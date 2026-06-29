@@ -1,0 +1,93 @@
+# MAGI docker-compose — local deployment.
+#
+# Single image, multiple services. Role is set via MAGI_NODE_ROLE but is
+# only a permission-scope preset — every other config axis
+# (MAGI_CHANNELS, MAGI_STATE_BACKEND, MAGI_ADAM_URL, ...) is independent.
+# `x-magi-base` carries the cross-cutting bits; each service overrides
+# only what differs.
+#
+# Topology:
+#   - postgres  : shared DB. Any service with MAGI_STATE_BACKEND=postgres
+#                 (or auto with DATABASE_URL) connects here.
+#   - adam      : enterprise scope, default channels=webui, postgres state.
+#   - eve-<id>  : personal scope, default channels=telegram, sqlite state.
+#                 Pulls config from Adam via MAGI_ADAM_URL.
+#
+# Phase C0: postgres is included but unused; Adam only serves /health.
+# The eve-* service is a placeholder template; real per-employee dispatch
+# (driven from Adam's Web UI) lands in C6.
+
+name: magi
+
+x-magi-base: &magi-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment:
+    MAGI_SHARED_SECRET: ${MAGI_SHARED_SECRET:?set MAGI_SHARED_SECRET in .env}
+    MAGI_ADAM_URL: ${MAGI_ADAM_URL:-http://adam:8000}
+    MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: magi
+      POSTGRES_PASSWORD: magi
+      POSTGRES_DB: magi
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magi -d magi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  adam:
+    <<: *magi-base
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *magi-base
+      MAGI_NODE_ROLE: adam
+      # Adam keeps the postgres state backend so audit / events / registry
+      # live in the shared store. Channels + state_backend can still be
+      # overridden here — e.g. MAGI_CHANNELS=webui,telegram to also expose
+      # a Telegram ops surface for HR.
+      MAGI_STATE_BACKEND: ${MAGI_STATE_BACKEND:-postgres}
+      DATABASE_URL: postgresql+psycopg://magi:magi@postgres:5432/magi
+      MAGI_RELOAD: ${MAGI_RELOAD:-0}
+    ports:
+      - "8000:8000"
+
+  # Placeholder template — duplicate this block per employee in C6+
+  # (or rely on Adam's Web UI dispatch button to render per-employee
+  # compose files). Until C6 lands we keep it commented out so
+  # `docker compose up` is fast.
+  #
+  # eve-template:
+  #   <<: *magi-base
+  #   depends_on:
+  #     - adam
+  #   environment:
+  #     <<: *magi-base
+  #     MAGI_NODE_ROLE: eve
+  #     # EVE defaults to sqlite + telegram; override if needed:
+  #     # MAGI_STATE_BACKEND: postgres     # only if a shared DB is desired
+  #     # MAGI_CHANNELS: telegram,webui   # also expose a personal dashboard
+  #     MAGI_EMPLOYEE_ID: REPLACE_ME
+  #     MAGI_BOT_TOKEN: REPLACE_ME
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #   volumes:
+  #     - eve_state_REPLACE_ME:/var/lib/magi/eve
+
+volumes:
+  postgres_data:
+    name: magi_postgres_data
+  # eve_state_REPLACE_ME:
+  #   name: magi_eve_REPLACE_ME
