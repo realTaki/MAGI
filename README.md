@@ -10,6 +10,11 @@ runs on-premise, one **Adam** node (Web-frontend control / orchestration
 backend for HR) + one Docker container per employee (EVE), with strict
 governance (audit, RBAC, hash-chained logs) baked in from day one.
 
+> **⚠️ This project is entirely written and maintained by AI.** It is in an
+> early experimental stage and may contain bugs, incomplete features, or
+> incorrect behaviours. Use at your own risk in production or production-like
+> environments. Contributions and bug reports are welcome.
+
 ## Naming and architecture
 
 | Name       | Role                                                                                  |
@@ -19,13 +24,17 @@ governance (audit, RBAC, hash-chained logs) baked in from day one.
 | **EVE**    | The employee-side node, one per employee. Default channel: **Telegram**. Pulls enterprise-wide data (directory, settings, enterprise skills) from Adam and caches locally. |
 | *admin*    | The user role (HR / IT) that uses Adam's Web UI. Kept lowercase on purpose.           |
 
-**Adam and EVE are architecturally identical.** Both run the same `magi.runtime` package (agent loop, dynamic context, skill runner, proactive engine, LLM provider, audit) and differ only along three axes:
+**Adam and EVE are the same node.** There is one `magiruntime` package (agent loop, dynamic context, skill runner, proactive engine, LLM provider, audit) and one process image. Every architectural choice is an independent config axis — no axis is hardcoded by role:
 
-1. **Channel**: which `channels/*` adapter is mounted (Adam → `webui`; EVE → `telegram`).
-2. **Permission scope**: `enterprise` vs `personal` — enforced by a policy gate in front of every skill.
-3. **Data source**: Adam is the system of record (Postgres + pgvector); EVE writes personal state locally (SQLite + sqlite-vec) and pulls enterprise data from Adam on startup + heartbeat.
+| Axis             | Env var                  | Default by role          | Notes                                                              |
+|------------------|--------------------------|--------------------------|--------------------------------------------------------------------|
+| Permission scope | `MAGI_NODE_ROLE`         | `adam` = enterprise, `eve` = personal | The **only** thing that role selects. Affects the policy gate inside the runtime. |
+| Channels         | `MAGI_CHANNELS`          | `adam` → `webui`, `eve` → `telegram`  | Comma-separated list. Adam can mount Telegram too; EVE can mount WebUI too. |
+| State backend    | `MAGI_STATE_BACKEND`     | `auto` (postgres if `DATABASE_URL` set, else sqlite) | Independent of role. EVE can use Postgres if a shared store is desired; Adam can use SQLite for a dev install. |
+| Adam peer        | `MAGI_ADAM_URL`          | `http://adam:8000`       | Always read. Any node that needs Adam's RPC (audit, config pull) sets this. |
+| LLM provider     | `ANTHROPIC_API_KEY` etc. | unset                    | Per-node or global.                                                 |
 
-There is **one process image, one entry point, one config object**. Which role a container plays is decided at runtime by `MAGI_NODE_ROLE`; the rest of `NodeConfig` and the `run()` / `check()` functions in `magi.node` are shared code with a small role-specific branch.
+The role just sets permission scope and a couple of default fields; every underlying axis is overridable. `magi.node.run()` does not branch on `role` — it iterates the channel list and hands off to each channel's launcher.
 
 > Full architecture, deployment topology, RPC contract and Phase 1 build
 > order live in [`.claude/plans/linked-cooking-waffle.md`](.claude/plans/linked-cooking-waffle.md).
@@ -46,16 +55,16 @@ Flat layout — packages live at the repo root, no `src/` wrapper.
 ```
 magi/
 ├── __init__.py
-├── __main__.py     # Single entry point. Dispatches by MAGI_NODE_ROLE.
+├── __main__.py     # Single entry point. Validates MAGI_NODE_ROLE, dispatches to magi.node.
 ├── runtime/        # Shared core: agent loop, context, skills, proactive, LLM, audit.
-│                   # Both Adam and EVE run this.
-├── channels/       # Pluggable channel adapters.
+│                   # Adam and EVE run the same runtime; only channel + scope + state differ.
+├── channels/       # Pluggable channel adapters. Either role can mount any subset.
 │   ├── base.py     # Channel Protocol — both adapters implement this.
-│   ├── telegram/   # EVE's channel — python-telegram-bot v21+ (C3+).
-│   └── webui/      # Adam's channel — FastAPI + HTMX (CRUD) + WS (chat console, C7+).
+│   ├── telegram/   # python-telegram-bot v21+ (C3+).
+│   └── webui/      # FastAPI + HTMX (CRUD) + WS (chat console, C7+).
+│       └── app.py  # The FastAPI app; built lazily by `webui` launcher.
 └── node/           # Node assembly: one NodeConfig, one check(), one run().
-    ├── __init__.py # Role is a config tag; the run() body branches on it for uvicorn vs ready-log.
-    └── app.py      # FastAPI app for Adam (EVE never imports this).
+    └── __init__.py # No role-based code paths. Iterates MAGI_CHANNELS, launches each.
 tests/              # unit / integration / e2e (one e2e file per checkpoint).
 ```
 
@@ -63,7 +72,7 @@ One console script:
 
 | Script  | Role                                                                                                                       |
 |---------|----------------------------------------------------------------------------------------------------------------------------|
-| `magi`  | Boots a MAGI node. Plays Adam when `MAGI_NODE_ROLE=adam` (binds :8000, WebUI channel), or EVE when `MAGI_NODE_ROLE=eve`.    |
+| `magi`  | Boots a MAGI node. `MAGI_NODE_ROLE` chooses the permission-scope preset; `MAGI_CHANNELS`, `MAGI_STATE_BACKEND` etc. override per-axis defaults. |
 
 ---
 
@@ -91,7 +100,7 @@ MAGI_NODE_ROLE=eve uv run magi --check
 MAGI_NODE_ROLE=adam uv run magi
 # in another shell:
 curl http://127.0.0.1:8000/health
-# → {"status":"ok","service":"adam","version":"0.1.0"}
+# → {"status":"ok","service":"magi","version":"0.1.0"}
 ```
 
 ### Run with Docker Compose (full local stack)
