@@ -50,23 +50,43 @@ The role just sets permission scope and a couple of default fields; every underl
 
 ## Repository layout
 
-Flat layout — packages live at the repo root, no `src/` wrapper.
+Two top-level trees, both flat — no nested `src/magi/`, no nested `web/apps/`.
 
 ```
-magi/
+magi/                          # Backend (Python) — same image for Adam and EVE
 ├── __init__.py
-├── __main__.py     # Single entry point. Validates MAGI_NODE_ROLE, dispatches to magi.node.
-├── runtime/        # Shared core: agent loop, context, skills, proactive, LLM, audit.
-│                   # Adam and EVE run the same runtime; only channel + scope + state differ.
-├── channels/       # Pluggable channel adapters. Either role can mount any subset.
-│   ├── base.py     # Channel Protocol — both adapters implement this.
-│   ├── telegram/   # python-telegram-bot v21+ (C3+).
-│   └── webui/      # FastAPI + HTMX (CRUD) + WS (chat console, C7+).
-│       └── app.py  # The FastAPI app; built lazily by `webui` launcher.
-└── node/           # Node assembly: one NodeConfig, one check(), one run().
-    └── __init__.py # No role-based code paths. Iterates MAGI_CHANNELS, launches each.
-tests/              # unit / integration / e2e (one e2e file per checkpoint).
+├── __main__.py                # Single entry point. Validates MAGI_NODE_ROLE, dispatches to magi.node.
+├── runtime/                   # Shared core: agent loop, context, skills, proactive, LLM, audit.
+│                              # Adam and EVE run the same runtime; only channel + scope + state differ.
+├── channels/                  # Pluggable channel adapters. Either role can mount any subset.
+│   ├── base.py                # Channel Protocol — both adapters implement this.
+│   ├── telegram/              # python-telegram-bot v21+ (C3+).
+│   └── webui/                 # FastAPI app; lazily mounted when the `webui` channel is enabled.
+└── node/                      # Node assembly: one NodeConfig, one check(), one run().
+    └── __init__.py            # No role-based code paths. Iterates MAGI_CHANNELS, launches each.
+
+web/                           # Frontend (single Vite SPA) — lands in C1.0b
+├── package.json               # name, type=module, Node >= 20
+├── tsconfig.json              # TS strict, target ES2022
+├── .nvmrc                     # Node 20 pin
+├── index.html                 # Vite entry (title already MAGI-customised)
+├── vite.config.js             # dev server proxies /api and /ws to Adam :8000
+└── src/                       # source code (created in C1.0b)
+
+tests/                         # unit / integration / e2e (one e2e file per checkpoint)
 ```
+
+### Frontend stack (lands in C1.0b)
+
+React 19 + TypeScript 5 + Vite 5 + Tailwind CSS v4 + shadcn/ui.
+Routing: **React Router v6** (no TanStack Router — keep deps minimal).
+Server state: **TanStack Query**. Forms: **react-hook-form + zod**.
+Types over the wire: **openapi-typescript** regenerates `web/src/api/types.gen.ts`
+from FastAPI's `/openapi.json` (`npm run generate-types`). Tests: **Vitest**.
+
+Adam and the console share one React tree (admin lives at `/admin/*`,
+console at `/console/*` once C7 lands). Built artifact (`web/dist/`) is
+baked into the Adam image via a multi-stage Dockerfile in **C1.4**.
 
 One console script:
 
