@@ -65,7 +65,7 @@ class NodeConfig:
 
     # — always-on (read regardless of role / channels) —
     shared_secret_set: bool = False
-    adam_url: str = "http://adam:69420"
+    adam_url: str = "http://adam:42069"
     log_level: str = "info"
 
     # — persistent store (any role, any channel mix) —
@@ -109,7 +109,7 @@ class NodeConfig:
         host = port = None
         if "webui" in channels:
             host = os.environ.get("MAGI_HOST", "0.0.0.0")
-            port = int(os.environ.get("MAGI_PORT", "69420"))
+            port = int(os.environ.get("MAGI_PORT", "42069"))
 
         # ``state_dir`` belongs to the node, not to any specific channel —
         # Adam uses it for SQLite state (small / dev), Eve for local working
@@ -127,7 +127,7 @@ class NodeConfig:
             role=role,
             channels=channels,
             shared_secret_set=bool(os.environ.get("MAGI_SHARED_SECRET")),
-            adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:69420"),
+            adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:42069"),
             log_level=os.environ.get("MAGI_LOG_LEVEL", "info"),
             state_backend=_resolve_state_backend(os.environ.get("MAGI_STATE_BACKEND")),
             host=host,
@@ -221,18 +221,25 @@ def _init_state(cfg: NodeConfig) -> None:
 # in C3 once the Telegram runtime exists (asyncio.gather).
 # ----------------------------------------------------------------------
 def _launch_webui(cfg: NodeConfig) -> None:
-    """Mount the WebUI channel: serve FastAPI on cfg.host:cfg.port."""
+    """Mount the WebUI channel: serve FastAPI on cfg.host:cfg.port.
+
+    Uses uvicorn's ``factory=True`` mode (the import string points at
+    ``create_app``) so ``reload=True`` works — uvicorn needs an import
+    string, not a pre-built app object, to spawn the reloader watcher.
+    """
     from magi.channels.webui.app import create_app  # lazy: keeps FastAPI off EVE-without-webui
 
-    app = create_app()
+    host = cfg.host or "0.0.0.0"
+    port = cfg.port or 42069
     logger.info(
         "webui channel starting",
-        extra={"host": cfg.host, "port": cfg.port, "reload": cfg.reload},
+        extra={"host": host, "port": port, "reload": cfg.reload},
     )
     uvicorn.run(
-        app,
-        host=cfg.host or "0.0.0.0",
-        port=cfg.port or 69420,
+        "magi.channels.webui.app:create_app",
+        factory=True,
+        host=host,
+        port=port,
         log_level=cfg.log_level.lower(),
         reload=cfg.reload,
     )
