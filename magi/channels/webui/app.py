@@ -34,7 +34,7 @@ logger = logging.getLogger("magi.channels.webui")
 
 # In-container path the Dockerfile uses. In dev (vite dev), we look
 # for the WebUI build output inside the magi/ folder; if not present
-# the SPA mount is skipped and vite handles the UI itself on :69420.
+# the SPA mount is skipped and vite handles the UI itself on :42069.
 _SPA_DIST_CANDIDATES: tuple[Path, ...] = (
     Path("/app/magi/WebUI/dist"),  # Dockerfile runtime stage
     Path(__file__).resolve().parents[2] / "WebUI" / "dist",  # dev checkout (magi/ is parents[2])
@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets
     # picked up; if neither produced a dist the mount is skipped and
-    # vite dev (on the same :69420) serves the UI itself.
+    # vite dev (on the same :42069) serves the UI itself.
     spa_dist = _find_spa_dist()
     if spa_dist is not None:
         app.mount(

@@ -5,7 +5,7 @@
 #   - the Python backend (magi runtime)
 #   - the React SPA (magi/WebUI/dist), served by FastAPI at /
 #
-# That way, http://localhost:69420/ works the same on Adam and on an
+# That way, http://localhost:42069/ works the same on Adam and on an
 # EVE container that mounted the webui channel — no external CDN, no
 # separate static host, no "is webui available on this role?" question.
 #
@@ -41,8 +41,9 @@ ENV UV_LINK_MODE=copy \
 WORKDIR /app
 # The Python project (pyproject.toml at root, package at magi/) is
 # copied as a unit. uv finds pyproject at the project root and
-# installs deps into the venv.
-COPY pyproject.toml uv.lock* ./
+# installs deps into the venv. README.md is also copied because
+# pyproject declares it under [project] readme.
+COPY pyproject.toml uv.lock* README.md ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
@@ -71,7 +72,7 @@ WORKDIR /workspace
 USER magi
 VOLUME ["/workspace/state"]
 
-EXPOSE 69420
+EXPOSE 42069
 
 # `magi --check` is role-aware (prints the resolved config for whichever
 # role this container is playing) and exits 0 — safe liveness probe for

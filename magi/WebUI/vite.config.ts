@@ -10,18 +10,18 @@ import tailwindcss from "@tailwindcss/vite";
 // ``http://127.0.0.1:${MAGI_PORT}``.
 //
 // MAGI_PORT is the port the *node* binds; the vite dev server itself
-// listens on 69420 so the dev URL matches the prod URL.
+// listens on 42069 so the dev URL matches the prod URL.
 const BACKEND_URL =
   process.env.VITE_BACKEND_URL ??
-  `http://127.0.0.1:${process.env.MAGI_PORT ?? "69420"}`;
+  `http://127.0.0.1:${process.env.MAGI_PORT ?? "42069"}`;
 const WS_URL = BACKEND_URL.replace(/^http/, "ws");
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // 69420 = the WebUI's port in production (FastAPI bind). Vite dev
+    // 42069 = the WebUI's port in production (FastAPI bind). Vite dev
     // reuses the same port so the dev URL matches the prod URL.
-    port: 69420,
+    port: 42069,
     proxy: {
       "/api": {
         target: BACKEND_URL,

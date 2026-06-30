@@ -4,19 +4,19 @@
 #
 # The base compose (docker-compose.yml) is the production deployment:
 #   - Single image built from `Dockerfile`
-#   - magi/WebUI/dist baked in, served by FastAPI on :69420
+#   - magi/WebUI/dist baked in, served by FastAPI on :42069
 #
 # This override swaps that for the dev image (Dockerfile.dev) which has
 # both Python and Node, mounts the source trees as volumes, and runs
 # `vite dev` alongside `magi` inside the same container.
 #
 # Dev workflow:
-#   - Open http://localhost:69420/ in browser
+#   - Open http://localhost:42069/ in browser
 #   - Edit magi/*.py   → uvicorn auto-reloads   (MAGI_RELOAD=1)
 #   - Edit magi/WebUI/* → vite HMR updates the browser
 #   - SQLite at /workspace/state → bind-mount persists to ./workspace/Adam
 #
-# vite proxies /api/* → 127.0.0.1:8000 (magi, internal). One port (69420)
+# vite proxies /api/* → 127.0.0.1:8000 (magi, internal). One port (42069)
 # is published to the host.
 
 services:
@@ -29,8 +29,13 @@ services:
       # Source mounts. The image already has the source baked in (so
       # `magi` can run even without these mounts) — the mounts
       # override at runtime so the dev container sees host edits.
-      - ./magi:/workspace/magi:ro
-      - ./magi/WebUI:/web:ro
+      # The compose file lives in deploy/ so the path is one level up.
+      #
+      # magi/ is read-only (Python doesn't need to write source).
+      # magi/WebUI/ is read-write because vite writes its config cache
+      # and HMR state under .vite/ and node_modules/.vite/.
+      - ../magi:/workspace/magi:ro
+      - ../magi/WebUI:/web
     environment:
       MAGI_RELOAD: "1"
       # Backend listens on 8000 INSIDE the container. vite picks it
@@ -42,4 +47,4 @@ services:
       # http://127.0.0.1:${MAGI_PORT}. Either way points at magi.
       VITE_BACKEND_URL: "http://127.0.0.1:8000"
     ports:
-      - "69420:69420"
+      - "42069:42069"

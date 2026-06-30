@@ -27,6 +27,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /usr/local/bin/
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
+    # ``/opt/venv/bin`` is where uv installs the ``magi`` console script
+    # declared in pyproject.toml. Prepending it to PATH means the
+    # entrypoint's ``exec magi`` resolves to the venv binary, not the
+    # base image's ``/usr/bin/magi`` (which doesn't exist).
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/bin" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -34,7 +39,7 @@ WORKDIR /app
 # Install Python deps (magi) from pyproject + uv.lock. We still do this
 # so the venv has a baseline magi install — the host mount in
 # docker-compose.dev.yml replaces it at runtime via PYTHONPATH.
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock* README.md ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
@@ -52,7 +57,7 @@ RUN mkdir -p /workspace/state
 
 ENV MAGI_STATE_DIR=/workspace/state
 
-EXPOSE 69420
+EXPOSE 42069
 
 # Entrypoint: run vite in background, trap signals so vite dies when
 # magi dies, then exec magi as PID 1. With magi as PID 1 the container
@@ -62,10 +67,12 @@ RUN cat >/usr/local/bin/entrypoint.sh <<'SH'
 #!/bin/sh
 set -eu
 cd /web
-npm run dev -- --host 0.0.0.0 --port 69420 &
+npm run dev -- --host 0.0.0.0 --port 42069 &
 VITE_PID=$!
 trap "kill $VITE_PID 2>/dev/null || true" EXIT INT TERM
-exec magi --reload
+# Auto-reload is driven by the MAGI_RELOAD env var (passed by
+# docker-compose.dev.yml). uvicorn picks it up via NodeConfig.
+exec magi
 SH
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

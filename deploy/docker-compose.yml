@@ -27,18 +27,16 @@ x-magi-base: &magi-base
     context: ..
     dockerfile: deploy/Dockerfile
   restart: unless-stopped
-  environment:
-    MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
 
 services:
   adam:
     <<: *magi-base
     environment:
-      <<: *magi-base
+      MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
       MAGI_NODE_ROLE: adam
       MAGI_RELOAD: ${MAGI_RELOAD:-0}
     ports:
-      - "${MAGI_PORT:-69420}:69420"
+      - "${MAGI_PORT:-42069}:42069"
     volumes:
       # Absolute path by default — set MAGI_WORKSPACE_DIR in .env to
       # override. Each container gets its own subdirectory under
