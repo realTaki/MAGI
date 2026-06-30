@@ -191,7 +191,17 @@ def run() -> None:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return
 
+    # Launch non-blocking channels first (they return quickly, often by
+    # spawning a background thread or task), THEN launch the blocking one
+    # (``webui`` is the only one that holds the main thread via
+    # ``uvicorn.run``). If we iterated in user-given order, putting webui
+    # first would starve every other channel.
+    non_blocking: list[str] = []
+    blocking: list[str] = []
     for channel in cfg.channels:
+        (blocking if channel == "webui" else non_blocking).append(channel)
+
+    for channel in non_blocking + blocking:
         _launch_channel(channel, cfg)
 
 
@@ -246,14 +256,34 @@ def _launch_webui(cfg: NodeConfig) -> None:
 
 
 def _launch_telegram(cfg: NodeConfig) -> None:
-    """Mount the Telegram channel. C0 stub; real wiring lands in C3."""
+    """Mount the Telegram channel: start a python-telegram-bot listener.
+
+    C0 behaviour is the "first-touch" handler from
+    ``magi.channels.telegram.bot``: anyone not in ``telegram.super_admins``
+    gets a reply with their own chat_id and a "contact admin" nudge.
+    C3 will replace this with the real agent-loop dispatcher.
+
+    No-op when no bot token has been saved (e.g. onboarding step 1 not
+    yet done). The bot daemon thread restarts are not required to pick
+    up new super admins — the allowlist is re-read on every message.
+    """
+    state_dir = cfg.state_dir or "/workspace/state"
+    from magi.channels.telegram.bot import start_bot
+
+    thread = start_bot(state_dir)
+    if thread is None:
+        logger.info(
+            "telegram: bot token not saved yet — channel idle until onboarding completes",
+            extra={"state_dir": state_dir},
+        )
+        return
     logger.info(
-        "telegram channel stub (C0); C3 will mount python-telegram-bot",
+        "telegram channel running",
         extra={
             "employee_id": cfg.employee_id,
             "adam_url": cfg.adam_url,
-            "bot_token_set": cfg.bot_token_set,
-            "state_dir": cfg.state_dir,
+            "state_dir": state_dir,
+            "bot_thread": thread.name,
         },
     )
 
