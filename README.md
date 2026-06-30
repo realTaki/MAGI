@@ -31,7 +31,7 @@ governance (audit, RBAC, hash-chained logs) baked in from day one.
 | Permission scope | `MAGI_NODE_ROLE`         | `adam` = enterprise, `eve` = personal | The **only** thing that role selects. Affects the policy gate inside the runtime. |
 | Channels         | `MAGI_CHANNELS`          | `adam` → `webui`, `eve` → `telegram`  | Comma-separated list. Adam can mount Telegram too; EVE can mount WebUI too. |
 | State backend    | `MAGI_STATE_BACKEND`     | `auto` (postgres if `DATABASE_URL` set, else sqlite) | Independent of role. EVE can use Postgres if a shared store is desired; Adam can use SQLite for a dev install. |
-| Adam peer        | `MAGI_ADAM_URL`          | `http://adam:8000`       | Always read. Any node that needs Adam's RPC (audit, config pull) sets this. |
+| Adam peer        | `MAGI_ADAM_URL`          | `http://adam:69420`      | Always read. Any node that needs Adam's RPC (audit, config pull) sets this. |
 | LLM provider     | `ANTHROPIC_API_KEY` etc. | unset                    | Per-node or global.                                                 |
 
 The role just sets permission scope and a couple of default fields; every underlying axis is overridable. `magi.node.run()` does not branch on `role` — it iterates the channel list and hands off to each channel's launcher.
@@ -70,7 +70,7 @@ web/                           # Frontend (single Vite SPA) — lands in C1.0b
 ├── tsconfig.json              # TS strict, target ES2022
 ├── .nvmrc                     # Node 20 pin
 ├── index.html                 # Vite entry (title already MAGI-customised)
-├── vite.config.js             # dev server proxies /api and /ws to Adam :8000
+├── vite.config.js             # dev server proxies /api and /ws to Adam :69420
 └── src/                       # source code (created in C1.0b)
 
 tests/                         # unit / integration / e2e (one e2e file per checkpoint)
@@ -116,26 +116,25 @@ uv sync --extra adam --extra eve
 # EVE (stub) — print resolved config and exit
 MAGI_NODE_ROLE=eve uv run magi --check
 
-# Adam — boot FastAPI on :8000
+# Adam — boot FastAPI on :69420
 MAGI_NODE_ROLE=adam uv run magi
 # in another shell:
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:69420/health
 # → {"status":"ok","service":"magi","version":"0.1.0"}
 ```
 
-### Run with Docker Compose (full local stack)
+### Run with Docker Compose (Adam only, C0)
 ```bash
 cp .env.example .env
-# edit MAGI_SHARED_SECRET and any LLM provider keys you want to enable
+# edit MAGI_SHARED_SECRET (only required var)
 docker compose up --build
-# Adam at http://localhost:8000/health
-# Postgres at localhost:5432 (user/pass: magi/magi, db: magi)
+# Adam at http://localhost:69420/health
 ```
 
-The compose file currently runs `postgres` + `adam` only. Per-employee
-`eve-<id>` services are wired up in checkpoint C6 alongside the dispatch
-button in Adam's Web UI — both build from the same Dockerfile and
-differ only via `MAGI_NODE_ROLE`.
+The compose file currently runs **just the Adam container** — no
+Postgres, no EVE. Postgres is added back in **C1** (when the ORM
+lands); per-employee EVE containers are wired up in **C6** via Adam's
+Web UI dispatch button.
 
 ---
 

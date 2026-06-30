@@ -233,3 +233,9 @@ web/yarn-debug.log*
 web/yarn-error.log*
 web/pnpm-debug.log*
 web/*.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# Runtime data — local SQLite / bind-mounted volumes
+# -----------------------------------------------------------------------------
+workspace/
+data/
