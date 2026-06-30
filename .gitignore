@@ -218,21 +218,23 @@ __marimo__/
 .streamlit/secrets.toml
 
 # -----------------------------------------------------------------------------
-# Frontend (web/) — single Vite SPA, not a monorepo
+# Frontend (magi/WebUI/) — single Vite SPA, lives inside the magi/ folder
+# so every MAGI node ships agent + WebUI together.
 # -----------------------------------------------------------------------------
-web/node_modules/
-web/dist/
-web/build/
-web/.vite/
-web/coverage/
-web/.env
-web/.env.local
-web/.env.*.local
-web/npm-debug.log*
-web/yarn-debug.log*
-web/yarn-error.log*
-web/pnpm-debug.log*
-web/*.tsbuildinfo
+node_modules/
+magi/WebUI/dist/
+magi/WebUI/build/
+.vite/
+magi/WebUI/.vite/
+magi/WebUI/coverage/
+magi/WebUI/.env
+magi/WebUI/.env.local
+magi/WebUI/.env.*.local
+magi/WebUI/npm-debug.log*
+magi/WebUI/yarn-debug.log*
+magi/WebUI/yarn-error.log*
+magi/WebUI/pnpm-debug.log*
+magi/WebUI/*.tsbuildinfo
 
 # -----------------------------------------------------------------------------
 # Runtime data — local SQLite / bind-mounted volumes

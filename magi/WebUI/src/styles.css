@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Shinkai-flavoured backdrop. A sky-like vertical gradient — cool blue at
+   the top, soft pink at the horizon. Cards/panels sit on top as
+   translucent white so the gradient reads through subtly. */
+html,
+body,
+#app {
+  min-height: 100vh;
+}
+
+body {
+  background: linear-gradient(
+    180deg,
+    #b3d9f2 0%,
+    #d2e3f3 28%,
+    #f1d6dc 65%,
+    #fadcc8 100%
+  );
+  background-attachment: fixed;
+  color: #1e293b; /* slate-800 */
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+}

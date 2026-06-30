@@ -1,13 +1,37 @@
 # syntax=docker/dockerfile:1.7
 # MAGI node — single image, role chosen at runtime via MAGI_NODE_ROLE.
 #
-# Whether the container plays Adam (enterprise scope, WebUI channel) or
-# EVE (personal scope, Telegram channel) is decided by env, not by which
-# image you pulled. Both roles use SQLite for local state; the file
-# lives under /var/lib/magi/state and should be bind-mounted to the host
-# in docker-compose so it persists across container restarts.
+# Every MAGI node (Adam or EVE) bundles both:
+#   - the Python backend (magi runtime)
+#   - the React SPA (magi/WebUI/dist), served by FastAPI at /
+#
+# That way, http://localhost:69420/ works the same on Adam and on an
+# EVE container that mounted the webui channel — no external CDN, no
+# separate static host, no "is webui available on this role?" question.
+#
+# Role (Adam / EVE) is selected at runtime via MAGI_NODE_ROLE; channel
+# selection (webui / telegram) is via MAGI_CHANNELS. SQLite lives at
+# /workspace/state (bind-mounted to the host).
 
-FROM python:3.12-slim AS builder
+# -----------------------------------------------------------------------------
+# Stage 1: build the React SPA
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS web-builder
+
+WORKDIR /web
+
+# Install deps in a separate layer so source edits don't bust the cache.
+COPY magi/WebUI/package.json magi/WebUI/package-lock.json* ./
+RUN npm ci
+
+COPY magi/WebUI ./
+RUN npm run build
+# /web/dist now contains the built SPA (index.html + assets/).
+
+# -----------------------------------------------------------------------------
+# Stage 2: install Python deps with uv
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim AS python-builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /usr/local/bin/
 
 ENV UV_LINK_MODE=copy \
@@ -15,28 +39,34 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
+# The Python package ``magi`` lives at the repo's ``magi/`` directory;
+# alongside it sits ``magi/WebUI/`` (the React SPA). We only need
+# pyproject + uv.lock here — the actual Python source + WebUI source
+# are carried in by other COPYs / mounts (or via the dev compose).
 COPY pyproject.toml uv.lock* ./
-COPY magi ./magi
-
-# Install full project (adam + eve extras) so the same image can serve
-# either role. Phase 1 baselines; phase 4 may split if image size matters.
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
-# ---- runtime ----------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Stage 3: runtime — Python + prebuilt SPA, run as non-root magi user
+# -----------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --shell /bin/bash magi \
     && mkdir -p /workspace/state \
     && chown -R magi:magi /workspace
 
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=python-builder /opt/venv /opt/venv
+COPY magi /app/magi
+# Prebuilt SPA baked in. FastAPI's webui launcher mounts /app/magi/WebUI/dist
+# as StaticFiles (with html=True) so /, /assets/* etc. all serve the SPA,
+# and /api/* still hits the FastAPI routers (registered before the
+# static mount so they take precedence).
+COPY --from=web-builder /web/dist /app/magi/WebUI/dist
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     MAGI_STATE_DIR=/workspace/state
 
-# /workspace is the container's working directory (matches the convention
-# used by Agent / dev environments). SQLite lives under /workspace/state
-# so a single bind mount at /workspace/state persists everything.
 WORKDIR /workspace
 USER magi
 VOLUME ["/workspace/state"]
