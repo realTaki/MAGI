@@ -3,14 +3,16 @@ import { useEffect, useState } from "react";
 import type { OnboardingData } from "./onboardingTypes";
 
 /**
- * First-time setup wizard — three steps:
+ * First-time setup wizard — four steps:
  *   1. Pick IM (Telegram only for now) + verify + save bot token.
  *      When a token is already saved, the step renders in a "configured"
  *      view (no input) with "Next →" enabled; "Re-set token" reveals
  *      the input form so the deployer can override.
  *   2. Show the saved bot, click Next.
  *   3. Add 1+ super-admin TG chat_ids (verify + save).
- *   → calls onComplete(savedData) and the parent flips to dashboard.
+ *   4. "MAGI is set up." summary + "OK, got it — sign in →" button
+ *      → calls onComplete(savedData); the parent flips the server
+ *      flag and routes to landing.
  *
  * On mount we GET /api/onboarding/status. The token itself is never
  * returned to the frontend (it's a secret); we only get the username.
@@ -18,7 +20,7 @@ import type { OnboardingData } from "./onboardingTypes";
 export default function OnboardingPage(props: {
   onComplete: (data: OnboardingData) => void;
 }) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [bot, setBot] = useState<{ token: string; username: string } | null>(
     null,
   );
@@ -31,6 +33,12 @@ export default function OnboardingPage(props: {
   const [initialSuperAdmins, setInitialSuperAdmins] = useState<
     Array<{ chatId: string; displayName: string | null }>
   >([]);
+  // Filled by step 3's "Finish setup →" and read by step 4's
+  // "OK, got it — sign in →". Kept in OnboardingPage state so we
+  // don't have to re-fetch /status just to render the summary.
+  const [completedData, setCompletedData] = useState<OnboardingData | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -63,7 +71,7 @@ export default function OnboardingPage(props: {
       <div className="flex-1 flex items-start justify-center pt-8">
         <div className="w-full max-w-2xl">
           <Card>
-            <StepIndicator current={step} total={3} />
+            <StepIndicator current={step} total={4} />
 
             {step === 1 && (
               <Step1View
@@ -90,13 +98,83 @@ export default function OnboardingPage(props: {
                 bot={bot}
                 initialSuperAdmins={initialSuperAdmins}
                 onBack={() => setStep(2)}
-                onComplete={props.onComplete}
+                onComplete={(data) => {
+                  setCompletedData(data);
+                  setStep(4);
+                }}
+              />
+            )}
+            {step === 4 && completedData && (
+              <Step4View
+                data={completedData}
+                onBack={() => setStep(3)}
+                onContinue={() => props.onComplete(completedData)}
               />
             )}
           </Card>
         </div>
       </div>
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// step 4 — "MAGI is set up" confirmation
+//
+// The wizard's terminus. Shows the saved data one last time and
+// asks the user to explicitly confirm by clicking "OK, got it —
+// sign in →". The parent uses that click to flip the server-side
+// ``onboarding_complete`` flag and route to landing. Until this
+// step completes, the boot routing keeps sending the user back
+// into the wizard — see Auth D in the project memory.
+// ---------------------------------------------------------------------------
+function Step4View(props: {
+  data: OnboardingData;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <>
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-slate-800">
+        MAGI is set up.
+      </h1>
+      <p className="mt-2 text-slate-600">
+        First-time wizard completed. Click below to mark the setup
+        as confirmed and go sign in.
+      </p>
+
+      <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+        <dt className="text-slate-500">Bot</dt>
+        <dd className="font-mono text-slate-900">@{props.data.bot.username}</dd>
+
+        <dt className="text-slate-500">Super admins</dt>
+        <dd className="text-slate-700">
+          {props.data.superAdmins.length} chat_id
+          {props.data.superAdmins.length === 1 ? "" : "s"} (
+          {props.data.superAdmins
+            .map((a) => (a.displayName ? `${a.displayName}` : a.chatId))
+            .join(", ")}
+          )
+        </dd>
+      </dl>
+
+      <div className="mt-8 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={props.onBack}
+          className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          onClick={props.onContinue}
+          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
+        >
+          OK, got it — sign in →
+        </button>
+      </div>
+    </>
   );
 }
 
