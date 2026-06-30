@@ -35,10 +35,14 @@ services:
       MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
       MAGI_NODE_ROLE: adam
       MAGI_RELOAD: ${MAGI_RELOAD:-0}
+      # Empty by default — role-specific defaults kick in (Adam → webui,
+      # EVE → telegram). Override in .env to enable both on Adam for
+      # the first-touch bot test, or to add email/calendar later.
+      MAGI_CHANNELS: ${MAGI_CHANNELS:-}
     ports:
       - "${MAGI_PORT:-42069}:42069"
     volumes:
-      # Absolute path by default — set MAGI_WORKSPACE_DIR in .env to
-      # override. Each container gets its own subdirectory under
-      # MAGI_WORKSPACE_DIR.
-      - "${MAGI_WORKSPACE_DIR:-/workspace}/Adam:/workspace"
+      # Each container gets its own subdirectory under
+      # MAGI_WORKSPACE_DIR so Adam and future Eve containers don't
+      # trample each other's SQLite. Default Adam/Eve-* layout.
+      - "${MAGI_WORKSPACE_DIR:-./workspace}/Adam:/workspace"

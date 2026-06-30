@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.webui.api import onboarding
+from magi.channels.webui.api import auth, onboarding
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
 
     # Feature routers — registered BEFORE the SPA static mount so
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
+    app.include_router(auth.router, prefix="/api/auth")
     app.include_router(onboarding.router, prefix="/api/onboarding")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
