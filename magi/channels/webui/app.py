@@ -1,25 +1,51 @@
-"""WebUI channel — the Adam-facing HTTP surface (and optionally Eve-facing).
+"""WebUI channel — the HTTP surface Adam (and optionally Eve) serves.
 
 This module builds the FastAPI application that the WebUI channel serves.
 It is imported by ``magi.node.run`` only when ``webui`` is in
-``MAGI_CHANNELS``. Subsequent checkpoints layer on:
+``MAGI_CHANNELS``.
 
-- C1 — HTMX CRUD pages (employees / eves / skills / knowledge / audit).
+Mounting order (matters for routing precedence):
+  1. ``/health``         — process-level liveness probe.
+  2. ``/api/onboarding/*`` — feature routers (verify-bot, save-bot, ...).
+  3. ``/``               — SPA static files (built by Vite at web/dist/).
+     Uses ``html=True`` so unknown paths fall back to index.html and
+     the SPA's client-side router can take over.
+
+Subsequent checkpoints layer on:
+- C1.2 — more routers (employees / eves / skills / audit / login).
 - C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVE → Adam ingest).
 - C6 — ``/api/eves/{id}/dispatch``, ``/api/eves/{id}/recall``.
 - C7 — WebSocket console stream (``/ws/console``).
-
-The ``/health`` endpoint is a process-level liveness probe (not a WebUI
-feature) — it stays here because FastAPI is the only HTTP server in
-this codebase and ``/health`` has to live somewhere.
 """
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
+from magi.channels.webui.api import onboarding
+
+logger = logging.getLogger("magi.channels.webui")
+
+# In-container path the Dockerfile uses. In dev (vite dev), we look
+# for the WebUI build output inside the magi/ folder; if not present
+# the SPA mount is skipped and vite handles the UI itself on :69420.
+_SPA_DIST_CANDIDATES: tuple[Path, ...] = (
+    Path("/app/magi/WebUI/dist"),  # Dockerfile runtime stage
+    Path(__file__).resolve().parents[2] / "WebUI" / "dist",  # dev checkout (magi/ is parents[2])
+)
+
+
+def _find_spa_dist() -> Path | None:
+    for candidate in _SPA_DIST_CANDIDATES:
+        if candidate.is_dir() and (candidate / "index.html").is_file():
+            return candidate
+    return None
 
 
 class HealthResponse(BaseModel):
@@ -45,6 +71,28 @@ def create_app() -> FastAPI:
     @app.get("/health", response_model=HealthResponse, tags=["meta"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", service="magi", version=__version__)
+
+    # Feature routers — registered BEFORE the SPA static mount so
+    # /api/* always wins over any same-prefixed asset in the SPA bundle.
+    app.include_router(onboarding.router, prefix="/api/onboarding")
+
+    # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
+    # stage). In a local dev checkout with `npm run build` it also gets
+    # picked up; if neither produced a dist the mount is skipped and
+    # vite dev (on the same :69420) serves the UI itself.
+    spa_dist = _find_spa_dist()
+    if spa_dist is not None:
+        app.mount(
+            "/",
+            StaticFiles(directory=str(spa_dist), html=True),
+            name="spa",
+        )
+        logger.info("SPA mounted", extra={"path": str(spa_dist)})
+    else:
+        logger.info(
+            "SPA dist not found; webui channel serves API only "
+            "(run `npm run build` in magi/WebUI/ or use vite dev to serve the UI)"
+        )
 
     return app
 

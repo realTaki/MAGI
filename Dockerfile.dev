@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.7
+# MAGI dev image — used only by docker-compose.dev.yml for local
+# development. Production uses the regular `Dockerfile` (no node,
+# web/dist baked in, single `magi` process).
+#
+# The dev image carries BOTH the Python runtime (so `magi` can run) and
+# the Node toolchain (so `vite dev` can serve the SPA with HMR). At
+# container start it spawns vite as a background process and `exec`s
+# `magi` as PID 1, so the container's lifecycle is tied to `magi`
+# (vite crashing doesn't kill the container; magi crashing does, and
+# compose restarts the whole service).
+
+FROM python:3.12-slim-bookworm
+
+# Node 20 from NodeSource (bookworm doesn't ship a recent enough node
+# for vite 6). Cleanup apt lists in the same layer to keep the image
+# small.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv for Python deps (matches what the prod Dockerfile uses).
+COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /usr/local/bin/
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+# Install Python deps (magi) from pyproject + uv.lock. We still do this
+# so the venv has a baseline magi install — the host mount in
+# docker-compose.dev.yml replaces it at runtime via PYTHONPATH.
+COPY pyproject.toml uv.lock* ./
+RUN uv sync --frozen --no-dev --extra adam --extra eve
+
+# Install web deps. Source itself is bind-mounted at runtime; this
+# baseline just ensures the `node_modules/` is present in case the
+# user runs the image without the dev override (e.g. for a quick
+# `docker run magi:dev` smoke test).
+COPY magi/WebUI/package.json magi/WebUI/package-lock.json* /web/
+RUN cd /web && npm ci --no-audit --no-fund
+
+# /workspace mirrors the prod image's working dir so source paths
+# (magi/, magi/WebUI/) line up regardless of how the user mounts them.
+WORKDIR /workspace
+RUN mkdir -p /workspace/state
+
+ENV MAGI_STATE_DIR=/workspace/state
+
+EXPOSE 69420
+
+# Entrypoint: run vite in background, trap signals so vite dies when
+# magi dies, then exec magi as PID 1. With magi as PID 1 the container
+# exits the moment magi exits (e.g. SIGTERM from compose stop), and
+# the trap cleans up the background vite process.
+RUN cat >/usr/local/bin/entrypoint.sh <<'SH'
+#!/bin/sh
+set -eu
+cd /web
+npm run dev -- --host 0.0.0.0 --port 69420 &
+VITE_PID=$!
+trap "kill $VITE_PID 2>/dev/null || true" EXIT INT TERM
+exec magi --reload
+SH
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+CMD ["/usr/local/bin/entrypoint.sh"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD magi --check >/dev/null || exit 1

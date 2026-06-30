@@ -47,6 +47,22 @@ def init_sqlite(state_dir: str) -> Path:
             "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
             (META_SCHEMA_VERSION, INITIAL_SCHEMA_VERSION),
         )
+        # ``settings`` is a small KV store for runtime config — channel
+        # bot tokens, verified flags, etc. Kept in SQLite (not env)
+        # because the webui writes to it at runtime and env is
+        # read-only. C1.1's ORM/Alembic pass will add a real model
+        # on top of this table; the schema here is deliberately
+        # minimal so that hand-off is a no-op (Alembic baseline sees
+        # the table as already created).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
         conn.commit()
 
     return db_path
