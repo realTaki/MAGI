@@ -69,6 +69,25 @@ def _super_admins() -> set[str]:
 # -- request / response schemas -----------------------------------------
 
 
+class AllowedLoginAccount(BaseModel):
+    """One row in the login-page dropdown.
+
+    ``role`` is "super_admin" for the wizard-configured deployers, and
+    will grow to "assigned_employee" once C2 starts persisting
+    employees with bound TG chat_ids. The frontend doesn't branch on
+    the value today — it just uses it to disambiguate rows that
+    happen to share a display name.
+    """
+
+    chat_id: str
+    display_name: str | None = None
+    role: str
+
+
+class AllowedLoginAccountsResponse(BaseModel):
+    accounts: list[AllowedLoginAccount]
+
+
 class SendLoginCodeRequest(BaseModel):
     chat_id: str = Field(min_length=1, max_length=64)
 
@@ -150,6 +169,57 @@ def _clear_login_code(chat_id: str) -> None:
 
 
 # -- endpoints ---------------------------------------------------------
+
+
+@router.get("/allowed-chat-ids", response_model=AllowedLoginAccountsResponse)
+async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
+    """The list of chat_ids that can log in to Adam.
+
+    For C0 this is just the super-admins list saved by the onboarding
+    wizard. C2+ will union in employees with a bound TG chat_id +
+    active EVE assignment (so an employee can manage their own
+    EVE without needing deployer-level access). The frontend uses
+    this to populate the login dropdown so users don't have to
+    remember their chat_id.
+
+    Display names are best-effort lookups via Telegram ``getChat``;
+    a failure (e.g. the user has blocked the bot, or the network is
+    down) just means we fall back to showing the bare chat_id.
+    """
+    from magi.runtime.state.settings import state_get
+
+    bot_token = state_get(_state_dir(), "telegram.bot_token")
+    accounts: list[AllowedLoginAccount] = []
+
+    for chat_id in sorted(_super_admins()):
+        display_name: str | None = None
+        if bot_token:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/getChat",
+                        json={"chat_id": int(chat_id)},
+                    )
+                if resp.status_code == 200 and (resp.json().get("ok")):
+                    chat = resp.json().get("result") or {}
+                    display_name = (
+                        chat.get("first_name")
+                        or chat.get("title")
+                        or chat.get("username")
+                    )
+            except (httpx.TimeoutException, httpx.RequestError, ValueError):
+                # Network down / user blocked the bot / whatever —
+                # the dropdown will just show the chat_id.
+                pass
+        accounts.append(
+            AllowedLoginAccount(
+                chat_id=chat_id,
+                display_name=display_name,
+                role="super_admin",
+            )
+        )
+
+    return AllowedLoginAccountsResponse(accounts=accounts)
 
 
 @router.post("/send-login-code", response_model=SendLoginCodeResponse)
