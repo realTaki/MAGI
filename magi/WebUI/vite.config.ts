@@ -26,6 +26,17 @@ export default defineConfig({
       "/api": {
         target: BACKEND_URL,
         changeOrigin: true,
+        // ``changeOrigin: true`` also rewrites the Set-Cookie
+        // ``Domain`` to the backend's host (127.0.0.1 inside the
+        // dev container). When the user is browsing on a different
+        // host (e.g. ``localhost`` from the host machine, or any
+        // external address), the browser then refuses to attach
+        // the cookie to subsequent requests — /me always 401s, the
+        // boot routing keeps sending the user back through the
+        // wizard, and login looks broken. Stripping the Domain
+        // attribute lets the browser bind the cookie to whatever
+        // origin the page was loaded from, which is what we want.
+        cookieDomainRewrite: "",
       },
       "/ws": {
         target: WS_URL,

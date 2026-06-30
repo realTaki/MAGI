@@ -119,6 +119,30 @@ class OnboardingStatus(BaseModel):
     bot_username: str | None = None
     super_admins_count: int
     super_admins: list[str] = []
+    # The single source of truth for "is the wizard done?". Flipped
+    # to True only by POST /api/onboarding/complete (the dashboard
+    # "OK, got it — sign in →" button). Cleared by /restart. This is
+    # deliberately decoupled from bot_saved + super_admins_count so a
+    # user who saved a bot but abandoned step 3 can still get back
+    # into the wizard (and so a deployer can "Restart onboarding"
+    # without nuking the saved data).
+    onboarding_complete: bool = False
+
+
+class CompleteRequest(BaseModel):
+    pass
+
+
+class CompleteResponse(BaseModel):
+    ok: bool
+
+
+class RestartRequest(BaseModel):
+    pass
+
+
+class RestartResponse(BaseModel):
+    ok: bool
 
 
 # -- endpoints ---------------------------------------------------------
@@ -131,6 +155,11 @@ async def get_status() -> OnboardingStatus:
     The frontend calls this on mount to decide whether to start the
     wizard at step 1 (nothing saved) or skip directly to step 2 / 3
     (bot already saved, optionally with super admins).
+
+    ``onboarding_complete`` is the only field the boot routing
+    trusts: it's a strict bool written by ``/complete`` (dashboard
+    "OK, got it") and cleared by ``/restart``. Everything else is
+    informational / for the wizard's own resume logic.
     """
     from magi.runtime.state.settings import state_get
 
@@ -148,12 +177,62 @@ async def get_status() -> OnboardingStatus:
                 "telegram.super_admins in settings is not valid JSON; treating as empty"
             )
 
+    # "True" / "true" / "1" all count. Anything else (including
+    # missing) is False. Kept as a plain text flag — the only
+    # writer is /complete, which writes the literal "true".
+    complete_raw = state_get(state_dir, "telegram.onboarding_complete")
+    onboarding_complete = str(complete_raw).strip().lower() in ("true", "1")
+
     return OnboardingStatus(
         bot_saved=bool(bot_username),
         bot_username=bot_username,
         super_admins_count=len(admins),
         super_admins=admins,
+        onboarding_complete=onboarding_complete,
     )
+
+
+@router.post("/complete", response_model=CompleteResponse)
+async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
+    """Mark the wizard as fully complete.
+
+    Called by the dashboard "OK, got it — sign in →" button — i.e.
+    only after the user has seen the wizard's result and explicitly
+    acknowledged it. Until this endpoint fires, ``/status`` keeps
+    reporting ``onboarding_complete=false`` and the boot routing
+    keeps sending the user back into the wizard, no matter how
+    much of step 1 / 2 / 3 they finished.
+    """
+    from magi.runtime.state.settings import state_set
+
+    try:
+        state_set(_state_dir(), "telegram.onboarding_complete", "true")
+    except Exception as exc:  # pragma: no cover — disk / permission errors
+        logger.exception("failed to write onboarding_complete flag")
+        return CompleteResponse(ok=False)
+    logger.info("onboarding marked complete")
+    return CompleteResponse(ok=True)
+
+
+@router.post("/restart", response_model=RestartResponse)
+async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
+    """Clear the ``onboarding_complete`` flag.
+
+    Called by the dashboard "Restart onboarding" button. The saved
+    bot token and super-admin list are intentionally left in place
+    so the wizard's resume logic (Step 1 view mode, prefilled admin
+    rows) picks them up again — a deployer can re-confirm a setup
+    without re-typing the chat_ids.
+    """
+    from magi.runtime.state.settings import state_delete
+
+    try:
+        state_delete(_state_dir(), "telegram.onboarding_complete")
+    except Exception as exc:  # pragma: no cover — disk / permission errors
+        logger.exception("failed to clear onboarding_complete flag")
+        return RestartResponse(ok=False)
+    logger.info("onboarding marked incomplete (restart)")
+    return RestartResponse(ok=True)
 
 
 @router.post("/verify-bot", response_model=VerifyBotResponse)

@@ -1,11 +1,14 @@
 /**
  * Landing page — the deployer's first stop.
  *
- * One button ("Sign in") leads to first-time onboarding (for now) or a
- * login form (later). `isFirstTime` is hard-coded `true` until C1.1
- * ships a real `/api/onboarding/status` check.
+ * Two CTAs depending on whether the system has been set up:
+ *   - "Set up"        — first time (no bot saved); goes to onboarding
+ *   - "Sign in"        — already configured; goes to login
  */
-export default function LandingPage(props: { onSignIn: () => void }) {
+export default function LandingPage(props: {
+  isFirstTime: boolean;
+  onSignIn: () => void;
+}) {
   return (
     <main className="min-h-screen flex flex-col px-6 py-16">
       <div className="flex-1 flex items-center justify-center">
@@ -38,12 +41,14 @@ export default function LandingPage(props: { onSignIn: () => void }) {
               onClick={props.onSignIn}
               className="rounded-md bg-sky-700 text-white px-6 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
             >
-              Sign in
+              {props.isFirstTime ? "Set up" : "Sign in"}
             </button>
           </div>
 
           <p className="mt-6 text-xs text-slate-500">
-            First time here? Sign in starts the setup wizard.
+            {props.isFirstTime
+              ? "First time here — Set up runs the first-time wizard."
+              : "Enter your Telegram chat_id and the code the bot sends to log in."}
           </p>
         </div>
       </div>
