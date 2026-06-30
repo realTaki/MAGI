@@ -4,15 +4,19 @@
 # Eve containers are not defined here yet — they land in C6 via the
 # Adam Web UI dispatch button, which renders per-employee compose files.
 #
+# Build context is the repo root (``..``) so the Dockerfile at
+# ``deploy/Dockerfile`` can ``COPY magi/`` and ``COPY pyproject.toml``.
+# This file lives in ``deploy/`` so ``.env`` is auto-loaded by compose
+# from the same directory.
+#
 # All hard-coded values that depend on the deployment (port, host-side
 # workspace path, log level) are pulled from .env via ${VAR:-default}
-# so the user can override them without editing this file. The only
-# required .env var is MAGI_SHARED_SECRET.
+# so the user can override them without editing this file.
 #
 # C0: Adam only serves /health. SQLite lands at /workspace/state/magi.db
 # inside the container. The host-side bind mount is
-# ${MAGI_WORKSPACE_DIR:-./workspace}/Adam — Adam owns its own subdirectory
-# under the shared MAGI_WORKSPACE_DIR, so EVE containers can sit next to
+# ${MAGI_WORKSPACE_DIR}/Adam — Adam owns its own subdirectory under
+# the shared MAGI_WORKSPACE_DIR, so EVE containers can sit next to
 # it (${MAGI_WORKSPACE_DIR}/eve-<id>:/workspace) once C6 lands.
 # Postgres returns in C1.
 
@@ -20,11 +24,10 @@ name: magi
 
 x-magi-base: &magi-base
   build:
-    context: .
-    dockerfile: Dockerfile
+    context: ..
+    dockerfile: deploy/Dockerfile
   restart: unless-stopped
   environment:
-    MAGI_SHARED_SECRET: ${MAGI_SHARED_SECRET:?set MAGI_SHARED_SECRET in .env}
     MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
 
 services:
@@ -37,4 +40,7 @@ services:
     ports:
       - "${MAGI_PORT:-69420}:69420"
     volumes:
-      - "${MAGI_WORKSPACE_DIR:-./workspace}/Adam:/workspace"
+      # Absolute path by default — set MAGI_WORKSPACE_DIR in .env to
+      # override. Each container gets its own subdirectory under
+      # MAGI_WORKSPACE_DIR.
+      - "${MAGI_WORKSPACE_DIR:-/workspace}/Adam:/workspace"

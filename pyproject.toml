@@ -55,8 +55,10 @@ requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# Flat layout: the `magi` package sits at the repo root (no `src/` wrapper).
-# uv_build defaults to `src/<module-name>/`; we override `module-root` to ".".
+# Flat layout: pyproject.toml at the repo root, the `magi` Python package
+# sits one level down in ``./magi/``. ``module-root = ""`` (empty) means
+# "look for the package directly under the project root" instead of the
+# default ``src/`` layout.
 module-name = "magi"
 module-root = ""
 

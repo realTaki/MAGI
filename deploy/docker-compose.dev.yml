@@ -22,8 +22,8 @@
 services:
   adam:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ..
+      dockerfile: deploy/Dockerfile.dev
     image: magi:dev
     volumes:
       # Source mounts. The image already has the source baked in (so
