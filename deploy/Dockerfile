@@ -39,11 +39,11 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
-# The Python package ``magi`` lives at the repo's ``magi/`` directory;
-# alongside it sits ``magi/WebUI/`` (the React SPA). We only need
-# pyproject + uv.lock here — the actual Python source + WebUI source
-# are carried in by other COPYs / mounts (or via the dev compose).
+# The Python project (pyproject.toml at root, package at magi/) is
+# copied as a unit. uv finds pyproject at the project root and
+# installs deps into the venv.
 COPY pyproject.toml uv.lock* ./
+COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
 # -----------------------------------------------------------------------------
