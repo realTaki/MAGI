@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
 # MAGI node — single image, role chosen at runtime via MAGI_NODE_ROLE.
 #
-# Whether the container plays Adam (enterprise scope, WebUI channel,
-# Postgres system of record) or EVE (personal scope, Telegram channel,
-# local SQLite + Adam pull) is decided by env, not by which image you
-# pulled. Build once, deploy everywhere.
+# Whether the container plays Adam (enterprise scope, WebUI channel) or
+# EVE (personal scope, Telegram channel) is decided by env, not by which
+# image you pulled. Both roles use SQLite for local state; the file
+# lives under /var/lib/magi/state and should be bind-mounted to the host
+# in docker-compose so it persists across container restarts.
 
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /usr/local/bin/
@@ -24,23 +25,23 @@ RUN uv sync --frozen --no-dev --extra adam --extra eve
 # ---- runtime ----------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --shell /bin/bash magi \
-    && mkdir -p /var/lib/magi/eve \
-    && chown -R magi:magi /var/lib/magi
+    && mkdir -p /workspace/state \
+    && chown -R magi:magi /workspace
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    MAGI_STATE_DIR=/var/lib/magi/eve
+    MAGI_STATE_DIR=/workspace/state
 
-WORKDIR /app
+# /workspace is the container's working directory (matches the convention
+# used by Agent / dev environments). SQLite lives under /workspace/state
+# so a single bind mount at /workspace/state persists everything.
+WORKDIR /workspace
 USER magi
-VOLUME ["/var/lib/magi/eve"]
+VOLUME ["/workspace/state"]
 
-# EVE does not bind a port in C0; Adam binds :8000 for the WebUI channel +
-# RPC. Compose / k8s service definitions should expose :8000 only on the
-# Adam service.
-EXPOSE 8000 9100
+EXPOSE 69420
 
 # `magi --check` is role-aware (prints the resolved config for whichever
 # role this container is playing) and exits 0 — safe liveness probe for

@@ -65,7 +65,7 @@ class NodeConfig:
 
     # — always-on (read regardless of role / channels) —
     shared_secret_set: bool = False
-    adam_url: str = "http://adam:8000"
+    adam_url: str = "http://adam:69420"
     log_level: str = "info"
 
     # — persistent store (any role, any channel mix) —
@@ -109,20 +109,25 @@ class NodeConfig:
         host = port = None
         if "webui" in channels:
             host = os.environ.get("MAGI_HOST", "0.0.0.0")
-            port = int(os.environ.get("MAGI_PORT", "8000"))
+            port = int(os.environ.get("MAGI_PORT", "69420"))
 
-        employee_id = state_dir = None
+        # ``state_dir`` belongs to the node, not to any specific channel —
+        # Adam uses it for SQLite state (small / dev), Eve for local working
+        # state. Read it unconditionally. Default matches the container's
+        # working directory (matches Agent convention).
+        state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/state")
+
+        employee_id = None
         bot_token_set = False
         if "telegram" in channels:
             employee_id = os.environ.get("MAGI_EMPLOYEE_ID")
             bot_token_set = bool(os.environ.get("MAGI_BOT_TOKEN"))
-            state_dir = os.environ.get("MAGI_STATE_DIR", "/var/lib/magi/eve")
 
         return cls(
             role=role,
             channels=channels,
             shared_secret_set=bool(os.environ.get("MAGI_SHARED_SECRET")),
-            adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:8000"),
+            adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:69420"),
             log_level=os.environ.get("MAGI_LOG_LEVEL", "info"),
             state_backend=_resolve_state_backend(os.environ.get("MAGI_STATE_BACKEND")),
             host=host,
@@ -180,12 +185,35 @@ def run() -> None:
         },
     )
 
+    _init_state(cfg)
+
     if not cfg.channels:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return
 
     for channel in cfg.channels:
         _launch_channel(channel, cfg)
+
+
+def _init_state(cfg: NodeConfig) -> None:
+    """Bring up the local state backend before any channel starts.
+
+    For ``sqlite`` (the default in C0), creates the SQLite file under
+    ``MAGI_STATE_DIR`` and logs the path. Postgres initialisation lands
+    alongside the ORM in C1.
+    """
+    if cfg.state_backend != "sqlite":
+        logger.info(
+            "state backend %s — deferring init to its own module (C1+)",
+            cfg.state_backend,
+        )
+        return
+
+    state_dir = cfg.state_dir or "/workspace/state"
+    from magi.runtime.state import init_sqlite
+
+    db_path = init_sqlite(state_dir)
+    logger.info("sqlite initialised", extra={"path": str(db_path)})
 
 
 # ----------------------------------------------------------------------
@@ -204,7 +232,7 @@ def _launch_webui(cfg: NodeConfig) -> None:
     uvicorn.run(
         app,
         host=cfg.host or "0.0.0.0",
-        port=cfg.port or 8000,
+        port=cfg.port or 69420,
         log_level=cfg.log_level.lower(),
         reload=cfg.reload,
     )
