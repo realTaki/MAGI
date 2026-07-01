@@ -1,30 +1,558 @@
 @import "tailwindcss";
 
-/* Shinkai-flavoured backdrop. A sky-like vertical gradient — cool blue at
-   the top, soft pink at the horizon. Cards/panels sit on top as
-   translucent white so the gradient reads through subtly. */
+/* =============================================================================
+   MAGI — Shinkai-flavoured design tokens.
+
+   The palette is borrowed from a "weather-soft" visual style
+   (sky gradient, glass on dark, sun-warm primary, sakura
+   accent) — chosen because an admin tool for *people* reads
+   better with a touch of warmth than with the default SaaS
+   grey. All custom properties are exposed as Tailwind utility
+   classes via the @theme block below.
+   ============================================================================= */
+
+@theme {
+  /* Sky: cool → warm gradient stops for body, accents, secondary fills */
+  --color-sky-deep:   #3d8ac4;
+  --color-sky-mid:    #6cafd8;
+  --color-sky-light:  #a8d5e8;
+  --color-sky-pale:   #d9eaf2;
+
+  /* Sun: warm yellow for primary actions, the "go" button, success */
+  --color-sun:        #ffe49a;
+  --color-sun-warm:   #f5c76e;
+  --color-sun-bright: #fff7c8;
+
+  /* Sakura: pink accent for danger / destructive + soft decorative */
+  --color-sakura:     #f5a8b8;
+
+  /* Ocean / ink: deep navy for text on light surfaces + dark glass base */
+  --color-ocean:      #3a6fa0;
+  --color-ink:        #0a1828;
+  --color-ink-soft:   #1a2a3a;
+
+  /* Cream: text colour for content rendered ON dark glass */
+  --color-cream:      #fff9ed;
+  --color-cream-soft: rgba(255, 250, 240, 0.78);
+
+  /* Glass surfaces — applied via arbitrary-value classes like
+     `bg-paper/80` once the CSS variables are reachable. Tailwind
+     v4 makes any defined CSS custom property usable as
+     `bg-<name>/<opacity>` via the @theme block above. */
+  --color-paper:        rgba(12, 22, 40, 0.58);
+  --color-paper-strong: rgba(8, 16, 30, 0.82);
+  --color-line:         rgba(255, 255, 255, 0.26);
+  --color-line-soft:    rgba(255, 255, 255, 0.14);
+
+  /* Type stack: sans by default; serif (Georgia + Songti) for the
+     big H1 lockup to lean into the Shinkai letterforms. */
+  --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-serif: Georgia, "Songti SC", "STSong", "Noto Serif SC",
+    "Times New Roman", serif;
+  --font-mono: "SFMono-Regular", "Menlo", "Consolas",
+    "JetBrains Mono", monospace;
+}
+
+/* =============================================================================
+   Base: body gradient (light sky → pale blue), typography.
+   The body should feel like a clear morning — pale, open, easy
+   on the eyes. Anything heavy (deep ink) is reserved for
+   accents (button text, code blocks); the page background
+   never goes below sky-light.
+   ============================================================================= */
 html,
 body,
 #app {
   min-height: 100vh;
 }
 
+html {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 body {
+  /* Vertical sky gradient — light at the top, slightly warmer at
+     the bottom. No more pink horizon; the dashboard reads as
+     a calm professional workspace, not a sunset. */
   background: linear-gradient(
     180deg,
-    #b3d9f2 0%,
-    #d2e3f3 28%,
-    #f1d6dc 65%,
-    #fadcc8 100%
+    #d8edf7 0%,
+    #e0eef7 32%,
+    #e7f1f7 68%,
+    #ecf3f9 100%
   );
   background-attachment: fixed;
-  color: #1e293b; /* slate-800 */
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 0.95rem; /* ~14.25px, denser than 15px without feeling cramped */
+  line-height: 1.6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  color: var(--color-ink);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 0 0 0.5em;
+}
+
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.05rem; }
+h4 { font-size: 0.95rem; text-transform: none; letter-spacing: 0; }
+
+p { margin: 0 0 0.75em; }
+
+/* "Sakura" soft hint — used on hover for action links inside
+   the sun palette; gives the dashboard a single hint of warmth
+   without dominating. */
+a {
+  color: var(--color-sky-deep);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+a:hover {
+  color: var(--color-ocean);
+}
+
+/* Soft horizon vignette: warm wash upper-right + bottom shadow
+   for text contrast on the dashboard cards. Applied via
+   ``<div class="scene-layer">`` if a page wants it; pages
+   that don't render that div still get the gradient body. */
+.scene-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 50% at 78% 12%, rgba(255, 247, 200, 0.32), transparent 65%),
+    radial-gradient(ellipse 60% 40% at 12% 92%, rgba(245, 168, 184, 0.18), transparent 70%),
+    linear-gradient(180deg, transparent 78%, rgba(10, 24, 40, 0.18) 100%);
+}
+
+/* =============================================================================
+   Form base. Inputs / selects / textareas across the dashboard
+   share a common look — focus ring sky-deep, soft sky-tinted
+   background so the white-on-sky-gradient doesn't read as
+   blinding.
+   ============================================================================= */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+input[type="number"],
+input[type="search"],
+select,
+textarea {
+  font: inherit;
+}
+
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="email"]:focus-visible,
+input[type="url"]:focus-visible,
+input[type="number"]:focus-visible,
+input[type="search"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-sky-mid);
+  box-shadow: 0 0 0 3px rgba(108, 175, 216, 0.22);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled,
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* =============================================================================
+   Card / panel surface. Used by .glass-card, .glass-panel,
+   .glass-strong. The dashboard's ConsoleCard also uses the
+   same family but with explicit `bg-white/85` (a lighter
+   variant for content density). All variants share border +
+   shadow tokens so they feel like one family.
+   ============================================================================= */
+.glass-card {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 18px;
+  box-shadow:
+    0 14px 38px -16px rgba(58, 111, 160, 0.18),
+    0 2px 0 rgba(255, 255, 255, 0.7) inset;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.glass-panel {
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 24px 60px -20px rgba(10, 24, 40, 0.4);
+  color: var(--color-cream);
+}
+
+.glass-panel--strong {
+  background: var(--color-paper-strong);
+}
+
+.glass-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(58, 111, 160, 0.22),
+    transparent
+  );
+}
+
+/* =============================================================================
+   Buttons. Three families — primary (sun-warm), secondary
+   (sky-tinted glass), danger (sakura). All with a small lift
+   on hover, no translate on the click (Tailwind's
+   active:translate pattern).
+   ============================================================================= */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-sun), var(--color-sun-warm));
+  color: var(--color-ink);
+  box-shadow: 0 8px 22px -10px rgba(245, 199, 110, 0.55);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fff3c4, var(--color-sun));
+  box-shadow: 0 10px 26px -8px rgba(245, 199, 110, 0.7);
+}
+
+.btn-secondary {
+  background: rgba(108, 175, 216, 0.18);
+  color: var(--color-ocean);
+  border-color: rgba(108, 175, 216, 0.45);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(108, 175, 216, 0.28);
+  border-color: rgba(61, 138, 196, 0.55);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--color-ink-soft);
+  border-color: rgba(58, 111, 160, 0.18);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(58, 111, 160, 0.35);
+}
+
+.btn-danger {
+  background: rgba(245, 168, 184, 0.18);
+  color: #b94f63;
+  border-color: rgba(245, 168, 184, 0.55);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(245, 168, 184, 0.32);
+  color: #8c2f44;
+}
+
+/* Dark-mode buttons: used inside the slate-900 sidebar where
+   text is cream/white. */
+.btn-dark {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-cream);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.btn-dark:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* =============================================================================
+   Typographic accents — big "MAGI" lockup, kicker label.
+   ============================================================================= */
+.kicker {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-ocean);
+}
+
+.brand-lockup {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--color-ink);
+}
+
+.brand-lockup--on-dark {
+  color: var(--color-cream);
+}
+
+/* =============================================================================
+   Tab pill (top-level dashboard nav). Shared style for any
+   container that wants "selectable pills in a row". Active =
+   sky-deep blue background, white text. Inactive = ink-soft
+   with soft sky-tinted hover.
+   ============================================================================= */
+.tab-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  cursor: pointer;
+}
+
+.tab-pill:hover:not(.is-active) {
+  background: rgba(108, 175, 216, 0.18);
+  color: var(--color-ocean);
+}
+
+.tab-pill.is-active {
+  background: linear-gradient(135deg, var(--color-sky-deep), var(--color-sky-mid));
+  color: #fff;
+  box-shadow:
+    0 6px 16px -8px rgba(61, 138, 196, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+}
+
+/* Light-background variant of the tab pill (used in the top
+   header on a sky-tinted glass strip). Same active sky-blue,
+   but inactive text is sky-deep instead of cream. */
+.tab-pill--on-light {
+  color: var(--color-ink-soft);
+}
+.tab-pill--on-light:hover:not(.is-active) {
+  background: rgba(108, 175, 216, 0.2);
+  color: var(--color-sky-deep);
+}
+
+/* Sidebar variant — used inside the slate-900 sidebars. */
+.tab-pill--on-dark {
+  color: var(--color-cream-soft);
+}
+.tab-pill--on-dark:hover:not(.is-active) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-cream);
+}
+.tab-pill--on-dark.is-active {
+  background: rgba(108, 175, 216, 0.28);
+  color: var(--color-sun-bright);
+  box-shadow: none;
+}
+
+/* =============================================================================
+   Form labels. Small uppercase sky-deep text, matching the
+   reference "kicker" pattern. Inputs below use the standard
+   sky-deep focus ring (see input rules above).
+   ============================================================================= */
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ocean);
+}
+
+.form-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(58, 111, 160, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--color-ink);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.form-input:focus-visible {
+  outline: none;
+  border-color: var(--color-sky-mid);
+  box-shadow: 0 0 0 3px rgba(108, 175, 216, 0.22);
+}
+
+.form-error {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: #b94f63;
+}
+
+.form-empty {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 0.88rem;
+  color: rgba(58, 111, 160, 0.6);
+}
+
+/* =============================================================================
+   Status pill. The "connected" / "coming soon" / "disconnected"
+   dots from the Channels card. Sky-tinted glass on the colored
+   backdrop, no harsh borders.
+   ============================================================================= */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status-pill--connected {
+  background: rgba(93, 173, 226, 0.18);
+  color: #2c6c97;
+  border: 1px solid rgba(93, 173, 226, 0.4);
+}
+
+.status-pill--coming {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--color-ink-soft);
+  border: 1px solid rgba(58, 111, 160, 0.18);
+}
+
+.status-pill--disconnected {
+  background: rgba(245, 168, 184, 0.22);
+  color: #8c2f44;
+  border: 1px solid rgba(245, 168, 184, 0.5);
+}
+
+/* =============================================================================
+   Data table. Used by the departments + employees tables.
+   Sky-deep header, soft hover row, no heavy borders — the
+   glass background already provides depth.
+   ============================================================================= */
+.data-table {
+  width: 100%;
+  font-size: 0.88rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ocean);
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(58, 111, 160, 0.18);
+}
+
+.data-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(108, 175, 216, 0.12);
+  color: var(--color-ink);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table tbody tr:hover td {
+  background: rgba(217, 234, 242, 0.5);
+}
+
+.data-table tbody tr.is-editing td {
+  background: rgba(255, 228, 154, 0.18);
+}
+
+/* Row action link. Small, sky-deep text; sakura on hover for
+   destructive actions. */
+.row-action {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-sky-deep);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.row-action:hover {
+  color: var(--color-ocean);
+}
+
+.row-action--danger:hover {
+  color: #8c2f44;
+}
+
+.row-action--primary {
+  color: #2c6c97;
+}
+
+.row-action:disabled {
+  color: rgba(58, 111, 160, 0.32);
+  cursor: not-allowed;
+}
+
+.row-action:disabled:hover {
+  color: rgba(58, 111, 160, 0.32);
+}
+
+/* =============================================================================
+   Modal. Dark glass overlay with backdrop blur; inner content
+   uses .glass-panel tokens.
+   ============================================================================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 24, 40, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }

@@ -147,26 +147,26 @@ export default function LoginPage(props: {
             height={28}
             className="rounded"
           />
-          <span className="text-sm font-semibold tracking-wide text-slate-700">
+          <span className="text-sm font-semibold tracking-wide text-sky-deep">
             MAGI
           </span>
-          <span className="text-xs text-slate-500 ml-2">sign in</span>
+          <span className="text-xs text-ink-soft ml-2">sign in</span>
         </div>
       </header>
 
       <div className="flex-1 flex items-start justify-center pt-8">
         <div className="w-full max-w-md">
-          <div className="rounded-2xl bg-white/85 backdrop-blur-md shadow-2xl shadow-sky-900/10 border border-white/60 p-8">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-800">
+          <div className="glass-card p-8">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
               Sign in
             </h1>
-            <p className="mt-2 text-slate-600">
+            <p className="mt-2 text-ink-soft">
               Pick your account — MAGI will send a 6-digit code to the
               linked Telegram chat. Type it back here to log in.
             </p>
 
             {accountsLoading && (
-              <p className="mt-6 text-sm text-slate-500">Loading…</p>
+              <p className="mt-6 text-sm text-ink-soft">Loading…</p>
             )}
 
             {accountsEmpty && (
@@ -180,7 +180,7 @@ export default function LoginPage(props: {
               <>
                 <label
                   htmlFor="login-chat-id"
-                  className="block mt-6 text-sm font-medium text-slate-700 mb-2"
+                  className="block mt-6 text-sm font-medium text-sky-deep mb-2"
                 >
                   Account
                 </label>
@@ -189,7 +189,7 @@ export default function LoginPage(props: {
                     id="login-chat-id"
                     value={selectedChatId}
                     onChange={(e) => setSelectedChatId(e.target.value)}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
+                    className="flex-1 rounded-lg border border-sky-light/50 bg-white px-4 py-3 text-base text-ink shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
                     style={{
                       backgroundImage:
                         "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%23475569' d='M6 8L1 3h10z'/></svg>\")",
@@ -210,7 +210,7 @@ export default function LoginPage(props: {
                     type="button"
                     onClick={handleSend}
                     disabled={!canSend}
-                    className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+                    className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-deep transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
                   >
                     {sending
                       ? "Sending…"
@@ -226,7 +226,7 @@ export default function LoginPage(props: {
               <div className="mt-4">
                 <label
                   htmlFor="login-code"
-                  className="block text-sm font-medium text-slate-700 mb-2"
+                  className="block text-sm font-medium text-sky-deep mb-2"
                 >
                   6-digit code from Telegram
                 </label>
@@ -242,7 +242,7 @@ export default function LoginPage(props: {
                     }
                     placeholder="123456"
                     autoFocus
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest text-center"
+                    className="flex-1 rounded-lg border border-sky-light/50 bg-white px-4 py-3 text-base text-ink shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest text-center"
                     disabled={verifying}
                   />
                   <button
@@ -254,7 +254,7 @@ export default function LoginPage(props: {
                     {verifying ? "Verifying…" : "Sign in"}
                   </button>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-ink-soft">
                   Code expires in 5 minutes. Click Resend to issue a
                   new one (60s cooldown).
                 </p>
@@ -275,7 +275,7 @@ export default function LoginPage(props: {
               <button
                 type="button"
                 onClick={props.onBack}
-                className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+                className="rounded-md border border-sky-light/50 bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
               >
                 ← Back
               </button>

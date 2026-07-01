@@ -99,7 +99,11 @@ function PostLoginLayout(props: {
 
   return (
     <main className="min-h-screen flex flex-col">
-      <header className="border-b border-slate-200 bg-white/70 backdrop-blur-md">
+      {/* Light sky-tinted glass strip. Reads as "the sky slightly
+          intensified" rather than a dark bar; the body gradient
+          shows through. Tabs are sky-blue active, ink-soft idle
+          — clean, no dark glass. */}
+      <header className="border-b border-sky-light/40 bg-white/60 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-6 h-12 flex items-center gap-6">
           <div className="flex items-center gap-2 shrink-0">
             <img
@@ -109,30 +113,24 @@ function PostLoginLayout(props: {
               height={22}
               className="rounded"
             />
-            <span className="text-sm font-semibold tracking-wide text-slate-800">
-              MAGI
-            </span>
+            <span className="brand-lockup">MAGI</span>
           </div>
 
-          {/* Center the tabs in the available width between the
-              logo block and the identity block. flex-1 + justify-center
-              lets the logo + identity stay at their natural widths
-              (don't shrink) while the tabs sit dead-center. */}
           <div className="flex-1 flex justify-center">
             <InlineTabBar current={tab} onChange={setTab} />
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs text-slate-500 hidden sm:inline">
+            <span className="text-xs text-ink-soft hidden sm:inline">
               Signed in as{" "}
-              <span className="font-mono text-slate-700">
+              <span className="font-mono text-ink">
                 {props.user.display_name ?? props.user.chat_id}
               </span>
             </span>
             <button
               type="button"
               onClick={props.onSignOut}
-              className="rounded-md border border-slate-300 bg-white text-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-50 transition"
+              className="btn btn-secondary text-xs"
             >
               Sign out
             </button>
@@ -183,12 +181,7 @@ function InlineTabBar(props: {
             key={t.key}
             type="button"
             onClick={() => props.onChange(t.key)}
-            className={
-              "px-3 py-1.5 text-sm font-medium transition rounded-md " +
-              (active
-                ? "text-sky-700 bg-sky-50"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100")
-            }
+            className={`tab-pill tab-pill--on-light ${active ? "is-active" : ""}`}
             aria-current={active ? "page" : undefined}
           >
             {t.label}
@@ -339,12 +332,12 @@ function ChatTab() {
       ariaLabel="Chat navigation"
       belowItems={
         <>
-          <hr className="my-3 border-slate-700" />
-          <p className="mt-1 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <hr className="my-3 border-sky-light/40" />
+          <p className="mt-1 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-ocean/70">
             历史对话
           </p>
           {historyVisible.length === 0 ? (
-            <p className="px-3 text-xs text-slate-500">
+            <p className="px-3 text-xs text-ink-soft">
               No conversations yet.
             </p>
           ) : (
@@ -357,8 +350,8 @@ function ChatTab() {
                     className={
                       "w-full text-left px-3 py-1.5 rounded-md text-xs truncate transition " +
                       (h.id === selectedId
-                        ? "bg-slate-700 text-white"
-                        : "text-slate-300 hover:bg-slate-800 hover:text-white")
+                        ? "bg-sky-deep text-white"
+                        : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
                     }
                     title={h.label}
                   >
@@ -374,8 +367,8 @@ function ChatTab() {
             className={
               "mt-1 w-full text-left px-3 py-1.5 rounded-md text-xs transition " +
               (selectedId === "view-all"
-                ? "bg-slate-700 text-white"
-                : "text-sky-300 hover:text-sky-200 hover:bg-slate-800")
+                ? "bg-sky-deep text-white"
+                : "text-sky-deep hover:text-sky-mid hover:bg-sky-light/40")
             }
           >
             查看全部 →
@@ -385,9 +378,9 @@ function ChatTab() {
     >
       <div className="p-8 text-center flex flex-col items-center justify-center">
         <h2 className="text-lg font-semibold text-slate-800">{selected.pane.title}</h2>
-        <p className="mt-2 text-sm text-slate-500 max-w-md">{selected.pane.hint}</p>
+        <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
         {selected.pane.meta && (
-          <p className="mt-3 text-xs text-slate-400">{selected.pane.meta}</p>
+          <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
         )}
       </div>
     </SidebarShell>
@@ -815,7 +808,7 @@ function DepartmentsPane() {
                   ))}
                 </select>
                 {(employees ?? []).length === 0 && (
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-ink-soft">
                     还没有员工。切到「员工管理」先创建。
                   </p>
                 )}
@@ -837,7 +830,7 @@ function DepartmentsPane() {
                 ? (departments ?? []).find((d) => d.id === editingId) ?? null
                 : null;
               return (
-                <div className="flex items-center gap-2 pt-3 border-t border-slate-200 flex-wrap">
+                <div className="flex items-center gap-2 pt-3 border-t border-sky-light/40 flex-wrap">
                   {editing && (
                     <>
                       <button
@@ -857,7 +850,7 @@ function DepartmentsPane() {
                             ? `有 ${editing.child_count} 个子部门，必须先全部删除`
                             : "删除部门"
                         }
-                        className="rounded-md border border-rose-200 bg-white text-rose-700 px-3 py-1.5 text-sm font-medium hover:bg-rose-50 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                        className="btn btn-danger text-sm py-1.5 px-3"
                       >
                         删除部门
                       </button>
@@ -891,17 +884,17 @@ function DepartmentsPane() {
           <p className="text-sm text-rose-700 mb-3">✗ {loadError}</p>
         )}
         {departments === null && !loadError && (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-ink-soft">Loading…</p>
         )}
         {departments !== null && departments.length === 0 && (
-          <p className="py-6 text-center text-slate-400 text-sm">
+          <p className="form-empty">
             还没有部门。点 + Create department 开始。
           </p>
         )}
         {departments !== null && departments.length > 0 && (
-          <table className="w-full text-sm">
+          <table className="data-table w-full">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">部门名称</th>
                 <th className="py-2 pr-4 font-medium w-24">子部门数</th>
                 <th className="py-2 pr-4 font-medium">负责人</th>
@@ -937,7 +930,7 @@ function DepartmentsPane() {
                       {d.manager ? (
                         d.manager.display_name || d.manager.name
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-ink-soft">—</span>
                       )}
                     </td>
                     <td className="py-2 text-right space-x-2">
@@ -1228,7 +1221,7 @@ function EmployeesPane() {
             className="w-56 shrink-0 bg-slate-900 text-slate-100 p-3"
             aria-label="Employee scope"
           >
-            <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
               范围
             </p>
             <ul className="space-y-0.5">
@@ -1239,14 +1232,14 @@ function EmployeesPane() {
                   className={
                     "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
                     (scope.kind === "unassigned"
-                      ? "bg-slate-700 text-white"
+                      ? "bg-sky-deep text-white"
                       : "text-slate-300 hover:bg-slate-800 hover:text-white")
                   }
                   aria-current={scope.kind === "unassigned" ? "page" : undefined}
                 >
                   <span className="font-medium">未指定部门</span>
                   {unassignedCount() >= 0 && (
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-ink-soft">
                       {unassignedCount()}
                     </span>
                   )}
@@ -1254,10 +1247,10 @@ function EmployeesPane() {
               </li>
 
               {departments === null && (
-                <li className="px-3 py-2 text-xs text-slate-500">Loading…</li>
+                <li className="px-3 py-2 text-xs text-ink-soft">Loading…</li>
               )}
               {departments?.length === 0 && (
-                <li className="px-3 py-2 text-xs text-slate-500">
+                <li className="px-3 py-2 text-xs text-ink-soft">
                   （还没有部门）
                 </li>
               )}
@@ -1278,14 +1271,14 @@ function EmployeesPane() {
                       className={
                         "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
                         (active
-                          ? "bg-slate-700 text-white"
+                          ? "bg-sky-deep text-white"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white")
                       }
                       aria-current={active ? "page" : undefined}
                     >
                       <span className="font-medium truncate">{d.name}</span>
                       {count >= 0 && (
-                        <span className="text-xs text-slate-400 shrink-0">
+                        <span className="text-xs text-ink-soft shrink-0">
                           {count}
                         </span>
                       )}
@@ -1389,7 +1382,7 @@ function EmployeesPane() {
                       type="button"
                       onClick={closeAdd}
                       disabled={adding}
-                      className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                      className="btn btn-ghost text-sm py-2 px-4"
                     >
                       取消
                     </button>
@@ -1400,19 +1393,19 @@ function EmployeesPane() {
 
             <ConsoleCard title="">
               {employees === null && !loadError && (
-                <p className="text-sm text-slate-500">Loading…</p>
+                <p className="text-sm text-ink-soft">Loading…</p>
               )}
               {employees !== null && employees.length === 0 && (
-                <p className="py-6 text-center text-slate-400 text-sm">
+                <p className="form-empty">
                   {scope.kind === "unassigned"
                     ? "没有未指定部门的员工。"
                     : "这个部门下还没有员工。"}
                 </p>
               )}
               {employees !== null && employees.length > 0 && (
-                <table className="w-full text-sm">
+                <table className="data-table w-full">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                    <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                       <th className="py-2 pr-4 font-medium">姓名</th>
                       <th className="py-2 pr-4 font-medium">显示名</th>
                       <th className="py-2 pr-4 font-medium">Provider</th>
@@ -1435,7 +1428,7 @@ function EmployeesPane() {
                         </td>
                         <td className="py-2 pr-4 text-slate-600">
                           {e.display_name || (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-ink-soft">—</span>
                           )}
                         </td>
                         <td className="py-2 pr-4">
@@ -1444,7 +1437,7 @@ function EmployeesPane() {
                               {e.provider}
                             </span>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-ink-soft">—</span>
                           )}
                         </td>
                         <td className="py-2 text-right">
@@ -1533,7 +1526,7 @@ function EmployeesPane() {
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       API Key
                       {viewingEmp.api_key_set && (
-                        <span className="ml-2 text-xs font-normal text-slate-500">
+                        <span className="ml-2 text-xs font-normal text-ink-soft">
                           已设置（…{viewingEmp.api_key_last4}）— 留空表示不变，要
                           rotate 就填新值
                         </span>
@@ -1575,7 +1568,7 @@ function EmployeesPane() {
                       type="button"
                       onClick={closeDetail}
                       disabled={savingDetail}
-                      className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                      className="btn btn-ghost text-sm py-2 px-4"
                     >
                       关闭
                     </button>
@@ -1680,7 +1673,7 @@ function AddAdminForm(props: {
     state === "code-sent" || state === "verifying" || state === "error";
 
   return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white/60 p-3">
+    <div className="mt-4 rounded-lg border border-sky-light/40 bg-white/60 p-3">
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -1712,7 +1705,7 @@ function AddAdminForm(props: {
         <button
           type="button"
           onClick={props.onCancel}
-          className="rounded-md border border-slate-200 bg-white text-slate-500 px-2 py-2 text-sm hover:bg-slate-50 transition shrink-0"
+          className="rounded-md border border-sky-light/40 bg-white text-ink-soft px-2 py-2 text-sm hover:bg-slate-50 transition shrink-0"
           title="Cancel"
         >
           ✕
@@ -1809,11 +1802,11 @@ function KnowledgeSkillsPane() {
           book meetings, search the knowledge base, collect info.
           The 4 MVP skills land with C4.
         </p>
-        <p className="mt-2 text-xs text-slate-400">C4 — Skill runner + 4 MVP skills</p>
+        <p className="mt-2 text-xs text-ink-soft">C4 — Skill runner + 4 MVP skills</p>
       </div>
       <ConsoleCard title="Registry">
-        <p className="text-sm text-slate-500">0 skills registered</p>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="text-sm text-ink-soft">0 skills registered</p>
+        <p className="mt-1 text-xs text-ink-soft">
           The 4 MVP skills will appear here automatically.
         </p>
       </ConsoleCard>
@@ -1837,7 +1830,7 @@ function KnowledgeConnectorsPane() {
           Channels EVEs talk through. Each connector is one
           platform; nodes mount the subset they need.
         </p>
-        <p className="mt-2 text-xs text-slate-400">Phase 2 — Email / Calendar</p>
+        <p className="mt-2 text-xs text-ink-soft">Phase 2 — Email / Calendar</p>
       </div>
       <div className="space-y-2">
         <KnowledgeConnectorRow
@@ -1868,13 +1861,13 @@ function KnowledgeConnectorRow(props: {
   const badge =
     props.status === "connected"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-slate-50 text-slate-500 border-slate-200";
+      : "bg-slate-50 text-ink-soft border-sky-light/40";
   const label = props.status === "connected" ? "connected" : "coming soon";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white/60 p-3 flex items-center gap-3">
+    <div className="rounded-lg border border-sky-light/40 bg-white/60 p-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-slate-900">{props.name}</div>
-        <div className="text-xs text-slate-500">{props.note}</div>
+        <div className="text-xs text-ink-soft">{props.note}</div>
       </div>
       <span
         className={
@@ -1904,13 +1897,13 @@ function KnowledgeContactsPane() {
           Scoped per employee; each row carries display name,
           department, role, and contact channels.
         </p>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs text-ink-soft">
           C1.1 — ORM + directory CRUD
         </p>
       </div>
       <ConsoleCard title="Directory">
-        <p className="text-sm text-slate-500">0 employees</p>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="text-sm text-ink-soft">0 employees</p>
+        <p className="mt-1 text-xs text-ink-soft">
           C1.1 fills this in. The super-admin list (a different
           concern) lives in the Admin tab.
         </p>
@@ -1995,7 +1988,7 @@ function SettingsChannelsCard(props: {
 
       <table className="w-full text-sm mt-4">
         <thead>
-          <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+          <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
             <th className="py-2 pr-4 font-medium">Name</th>
             <th className="py-2 pr-4 font-medium w-32">Status</th>
             <th className="py-2 pr-4 font-medium">Notes</th>
@@ -2011,7 +2004,7 @@ function SettingsChannelsCard(props: {
             <td className="py-2 pr-4 text-slate-600 font-mono text-xs">
               :42069
             </td>
-            <td className="py-2 text-right text-xs text-slate-400">—</td>
+            <td className="py-2 text-right text-xs text-ink-soft">—</td>
           </tr>
 
           <tr className="border-b border-slate-100">
@@ -2044,7 +2037,7 @@ function SettingsChannelsCard(props: {
       </table>
 
       {editing && (
-        <div className="mt-4 border-t border-slate-200 pt-4">
+        <div className="mt-4 border-t border-sky-light/40 pt-4">
           <BotTokenField
             onSaved={(token, username) => {
               props.onBotUpdated({ token, username });
@@ -2065,8 +2058,8 @@ function ComingChannelRow(props: { name: string }) {
       <td className="py-2 pr-4">
         <ChannelStatusBadge status="coming" />
       </td>
-      <td className="py-2 pr-4 text-slate-500">—</td>
-      <td className="py-2 text-right text-xs text-slate-400">—</td>
+      <td className="py-2 pr-4 text-ink-soft">—</td>
+      <td className="py-2 text-right text-xs text-ink-soft">—</td>
     </tr>
   );
 }
@@ -2077,19 +2070,19 @@ function ChannelStatusBadge(props: {
   switch (props.status) {
     case "connected":
       return (
-        <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+        <span className="status-pill status-pill--connected">
           connected
         </span>
       );
     case "disconnected":
       return (
-        <span className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5">
+        <span className="status-pill status-pill--disconnected">
           disconnected
         </span>
       );
     case "coming":
       return (
-        <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+        <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
           coming soon
         </span>
       );
@@ -2182,19 +2175,19 @@ function SettingsWebuiAccessCard(props: {
 
       <div className="mt-4">
         {accounts === null && !loadError && (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-ink-soft">Loading…</p>
         )}
         {loadError && <p className="text-sm text-rose-700">✗ {loadError}</p>}
         {accounts !== null && accounts.length === 0 && (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-ink-soft">
             No one has access yet. Add a super admin below, or
             dispatch an EVE in the organization tab (C6).
           </p>
         )}
         {accounts !== null && accounts.length > 0 && (
-          <table className="w-full text-sm">
+          <table className="data-table w-full">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium w-44">Role</th>
                 <th className="py-2 pr-4 font-medium">TG chat_id</th>
@@ -2207,22 +2200,22 @@ function SettingsWebuiAccessCard(props: {
                 return (
                   <tr
                     key={a.chat_id}
-                    className="border-b border-slate-100 last:border-0"
+                    className=""
                   >
                     <td className="py-2 pr-4 text-slate-900">
                       {a.display_name ?? (
-                        <span className="text-slate-400">(no display name)</span>
+                        <span className="text-ink-soft">(no display name)</span>
                       )}
                     </td>
                     <td className="py-2 pr-4">
                       <RoleBadge role="super_admin" />
                     </td>
-                    <td className="py-2 pr-4 font-mono text-xs text-slate-500">
+                    <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
                       {a.chat_id}
                     </td>
                     <td className="py-2 text-right">
                       {isSelf ? (
-                        <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                        <span className="status-pill status-pill--connected">
                           you
                         </span>
                       ) : (
@@ -2230,7 +2223,7 @@ function SettingsWebuiAccessCard(props: {
                           type="button"
                           onClick={() => handleRemoveAdmin(a.chat_id)}
                           title="Remove this super admin"
-                          className="rounded-md border border-slate-200 bg-white text-slate-500 px-2 py-1 text-xs hover:bg-slate-50 hover:text-rose-700 transition"
+                          className="rounded-md border border-sky-light/40 bg-white text-ink-soft px-2 py-1 text-xs hover:bg-slate-50 hover:text-rose-700 transition"
                         >
                           ✕ Remove
                         </button>
@@ -2242,20 +2235,20 @@ function SettingsWebuiAccessCard(props: {
               {assignedEmployees.map((a) => (
                 <tr
                   key={a.chat_id}
-                  className="border-b border-slate-100 last:border-0"
+                  className=""
                 >
                   <td className="py-2 pr-4 text-slate-900">
                     {a.display_name ?? (
-                      <span className="text-slate-400">(no display name)</span>
+                      <span className="text-ink-soft">(no display name)</span>
                     )}
                   </td>
                   <td className="py-2 pr-4">
                     <RoleBadge role="assigned_employee" />
                   </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-slate-500">
+                  <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
                     {a.chat_id}
                   </td>
-                  <td className="py-2 text-right text-xs text-slate-400">
+                  <td className="py-2 text-right text-xs text-ink-soft">
                     via EVE
                   </td>
                 </tr>
@@ -2291,13 +2284,13 @@ function SettingsWebuiAccessCard(props: {
 function RoleBadge(props: { role: "super_admin" | "assigned_employee" }) {
   if (props.role === "super_admin") {
     return (
-      <span className="text-xs text-slate-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+      <span className="text-xs text-slate-700 bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
         super admin
       </span>
     );
   }
   return (
-    <span className="text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5">
+    <span className="text-xs bg-sky-deep text-white border border-sky-200 rounded px-1.5 py-0.5">
       assigned employee
     </span>
   );
@@ -2465,7 +2458,7 @@ function BotTokenField(props: {
             type="button"
             onClick={props.onCancel}
             disabled={saveState === "saving"}
-            className="rounded-md border border-slate-300 bg-white text-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+            className="btn btn-ghost text-sm py-2 px-3"
           >
             Cancel
           </button>
@@ -2479,7 +2472,7 @@ function BotTokenField(props: {
         <button
           type="button"
           onClick={props.onCancel}
-          className="text-xs text-slate-500 hover:text-slate-700 transition"
+          className="text-xs text-ink-soft hover:text-slate-700 transition"
         >
           Cancel
         </button>

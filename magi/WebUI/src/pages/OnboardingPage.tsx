@@ -135,20 +135,20 @@ function Step4View(props: {
 }) {
   return (
     <>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-slate-800">
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
         MAGI is set up.
       </h1>
-      <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-ink-soft">
         First-time wizard completed. Click below to mark the setup
         as confirmed and go sign in.
       </p>
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
-        <dt className="text-slate-500">Bot</dt>
+        <dt className="text-ink-soft">Bot</dt>
         <dd className="font-mono text-slate-900">@{props.data.bot.username}</dd>
 
-        <dt className="text-slate-500">Super admins</dt>
-        <dd className="text-slate-700">
+        <dt className="text-ink-soft">Super admins</dt>
+        <dd className="text-sky-deep">
           {props.data.superAdmins.length} chat_id
           {props.data.superAdmins.length === 1 ? "" : "s"} (
           {props.data.superAdmins
@@ -162,14 +162,14 @@ function Step4View(props: {
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
         >
           Back
         </button>
         <button
           type="button"
           onClick={props.onContinue}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
+          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
         >
           OK, got it — sign in →
         </button>
@@ -195,10 +195,10 @@ function Step1View(props: {
 
   return (
     <>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-slate-800">
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
         How should EVE reach your employees?
       </h1>
-      <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-ink-soft">
         Pick the messaging platform your team already uses. You can add more
         later.
       </p>
@@ -246,14 +246,14 @@ function BotTokenConfiguredView(props: {
         <button
           type="button"
           onClick={props.onNext}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
+          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
         >
           Next →
         </button>
         <button
           type="button"
           onClick={props.onReSet}
-          className="text-sm text-slate-500 hover:text-slate-700 transition"
+          className="text-sm text-ink-soft hover:text-sky-deep transition"
         >
           Re-set token
         </button>
@@ -281,23 +281,23 @@ function Step2View(props: {
 
   return (
     <>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-slate-800">
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
         Telegram bot connected
       </h1>
-      <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-ink-soft">
         {showToken
           ? "Token verified and saved. You can change it later from the admin dashboard."
           : "Bot already connected from a previous setup. You can keep going or restart with a new token from the dashboard."}
       </p>
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
-        <dt className="text-slate-500">Bot username</dt>
+        <dt className="text-ink-soft">Bot username</dt>
         <dd className="font-mono text-slate-900">@{props.bot.username}</dd>
 
         {masked && (
           <>
-            <dt className="text-slate-500">Token</dt>
-            <dd className="font-mono text-slate-700">{masked}</dd>
+            <dt className="text-ink-soft">Token</dt>
+            <dd className="font-mono text-sky-deep">{masked}</dd>
           </>
         )}
       </dl>
@@ -306,14 +306,14 @@ function Step2View(props: {
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
         >
           Back
         </button>
         <button
           type="button"
           onClick={props.onNext}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
+          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
         >
           Next →
         </button>
@@ -534,10 +534,10 @@ function Step3View(props: {
 
   return (
     <>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-slate-800">
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
         Who's the super admin?
       </h1>
-      <p className="mt-2 text-slate-600">
+      <p className="mt-2 text-ink-soft">
         Add 1+ Telegram chat IDs. For each one, MAGI sends a 6-digit
         code to that chat via{" "}
         <span className="font-mono">@{props.bot.username}</span>; type
@@ -575,7 +575,7 @@ function Step3View(props: {
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
         >
           Back
         </button>
@@ -583,7 +583,7 @@ function Step3View(props: {
           type="button"
           onClick={handleFinish}
           disabled={saving || verifiedCount === 0}
-          className="rounded-md bg-emerald-600 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+          className="rounded-md bg-emerald-600 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
         >
           {saving
             ? "Saving…"
@@ -624,7 +624,7 @@ function AdminRowView(props: {
           value={row.chatId}
           onChange={(e) => onChangeChatId(e.target.value)}
           placeholder="TG chat ID (e.g. 123456789)"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono"
+          className="flex-1 rounded-md border border-sky-light bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono"
         />
         <button
           type="button"
@@ -634,7 +634,7 @@ function AdminRowView(props: {
             row.rowState === "verifying-code" ||
             !row.chatId.trim()
           }
-          className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+          className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-deep transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed shrink-0"
         >
           {row.rowState === "sending-code"
             ? "Sending…"
@@ -646,7 +646,7 @@ function AdminRowView(props: {
           type="button"
           onClick={onRemove}
           title="Remove this row"
-          className="rounded-md border border-slate-200 bg-white text-slate-500 px-2 py-2 text-sm hover:bg-slate-50 transition shrink-0"
+          className="rounded-md border border-slate-200 bg-white text-ink-soft px-2 py-2 text-sm hover:bg-sky-pale/40 transition shrink-0"
         >
           ✕
         </button>
@@ -663,7 +663,7 @@ function AdminRowView(props: {
               onChangeCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
             placeholder="6-digit code from TG"
-            className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest"
+            className="flex-1 rounded-md border border-sky-light bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest"
             disabled={row.rowState === "verifying-code" || row.rowState === "verified"}
           />
           <button
@@ -674,7 +674,7 @@ function AdminRowView(props: {
               row.rowState === "verified" ||
               row.code.length !== 6
             }
-            className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+            className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-deep transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed shrink-0"
           >
             {row.rowState === "verifying-code" ? "Verifying…" : "Verify"}
           </button>
@@ -696,7 +696,7 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
       );
     case "sending-code":
       return (
-        <p className="mt-2 text-xs text-slate-500">Sending code…</p>
+        <p className="mt-2 text-xs text-ink-soft">Sending code…</p>
       );
     case "code-sent":
       return (
@@ -707,7 +707,7 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
       );
     case "verifying-code":
       return (
-        <p className="mt-2 text-xs text-slate-500">Verifying code…</p>
+        <p className="mt-2 text-xs text-ink-soft">Verifying code…</p>
       );
     case "error":
       return (
@@ -715,7 +715,7 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
       );
     case "idle":
       return (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-ink-soft">
           Click Send code to deliver a 6-digit code to this chat via the
           bot.
         </p>
@@ -737,10 +737,10 @@ function Header() {
           height={28}
           className="rounded"
         />
-        <span className="text-sm font-semibold tracking-wide text-slate-700">
+        <span className="text-sm font-semibold tracking-wide text-sky-deep">
           MAGI
         </span>
-        <span className="text-xs text-slate-500 ml-2">first-time setup</span>
+        <span className="text-xs text-ink-soft ml-2">first-time setup</span>
       </div>
     </header>
   );
@@ -748,7 +748,7 @@ function Header() {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white/85 backdrop-blur-md shadow-2xl shadow-sky-900/10 border border-white/60 p-8">
+    <div className="glass-card p-8">
       {children}
     </div>
   );
@@ -756,7 +756,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-slate-500 uppercase tracking-wider">
+    <div className="flex items-center gap-3 text-xs text-ink-soft uppercase tracking-wider">
       <span>
         Step {current} of {total}
       </span>
@@ -782,7 +782,7 @@ function ChannelSelect(props: {
     <div className="mt-6">
       <label
         htmlFor="channel-select"
-        className="block text-sm font-medium text-slate-700 mb-2"
+        className="block text-sm font-medium text-sky-deep mb-2"
       >
         Messaging platform
       </label>
@@ -790,7 +790,7 @@ function ChannelSelect(props: {
         id="channel-select"
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
+        className="w-full rounded-lg border border-sky-light bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%23475569' d='M6 8L1 3h10z'/></svg>\")",
@@ -814,7 +814,7 @@ function ChannelDescription({ channel }: { channel: ChannelOption | undefined })
   if (!channel) {
     return null;
   }
-  return <p className="mt-3 text-sm text-slate-500">{channel.description}</p>;
+  return <p className="mt-3 text-sm text-ink-soft">{channel.description}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -904,7 +904,7 @@ function BotTokenField(props: {
     <div className="mt-6">
       <label
         htmlFor="bot-token"
-        className="block text-sm font-medium text-slate-700 mb-2"
+        className="block text-sm font-medium text-sky-deep mb-2"
       >
         Telegram bot token
       </label>
@@ -918,13 +918,13 @@ function BotTokenField(props: {
           autoComplete="off"
           spellCheck={false}
           disabled={saveState === "saved"}
-          className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500 font-mono"
+          className="flex-1 rounded-lg border border-sky-light bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:bg-slate-50 disabled:text-ink-soft font-mono"
         />
         <button
           type="button"
           onClick={handleTest}
           disabled={testState === "testing" || !token.trim() || saveState === "saved"}
-          className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-800 transition shrink-0 disabled:bg-slate-300 disabled:cursor-not-allowed"
+          className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-deep transition shrink-0 disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
         >
           {testState === "testing" ? "Testing…" : "Test connection"}
         </button>
@@ -939,7 +939,7 @@ function BotTokenField(props: {
         <p className="mt-2 text-sm text-rose-700">✗ {testError}</p>
       )}
       {testState === "idle" && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-ink-soft">
           Create a bot with <span className="font-mono">@BotFather</span> on
           Telegram and paste the token here.
         </p>
@@ -951,7 +951,7 @@ function BotTokenField(props: {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-emerald-700 transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
           >
             {saveState === "saving"
               ? "Saving…"
