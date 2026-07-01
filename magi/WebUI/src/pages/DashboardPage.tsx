@@ -582,7 +582,6 @@ function AddAdminForm(props: {
     "idle" | "sending" | "code-sent" | "verifying" | "error"
   >("idle");
   const [error, setError] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
 
   async function sendCode() {
     const cid = chatId.trim();
@@ -636,7 +635,6 @@ function AddAdminForm(props: {
         error?: string;
       };
       if (data.ok) {
-        setDisplayName(data.display_name ?? null);
         // The endpoint already appended the chat_id to settings; we
         // just need to tell the parent to refresh.
         props.onAdded(cid, data.display_name ?? null);

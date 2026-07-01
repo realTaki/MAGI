@@ -113,7 +113,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         or update.effective_chat.title
     )
 
-    state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/state")
+    state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
     admins = _load_super_admins(state_dir)
 
     # ADMIN: in the allowlist. C1+ will wire actual admin commands; for

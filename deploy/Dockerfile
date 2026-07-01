@@ -52,7 +52,7 @@ RUN uv sync --frozen --no-dev --extra adam --extra eve
 # -----------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --shell /bin/bash magi \
-    && mkdir -p /workspace/state \
+    && mkdir -p /workspace/memories \
     && chown -R magi:magi /workspace
 
 COPY --from=python-builder /opt/venv /opt/venv
@@ -66,11 +66,16 @@ COPY --from=web-builder /web/dist /app/magi/WebUI/dist
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    MAGI_STATE_DIR=/workspace/state
+    MAGI_STATE_DIR=/workspace/memories
 
 WORKDIR /workspace
 USER magi
-VOLUME ["/workspace/state"]
+# NOTE: we deliberately do NOT declare a VOLUME for /workspace/memories
+# (or any subdir of /workspace). The compose file already bind-mounts
+# the host's <MAGI_WORKSPACE_DIR>/Adam onto /workspace, and a nested
+# VOLUME directive would create an anonymous volume that shadows
+# the bind-mounted subdirectory — making the host's data invisible
+# to the container.
 
 EXPOSE 42069
 

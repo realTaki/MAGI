@@ -53,9 +53,9 @@ RUN cd /web && npm ci --no-audit --no-fund
 # /workspace mirrors the prod image's working dir so source paths
 # (magi/, magi/WebUI/) line up regardless of how the user mounts them.
 WORKDIR /workspace
-RUN mkdir -p /workspace/state
+RUN mkdir -p /workspace/memories
 
-ENV MAGI_STATE_DIR=/workspace/state
+ENV MAGI_STATE_DIR=/workspace/memories
 
 EXPOSE 42069
 
@@ -63,17 +63,12 @@ EXPOSE 42069
 # magi dies, then exec magi as PID 1. With magi as PID 1 the container
 # exits the moment magi exits (e.g. SIGTERM from compose stop), and
 # the trap cleans up the background vite process.
-RUN cat >/usr/local/bin/entrypoint.sh <<'SH'
-#!/bin/sh
-set -eu
-cd /web
-npm run dev -- --host 0.0.0.0 --port 42069 &
-VITE_PID=$!
-trap "kill $VITE_PID 2>/dev/null || true" EXIT INT TERM
-# Auto-reload is driven by the MAGI_RELOAD env var (passed by
-# docker-compose.dev.yml). uvicorn picks it up via NodeConfig.
-exec magi
-SH
+#
+# The script lives in deploy/entrypoint.dev.sh and is COPY'd in
+# rather than written via a heredoc — heredocs in Dockerfile RUN
+# commands have been flaky in our build context (the file ended
+# up empty once, causing "exec format error" on container boot).
+COPY deploy/entrypoint.dev.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 CMD ["/usr/local/bin/entrypoint.sh"]

@@ -47,7 +47,7 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/state")
+    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
 
 
 def _super_admins() -> set[str]:

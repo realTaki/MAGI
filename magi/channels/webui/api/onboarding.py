@@ -44,7 +44,7 @@ _TELEGRAM_TIMEOUT_SECONDS = 5.0
 
 def _state_dir() -> str:
     """Read MAGI_STATE_DIR each call — keeps state_dir testable + env-friendly."""
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/state")
+    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
 
 
 # -- request / response schemas -----------------------------------------
