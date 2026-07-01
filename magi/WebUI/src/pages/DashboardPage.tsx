@@ -481,7 +481,28 @@ type EmployeeRow = {
   id: number;
   name: string;
   display_name: string | null;
+  department_id: number | null;
+  provider: string | null;
+  api_key_set: boolean;
+  api_key_last4: string | null;
 };
+
+// Master-detail "scope" — what the right pane is showing. The
+// "unassigned" item is special: ``null`` (no department) in
+// the API's ``?department_id=null`` sense, surfaced as a real
+// row in the sidebar so the operator has one click to it.
+type EmployeeScope =
+  | { kind: "unassigned" }
+  | { kind: "department"; departmentId: number };
+
+const PROVIDER_OPTIONS = [
+  { value: "", label: "（未指定）" },
+  { value: "anthropic", label: "Anthropic (Claude)" },
+  { value: "openai", label: "OpenAI" },
+  { value: "google", label: "Google (Gemini)" },
+  { value: "deepseek", label: "DeepSeek" },
+  { value: "ollama", label: "Ollama (local)" },
+] as const;
 
 // Build a DFS-ordered list of departments with each row's depth,
 // so the renderer can indent by depth. The backend's
@@ -897,21 +918,65 @@ function DepartmentsPane() {
 // status land with C1.2 / C2. The columns that need those
 // (部门 / TG chat_id / 状态) render "—" until then so the table
 // shape stays stable across checkpoints.
+//
+// Master-detail: left sidebar lists the departments + a
+// "未指定部门" pseudo-item; right pane shows the employees
+// in the selected scope. Clicking 查看详情 on a row opens
+// an inline detail panel for the LLM provider / API key
+// configuration.
 function EmployeesPane() {
+  const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
   const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // The selected sidebar item. Defaults to "unassigned" — new
+  // operators usually start by adding people without a dept
+  // and then creating a dept to drag them into.
+  const [scope, setScope] = useState<EmployeeScope>({ kind: "unassigned" });
+
+  // Inline "add employee" form, collapsed by default.
   const [addingNew, setAddingNew] = useState(false);
-  const [form, setForm] = useState<{
+  const [addForm, setAddForm] = useState<{
     name: string;
     display_name: string;
-  }>({ name: "", display_name: "" });
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+    department_id: number | null;
+  }>({ name: "", display_name: "", department_id: null });
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
-  async function refresh() {
+  // The currently-viewed employee detail panel. ``null`` means
+  // no panel open. The detail panel is always editable; the
+  // form fields are seeded from the employee's current state
+  // when the panel opens.
+  const [viewingId, setViewingId] = useState<number | null>(null);
+  const [detailForm, setDetailForm] = useState<{
+    display_name: string;
+    department_id: number | null;
+    provider: string;
+    api_key: string;
+  }>({ display_name: "", department_id: null, provider: "", api_key: "" });
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [savingDetail, setSavingDetail] = useState(false);
+
+  // -- fetches ------------------------------------------------------------
+
+  async function refreshDepartments() {
+    try {
+      const r = await fetch("/api/departments", { credentials: "include" });
+      if (r.ok) setDepartments(await r.json());
+    } catch {
+      /* leave the previous value; the row-level error catches it */
+    }
+  }
+
+  async function refreshEmployees() {
     setLoadError(null);
     try {
-      const r = await fetch("/api/employees", { credentials: "include" });
+      const qs =
+        scope.kind === "unassigned"
+          ? "?unassigned=true"
+          : `?department_id=${scope.departmentId}`;
+      const r = await fetch(`/api/employees${qs}`, { credentials: "include" });
       if (!r.ok) {
         setLoadError(`Failed to load (${r.status})`);
         return;
@@ -922,37 +987,79 @@ function EmployeesPane() {
     }
   }
 
+  // Re-fetch on mount + whenever the scope changes. Departments
+  // are re-fetched on mount only (the master list doesn't
+  // change as the user clicks around).
   useEffect(() => {
-    void refresh();
+    void refreshDepartments();
   }, []);
+  useEffect(() => {
+    void refreshEmployees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope.kind === "department" ? scope.departmentId : "unassigned"]);
 
-  function openForm() {
-    setForm({ name: "", display_name: "" });
-    setFormError(null);
+  // -- helpers ------------------------------------------------------------
+
+  function unassignedCount(): number {
+    // The list endpoint only returns one scope at a time, so
+    // for the unassigned count we issue a tiny extra fetch.
+    // Cheap: it's just a count of the right pane, or —
+    // better — we have it when ``scope.kind === 'unassigned'``.
+    if (scope.kind === "unassigned") {
+      return employees?.length ?? 0;
+    }
+    // Otherwise we don't know without another fetch; render
+    // "—" rather than burn a request per click.
+    return -1;
+  }
+
+  function deptHeadcount(deptId: number): number {
+    if (scope.kind === "department" && scope.departmentId === deptId) {
+      return employees?.length ?? 0;
+    }
+    return -1;
+  }
+
+  function selectScope(next: EmployeeScope) {
+    setScope(next);
+    setViewingId(null); // close the detail panel on scope change
+  }
+
+  // -- add employee -------------------------------------------------------
+
+  function openAdd() {
+    // Seed the form's department to whatever the current scope
+    // is, so adding a new employee while looking at a dept
+    // preselects that dept.
+    const seedDeptId =
+      scope.kind === "department" ? scope.departmentId : null;
+    setAddForm({ name: "", display_name: "", department_id: seedDeptId });
+    setAddError(null);
     setAddingNew(true);
   }
 
-  function closeForm() {
+  function closeAdd() {
     setAddingNew(false);
-    setFormError(null);
-    setForm({ name: "", display_name: "" });
+    setAddError(null);
+    setAddForm({ name: "", display_name: "", department_id: null });
   }
 
-  async function save() {
-    const name = form.name.trim();
+  async function submitAdd() {
+    const name = addForm.name.trim();
     if (!name) {
-      setFormError("姓名不能为空");
+      setAddError("姓名不能为空");
       return;
     }
-    setSaving(true);
-    setFormError(null);
+    setAdding(true);
+    setAddError(null);
     try {
       const r = await fetch("/api/employees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          display_name: form.display_name.trim() || null,
+          display_name: addForm.display_name.trim() || null,
+          department_id: addForm.department_id,
         }),
         credentials: "include",
       });
@@ -960,17 +1067,82 @@ function EmployeesPane() {
         const detail = (await r.json().catch(() => ({}))) as {
           detail?: string;
         };
-        setFormError(detail.detail ?? `Save failed (${r.status})`);
+        setAddError(detail.detail ?? `Save failed (${r.status})`);
         return;
       }
-      closeForm();
-      await refresh();
+      closeAdd();
+      await refreshEmployees();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Network error");
+      setAddError(err instanceof Error ? err.message : "Network error");
     } finally {
-      setSaving(false);
+      setAdding(false);
     }
   }
+
+  // -- detail panel -------------------------------------------------------
+
+  function openDetail(emp: EmployeeRow) {
+    setViewingId(emp.id);
+    setDetailForm({
+      display_name: emp.display_name ?? "",
+      department_id: emp.department_id,
+      provider: emp.provider ?? "",
+      api_key: "", // never pre-fill; user re-enters to set/rotate
+    });
+    setDetailError(null);
+  }
+
+  function closeDetail() {
+    setViewingId(null);
+    setDetailError(null);
+  }
+
+  async function submitDetail() {
+    if (viewingId === null) return;
+    setSavingDetail(true);
+    setDetailError(null);
+    try {
+      const body: Record<string, unknown> = {
+        display_name: detailForm.display_name.trim() || null,
+        department_id: detailForm.department_id,
+        provider: detailForm.provider || null,
+      };
+      // Only send api_key when the user actually typed something
+      // — empty string would clear the stored key (intentional
+      // for rotate, but ``null`` means "don't change" so the
+      // default PATCH semantics keep an existing key).
+      if (detailForm.api_key !== "") {
+        body.api_key = detailForm.api_key;
+      }
+      const r = await fetch(`/api/employees/${viewingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setDetailError(detail.detail ?? `Save failed (${r.status})`);
+        return;
+      }
+      closeDetail();
+      await refreshEmployees();
+      await refreshDepartments();
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSavingDetail(false);
+    }
+  }
+
+  // -- render -------------------------------------------------------------
+
+  const viewingEmp =
+    viewingId !== null
+      ? (employees ?? []).find((e) => e.id === viewingId) ?? null
+      : null;
 
   return (
     <div className="space-y-4">
@@ -978,14 +1150,14 @@ function EmployeesPane() {
         <div>
           <h2 className="text-lg font-semibold text-slate-800">员工管理</h2>
           <p className="mt-1 text-sm text-slate-600">
-            部门负责人从这里选。C2 之后这页会接 TG 绑定（员工在
-            Telegram 里回复 code 把 chat_id 写回这一行）。
+            左侧选部门看该部门下的员工；右侧可加员工、点
+            「查看详情」配置 provider 与 API key。
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={openForm}
+            onClick={openAdd}
             disabled={addingNew}
             className="rounded-md bg-sky-700 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
           >
@@ -994,118 +1166,371 @@ function EmployeesPane() {
         </div>
       </div>
 
-      {addingNew && (
-        <ConsoleCard title="新建员工">
-          <div className="space-y-3">
-            <div>
-              <label
-                htmlFor="emp-name"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                姓名
-              </label>
-              <input
-                id="emp-name"
-                type="text"
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
-                placeholder="例如：张三"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="emp-display"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
-                显示名（可选）
-              </label>
-              <input
-                id="emp-display"
-                type="text"
-                value={form.display_name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, display_name: e.target.value }))
-                }
-                placeholder="留空就用姓名"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
-              />
-            </div>
-            {formError && (
-              <p className="text-sm text-rose-700">✗ {formError}</p>
-            )}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving}
-                className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
-              <button
-                type="button"
-                onClick={closeForm}
-                disabled={saving}
-                className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </ConsoleCard>
-      )}
-
-      <ConsoleCard title="">
-        {loadError && (
-          <p className="text-sm text-rose-700 mb-3">✗ {loadError}</p>
-        )}
-        {employees === null && !loadError && (
-          <p className="text-sm text-slate-500">Loading…</p>
-        )}
-        {employees !== null && employees.length === 0 && (
-          <p className="py-6 text-center text-slate-400 text-sm">
-            还没有员工。点 + Add employee 开始。
-          </p>
-        )}
-        {employees !== null && employees.length > 0 && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                <th className="py-2 pr-4 font-medium">姓名</th>
-                <th className="py-2 pr-4 font-medium">显示名</th>
-                <th className="py-2 pr-4 font-medium">TG chat_id</th>
-                <th className="py-2 pr-4 font-medium">部门</th>
-                <th className="py-2 font-medium w-20">状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((e) => (
-                <tr
-                  key={e.id}
-                  className="border-b border-slate-100 last:border-0"
+      <div className="rounded-2xl bg-white/80 backdrop-blur-md shadow-lg shadow-sky-900/5 border border-white/60 overflow-hidden">
+        <div className="flex min-h-[420px]">
+          {/* Left: scope picker — "未指定部门" + every department */}
+          <nav
+            className="w-56 shrink-0 bg-slate-900 text-slate-100 p-3"
+            aria-label="Employee scope"
+          >
+            <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              范围
+            </p>
+            <ul className="space-y-0.5">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => selectScope({ kind: "unassigned" })}
+                  className={
+                    "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
+                    (scope.kind === "unassigned"
+                      ? "bg-slate-700 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white")
+                  }
+                  aria-current={scope.kind === "unassigned" ? "page" : undefined}
                 >
-                  <td className="py-2 pr-4 text-slate-900 font-medium">
-                    {e.name}
-                  </td>
-                  <td className="py-2 pr-4 text-slate-600">
-                    {e.display_name || (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-slate-400">
-                    —
-                  </td>
-                  <td className="py-2 pr-4 text-slate-400">—</td>
-                  <td className="py-2 text-slate-400">—</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </ConsoleCard>
+                  <span className="font-medium">未指定部门</span>
+                  {unassignedCount() >= 0 && (
+                    <span className="text-xs text-slate-400">
+                      {unassignedCount()}
+                    </span>
+                  )}
+                </button>
+              </li>
+
+              {departments === null && (
+                <li className="px-3 py-2 text-xs text-slate-500">Loading…</li>
+              )}
+              {departments?.length === 0 && (
+                <li className="px-3 py-2 text-xs text-slate-500">
+                  （还没有部门）
+                </li>
+              )}
+              {departments?.map((d) => {
+                const active =
+                  scope.kind === "department" && scope.departmentId === d.id;
+                const count = deptHeadcount(d.id);
+                return (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        selectScope({
+                          kind: "department",
+                          departmentId: d.id,
+                        })
+                      }
+                      className={
+                        "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
+                        (active
+                          ? "bg-slate-700 text-white"
+                          : "text-slate-300 hover:bg-slate-800 hover:text-white")
+                      }
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <span className="font-medium truncate">{d.name}</span>
+                      {count >= 0 && (
+                        <span className="text-xs text-slate-400 shrink-0">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          {/* Right: employees + add form + detail panel */}
+          <div className="flex-1 p-6 space-y-4">
+            {loadError && (
+              <p className="text-sm text-rose-700">✗ {loadError}</p>
+            )}
+
+            {addingNew && (
+              <ConsoleCard title="新建员工">
+                <div className="space-y-3">
+                  <div>
+                    <label
+                      htmlFor="emp-name"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      姓名
+                    </label>
+                    <input
+                      id="emp-name"
+                      type="text"
+                      value={addForm.name}
+                      onChange={(e) =>
+                        setAddForm((f) => ({ ...f, name: e.target.value }))
+                      }
+                      placeholder="例如：张三"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="emp-display"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      显示名（可选）
+                    </label>
+                    <input
+                      id="emp-display"
+                      type="text"
+                      value={addForm.display_name}
+                      onChange={(e) =>
+                        setAddForm((f) => ({
+                          ...f,
+                          display_name: e.target.value,
+                        }))
+                      }
+                      placeholder="留空就用姓名"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="emp-dept"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      部门
+                    </label>
+                    <select
+                      id="emp-dept"
+                      value={addForm.department_id ?? ""}
+                      onChange={(e) =>
+                        setAddForm((f) => ({
+                          ...f,
+                          department_id:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    >
+                      <option value="">（未指定部门）</option>
+                      {(departments ?? []).map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {addError && (
+                    <p className="text-sm text-rose-700">✗ {addError}</p>
+                  )}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={submitAdd}
+                      disabled={adding}
+                      className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                    >
+                      {adding ? "保存中…" : "保存"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeAdd}
+                      disabled={adding}
+                      className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </ConsoleCard>
+            )}
+
+            <ConsoleCard title="">
+              {employees === null && !loadError && (
+                <p className="text-sm text-slate-500">Loading…</p>
+              )}
+              {employees !== null && employees.length === 0 && (
+                <p className="py-6 text-center text-slate-400 text-sm">
+                  {scope.kind === "unassigned"
+                    ? "没有未指定部门的员工。"
+                    : "这个部门下还没有员工。"}
+                </p>
+              )}
+              {employees !== null && employees.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                      <th className="py-2 pr-4 font-medium">姓名</th>
+                      <th className="py-2 pr-4 font-medium">显示名</th>
+                      <th className="py-2 pr-4 font-medium">Provider</th>
+                      <th className="py-2 font-medium w-24 text-right">
+                        操作
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.map((e) => (
+                      <tr
+                        key={e.id}
+                        className={
+                          "border-b border-slate-100 last:border-0 " +
+                          (viewingId === e.id ? "bg-sky-50/50" : "")
+                        }
+                      >
+                        <td className="py-2 pr-4 text-slate-900 font-medium">
+                          {e.name}
+                        </td>
+                        <td className="py-2 pr-4 text-slate-600">
+                          {e.display_name || (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {e.provider ? (
+                            <span className="text-xs font-mono text-slate-700">
+                              {e.provider}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openDetail(e)}
+                            className="text-xs text-sky-700 hover:text-sky-800 transition"
+                          >
+                            查看详情
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </ConsoleCard>
+
+            {viewingId !== null && viewingEmp && (
+              <ConsoleCard title={`员工详情：${viewingEmp.name}`}>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      显示名
+                    </label>
+                    <input
+                      type="text"
+                      value={detailForm.display_name}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          display_name: e.target.value,
+                        }))
+                      }
+                      placeholder="留空就用姓名"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      部门
+                    </label>
+                    <select
+                      value={detailForm.department_id ?? ""}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          department_id:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    >
+                      <option value="">（未指定部门）</option>
+                      {(departments ?? []).map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Provider
+                    </label>
+                    <select
+                      value={detailForm.provider}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          provider: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    >
+                      {PROVIDER_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      API Key
+                      {viewingEmp.api_key_set && (
+                        <span className="ml-2 text-xs font-normal text-slate-500">
+                          已设置（…{viewingEmp.api_key_last4}）— 留空表示不变，要
+                          rotate 就填新值
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="password"
+                      value={detailForm.api_key}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          api_key: e.target.value,
+                        }))
+                      }
+                      placeholder={
+                        viewingEmp.api_key_set
+                          ? "留空保持不变"
+                          : "sk-..."
+                      }
+                      autoComplete="new-password"
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                    />
+                  </div>
+
+                  {detailError && (
+                    <p className="text-sm text-rose-700">✗ {detailError}</p>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={submitDetail}
+                      disabled={savingDetail}
+                      className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                    >
+                      {savingDetail ? "保存中…" : "保存"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeDetail}
+                      disabled={savingDetail}
+                      className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </div>
+              </ConsoleCard>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
