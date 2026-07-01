@@ -554,6 +554,11 @@ function DepartmentsPane() {
   // ``addingNew`` means "create mode".
   const [editingId, setEditingId] = useState<number | null>(null);
   const [addingNew, setAddingNew] = useState(false);
+
+  // Default parent when the form opens via the "+ 子部门"
+  // button. ``null`` means "no default" (top-level form from
+  // the top button).
+  const [formDefaultParent, setFormDefaultParent] = useState<number | null>(null);
   const [form, setForm] = useState<{
     name: string;
     parent_id: number | null;
@@ -587,13 +592,25 @@ function DepartmentsPane() {
   }, []);
 
   function openCreate() {
-    setForm({ name: "", parent_id: null, manager_id: null });
+    setForm({ name: "", parent_id: formDefaultParent, manager_id: null });
+    setEditingId(null);
+    setAddingNew(true);
+    setFormError(null);
+  }
+
+  // Open the create form pre-filled with ``parent_id`` = the
+  // row the user clicked. Called by the per-row "+ 子部门"
+  // button and by the detail panel's "创建下级部门" button.
+  function openCreateChild(parentId: number) {
+    setFormDefaultParent(parentId);
+    setForm({ name: "", parent_id: parentId, manager_id: null });
     setEditingId(null);
     setAddingNew(true);
     setFormError(null);
   }
 
   function openEdit(d: DepartmentRow) {
+    setFormDefaultParent(null);
     setForm({
       name: d.name,
       parent_id: d.parent_id,
@@ -609,6 +626,7 @@ function DepartmentsPane() {
     setAddingNew(false);
     setFormError(null);
     setForm({ name: "", parent_id: null, manager_id: null });
+    setFormDefaultParent(null);
   }
 
   async function save() {
@@ -675,6 +693,18 @@ function DepartmentsPane() {
   }
 
   const formOpen = addingNew || editingId !== null;
+  // Total members of a department: it's the employee count for
+  // that department (from the cached employees list). For
+  // non-leaf depts this is just the dept's own members, not
+  // the recursive subtree — recursive count would require a
+  // second endpoint or client-side walk. Used by the inline
+  // sub-dept disable / enable logic in the edit form.
+  function memberCount(deptId: number): number {
+    if (scope.kind !== "department" || scope.departmentId !== deptId) {
+      return (employees ?? []).filter((e) => e.department_id === deptId).length;
+    }
+    return employees?.length ?? 0;
+  }
   const tree = departments ? buildTree(departments) : [];
   const flat = flattenTree(tree);
 
@@ -796,24 +826,62 @@ function DepartmentsPane() {
               <p className="text-sm text-rose-700">✗ {formError}</p>
             )}
 
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving}
-                className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
-              <button
-                type="button"
-                onClick={closeForm}
-                disabled={saving}
-                className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
-              >
-                取消
-              </button>
-            </div>
+            {/* All form actions live in one row, separated visually
+                by a thin gap. Edit-mode-only ops (创建下级部门 /
+                删除部门) come first, then 保存 / 取消 at the end
+                with ``ml-auto`` so they push to the right. In
+                create mode the edit-ops block is skipped, leaving
+                just 保存 / 取消 on the right. */}
+            {(() => {
+              const editing = !addingNew
+                ? (departments ?? []).find((d) => d.id === editingId) ?? null
+                : null;
+              return (
+                <div className="flex items-center gap-2 pt-3 border-t border-slate-200 flex-wrap">
+                  {editing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openCreateChild(editing.id)}
+                        disabled={saving}
+                        className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                      >
+                        + 创建下级部门
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(editing)}
+                        disabled={saving || editing.child_count > 0}
+                        title={
+                          editing.child_count > 0
+                            ? `有 ${editing.child_count} 个子部门，必须先全部删除`
+                            : "删除部门"
+                        }
+                        className="rounded-md border border-rose-200 bg-white text-rose-700 px-3 py-1.5 text-sm font-medium hover:bg-rose-50 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      >
+                        删除部门
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={saving}
+                    className={`rounded-md bg-emerald-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed ${editing ? "ml-auto" : ""}`}
+                  >
+                    {saving ? "保存中…" : "保存"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeForm}
+                    disabled={saving}
+                    className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-1.5 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </ConsoleCard>
       )}
@@ -880,19 +948,6 @@ function DepartmentsPane() {
                         className="text-xs text-sky-700 hover:text-sky-800 transition disabled:text-slate-300 disabled:cursor-not-allowed"
                       >
                         编辑
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(d)}
-                        disabled={d.child_count > 0}
-                        title={
-                          d.child_count > 0
-                            ? "有子部门，请先删除子部门"
-                            : "删除部门"
-                        }
-                        className="text-xs text-slate-500 hover:text-rose-700 transition disabled:text-slate-300 disabled:cursor-not-allowed"
-                      >
-                        删除
                       </button>
                     </td>
                   </tr>
