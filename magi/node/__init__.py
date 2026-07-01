@@ -187,6 +187,14 @@ def run() -> None:
 
     _init_state(cfg)
 
+    # Initialise the SQLAlchemy ORM tables (Department, Employee,
+    # and the future C1.x additions). Idempotent — ``create_all``
+    # is a no-op for existing tables, so this is safe on every
+    # boot. Runs in the same ``magi.db`` file as the hand-rolled
+    # KV store; the two write to disjoint tables.
+    from magi.runtime.state.orm import init_orm
+    init_orm(cfg.state_dir)
+
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent — every boot re-checks but
     # only creates what's missing, so deployer edits to SOUL.md

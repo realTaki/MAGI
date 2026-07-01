@@ -59,19 +59,13 @@ ENV MAGI_STATE_DIR=/workspace/memories
 
 EXPOSE 42069
 
-# Entrypoint: run vite in background, trap signals so vite dies when
-# magi dies, then exec magi as PID 1. With magi as PID 1 the container
-# exits the moment magi exits (e.g. SIGTERM from compose stop), and
-# the trap cleans up the background vite process.
-#
-# The script lives in deploy/entrypoint.dev.sh and is COPY'd in
-# rather than written via a heredoc — heredocs in Dockerfile RUN
-# commands have been flaky in our build context (the file ended
-# up empty once, causing "exec format error" on container boot).
-COPY deploy/entrypoint.dev.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-CMD ["/usr/local/bin/entrypoint.sh"]
+# No ENTRYPOINT / CMD here on purpose. The dev entrypoint script
+# (start vite in background + exec magi) is bind-mounted from the
+# host at /usr/local/bin/entrypoint.sh via docker-compose.dev.yml,
+# so editing it doesn't require an image rebuild. With nothing
+# below, the image's CMD is whatever the base python:3.12-slim
+# sets by default — which we override to ``["magi"]`` here:
+CMD ["magi"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD magi --check >/dev/null || exit 1

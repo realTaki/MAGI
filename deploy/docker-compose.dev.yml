@@ -1,6 +1,6 @@
 # MAGI dev-mode compose override.
 #
-# Usage:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # The base compose (docker-compose.yml) is the production deployment:
 #   - Single image built from `Dockerfile`
@@ -10,11 +10,16 @@
 # both Python and Node, mounts the source trees as volumes, and runs
 # `vite dev` alongside `magi` inside the same container.
 #
-# Dev workflow:
+# Dev workflow (zero build required for source / script edits):
 #   - Open http://localhost:42069/ in browser
-#   - Edit magi/*.py   → uvicorn auto-reloads   (MAGI_RELOAD=1)
-#   - Edit magi/WebUI/* → vite HMR updates the browser
-#   - SQLite at /workspace/state → bind-mount persists to ./workspace/Adam
+#   - Edit magi/**/*.py          → uvicorn auto-reloads   (MAGI_RELOAD=1)
+#   - Edit magi/WebUI/src/**     → vite HMR updates the browser
+#   - Edit deploy/entrypoint.dev.sh → `docker compose restart adam`
+#   - SQLite at /workspace/memories → bind-mount persists to ./workspace/Adam
+#
+# Build the image again ONLY when:
+#   - Dockerfile / Dockerfile.dev change (apt deps, ENV baked at build)
+#   - pyproject.toml or package.json change (deps installed in build)
 #
 # vite proxies /api/* → 127.0.0.1:8000 (magi, internal). One port (42069)
 # is published to the host.
@@ -36,15 +41,20 @@ services:
       # and HMR state under .vite/ and node_modules/.vite/.
       - ../magi:/workspace/magi:ro
       - ../magi/WebUI:/web
+      # Dev entrypoint (start vite + exec magi) lives on the host so
+      # we can edit it without rebuilding the image. The image
+      # has no entrypoint script — if this mount is missing, the
+      # container fails fast on boot (the image's CMD points at
+      # /usr/local/bin/entrypoint.sh which won't exist).
+      - ./entrypoint.dev.sh:/usr/local/bin/entrypoint.sh:ro
     environment:
       MAGI_RELOAD: "1"
-      # Backend listens on 8000 INSIDE the container. vite picks it
-      # up at http://127.0.0.1:8000 because both run in the same
-      # container; no cross-container networking.
       MAGI_PORT: "8000"
       PYTHONPATH: /workspace
-      # vite config picks this up when set; if unset it falls back to
-      # http://127.0.0.1:${MAGI_PORT}. Either way points at magi.
       VITE_BACKEND_URL: "http://127.0.0.1:8000"
+    # Override the image's CMD so the bind-mounted dev entrypoint
+    # script runs instead of the bare ``magi``. The script starts
+    # vite in the background and execs magi as PID 1.
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
     ports:
       - "42069:42069"
