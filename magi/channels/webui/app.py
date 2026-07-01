@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.webui.api import auth, onboarding
+from magi.channels.webui.api import auth, departments, onboarding
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -76,6 +76,11 @@ def create_app() -> FastAPI:
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(onboarding.router, prefix="/api/onboarding")
+    # Departments + Employees routers share the same auth gate
+    # (``admin_gate``) but ship as two APIRouters so the prefix
+    # stays clean: /api/departments, /api/employees.
+    app.include_router(departments.router, prefix="/api")
+    app.include_router(departments.employees_router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets

@@ -459,23 +459,228 @@ function OrganizationTab() {
 // CRUD for departments. Columns per the design:
 //   部门名称 | 部门人数 | 负责人 | 操作
 // C1.1 lands the backend (employees + directory tables).
+// -- pane: 部门管理 ---------------------------------------------------------
+//
+// C1.1 + C1.2: real CRUD against /api/departments + /api/employees.
+// The backend returns departments as a flat list with parent_id;
+// the frontend builds a parent → children map and DFS-renders
+// so the tree structure is visible in the table. Create / edit
+// uses a single shared form (collapsed by default), so switching
+// between "new" and "edit <id>" is just a state change.
+type DepartmentRow = {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  manager: { id: number; name: string; display_name: string | null } | null;
+  child_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type EmployeeRow = {
+  id: number;
+  name: string;
+  display_name: string | null;
+};
+
+// Build a DFS-ordered list of departments with each row's depth,
+// so the renderer can indent by depth. The backend's
+// ``child_count`` is the number of direct sub-departments; we
+// use it both for display and to disable Delete on non-leaves
+// (the API also refuses, but the UI gate saves a round-trip).
+type FlatDept = DepartmentRow & { depth: number; children: FlatDept[] };
+
+function buildTree(rows: DepartmentRow[]): FlatDept[] {
+  const byId = new Map<number, FlatDept>();
+  for (const r of rows) {
+    byId.set(r.id, { ...r, depth: 0, children: [] });
+  }
+  const roots: FlatDept[] = [];
+  for (const r of rows) {
+    const node = byId.get(r.id)!;
+    if (r.parent_id != null && byId.has(r.parent_id)) {
+      byId.get(r.parent_id)!.children.push(node);
+    } else {
+      // Either top-level or parent_id references a missing row —
+      // promote to root so the row stays visible.
+      roots.push(node);
+    }
+  }
+  const assignDepth = (nodes: FlatDept[], d: number) => {
+    for (const n of nodes) {
+      n.depth = d;
+      assignDepth(n.children, d + 1);
+    }
+  };
+  assignDepth(roots, 0);
+  return roots;
+}
+
+function flattenTree(roots: FlatDept[], out: FlatDept[] = []): FlatDept[] {
+  for (const n of roots) {
+    out.push(n);
+    if (n.children.length) flattenTree(n.children, out);
+  }
+  return out;
+}
+
 function DepartmentsPane() {
+  const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
+  const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Form state — null when collapsed. ``editingId === null`` +
+  // ``addingNew`` means "create mode".
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [addingNew, setAddingNew] = useState(false);
+  const [form, setForm] = useState<{
+    name: string;
+    parent_id: number | null;
+    manager_id: number | null;
+  }>({ name: "", parent_id: null, manager_id: null });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function refresh() {
+    setLoadError(null);
+    try {
+      const [d, e] = await Promise.all([
+        fetch("/api/departments", { credentials: "include" }),
+        fetch("/api/employees", { credentials: "include" }),
+      ]);
+      if (!d.ok || !e.ok) {
+        setLoadError(
+          `Failed to load (departments ${d.status}, employees ${e.status})`,
+        );
+        return;
+      }
+      setDepartments(await d.json());
+      setEmployees(await e.json());
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Network error");
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  function openCreate() {
+    setForm({ name: "", parent_id: null, manager_id: null });
+    setEditingId(null);
+    setAddingNew(true);
+    setFormError(null);
+  }
+
+  function openEdit(d: DepartmentRow) {
+    setForm({
+      name: d.name,
+      parent_id: d.parent_id,
+      manager_id: d.manager?.id ?? null,
+    });
+    setEditingId(d.id);
+    setAddingNew(false);
+    setFormError(null);
+  }
+
+  function closeForm() {
+    setEditingId(null);
+    setAddingNew(false);
+    setFormError(null);
+    setForm({ name: "", parent_id: null, manager_id: null });
+  }
+
+  async function save() {
+    const name = form.name.trim();
+    if (!name) {
+      setFormError("部门名称不能为空");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const url = editingId
+        ? `/api/departments/${editingId}`
+        : "/api/departments";
+      const method = editingId ? "PATCH" : "POST";
+      const body = {
+        name,
+        parent_id: form.parent_id,
+        manager_id: form.manager_id,
+      };
+      const r = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setFormError(detail.detail ?? `${method} failed (${r.status})`);
+        return;
+      }
+      closeForm();
+      await refresh();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(d: DepartmentRow) {
+    if (d.child_count > 0) {
+      alert(
+        `「${d.name}」有 ${d.child_count} 个子部门，请先删除子部门`,
+      );
+      return;
+    }
+    if (!confirm(`确定删除「${d.name}」？此操作不可撤销。`)) return;
+    const r = await fetch(`/api/departments/${d.id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!r.ok && r.status !== 204) {
+      const detail = (await r.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      alert(detail.detail ?? `Delete failed (${r.status})`);
+      return;
+    }
+    if (editingId === d.id) closeForm();
+    await refresh();
+  }
+
+  const formOpen = addingNew || editingId !== null;
+  const tree = departments ? buildTree(departments) : [];
+  const flat = flattenTree(tree);
+
+  // The parent dropdown should offer "no parent" (top-level) plus
+  // every other department EXCEPT the one being edited (a dept
+  // can't be its own parent). The "tree" option in v2 would
+  // render a hierarchical picker; the flat list with leading
+  // em-spaces is good enough for C1.1.
+  const parentOptions = (departments ?? []).filter(
+    (d) => d.id !== editingId,
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">部门管理</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Create departments, name a lead, and add employees to
-            each. The lead ("负责人") is whichever employee is
-            flagged as the dept's manager.
+            树形组织结构。每个部门可以指定负责人，子部门通过
+            「上级部门」字段挂在父节点下。
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            disabled
-            title="C1.1"
+            onClick={openCreate}
+            disabled={formOpen && !addingNew}
             className="rounded-md bg-sky-700 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
           >
             + Create department
@@ -483,25 +688,198 @@ function DepartmentsPane() {
         </div>
       </div>
 
+      {formOpen && (
+        <ConsoleCard title={addingNew ? "新建部门" : "编辑部门"}>
+          <div className="space-y-3">
+            <div>
+              <label
+                htmlFor="dept-name"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                部门名称
+              </label>
+              <input
+                id="dept-name"
+                type="text"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="例如：Engineering"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="dept-parent"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  上级部门
+                </label>
+                <select
+                  id="dept-parent"
+                  value={form.parent_id ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      parent_id: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                >
+                  <option value="">（无 — 根部门）</option>
+                  {parentOptions.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="dept-manager"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  负责人
+                </label>
+                <select
+                  id="dept-manager"
+                  value={form.manager_id ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      manager_id: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                >
+                  <option value="">（无）</option>
+                  {(employees ?? []).map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.display_name || e.name}
+                    </option>
+                  ))}
+                </select>
+                {(employees ?? []).length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    还没有员工。切到「员工管理」先创建。
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {formError && (
+              <p className="text-sm text-rose-700">✗ {formError}</p>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={saving}
+                className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </ConsoleCard>
+      )}
+
       <ConsoleCard title="">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-4 font-medium">部门名称</th>
-              <th className="py-2 pr-4 font-medium w-24">部门人数</th>
-              <th className="py-2 pr-4 font-medium">负责人</th>
-              <th className="py-2 font-medium w-24 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={4} className="py-6 text-center text-slate-400 text-xs">
-                No departments yet — C1.1 (ORM + directory CRUD) fills
-                this in.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        {loadError && (
+          <p className="text-sm text-rose-700 mb-3">✗ {loadError}</p>
+        )}
+        {departments === null && !loadError && (
+          <p className="text-sm text-slate-500">Loading…</p>
+        )}
+        {departments !== null && departments.length === 0 && (
+          <p className="py-6 text-center text-slate-400 text-sm">
+            还没有部门。点 + Create department 开始。
+          </p>
+        )}
+        {departments !== null && departments.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <th className="py-2 pr-4 font-medium">部门名称</th>
+                <th className="py-2 pr-4 font-medium w-24">子部门数</th>
+                <th className="py-2 pr-4 font-medium">负责人</th>
+                <th className="py-2 font-medium w-28 text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flat.map((d) => {
+                const isEditing = editingId === d.id;
+                return (
+                  <tr
+                    key={d.id}
+                    className={
+                      "border-b border-slate-100 last:border-0 " +
+                      (isEditing ? "bg-sky-50/50" : "")
+                    }
+                  >
+                    <td className="py-2 pr-4 text-slate-900">
+                      <span
+                        style={{ paddingLeft: `${d.depth * 20}px` }}
+                        className="inline-flex items-center gap-1"
+                      >
+                        {d.depth > 0 && (
+                          <span className="text-slate-300">└</span>
+                        )}
+                        <span className="font-medium">{d.name}</span>
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-600">
+                      {d.child_count}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-600">
+                      {d.manager ? (
+                        d.manager.display_name || d.manager.name
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(d)}
+                        disabled={formOpen && !isEditing}
+                        className="text-xs text-sky-700 hover:text-sky-800 transition disabled:text-slate-300 disabled:cursor-not-allowed"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(d)}
+                        disabled={d.child_count > 0}
+                        title={
+                          d.child_count > 0
+                            ? "有子部门，请先删除子部门"
+                            : "删除部门"
+                        }
+                        className="text-xs text-slate-500 hover:text-rose-700 transition disabled:text-slate-300 disabled:cursor-not-allowed"
+                      >
+                        删除
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </ConsoleCard>
     </div>
   );
@@ -513,22 +891,102 @@ function DepartmentsPane() {
 // and status. "Add employee" creates a row in `employees`; the
 // TG-binding step (C2) writes `telegram_id` into the same row
 // once the employee proves ownership of the chat from TG.
+// -- pane: 员工管理 ---------------------------------------------------------
+//
+// C1.1 minimal: list + add. Department assignment + TG binding +
+// status land with C1.2 / C2. The columns that need those
+// (部门 / TG chat_id / 状态) render "—" until then so the table
+// shape stays stable across checkpoints.
 function EmployeesPane() {
+  const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [addingNew, setAddingNew] = useState(false);
+  const [form, setForm] = useState<{
+    name: string;
+    display_name: string;
+  }>({ name: "", display_name: "" });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function refresh() {
+    setLoadError(null);
+    try {
+      const r = await fetch("/api/employees", { credentials: "include" });
+      if (!r.ok) {
+        setLoadError(`Failed to load (${r.status})`);
+        return;
+      }
+      setEmployees(await r.json());
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Network error");
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  function openForm() {
+    setForm({ name: "", display_name: "" });
+    setFormError(null);
+    setAddingNew(true);
+  }
+
+  function closeForm() {
+    setAddingNew(false);
+    setFormError(null);
+    setForm({ name: "", display_name: "" });
+  }
+
+  async function save() {
+    const name = form.name.trim();
+    if (!name) {
+      setFormError("姓名不能为空");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const r = await fetch("/api/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          display_name: form.display_name.trim() || null,
+        }),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setFormError(detail.detail ?? `Save failed (${r.status})`);
+        return;
+      }
+      closeForm();
+      await refresh();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">员工管理</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Every employee an EVE can be assigned to. Adding a row
-            here is what makes "派发 EVE 给某人" (C6) possible.
+            部门负责人从这里选。C2 之后这页会接 TG 绑定（员工在
+            Telegram 里回复 code 把 chat_id 写回这一行）。
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            disabled
-            title="C1.1"
+            onClick={openForm}
+            disabled={addingNew}
             className="rounded-md bg-sky-700 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
           >
             + Add employee
@@ -536,27 +994,117 @@ function EmployeesPane() {
         </div>
       </div>
 
+      {addingNew && (
+        <ConsoleCard title="新建员工">
+          <div className="space-y-3">
+            <div>
+              <label
+                htmlFor="emp-name"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                姓名
+              </label>
+              <input
+                id="emp-name"
+                type="text"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="例如：张三"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="emp-display"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                显示名（可选）
+              </label>
+              <input
+                id="emp-display"
+                type="text"
+                value={form.display_name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, display_name: e.target.value }))
+                }
+                placeholder="留空就用姓名"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+              />
+            </div>
+            {formError && (
+              <p className="text-sm text-rose-700">✗ {formError}</p>
+            )}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                {saving ? "保存中…" : "保存"}
+              </button>
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={saving}
+                className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </ConsoleCard>
+      )}
+
       <ConsoleCard title="">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-4 font-medium">姓名</th>
-              <th className="py-2 pr-4 font-medium">TG chat_id</th>
-              <th className="py-2 pr-4 font-medium">部门</th>
-              <th className="py-2 pr-4 font-medium w-20">状态</th>
-              <th className="py-2 font-medium w-24 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={5} className="py-6 text-center text-slate-400 text-xs">
-                No employees yet — C1.1 fills this in. C2 then adds
-                the TG-binding step (employee proves ownership of
-                the chat).
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        {loadError && (
+          <p className="text-sm text-rose-700 mb-3">✗ {loadError}</p>
+        )}
+        {employees === null && !loadError && (
+          <p className="text-sm text-slate-500">Loading…</p>
+        )}
+        {employees !== null && employees.length === 0 && (
+          <p className="py-6 text-center text-slate-400 text-sm">
+            还没有员工。点 + Add employee 开始。
+          </p>
+        )}
+        {employees !== null && employees.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <th className="py-2 pr-4 font-medium">姓名</th>
+                <th className="py-2 pr-4 font-medium">显示名</th>
+                <th className="py-2 pr-4 font-medium">TG chat_id</th>
+                <th className="py-2 pr-4 font-medium">部门</th>
+                <th className="py-2 font-medium w-20">状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.map((e) => (
+                <tr
+                  key={e.id}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="py-2 pr-4 text-slate-900 font-medium">
+                    {e.name}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-600">
+                    {e.display_name || (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 font-mono text-xs text-slate-400">
+                    —
+                  </td>
+                  <td className="py-2 pr-4 text-slate-400">—</td>
+                  <td className="py-2 text-slate-400">—</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </ConsoleCard>
     </div>
   );
