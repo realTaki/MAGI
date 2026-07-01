@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -117,9 +117,70 @@ class EmployeeCreate(BaseModel):
 
 
 class EmployeeOut(BaseModel):
+    """The bits the list view + the detail panel both need.
+
+    ``api_key`` is **never** included — only the ``api_key_set``
+    flag (so the UI can render "configured" vs "not set") and
+    the ``api_key_last4`` suffix (so the UI can show ``"sk-…abcd"``
+    without leaking the value). For the actual key, the operator
+    re-enters it via PATCH; we never read it back.
+    """
+
     id: int
     name: str
     display_name: str | None = None
+    department_id: int | None = None
+    provider: str | None = None
+    api_key_set: bool = False
+    api_key_last4: str | None = None
+
+
+class EmployeeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    display_name: str | None = Field(default=None, max_length=120)
+    # Provider / api_key can be set at create time, but most
+    # of the time the operator will add a placeholder and fill
+    # these in later via PATCH. Optional to keep the create
+    # flow light.
+    department_id: int | None = None
+    provider: str | None = Field(default=None, max_length=32)
+    api_key: str | None = Field(default=None, max_length=512)
+
+
+class EmployeeUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    department_id: Optional[int] = None  # explicit null un-assigns
+    provider: Optional[str] = Field(default=None, max_length=32)
+    # ``api_key`` is write-only. Set it to a new value to
+    # rotate; set it to an empty string to clear. ``None`` means
+    # "don't change".
+    api_key: Optional[str] = Field(default=None, max_length=512)
+
+
+def _mask_key(raw: str | None) -> tuple[bool, str | None]:
+    """Return ``(is_set, last4_or_None)`` from a stored key.
+
+    Used by every employee serialisation so the policy lives
+    in one place. The ``last4`` is a usability affordance for
+    the operator ("did the rotate land?") — it doesn't reveal
+    the value.
+    """
+    if not raw:
+        return False, None
+    return True, (raw[-4:] if len(raw) >= 4 else raw)
+
+
+def _serialize_employee(e: Employee) -> EmployeeOut:
+    is_set, last4 = _mask_key(e.api_key)
+    return EmployeeOut(
+        id=e.id,
+        name=e.name,
+        display_name=e.display_name,
+        department_id=e.department_id,
+        provider=e.provider,
+        api_key_set=is_set,
+        api_key_last4=last4,
+    )
 
 
 # -- helpers -----------------------------------------------------------------
@@ -343,18 +404,24 @@ def delete_department(
 employees_router = APIRouter(tags=["employees"])
 
 
+# The two query params are mutually exclusive — pick one. The
+# UI uses ``?department_id=X`` for "in this dept" and
+# ``?unassigned=true`` for the "未指定部门" pseudo-section.
 @employees_router.get("/employees", response_model=list[EmployeeOut])
 def list_employees(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
+    department_id: int | None = None,
+    unassigned: bool = False,
 ) -> list[EmployeeOut]:
-    rows = session.scalars(
-        select(Employee).order_by(Employee.name.asc())
-    ).all()
-    return [
-        EmployeeOut(id=r.id, name=r.name, display_name=r.display_name)
-        for r in rows
-    ]
+    q = select(Employee)
+    if unassigned:
+        q = q.where(Employee.department_id.is_(None))
+    elif department_id is not None:
+        q = q.where(Employee.department_id == department_id)
+    q = q.order_by(Employee.name.asc())
+    rows = session.scalars(q).all()
+    return [_serialize_employee(r) for r in rows]
 
 
 @employees_router.post("/employees", response_model=EmployeeOut, status_code=201)
@@ -368,8 +435,99 @@ def create_employee(
         raise HTTPException(status_code=400, detail="name must not be empty")
     if session.scalar(select(Employee).where(Employee.name == name)) is not None:
         raise HTTPException(status_code=409, detail=f"employee {name!r} already exists")
-    emp = Employee(name=name, display_name=payload.display_name)
+    # Validate the optional FK up-front so a bad ID gets a 400
+    # rather than a confusing 500 from SQLite.
+    if payload.department_id is not None and session.get(Department, payload.department_id) is None:
+        raise HTTPException(
+            status_code=400, detail=f"department_id {payload.department_id} not found"
+        )
+    emp = Employee(
+        name=name,
+        display_name=payload.display_name,
+        department_id=payload.department_id,
+        provider=payload.provider,
+        api_key=payload.api_key,
+    )
     session.add(emp)
     session.commit()
     session.refresh(emp)
-    return EmployeeOut(id=emp.id, name=emp.name, display_name=emp.display_name)
+    return _serialize_employee(emp)
+
+
+@employees_router.get("/employees/{emp_id}", response_model=EmployeeOut)
+def get_employee(
+    emp_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> EmployeeOut:
+    emp = session.get(Employee, emp_id)
+    if emp is None:
+        raise HTTPException(status_code=404, detail="employee not found")
+    return _serialize_employee(emp)
+
+
+@employees_router.patch("/employees/{emp_id}", response_model=EmployeeOut)
+def update_employee(
+    emp_id: int,
+    payload: EmployeeUpdate,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> EmployeeOut:
+    emp = session.get(Employee, emp_id)
+    if emp is None:
+        raise HTTPException(status_code=404, detail="employee not found")
+
+    if "display_name" in payload.model_fields_set:
+        emp.display_name = payload.display_name
+
+    if "department_id" in payload.model_fields_set:
+        if payload.department_id is not None:
+            if session.get(Department, payload.department_id) is None:
+                raise HTTPException(
+                    status_code=400, detail=f"department_id {payload.department_id} not found"
+                )
+        emp.department_id = payload.department_id
+
+    if "provider" in payload.model_fields_set:
+        emp.provider = payload.provider
+
+    # api_key is write-only:
+    #   - None  : don't change
+    #   - ""    : clear
+    #   - "<x>" : set / rotate to <x>
+    if "api_key" in payload.model_fields_set:
+        emp.api_key = payload.api_key if payload.api_key else None
+
+    session.commit()
+    session.refresh(emp)
+    return _serialize_employee(emp)
+
+
+@employees_router.delete("/employees/{emp_id}", status_code=204)
+def delete_employee(
+    emp_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> Response:
+    """Remove an employee. Refuses if they're the lead of a
+    department (set the dept's manager to someone else first
+    or null it). The Department.manager_id FK uses ``ON DELETE
+    SET NULL`` so any other column referencing this employee
+    is safe."""
+    emp = session.get(Employee, emp_id)
+    if emp is None:
+        raise HTTPException(status_code=404, detail="employee not found")
+    led = session.scalar(
+        select(Department).where(Department.manager_id == emp_id)
+    )
+    if led is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"employee is the lead of {led.name!r}; "
+                "reassign or clear the department's manager first"
+            ),
+        )
+    session.delete(emp)
+    session.commit()
+    return Response(status_code=204)
