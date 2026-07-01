@@ -34,6 +34,20 @@ def init_sqlite(state_dir: str) -> Path:
 
     db_path = directory / "magi.db"
     with sqlite3.connect(str(db_path)) as conn:
+        # WAL mode = readers don't block writers, writers don't
+        # block readers. Crucial for our setup: the FastAPI
+        # event loop + the Telegram bot thread both hit the DB
+        # via magi/runtime/state/settings.py. Without WAL a
+        # long-ish read could stall an in-flight write and vice
+        # versa. WAL is also more crash-safe (the -wal sidecar
+        # is fsync'd instead of overwriting the main file).
+        conn.execute("PRAGMA journal_mode=WAL")
+        # busy_timeout is the per-connection grace period before
+        # SQLite raises "database is locked". 5s is the stdlib
+        # default but we set it explicitly so the value is
+        # visible in the schema-design history. With WAL, this
+        # is rarely needed, but it's cheap insurance.
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS meta (
