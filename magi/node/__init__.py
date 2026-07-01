@@ -115,7 +115,7 @@ class NodeConfig:
         # Adam uses it for SQLite state (small / dev), Eve for local working
         # state. Read it unconditionally. Default matches the container's
         # working directory (matches Agent convention).
-        state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/state")
+        state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
 
         employee_id = None
         bot_token_set = False
@@ -187,6 +187,13 @@ def run() -> None:
 
     _init_state(cfg)
 
+    # Bootstrap the workspace (skills/, memories/, SOUL.md) before
+    # any channel launches. Idempotent — every boot re-checks but
+    # only creates what's missing, so deployer edits to SOUL.md
+    # (or anything else) survive across restarts.
+    from magi.runtime.workspace import bootstrap_workspace, workspace_root
+    bootstrap_workspace(workspace_root(cfg.state_dir or "/workspace/memories"))
+
     if not cfg.channels:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return
@@ -219,7 +226,7 @@ def _init_state(cfg: NodeConfig) -> None:
         )
         return
 
-    state_dir = cfg.state_dir or "/workspace/state"
+    state_dir = cfg.state_dir or "/workspace/memories"
     from magi.runtime.state import init_sqlite
 
     db_path = init_sqlite(state_dir)
@@ -267,7 +274,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     yet done). The bot daemon thread restarts are not required to pick
     up new super admins — the allowlist is re-read on every message.
     """
-    state_dir = cfg.state_dir or "/workspace/state"
+    state_dir = cfg.state_dir or "/workspace/memories"
     from magi.channels.telegram.bot import start_bot
 
     thread = start_bot(state_dir)
