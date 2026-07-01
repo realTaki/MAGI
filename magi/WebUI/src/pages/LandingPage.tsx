@@ -21,15 +21,15 @@ export default function LandingPage(props: {
               height={40}
               className="rounded"
             />
-            <span className="text-2xl font-semibold tracking-wide text-slate-800">
+            <span className="text-2xl font-semibold tracking-wide text-ink">
               MAGI
             </span>
           </div>
 
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-800">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
             Enterprise agents, on your terms.
           </h1>
-          <p className="mt-4 text-slate-600 leading-relaxed">
+          <p className="mt-4 text-ink-soft leading-relaxed">
             MAGI gives every employee a personal agent — running on the
             messaging platform they already use — while keeping the
             infrastructure, skills and audit log under your control.
@@ -45,7 +45,7 @@ export default function LandingPage(props: {
             </button>
           </div>
 
-          <p className="mt-6 text-xs text-slate-500">
+          <p className="mt-6 text-xs text-ink-soft">
             {props.isFirstTime
               ? "First time here — Set up runs the first-time wizard."
               : "Enter your Telegram chat_id and the code the bot sends to log in."}
