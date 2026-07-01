@@ -61,6 +61,38 @@ export default function App() {
             display_name: string | null;
           };
           setSignedInUser(me);
+          // Also pull the bot info for the Settings tab. /status
+          // only returns the bot username (the token is a secret,
+          // it never leaves the server) — the Settings tab handles
+          // the missing token gracefully (shows "(saved — only the
+          // username is shown)" instead of a masked preview).
+          // Without this, a returning user who reloaded the page
+          // would see the Telegram channel as "disconnected" and
+          // the Re-set button hidden, even though the bot is
+          // perfectly wired.
+          try {
+            const stRes = await fetch("/api/onboarding/status", {
+              credentials: "include",
+            });
+            if (!cancelled && stRes.ok) {
+              const st = (await stRes.json()) as {
+                bot_saved?: boolean;
+                bot_username?: string;
+                super_admins?: string[];
+              };
+              if (st.bot_saved && st.bot_username) {
+                setOnboardingData({
+                  bot: { token: "", username: st.bot_username },
+                  superAdmins: (st.super_admins ?? []).map((c) => ({
+                    chatId: c,
+                    displayName: null,
+                  })),
+                });
+              }
+            }
+          } catch {
+            /* network — Settings tab will show "disconnected" */
+          }
           setView("dashboard");
           return;
         }

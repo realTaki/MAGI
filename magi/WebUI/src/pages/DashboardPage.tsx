@@ -69,31 +69,70 @@ export default function DashboardPage(props: {
   }
   const user = props.signedInUser;
   return (
-    <main className="min-h-screen flex flex-col px-6 py-12">
-      <header className="px-2 py-2 max-w-4xl w-full mx-auto">
-        <div className="flex items-center gap-3">
-          <img
-            src="/assets/favicon.svg"
-            alt="MAGI"
-            width={28}
-            height={28}
-            className="rounded"
-          />
-          <span className="text-sm font-semibold tracking-wide text-slate-700">
-            MAGI
-          </span>
-          <span className="text-xs text-slate-500 ml-2">admin console</span>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-slate-500">
+    <PostLoginLayout
+      user={user}
+      onSignOut={props.onSignOut}
+      data={props.data}
+      onBotUpdated={props.onBotUpdated}
+      onAdminsChanged={props.onAdminsChanged}
+      onRestart={props.onRestart}
+    />
+  );
+}
+
+// Single-row top bar (logo · tabs · signed-in-as · sign-out) plus
+// the tab content below. Designed to feel like a slim SaaS nav
+// rather than a tall hero card; matches the kind of top bar
+// shown in the reference (logo + inline nav + identity pill +
+// utility buttons on the right, all on one row).
+function PostLoginLayout(props: {
+  user: { chat_id: string; display_name: string | null };
+  data: OnboardingData | null;
+  onBotUpdated: (newBot: { token: string; username: string }) => void;
+  onAdminsChanged: (
+    next: Array<{ chatId: string; displayName: string | null }>,
+  ) => void;
+  onRestart: () => void;
+  onSignOut: () => void;
+}) {
+  const [tab, setTab] = useState<TabKey>("organization");
+
+  return (
+    <main className="min-h-screen flex flex-col">
+      <header className="border-b border-slate-200 bg-white/70 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 h-12 flex items-center gap-6">
+          <div className="flex items-center gap-2 shrink-0">
+            <img
+              src="/assets/favicon.svg"
+              alt="MAGI"
+              width={22}
+              height={22}
+              className="rounded"
+            />
+            <span className="text-sm font-semibold tracking-wide text-slate-800">
+              MAGI
+            </span>
+          </div>
+
+          {/* Center the tabs in the available width between the
+              logo block and the identity block. flex-1 + justify-center
+              lets the logo + identity stay at their natural widths
+              (don't shrink) while the tabs sit dead-center. */}
+          <div className="flex-1 flex justify-center">
+            <InlineTabBar current={tab} onChange={setTab} />
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-xs text-slate-500 hidden sm:inline">
               Signed in as{" "}
               <span className="font-mono text-slate-700">
-                {user.display_name ?? user.chat_id}
+                {props.user.display_name ?? props.user.chat_id}
               </span>
             </span>
             <button
               type="button"
               onClick={props.onSignOut}
-              className="rounded-md border border-slate-300 bg-white text-slate-700 px-3 py-1.5 text-xs font-medium hover:bg-slate-50 transition"
+              className="rounded-md border border-slate-300 bg-white text-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-50 transition"
             >
               Sign out
             </button>
@@ -101,71 +140,31 @@ export default function DashboardPage(props: {
         </div>
       </header>
 
-      <div className="flex-1 flex items-start justify-center pt-8">
-        <div className="w-full max-w-4xl space-y-6">
-          <PostLoginConsole
-            data={props.data}
-            user={user}
-            onBotUpdated={props.onBotUpdated}
-            onAdminsChanged={props.onAdminsChanged}
-            onRestart={props.onRestart}
-          />
+      <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
+        <div className="space-y-4">
+          {tab === "chat" && <ChatTab />}
+          {tab === "organization" && <OrganizationTab />}
+          {tab === "knowledge" && <KnowledgeTab />}
+          {tab === "settings" && (
+            <SettingsTab
+              data={props.data}
+              signedInUser={props.user}
+              onBotUpdated={props.onBotUpdated}
+              onAdminsChanged={props.onAdminsChanged}
+              onRestart={props.onRestart}
+            />
+          )}
         </div>
       </div>
     </main>
   );
 }
 
-// ---------------------------------------------------------------------------
-// tab container
-// ---------------------------------------------------------------------------
-function PostLoginConsole(props: {
-  data: OnboardingData | null;
-  user: { chat_id: string; display_name: string | null };
-  onBotUpdated: (newBot: { token: string; username: string }) => void;
-  onAdminsChanged: (
-    next: Array<{ chatId: string; displayName: string | null }>,
-  ) => void;
-  onRestart: () => void;
-}) {
-  // Three top-level sections in the dashboard. Default to "admin"
-  // so the user lands on the operational overview they actually
-  // came here to use; chat / settings are a click away.
-  const [tab, setTab] = useState<TabKey>("organization");
-
-  return (
-    <>
-      <div className="rounded-2xl bg-white/85 backdrop-blur-md shadow-2xl shadow-sky-900/10 border border-white/60 px-8 pt-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-800">
-          Welcome back.
-        </h1>
-        <p className="mt-1 text-slate-600 text-sm">
-          MAGI is configured and running.
-        </p>
-        <TabBar current={tab} onChange={setTab} />
-      </div>
-
-      <div className="space-y-4">
-        {tab === "chat" && <ChatTab />}
-        {tab === "organization" && <OrganizationTab />}
-        {tab === "knowledge" && <KnowledgeTab />}
-        {tab === "settings" && (
-          <SettingsTab
-            data={props.data}
-            signedInUser={props.user}
-            onBotUpdated={props.onBotUpdated}
-            onAdminsChanged={props.onAdminsChanged}
-            onRestart={props.onRestart}
-          />
-        )}
-      </div>
-    </>
-  );
-}
-
-type TabKey = "chat" | "organization" | "knowledge" | "settings";
-
-function TabBar(props: {
+// Inline variant of <TabBar> used inside the slim header. No
+// rounded card wrapper, no bottom border (the header itself has
+// one), no extra padding — tabs are just buttons separated by
+// spaces.
+function InlineTabBar(props: {
   current: TabKey;
   onChange: (t: TabKey) => void;
 }) {
@@ -176,10 +175,7 @@ function TabBar(props: {
     { key: "settings", label: "Settings" },
   ];
   return (
-    <nav
-      className="mt-6 -mb-px flex items-center gap-6"
-      aria-label="Dashboard sections"
-    >
+    <nav className="flex items-center gap-1" aria-label="Dashboard sections">
       {tabs.map((t) => {
         const active = t.key === props.current;
         return (
@@ -188,10 +184,10 @@ function TabBar(props: {
             type="button"
             onClick={() => props.onChange(t.key)}
             className={
-              "pb-3 text-sm font-medium transition border-b-2 " +
+              "px-3 py-1.5 text-sm font-medium transition rounded-md " +
               (active
-                ? "border-sky-700 text-sky-700"
-                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300")
+                ? "text-sky-700 bg-sky-50"
+                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100")
             }
             aria-current={active ? "page" : undefined}
           >
@@ -202,6 +198,8 @@ function TabBar(props: {
     </nav>
   );
 }
+
+type TabKey = "chat" | "organization" | "knowledge" | "settings";
 
 // -- tab: chat --------------------------------------------------------------
 //
