@@ -175,22 +175,35 @@ def _clear_login_code(chat_id: str) -> None:
 async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     """The list of chat_ids that can log in to Adam.
 
-    For C0 this is just the super-admins list saved by the onboarding
-    wizard. C2+ will union in employees with a bound TG chat_id +
-    active EVE assignment (so an employee can manage their own
-    EVE without needing deployer-level access). The frontend uses
-    this to populate the login dropdown so users don't have to
-    remember their chat_id.
+    Two sources, unioned:
 
-    Display names are best-effort lookups via Telegram ``getChat``;
-    a failure (e.g. the user has blocked the bot, or the network is
-    down) just means we fall back to showing the bare chat_id.
+    1. ``telegram.super_admins`` — the wizard-configured deployer
+       list. role = ``super_admin``.
+    2. Employees with a bound TG chat_id + an active EVE
+       assignment. role = ``assigned_employee``. C2 wires the TG
+       binding (the employee proves ownership of the chat from
+       TG by replying to a code); C6 wires the EVE dispatch
+       (Adam spawns a container for the employee). The two
+       together mean "this person has a live EVE they manage" —
+       they should be able to sign in to see its logs, change
+       its skills, etc., without needing deployer-level access.
+
+    For C0 the employees side is empty (the tables don't exist
+    yet — C1.1 lands the ORM). The path is wired so the
+    frontend can show "0 assigned employees" today and start
+    populating as soon as C6 dispatches the first EVE.
+
+    Display names are best-effort lookups via Telegram
+    ``getChat``; a failure (e.g. the user has blocked the bot,
+    or the network is down) just means we fall back to showing
+    the bare chat_id.
     """
     from magi.runtime.state.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     accounts: list[AllowedLoginAccount] = []
 
+    # 1. Super admins (wizard-configured).
     for chat_id in sorted(_super_admins()):
         display_name: str | None = None
         if bot_token:
@@ -218,6 +231,25 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
                 role="super_admin",
             )
         )
+
+    # 2. Assigned employees. C0: the employees / eves tables don't
+    # exist yet, so this list is always empty. The query is
+    # sketched in the comment so C1.1 / C6 can drop it in.
+    #
+    #   SELECT e.telegram_id, e.name
+    #   FROM employees e
+    #   JOIN eves v ON v.employee_id = e.id
+    #   WHERE e.telegram_id IS NOT NULL
+    #     AND v.status != 'shutting_down'
+    #     AND NOT EXISTS (
+    #       SELECT 1 FROM telegram.super_admins a
+    #       WHERE a.chat_id = e.telegram_id
+    #     );
+    #
+    # We skip the join and rely on the frontend to de-dupe
+    # super_admins from the visible list (super admins should
+    # not also appear under "assigned employees" — they manage
+    # the system, not a single EVE).
 
     return AllowedLoginAccountsResponse(accounts=accounts)
 
