@@ -29,6 +29,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 logger = logging.getLogger("magi.api.auth")
 
@@ -51,10 +52,34 @@ def _state_dir() -> str:
 
 
 def _super_admins() -> set[str]:
-    """Read telegram.super_admins as a set of chat_id strings."""
+    """Read the super-admin allowlist as a set of chat_id strings.
+
+    Source of truth: the ``employees`` table (rows with
+    ``role='admin'`` and a non-null ``telegram_id``). Falls
+    back to the legacy ``telegram.super_admins`` meta key
+    for state files written before the unified table landed
+    (C1.x). The fallback path is retired in C8.
+    """
+    from magi.runtime.state.orm import Employee, open_session
     from magi.runtime.state.settings import state_get
 
-    raw = state_get(_state_dir(), "telegram.super_admins")
+    state_dir = _state_dir()
+    result: set[str] = set()
+    try:
+        with open_session() as session:
+            for emp in session.scalars(
+                select(Employee).where(Employee.role == "admin")
+            ).all():
+                if emp.telegram_id is not None:
+                    result.add(str(emp.telegram_id))
+        if result:
+            return result
+    except Exception:
+        # If the ORM read fails (table not initialised yet,
+        # very-early-boot case) fall through to the meta.
+        pass
+
+    raw = state_get(state_dir, "telegram.super_admins")
     if not raw:
         return set()
     try:

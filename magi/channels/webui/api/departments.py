@@ -39,21 +39,51 @@ router = APIRouter(tags=["departments"])
 
 # -- auth gate --------------------------------------------------------------
 
-def _super_admin_chat_ids() -> set[str]:
-    """Read ``telegram.super_admins`` as a set of chat_id strings.
+def _is_admin_chat_id(chat_id: str) -> bool:
+    """True if ``chat_id`` is bound to an Employee with role=admin.
 
-    Same logic the auth module uses; duplicated here so this
-    router doesn't need to know about the auth router's
-    internals. If we add a third role later, both call sites
-    collapse into a single ``require_role("admin")`` helper.
+    Single source of truth: reads from the ``employees`` table
+    (where the onboarding wizard writes admins). Falls back
+    to the legacy ``telegram.super_admins`` meta key so a
+    state file from before the unified table (C1.x) still
+    authenticates — the meta key gets retired in C8.
     """
-    raw = state_get(os.environ.get("MAGI_STATE_DIR", "/workspace/memories"), "telegram.super_admins")
-    if not raw:
-        return set()
+    from magi.runtime.state.orm import Employee, open_session
+
     try:
-        return {str(x) for x in json.loads(raw)}
+        cid_int = int(chat_id)
+    except (TypeError, ValueError):
+        cid_int = None
+
+    if cid_int is not None:
+        try:
+            from sqlalchemy import select as _select
+            from magi.runtime.state.orm import open_session as _open
+
+            with _open() as session:
+                # ``Employee.telegram_id`` is the source of truth;
+                # look up by telegram_id rather than by id because
+                # the chat_id and the row id are different numbers.
+                emp = session.scalar(
+                    _select(Employee).where(Employee.telegram_id == cid_int)
+                )
+                if emp is not None and emp.role == "admin":
+                    return True
+        except Exception:
+            logger.exception("admin_gate: ORM read failed; falling back to meta")
+
+    # Fallback — the pre-C1.x meta key. Still works for any
+    # state that hasn't been migrated yet.
+    raw = state_get(
+        os.environ.get("MAGI_STATE_DIR", "/workspace/memories"),
+        "telegram.super_admins",
+    )
+    if not raw:
+        return False
+    try:
+        return chat_id in {str(x) for x in json.loads(raw)}
     except (ValueError, TypeError):
-        return set()
+        return False
 
 
 def admin_gate(request: Request) -> str:
@@ -68,7 +98,7 @@ def admin_gate(request: Request) -> str:
     after an admin removal shouldn't sneak past).
     """
     chat_id = request.cookies.get("magi_session")
-    if not chat_id or chat_id not in _super_admin_chat_ids():
+    if not chat_id or not _is_admin_chat_id(chat_id):
         raise HTTPException(status_code=401, detail="Not signed in")
     return chat_id
 
@@ -125,6 +155,12 @@ class EmployeeOut(BaseModel):
     active, a timestamp means the employee was marked separated
     at that time. The dashboard shows a "已离职" badge and the
     dedicated "已离职员工" scope filters on this.
+
+    ``role`` is the per-MAGI-perspective classification
+    (admin / employee / assigned / other). See
+    :class:`magi.runtime.state.orm.Employee` for the semantics.
+    ``telegram_id`` is the bound TG chat id when known
+    (``None`` until the /start binding flow runs).
     """
 
     id: int
@@ -135,6 +171,15 @@ class EmployeeOut(BaseModel):
     api_key_set: bool = False
     api_key_last4: str | None = None
     separated_at: str | None = None
+    role: str = "employee"
+    telegram_id: int | None = None
+
+
+# Roles the operator can assign via the API. ``assigned`` and
+# ``other`` are reserved for C6 (EVE assignment) and C7
+# (cross-instance directory) — listing them as invalid here
+# keeps v0 from accidentally setting them via the dashboard.
+_EMPLOYEE_ROLES: tuple[str, ...] = ("admin", "employee", "assigned", "other")
 
 
 class EmployeeCreate(BaseModel):
@@ -147,6 +192,12 @@ class EmployeeCreate(BaseModel):
     department_id: int | None = None
     provider: str | None = Field(default=None, max_length=32)
     api_key: str | None = Field(default=None, max_length=512)
+    # Role defaults to "employee" — super admins are created
+    # via the onboarding wizard (step 3) which sets role=admin
+    # explicitly. ``telegram_id`` is optional at create; the
+    # /start binding flow (C2) sets it later.
+    role: str = Field(default="employee", max_length=16)
+    telegram_id: int | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -162,6 +213,12 @@ class EmployeeUpdate(BaseModel):
     # ``None`` means "don't change". Distinct from "absent" via
     # ``model_fields_set`` like the other optional fields.
     separated: Optional[bool] = None
+    # Role transition. ``None`` means "don't change". To
+    # un-assign a TG chat, send ``telegram_id=null``; the
+    # endpoint validates uniqueness so a duplicate id is
+    # a 409, not a silent overwrite.
+    role: Optional[str] = Field(default=None, max_length=16)
+    telegram_id: Optional[int] = None
 
 
 class EmployeeListOut(BaseModel):
@@ -204,6 +261,8 @@ def _serialize_employee(e: Employee) -> EmployeeOut:
         api_key_set=is_set,
         api_key_last4=last4,
         separated_at=e.separated_at.isoformat() if e.separated_at else None,
+        role=e.role,
+        telegram_id=e.telegram_id,
     )
 
 
@@ -452,6 +511,7 @@ def list_employees(
     unassigned: bool = False,
     separated: bool = False,
     include_separated: bool = False,
+    role: str | None = None,
     page: int = 1,
     page_size: int = _PAGE_SIZE_DEFAULT,
 ) -> EmployeeListOut:
@@ -477,6 +537,21 @@ def list_employees(
             base = base.where(Employee.department_id.is_(None))
         elif department_id is not None:
             base = base.where(Employee.department_id == department_id)
+
+    # ``role`` filter — drives the WebUI Access card
+    # (role=admin) and the future "assigned to me" pane
+    # (role=assigned). Validated here rather than in the
+    # SQL ``WHERE`` so a typo gets a 400, not an empty list.
+    if role is not None:
+        if role not in _EMPLOYEE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown role {role!r}. "
+                    f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
+                ),
+            )
+        base = base.where(Employee.role == role)
 
     # COUNT comes from a separate statement against the same
     # WHERE clause so the pager has the true total.
@@ -517,12 +592,35 @@ def create_employee(
         raise HTTPException(
             status_code=400, detail=f"department_id {payload.department_id} not found"
         )
+    if payload.role not in _EMPLOYEE_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown role {payload.role!r}. "
+                f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
+            ),
+        )
+    # Telegram id uniqueness — one chat_id binds to at most
+    # one employee. A duplicate id here means the operator
+    # is double-binding; surface as a 409.
+    if payload.telegram_id is not None and session.scalar(
+        select(Employee).where(Employee.telegram_id == payload.telegram_id)
+    ) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"telegram_id {payload.telegram_id} is already bound "
+                "to another employee"
+            ),
+        )
     emp = Employee(
         name=name,
         display_name=payload.display_name,
         department_id=payload.department_id,
         provider=payload.provider,
         api_key=payload.api_key,
+        role=payload.role,
+        telegram_id=payload.telegram_id,
     )
     session.add(emp)
     session.commit()
@@ -584,6 +682,42 @@ def update_employee(
             emp.separated_at = datetime.utcnow()
         else:
             emp.separated_at = None
+
+    # Role transition. Validated against the enum so a typo
+    # doesn't sneak a bad value into the DB. ``None`` means
+    # "don't change", so sending the field without a value
+    # is a no-op (use ``model_fields_set`` like the others).
+    if "role" in payload.model_fields_set and payload.role is not None:
+        if payload.role not in _EMPLOYEE_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown role {payload.role!r}. "
+                    f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
+                ),
+            )
+        emp.role = payload.role
+
+    # Telegram binding. ``None`` means "don't change"; the
+    # operator can send ``telegram_id=null`` to unbind (the
+    # /start flow re-binds via this same field). Duplicate
+    # id check is the same as create_employee — surface as
+    # 409 so the operator knows to unbind the other row first.
+    if "telegram_id" in payload.model_fields_set:
+        new_tg = payload.telegram_id
+        if new_tg is not None:
+            existing = session.scalar(
+                select(Employee).where(Employee.telegram_id == new_tg)
+            )
+            if existing is not None and existing.id != emp.id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"telegram_id {new_tg} is already bound to "
+                        f"employee {existing.id} ({existing.name!r})"
+                    ),
+                )
+        emp.telegram_id = new_tg
 
     session.commit()
     session.refresh(emp)

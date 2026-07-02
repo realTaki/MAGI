@@ -668,6 +668,15 @@ type EmployeeRow = {
   // the employee is active. Surfaced as a "已离职" badge in
   // the table; flip via the detail panel.
   separated_at: string | null;
+  // Per-MAGI-perspective role: ``admin`` can sign in to
+  // Adam's WebUI; ``employee`` is a regular org member;
+  // ``assigned`` / ``other`` are reserved for the multi-
+  // instance future (C6+).
+  role: "admin" | "employee" | "assigned" | "other";
+  // Bound TG chat id, when known. ``null`` until the
+  // binding flow runs (C2 self-serve, or the admin endpoint
+  // for v0). Unique across the company.
+  telegram_id: number | null;
 };
 
 // Mirrors the API's ``EmployeeListOut`` shape — the page
@@ -1250,7 +1259,17 @@ function EmployeesPane() {
     department_id: number | null;
     provider: string;
     api_key: string;
-  }>({ display_name: "", department_id: null, provider: "", api_key: "" });
+    role: "admin" | "employee" | "assigned" | "other";
+    telegram_id: string; // string in the form (input); we
+    // convert to number | null on submit.
+  }>({
+    display_name: "",
+    department_id: null,
+    provider: "",
+    api_key: "",
+    role: "employee",
+    telegram_id: "",
+  });
   const [detailError, setDetailError] = useState<string | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
 
@@ -1402,6 +1421,8 @@ function EmployeesPane() {
       department_id: emp.department_id,
       provider: emp.provider ?? "",
       api_key: "", // never pre-fill; user re-enters to set/rotate
+      role: emp.role,
+      telegram_id: emp.telegram_id !== null ? String(emp.telegram_id) : "",
     });
     setDetailError(null);
   }
@@ -1420,6 +1441,7 @@ function EmployeesPane() {
         display_name: detailForm.display_name.trim() || null,
         department_id: detailForm.department_id,
         provider: detailForm.provider || null,
+        role: detailForm.role,
       };
       // Only send api_key when the user actually typed something
       // — empty string would clear the stored key (intentional
@@ -1427,6 +1449,22 @@ function EmployeesPane() {
       // default PATCH semantics keep an existing key).
       if (detailForm.api_key !== "") {
         body.api_key = detailForm.api_key;
+      }
+      // Telegram id: empty string in the form means "unbind"
+      // (set to null on the server); a numeric string is
+      // converted to int. Whitespace-only input is treated
+      // as empty.
+      const tgRaw = detailForm.telegram_id.trim();
+      if (tgRaw === "") {
+        body.telegram_id = null;
+      } else {
+        const tgNum = Number(tgRaw);
+        if (!Number.isInteger(tgNum)) {
+          setDetailError("Telegram chat_id 必须是整数");
+          setSavingDetail(false);
+          return;
+        }
+        body.telegram_id = tgNum;
       }
       const r = await fetch(`/api/employees/${viewingId}`, {
         method: "PATCH",
@@ -1879,6 +1917,36 @@ function EmployeesPane() {
                     </div>
                   )}
                   <div>
+                    <label className="form-label">角色</label>
+                    <select
+                      value={detailForm.role}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          role: e.target.value as
+                            | "admin"
+                            | "employee"
+                            | "assigned"
+                            | "other",
+                        }))
+                      }
+                      className="form-input text-sm py-2 px-3"
+                    >
+                      <option value="admin">admin（可登录 WebUI）</option>
+                      <option value="employee">employee（普通员工）</option>
+                      <option value="assigned">
+                        assigned（C6+，被此 MAGI 服务）
+                      </option>
+                      <option value="other">
+                        other（C6+，被其他 MAGI 服务）
+                      </option>
+                    </select>
+                    <p className="mt-1 text-xs text-ink-soft">
+                      admin = 可登录 Adam 控制台；employee = 普通员工；
+                      assigned/other 是多 MAGI 场景下的预占值。
+                    </p>
+                  </div>
+                  <div>
                     <label className="form-label">显示名</label>
                     <input
                       type="text"
@@ -1934,6 +2002,29 @@ function EmployeesPane() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="form-label">
+                      Telegram chat_id
+                      {detailForm.telegram_id && (
+                        <span className="ml-2 text-xs font-normal text-ink-soft">
+                          （已绑定 — 留空表示不变，要解绑就清空）
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={detailForm.telegram_id}
+                      onChange={(e) =>
+                        setDetailForm((f) => ({
+                          ...f,
+                          telegram_id: e.target.value,
+                        }))
+                      }
+                      placeholder="例如：123456789（留空 = 解绑）"
+                      className="form-input text-sm py-2 px-3 font-mono"
+                    />
                   </div>
                   <div>
                     <label className="form-label">
@@ -2007,12 +2098,6 @@ function EmployeesPane() {
     </div>
   );
 }
-
-type AllowedAccount = {
-  chat_id: string;
-  display_name: string | null;
-  role: string;
-};
 
 // Inline add-admin form: chat_id → Send code → 6 digits → Verify.
 // Mirrors the wizard's Step 3 row but as a single self-contained
@@ -2520,33 +2605,38 @@ function SettingsWebuiAccessCard(props: {
     next: Array<{ chatId: string; displayName: string | null }>,
   ) => void;
 }) {
-  // Local state is the source of truth for what the card shows.
-  // On mount we fetch the server view (which has display names);
-  // every mutation re-fetches so we don't drift.
-  const [accounts, setAccounts] = useState<AllowedAccount[] | null>(null);
+  // WebUI Access = employees WHERE role=admin. The unified
+  // table means a single GET returns the list, the new
+  // employees / remove flow can delete rows directly, and
+  // we don't have to keep two views in sync.
+  const [admins, setAdmins] = useState<EmployeeRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addingNew, setAddingNew] = useState(false);
 
   async function refresh() {
     setLoadError(null);
     try {
-      const r = await fetch("/api/auth/allowed-chat-ids", {
-        credentials: "include",
-      });
+      const r = await fetch(
+        "/api/employees?role=admin&page=1&page_size=100",
+        { credentials: "include" },
+      );
       if (!r.ok) {
         setLoadError("Failed to load access list");
         return;
       }
-      const data = (await r.json()) as { accounts: AllowedAccount[] };
-      setAccounts(data.accounts);
-      // Bubble the updated admin list up to App so the rest of the
-      // dashboard (header, etc.) stays consistent.
+      const data = (await r.json()) as {
+        items: EmployeeRow[];
+        total: number;
+      };
+      setAdmins(data.items);
+      // Bubble the updated admin list up to App so the rest of
+      // the dashboard (header, etc.) stays consistent.
       props.onAdminsChanged(
-        data.accounts
-          .filter((a) => a.role === "super_admin")
-          .map((a) => ({
-            chatId: a.chat_id,
-            displayName: a.display_name,
+        data.items
+          .filter((e) => e.telegram_id !== null)
+          .map((e) => ({
+            chatId: String(e.telegram_id),
+            displayName: e.display_name ?? e.name,
           })),
       );
     } catch (err) {
@@ -2559,15 +2649,25 @@ function SettingsWebuiAccessCard(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleRemoveAdmin(chatId: string) {
-    if (!accounts) return;
-    if (chatId === props.signedInUser.chat_id) return; // belt + suspenders
-    // Only super_admin rows are removed via this card; the
-    // backend save-admin endpoint just replaces the super_admins
-    // list, so the employees side is unaffected.
-    const remaining = accounts
-      .filter((a) => a.role === "super_admin" && a.chat_id !== chatId)
-      .map((a) => a.chat_id);
+  async function handleRemoveAdmin(emp: EmployeeRow) {
+    if (String(emp.telegram_id ?? "") === props.signedInUser.chat_id) {
+      return; // belt + suspenders
+    }
+    if (
+      !confirm(
+        `确定移除管理员「${emp.name}」？这会从 employees 表删掉这一行。`,
+      )
+    ) {
+      return;
+    }
+    // Re-saving the full list (minus this one) is the
+    // current API surface; it also drops the Employee row
+    // because the new save-admin deletes admins not in the
+    // incoming set.
+    const remaining =
+      (admins ?? [])
+        .filter((e) => e.id !== emp.id && e.telegram_id !== null)
+        .map((e) => String(e.telegram_id));
     const r = await fetch("/api/onboarding/save-admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2581,35 +2681,31 @@ function SettingsWebuiAccessCard(props: {
     }
   }
 
-  const superAdmins = accounts?.filter((a) => a.role === "super_admin") ?? [];
-  const assignedEmployees =
-    accounts?.filter((a) => a.role === "assigned_employee") ?? [];
-
   return (
     <ConsoleCard title="WebUI Access">
       <p className="text-sm text-ink-soft">
-        Chat IDs that may sign in to Adam. Two kinds:
-        <span className="font-medium"> super admins</span> are
-        wizard-configured (deployers) and
-        <span className="font-medium"> assigned employees</span>{" "}
-        are employees with a dispatched EVE (C6). Adding a
-        super admin runs the code-based verify flow; removing
-        one writes the filtered list back. Employees are
-        managed by the EVE lifecycle, not this card.
+        Sign-in list. Each row is an <code>Employee</code> with
+        <span className="font-medium"> role=admin</span> and a
+        bound <code>telegram_id</code>. The wizard
+        (step 3) creates these from the verified chat_ids;
+        the table below mirrors that state. Removing a row
+        calls the same wizard endpoint with the smaller list
+        — the server drops the deleted rows from the
+        employees table.
       </p>
 
       <div className="mt-4">
-        {accounts === null && !loadError && (
+        {admins === null && !loadError && (
           <p className="text-sm text-ink-soft">Loading…</p>
         )}
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {accounts !== null && accounts.length === 0 && (
+        {admins !== null && admins.length === 0 && (
           <p className="text-sm text-ink-soft">
-            No one has access yet. Add a super admin below, or
-            dispatch an EVE in the organization tab (C6).
+            No one has access yet. Run the first-time wizard
+            to add a super admin.
           </p>
         )}
-        {accounts !== null && accounts.length > 0 && (
+        {admins !== null && admins.length > 0 && (
           <table className="data-table w-full">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
@@ -2620,23 +2716,22 @@ function SettingsWebuiAccessCard(props: {
               </tr>
             </thead>
             <tbody>
-              {superAdmins.map((a) => {
-                const isSelf = a.chat_id === props.signedInUser.chat_id;
+              {admins.map((emp) => {
+                const isSelf =
+                  String(emp.telegram_id ?? "") ===
+                  props.signedInUser.chat_id;
                 return (
-                  <tr
-                    key={a.chat_id}
-                    className=""
-                  >
+                  <tr key={emp.id} className="">
                     <td className="py-2 pr-4 text-ink">
-                      {a.display_name ?? (
-                        <span className="text-ink-soft">(no display name)</span>
-                      )}
+                      {emp.display_name ?? emp.name}
                     </td>
                     <td className="py-2 pr-4">
-                      <RoleBadge role="super_admin" />
+                      <RoleBadge role={emp.role} />
                     </td>
                     <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
-                      {a.chat_id}
+                      {emp.telegram_id ?? (
+                        <span className="text-ink-soft">—</span>
+                      )}
                     </td>
                     <td className="py-2 text-right">
                       {isSelf ? (
@@ -2646,7 +2741,7 @@ function SettingsWebuiAccessCard(props: {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => handleRemoveAdmin(a.chat_id)}
+                          onClick={() => handleRemoveAdmin(emp)}
                           title="Remove this super admin"
                           className="btn btn-secondary text-xs py-1 px-2"
                         >
@@ -2657,27 +2752,6 @@ function SettingsWebuiAccessCard(props: {
                   </tr>
                 );
               })}
-              {assignedEmployees.map((a) => (
-                <tr
-                  key={a.chat_id}
-                  className=""
-                >
-                  <td className="py-2 pr-4 text-ink">
-                    {a.display_name ?? (
-                      <span className="text-ink-soft">(no display name)</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <RoleBadge role="assigned_employee" />
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
-                    {a.chat_id}
-                  </td>
-                  <td className="py-2 text-right text-xs text-ink-soft">
-                    via EVE
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         )}
@@ -2706,17 +2780,29 @@ function SettingsWebuiAccessCard(props: {
   );
 }
 
-function RoleBadge(props: { role: "super_admin" | "assigned_employee" }) {
-  if (props.role === "super_admin") {
+function RoleBadge(props: {
+  role: "admin" | "employee" | "assigned" | "other";
+}) {
+  if (props.role === "admin") {
     return (
       <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
         super admin
       </span>
     );
   }
+  if (props.role === "employee") {
+    return (
+      <span className="text-xs text-ink-soft bg-white border border-sky-light/40 rounded px-1.5 py-0.5">
+        employee
+      </span>
+    );
+  }
+  // ``assigned`` and ``other`` only show up post-C6 (multi-
+  // instance). Keep them visible so the table doesn't look
+  // broken if a future migration leaves them in the DB.
   return (
-    <span className="text-xs bg-sky-deep text-white border border-sky-200 rounded px-1.5 py-0.5">
-      assigned employee
+    <span className="text-xs text-ink-soft bg-sky-pale/60 border border-sky-light/40 rounded px-1.5 py-0.5">
+      {props.role}
     </span>
   );
 }

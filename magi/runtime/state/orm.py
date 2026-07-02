@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     String,
@@ -101,6 +102,29 @@ class Employee(Base):
     # employees because the org needs the historical record
     # (manager_of, past assignments, audit references).
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Role on the MAGI instance. From a single-instance view:
+    #   - "admin"    : can sign in to Adam's WebUI
+    #   - "employee" : regular org member
+    #   - "assigned" : (reserved for C6) an EVE on this instance
+    #                  is bound to this person
+    #   - "other"    : (reserved for C6) belongs to the same
+    #                  org but served by a different instance
+    # The v0 deployment only ever sets "admin" or "employee";
+    # the other two are kept in the enum so multi-instance
+    # code (C6+) can read them without a schema change.
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="employee")
+    # Telegram chat id of the bound user, when known. NULL
+    # for employees who haven't completed the /start binding
+    # flow (C2). Unique across the table — one chat_id
+    # binds to at most one employee. Stored on the row so
+    # the TG bot can resolve a chat_id to its employee in
+    # a single ORM read; the older ``meta``-key mapping
+    # (telegram.user.<chat_id>.employee_id) is deprecated
+    # but kept in the codebase for back-compat with
+    # any state that hasn't been migrated yet.
+    telegram_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, unique=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
@@ -318,6 +342,13 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # C1.1 (soft-delete): separated_at lets the dashboard mark
     # an employee as 离职 without losing the row.
     ("employees", "separated_at", "DATETIME"),
+    # C1.x (role + TG binding): unifies the WebUI Access list
+    # with the employees table. Existing rows default to
+    # role='employee' (set by the migration's UPDATE step
+    # below); telegram_id stays NULL until the /start binding
+    # flow runs.
+    ("employees", "role", "VARCHAR(16) NOT NULL DEFAULT 'employee'"),
+    ("employees", "telegram_id", "BIGINT UNIQUE"),
 ]
 
 

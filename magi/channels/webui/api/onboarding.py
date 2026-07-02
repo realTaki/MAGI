@@ -26,6 +26,7 @@ table, so they live alongside the webui channel rather than in a future
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -33,6 +34,7 @@ import os
 import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 logger = logging.getLogger("magi.api.onboarding")
 
@@ -161,21 +163,39 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
+    from magi.runtime.state.orm import Employee, open_session
     from magi.runtime.state.settings import state_get
 
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
-    raw_admins = state_get(state_dir, "telegram.super_admins")
+
+    # Super admins now live in the employees table (unified
+    # with the rest of the org directory). The wizard
+    # resumes by reading from there so the "you already
+    # added N admins" message reflects the canonical state.
     admins: list[str] = []
-    if raw_admins:
-        try:
-            parsed = json.loads(raw_admins)
-            if isinstance(parsed, list):
-                admins = [str(x) for x in parsed]
-        except (ValueError, TypeError):
-            logger.warning(
-                "telegram.super_admins in settings is not valid JSON; treating as empty"
-            )
+    try:
+        with open_session() as session:
+            for emp in session.scalars(
+                select(Employee).where(Employee.role == "admin")
+            ).all():
+                if emp.telegram_id is not None:
+                    admins.append(str(emp.telegram_id))
+    except Exception:
+        # If the table is unreachable (very early boot) fall
+        # back to the legacy meta so the wizard still
+        # shows something useful.
+        logger.exception("failed to read admin employees; falling back to meta")
+        raw_admins = state_get(state_dir, "telegram.super_admins")
+        if raw_admins:
+            try:
+                parsed = json.loads(raw_admins)
+                if isinstance(parsed, list):
+                    admins = [str(x) for x in parsed]
+            except (ValueError, TypeError):
+                logger.warning(
+                    "telegram.super_admins in settings is not valid JSON; treating as empty"
+                )
 
     # "True" / "true" / "1" all count. Anything else (including
     # missing) is False. Kept as a plain text flag — the only
@@ -604,25 +624,117 @@ def _now_iso() -> str:
 
 @router.post("/save-admin", response_model=SaveAdminResponse)
 async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
-    """Persist the verified super-admin chat_id list.
+    """Replace the super-admin set with the verified list.
 
-    JSON-encoded into ``settings.telegram.super_admins``. The frontend
-    guarantees each id was verified via ``/verify-admin`` immediately
-    before this call.
+    Each entry becomes an :class:`Employee` row with
+    ``role='admin'`` and ``telegram_id=<chat_id>``, living
+    under no department (the "未指定部门" scope). Display
+    name is resolved via Telegram ``getChat`` so the
+    dashboard can show "Alice" instead of "12345" without a
+    second round-trip per row.
+
+    Side effects on each call:
+      - Any prior ``Employee`` with ``role='admin'`` whose
+        ``telegram_id`` isn't in the new list is **deleted**
+        (these rows were created by onboarding too; they
+        have no business data so dropping is safe).
+      - Any prior ``Employee`` with ``telegram_id`` in the
+        new list gets its ``role`` flipped to ``admin`` even
+        if it was previously a regular employee (this
+        handles the rare case where someone was first added
+        to the company, then promoted to admin).
+      - The legacy ``settings.telegram.super_admins`` meta
+        key is still written so older auth paths don't 401
+        mid-migration. C8 cleans it up.
     """
+    from magi.runtime.state.orm import Employee, open_session
     from magi.runtime.state.settings import state_set
 
     state_dir = _state_dir()
-    # Trim + dedupe + drop empties.
     cleaned = sorted({c.strip() for c in payload.chat_ids if c.strip()})
     if not cleaned:
         return SaveAdminResponse(ok=False, error="At least one chat_id required")
+    # Each chat_id must be a TG-compatible integer (possibly
+    # negative for group chats).
+    parsed_ids: list[int] = []
+    for c in cleaned:
+        try:
+            parsed_ids.append(int(c))
+        except ValueError:
+            return SaveAdminResponse(
+                ok=False,
+                error=f"chat_id must be numeric, got {c!r}",
+            )
+
+    # Display name resolution runs in parallel for all ids —
+    # they're independent HTTPS calls, no point serialising.
+    display_names: dict[int, str | None] = {}
+    if parsed_ids:
+        results = await asyncio.gather(
+            *(_fetch_chat_display_name(c) for c in parsed_ids),
+            return_exceptions=True,
+        )
+        for cid, name in zip(parsed_ids, results):
+            if isinstance(name, BaseException):
+                # getChat failed (timeout, 4xx, etc.). The admin
+                # row is still created — we just fall back to
+                # the chat_id as the display. The row's name
+                # field holds the human-readable label (see
+                # below).
+                display_names[cid] = None
+            else:
+                display_names[cid] = name
 
     try:
-        state_set(state_dir, "telegram.super_admins", json.dumps(cleaned))
+        with open_session() as session:
+            # 1) Existing admin rows not in the new list → delete
+            #    (these are onboarding-created shells; no
+            #    business data so dropping is safe).
+            existing_admins = session.scalars(
+                select(Employee).where(Employee.role == "admin")
+            ).all()
+            new_id_set = set(parsed_ids)
+            for old in existing_admins:
+                if old.telegram_id is None or old.telegram_id not in new_id_set:
+                    session.delete(old)
+
+            # 2) Each new chat_id → ensure an Employee row
+            #    exists with role=admin, telegram_id=<id>,
+            #    department_id=null. Promote existing regular
+            #    employees in the rare case the chat_id was
+            #    already bound.
+            for cid in parsed_ids:
+                emp = session.scalar(
+                    select(Employee).where(Employee.telegram_id == cid)
+                )
+                if emp is None:
+                    emp = Employee(
+                        name=display_names[cid] or f"Admin {cid}",
+                        display_name=display_names[cid],
+                        department_id=None,
+                        role="admin",
+                        telegram_id=cid,
+                    )
+                    session.add(emp)
+                else:
+                    emp.role = "admin"
+                    if display_names[cid]:
+                        emp.name = display_names[cid]
+                        if not emp.display_name:
+                            emp.display_name = display_names[cid]
+            session.commit()
     except Exception as exc:
-        logger.exception("failed to write super_admins")
+        logger.exception("failed to write admin employees")
         return SaveAdminResponse(ok=False, error=str(exc))
+
+    # Legacy meta key — kept in sync so older auth paths
+    # (e.g. the pre-refactor admin_gate) don't 401 mid-
+    # migration. C8 will retire it once everyone's on the
+    # new auth path.
+    try:
+        state_set(state_dir, "telegram.super_admins", json.dumps(cleaned))
+    except Exception:
+        logger.exception("failed to write legacy super_admins meta")
 
     logger.info("super admins saved", extra={"count": len(cleaned)})
     return SaveAdminResponse(ok=True, count=len(cleaned))
