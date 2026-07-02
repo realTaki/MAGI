@@ -24,28 +24,11 @@ from pathlib import Path
 
 logger = logging.getLogger("magi.runtime.workspace")
 
-# Default contents of SOUL.md on first boot. Short — the
-# deployer is expected to edit it. The placeholders in [brackets]
-# are intentional: leaving them lets the deployer grep for
-# unfilled config without having to read the whole file.
-_DEFAULT_SOUL = """\
-# MAGI Soul
-
-You are an EVE — an Everyday Virtual Employee — working for
-[name] inside [company]. You are direct, helpful, and don't
-pretend to know things you don't.
-
-## Voice
-
-- Short, plain, no filler.
-- Reply in the user's language.
-
-## Rules of engagement
-
-- If you're not sure, say so.
-- Don't make promises on the user's behalf.
-- Surface what you actually did, not what you'd "ideally" do.
-"""
+# Bundled default SOUL.md lives in ``prompts/`` so all
+# prompt templates are co-located.  The bootstrap copies it
+# to the workspace root on first boot; the deployer can then
+# edit the workspace copy without touching the source.
+_BUNDLED_SOUL = Path(__file__).resolve().parent / "prompts" / "soul.md"
 
 
 def workspace_root(state_dir: str | os.PathLike[str]) -> Path:
@@ -95,8 +78,16 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
 
     soul = workspace / "SOUL.md"
     if not soul.exists():
-        soul.write_text(_DEFAULT_SOUL, encoding="utf-8")
-        created["SOUL.md"] = "created"
+        if not _BUNDLED_SOUL.is_file():
+            logger.error(
+                "bundled soul.md missing at %s; workspace SOUL.md not created",
+                _BUNDLED_SOUL,
+            )
+            created["SOUL.md"] = "skipped (no bundled default)"
+        else:
+            default_text = _BUNDLED_SOUL.read_text(encoding="utf-8")
+            soul.write_text(default_text, encoding="utf-8")
+            created["SOUL.md"] = "created"
     else:
         created["SOUL.md"] = "kept"
 

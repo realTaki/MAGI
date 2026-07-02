@@ -20,7 +20,9 @@ import os
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
+
+from magi.channels.webui.api.errors import MagiHTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -99,7 +101,9 @@ def admin_gate(request: Request) -> str:
     """
     chat_id = request.cookies.get("magi_session")
     if not chat_id or not _is_admin_chat_id(chat_id):
-        raise HTTPException(status_code=401, detail="Not signed in")
+        raise MagiHTTPException(
+            status_code=401, code="auth.not_signed_in", detail="Not signed in"
+        )
     return chat_id
 
 
@@ -356,27 +360,39 @@ def create_department(
 ) -> DepartmentOut:
     name = payload.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="name must not be empty")
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.name_required",
+            detail="name must not be empty",
+        )
 
     # Parent + manager validation. ``get`` on a non-existent PK
     # returns None in SQLAlchemy 2.x, so we explicitly 404.
     if payload.parent_id is not None:
         parent = session.get(Department, payload.parent_id)
         if parent is None:
-            raise HTTPException(
-                status_code=400, detail=f"parent_id {payload.parent_id} not found"
+            raise MagiHTTPException(
+                status_code=400,
+                code="validation.department_id_not_found",
+                detail=f"parent_id {payload.parent_id} not found",
             )
     if payload.manager_id is not None:
         manager = session.get(Employee, payload.manager_id)
         if manager is None:
-            raise HTTPException(
-                status_code=400, detail=f"manager_id {payload.manager_id} not found"
+            raise MagiHTTPException(
+                status_code=400,
+                code="validation.manager_id_not_found",
+                detail=f"manager_id {payload.manager_id} not found",
             )
 
     # Name uniqueness is enforced at the SQL level (unique=True
     # on the column) — surface that as a 409 here.
     if session.scalar(select(Department).where(Department.name == name)) is not None:
-        raise HTTPException(status_code=409, detail=f"department {name!r} already exists")
+        raise MagiHTTPException(
+            status_code=409,
+            code="conflict.department_name_exists",
+            detail=f"department {name!r} already exists",
+        )
 
     dept = Department(
         name=name,
@@ -401,7 +417,11 @@ def get_department(
         Department, dept_id, options=[selectinload(Department.children), selectinload(Department.manager)]
     )
     if dept is None:
-        raise HTTPException(status_code=404, detail="department not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.department",
+            detail="department not found",
+        )
     return _serialize(dept)
 
 
@@ -416,17 +436,27 @@ def update_department(
         Department, dept_id, options=[selectinload(Department.children), selectinload(Department.manager)]
     )
     if dept is None:
-        raise HTTPException(status_code=404, detail="department not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.department",
+            detail="department not found",
+        )
 
     if payload.name is not None:
         new_name = payload.name.strip()
         if not new_name:
-            raise HTTPException(status_code=400, detail="name must not be empty")
+            raise MagiHTTPException(
+            status_code=400,
+            code="validation.name_required",
+            detail="name must not be empty",
+        )
         if new_name != dept.name and session.scalar(
             select(Department).where(Department.name == new_name)
         ) is not None:
-            raise HTTPException(
-                status_code=409, detail=f"department {new_name!r} already exists"
+            raise MagiHTTPException(
+                status_code=409,
+                code="conflict.department_name_exists",
+                detail=f"department {new_name!r} already exists",
             )
         dept.name = new_name
 
@@ -437,12 +467,16 @@ def update_department(
         if payload.parent_id is not None:
             parent = session.get(Department, payload.parent_id)
             if parent is None:
-                raise HTTPException(
-                    status_code=400, detail=f"parent_id {payload.parent_id} not found"
+                raise MagiHTTPException(
+                    status_code=400,
+                    code="validation.department_id_not_found",
+                    detail=f"parent_id {payload.parent_id} not found",
                 )
             if _would_close_loop(session, dept_id, payload.parent_id):
-                raise HTTPException(
-                    status_code=400, detail="parent change would create a cycle"
+                raise MagiHTTPException(
+                    status_code=400,
+                    code="validation.parent_change_creates_cycle",
+                    detail="parent change would create a cycle",
                 )
         dept.parent_id = payload.parent_id
 
@@ -450,8 +484,10 @@ def update_department(
         if payload.manager_id is not None:
             manager = session.get(Employee, payload.manager_id)
             if manager is None:
-                raise HTTPException(
-                    status_code=400, detail=f"manager_id {payload.manager_id} not found"
+                raise MagiHTTPException(
+                    status_code=400,
+                    code="validation.manager_id_not_found",
+                    detail=f"manager_id {payload.manager_id} not found",
                 )
         dept.manager_id = payload.manager_id
 
@@ -470,15 +506,20 @@ def delete_department(
         Department, dept_id, options=[selectinload(Department.children)]
     )
     if dept is None:
-        raise HTTPException(status_code=404, detail="department not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.department",
+            detail="department not found",
+        )
     if dept.children:
         # Refuse rather than cascade — a delete with sub-
         # departments is almost always a mistake. The deployer
         # should move / delete the children first.
         names = ", ".join(c.name for c in dept.children[:5])
         more = "" if len(dept.children) <= 5 else f" (+{len(dept.children) - 5} more)"
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=409,
+            code="conflict.department_has_subdepts",
             detail=f"department has {len(dept.children)} sub-departments: {names}{more}",
         )
     session.delete(dept)
@@ -552,8 +593,9 @@ def list_employees(
     # SQL ``WHERE`` so a typo gets a 400, not an empty list.
     if role is not None:
         if role not in _EMPLOYEE_ROLES:
-            raise HTTPException(
+            raise MagiHTTPException(
                 status_code=400,
+                code="validation.role_unknown",
                 detail=(
                     f"Unknown role {role!r}. "
                     f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
@@ -591,18 +633,29 @@ def create_employee(
 ) -> EmployeeOut:
     name = payload.name.strip()
     if not name:
-        raise HTTPException(status_code=400, detail="name must not be empty")
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.name_required",
+            detail="name must not be empty",
+        )
     if session.scalar(select(Employee).where(Employee.name == name)) is not None:
-        raise HTTPException(status_code=409, detail=f"employee {name!r} already exists")
+        raise MagiHTTPException(
+            status_code=409,
+            code="conflict.employee_name_exists",
+            detail=f"employee {name!r} already exists",
+        )
     # Validate the optional FK up-front so a bad ID gets a 400
     # rather than a confusing 500 from SQLite.
     if payload.department_id is not None and session.get(Department, payload.department_id) is None:
-        raise HTTPException(
-            status_code=400, detail=f"department_id {payload.department_id} not found"
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.department_id_not_found",
+            detail=f"department_id {payload.department_id} not found",
         )
     if payload.role not in _EMPLOYEE_ROLES:
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.role_unknown",
             detail=(
                 f"Unknown role {payload.role!r}. "
                 f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
@@ -614,8 +667,9 @@ def create_employee(
     if payload.telegram_id is not None and session.scalar(
         select(Employee).where(Employee.telegram_id == payload.telegram_id)
     ) is not None:
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=409,
+            code="conflict.telegram_id_already_bound",
             detail=(
                 f"telegram_id {payload.telegram_id} is already bound "
                 "to another employee"
@@ -644,7 +698,11 @@ def get_employee(
 ) -> EmployeeOut:
     emp = session.get(Employee, emp_id)
     if emp is None:
-        raise HTTPException(status_code=404, detail="employee not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.employee",
+            detail="employee not found",
+        )
     return _serialize_employee(emp)
 
 
@@ -657,7 +715,11 @@ def update_employee(
 ) -> EmployeeOut:
     emp = session.get(Employee, emp_id)
     if emp is None:
-        raise HTTPException(status_code=404, detail="employee not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.employee",
+            detail="employee not found",
+        )
 
     if "display_name" in payload.model_fields_set:
         emp.display_name = payload.display_name
@@ -665,8 +727,10 @@ def update_employee(
     if "department_id" in payload.model_fields_set:
         if payload.department_id is not None:
             if session.get(Department, payload.department_id) is None:
-                raise HTTPException(
-                    status_code=400, detail=f"department_id {payload.department_id} not found"
+                raise MagiHTTPException(
+                    status_code=400,
+                    code="validation.department_id_not_found",
+                    detail=f"department_id {payload.department_id} not found",
                 )
         emp.department_id = payload.department_id
 
@@ -697,8 +761,9 @@ def update_employee(
     # is a no-op (use ``model_fields_set`` like the others).
     if "role" in payload.model_fields_set and payload.role is not None:
         if payload.role not in _EMPLOYEE_ROLES:
-            raise HTTPException(
+            raise MagiHTTPException(
                 status_code=400,
+                code="validation.role_unknown",
                 detail=(
                     f"Unknown role {payload.role!r}. "
                     f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
@@ -718,8 +783,9 @@ def update_employee(
                 select(Employee).where(Employee.telegram_id == new_tg)
             )
             if existing is not None and existing.id != emp.id:
-                raise HTTPException(
+                raise MagiHTTPException(
                     status_code=409,
+                    code="conflict.telegram_id_already_bound",
                     detail=(
                         f"telegram_id {new_tg} is already bound to "
                         f"employee {existing.id} ({existing.name!r})"

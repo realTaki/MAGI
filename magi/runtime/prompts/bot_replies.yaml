@@ -1,0 +1,51 @@
+# Telegram bot reply templates.
+#
+# Keys are template IDs (Python identifiers, stable across
+# releases). Values are ``str.format()`` templates — the
+# loader does NOT interpolate; callers pass the named args
+# they have. To change the wording, edit this file; the
+# bot code never embeds the strings.
+#
+# Adding a new template:
+#   1. Add the key + value here.
+#   2. Call ``replies["your_key"].format(...)`` in bot.py
+#      or agent.py.
+#   3. Re-run the smoke test (Telegram bot → reply text).
+
+# Sent when a chat_id is bound to an employee with role
+# ``employee`` or ``guest`` — i.e. someone this MAGI does
+# NOT serve. We tell them the chat_id so they can pass it
+# to their company's admin.
+cross_company_refusal: |
+  你的账号（{emp_name}）不属于本 MAGI 服务范围。
+  请联系你公司的管理员，或把你的 chat_id ({chat_id}）告诉他们以加入。
+
+# Sent when a bound employee is marked separated (离职).
+# Admin can restore via the dashboard; the EVE itself stays
+# paused while separated.
+separated_employee: |
+  你的账号（{employee_name}）已标记为离职。如需恢复，请联系管理员。
+
+# Sent for sticker / photo / voice / etc — v0 only handles
+# text. We acknowledge receipt so the user knows we got
+# the message but explains the limitation.
+non_text_message: |
+  我暂时只支持文字消息，等 C4 加上多模态再试。
+
+# Sent when a chat_id has no employee bound. Includes the
+# chat_id in the reply so the user can pass it to the
+# admin. The HTML <code> tag keeps the digits copy-paste-
+# clean in TG's monospace rendering.
+unknown_sender: |
+  👋 Hi — you're not in MAGI's super-admin list yet.
+
+  Your Telegram chat_id is: <code>{chat_id}</code>
+
+  Please contact the MAGI admin and share this ID so they can add your permissions. Once that's done, message me anything and I'll route you to the right person.
+
+# Sent to the user when the LLM call fails for any reason
+# (auth / rate-limit / network / context-length). The real
+# error is audited; the user gets a stable friendly string
+# so the conversation doesn't look like a crash.
+agent_fallback: |
+  我现在有点忙，等会儿再试一次吧。

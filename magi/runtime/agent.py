@@ -42,41 +42,58 @@ logger = logging.getLogger("magi.runtime.agent")
 DEFAULT_MAX_TOKENS = 1024
 
 # Friendly fallback the user sees when the LLM call fails
-# for any reason. The real error is logged + audited; the
-# user gets a stable string so the conversation doesn't look
-# like a crash.
-FALLBACK_REPLY = "我现在有点忙，等会儿再试一次吧。"
+# for any reason. The wording lives in
+# ``magi/runtime/prompts/bot_replies.yaml`` under the
+# ``agent_fallback`` key — see that file to tweak. The
+# string is resolved at first use and cached.
+from magi.runtime.prompts import load_bot_replies  # noqa: E402
+
+_FALLBACK_KEY = "agent_fallback"
+_FALLBACK_REPLY_CACHE: str | None = None
+
+
+def _fallback_reply() -> str:
+    """Resolve the user-facing fallback string from the
+    bot_replies prompt table. Cached so a single YAML
+    read serves every fallback for the rest of the
+    process."""
+    global _FALLBACK_REPLY_CACHE
+    if _FALLBACK_REPLY_CACHE is None:
+        _FALLBACK_REPLY_CACHE = load_bot_replies()[_FALLBACK_KEY]
+    return _FALLBACK_REPLY_CACHE
 
 # Where SOUL.md lives. C4 will move this to a per-employee
 # path (each EVE can have its own persona); for v0 we read
 # the single workspace file at startup.
 _SOUL_FILENAME = "SOUL.md"
 
-# Hardcoded system-prompt fallback when SOUL.md is missing.
-# The deployer is expected to ship one (the workspace
-# bootstrap creates a default), but the runtime must not
-# crash if it's been deleted.
-_DEFAULT_PERSONA = "You are a helpful enterprise assistant."
-
-
 def _read_soul(state_dir: str) -> str:
-    """Load the persona text from ``<state_dir>/SOUL.md``.
+    """Load the persona text from the workspace's ``SOUL.md``.
 
-    The file lives next to the SQLite DB (one level up from
-    the ``memories/`` subdir in the typical layout). For the
-    smoke test, the workspace bootstrap creates a starter
-    SOUL.md on first boot.
+    Path resolution goes through :func:`magi.runtime.workspace.workspace_root`
+    so a deployer that sets ``MAGI_WORKSPACE_DIR`` (state lives
+    outside the workspace tree) still gets the right file.
+
+    This is a **read** function — it does not bootstrap or write
+    to disk. :func:`magi.runtime.workspace.bootstrap_workspace`
+    runs once at boot from ``magi.node`` and is responsible
+    for keeping ``SOUL.md`` in place. If the file is still
+    missing (e.g. operator wiped the workspace mid-run, or the
+    bundled prompt is absent from the install), we fall back to
+    the bundled ``prompts/fallback_persona.md`` rather than
+    write anything — the agent loop should never silently
+    mutate on-disk state.
     """
-    soul_path = Path(state_dir).parent / _SOUL_FILENAME
-    if not soul_path.exists():
-        # Fall back to the same dir as the DB; the bootstrap
-        # may have written it there depending on the layout
-        # the deployer chose.
-        soul_path = Path(state_dir) / _SOUL_FILENAME
-    if not soul_path.exists():
-        return _DEFAULT_PERSONA
-    text = soul_path.read_text(encoding="utf-8").strip()
-    return text or _DEFAULT_PERSONA
+    from magi.runtime.prompts import load_fallback_persona
+    from magi.runtime.workspace import workspace_root
+
+    soul_path = workspace_root(state_dir) / _SOUL_FILENAME
+    try:
+        text = soul_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return load_fallback_persona()
+    text = text.strip()
+    return text or load_fallback_persona()
 
 
 def _resolve_system_default(
@@ -163,7 +180,8 @@ async def handle_message(
 ) -> str:
     """One chat turn. Returns the LLM's reply text.
 
-    On any LLM failure, returns :data:`FALLBACK_REPLY` and
+    On any LLM failure, returns the ``agent_fallback`` template
+    (see ``magi/runtime/prompts/bot_replies.yaml``) and
     audits the real error. The caller (TG bot / WebUI chat)
     is responsible for delivering the string; we don't raise
     into the transport layer because the user already pressed
@@ -221,9 +239,9 @@ async def handle_message(
                 kind="chat.outbound.error",
                 employee_id=employee_id,
                 channel=channel,
-                payload={"error": str(e), "text": FALLBACK_REPLY},
+                payload={"error": str(e), "text": _fallback_reply()},
             )
-            return FALLBACK_REPLY
+            return _fallback_reply()
 
     soul = _read_soul(state_dir)
 
@@ -249,10 +267,10 @@ async def handle_message(
                 "error_class": type(e).__name__,
                 "provider": provider_name,
                 "model": model,
-                "text": FALLBACK_REPLY,
+                "text": _fallback_reply(),
             },
         )
-        return FALLBACK_REPLY
+        return _fallback_reply()
 
     # Outbound audit. ``text`` is the user-facing reply;
     # ``thinking`` is captured separately for debugging
