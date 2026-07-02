@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Generator
@@ -359,6 +360,27 @@ def get_session() -> Generator[Session, None, None]:
         # The first request arrives before ``init_orm`` was called
         # (shouldn't happen in production — boot always runs init
         # first — but be defensive). Initialise on demand.
+        init_orm()
+    assert _SessionLocal is not None
+    session = _SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@contextmanager
+def open_session() -> Generator[Session, None, None]:
+    """Context-manager variant of :func:`get_session`.
+
+    Use this from code that needs a session outside the
+    FastAPI request lifecycle — the TG bot thread, the
+    background scheduler, the workspace bootstrap, etc.
+    Inside FastAPI route handlers prefer
+    ``Depends(get_session)`` so the session closes at the
+    same point the response is sent.
+    """
+    if _SessionLocal is None:
         init_orm()
     assert _SessionLocal is not None
     session = _SessionLocal()
