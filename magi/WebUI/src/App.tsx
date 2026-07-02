@@ -256,7 +256,7 @@ function BootSplash() {
   // is set up" hero but with a "starting" subtitle.
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
-      <p className="text-slate-500 text-sm">MAGI · starting…</p>
+      <p className="text-ink-soft text-sm">MAGI · starting…</p>
     </main>
   );
 }

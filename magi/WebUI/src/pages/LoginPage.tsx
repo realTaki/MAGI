@@ -189,7 +189,7 @@ export default function LoginPage(props: {
                     id="login-chat-id"
                     value={selectedChatId}
                     onChange={(e) => setSelectedChatId(e.target.value)}
-                    className="flex-1 rounded-lg border border-sky-light/50 bg-white px-4 py-3 text-base text-ink shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
+                    className="form-input flex-1 appearance-none text-base py-3 px-4"
                     style={{
                       backgroundImage:
                         "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%23475569' d='M6 8L1 3h10z'/></svg>\")",
@@ -210,7 +210,7 @@ export default function LoginPage(props: {
                     type="button"
                     onClick={handleSend}
                     disabled={!canSend}
-                    className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-deep transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+                    className="btn btn-primary px-4 py-3 shrink-0"
                   >
                     {sending
                       ? "Sending…"
@@ -242,14 +242,14 @@ export default function LoginPage(props: {
                     }
                     placeholder="123456"
                     autoFocus
-                    className="flex-1 rounded-lg border border-sky-light/50 bg-white px-4 py-3 text-base text-ink shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest text-center"
+                    className="form-input flex-1 text-base py-3 px-4 font-mono tracking-widest text-center"
                     disabled={verifying}
                   />
                   <button
                     type="button"
                     onClick={handleVerify}
                     disabled={verifying || code.length !== 6}
-                    className="rounded-lg bg-emerald-600 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+                    className="btn btn-primary px-4 py-3 shrink-0"
                   >
                     {verifying ? "Verifying…" : "Sign in"}
                   </button>
@@ -262,7 +262,7 @@ export default function LoginPage(props: {
             )}
 
             {phase === "error" && error && (
-              <p className="mt-3 text-sm text-rose-700">✗ {error}</p>
+              <p className="form-error">✗ {error}</p>
             )}
             {phase === "code" && !error && (
               <p className="mt-3 text-sm text-sky-700">
@@ -275,7 +275,7 @@ export default function LoginPage(props: {
               <button
                 type="button"
                 onClick={props.onBack}
-                className="rounded-md border border-sky-light/50 bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-slate-50 transition"
+                className="btn btn-secondary px-4 py-2.5"
               >
                 ← Back
               </button>
