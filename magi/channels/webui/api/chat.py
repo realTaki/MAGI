@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
+
+from magi.channels.webui.api.errors import MagiHTTPException
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.runtime.agent import handle_message
@@ -75,7 +77,11 @@ async def send_chat(
     """
     text = payload.text.strip()
     if not text:
-        raise HTTPException(status_code=400, detail="text must not be empty")
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.text_required",
+            detail="text must not be empty",
+        )
 
     reply = await handle_message(
         _state_dir(),

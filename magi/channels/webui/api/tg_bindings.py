@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Response
+
+from magi.channels.webui.api.errors import MagiHTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -66,28 +68,32 @@ def bind_telegram(
     way of pausing their EVE without losing history.
     """
     if not payload.chat_id.lstrip("-").isdigit():
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must be a numeric Telegram chat id",
         )
     try:
         chat_id_int = int(payload.chat_id)
     except ValueError:
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must fit in an integer",
         )
 
     with open_session() as session:
         emp = session.get(Employee, payload.employee_id)
         if emp is None:
-            raise HTTPException(
+            raise MagiHTTPException(
                 status_code=404,
+                code="not_found.employee",
                 detail=f"employee {payload.employee_id} not found",
             )
         if emp.separated_at is not None:
-            raise HTTPException(
+            raise MagiHTTPException(
                 status_code=409,
+                code="conflict.employee_separated",
                 detail=(
                     f"employee {emp.name!r} is marked separated; "
                     "restore them before binding a chat_id"
@@ -137,15 +143,17 @@ def unbind_telegram(
     unbound row".
     """
     if not chat_id.lstrip("-").isdigit():
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must be a numeric Telegram chat id",
         )
     try:
         chat_id_int = int(chat_id)
     except ValueError:
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must fit in an integer",
         )
     with open_session() as session:
@@ -182,15 +190,17 @@ def get_telegram_binding(
     it up explicitly.
     """
     if not chat_id.lstrip("-").isdigit():
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must be a numeric Telegram chat id",
         )
     try:
         chat_id_int = int(chat_id)
     except ValueError:
-        raise HTTPException(
+        raise MagiHTTPException(
             status_code=400,
+            code="validation.telegram_id_invalid",
             detail="chat_id must fit in an integer",
         )
 

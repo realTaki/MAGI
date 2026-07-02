@@ -68,6 +68,13 @@ def create_app() -> FastAPI:
         summary="MAGI node — channel-driven (WebUI / Telegram / …).",
     )
 
+    # Install the i18n-ready error envelope BEFORE the
+    # routers mount so :class:`MagiHTTPException` raised
+    # anywhere in the app gets serialised as
+    # ``{"code": ..., "detail": ...}``.
+    from magi.channels.webui.api.errors import install_error_handler
+    install_error_handler(app)
+
     @app.get("/health", response_model=HealthResponse, tags=["meta"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", service="magi", version=__version__)

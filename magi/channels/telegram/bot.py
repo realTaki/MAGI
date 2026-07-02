@@ -30,17 +30,30 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 logger = logging.getLogger("magi.channels.telegram.bot")
 
+# All bot replies now live in ``magi/runtime/prompts/bot_replies.yaml``
+# — see that file for wording. The dispatchers below call
+# :func:`magi.runtime.prompts.load_bot_replies` once and look up
+# templates by id. Keeping the templates out of code means an
+# operator can tweak wording without touching Python. The
+# lazy import + per-process cache in ``prompts/__init__.py``
+# means a single YAML read per process; the dispatchers
+# don't need to worry about the file system.
+from magi.runtime.prompts import load_bot_replies  # noqa: E402
 
-#: Message sent to anyone who DMs the bot but isn't in the super-admin
-#: allowlist. ``{chat_id}`` is filled with the sender's TG chat_id so
-#: they can pass it to the admin to be onboarded.
-UNKNOWN_USER_REPLY = (
-    "👋 Hi — you're not in MAGI's super-admin list yet.\n\n"
-    "Your Telegram chat_id is: <code>{chat_id}</code>\n\n"
-    "Please contact the MAGI admin and share this ID so they can add "
-    "your permissions. Once that's done, message me anything and I'll "
-    "route you to the right person."
-)
+# Loaded once per process. The dict is shared across
+# messages, which is fine — values are templates, not
+# state.
+_BOT_REPLIES: dict[str, str] | None = None
+
+
+def _replies() -> dict[str, str]:
+    """Lazy loader that defers the YAML read to the first
+    reply. Keeps the module importable even if the YAML
+    file is temporarily missing during a deploy."""
+    global _BOT_REPLIES
+    if _BOT_REPLIES is None:
+        _BOT_REPLIES = load_bot_replies()
+    return _BOT_REPLIES
 
 
 def _load_super_admins(state_dir: str) -> set[str]:
@@ -170,9 +183,9 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 extra={"chat_id": chat_id, "employee_id": emp_id},
             )
             await update.effective_message.reply_text(
-                f"你的账号（{emp_name}）不属于本 MAGI 服务范围。"
-                f"请联系你公司的管理员，或把你的 chat_id ({chat_id}) "
-                "告诉他们以加入。",
+                _replies()["cross_company_refusal"].format(
+                    emp_name=emp_name, chat_id=chat_id,
+                ),
             )
             return
         await _handle_employee_message(
@@ -199,7 +212,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     role = _get_user_role(state_dir, chat_id) or "GUEST"
     if role == "GUEST":
         await update.effective_message.reply_text(
-            UNKNOWN_USER_REPLY.format(chat_id=chat_id),
+            _replies()["unknown_sender"].format(chat_id=chat_id),
             parse_mode="HTML",
         )
         return
@@ -316,7 +329,7 @@ async def _handle_employee_message(
         # the org marked them as 离职, so the agent is
         # paused. Admin can restore via the dashboard.
         await update.effective_message.reply_text(
-            f"你的账号（{employee_name}）已标记为离职。如需恢复，请联系管理员。",
+            _replies()["separated_employee"].format(employee_name=employee_name),
         )
         return
 
@@ -326,7 +339,7 @@ async def _handle_employee_message(
         # only handles text in v0. Acknowledge so the user
         # knows we got it but explain the limitation.
         await update.effective_message.reply_text(
-            "我暂时只支持文字消息，等 C4 加上多模态再试。",
+            _replies()["non_text_message"],
         )
         return
 

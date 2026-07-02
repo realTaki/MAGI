@@ -448,8 +448,10 @@ async def me(
     We don't bother fetching the display name here — the dashboard can
     do that lazily once it knows the user is signed in.
     """
-    from fastapi import HTTPException
+    from magi.channels.webui.api.errors import MagiHTTPException
 
     if not magi_session or magi_session not in _super_admins():
-        raise HTTPException(status_code=401, detail="Not signed in")
+        raise MagiHTTPException(
+            status_code=401, code="auth.not_signed_in", detail="Not signed in"
+        )
     return MeResponse(chat_id=magi_session, display_name=None)

@@ -29,7 +29,9 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Response
+
+from magi.channels.webui.api.errors import MagiHTTPException
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.departments import AdminGate
@@ -136,8 +138,9 @@ def put_llm_default(
 
     if "provider" in payload.model_fields_set and payload.provider is not None:
         if not is_known_provider(payload.provider):
-            raise HTTPException(
+            raise MagiHTTPException(
                 status_code=400,
+                code="validation.provider_unknown",
                 detail=(
                     f"Unknown provider {payload.provider!r}. "
                     f"Known: {', '.join(known_providers())}"
