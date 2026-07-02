@@ -92,6 +92,14 @@ class Employee(Base):
     provider: Mapped[str | None] = mapped_column(String(32))
     # Secret. Never logged, never returned in plain text.
     api_key: Mapped[str | None] = mapped_column(String(512))
+    # Soft-delete flag. NULL means active; non-NULL is the
+    # timestamp at which the employee was marked separated.
+    # Separated employees are hidden by default in department
+    # views (toggleable) and exposed via the dedicated
+    # "已离职员工" scope — the dashboard never hard-deletes
+    # employees because the org needs the historical record
+    # (manager_of, past assignments, audit references).
+    separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
@@ -306,6 +314,9 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     ("employees", "department_id", "INTEGER REFERENCES departments(id) ON DELETE SET NULL"),
     ("employees", "provider", "VARCHAR(32)"),
     ("employees", "api_key", "VARCHAR(512)"),
+    # C1.1 (soft-delete): separated_at lets the dashboard mark
+    # an employee as 离职 without losing the row.
+    ("employees", "separated_at", "DATETIME"),
 ]
 
 

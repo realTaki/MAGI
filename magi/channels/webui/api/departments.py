@@ -17,11 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from magi.runtime.state.orm import (
@@ -111,11 +112,6 @@ class DepartmentUpdate(BaseModel):
     manager_id: int | None = None  # explicit null un-assigns manager
 
 
-class EmployeeCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    display_name: str | None = Field(default=None, max_length=120)
-
-
 class EmployeeOut(BaseModel):
     """The bits the list view + the detail panel both need.
 
@@ -124,6 +120,11 @@ class EmployeeOut(BaseModel):
     the ``api_key_last4`` suffix (so the UI can show ``"sk-…abcd"``
     without leaking the value). For the actual key, the operator
     re-enters it via PATCH; we never read it back.
+
+    ``separated_at`` is the soft-delete flag — ``None`` means
+    active, a timestamp means the employee was marked separated
+    at that time. The dashboard shows a "已离职" badge and the
+    dedicated "已离职员工" scope filters on this.
     """
 
     id: int
@@ -133,6 +134,7 @@ class EmployeeOut(BaseModel):
     provider: str | None = None
     api_key_set: bool = False
     api_key_last4: str | None = None
+    separated_at: str | None = None
 
 
 class EmployeeCreate(BaseModel):
@@ -155,6 +157,27 @@ class EmployeeUpdate(BaseModel):
     # rotate; set it to an empty string to clear. ``None`` means
     # "don't change".
     api_key: Optional[str] = Field(default=None, max_length=512)
+    # Soft-delete toggle. ``true`` stamps ``separated_at = now``;
+    # ``false`` clears it back to NULL (the employee is restored).
+    # ``None`` means "don't change". Distinct from "absent" via
+    # ``model_fields_set`` like the other optional fields.
+    separated: Optional[bool] = None
+
+
+class EmployeeListOut(BaseModel):
+    """Paginated list response for ``GET /api/employees``.
+
+    ``total`` is the number of rows matching the scope filter
+    *before* pagination; ``total_pages`` is computed from it
+    so the UI doesn't have to round-trip again. ``items`` is
+    the page slice in the same order the SQL query produced
+    (name ASC)."""
+
+    items: list[EmployeeOut]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 def _mask_key(raw: str | None) -> tuple[bool, str | None]:
@@ -180,6 +203,7 @@ def _serialize_employee(e: Employee) -> EmployeeOut:
         provider=e.provider,
         api_key_set=is_set,
         api_key_last4=last4,
+        separated_at=e.separated_at.isoformat() if e.separated_at else None,
     )
 
 
@@ -404,24 +428,76 @@ def delete_department(
 employees_router = APIRouter(tags=["employees"])
 
 
-# The two query params are mutually exclusive — pick one. The
-# UI uses ``?department_id=X`` for "in this dept" and
-# ``?unassigned=true`` for the "未指定部门" pseudo-section.
-@employees_router.get("/employees", response_model=list[EmployeeOut])
+# The scope query params are mutually exclusive — pick one:
+#   - ``?department_id=X``         — active employees in dept X
+#   - ``?unassigned=true``         — active employees with no dept
+#   - ``?separated=true``          — ALL separated employees (the
+#                                    "已离职员工" scope)
+# Separated employees are hidden by default in the regular
+# scopes; pass ``?include_separated=true`` to fold them in
+# (the dept view's "显示离职员工" toggle).
+# Results are paginated: ``page`` is 1-based, ``page_size``
+# defaults to 20 and caps at 100. Response wraps the page in
+# ``{items, total, page, page_size, total_pages}`` so the UI
+# can render the pager without a second round-trip.
+_PAGE_SIZE_DEFAULT = 20
+_PAGE_SIZE_MAX = 100
+
+
+@employees_router.get("/employees", response_model=EmployeeListOut)
 def list_employees(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
     department_id: int | None = None,
     unassigned: bool = False,
-) -> list[EmployeeOut]:
-    q = select(Employee)
-    if unassigned:
-        q = q.where(Employee.department_id.is_(None))
-    elif department_id is not None:
-        q = q.where(Employee.department_id == department_id)
-    q = q.order_by(Employee.name.asc())
-    rows = session.scalars(q).all()
-    return [_serialize_employee(r) for r in rows]
+    separated: bool = False,
+    include_separated: bool = False,
+    page: int = 1,
+    page_size: int = _PAGE_SIZE_DEFAULT,
+) -> EmployeeListOut:
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = _PAGE_SIZE_DEFAULT
+    if page_size > _PAGE_SIZE_MAX:
+        page_size = _PAGE_SIZE_MAX
+
+    base = select(Employee)
+    if separated:
+        # Dedicated "已离职员工" scope: only show separated ones,
+        # regardless of which dept they belonged to.
+        base = base.where(Employee.separated_at.is_not(None))
+    else:
+        # Regular scopes (department / unassigned) hide
+        # separated employees by default; the UI flips the
+        # ``include_separated`` toggle to see them.
+        if not include_separated:
+            base = base.where(Employee.separated_at.is_(None))
+        if unassigned:
+            base = base.where(Employee.department_id.is_(None))
+        elif department_id is not None:
+            base = base.where(Employee.department_id == department_id)
+
+    # COUNT comes from a separate statement against the same
+    # WHERE clause so the pager has the true total.
+    total = session.scalar(
+        select(func.count()).select_from(base.subquery())
+    ) or 0
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    page_q = (
+        base.order_by(Employee.name.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = session.scalars(page_q).all()
+    return EmployeeListOut(
+        items=[_serialize_employee(r) for r in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @employees_router.post("/employees", response_model=EmployeeOut, status_code=201)
@@ -498,36 +574,25 @@ def update_employee(
     if "api_key" in payload.model_fields_set:
         emp.api_key = payload.api_key if payload.api_key else None
 
+    # Soft-delete toggle. ``separated=True`` stamps
+    # ``separated_at`` to now; ``separated=False`` clears it
+    # (restores the employee to active). ``None`` / absent
+    # means "don't touch", which is why we gate on
+    # ``model_fields_set`` rather than the value.
+    if "separated" in payload.model_fields_set:
+        if payload.separated:
+            emp.separated_at = datetime.utcnow()
+        else:
+            emp.separated_at = None
+
     session.commit()
     session.refresh(emp)
     return _serialize_employee(emp)
 
 
-@employees_router.delete("/employees/{emp_id}", status_code=204)
-def delete_employee(
-    emp_id: int,
-    _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
-) -> Response:
-    """Remove an employee. Refuses if they're the lead of a
-    department (set the dept's manager to someone else first
-    or null it). The Department.manager_id FK uses ``ON DELETE
-    SET NULL`` so any other column referencing this employee
-    is safe."""
-    emp = session.get(Employee, emp_id)
-    if emp is None:
-        raise HTTPException(status_code=404, detail="employee not found")
-    led = session.scalar(
-        select(Department).where(Department.manager_id == emp_id)
-    )
-    if led is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"employee is the lead of {led.name!r}; "
-                "reassign or clear the department's manager first"
-            ),
-        )
-    session.delete(emp)
-    session.commit()
-    return Response(status_code=204)
+# Hard delete is intentionally not exposed. The org needs the
+# historical record (manager_of, audit trail, past assignments)
+# so separation is one-way-but-reversible — flip ``separated``
+# to ``false`` via PATCH to bring the employee back. If a
+# future requirement needs a true purge, gate it behind a
+# separate admin-only endpoint with explicit confirmation.

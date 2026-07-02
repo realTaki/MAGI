@@ -478,15 +478,30 @@ type EmployeeRow = {
   provider: string | null;
   api_key_set: boolean;
   api_key_last4: string | null;
+  // Soft-delete flag — ISO timestamp string, ``null`` means
+  // the employee is active. Surfaced as a "已离职" badge in
+  // the table; flip via the detail panel.
+  separated_at: string | null;
 };
 
-// Master-detail "scope" — what the right pane is showing. The
-// "unassigned" item is special: ``null`` (no department) in
-// the API's ``?department_id=null`` sense, surfaced as a real
-// row in the sidebar so the operator has one click to it.
+// Mirrors the API's ``EmployeeListOut`` shape — the page
+// slice plus the totals the pager needs.
+type EmployeeListResponse = {
+  items: EmployeeRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+};
+
+// Master-detail "scope" — what the right pane is showing.
+//   - "unassigned"  : employees with no department
+//   - "department"  : employees in a specific dept
+//   - "separated"   : the dedicated 已离职员工 view (across depts)
 type EmployeeScope =
   | { kind: "unassigned" }
-  | { kind: "department"; departmentId: number };
+  | { kind: "department"; departmentId: number }
+  | { kind: "separated" };
 
 const PROVIDER_OPTIONS = [
   { value: "", label: "（未指定）" },
@@ -953,7 +968,20 @@ function DepartmentsPane() {
 // configuration.
 function EmployeesPane() {
   const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
-  const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
+  // ``employeeList`` is the full paginated response; the table
+  // renders ``employeeList.items`` while the pager reads the
+  // totals off the same object.
+  const [employeeList, setEmployeeList] = useState<EmployeeListResponse | null>(
+    null,
+  );
+  // Page index (1-based). Reset to 1 whenever the scope or
+  // the include_separated toggle changes — see the effect
+  // below. ``total_pages`` on the response clamps us.
+  const [page, setPage] = useState(1);
+  // "Show separated employees in this scope" toggle. Applies
+  // to ``unassigned`` and ``department`` scopes only — the
+  // dedicated ``separated`` scope always shows them.
+  const [includeSeparated, setIncludeSeparated] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // The selected sidebar item. Defaults to "unassigned" — new
@@ -999,57 +1027,75 @@ function EmployeesPane() {
   async function refreshEmployees() {
     setLoadError(null);
     try {
-      const qs =
-        scope.kind === "unassigned"
-          ? "?unassigned=true"
-          : `?department_id=${scope.departmentId}`;
+      const params = new URLSearchParams();
+      if (scope.kind === "unassigned") {
+        params.set("unassigned", "true");
+      } else if (scope.kind === "department") {
+        params.set("department_id", String(scope.departmentId));
+      } else {
+        params.set("separated", "true");
+      }
+      if (scope.kind !== "separated" && includeSeparated) {
+        params.set("include_separated", "true");
+      }
+      params.set("page", String(page));
+      const qs = `?${params.toString()}`;
       const r = await fetch(`/api/employees${qs}`, { credentials: "include" });
       if (!r.ok) {
         setLoadError(`Failed to load (${r.status})`);
         return;
       }
-      setEmployees(await r.json());
+      setEmployeeList((await r.json()) as EmployeeListResponse);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Network error");
     }
   }
 
-  // Re-fetch on mount + whenever the scope changes. Departments
-  // are re-fetched on mount only (the master list doesn't
-  // change as the user clicks around).
+  // Re-fetch on mount + whenever scope / page / include_separated
+  // changes. ``refreshEmployees`` reads those three from the
+  // closure; the effect's dep list keeps them honest.
   useEffect(() => {
     void refreshDepartments();
   }, []);
   useEffect(() => {
     void refreshEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope.kind === "department" ? scope.departmentId : "unassigned"]);
+  }, [scope, page, includeSeparated]);
 
   // -- helpers ------------------------------------------------------------
 
   function unassignedCount(): number {
-    // The list endpoint only returns one scope at a time, so
-    // for the unassigned count we issue a tiny extra fetch.
-    // Cheap: it's just a count of the right pane, or —
-    // better — we have it when ``scope.kind === 'unassigned'``.
+    // The list endpoint returns the page slice; we only know
+    // the true unassigned total when that's the active scope.
     if (scope.kind === "unassigned") {
-      return employees?.length ?? 0;
+      return employeeList?.total ?? 0;
     }
-    // Otherwise we don't know without another fetch; render
-    // "—" rather than burn a request per click.
     return -1;
   }
 
   function deptHeadcount(deptId: number): number {
     if (scope.kind === "department" && scope.departmentId === deptId) {
-      return employees?.length ?? 0;
+      return employeeList?.total ?? 0;
+    }
+    return -1;
+  }
+
+  function separatedCount(): number {
+    if (scope.kind === "separated") {
+      return employeeList?.total ?? 0;
     }
     return -1;
   }
 
   function selectScope(next: EmployeeScope) {
     setScope(next);
+    setPage(1); // reset pager on scope change
     setViewingId(null); // close the detail panel on scope change
+  }
+
+  function toggleIncludeSeparated(next: boolean) {
+    setIncludeSeparated(next);
+    setPage(1); // toggling may add/remove rows; reset pager
   }
 
   // -- add employee -------------------------------------------------------
@@ -1164,12 +1210,60 @@ function EmployeesPane() {
     }
   }
 
+  // Soft-delete toggle on the detail panel. ``separated=true``
+  // stamps ``separated_at = now``; ``separated=false`` clears it.
+  // The endpoint uses ``model_fields_set`` semantics so we always
+  // send the field — no "don't touch" branch needed here.
+  async function toggleSeparated() {
+    if (viewingId === null || !viewingEmp) return;
+    const next = !viewingEmp.separated_at;
+    const label = next ? "标记为离职" : "恢复在职";
+    if (
+      !confirm(
+        next
+          ? `确定把「${viewingEmp.name}」标记为离职吗？此操作可在详情里撤销。`
+          : `确定把「${viewingEmp.name}」恢复为在职吗？`,
+      )
+    ) {
+      return;
+    }
+    setSavingDetail(true);
+    setDetailError(null);
+    try {
+      const r = await fetch(`/api/employees/${viewingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ separated: next }),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setDetailError(detail.detail ?? `${label}失败 (${r.status})`);
+        return;
+      }
+      await refreshEmployees();
+      await refreshDepartments();
+      // Stay on the detail panel so the operator sees the new
+      // status + the inverse button label (the row's
+      // separated_at flipped, the panel re-reads from
+      // viewingEmp on the next render).
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSavingDetail(false);
+    }
+  }
+
   // -- render -------------------------------------------------------------
 
   const viewingEmp =
     viewingId !== null
-      ? (employees ?? []).find((e) => e.id === viewingId) ?? null
+      ? (employeeList?.items ?? []).find((e) => e.id === viewingId) ?? null
       : null;
+
+  const employees = employeeList?.items ?? null;
 
   return (
     <div className="space-y-4">
@@ -1265,6 +1359,32 @@ function EmployeesPane() {
                   </li>
                 );
               })}
+
+              {/* 已离职员工 scope — sits below the regular dept
+                  list and surfaces every employee that's been
+                  marked separated, regardless of their last dept.
+                  Counts only resolve when this is the active
+                  scope (server returns the real total). */}
+              <li className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => selectScope({ kind: "separated" })}
+                  className={
+                    "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
+                    (scope.kind === "separated"
+                      ? "bg-sky-deep text-white shadow-sm"
+                      : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
+                  }
+                  aria-current={scope.kind === "separated" ? "page" : undefined}
+                >
+                  <span className="font-medium">已离职员工</span>
+                  {separatedCount() >= 0 && (
+                    <span className="text-xs text-ink-soft">
+                      {separatedCount()}
+                    </span>
+                  )}
+                </button>
+              </li>
             </ul>
           </nav>
 
@@ -1362,14 +1482,46 @@ function EmployeesPane() {
             )}
 
             <ConsoleCard title="">
+              {/* Toolbar — only on the non-separated scopes, where
+                  the toggle makes sense. The dedicated 已离职员工
+                  scope is always-separated so the toggle would
+                  be a no-op. Count badge reflects the server's
+                  total for this scope (page size aside). */}
+              <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  {scope.kind !== "separated" && (
+                    <label className="flex items-center gap-1.5 text-xs text-ink-soft cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeSeparated}
+                        onChange={(e) =>
+                          toggleIncludeSeparated(e.target.checked)
+                        }
+                        className="accent-sky-deep"
+                      />
+                      显示离职员工
+                    </label>
+                  )}
+                </div>
+                {employeeList && (
+                  <span className="text-xs text-ink-soft">
+                    共 {employeeList.total} 人
+                    {employeeList.total_pages > 1 &&
+                      ` · 第 ${employeeList.page} / ${employeeList.total_pages} 页`}
+                  </span>
+                )}
+              </div>
+
               {employees === null && !loadError && (
                 <p className="text-sm text-ink-soft">Loading…</p>
               )}
               {employees !== null && employees.length === 0 && (
                 <p className="form-empty">
-                  {scope.kind === "unassigned"
-                    ? "没有未指定部门的员工。"
-                    : "这个部门下还没有员工。"}
+                  {scope.kind === "separated"
+                    ? "没有已离职员工。"
+                    : scope.kind === "unassigned"
+                      ? "没有未指定部门的员工。"
+                      : "这个部门下还没有员工。"}
                 </p>
               )}
               {employees !== null && employees.length > 0 && (
@@ -1394,7 +1546,14 @@ function EmployeesPane() {
                         }
                       >
                         <td className="py-2 pr-4 text-ink font-medium">
-                          {e.name}
+                          <span className="inline-flex items-center gap-2">
+                            {e.name}
+                            {e.separated_at && (
+                              <span className="status-pill status-pill--disconnected">
+                                已离职
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td className="py-2 pr-4 text-ink-soft">
                           {e.display_name || (
@@ -1424,11 +1583,60 @@ function EmployeesPane() {
                   </tbody>
                 </table>
               )}
+
+              {/* Pagination — prev / page-info / next. Server
+                  clamps page to [1, total_pages]; we mirror
+                  that on the client so prev/next grey out at
+                  the edges. Hidden on a single page so it
+                  doesn't add noise when there's nothing to
+                  page through. */}
+              {employeeList && employeeList.total_pages > 1 && (
+                <div className="mt-4 flex items-center justify-end gap-2 text-xs text-ink-soft">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="btn btn-secondary text-xs py-1 px-2"
+                  >
+                    ‹ 上一页
+                  </button>
+                  <span>
+                    {employeeList.page} / {employeeList.total_pages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((p) =>
+                        Math.min(employeeList.total_pages, p + 1),
+                      )
+                    }
+                    disabled={page >= employeeList.total_pages}
+                    className="btn btn-secondary text-xs py-1 px-2"
+                  >
+                    下一页 ›
+                  </button>
+                </div>
+              )}
             </ConsoleCard>
 
             {viewingId !== null && viewingEmp && (
-              <ConsoleCard title={`员工详情：${viewingEmp.name}`}>
+              <ConsoleCard
+                title={`员工详情：${viewingEmp.name}`}
+              >
                 <div className="space-y-3">
+                  {viewingEmp.separated_at && (
+                    <div className="rounded-md border border-sky-light/40 bg-sky-pale/40 px-3 py-2 text-xs text-ink-soft">
+                      已离职
+                      {viewingEmp.separated_at && (
+                        <>
+                          {" — "}
+                          <span className="font-mono text-ink">
+                            {new Date(viewingEmp.separated_at).toLocaleString()}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <label className="form-label">显示名</label>
                     <input
@@ -1527,6 +1735,18 @@ function EmployeesPane() {
                       className="btn btn-primary text-sm py-2 px-4"
                     >
                       {savingDetail ? "保存中…" : "保存"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleSeparated}
+                      disabled={savingDetail}
+                      className={
+                        viewingEmp.separated_at
+                          ? "btn btn-secondary text-sm py-2 px-4"
+                          : "btn btn-danger text-sm py-2 px-4"
+                      }
+                    >
+                      {viewingEmp.separated_at ? "恢复在职" : "标记为离职"}
                     </button>
                     <button
                       type="button"
