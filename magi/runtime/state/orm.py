@@ -102,17 +102,34 @@ class Employee(Base):
     # employees because the org needs the historical record
     # (manager_of, past assignments, audit references).
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Role on the MAGI instance. From a single-instance view:
-    #   - "admin"    : can sign in to Adam's WebUI
-    #   - "employee" : regular org member
-    #   - "assigned" : (reserved for C6) an EVE on this instance
-    #                  is bound to this person
-    #   - "other"    : (reserved for C6) belongs to the same
-    #                  org but served by a different instance
-    # The v0 deployment only ever sets "admin" or "employee";
-    # the other two are kept in the enum so multi-instance
-    # code (C6+) can read them without a schema change.
-    role: Mapped[str] = mapped_column(String(16), nullable=False, default="employee")
+    # Role on the MAGI instance — four-value enum:
+    #   - "admin"    : operator / deployer. Can sign in to
+    #                  Adam's WebUI. Sees the audit log, the
+    #                  employee directory, the channel admin.
+    #                  The TG bot logs admin messages but
+    #                  doesn't run them through the LLM (we
+    #                  don't burn the operator's API key on
+    #                  chitchat).
+    #   - "assigned" : the person this MAGI serves. Their
+    #                  TG messages go through the agent loop.
+    #                  In v0 single-instance, all "real"
+    #                  employees default to ``assigned``.
+    #   - "employee" : another company employee. NOT
+    #                  served by this MAGI. Cross-MAGI
+    #                  access (an employee of company X
+    #                  talking to company Y's MAGI) is a
+    #                  future concern; for v0 the bot
+    #                  politely refuses their messages.
+    #   - "guest"    : not in this company at all — a
+    #                  visitor. The bot's first-touch
+    #                  discovery reply is the path that
+    #                  handles this; a row with role='guest'
+    #                  is rare and usually operator-created.
+    # v0 writes ``admin`` (onboarding) or ``assigned``
+    # (dashboard create). ``employee`` and ``guest`` exist
+    # so future C6+ (cross-MAGI access, public visitors)
+    # can read them without a schema change.
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="assigned")
     # Telegram chat id of the bound user, when known. NULL
     # for employees who haven't completed the /start binding
     # flow (C2). Unique across the table — one chat_id
@@ -122,8 +139,15 @@ class Employee(Base):
     # (telegram.user.<chat_id>.employee_id) is deprecated
     # but kept in the codebase for back-compat with
     # any state that hasn't been migrated yet.
+    # Uniqueness is enforced via the ``ux_employees_telegram_id``
+    # index created in :data:`_UNIQUE_INDEX_MIGRATIONS` — a
+    # plain ``UNIQUE`` constraint here would block ALTER
+    # TABLE on a pre-existing table (SQLite refuses "Cannot
+    # add a UNIQUE column"). The index is ``WHERE telegram_id
+    # IS NOT NULL`` so multiple NULLs (un-bound employees)
+    # don't collide, matching the spirit of SQL UNIQUE.
     telegram_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True, unique=True
+        BigInteger, nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -334,6 +358,12 @@ def _seed_default_root(engine: Engine) -> None:
 # is the part after the column name, e.g. ``"INTEGER REFERENCES
 # departments(id)"``. NULL is the default, so existing rows
 # survive the add.
+#
+# Columns that need a UNIQUE constraint are listed separately
+# in :data:`_UNIQUE_INDEX_MIGRATIONS` because SQLite refuses
+# ``ALTER TABLE ... ADD COLUMN ... UNIQUE`` ("Cannot add a
+# UNIQUE column") on pre-existing tables. The workaround is
+# to add the column plain, then create the unique index.
 _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # C1.1: added department_id, provider, api_key to employees.
     ("employees", "department_id", "INTEGER REFERENCES departments(id) ON DELETE SET NULL"),
@@ -344,11 +374,21 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     ("employees", "separated_at", "DATETIME"),
     # C1.x (role + TG binding): unifies the WebUI Access list
     # with the employees table. Existing rows default to
-    # role='employee' (set by the migration's UPDATE step
-    # below); telegram_id stays NULL until the /start binding
-    # flow runs.
-    ("employees", "role", "VARCHAR(16) NOT NULL DEFAULT 'employee'"),
-    ("employees", "telegram_id", "BIGINT UNIQUE"),
+    # role='assigned' (in v0 single-instance, this MAGI
+    # serves every employee); telegram_id stays NULL until
+    # the /start binding flow runs. The UNIQUE constraint
+    # on telegram_id is added as a separate index step
+    # below (SQLite can't ALTER TABLE ADD COLUMN with
+    # UNIQUE).
+    ("employees", "role", "VARCHAR(16) NOT NULL DEFAULT 'assigned'"),
+    ("employees", "telegram_id", "BIGINT"),
+]
+
+# Pairs of ``(table, index_name, column)``. Run after the
+# plain ALTER TABLE above; the index is the equivalent of
+# ``UNIQUE`` for a column added post-hoc.
+_UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
+    ("employees", "ux_employees_telegram_id", "telegram_id"),
 ]
 
 
@@ -372,6 +412,21 @@ def _run_inline_migrations(engine: Engine) -> None:
             )
             conn.execute(
                 text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            )
+
+        for table, index_name, column in _UNIQUE_INDEX_MIGRATIONS:
+            # ``CREATE UNIQUE INDEX IF NOT EXISTS`` is idempotent
+            # so re-running the migration is a no-op.
+            logger.info(
+                "inline migration: ensuring unique index %s on %s.%s",
+                index_name, table, column,
+            )
+            conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS "
+                    f"{index_name} ON {table} ({column}) "
+                    f"WHERE {column} IS NOT NULL"
+                )
             )
 
 

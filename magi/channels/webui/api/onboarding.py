@@ -671,7 +671,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     display_names: dict[int, str | None] = {}
     if parsed_ids:
         results = await asyncio.gather(
-            *(_fetch_chat_display_name(c) for c in parsed_ids),
+            *(_fetch_display_name(c) for c in parsed_ids),
             return_exceptions=True,
         )
         for cid, name in zip(parsed_ids, results):
