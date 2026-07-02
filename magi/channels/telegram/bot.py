@@ -129,28 +129,52 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
 
     # 1+2. Look up the bound employee. Single ORM read by
-    # ``telegram_id`` covers both admin and employee roles;
-    # the role decides what we do next.
+    # ``telegram_id``; the role decides what we do next.
+    # Dispatch rules (per-MAGI perspective):
+    #   - ``admin``    : log only (admin chat grows real
+    #                    admin commands in C6+; v0 keeps
+    #                    the LLM out of the loop so the
+    #                    operator's API key doesn't burn on
+    #                    chitchat).
+    #   - ``assigned`` : this MAGI serves the person. The
+    #                    agent loop runs.
+    #   - ``employee`` : another company employee. NOT
+    #                    served by this MAGI. Cross-MAGI
+    #                    access is a future concern; for
+    #                    v0 we politely refuse and tell
+    #                    them to talk to their own admin.
+    #   - ``guest``    : not in this company at all. Same
+    #                    refusal as ``employee`` so the
+    #                    chat_id discovery path can be
+    #                    surfaced ("here's your chat_id,
+    #                    ask your admin to invite you").
     bound = _find_employee_by_telegram_id(state_dir, chat_id)
     if bound is not None:
         emp_id, emp_role, emp_name, emp_separated, emp_provider, emp_key = bound
         if emp_role == "admin":
-            # The admin chat is growing real admin commands
-            # in C6+; for v0 we just log so the operator
-            # can see the bot is alive when an admin pings
-            # it. We don't run the LLM on admin messages
-            # because that would burn the operator's API
-            # key on chitchat.
             logger.info(
                 "telegram: admin message (no-op until C6)",
                 extra={"chat_id": chat_id, "display_name": display_name},
             )
             return
-        # ``employee`` / ``assigned`` / ``other`` — all
-        # routed to the agent loop. ``other`` is reserved
-        # for multi-instance (C6+) where it means "an
-        # employee served by a different EVE"; the agent
-        # still answers, just logged differently.
+        if emp_role != "assigned":
+            # ``employee`` / ``guest`` — refuse politely
+            # without burning the LLM. The hint about
+            # the chat_id is the same one the unknown-
+            # chat path sends, so the user can pass
+            # the id to whoever runs their company's
+            # MAGI to get added.
+            logger.info(
+                "telegram: %s role not served by this MAGI; refusing",
+                emp_role,
+                extra={"chat_id": chat_id, "employee_id": emp_id},
+            )
+            await update.effective_message.reply_text(
+                f"你的账号（{emp_name}）不属于本 MAGI 服务范围。"
+                f"请联系你公司的管理员，或把你的 chat_id ({chat_id}) "
+                "告诉他们以加入。",
+            )
+            return
         await _handle_employee_message(
             update,
             state_dir,

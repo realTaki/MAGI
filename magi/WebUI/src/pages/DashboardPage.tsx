@@ -668,11 +668,11 @@ type EmployeeRow = {
   // the employee is active. Surfaced as a "已离职" badge in
   // the table; flip via the detail panel.
   separated_at: string | null;
-  // Per-MAGI-perspective role: ``admin`` can sign in to
-  // Adam's WebUI; ``employee`` is a regular org member;
-  // ``assigned`` / ``other`` are reserved for the multi-
-  // instance future (C6+).
-  role: "admin" | "employee" | "assigned" | "other";
+  // Per-MAGI-perspective role: ``admin`` signs in to
+  // Adam's WebUI; ``assigned`` is the employee this MAGI
+  // serves; ``employee`` / ``guest`` are reserved for the
+  // cross-MAGI future (C6+).
+  role: "admin" | "assigned" | "employee" | "guest";
   // Bound TG chat id, when known. ``null`` until the
   // binding flow runs (C2 self-serve, or the admin endpoint
   // for v0). Unique across the company.
@@ -1259,7 +1259,7 @@ function EmployeesPane() {
     department_id: number | null;
     provider: string;
     api_key: string;
-    role: "admin" | "employee" | "assigned" | "other";
+    role: "admin" | "assigned" | "employee" | "guest";
     telegram_id: string; // string in the form (input); we
     // convert to number | null on submit.
   }>({
@@ -1925,25 +1925,27 @@ function EmployeesPane() {
                           ...f,
                           role: e.target.value as
                             | "admin"
-                            | "employee"
                             | "assigned"
-                            | "other",
+                            | "employee"
+                            | "guest",
                         }))
                       }
                       className="form-input text-sm py-2 px-3"
                     >
                       <option value="admin">admin（可登录 WebUI）</option>
-                      <option value="employee">employee（普通员工）</option>
                       <option value="assigned">
-                        assigned（C6+，被此 MAGI 服务）
+                        assigned（被此 MAGI 服务，走 agent）
                       </option>
-                      <option value="other">
-                        other（C6+，被其他 MAGI 服务）
+                      <option value="employee">
+                        employee（其他公司员工，暂不服务）
+                      </option>
+                      <option value="guest">
+                        guest（访客，暂不服务）
                       </option>
                     </select>
                     <p className="mt-1 text-xs text-ink-soft">
-                      admin = 可登录 Adam 控制台；employee = 普通员工；
-                      assigned/other 是多 MAGI 场景下的预占值。
+                      v0 下 admin 可登录控制台；assigned 走 agent；
+                      employee / guest 是多 MAGI / 公开访客的预占值。
                     </p>
                   </div>
                   <div>
@@ -2781,30 +2783,34 @@ function SettingsWebuiAccessCard(props: {
 }
 
 function RoleBadge(props: {
-  role: "admin" | "employee" | "assigned" | "other";
+  role: "admin" | "assigned" | "employee" | "guest";
 }) {
-  if (props.role === "admin") {
-    return (
-      <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
-        super admin
-      </span>
-    );
+  switch (props.role) {
+    case "admin":
+      return (
+        <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
+          super admin
+        </span>
+      );
+    case "assigned":
+      return (
+        <span className="text-xs text-white bg-sky-deep border border-sky-deep rounded px-1.5 py-0.5">
+          assigned
+        </span>
+      );
+    case "employee":
+      return (
+        <span className="text-xs text-ink-soft bg-white border border-sky-light/40 rounded px-1.5 py-0.5">
+          employee
+        </span>
+      );
+    case "guest":
+      return (
+        <span className="text-xs text-ink-soft bg-sky-pale/60 border border-sky-light/40 rounded px-1.5 py-0.5">
+          guest
+        </span>
+      );
   }
-  if (props.role === "employee") {
-    return (
-      <span className="text-xs text-ink-soft bg-white border border-sky-light/40 rounded px-1.5 py-0.5">
-        employee
-      </span>
-    );
-  }
-  // ``assigned`` and ``other`` only show up post-C6 (multi-
-  // instance). Keep them visible so the table doesn't look
-  // broken if a future migration leaves them in the DB.
-  return (
-    <span className="text-xs text-ink-soft bg-sky-pale/60 border border-sky-light/40 rounded px-1.5 py-0.5">
-      {props.role}
-    </span>
-  );
 }
 
 function SettingsOnboardingCard(props: { onRestart: () => void }) {

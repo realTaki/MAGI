@@ -171,15 +171,22 @@ class EmployeeOut(BaseModel):
     api_key_set: bool = False
     api_key_last4: str | None = None
     separated_at: str | None = None
-    role: str = "employee"
+    role: str = "assigned"
     telegram_id: int | None = None
 
 
-# Roles the operator can assign via the API. ``assigned`` and
-# ``other`` are reserved for C6 (EVE assignment) and C7
-# (cross-instance directory) — listing them as invalid here
-# keeps v0 from accidentally setting them via the dashboard.
-_EMPLOYEE_ROLES: tuple[str, ...] = ("admin", "employee", "assigned", "other")
+# Roles the operator can assign via the API. The four
+# values match the per-MAGI-perspective enum documented
+# on :class:`magi.runtime.state.orm.Employee.role`.
+# ``employee`` and ``guest`` are reserved for the multi-
+# instance future (C6+) but the enum already supports
+# them, so we don't reject manual assignments.
+_EMPLOYEE_ROLES: tuple[str, ...] = (
+    "admin",
+    "assigned",
+    "employee",
+    "guest",
+)
 
 
 class EmployeeCreate(BaseModel):
@@ -192,11 +199,12 @@ class EmployeeCreate(BaseModel):
     department_id: int | None = None
     provider: str | None = Field(default=None, max_length=32)
     api_key: str | None = Field(default=None, max_length=512)
-    # Role defaults to "employee" — super admins are created
-    # via the onboarding wizard (step 3) which sets role=admin
-    # explicitly. ``telegram_id`` is optional at create; the
-    # /start binding flow (C2) sets it later.
-    role: str = Field(default="employee", max_length=16)
+    # Role defaults to "assigned" — in v0 single-instance,
+    # this MAGI serves every employee by default. The
+    # onboarding wizard (step 3) sets role=admin explicitly
+    # for super admins. ``telegram_id`` is optional at create;
+    # the /start binding flow (C2) sets it later.
+    role: str = Field(default="assigned", max_length=16)
     telegram_id: int | None = None
 
 

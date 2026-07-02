@@ -98,12 +98,18 @@ def bind_telegram(
         # any). The unique constraint on telegram_id will
         # raise on commit if we skip this, but doing it
         # explicitly gives a cleaner error and a clear
-        # log line.
+        # log line. ``session.flush()`` between the clear
+        # and the new bind is needed because the unique
+        # index is checked row-by-row at flush time —
+        # without the explicit flush, SQLAlchemy may
+        # apply the new UPDATE before the clear, hitting
+        # the unique constraint on the old holder.
         existing = session.scalar(
             select(Employee).where(Employee.telegram_id == chat_id_int)
         )
         if existing is not None and existing.id != emp.id:
             existing.telegram_id = None
+            session.flush()
 
         emp.telegram_id = chat_id_int
         session.commit()
