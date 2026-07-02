@@ -39,7 +39,7 @@ export default function LandingPage(props: {
             <button
               type="button"
               onClick={props.onSignIn}
-              className="rounded-md bg-sky-700 text-white px-6 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-800 transition"
+              className="btn btn-primary px-6 py-2.5"
             >
               {props.isFirstTime ? "Set up" : "Sign in"}
             </button>

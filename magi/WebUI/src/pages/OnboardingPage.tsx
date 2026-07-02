@@ -145,7 +145,7 @@ function Step4View(props: {
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
         <dt className="text-ink-soft">Bot</dt>
-        <dd className="font-mono text-slate-900">@{props.data.bot.username}</dd>
+        <dd className="font-mono text-ink">@{props.data.bot.username}</dd>
 
         <dt className="text-ink-soft">Super admins</dt>
         <dd className="text-sky-deep">
@@ -162,14 +162,14 @@ function Step4View(props: {
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
+          className="btn btn-secondary px-4 py-2.5"
         >
           Back
         </button>
         <button
           type="button"
           onClick={props.onContinue}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
+          className="btn btn-primary px-5 py-2.5"
         >
           OK, got it — sign in →
         </button>
@@ -246,7 +246,7 @@ function BotTokenConfiguredView(props: {
         <button
           type="button"
           onClick={props.onNext}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
+          className="btn btn-primary px-5 py-2.5"
         >
           Next →
         </button>
@@ -292,7 +292,7 @@ function Step2View(props: {
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
         <dt className="text-ink-soft">Bot username</dt>
-        <dd className="font-mono text-slate-900">@{props.bot.username}</dd>
+        <dd className="font-mono text-ink">@{props.bot.username}</dd>
 
         {masked && (
           <>
@@ -306,14 +306,14 @@ function Step2View(props: {
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
+          className="btn btn-secondary px-4 py-2.5"
         >
           Back
         </button>
         <button
           type="button"
           onClick={props.onNext}
-          className="rounded-md bg-sky-700 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-sky-700/20 hover:bg-sky-deep transition"
+          className="btn btn-primary px-5 py-2.5"
         >
           Next →
         </button>
@@ -562,20 +562,20 @@ function Step3View(props: {
       <button
         type="button"
         onClick={addRow}
-        className="mt-3 text-sm text-sky-700 hover:text-sky-800 transition"
+        className="mt-3 text-sm text-sky-700 hover:text-sky-deep transition"
       >
         + Add another super admin
       </button>
 
       {saveError && (
-        <p className="mt-4 text-sm text-rose-700">✗ {saveError}</p>
+        <p className="form-error">✗ {saveError}</p>
       )}
 
       <div className="mt-8 flex items-center gap-3">
         <button
           type="button"
           onClick={props.onBack}
-          className="rounded-md border border-sky-light bg-white text-sky-deep px-4 py-2.5 text-sm font-medium hover:bg-sky-pale/40 transition"
+          className="btn btn-secondary px-4 py-2.5"
         >
           Back
         </button>
@@ -583,7 +583,7 @@ function Step3View(props: {
           type="button"
           onClick={handleFinish}
           disabled={saving || verifiedCount === 0}
-          className="rounded-md bg-emerald-600 text-white px-5 py-2.5 text-sm font-medium shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
+          className="btn btn-primary px-5 py-2.5"
         >
           {saving
             ? "Saving…"
@@ -616,7 +616,7 @@ function AdminRowView(props: {
     (row.rowState === "error" && row.code.length > 0);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+    <div className="rounded-lg border border-sky-light/40 bg-white/70 p-3">
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -624,7 +624,7 @@ function AdminRowView(props: {
           value={row.chatId}
           onChange={(e) => onChangeChatId(e.target.value)}
           placeholder="TG chat ID (e.g. 123456789)"
-          className="flex-1 rounded-md border border-sky-light bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono"
+          className="form-input flex-1 text-sm py-2 px-3 font-mono"
         />
         <button
           type="button"
@@ -634,7 +634,7 @@ function AdminRowView(props: {
             row.rowState === "verifying-code" ||
             !row.chatId.trim()
           }
-          className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-deep transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed shrink-0"
+          className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
           {row.rowState === "sending-code"
             ? "Sending…"
@@ -646,7 +646,7 @@ function AdminRowView(props: {
           type="button"
           onClick={onRemove}
           title="Remove this row"
-          className="rounded-md border border-slate-200 bg-white text-ink-soft px-2 py-2 text-sm hover:bg-sky-pale/40 transition shrink-0"
+          className="btn btn-secondary text-sm py-2 px-2 shrink-0"
         >
           ✕
         </button>
@@ -663,7 +663,7 @@ function AdminRowView(props: {
               onChangeCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
             placeholder="6-digit code from TG"
-            className="flex-1 rounded-md border border-sky-light bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none font-mono tracking-widest"
+            className="form-input flex-1 text-sm py-2 px-3 font-mono tracking-widest"
             disabled={row.rowState === "verifying-code" || row.rowState === "verified"}
           />
           <button
@@ -674,7 +674,7 @@ function AdminRowView(props: {
               row.rowState === "verified" ||
               row.code.length !== 6
             }
-            className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-deep transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed shrink-0"
+            className="btn btn-primary text-sm py-2 px-3 shrink-0"
           >
             {row.rowState === "verifying-code" ? "Verifying…" : "Verify"}
           </button>
@@ -765,7 +765,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
           <span
             key={i}
             className={
-              "h-1 w-8 rounded-full " + (i < current ? "bg-sky-700" : "bg-sky-200")
+              "h-1 w-8 rounded-full " + (i < current ? "bg-sky-deep" : "bg-sky-200")
             }
           />
         ))}
@@ -780,17 +780,14 @@ function ChannelSelect(props: {
 }) {
   return (
     <div className="mt-6">
-      <label
-        htmlFor="channel-select"
-        className="block text-sm font-medium text-sky-deep mb-2"
-      >
+      <label htmlFor="channel-select" className="form-label">
         Messaging platform
       </label>
       <select
         id="channel-select"
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        className="w-full rounded-lg border border-sky-light bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none appearance-none"
+        className="form-input appearance-none text-base py-3 px-4"
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%23475569' d='M6 8L1 3h10z'/></svg>\")",
@@ -902,10 +899,7 @@ function BotTokenField(props: {
 
   return (
     <div className="mt-6">
-      <label
-        htmlFor="bot-token"
-        className="block text-sm font-medium text-sky-deep mb-2"
-      >
+      <label htmlFor="bot-token" className="form-label">
         Telegram bot token
       </label>
       <div className="flex gap-2">
@@ -918,13 +912,13 @@ function BotTokenField(props: {
           autoComplete="off"
           spellCheck={false}
           disabled={saveState === "saved"}
-          className="flex-1 rounded-lg border border-sky-light bg-white px-4 py-3 text-base text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:bg-slate-50 disabled:text-ink-soft font-mono"
+          className="form-input flex-1 text-base py-3 px-4 font-mono"
         />
         <button
           type="button"
           onClick={handleTest}
           disabled={testState === "testing" || !token.trim() || saveState === "saved"}
-          className="rounded-lg bg-sky-700 text-white px-4 py-3 text-sm font-medium shadow-sm hover:bg-sky-deep transition shrink-0 disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
+          className="btn btn-primary px-4 py-3 shrink-0"
         >
           {testState === "testing" ? "Testing…" : "Test connection"}
         </button>
@@ -936,7 +930,7 @@ function BotTokenField(props: {
         </p>
       )}
       {testState === "error" && (
-        <p className="mt-2 text-sm text-rose-700">✗ {testError}</p>
+        <p className="form-error">✗ {testError}</p>
       )}
       {testState === "idle" && (
         <p className="mt-2 text-xs text-ink-soft">
@@ -951,7 +945,7 @@ function BotTokenField(props: {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-emerald-700 transition disabled:bg-sky-pale/60 disabled:cursor-not-allowed"
+            className="btn btn-primary px-4 py-2.5"
           >
             {saveState === "saving"
               ? "Saving…"
@@ -960,7 +954,7 @@ function BotTokenField(props: {
                 : "Save bot token"}
           </button>
           {saveState === "error" && (
-            <p className="text-sm text-rose-700">✗ {saveError}</p>
+            <p className="form-error">✗ {saveError}</p>
           )}
         </div>
       )}

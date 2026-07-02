@@ -13,9 +13,9 @@ export default function ConsoleCard(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl bg-white/80 backdrop-blur-md shadow-lg shadow-sky-900/5 border border-white/60 p-5">
+    <div className="glass-card p-5">
       {props.title && (
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-ocean">
           {props.title}
         </h2>
       )}

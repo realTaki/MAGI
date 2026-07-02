@@ -377,7 +377,7 @@ function ChatTab() {
       }
     >
       <div className="p-8 text-center flex flex-col items-center justify-center">
-        <h2 className="text-lg font-semibold text-slate-800">{selected.pane.title}</h2>
+        <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>
         <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
         {selected.pane.meta && (
           <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
@@ -686,18 +686,6 @@ function DepartmentsPane() {
   }
 
   const formOpen = addingNew || editingId !== null;
-  // Total members of a department: it's the employee count for
-  // that department (from the cached employees list). For
-  // non-leaf depts this is just the dept's own members, not
-  // the recursive subtree — recursive count would require a
-  // second endpoint or client-side walk. Used by the inline
-  // sub-dept disable / enable logic in the edit form.
-  function memberCount(deptId: number): number {
-    if (scope.kind !== "department" || scope.departmentId !== deptId) {
-      return (employees ?? []).filter((e) => e.department_id === deptId).length;
-    }
-    return employees?.length ?? 0;
-  }
   const tree = departments ? buildTree(departments) : [];
   const flat = flattenTree(tree);
 
@@ -714,8 +702,8 @@ function DepartmentsPane() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">部门管理</h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <h2 className="text-lg font-semibold text-ink">部门管理</h2>
+          <p className="mt-1 text-sm text-ink-soft">
             树形组织结构。每个部门可以指定负责人，子部门通过
             「上级部门」字段挂在父节点下。
           </p>
@@ -725,7 +713,7 @@ function DepartmentsPane() {
             type="button"
             onClick={openCreate}
             disabled={formOpen && !addingNew}
-            className="rounded-md bg-sky-700 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="btn btn-primary px-4 py-2"
           >
             + Create department
           </button>
@@ -736,10 +724,7 @@ function DepartmentsPane() {
         <ConsoleCard title={addingNew ? "新建部门" : "编辑部门"}>
           <div className="space-y-3">
             <div>
-              <label
-                htmlFor="dept-name"
-                className="block text-sm font-medium text-slate-700 mb-1"
-              >
+              <label htmlFor="dept-name" className="form-label">
                 部门名称
               </label>
               <input
@@ -750,16 +735,13 @@ function DepartmentsPane() {
                   setForm((f) => ({ ...f, name: e.target.value }))
                 }
                 placeholder="例如：Engineering"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                className="form-input text-sm py-2 px-3"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label
-                  htmlFor="dept-parent"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
+                <label htmlFor="dept-parent" className="form-label">
                   上级部门
                 </label>
                 <select
@@ -771,7 +753,7 @@ function DepartmentsPane() {
                       parent_id: e.target.value === "" ? null : Number(e.target.value),
                     }))
                   }
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                  className="form-input text-sm py-2 px-3"
                 >
                   <option value="">（无 — 根部门）</option>
                   {parentOptions.map((d) => (
@@ -783,10 +765,7 @@ function DepartmentsPane() {
               </div>
 
               <div>
-                <label
-                  htmlFor="dept-manager"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
+                <label htmlFor="dept-manager" className="form-label">
                   负责人
                 </label>
                 <select
@@ -798,7 +777,7 @@ function DepartmentsPane() {
                       manager_id: e.target.value === "" ? null : Number(e.target.value),
                     }))
                   }
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                  className="form-input text-sm py-2 px-3"
                 >
                   <option value="">（无）</option>
                   {(employees ?? []).map((e) => (
@@ -816,7 +795,7 @@ function DepartmentsPane() {
             </div>
 
             {formError && (
-              <p className="text-sm text-rose-700">✗ {formError}</p>
+              <p className="form-error">✗ {formError}</p>
             )}
 
             {/* All form actions live in one row, separated visually
@@ -837,7 +816,7 @@ function DepartmentsPane() {
                         type="button"
                         onClick={() => openCreateChild(editing.id)}
                         disabled={saving}
-                        className="rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                        className="btn btn-primary text-sm py-1.5 px-3"
                       >
                         + 创建下级部门
                       </button>
@@ -860,7 +839,7 @@ function DepartmentsPane() {
                     type="button"
                     onClick={save}
                     disabled={saving}
-                    className={`rounded-md bg-emerald-600 text-white px-4 py-1.5 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed ${editing ? "ml-auto" : ""}`}
+                    className={`btn btn-primary text-sm py-1.5 px-4 ${editing ? "ml-auto" : ""}`}
                   >
                     {saving ? "保存中…" : "保存"}
                   </button>
@@ -868,7 +847,7 @@ function DepartmentsPane() {
                     type="button"
                     onClick={closeForm}
                     disabled={saving}
-                    className="rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-1.5 text-sm font-medium hover:bg-slate-50 transition disabled:opacity-50"
+                    className="btn btn-secondary text-sm py-1.5 px-4"
                   >
                     取消
                   </button>
@@ -881,7 +860,7 @@ function DepartmentsPane() {
 
       <ConsoleCard title="">
         {loadError && (
-          <p className="text-sm text-rose-700 mb-3">✗ {loadError}</p>
+          <p className="form-error mb-3">✗ {loadError}</p>
         )}
         {departments === null && !loadError && (
           <p className="text-sm text-ink-soft">Loading…</p>
@@ -908,25 +887,25 @@ function DepartmentsPane() {
                   <tr
                     key={d.id}
                     className={
-                      "border-b border-slate-100 last:border-0 " +
+                      "border-b border-sky-light/30 last:border-0 " +
                       (isEditing ? "bg-sky-50/50" : "")
                     }
                   >
-                    <td className="py-2 pr-4 text-slate-900">
+                    <td className="py-2 pr-4 text-ink">
                       <span
                         style={{ paddingLeft: `${d.depth * 20}px` }}
                         className="inline-flex items-center gap-1"
                       >
                         {d.depth > 0 && (
-                          <span className="text-slate-300">└</span>
+                          <span className="text-sky-light">└</span>
                         )}
                         <span className="font-medium">{d.name}</span>
                       </span>
                     </td>
-                    <td className="py-2 pr-4 text-slate-600">
+                    <td className="py-2 pr-4 text-ink-soft">
                       {d.child_count}
                     </td>
-                    <td className="py-2 pr-4 text-slate-600">
+                    <td className="py-2 pr-4 text-ink-soft">
                       {d.manager ? (
                         d.manager.display_name || d.manager.name
                       ) : (
@@ -938,7 +917,7 @@ function DepartmentsPane() {
                         type="button"
                         onClick={() => openEdit(d)}
                         disabled={formOpen && !isEditing}
-                        className="text-xs text-sky-700 hover:text-sky-800 transition disabled:text-slate-300 disabled:cursor-not-allowed"
+                        className="text-xs text-sky-700 hover:text-sky-deep transition disabled:text-sky-light/50 disabled:cursor-not-allowed"
                       >
                         编辑
                       </button>
@@ -1196,8 +1175,8 @@ function EmployeesPane() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">员工管理</h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <h2 className="text-lg font-semibold text-ink">员工管理</h2>
+          <p className="mt-1 text-sm text-ink-soft">
             左侧选部门看该部门下的员工；右侧可加员工、点
             「查看详情」配置 provider 与 API key。
           </p>
@@ -1207,21 +1186,21 @@ function EmployeesPane() {
             type="button"
             onClick={openAdd}
             disabled={addingNew}
-            className="rounded-md bg-sky-700 text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="btn btn-primary px-4 py-2"
           >
             + Add employee
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white/80 backdrop-blur-md shadow-lg shadow-sky-900/5 border border-white/60 overflow-hidden">
+      <div className="glass-card overflow-hidden">
         <div className="flex min-h-[420px]">
           {/* Left: scope picker — "未指定部门" + every department */}
           <nav
-            className="w-56 shrink-0 bg-slate-900 text-slate-100 p-3"
+            className="w-56 shrink-0 bg-sky-pale/70 backdrop-blur-md border-r border-sky-light/40 p-3"
             aria-label="Employee scope"
           >
-            <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+            <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-ocean/70">
               范围
             </p>
             <ul className="space-y-0.5">
@@ -1232,8 +1211,8 @@ function EmployeesPane() {
                   className={
                     "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
                     (scope.kind === "unassigned"
-                      ? "bg-sky-deep text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white")
+                      ? "bg-sky-deep text-white shadow-sm"
+                      : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
                   }
                   aria-current={scope.kind === "unassigned" ? "page" : undefined}
                 >
@@ -1271,8 +1250,8 @@ function EmployeesPane() {
                       className={
                         "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md text-sm transition " +
                         (active
-                          ? "bg-sky-deep text-white"
-                          : "text-slate-300 hover:bg-slate-800 hover:text-white")
+                          ? "bg-sky-deep text-white shadow-sm"
+                          : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
                       }
                       aria-current={active ? "page" : undefined}
                     >
@@ -1299,10 +1278,7 @@ function EmployeesPane() {
               <ConsoleCard title="新建员工">
                 <div className="space-y-3">
                   <div>
-                    <label
-                      htmlFor="emp-name"
-                      className="block text-sm font-medium text-slate-700 mb-1"
-                    >
+                    <label htmlFor="emp-name" className="form-label">
                       姓名
                     </label>
                     <input
@@ -1313,14 +1289,11 @@ function EmployeesPane() {
                         setAddForm((f) => ({ ...f, name: e.target.value }))
                       }
                       placeholder="例如：张三"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     />
                   </div>
                   <div>
-                    <label
-                      htmlFor="emp-display"
-                      className="block text-sm font-medium text-slate-700 mb-1"
-                    >
+                    <label htmlFor="emp-display" className="form-label">
                       显示名（可选）
                     </label>
                     <input
@@ -1334,14 +1307,11 @@ function EmployeesPane() {
                         }))
                       }
                       placeholder="留空就用姓名"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     />
                   </div>
                   <div>
-                    <label
-                      htmlFor="emp-dept"
-                      className="block text-sm font-medium text-slate-700 mb-1"
-                    >
+                    <label htmlFor="emp-dept" className="form-label">
                       部门
                     </label>
                     <select
@@ -1356,7 +1326,7 @@ function EmployeesPane() {
                               : Number(e.target.value),
                         }))
                       }
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     >
                       <option value="">（未指定部门）</option>
                       {(departments ?? []).map((d) => (
@@ -1367,14 +1337,14 @@ function EmployeesPane() {
                     </select>
                   </div>
                   {addError && (
-                    <p className="text-sm text-rose-700">✗ {addError}</p>
+                    <p className="form-error">✗ {addError}</p>
                   )}
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={submitAdd}
                       disabled={adding}
-                      className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                      className="btn btn-primary text-sm py-2 px-4"
                     >
                       {adding ? "保存中…" : "保存"}
                     </button>
@@ -1419,21 +1389,21 @@ function EmployeesPane() {
                       <tr
                         key={e.id}
                         className={
-                          "border-b border-slate-100 last:border-0 " +
+                          "border-b border-sky-light/30 last:border-0 " +
                           (viewingId === e.id ? "bg-sky-50/50" : "")
                         }
                       >
-                        <td className="py-2 pr-4 text-slate-900 font-medium">
+                        <td className="py-2 pr-4 text-ink font-medium">
                           {e.name}
                         </td>
-                        <td className="py-2 pr-4 text-slate-600">
+                        <td className="py-2 pr-4 text-ink-soft">
                           {e.display_name || (
                             <span className="text-ink-soft">—</span>
                           )}
                         </td>
                         <td className="py-2 pr-4">
                           {e.provider ? (
-                            <span className="text-xs font-mono text-slate-700">
+                            <span className="text-xs font-mono text-ocean">
                               {e.provider}
                             </span>
                           ) : (
@@ -1444,7 +1414,7 @@ function EmployeesPane() {
                           <button
                             type="button"
                             onClick={() => openDetail(e)}
-                            className="text-xs text-sky-700 hover:text-sky-800 transition"
+                            className="text-xs text-sky-700 hover:text-sky-deep transition"
                           >
                             查看详情
                           </button>
@@ -1460,9 +1430,7 @@ function EmployeesPane() {
               <ConsoleCard title={`员工详情：${viewingEmp.name}`}>
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      显示名
-                    </label>
+                    <label className="form-label">显示名</label>
                     <input
                       type="text"
                       value={detailForm.display_name}
@@ -1473,13 +1441,11 @@ function EmployeesPane() {
                         }))
                       }
                       placeholder="留空就用姓名"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      部门
-                    </label>
+                    <label className="form-label">部门</label>
                     <select
                       value={detailForm.department_id ?? ""}
                       onChange={(e) =>
@@ -1491,7 +1457,7 @@ function EmployeesPane() {
                               : Number(e.target.value),
                         }))
                       }
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     >
                       <option value="">（未指定部门）</option>
                       {(departments ?? []).map((d) => (
@@ -1502,9 +1468,7 @@ function EmployeesPane() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Provider
-                    </label>
+                    <label className="form-label">Provider</label>
                     <select
                       value={detailForm.provider}
                       onChange={(e) =>
@@ -1513,7 +1477,7 @@ function EmployeesPane() {
                           provider: e.target.value,
                         }))
                       }
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3"
                     >
                       {PROVIDER_OPTIONS.map((p) => (
                         <option key={p.value} value={p.value}>
@@ -1523,7 +1487,7 @@ function EmployeesPane() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <label className="form-label">
                       API Key
                       {viewingEmp.api_key_set && (
                         <span className="ml-2 text-xs font-normal text-ink-soft">
@@ -1547,12 +1511,12 @@ function EmployeesPane() {
                           : "sk-..."
                       }
                       autoComplete="new-password"
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+                      className="form-input text-sm py-2 px-3 font-mono"
                     />
                   </div>
 
                   {detailError && (
-                    <p className="text-sm text-rose-700">✗ {detailError}</p>
+                    <p className="form-error">✗ {detailError}</p>
                   )}
 
                   <div className="flex items-center gap-2 pt-1">
@@ -1560,7 +1524,7 @@ function EmployeesPane() {
                       type="button"
                       onClick={submitDetail}
                       disabled={savingDetail}
-                      className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+                      className="btn btn-primary text-sm py-2 px-4"
                     >
                       {savingDetail ? "保存中…" : "保存"}
                     </button>
@@ -1684,7 +1648,7 @@ function AddAdminForm(props: {
             if (state === "error") setState("idle");
           }}
           placeholder="TG chat ID"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+          className="form-input flex-1 text-sm py-2 px-3 font-mono"
         />
         <button
           type="button"
@@ -1694,7 +1658,7 @@ function AddAdminForm(props: {
             state === "verifying" ||
             !chatId.trim()
           }
-          className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+          className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
           {state === "sending"
             ? "Sending…"
@@ -1705,7 +1669,7 @@ function AddAdminForm(props: {
         <button
           type="button"
           onClick={props.onCancel}
-          className="rounded-md border border-sky-light/40 bg-white text-ink-soft px-2 py-2 text-sm hover:bg-slate-50 transition shrink-0"
+          className="btn btn-secondary text-sm py-2 px-2 shrink-0"
           title="Cancel"
         >
           ✕
@@ -1723,14 +1687,14 @@ function AddAdminForm(props: {
               setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
             placeholder="6-digit code from TG"
-            className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono tracking-widest shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none"
+            className="form-input flex-1 text-sm py-2 px-3 font-mono tracking-widest"
             disabled={state === "verifying"}
           />
           <button
             type="button"
             onClick={verifyCode}
             disabled={state === "verifying" || code.length !== 6}
-            className="rounded-md bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+            className="btn btn-primary text-sm py-2 px-3 shrink-0"
           >
             {state === "verifying" ? "Verifying…" : "Verify"}
           </button>
@@ -1738,7 +1702,7 @@ function AddAdminForm(props: {
       )}
 
       {state === "error" && error && (
-        <p className="mt-2 text-xs text-rose-700">✗ {error}</p>
+        <p className="form-error mt-2 text-xs">✗ {error}</p>
       )}
       {state === "code-sent" && (
         <p className="mt-2 text-xs text-sky-700">
@@ -1796,8 +1760,8 @@ function KnowledgeSkillsPane() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Skills</h2>
-        <p className="mt-1 text-sm text-slate-600">
+        <h2 className="text-lg font-semibold text-ink">Skills</h2>
+        <p className="mt-1 text-sm text-ink-soft">
           Reusable actions EVEs can call — schedule reminders,
           book meetings, search the knowledge base, collect info.
           The 4 MVP skills land with C4.
@@ -1825,8 +1789,8 @@ function KnowledgeConnectorsPane() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Connectors</h2>
-        <p className="mt-1 text-sm text-slate-600">
+        <h2 className="text-lg font-semibold text-ink">Connectors</h2>
+        <p className="mt-1 text-sm text-ink-soft">
           Channels EVEs talk through. Each connector is one
           platform; nodes mount the subset they need.
         </p>
@@ -1861,12 +1825,12 @@ function KnowledgeConnectorRow(props: {
   const badge =
     props.status === "connected"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-slate-50 text-ink-soft border-sky-light/40";
+      : "bg-sky-pale/40 text-ink-soft border-sky-light/40";
   const label = props.status === "connected" ? "connected" : "coming soon";
   return (
     <div className="rounded-lg border border-sky-light/40 bg-white/60 p-3 flex items-center gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-slate-900">{props.name}</div>
+        <div className="text-sm font-medium text-ink">{props.name}</div>
         <div className="text-xs text-ink-soft">{props.note}</div>
       </div>
       <span
@@ -1891,8 +1855,8 @@ function KnowledgeContactsPane() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Contacts</h2>
-        <p className="mt-1 text-sm text-slate-600">
+        <h2 className="text-lg font-semibold text-ink">Contacts</h2>
+        <p className="mt-1 text-sm text-ink-soft">
           The company directory — every employee an EVE can reach.
           Scoped per employee; each row carries display name,
           department, role, and contact channels.
@@ -1980,7 +1944,7 @@ function SettingsChannelsCard(props: {
 
   return (
     <ConsoleCard title="Channels">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Platform adapters the node can mount. WebUI is the
         console you're using; Telegram is the IM channel the
         wizard configured. The rest are planned.
@@ -1996,25 +1960,25 @@ function SettingsChannelsCard(props: {
           </tr>
         </thead>
         <tbody>
-          <tr className="border-b border-slate-100">
-            <td className="py-2 pr-4 text-slate-900">WebUI</td>
+          <tr className="border-b border-sky-light/30">
+            <td className="py-2 pr-4 text-ink">WebUI</td>
             <td className="py-2 pr-4">
               <ChannelStatusBadge status="connected" />
             </td>
-            <td className="py-2 pr-4 text-slate-600 font-mono text-xs">
+            <td className="py-2 pr-4 text-ink-soft font-mono text-xs">
               :42069
             </td>
             <td className="py-2 text-right text-xs text-ink-soft">—</td>
           </tr>
 
-          <tr className="border-b border-slate-100">
-            <td className="py-2 pr-4 text-slate-900">Telegram</td>
+          <tr className="border-b border-sky-light/30">
+            <td className="py-2 pr-4 text-ink">Telegram</td>
             <td className="py-2 pr-4">
               <ChannelStatusBadge
                 status={tgConnected ? "connected" : "disconnected"}
               />
             </td>
-            <td className="py-2 pr-4 text-slate-600 font-mono text-xs">
+            <td className="py-2 pr-4 text-ink-soft font-mono text-xs">
               {tgNote}
             </td>
             <td className="py-2 text-right">
@@ -2022,7 +1986,7 @@ function SettingsChannelsCard(props: {
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
-                  className="text-sm text-sky-700 hover:text-sky-800 transition"
+                  className="text-sm text-sky-700 hover:text-sky-deep transition"
                 >
                   Re-set
                 </button>
@@ -2053,8 +2017,8 @@ function SettingsChannelsCard(props: {
 
 function ComingChannelRow(props: { name: string }) {
   return (
-    <tr className="border-b border-slate-100 last:border-0 opacity-50">
-      <td className="py-2 pr-4 text-slate-700">{props.name}</td>
+    <tr className="border-b border-sky-light/30 last:border-0 opacity-50">
+      <td className="py-2 pr-4 text-ink-soft">{props.name}</td>
       <td className="py-2 pr-4">
         <ChannelStatusBadge status="coming" />
       </td>
@@ -2162,7 +2126,7 @@ function SettingsWebuiAccessCard(props: {
 
   return (
     <ConsoleCard title="WebUI Access">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Chat IDs that may sign in to Adam. Two kinds:
         <span className="font-medium"> super admins</span> are
         wizard-configured (deployers) and
@@ -2177,7 +2141,7 @@ function SettingsWebuiAccessCard(props: {
         {accounts === null && !loadError && (
           <p className="text-sm text-ink-soft">Loading…</p>
         )}
-        {loadError && <p className="text-sm text-rose-700">✗ {loadError}</p>}
+        {loadError && <p className="form-error">✗ {loadError}</p>}
         {accounts !== null && accounts.length === 0 && (
           <p className="text-sm text-ink-soft">
             No one has access yet. Add a super admin below, or
@@ -2202,7 +2166,7 @@ function SettingsWebuiAccessCard(props: {
                     key={a.chat_id}
                     className=""
                   >
-                    <td className="py-2 pr-4 text-slate-900">
+                    <td className="py-2 pr-4 text-ink">
                       {a.display_name ?? (
                         <span className="text-ink-soft">(no display name)</span>
                       )}
@@ -2223,7 +2187,7 @@ function SettingsWebuiAccessCard(props: {
                           type="button"
                           onClick={() => handleRemoveAdmin(a.chat_id)}
                           title="Remove this super admin"
-                          className="rounded-md border border-sky-light/40 bg-white text-ink-soft px-2 py-1 text-xs hover:bg-slate-50 hover:text-rose-700 transition"
+                          className="btn btn-secondary text-xs py-1 px-2"
                         >
                           ✕ Remove
                         </button>
@@ -2237,7 +2201,7 @@ function SettingsWebuiAccessCard(props: {
                   key={a.chat_id}
                   className=""
                 >
-                  <td className="py-2 pr-4 text-slate-900">
+                  <td className="py-2 pr-4 text-ink">
                     {a.display_name ?? (
                       <span className="text-ink-soft">(no display name)</span>
                     )}
@@ -2261,7 +2225,7 @@ function SettingsWebuiAccessCard(props: {
           <button
             type="button"
             onClick={() => setAddingNew(true)}
-            className="mt-3 text-sm text-sky-700 hover:text-sky-800 transition"
+            className="mt-3 text-sm text-sky-700 hover:text-sky-deep transition"
           >
             + Add super admin
           </button>
@@ -2284,7 +2248,7 @@ function SettingsWebuiAccessCard(props: {
 function RoleBadge(props: { role: "super_admin" | "assigned_employee" }) {
   if (props.role === "super_admin") {
     return (
-      <span className="text-xs text-slate-700 bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
+      <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
         super admin
       </span>
     );
@@ -2299,7 +2263,7 @@ function RoleBadge(props: { role: "super_admin" | "assigned_employee" }) {
 function SettingsOnboardingCard(props: { onRestart: () => void }) {
   return (
     <ConsoleCard title="Onboarding">
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ink-soft">
         Re-run the first-time setup wizard. Saved bot and admin
         rows stay in SQLite; the wizard will resume from wherever
         it left off.
@@ -2307,7 +2271,7 @@ function SettingsOnboardingCard(props: { onRestart: () => void }) {
       <button
         type="button"
         onClick={props.onRestart}
-        className="mt-3 rounded-md border border-slate-300 bg-white text-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-50 transition"
+        className="mt-3 btn btn-secondary px-4 py-2"
       >
         Restart onboarding
       </button>
@@ -2403,10 +2367,7 @@ function BotTokenField(props: {
 
   return (
     <div className="space-y-2">
-      <label
-        htmlFor="settings-bot-token"
-        className="block text-sm font-medium text-slate-700"
-      >
+      <label htmlFor="settings-bot-token" className="form-label">
         New Telegram bot token
       </label>
       <div className="flex gap-2">
@@ -2419,13 +2380,13 @@ function BotTokenField(props: {
           autoComplete="off"
           spellCheck={false}
           disabled={saveState === "saved"}
-          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:bg-slate-50"
+          className="form-input flex-1 text-sm py-2 px-3 font-mono"
         />
         <button
           type="button"
           onClick={handleTest}
           disabled={testState === "testing" || !token.trim() || saveState === "saved"}
-          className="rounded-lg bg-sky-700 text-white px-3 py-2 text-sm font-medium hover:bg-sky-800 transition disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+          className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
           {testState === "testing" ? "Testing…" : "Test"}
         </button>
@@ -2437,7 +2398,7 @@ function BotTokenField(props: {
         </p>
       )}
       {testState === "error" && (
-        <p className="text-sm text-rose-700">✗ {testError}</p>
+        <p className="form-error">✗ {testError}</p>
       )}
 
       {testState === "success" && (
@@ -2446,7 +2407,7 @@ function BotTokenField(props: {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm font-medium hover:bg-emerald-700 transition disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="btn btn-primary text-sm py-2 px-4"
           >
             {saveState === "saving"
               ? "Saving…"
@@ -2463,7 +2424,7 @@ function BotTokenField(props: {
             Cancel
           </button>
           {saveState === "error" && (
-            <p className="text-sm text-rose-700">✗ {saveError}</p>
+            <p className="form-error">✗ {saveError}</p>
           )}
         </div>
       )}
@@ -2472,7 +2433,7 @@ function BotTokenField(props: {
         <button
           type="button"
           onClick={props.onCancel}
-          className="text-xs text-ink-soft hover:text-slate-700 transition"
+          className="text-xs text-ink-soft hover:text-sky-deep transition"
         >
           Cancel
         </button>
