@@ -96,13 +96,17 @@ def _record_user(
 async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle any inbound message from any chat.
 
-    The bot recognises five roles (ADMIN, ASSIGNED_EMPLOYEE,
-    OTHER_EMPLOYEE, BOT, GUEST) but only the GUEST path is implemented
-    for C0/C1: a sender we don't yet know about is auto-recorded as
-    GUEST and gets a "here's your chat_id, contact the admin" reply.
-    The other four roles are routed only as a no-op log line — the real
-    agent-loop dispatcher (per-admin command, per-employee EVE, etc.)
-    lands in C3.
+    Role resolution (in order):
+      1. super-admin allowlist (role = ``"admin"``)        — log only for now
+      2. ``telegram.user.<chat_id>.employee_id`` is set    — route through
+         the agent loop using that employee's LLM credentials (falls back
+         to system default if the employee has none).
+      3. first-touch, never seen before                    — record as
+         GUEST and send the chat_id discovery reply.
+      4. recorded GUEST                                    — same reply
+         (so retries work).
+      5. any other recorded role (OTHER_EMPLOYEE / BOT)   — log only;
+         no per-role handler yet.
     """
     if update.effective_chat is None or update.effective_message is None:
         return
@@ -116,22 +120,42 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
     admins = _load_super_admins(state_dir)
 
-    # ADMIN: in the allowlist. C1+ will wire actual admin commands; for
-    # now we just log.
+    # 1. ADMIN: in the allowlist. The admin chat will grow real
+    # admin commands (C6+); for v0 we just log so the
+    # operator can see the bot is alive.
     if chat_id in admins:
         logger.info(
-            "telegram: admin message (no-op until C3)",
+            "telegram: admin message (no-op until C6)",
             extra={"chat_id": chat_id, "display_name": display_name},
         )
         return
 
-    # Everyone else: resolve the recorded role (default GUEST if unseen).
-    role = _get_user_role(state_dir, chat_id) or "GUEST"
+    # 2. Bound employee: ``telegram.user.<chat_id>.employee_id``
+    # is set by the bind-telegram flow (C2 lands the full
+    # flow; v0 supports a manual ``bind`` set via a small
+    # admin endpoint or direct meta write). The chat_id is
+    # the TG side of the binding; the value is the row id in
+    # ``employees``.
+    employee_id_str = _get_user_employee_id(state_dir, chat_id)
+    if employee_id_str is not None:
+        try:
+            employee_id = int(employee_id_str)
+        except (TypeError, ValueError):
+            logger.warning(
+                "telegram: malformed employee_id binding for chat %s: %r",
+                chat_id, employee_id_str,
+            )
+            employee_id = None
+        if employee_id is not None:
+            await _handle_employee_message(
+                update, state_dir, chat_id, employee_id, display_name,
+            )
+            return
 
-    # First-time contact: record the user. Future C1+ code will set
-    # explicit roles here (ASSIGNED_EMPLOYEE / OTHER_EMPLOYEE / BOT)
-    # based on the employees table; for now everything not in the admin
-    # list is GUEST.
+    # 3. First-time contact: record the user. The first-touch
+    # message always gets the discovery reply; a second
+    # message from the same unknown chat_id also gets the
+    # same reply (the "recorded GUEST" path below).
     if _get_user_role(state_dir, chat_id) is None:
         _record_user(state_dir, chat_id, "GUEST", display_name=display_name)
         logger.info(
@@ -139,21 +163,155 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             extra={"chat_id": chat_id, "display_name": display_name},
         )
 
+    # 4. Recorded GUEST (re-send or first-touch): tell them
+    # their chat_id and how to reach the admin. The reply
+    # is the same on every message so the discovery flow
+    # works even if the user retries after a flaky send.
+    role = _get_user_role(state_dir, chat_id) or "GUEST"
     if role == "GUEST":
-        # C0 behaviour: tell them their chat_id + how to reach admin.
-        # The four non-GUEST roles are future work; for now we just
-        # log so we can see them in the dev container's stdout.
         await update.effective_message.reply_text(
             UNKNOWN_USER_REPLY.format(chat_id=chat_id),
             parse_mode="HTML",
         )
         return
 
-    # Non-GUEST role. No-op until C3+ routes per role.
+    # 5. Any other recorded role (OTHER_EMPLOYEE / BOT) —
+    # no per-role handler yet; log so we can see them in
+    # the dev container's stdout.
     logger.info(
-        "telegram: %s role, no handler yet (C3+)", role,
+        "telegram: %s role, no handler yet", role,
         extra={"chat_id": chat_id, "display_name": display_name},
     )
+
+
+def _get_user_employee_id(state_dir: str, chat_id: str) -> str | None:
+    """Read ``telegram.user.<chat_id>.employee_id`` from the
+    meta table.
+
+    Set by the binding flow (C2's admin endpoint or, for v0,
+    by direct meta write). ``None`` when unbound; the caller
+    falls through to the GUEST path. The value is a string
+    of the integer ``employees.id`` so we don't need to
+    think about encoding.
+    """
+    from magi.runtime.state.settings import state_get
+
+    return state_get(state_dir, f"telegram.user.{chat_id}.employee_id")
+
+
+def _set_user_employee_id(
+    state_dir: str, chat_id: str, employee_id: int | None
+) -> None:
+    """Write or clear ``telegram.user.<chat_id>.employee_id``.
+
+    Used by the binding admin endpoint and (later) the
+    in-TG ``/start <code>`` flow. ``employee_id=None``
+    clears the binding.
+    """
+    from magi.runtime.state.settings import state_delete, state_set
+
+    key = f"telegram.user.{chat_id}.employee_id"
+    if employee_id is None:
+        state_delete(state_dir, key)
+    else:
+        state_set(state_dir, key, str(employee_id))
+
+
+async def _handle_employee_message(
+    update: Update,
+    state_dir: str,
+    chat_id: str,
+    employee_id: int,
+    display_name: str | None,
+) -> None:
+    """Route a message from a bound employee through the agent loop.
+
+    Looks up the employee's LLM credentials (provider + api_key)
+    from the ORM, falls back to the system default if the
+    employee has none, calls :func:`magi.runtime.agent.handle_message`,
+    and replies with the LLM's text. On any agent error the
+    user gets a friendly fallback string; the real error is
+    audited.
+
+    The function is intentionally short: all the interesting
+    logic (credential resolution, audit, fallback) lives in
+    ``handle_message``. The TG channel's job is just to
+    translate a message event into a string in, string out.
+    """
+    from magi.runtime.agent import handle_message
+    from magi.runtime.state.orm import Employee, open_session
+
+    text = update.effective_message.text or ""
+    if not text.strip():
+        # Sticker / photo / voice / etc — the agent loop
+        # only handles text in v0. Acknowledge so the user
+        # knows we got it but explain the limitation.
+        await update.effective_message.reply_text(
+            "我暂时只支持文字消息，等 C4 加上多模态再试。",
+        )
+        return
+
+    # Look up the employee's LLM config. SQLAlchemy's
+    # session lifecycle: open one for this single query.
+    employee_provider: str | None = None
+    employee_api_key: str | None = None
+    employee_separated: bool = False
+    employee_name: str | None = None
+    try:
+        with open_session() as session:
+            emp = session.get(Employee, employee_id)
+            if emp is None:
+                logger.warning(
+                    "telegram: chat %s bound to missing employee %s; "
+                    "treating as unbound",
+                    chat_id, employee_id,
+                )
+                _set_user_employee_id(state_dir, chat_id, None)
+                await update.effective_message.reply_text(
+                    UNKNOWN_USER_REPLY.format(chat_id=chat_id),
+                    parse_mode="HTML",
+                )
+                return
+            employee_provider = emp.provider
+            employee_api_key = emp.api_key
+            employee_separated = emp.separated_at is not None
+            employee_name = emp.name
+    except Exception as e:
+        logger.exception(
+            "telegram: ORM read failed for employee %s: %s", employee_id, e,
+        )
+        await update.effective_message.reply_text(
+            "服务暂时不可用，请稍后再试。",
+        )
+        return
+
+    if employee_separated:
+        # Separated employees can't chat with their EVE —
+        # the org marked them as 离职, so the agent is
+        # paused. Admin can restore via the dashboard.
+        await update.effective_message.reply_text(
+            f"你的账号（{employee_name}）已标记为离职。如需恢复，请联系管理员。",
+        )
+        return
+
+    reply = await handle_message(
+        state_dir,
+        text=text,
+        channel="tg",
+        employee_id=employee_id,
+        employee_provider=employee_provider,
+        employee_api_key=employee_api_key,
+    )
+
+    # Telegram has a 4096-char message limit. The agent
+    # loop's reply is well under that in practice, but a
+    # long SOUL.md + verbose model could overflow. Truncate
+    # defensively with a note so the user knows there's
+    # more.
+    if len(reply) > 4000:
+        reply = reply[:3990] + "\n\n…(回复过长，已截断)"
+
+    await update.effective_message.reply_text(reply)
 
 
 def start_bot(state_dir: str) -> Optional[threading.Thread]:

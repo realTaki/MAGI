@@ -81,6 +81,20 @@ def create_app() -> FastAPI:
     # stays clean: /api/departments, /api/employees.
     app.include_router(departments.router, prefix="/api")
     app.include_router(departments.employees_router, prefix="/api")
+    # LLM system defaults (separate from per-employee config):
+    # GET/PUT/DELETE /api/llm/default, GET /api/llm/providers.
+    from magi.channels.webui.api import llm_settings
+    app.include_router(llm_settings.router, prefix="/api")
+    # Telegram binding (chat_id ↔ employee_id, v0 admin endpoint;
+    # C2 will replace with a /start <code> flow that uses the
+    # same underlying meta key).
+    from magi.channels.webui.api import tg_bindings
+    app.include_router(tg_bindings.router, prefix="/api")
+    # Adam → system LLM chat (operator types into the WebUI,
+    # gets a synchronous reply). v0 non-streaming; C7 swaps
+    # in SSE / WebSocket.
+    from magi.channels.webui.api import chat
+    app.include_router(chat.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets

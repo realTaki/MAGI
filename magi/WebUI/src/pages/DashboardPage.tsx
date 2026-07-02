@@ -314,6 +314,52 @@ function ChatTab() {
   // behave like opening search).
   const [selectedId, setSelectedId] = useState<string>(CHAT_CATEGORIES[0].id);
 
+  // The "新对话" pane is the real chat. v0: one in-memory
+  // conversation, no history (that's C7). Messages live in
+  // component state — refreshing the page starts a new
+  // thread. The user model is "send text → wait for full
+  // reply → see it appear" (C7 swaps in streaming).
+  const [chatMessages, setChatMessages] = useState<
+    Array<{ id: number; role: "user" | "assistant"; text: string }>
+  >([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text || chatSending) return;
+    setChatInput("");
+    setChatError(null);
+    const userMsg = { id: Date.now(), role: "user" as const, text };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatSending(true);
+    try {
+      const r = await fetch("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setChatError(detail.detail ?? `Send failed (${r.status})`);
+        return;
+      }
+      const data = (await r.json()) as { reply: string };
+      setChatMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: "assistant", text: data.reply },
+      ]);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setChatSending(false);
+    }
+  }
+
   const allById: Record<string, ChatItem> = {};
   for (const c of CHAT_CATEGORIES) allById[c.id] = c;
   for (const a of CHAT_ACTIONS) allById[a.id] = a;
@@ -376,14 +422,154 @@ function ChatTab() {
         </>
       }
     >
-      <div className="p-8 text-center flex flex-col items-center justify-center">
-        <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>
-        <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
-        {selected.pane.meta && (
-          <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
+      {selectedId === "new-chat" ? (
+        <ChatConversationPane
+          messages={chatMessages}
+          input={chatInput}
+          onInputChange={setChatInput}
+          sending={chatSending}
+          error={chatError}
+          onSend={sendChat}
+        />
+      ) : (
+        <div className="p-8 text-center flex flex-col items-center justify-center">
+          <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>
+          <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
+          {selected.pane.meta && (
+            <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
+          )}
+        </div>
+      )}
+    </SidebarShell>
+  );
+}
+
+// -- pane: chat conversation ----------------------------------------------
+//
+// v0 chat UI: scrollable message list (user right, assistant
+// left) + a textarea at the bottom + a Send button. The
+// conversation lives in ChatTab's state — refreshing the
+// page clears it. C7 wires this to a real conversation
+// store + streaming replies.
+//
+// The textarea submits on Cmd/Ctrl-Enter so Enter stays
+// available for newlines (chat-style). The Send button is
+// disabled while a request is in flight so the user can't
+// double-submit.
+
+type ChatMessageRow = {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+};
+
+function ChatConversationPane(props: {
+  messages: ChatMessageRow[];
+  input: string;
+  onInputChange: (v: string) => void;
+  sending: boolean;
+  error: string | null;
+  onSend: () => void;
+}) {
+  return (
+    <div className="flex flex-col h-[560px]">
+      {/* Header — just the pane title; the "Adam" identity is
+          implicit (the operator is talking to their own system
+          LLM, not to a specific EVE). */}
+      <div className="px-6 py-3 border-b border-sky-light/40">
+        <h2 className="text-base font-semibold text-ink">新对话</h2>
+        <p className="text-xs text-ink-soft">
+          跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。
+        </p>
+      </div>
+
+      {/* Message list. Empty state nudges the operator to type
+          something; once the first message lands, the list
+          owns the rest of the pane height. */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        {props.messages.length === 0 ? (
+          <p className="text-sm text-ink-soft text-center mt-12">
+            输入消息开始对话。回车换行，⌘/Ctrl + 回车发送。
+          </p>
+        ) : (
+          props.messages.map((m) => (
+            <div
+              key={m.id}
+              className={
+                "flex " +
+                (m.role === "user" ? "justify-end" : "justify-start")
+              }
+            >
+              <div
+                className={
+                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
+                  (m.role === "user"
+                    ? "bg-sky-deep text-white"
+                    : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                }
+              >
+                {m.text}
+              </div>
+            </div>
+          ))
+        )}
+        {props.sending && (
+          <div className="flex justify-start">
+            <div className="rounded-2xl bg-sky-pale/60 text-ink-soft border border-sky-light/40 px-4 py-2.5 text-sm">
+              <span className="inline-flex gap-1">
+                <span className="animate-pulse">·</span>
+                <span className="animate-pulse [animation-delay:120ms]">
+                  ·
+                </span>
+                <span className="animate-pulse [animation-delay:240ms]">
+                  ·
+                </span>
+              </span>
+            </div>
+          </div>
         )}
       </div>
-    </SidebarShell>
+
+      {/* Error banner — surfaces under the message list so
+          the user keeps context. Clears on the next send. */}
+      {props.error && (
+        <div className="mx-6 mb-2">
+          <p className="form-error">✗ {props.error}</p>
+        </div>
+      )}
+
+      {/* Composer — textarea + send button. The button
+          stays enabled when input is empty too; the onSend
+          handler early-returns on whitespace-only input so
+          an accidental click does nothing. */}
+      <div className="border-t border-sky-light/40 px-6 py-3 bg-white/40">
+        <div className="flex items-end gap-2">
+          <textarea
+            value={props.input}
+            onChange={(e) => props.onInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                props.onSend();
+              }
+            }}
+            placeholder="输入消息…"
+            rows={2}
+            disabled={props.sending}
+            className="form-input flex-1 text-sm py-2 px-3 resize-none"
+            style={{ minHeight: "44px", maxHeight: "160px" }}
+          />
+          <button
+            type="button"
+            onClick={props.onSend}
+            disabled={props.sending || !props.input.trim()}
+            className="btn btn-primary text-sm py-2 px-4"
+          >
+            {props.sending ? "发送中…" : "发送"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
