@@ -545,10 +545,19 @@ function buildTree(rows: DepartmentRow[]): FlatDept[] {
   return roots;
 }
 
-function flattenTree(roots: FlatDept[], out: FlatDept[] = []): FlatDept[] {
+function flattenTree(
+  roots: FlatDept[],
+  collapsed: ReadonlySet<number>,
+  out: FlatDept[] = [],
+): FlatDept[] {
   for (const n of roots) {
     out.push(n);
-    if (n.children.length) flattenTree(n.children, out);
+    // When the node is collapsed, skip its subtree entirely.
+    // The node itself stays in the list so the operator can
+    // click again to re-expand.
+    if (n.children.length && !collapsed.has(n.id)) {
+      flattenTree(n.children, collapsed, out);
+    }
   }
   return out;
 }
@@ -557,6 +566,27 @@ function DepartmentsPane() {
   const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
   const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Set of dept IDs whose subtree is currently folded up in the
+  // table. Rows without children don't get a chevron and don't
+  // need to be in this set. Defaults to empty = everything
+  // expanded, so the table matches the previous behaviour until
+  // the user starts folding.
+  const [collapsed, setCollapsed] = useState<Set<number>>(
+    () => new Set(),
+  );
+
+  function toggleCollapsed(id: number) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
 
   // Form state — null when collapsed. ``editingId === null`` +
   // ``addingNew`` means "create mode".
@@ -702,7 +732,7 @@ function DepartmentsPane() {
 
   const formOpen = addingNew || editingId !== null;
   const tree = departments ? buildTree(departments) : [];
-  const flat = flattenTree(tree);
+  const flat = flattenTree(tree, collapsed);
 
   // The parent dropdown should offer "no parent" (top-level) plus
   // every other department EXCEPT the one being edited (a dept
@@ -898,6 +928,8 @@ function DepartmentsPane() {
             <tbody>
               {flat.map((d) => {
                 const isEditing = editingId === d.id;
+                const hasChildren = d.child_count > 0;
+                const isCollapsed = collapsed.has(d.id);
                 return (
                   <tr
                     key={d.id}
@@ -911,8 +943,31 @@ function DepartmentsPane() {
                         style={{ paddingLeft: `${d.depth * 20}px` }}
                         className="inline-flex items-center gap-1"
                       >
-                        {d.depth > 0 && (
-                          <span className="text-sky-light">└</span>
+                        {hasChildren ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleCollapsed(d.id)}
+                            title={isCollapsed ? "展开子部门" : "收起子部门"}
+                            aria-label={
+                              isCollapsed ? "expand children" : "collapse children"
+                            }
+                            className="inline-flex items-center justify-center w-4 h-4 text-sky-deep hover:text-ocean transition"
+                          >
+                            {/* ▼ when expanded, ▶ when collapsed */}
+                            <span
+                              className="inline-block text-[10px] leading-none transition-transform"
+                              style={{
+                                transform: isCollapsed
+                                  ? "rotate(0deg)"
+                                  : "rotate(90deg)",
+                              }}
+                            >
+                              ▶
+                            </span>
+                          </button>
+                        ) : (
+                          // Spacer so leaf rows line up with parent rows.
+                          <span className="inline-block w-4" />
                         )}
                         <span className="font-medium">{d.name}</span>
                       </span>
