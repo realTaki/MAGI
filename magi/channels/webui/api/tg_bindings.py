@@ -1,29 +1,30 @@
-"""Admin endpoint to bind / unbind a Telegram chat_id to an
+"""Admin endpoints to bind / unbind a Telegram chat_id to an
 employee.
 
-C2 lands the proper flow (employee /start's the bot with a
-6-digit code, code is verified, chat_id written). For v0
-the operator types the chat_id into a form on the employee
-detail panel (or hits this endpoint directly with curl);
-C2 will reuse the same ``_set_user_employee_id`` helper and
-just replace the manual input with a code-based handshake.
+C2 lands the proper self-serve flow (employee /start's the
+bot with a 6-digit code; on success the chat_id is written
+to ``Employee.telegram_id``). For v0 the operator drives the
+binding manually — pick a chat_id and an employee, hit
+``POST /api/telegram/bind``, and the row's ``telegram_id``
+gets set. The same PATCH can also happen directly via
+``PATCH /api/employees/{id}`` with ``{"telegram_id": "..."}``;
+this router is a thin convenience that does the chat_id
+lookup in the other direction (chat_id → employee).
 
-Storage lives in the ``meta`` table under
-``telegram.user.<chat_id>.employee_id`` — see
-:func:`magi.channels.telegram.bot._get_user_employee_id` for
-the read path. The key is a stringified int so we don't
-need to think about JSON encoding.
+Storage lives on the employee row (``Employee.telegram_id``,
+unique across the table). The legacy ``telegram.user.<chat_id>.employee_id``
+meta key is still read by the TG bot as a fallback for
+un-migrated state but is no longer written.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Annotated, Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
-from magi.channels.telegram.bot import _set_user_employee_id
 from magi.channels.webui.api.departments import AdminGate
 from magi.runtime.state.orm import Employee, open_session
 
@@ -37,10 +38,9 @@ def _state_dir() -> str:
 class TGBindRequest(BaseModel):
     """Body for ``POST /api/telegram/bind``.
 
-    ``employee_id`` is the row in ``employees`` that the
-    chat_id should map to. ``chat_id`` is the Telegram chat
-    id (must be numeric — TG chat ids are always integers).
-    Both fields are required.
+    ``employee_id`` is the row in ``employees`` to bind to.
+    ``chat_id`` is the Telegram chat id (numeric). Both are
+    required.
     """
 
     chat_id: str = Field(min_length=1, max_length=32)
@@ -59,21 +59,25 @@ def bind_telegram(
 ) -> TGBindResponse:
     """Bind ``chat_id`` to ``employee_id``.
 
-    Validates that the employee exists and is active (not
-    separated), then writes the meta key. Returns the
-    binding so the UI can show the operator the saved
-    mapping without a re-fetch.
+    Writes ``Employee.telegram_id`` (and un-binds whatever
+    row currently has that chat_id, so the binding is
+    one-to-one). Validates the employee is active (not
+    separated); separating an employee is the operator's
+    way of pausing their EVE without losing history.
     """
     if not payload.chat_id.lstrip("-").isdigit():
-        # TG chat ids are always integers (possibly negative
-        # for group chats). Reject anything that isn't digits
-        # so a typo "abc" doesn't get silently written.
         raise HTTPException(
             status_code=400,
             detail="chat_id must be a numeric Telegram chat id",
         )
+    try:
+        chat_id_int = int(payload.chat_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="chat_id must fit in an integer",
+        )
 
-    sd = _state_dir()
     with open_session() as session:
         emp = session.get(Employee, payload.employee_id)
         if emp is None:
@@ -90,7 +94,20 @@ def bind_telegram(
                 ),
             )
 
-    _set_user_employee_id(sd, payload.chat_id, payload.employee_id)
+        # Unbind whatever currently has this chat_id (if
+        # any). The unique constraint on telegram_id will
+        # raise on commit if we skip this, but doing it
+        # explicitly gives a cleaner error and a clear
+        # log line.
+        existing = session.scalar(
+            select(Employee).where(Employee.telegram_id == chat_id_int)
+        )
+        if existing is not None and existing.id != emp.id:
+            existing.telegram_id = None
+
+        emp.telegram_id = chat_id_int
+        session.commit()
+
     return TGBindResponse(
         chat_id=payload.chat_id,
         employee_id=payload.employee_id,
@@ -109,7 +126,7 @@ def unbind_telegram(
     """Clear the binding for ``chat_id``.
 
     Idempotent — unbinding an already-unbound chat_id
-    returns 204 with no error, so the UI can use the same
+    returns 204 with no error so the UI can use the same
     call to handle "user clicked unbind on an already-
     unbound row".
     """
@@ -118,7 +135,20 @@ def unbind_telegram(
             status_code=400,
             detail="chat_id must be a numeric Telegram chat id",
         )
-    _set_user_employee_id(_state_dir(), chat_id, None)
+    try:
+        chat_id_int = int(chat_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="chat_id must fit in an integer",
+        )
+    with open_session() as session:
+        emp = session.scalar(
+            select(Employee).where(Employee.telegram_id == chat_id_int)
+        )
+        if emp is not None:
+            emp.telegram_id = None
+            session.commit()
     return Response(status_code=204)
 
 
@@ -139,36 +169,33 @@ def get_telegram_binding(
     """Return the current binding (if any) for ``chat_id``.
 
     The operator-facing UI uses this to pre-fill the
-    "unbind" confirmation with the employee name. The
-    bound employee is resolved by id so the name shows up
-    even if the row's been soft-deleted (a deliberate UX
-    choice — the operator should still see "this chat was
-    bound to X" when unbinding).
+    "unbind" confirmation with the employee name. Even
+    if the bound row is gone (deleted via the WebUI), the
+    endpoint reports ``bound_employee_id`` so the operator
+    can see the dangling reference and re-bind or clean
+    it up explicitly.
     """
-    from magi.channels.telegram.bot import _get_user_employee_id
-
     if not chat_id.lstrip("-").isdigit():
         raise HTTPException(
             status_code=400,
             detail="chat_id must be a numeric Telegram chat id",
         )
-
-    sd = _state_dir()
-    raw = _get_user_employee_id(sd, chat_id)
-    if raw is None:
-        return TGBindStatus(chat_id=chat_id, bound_employee_id=None)
-
     try:
-        emp_id = int(raw)
-    except (TypeError, ValueError):
-        return TGBindStatus(chat_id=chat_id, bound_employee_id=None)
+        chat_id_int = int(chat_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="chat_id must fit in an integer",
+        )
 
     with open_session() as session:
-        emp = session.get(Employee, emp_id)
-        name = emp.name if emp is not None else None
-
-    return TGBindStatus(
-        chat_id=chat_id,
-        bound_employee_id=emp_id,
-        bound_employee_name=name,
-    )
+        emp = session.scalar(
+            select(Employee).where(Employee.telegram_id == chat_id_int)
+        )
+        if emp is None:
+            return TGBindStatus(chat_id=chat_id, bound_employee_id=None)
+        return TGBindStatus(
+            chat_id=chat_id,
+            bound_employee_id=emp.id,
+            bound_employee_name=emp.name,
+        )
