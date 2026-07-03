@@ -41,26 +41,35 @@ logger = logging.getLogger("magi.runtime.agent")
 # advertise. Callers can override per-call.
 DEFAULT_MAX_TOKENS = 1024
 
-# Friendly fallback the user sees when the LLM call fails
-# for any reason. The wording lives in
-# ``magi/runtime/prompts/bot_replies.yaml`` under the
-# ``agent_fallback`` key — see that file to tweak. The
-# string is resolved at first use and cached.
+# Two friendly strings the agent loop can return when
+# something is wrong: ``agent_fallback`` for an LLM call
+# that failed mid-stream (network / rate-limit / context-
+# length), and ``agent_no_credentials`` for the strict-mode
+# rejection when the chat caller never supplied per-
+# employee credentials. Both live in
+# ``magi/runtime/prompts/bot_replies.yaml`` — see that file
+# to tweak. Resolved lazily and cached so a single YAML
+# read serves every fallback for the rest of the process.
 from magi.runtime.prompts import load_bot_replies  # noqa: E402
 
-_FALLBACK_KEY = "agent_fallback"
-_FALLBACK_REPLY_CACHE: str | None = None
+_FALLBACK_REPLY_CACHE: dict[str, str] = {}
 
 
-def _fallback_reply() -> str:
-    """Resolve the user-facing fallback string from the
-    bot_replies prompt table. Cached so a single YAML
-    read serves every fallback for the rest of the
-    process."""
-    global _FALLBACK_REPLY_CACHE
-    if _FALLBACK_REPLY_CACHE is None:
-        _FALLBACK_REPLY_CACHE = load_bot_replies()[_FALLBACK_KEY]
-    return _FALLBACK_REPLY_CACHE
+def _fallback_reply(key: str = "agent_fallback") -> str:
+    """Resolve a friendly fallback string from the
+    bot_replies prompt table. Cached so a single YAML read
+    serves every fallback for the rest of the process.
+
+    ``key`` selects which template: ``agent_fallback`` for
+    LLM-call failures (the legacy single-purpose template),
+    ``agent_no_credentials`` for the strict-mode rejection
+    that tells the user where to fix the missing config.
+    """
+    cached = _FALLBACK_REPLY_CACHE.get(key)
+    if cached is None:
+        cached = load_bot_replies()[key]
+        _FALLBACK_REPLY_CACHE[key] = cached
+    return cached
 
 # Where SOUL.md lives. C4 will move this to a per-employee
 # path (each EVE can have its own persona); for v0 we read
@@ -94,26 +103,6 @@ def _read_soul(state_dir: str) -> str:
         return load_fallback_persona()
     text = text.strip()
     return text or load_fallback_persona()
-
-
-def _resolve_system_default(
-    state_dir: str,
-) -> tuple[str, str, str | None]:
-    """Read the system LLM default from the meta table.
-
-    Returns (provider, api_key, model_or_none). Raises
-    ``LLMError`` if no system default is configured.
-    """
-    provider = state_get(state_dir, "llm.default_provider")
-    api_key = state_get(state_dir, "llm.default_api_key")
-    model = state_get(state_dir, "llm.default_model") or None
-    if not provider or not api_key:
-        raise LLMError(
-            "No LLM configured. Set llm.default_provider + "
-            "llm.default_api_key in the meta table, or assign "
-            "a provider + api_key to the employee."
-        )
-    return provider, api_key, model
 
 
 def _write_audit(
@@ -169,10 +158,11 @@ async def handle_message(
     text: str,
     channel: str,
     employee_id: int | None = None,
-    # Employee-level credentials take precedence over the
-    # system default. Both come from the caller (the TG
-    # channel or the WebUI chat API) — the agent doesn't
-    # touch the DB, which keeps it free of ORM coupling.
+    # Per-employee credentials — the chat path is strict by
+    # default (no fall-back to a system default) so every LLM
+    # call can be billed to a specific employee. Both must be
+    # set together or the call is rejected with the
+    # ``agent_fallback`` friendly reply.
     employee_provider: str | None = None,
     employee_api_key: str | None = None,
     employee_model: str | None = None,
@@ -180,13 +170,22 @@ async def handle_message(
 ) -> str:
     """One chat turn. Returns the LLM's reply text.
 
-    On any LLM failure, returns the ``agent_fallback`` template
+    On any LLM failure (including missing per-employee
+    credentials), returns the ``agent_fallback`` template
     (see ``magi/runtime/prompts/bot_replies.yaml``) and
     audits the real error. The caller (TG bot / WebUI chat)
     is responsible for delivering the string; we don't raise
     into the transport layer because the user already pressed
     send, and a transport-level exception would just confuse
     the UI.
+
+    No default-LLM fallback. Every LLM call must carry the
+    employee credentials that pay for it — the design is
+    "every message is billed to a person", so silent fall-back
+    to a house-LLM (which would mis-route the reply and hide
+    the configuration mistake) is deliberately not supported.
+    The pre-flight rejection is loud enough that the user
+    can fix it from the dashboard / config panel.
 
     Parameters
     ----------
@@ -201,12 +200,11 @@ async def handle_message(
         Optional employee id, for the audit row. ``None`` for
         anonymous (WebUI) traffic.
     employee_provider / employee_api_key / employee_model
-        Per-call LLM credentials. If ``employee_provider`` is
-        set, ``employee_api_key`` must also be set (or the
-        call falls back to the system default). The TG
-        channel fetches the key from the employee row before
-        calling here; the WebUI chat API passes the
-        ``magi_session`` chat_id's admin defaults.
+        Per-call LLM credentials. Either all three are set
+        (employee chooses model optionally) or the call is
+        rejected. The TG channel fetches these from the
+        employee row; the WebUI chat API does the same via
+        the ``magi_session`` admin cookie.
     """
     # Inbound audit. Written before the LLM call so a crash
     # in the provider still leaves a record of the message.
@@ -218,30 +216,36 @@ async def handle_message(
         payload={"text": text},
     )
 
-    # Resolve credentials: per-employee first, then system
-    # default. Empty strings are treated as "not set" so a
-    # half-cleared row doesn't accidentally route to a
-    # broken provider.
-    if employee_provider and employee_api_key:
-        provider_name = employee_provider
-        api_key = employee_api_key
-        model = employee_model
-    else:
-        try:
-            provider_name, api_key, model = _resolve_system_default(state_dir)
-        except LLMError as e:
-            logger.warning(
-                "no LLM configured; returning fallback (employee=%s): %s",
-                employee_id, e,
-            )
-            _write_audit(
-                state_dir,
-                kind="chat.outbound.error",
-                employee_id=employee_id,
-                channel=channel,
-                payload={"error": str(e), "text": _fallback_reply()},
-            )
-            return _fallback_reply()
+    # Strict-mode pre-flight: per-employee credentials must
+    # be present in full. We treat empty strings as "not set"
+    # so a half-cleared row doesn't accidentally route to
+    # a broken provider. The user-friendly reply points the
+    # user at the panel that fixes the config (TG users will
+    # see this; WebUI users hit a 403 one layer up before
+    # getting here).
+    if not employee_provider or not employee_api_key:
+        reason = (
+            "no per-employee credentials configured"
+            if employee_provider is None and employee_api_key is None
+            else "per-employee credentials partially configured "
+                 "(provider or key missing)"
+        )
+        logger.warning(
+            "chat rejected (employee=%s channel=%s): %s",
+            employee_id, channel, reason,
+        )
+        _write_audit(
+            state_dir,
+            kind="chat.outbound.error",
+            employee_id=employee_id,
+            channel=channel,
+            payload={"error": reason, "text": _fallback_reply("agent_no_credentials")},
+        )
+        return _fallback_reply("agent_no_credentials")
+
+    provider_name = employee_provider
+    api_key = employee_api_key
+    model = employee_model
 
     soul = _read_soul(state_dir)
 

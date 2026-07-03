@@ -324,7 +324,15 @@ function ChatTab() {
   >([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
+  // ``chatError`` carries the stable backend error ``code`` so
+  // the renderer can pick a friendlier message than the English
+  // ``detail`` for known cases (e.g. ``chat.llm_credentials_required``
+  // points the operator at the Organization tab where their
+  // per-employee LLM is configured). Unknown codes fall through
+  // to ``detail`` so a missing translation never blanks the UI.
+  const [chatError, setChatError] = useState<
+    { code: string; detail: string } | null
+  >(null);
 
   async function sendChat() {
     const text = chatInput.trim();
@@ -342,10 +350,14 @@ function ChatTab() {
         credentials: "include",
       });
       if (!r.ok) {
-        const detail = (await r.json().catch(() => ({}))) as {
+        const body = (await r.json().catch(() => ({}))) as {
+          code?: string;
           detail?: string;
         };
-        setChatError(detail.detail ?? `Send failed (${r.status})`);
+        setChatError({
+          code: body.code ?? "unknown",
+          detail: body.detail ?? `Send failed (${r.status})`,
+        });
         return;
       }
       const data = (await r.json()) as { reply: string };
@@ -354,7 +366,10 @@ function ChatTab() {
         { id: Date.now() + 1, role: "assistant", text: data.reply },
       ]);
     } catch (err) {
-      setChatError(err instanceof Error ? err.message : "Network error");
+      setChatError({
+        code: "network",
+        detail: err instanceof Error ? err.message : "Network error",
+      });
     } finally {
       setChatSending(false);
     }
@@ -468,7 +483,7 @@ function ChatConversationPane(props: {
   input: string;
   onInputChange: (v: string) => void;
   sending: boolean;
-  error: string | null;
+  error: { code: string; detail: string } | null;
   onSend: () => void;
 }) {
   return (
@@ -531,12 +546,44 @@ function ChatConversationPane(props: {
       </div>
 
       {/* Error banner — surfaces under the message list so
-          the user keeps context. Clears on the next send. */}
-      {props.error && (
-        <div className="mx-6 mb-2">
-          <p className="form-error">✗ {props.error}</p>
-        </div>
-      )}
+          the user keeps context. Clears on the next send.
+
+          Known backend ``code``s get a friendlier Chinese line
+          that tells the operator how to fix it (rather than
+          just dumping the English ``detail``); unknown codes
+          fall through to ``detail`` so a missing translation
+          never blanks the UI. */}
+      {props.error && (() => {
+        const friendly: Record<string, string> = {
+          // The operator hasn't set their per-employee LLM
+          // credentials yet — point them at the Organization
+          // tab where the employee detail panel lives. Tells
+          // them what to fill in (provider + API key) so the
+          // next attempt works without a second round-trip.
+          chat_llm_credentials_required:
+            "还没设置你的 LLM provider 和 API key。切到「员工」tab，找到自己的档案，把 Provider 和 API Key 填上再发消息。",
+          // ``chat.unknown_sender`` would mean the cookie is
+          // unbound, which the auth gate catches first — keep
+          // a local string here in case the gate is ever
+          // bypassed and the chat endpoint surfaces this.
+          chat_unknown_sender:
+            "登录失效了，重新登录一次再试试。",
+          // 401 from the auth gate — typically a stale
+          // session after long idle.
+          auth_not_signed_in:
+            "登录失效了，重新登录一次再试试。",
+        };
+        // Map dot-style backend codes to underscore keys
+        // (the friendly table) since this object uses
+        // underscore keys.
+        const key = props.error.code.replace(/\./g, "_");
+        const message = friendly[key] ?? props.error.detail;
+        return (
+          <div className="mx-6 mb-2">
+            <p className="form-error">✗ {message}</p>
+          </div>
+        );
+      })()}
 
       {/* Composer — textarea + send button. The button
           stays enabled when input is empty too; the onSend

@@ -49,3 +49,13 @@ unknown_sender: |
 # so the conversation doesn't look like a crash.
 agent_fallback: |
   我现在有点忙，等会儿再试一次吧。
+
+# Sent when the chat caller has no per-employee LLM
+# credentials configured. The WebUI chat endpoint catches
+# this earlier (403 chat.llm_credentials_required before the
+# agent is called), but the TG bot reaches the agent with
+# no creds if an assigned employee lost their provider.
+# Both paths funnel through this template so the wording
+# stays consistent.
+agent_no_credentials: |
+  你的账号还没设置 LLM provider 和 API key，去 MAGI WebUI 的「员工」里把自己的档案补上吧。
