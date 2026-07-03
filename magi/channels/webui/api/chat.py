@@ -60,6 +60,7 @@ from magi.runtime.sessions import (
     SessionPathError,
     SessionStore,
     new_session_id,
+    session_lock,
     utcnow_iso as _utcnow_iso,
 )
 from magi.runtime.state.orm import Employee, open_session
@@ -256,19 +257,23 @@ async def send_chat(
         sess = store.create(chat_id, employee_id=employee_id)
         session_id = sess.session_id
 
-    # Inbound audit + on-disk append happen together.
-    # ``append_messages`` validates roles and updates
-    # ``updated_at``; failures here bubble up as 500
-    # (``chat.session_store_failed``).
+    # Inbound audit + on-disk append happen together under
+    # the per-session ``asyncio.Lock`` so the auto-title
+    # worker (D.7) reads a coherent state. We hold the lock
+    # only across the inbound ``append_messages`` — the LLM
+    # call and the outbound append run unlocked. The lock is
+    # serialising-writers for the same session; two
+    # concurrent sends on different sessions are unaffected.
     ts_in = _utcnow_iso()
     try:
-        store.append_messages(
-            chat_id, session_id,
-            [SessionMessage(
-                role="user", text=text, ts=ts_in,
-                message_id=new_session_id(),
-            )],
-        )
+        async with session_lock(chat_id, session_id):
+            post = store.append_messages(
+                chat_id, session_id,
+                [SessionMessage(
+                    role="user", text=text, ts=ts_in,
+                    message_id=new_session_id(),
+                )],
+            )
     except Exception as e:
         logger.exception(
             "chat: failed to append user message for session %s", session_id,
@@ -277,6 +282,27 @@ async def send_chat(
             status_code=500,
             code="chat.session_store_failed",
             detail="could not persist chat message",
+        )
+
+    # D.7: fire the auto-title job once per session — when
+    # ``post.messages`` is exactly the user message we just
+    # appended (so this is the inaugural user message of a
+    # fresh session). Subsequent user messages
+    # (``len(messages) >= 3`` — user, assistant, user) don't
+    # re-enqueue. ``enqueue_title_job`` is fire-and-forget;
+    # no slow work happens on the request path here.
+    # ``employee_model`` stays None today (chat-send doesn't
+    # accept a model override); the auto-title worker is
+    # already structured to accept one when chat-send grows
+    # to thread it through.
+    if len(post.messages) == 1:
+        from magi.runtime.auto_title import enqueue_title_job
+        await enqueue_title_job(
+            chat_id=chat_id,
+            session_id=session_id,
+            employee_id=employee_id,
+            employee_provider=employee_provider,
+            employee_api_key=employee_api_key,
         )
 
     reply = await handle_message(
