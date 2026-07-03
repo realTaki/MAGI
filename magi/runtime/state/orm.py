@@ -245,6 +245,117 @@ class Department(Base):
         return f"Department(id={self.id}, name={self.name!r}, parent_id={self.parent_id})"
 
 
+# -- action items -----------------------------------------------------------
+#
+# A small "to-do" surface — the dashboard shows these in the
+# "Action Items" sidebar entry. The first concrete use case is
+# ``kind='llm_credentials_missing'``: every new admin gets one
+# so the dashboard nudges them to set their provider + API key
+# before they chat. C4 will reuse the same table for EVE-driven
+# follow-ups (kind strings like ``eve_followup_meeting``).
+#
+# Schema is intentionally kind-agnostic — every row carries
+# a stable ``kind`` + human-readable ``title`` / ``description``
+# / ``target_url``. No ``payload_json`` blob (YAGNI for the
+# rows we can foresee; add it later if C4 needs structured
+# per-kind fields).
+#
+# FK policy is ``ON DELETE SET NULL`` rather than CASCADE:
+# ``save_admin`` deletes old admin rows; cascade would wipe
+# their action history silently. SET NULL leaves an
+# ``employee_id IS NULL`` orphan that the post-commit sweep
+# in ``save_admin`` re-binds to the freshly-recreated admin,
+# so "remove admin and re-add" naturally surfaces the prompt
+# again instead of erasing it.
+
+
+class ActionItem(Base):
+    """A to-do surfaced to an admin in the dashboard.
+
+    Created by system paths (``save_admin`` etc.) and, from
+    C4, by EVEs that want to nudge the operator about a
+    follow-up. Dismissed / completed by the operator via
+    ``POST /api/action_items/{id}/complete`` — auto-completion
+    is deliberately out of scope (the operator may want to
+    dismiss a row for reasons unrelated to the underlying
+    state).
+    """
+
+    __tablename__ = "action_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # See class docstring on the SET NULL choice. Nullable
+    # because the FK target can disappear (admin removed),
+    # leaving the action item as an orphan until something
+    # re-binds it.
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Stable identifier per row category. Free-form string;
+    # the schema doesn't enforce a closed enum so C4 can add
+    # new kinds without a migration. Picked to be short +
+    # readable in /api/action_items?kind=<here> URLs.
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000))
+    # Where the "去设置" button navigates. Currently a path
+    # relative to the dashboard; future in-app tab switches
+    # can replace it with a deep-link state.
+    target_url: Mapped[str | None] = mapped_column(String(500))
+    # "normal" (default) or "high" — C4 uses "high" for
+    # time-sensitive follow-ups. Not a closed enum here for
+    # the same reason as ``kind``.
+    priority: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="normal"
+    )
+    # Who created the row. "system" for save_admin /
+    # similar, "eve" when C4 EVE-driven rows land, "user"
+    # for future operator-authored reminders. Useful for
+    # grouping + filtering later.
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="system"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    # Null = open. The "I clicked 完成" stamp.
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    completed_by_employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Optional reason captured at complete-time; useful for
+    # C4 EVE-driven rows where the operator may say "I'll do
+    # it next week" (the EVE then reads it back).
+    completion_note: Mapped[str | None] = mapped_column(String(500))
+    # Hidden without recording "I did it". Distinct from
+    # completed_at IS NOT NULL — both remove from the open
+    # list, but a dismissed row never claims the underlying
+    # action was performed. Used by the future "hide this
+    # prompt" affordance; v0 leaves dismissed at False.
+    dismissed: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    # Viewonly relationships so route code never mutates
+    # Employee via the ActionItem collection.
+    employee: Mapped["Employee | None"] = relationship(
+        foreign_keys=[employee_id], viewonly=True
+    )
+    completed_by: Mapped["Employee | None"] = relationship(
+        foreign_keys=[completed_by_employee_id], viewonly=True
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"ActionItem(id={self.id}, kind={self.kind!r}, "
+            f"employee_id={self.employee_id}, "
+            f"completed={self.completed_at is not None}, "
+            f"dismissed={self.dismissed})"
+        )
+
+
 # -- bootstrap --------------------------------------------------------------
 
 _engine: Engine | None = None
@@ -384,11 +495,48 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     ("employees", "telegram_id", "BIGINT"),
 ]
 
-# Pairs of ``(table, index_name, column)``. Run after the
-# plain ALTER TABLE above; the index is the equivalent of
-# ``UNIQUE`` for a column added post-hoc.
-_UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
-    ("employees", "ux_employees_telegram_id", "telegram_id"),
+# Plain index pairs. ``(table, index_name, columns_ddl)``.
+# Run after the plain ALTER TABLE above for read-side speed.
+# Idempotent (``CREATE INDEX IF NOT EXISTS``).
+_INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
+    # Speeds up ``GET /api/action_items`` which always filters
+    # by employee_id; the second index supports the
+    # "open + last-7-days completed" listing ordered by recency.
+    (
+        "action_items",
+        "ix_action_items_employee_id",
+        "(employee_id)",
+    ),
+    (
+        "action_items",
+        "ix_action_items_employee_recent",
+        "(employee_id, created_at DESC)",
+    ),
+]
+
+# Unique-index triples. ``(table, index_name, columns_ddl,
+# where_clause_or_None)``. The where_clause is a partial-index
+# predicate; ``None`` falls back to ``WHERE <last_column> IS
+# NOT NULL`` (the original behaviour for the employees
+# telegram_id index, which is nullable for non-bound rows).
+_UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str, str | None]] = [
+    (
+        "employees",
+        "ux_employees_telegram_id",
+        "telegram_id",
+        None,
+    ),
+    # Action items: idempotency — one OPEN row per
+    # ``(employee_id, kind)``. ``Partial unique`` so a
+    # completed/dismissed row doesn't block a future same-kind
+    # prompt (e.g. operator removes admin, re-adds them:
+    # a future prompt of the same kind must be allow-listed).
+    (
+        "action_items",
+        "ux_action_items_open_per_kind",
+        "employee_id, kind",
+        "completed_at IS NULL AND dismissed = 0",
+    ),
 ]
 
 
@@ -414,18 +562,38 @@ def _run_inline_migrations(engine: Engine) -> None:
                 text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             )
 
-        for table, index_name, column in _UNIQUE_INDEX_MIGRATIONS:
-            # ``CREATE UNIQUE INDEX IF NOT EXISTS`` is idempotent
-            # so re-running the migration is a no-op.
+        for table, index_name, columns in _INDEX_MIGRATIONS:
             logger.info(
-                "inline migration: ensuring unique index %s on %s.%s",
-                index_name, table, column,
+                "inline migration: ensuring index %s on %s.%s",
+                index_name, table, columns,
             )
             conn.execute(
                 text(
+                    f"CREATE INDEX IF NOT EXISTS "
+                    f"{index_name} ON {table} {columns}"
+                )
+            )
+
+        for table, index_name, columns, where_clause in _UNIQUE_INDEX_MIGRATIONS:
+            logger.info(
+                "inline migration: ensuring unique index %s on %s.%s",
+                index_name, table, columns,
+            )
+            # ``where_clause`` is None → default to "WHERE
+            # <last column> IS NOT NULL" (preserves the original
+            # behaviour for ux_employees_telegram_id). For
+            # partial indexes (``ux_action_items_open_per_kind``)
+            # the caller supplies the actual predicate.
+            if where_clause is None:
+                last_col = columns.split(",")[-1].strip()
+                predicate = f"WHERE {last_col} IS NOT NULL"
+            else:
+                predicate = f"WHERE {where_clause}"
+            conn.execute(
+                text(
                     f"CREATE UNIQUE INDEX IF NOT EXISTS "
-                    f"{index_name} ON {table} ({column}) "
-                    f"WHERE {column} IS NOT NULL"
+                    f"{index_name} ON {table} ({columns}) "
+                    f"{predicate}"
                 )
             )
 
