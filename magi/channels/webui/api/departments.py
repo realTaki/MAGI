@@ -6,17 +6,15 @@ into the full directory / TG-binding / EVE-assignment story; for
 now ``Employee`` is just enough to back the "manager" picker.
 
 All routes require the user to be signed in (the existing
-``/api/auth/me`` check) and to be a super admin (the existing
-``telegram.super_admins`` list). Both checks run in the
-``require_admin`` dependency — keeping the auth gate in one place
-so the route bodies stay focused on the data.
+``/api/auth/me`` check) and to be an admin (an Employee row
+with ``role='admin'``). Both checks run in the ``require_admin``
+dependency — keeping the auth gate in one place so the route
+bodies stay focused on the data.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from datetime import datetime
 from typing import Annotated, Optional
 
@@ -32,7 +30,6 @@ from magi.runtime.state.orm import (
     Employee,
     get_session,
 )
-from magi.runtime.state.settings import state_get
 
 logger = logging.getLogger("magi.api.departments")
 
@@ -45,47 +42,41 @@ def _is_admin_chat_id(chat_id: str) -> bool:
     """True if ``chat_id`` is bound to an Employee with role=admin.
 
     Single source of truth: reads from the ``employees`` table
-    (where the onboarding wizard writes admins). Falls back
-    to the legacy ``telegram.super_admins`` meta key so a
-    state file from before the unified table (C1.x) still
-    authenticates — the meta key gets retired in C8.
+    where the onboarding wizard writes admins. There is no
+    separate settings key for the admin allowlist — a single
+    source of truth avoids drift between ORM rows and a meta
+    blob, and lets ``save_admin`` / ``PATCH /employees/{id}``
+    be the only two paths that ever grant admin status.
+
+    An ORM read failure (table not yet initialised, etc.) is a
+    hard ``False`` — the gate fails closed rather than silently
+    letting unauthenticated callers through. ``AdminGate`` is
+    the only auth path; the chat endpoint and action_items
+    endpoint both pre-check via this same gate.
     """
+    from sqlalchemy import select
+
     from magi.runtime.state.orm import Employee, open_session
 
     try:
         cid_int = int(chat_id)
     except (TypeError, ValueError):
-        cid_int = None
-
-    if cid_int is not None:
-        try:
-            from sqlalchemy import select as _select
-            from magi.runtime.state.orm import open_session as _open
-
-            with _open() as session:
-                # ``Employee.telegram_id`` is the source of truth;
-                # look up by telegram_id rather than by id because
-                # the chat_id and the row id are different numbers.
-                emp = session.scalar(
-                    _select(Employee).where(Employee.telegram_id == cid_int)
-                )
-                if emp is not None and emp.role == "admin":
-                    return True
-        except Exception:
-            logger.exception("admin_gate: ORM read failed; falling back to meta")
-
-    # Fallback — the pre-C1.x meta key. Still works for any
-    # state that hasn't been migrated yet.
-    raw = state_get(
-        os.environ.get("MAGI_STATE_DIR", "/workspace/memories"),
-        "telegram.super_admins",
-    )
-    if not raw:
         return False
+
     try:
-        return chat_id in {str(x) for x in json.loads(raw)}
-    except (ValueError, TypeError):
-        return False
+        with open_session() as session:
+            # ``Employee.telegram_id`` is the source of truth;
+            # look up by telegram_id rather than by id because
+            # the chat_id and the row id are different numbers.
+            emp = session.scalar(
+                select(Employee).where(Employee.telegram_id == cid_int)
+            )
+            if emp is not None and emp.role == "admin":
+                return True
+    except Exception:
+        logger.exception("admin_gate: ORM read failed; denying access")
+
+    return False
 
 
 def admin_gate(request: Request) -> str:

@@ -1,11 +1,14 @@
 """Telegram channel — bootstrap a python-telegram-bot listener.
 
 C0/C1 behaviour: only the "first-touch" message handler is wired up.
-When **anyone other than a registered super admin** sends the bot a
+When **anyone other than a registered admin** sends the bot a
 message (including the first ``/start``), we reply with their chat_id
 and a "contact the admin" message. That way unprivileged users can
-discover their own chat_id to hand to the deployer. Once they're in
-``telegram.super_admins`` the same handler is a no-op (logs only).
+discover their own chat_id to hand to the deployer. Admin status
+is determined by ``Employee.role='admin'`` (the unified table
+written during onboarding) — there is no separate settings key for
+the admin allowlist, by design: a single source of truth for
+"who's an admin" avoids drift between ORM rows and meta blobs.
 
 C3 will replace this with a real agent-loop dispatcher: per-admin
 routing, audit hooks, conversation buffer, etc.
@@ -19,7 +22,6 @@ needed — each thread does its own I/O.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import threading
@@ -54,24 +56,6 @@ def _replies() -> dict[str, str]:
     if _BOT_REPLIES is None:
         _BOT_REPLIES = load_bot_replies()
     return _BOT_REPLIES
-
-
-def _load_super_admins(state_dir: str) -> set[str]:
-    """Read the super-admin allowlist from settings. Returns a set of
-    stringified chat_ids. Tolerant of missing/garbage rows."""
-    from magi.runtime.state.settings import state_get
-
-    raw = state_get(state_dir, "telegram.super_admins")
-    if not raw:
-        return set()
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        logger.warning("telegram.super_admins is not valid JSON; treating as empty")
-        return set()
-    if not isinstance(parsed, list):
-        return set()
-    return {str(x) for x in parsed}
 
 
 def _get_user_role(state_dir: str, chat_id: str) -> str | None:

@@ -274,13 +274,14 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     """Mount the Telegram channel: start a python-telegram-bot listener.
 
     C0 behaviour is the "first-touch" handler from
-    ``magi.channels.telegram.bot``: anyone not in ``telegram.super_admins``
-    gets a reply with their own chat_id and a "contact admin" nudge.
+    ``magi.channels.telegram.bot``: anyone not in the admin
+    list (an ``Employee`` row with ``role='admin'``) gets a
+    reply with their own chat_id and a "contact admin" nudge.
     C3 will replace this with the real agent-loop dispatcher.
 
     No-op when no bot token has been saved (e.g. onboarding step 1 not
     yet done). The bot daemon thread restarts are not required to pick
-    up new super admins — the allowlist is re-read on every message.
+    up new admins — the allowlist is re-read on every message.
     """
     state_dir = cfg.state_dir or "/workspace/memories"
     from magi.channels.telegram.bot import start_bot
