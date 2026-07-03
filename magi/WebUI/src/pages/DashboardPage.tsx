@@ -304,13 +304,30 @@ const CHAT_ACTIONS: ChatItem[] = [
   },
 ];
 
-// Empty for C0 — populated from the audit/event stream once C3
-// + C7 land. The shell is the same either way.
-const HISTORY: ChatItem[] = [];
-
 /** Cap the visible history list at 20 — beyond that, the "查看全部"
- *  row is the affordance to widen the window. */
+ *  row is the affordance to widen the window.
+ *
+ *  D.6: actually loaded from
+ *  ``GET /api/chat/sessions?limit=50`` now; the cap of 20 is
+ *  purely a UI cap (the sidebar shows the first 20 with a
+ *  "load more" expansion when the server has more). */
 const HISTORY_VISIBLE_LIMIT = 20;
+
+/** Storage key for the active chat session id. We keep the
+ *  *just-opened* session in localStorage so a hard refresh
+ *  restores the live thread. The backend is the source of
+ *  truth — localStorage is just a "last known" pointer. */
+const SESSION_STORAGE_KEY = "magi_chat_session_id";
+
+/** A row in the ``/api/chat/sessions`` list response. */
+type SessionSummary = {
+  session_id: string;
+  created_at: string;
+  created_by_employee_id: number;
+  updated_at: string;
+  message_count: number;
+  preview: string;
+};
 
 function ChatTab() {
   // "view-all" is a synthetic id that aliases the search view (per
@@ -318,11 +335,27 @@ function ChatTab() {
   // behave like opening search).
   const [selectedId, setSelectedId] = useState<string>(CHAT_CATEGORIES[0].id);
 
-  // The "新对话" pane is the real chat. v0: one in-memory
-  // conversation, no history (that's C7). Messages live in
-  // component state — refreshing the page starts a new
-  // thread. The user model is "send text → wait for full
-  // reply → see it appear" (C7 swaps in streaming).
+  // -- session lifecycle (D.6) -----------------------------------
+  // ``sessionId`` is the file-backed chat thread the operator
+  // currently has open. ``null`` means "no session yet" (the
+  // next /send call will auto-create one); the server
+  // returns the new id in the response.
+  const [sessionId, setSessionId] = useState<string | null>(
+    () => localStorage.getItem(SESSION_STORAGE_KEY)
+  );
+  // History list — most recent first, scoped to the
+  // current chat_id (server resolves via cookie).
+  const [history, setHistory] = useState<SessionSummary[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLimit] = useState(50);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // C7 / future: server returns a chunked list and the
+  // UI exposes "load more". v0 always renders the first
+  // 20 of whatever the server sends.
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  // -- chat messages (kept in component state, hydrated from
+  //    the server on session switch) ------------------------------
   const [chatMessages, setChatMessages] = useState<
     Array<{ id: number; role: "user" | "assistant"; text: string }>
   >([]);
@@ -338,6 +371,122 @@ function ChatTab() {
     { code: string; detail: string } | null
   >(null);
 
+  // -- helpers -----------------------------------------------------
+
+  async function loadSession(id: string) {
+    setChatError(null);
+    const r = await fetch(`/api/chat/sessions/${id}`, {
+      credentials: "include",
+    });
+    if (!r.ok) {
+      // 404 → stale id (manually deleted or migrated).
+      // Drop the localStorage pointer so the next send
+      // auto-creates; clear messages so the operator
+      // sees an empty thread instead of a flash of
+      // someone else's content.
+      if (r.status === 404) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        setSessionId(null);
+        setChatMessages([]);
+        setHistory((h) => h.filter((x) => x.session_id !== id));
+        return;
+      }
+      const body = (await r.json().catch(() => ({}))) as {
+        code?: string;
+        detail?: string;
+      };
+      setChatError({
+        code: body.code ?? "unknown",
+        detail: body.detail ?? `Load failed (${r.status})`,
+      });
+      return;
+    }
+    const data = (await r.json()) as {
+      session_id: string;
+      messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+    };
+    setSessionId(data.session_id);
+    localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+    setChatMessages(
+      data.messages.map((m, i) => ({
+        // idx is fine for keys — reassignment is rare
+        // and the messages array fully replaces on load.
+        id: i,
+        role: m.role as "user" | "assistant",
+        text: m.text,
+      }))
+    );
+  }
+
+  async function refreshHistory() {
+    setHistoryLoading(true);
+    try {
+      const r = await fetch(
+        `/api/chat/sessions?limit=${historyLimit}&offset=0`,
+        { credentials: "include" }
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        items: SessionSummary[];
+        total: number;
+      };
+      setHistory(data.items);
+      setHistoryTotal(data.total);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function newChat() {
+    setSessionId(null);
+    setChatMessages([]);
+    setChatInput("");
+    setChatError(null);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    // The next /send call will get a fresh session_id back
+    // from the server.
+  }
+
+  async function openSession(id: string) {
+    await loadSession(id);
+    setSelectedId("new-chat");
+    void refreshHistory();
+  }
+
+  async function deleteSession(id: string) {
+    if (!confirm("删除这条对话？")) return;
+    const r = await fetch(`/api/chat/sessions/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (r.ok || r.status === 404) {
+      // Filter locally; ignore server states (the route is
+      // idempotent, so 200 / 204 / 404 all mean "gone").
+      setHistory((h) => h.filter((x) => x.session_id !== id));
+      setHistoryTotal((t) => Math.max(0, t - 1));
+      // If we just deleted the active session, drop the
+      // localStorage pointer and start fresh — the next
+      // /send will auto-create.
+      if (id === sessionId) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        setSessionId(null);
+        setChatMessages([]);
+      }
+    }
+  }
+
+  // -- mount effects -----------------------------------------------
+
+  // On first mount, hydrate the active session from
+  // localStorage. If the id no longer exists, ``loadSession``
+  // drops the pointer and starts clean.
+  useEffect(() => {
+    const id = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (id) loadSession(id);
+    void refreshHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatSending) return;
@@ -350,7 +499,7 @@ function ChatTab() {
       const r = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, session_id: sessionId }),
         credentials: "include",
       });
       if (!r.ok) {
@@ -364,7 +513,15 @@ function ChatTab() {
         });
         return;
       }
-      const data = (await r.json()) as { reply: string };
+      const data = (await r.json()) as { reply: string; session_id: string };
+      // Pin the session id on the first send (the server
+      // auto-created one) and refresh the history so the
+      // sidebar reflects the freshly-persisted thread.
+      if (data.session_id !== sessionId) {
+        setSessionId(data.session_id);
+        localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+        void refreshHistory();
+      }
       setChatMessages((prev) => [
         ...prev,
         { id: Date.now() + 1, role: "assistant", text: data.reply },
@@ -382,12 +539,20 @@ function ChatTab() {
   const allById: Record<string, ChatItem> = {};
   for (const c of CHAT_CATEGORIES) allById[c.id] = c;
   for (const a of CHAT_ACTIONS) allById[a.id] = a;
-  for (const h of HISTORY) allById[h.id] = h;
-  // view-all is treated as "search" for the right pane.
+  // ``HISTORY`` (the placeholder) is intentionally not
+  // merged in anymore — D.6 replaces it with a real list
+  // driven from ``/api/chat/sessions``. The right-pane
+  // "view-all" / "search" entry is still synthetic.
   allById["view-all"] = allById["search"];
 
   const selected = allById[selectedId] ?? CHAT_CATEGORIES[0];
-  const historyVisible = HISTORY.slice(0, HISTORY_VISIBLE_LIMIT);
+  // The sidebar's "历史对话" list — latest first, the first
+  // ``HISTORY_VISIBLE_LIMIT`` of the 50 the server sent. Each
+  // row shows the first user-message preview as a label;
+  // clicking opens that session in the chat pane; the "×"
+  // button deletes it (with a confirm).
+  const historyVisible = history.slice(0, HISTORY_VISIBLE_LIMIT);
+  const historyOverflow = Math.max(0, historyTotal - historyVisible.length);
 
   return (
     <SidebarShell
@@ -401,29 +566,62 @@ function ChatTab() {
           <p className="mt-1 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-ocean/70">
             历史对话
           </p>
-          {historyVisible.length === 0 ? (
+          {historyLoading && history.length === 0 ? (
+            <p className="px-3 text-xs text-ink-soft">Loading…</p>
+          ) : history.length === 0 ? (
             <p className="px-3 text-xs text-ink-soft">
               No conversations yet.
             </p>
           ) : (
             <ul className="space-y-0.5">
               {historyVisible.map((h) => (
-                <li key={h.id}>
+                <li
+                  key={h.session_id}
+                  className={
+                    "flex items-center gap-1 rounded-md transition " +
+                    (h.session_id === sessionId
+                      ? "bg-sky-deep text-white"
+                      : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
+                  }
+                >
                   <button
                     type="button"
-                    onClick={() => setSelectedId(h.id)}
-                    className={
-                      "w-full text-left px-3 py-1.5 rounded-md text-xs truncate transition " +
-                      (h.id === selectedId
-                        ? "bg-sky-deep text-white"
-                        : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep")
-                    }
-                    title={h.label}
+                    onClick={() => openSession(h.session_id)}
+                    className="flex-1 text-left px-3 py-1.5 text-xs truncate"
+                    title={h.preview || "(空对话)"}
                   >
-                    {h.label}
+                    {h.preview || "(空对话)"}{" "}
+                    <span className={h.session_id === sessionId ? "opacity-70" : "opacity-60"}>
+                      · {h.message_count}条
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteSession(h.session_id)}
+                    className={
+                      "px-2 py-1.5 text-xs " +
+                      (h.session_id === sessionId
+                        ? "text-white/80 hover:text-white"
+                        : "text-ocean/60 hover:text-sky-deep")
+                    }
+                    title="删除"
+                    aria-label="删除对话"
+                  >
+                    ✕
                   </button>
                 </li>
               ))}
+              {historyOverflow > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setHistoryExpanded((b) => !b)}
+                  className="mt-1 w-full text-left px-3 py-1.5 text-xs text-sky-deep hover:text-sky-mid"
+                >
+                  {historyExpanded
+                    ? "收起"
+                    : `查看更多 (${historyOverflow}) →`}
+                </button>
+              )}
             </ul>
           )}
           <button
@@ -449,6 +647,8 @@ function ChatTab() {
           sending={chatSending}
           error={chatError}
           onSend={sendChat}
+          onNewChat={newChat}
+          hasActiveSession={sessionId !== null}
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
@@ -491,17 +691,35 @@ function ChatConversationPane(props: {
   sending: boolean;
   error: { code: string; detail: string } | null;
   onSend: () => void;
+  /** D.6: drop the local session pointer + messages. */
+  onNewChat: () => void;
+  /** D.6: whether the operator has a live session currently
+   *  open. The "新对话" button is meaningless when there's
+   *  no thread — disable it. */
+  hasActiveSession: boolean;
 }) {
   return (
     <div className="flex flex-col h-[560px]">
-      {/* Header — just the pane title; the "Adam" identity is
-          implicit (the operator is talking to their own system
-          LLM, not to a specific EVE). */}
-      <div className="px-6 py-3 border-b border-sky-light/40">
-        <h2 className="text-base font-semibold text-ink">新对话</h2>
-        <p className="text-xs text-ink-soft">
-          跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。
-        </p>
+      {/* Header — the pane title plus a "新对话" affordance
+          that drops the active session (the next /send
+          auto-creates a fresh one). The button is disabled
+          when there's no active session. */}
+      <div className="px-6 py-3 border-b border-sky-light/40 flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-semibold text-ink">新对话</h2>
+          <p className="text-xs text-ink-soft">
+            跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onNewChat}
+          disabled={!props.hasActiveSession}
+          className="btn btn-secondary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+          title="开一条新对话（清空当前消息）"
+        >
+          新对话
+        </button>
       </div>
 
       {/* Message list. Empty state nudges the operator to type

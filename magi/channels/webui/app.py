@@ -98,6 +98,13 @@ def create_app() -> FastAPI:
     # in SSE / WebSocket.
     from magi.channels.webui.api import chat
     app.include_router(chat.router, prefix="/api")
+    # Chat session CRUD — file-backed per-user conversation
+    # history (D.6). Each operator's sessions live under
+    # ``<workspace>/memories/sessions/<chat_id>/`` and the
+    # cookie pins the operator. Mounted right after ``chat``
+    # so its URL prefix aligns with the chat namespace.
+    from magi.channels.webui.api import chat_sessions
+    app.include_router(chat_sessions.router, prefix="/api")
     # Action Items — the "things to do" inbox the dashboard's
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``

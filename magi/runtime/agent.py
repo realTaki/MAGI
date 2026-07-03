@@ -158,6 +158,13 @@ async def handle_message(
     text: str,
     channel: str,
     employee_id: int | None = None,
+    # D.6: optional session id. Pure audit annotation for
+    # v0 — the agent loop itself does not (yet) read session
+    # history. The id is echoed into the audit_log rows so
+    # future replay tools can join messages back to the
+    # persisted session file under
+    # ``<workspace>/memories/sessions/<chat_id>/<id>.json``.
+    session_id: str | None = None,
     # Per-employee credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
     # call can be billed to a specific employee. Both must be
@@ -199,6 +206,13 @@ async def handle_message(
     employee_id
         Optional employee id, for the audit row. ``None`` for
         anonymous (WebUI) traffic.
+    session_id
+        D.6: optional chat session id. Pure audit-only field
+        in v0 — the agent loop itself does not read session
+        history. Echoed into all ``chat.*`` audit rows so
+        future replay tools can join audit_log entries back
+        to the persisted session file under
+        ``<workspace>/memories/sessions/<chat_id>/<id>.json``.
     employee_provider / employee_api_key / employee_model
         Per-call LLM credentials. Either all three are set
         (employee chooses model optionally) or the call is
@@ -213,7 +227,7 @@ async def handle_message(
         kind="chat.inbound",
         employee_id=employee_id,
         channel=channel,
-        payload={"text": text},
+        payload={"text": text, "session_id": session_id},
     )
 
     # Strict-mode pre-flight: per-employee credentials must
@@ -239,7 +253,11 @@ async def handle_message(
             kind="chat.outbound.error",
             employee_id=employee_id,
             channel=channel,
-            payload={"error": reason, "text": _fallback_reply("agent_no_credentials")},
+            payload={
+                "error": reason,
+                "session_id": session_id,
+                "text": _fallback_reply("agent_no_credentials"),
+            },
         )
         return _fallback_reply("agent_no_credentials")
 
@@ -271,6 +289,7 @@ async def handle_message(
                 "error_class": type(e).__name__,
                 "provider": provider_name,
                 "model": model,
+                "session_id": session_id,
                 "text": _fallback_reply(),
             },
         )
@@ -292,6 +311,7 @@ async def handle_message(
             "model": result.model,
             "provider": provider.name,
             "usage": result.usage,
+            "session_id": session_id,
             "raw_blocks": result.raw_blocks,
         },
     )
