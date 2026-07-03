@@ -382,6 +382,12 @@ function ChatTab() {
     { code: string; detail: string } | null
   >(null);
 
+  // D.8: pane header follows the active session. Both cleared
+  // together whenever ``sessionId`` changes (see ``newChat`` /
+  // ``openSession`` / ``loadSession``); never decoupled.
+  const [activeTitle, setActiveTitle] = useState<string | null>(null);
+  const [activePreview, setActivePreview] = useState<string | null>(null);
+
   // -- helpers -----------------------------------------------------
 
   async function loadSession(id: string) {
@@ -399,6 +405,9 @@ function ChatTab() {
         localStorage.removeItem(SESSION_STORAGE_KEY);
         setSessionId(null);
         setChatMessages([]);
+        // D.8: matching clear — header reverts to default.
+        setActiveTitle(null);
+        setActivePreview(null);
         setHistory((h) => h.filter((x) => x.session_id !== id));
         return;
       }
@@ -414,6 +423,7 @@ function ChatTab() {
     }
     const data = (await r.json()) as {
       session_id: string;
+      title: string | null;
       messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
     };
     setSessionId(data.session_id);
@@ -426,6 +436,16 @@ function ChatTab() {
         role: m.role as "user" | "assistant",
         text: m.text,
       }))
+    );
+    // D.8: capture the session's own title + first user message
+    // so the pane header can render them. ``title`` is what the
+    // operator renamed to or what the LLM worker generated;
+    // ``preview`` is the first user text (the sidebar's fallback
+    // when there's no title). Stashed separately from ``sessionId``
+    // so a stale id (404 path above) drops them cleanly.
+    setActiveTitle(data.title ?? null);
+    setActivePreview(
+      data.messages.find((m) => m.role === "user")?.text ?? null,
     );
   }
 
@@ -443,6 +463,19 @@ function ChatTab() {
       };
       setHistory(data.items);
       setHistoryTotal(data.total);
+      // D.8: if the active session is in the refreshed list
+      // and the server now has a title for it (e.g. the
+      // auto-title worker fired after our last send), mirror
+      // it into ``activeTitle`` so the pane header updates
+      // without requiring a manual row click. ``activeTitle``
+      // is intentionally NOT cleared when the title is null —
+      // a transient worker delay should not blank the header.
+      if (sessionId) {
+        const active = data.items.find((x) => x.session_id === sessionId);
+        if (active && active.title) {
+          setActiveTitle(active.title);
+        }
+      }
     } finally {
       setHistoryLoading(false);
     }
@@ -453,6 +486,10 @@ function ChatTab() {
     setChatMessages([]);
     setChatInput("");
     setChatError(null);
+    // D.8: drop the active session's title + preview so the
+    // header reverts to the default "新对话" copy.
+    setActiveTitle(null);
+    setActivePreview(null);
     localStorage.removeItem(SESSION_STORAGE_KEY);
     // The next /send call will get a fresh session_id back
     // from the server.
@@ -496,6 +533,11 @@ function ChatTab() {
         row.session_id === id ? { ...row, title: trimmed } : row,
       ),
     );
+    // D.8: also flip the pane header if this is the active
+    // session — same precedence as the sidebar.
+    if (id === sessionId) {
+      setActiveTitle(trimmed);
+    }
 
     try {
       const r = await fetch(`/api/chat/sessions/${id}`, {
@@ -510,6 +552,10 @@ function ChatTab() {
             row.session_id === id ? { ...row, title: previous } : row,
           ),
         );
+        // D.8: matching revert for the pane header.
+        if (id === sessionId) {
+          setActiveTitle(previous);
+        }
         const body = (await r.json().catch(() => ({}))) as {
           code?: string;
           detail?: string;
@@ -600,6 +646,11 @@ function ChatTab() {
       if (data.session_id !== sessionId) {
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+        // D.8: first send of a fresh thread — no title yet
+        // (the auto-title worker hasn't run), so seed the
+        // pane header with the user message text as preview.
+        setActiveTitle(null);
+        setActivePreview(text);
         void refreshHistory();
       }
       setChatMessages((prev) => [
@@ -793,6 +844,8 @@ function ChatTab() {
           onSend={sendChat}
           onNewChat={newChat}
           hasActiveSession={sessionId !== null}
+          title={activeTitle}
+          preview={activePreview}
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
@@ -841,19 +894,50 @@ function ChatConversationPane(props: {
    *  open. The "新对话" button is meaningless when there's
    *  no thread — disable it. */
   hasActiveSession: boolean;
+  /** D.8: pane header follows the active session. ``null``
+   *  means "no session yet" — falls back to the default
+   *  "新对话" copy below the title. ``title ?? preview``
+   *  is the sidebar label, so the header reuses the same
+   *  precedence (manual / LLM-generated title > first user
+   *  message preview). The literal string "新对话" is the
+   *  fallback for the empty-state case. */
+  title: string | null;
+  /** First user message text — fallback label when there's
+   *  no title. Mirrors ``SessionSummary.preview``. */
+  preview: string | null;
 }) {
+  // Header text:
+  //   - active session with a title  → that title
+  //   - active session with no title → first user message preview
+  //   - no session yet               → "新对话"
+  const headerTitle =
+    props.title ??
+    props.preview ??
+    "新对话";
+  // Subtitle: only show the "reply uses SOUL.md persona"
+  // hint when the thread is empty / brand new. Once there
+  // are messages, the context is obvious and the line would
+  // just add noise.
+  const headerSubtitle =
+    props.messages.length === 0
+      ? "跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。"
+      : null;
+
   return (
     <div className="flex flex-col h-[560px]">
-      {/* Header — the pane title plus a "新对话" affordance
-          that drops the active session (the next /send
-          auto-creates a fresh one). The button is disabled
-          when there's no active session. */}
+      {/* Header — pane title follows the active session
+          (manual title / LLM auto-title / first user preview
+          / "新对话" for empty), plus a "新对话" affordance
+          that drops the active session. Disabled when no
+          session is open. */}
       <div className="px-6 py-3 border-b border-sky-light/40 flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-semibold text-ink">新对话</h2>
-          <p className="text-xs text-ink-soft">
-            跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。
-          </p>
+          <h2 className="text-base font-semibold text-ink truncate" title={headerTitle}>
+            {headerTitle}
+          </h2>
+          {headerSubtitle && (
+            <p className="text-xs text-ink-soft">{headerSubtitle}</p>
+          )}
         </div>
         <button
           type="button"
