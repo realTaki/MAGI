@@ -200,8 +200,40 @@ async def get_status() -> OnboardingStatus:
     # "True" / "true" / "1" all count. Anything else (including
     # missing) is False. Kept as a plain text flag — the only
     # writer is /complete, which writes the literal "true".
-    complete_raw = state_get(state_dir, "telegram.onboarding_complete")
-    onboarding_complete = str(complete_raw).strip().lower() in ("true", "1")
+    #
+    # The key is ``onboarding.complete`` (not
+    # ``telegram.onboarding_complete``) because "is the
+    # operator's first-time setup done?" is a system-level
+    # state, not a channel-level one. The channel-level keys
+    # (``telegram.bot_token``, ``telegram.super_admins``, …)
+    # legitimately carry the ``telegram.`` prefix because the
+    # bot identity + chat-id verification ARE Telegram-specific.
+    # Onboarding isn't — C5 will onboard Email or Calendar,
+    # and that flow's "complete?" flag should live next to
+    # this one in the system namespace, not under each
+    # channel.
+    #
+    # Migration: the v0 keys carry ``telegram.`` as a leftover
+    # from when bot setup WAS the only onboarding step. Treat
+    # the old key as one-shot-equivalent so an operator
+    # upgrading from v0 doesn't get sent back into the wizard.
+    complete_raw = state_get(state_dir, "onboarding.complete")
+    if complete_raw is None:
+        # Pre-rename deployments still have the older
+        # ``telegram.onboarding_complete`` key. Read it once,
+        # migrate forward lazily (don't write here — the
+        # wizard's completion will write the new key).
+        old_raw = state_get(state_dir, "telegram.onboarding_complete")
+        if old_raw is not None:
+            logger.info(
+                "migrating legacy telegram.onboarding_complete -> onboarding.complete",
+                extra={"value": old_raw},
+            )
+    else:
+        old_raw = None
+    onboarding_complete = (
+        str(complete_raw or old_raw or "").strip().lower() in ("true", "1")
+    )
 
     return OnboardingStatus(
         bot_saved=bool(bot_username),
@@ -222,15 +254,68 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     reporting ``onboarding_complete=false`` and the boot routing
     keeps sending the user back into the wizard, no matter how
     much of step 1 / 2 / 3 they finished.
+
+    Side effect: stamp a ``llm_credentials_missing`` action item
+    onto every current admin so the dashboard's Action Items
+    pane nudges each operator to set their LLM provider + key
+    before chatting. The first onboard is the natural moment
+    for this (each admin's row already exists by the time the
+    wizard reaches step 4); re-onboarding later (after
+    ``/restart``) re-runs the same logic against whatever the
+    admin set is now.
+
+    The action-item insert runs **before** the
+    ``onboarding_complete`` flag is written so a partial
+    failure can't leave the user at the dashboard with the
+    flag set and no nudges. If the insert fails we report
+    ``ok=false`` and the wizard's button shows the error —
+    the user retries, the helper is idempotent so no
+    duplicate rows on retry.
     """
+    from sqlalchemy import select
+
+    from magi.channels.webui.api.action_items import (
+        _ensure_llm_credentials_item,
+    )
+    from magi.runtime.state.orm import Employee, open_session
     from magi.runtime.state.settings import state_set
 
+    # 1. Stamp one nudge per current admin. Helper is
+    #    idempotent — re-running (e.g. retry after failure,
+    #    second wizard pass after /restart) is a no-op for any
+    #    admin that already has an open row.
     try:
-        state_set(_state_dir(), "telegram.onboarding_complete", "true")
+        with open_session() as session:
+            admins = list(
+                session.scalars(
+                    select(Employee).where(Employee.role == "admin")
+                ).all()
+            )
+            inserted = 0
+            for admin in admins:
+                if _ensure_llm_credentials_item(session, admin.id):
+                    inserted += 1
+            session.commit()
+    except Exception as exc:  # pragma: no cover — DB failure
+        logger.exception(
+            "complete: action-item insert failed (%d admins, %d inserted before error)",
+            len(admins) if 'admins' in locals() else 0, inserted if 'inserted' in locals() else 0,
+        )
+        return CompleteResponse(ok=False)
+
+    # 2. Flip the flag only after the inserts succeeded.
+    try:
+        state_set(_state_dir(), "onboarding.complete", "true")
     except Exception as exc:  # pragma: no cover — disk / permission errors
         logger.exception("failed to write onboarding_complete flag")
         return CompleteResponse(ok=False)
-    logger.info("onboarding marked complete")
+    logger.info(
+        "onboarding marked complete",
+        extra={
+            "admin_count": len(admins),
+            "action_items_inserted": inserted,
+        },
+    )
     return CompleteResponse(ok=True)
 
 
@@ -243,10 +328,18 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     so the wizard's resume logic (Step 1 view mode, prefilled admin
     rows) picks them up again — a deployer can re-confirm a setup
     without re-typing the chat_ids.
+
+    Clears both the canonical key (``onboarding.complete``) and
+    the legacy v0 key (``telegram.onboarding_complete``) so a
+    deployer's previous setting doesn't accidentally keep them
+    out of the wizard. The legacy key is read-only on the
+    status path; ``/restart`` is the one place that writes a
+    delete for it too.
     """
     from magi.runtime.state.settings import state_delete
 
     try:
+        state_delete(_state_dir(), "onboarding.complete")
         state_delete(_state_dir(), "telegram.onboarding_complete")
     except Exception as exc:  # pragma: no cover — disk / permission errors
         logger.exception("failed to clear onboarding_complete flag")
