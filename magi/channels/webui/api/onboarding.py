@@ -16,8 +16,9 @@
            saved bot. Returns ``{ok, display_name}`` or ``{ok: false,
            error}``. **Does not store**.
        ``POST /api/onboarding/save-admin { chat_ids: list[str] }``
-           Writes the verified chat_id list (JSON-encoded) into
-           ``telegram.super_admins`` in the ``settings`` table.
+           Upserts an ``Employee`` row per chat_id with ``role='admin'``,
+           ``telegram_id=<chat_id>`` and no department. Display names are
+           resolved via Telegram ``getChat``. Idempotent.
 
 All four endpoints are read-only or write-only against the ``settings``
 table, so they live alongside the webui channel rather than in a future
@@ -124,10 +125,10 @@ class OnboardingStatus(BaseModel):
     # The single source of truth for "is the wizard done?". Flipped
     # to True only by POST /api/onboarding/complete (the dashboard
     # "OK, got it — sign in →" button). Cleared by /restart. This is
-    # deliberately decoupled from bot_saved + super_admins_count so a
-    # user who saved a bot but abandoned step 3 can still get back
-    # into the wizard (and so a deployer can "Restart onboarding"
-    # without nuking the saved data).
+    # deliberately decoupled from ``bot_saved`` and the admin-list
+    # fields above so a user who saved a bot but abandoned step 3
+    # can still get back into the wizard (and so a deployer can
+    # "Restart onboarding" without nuking the saved data).
     onboarding_complete: bool = False
 
 
@@ -169,10 +170,14 @@ async def get_status() -> OnboardingStatus:
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
 
-    # Super admins now live in the employees table (unified
-    # with the rest of the org directory). The wizard
-    # resumes by reading from there so the "you already
-    # added N admins" message reflects the canonical state.
+    # Super admins live in the employees table (unified with
+    # the rest of the org directory) — that's the single source
+    # of truth. The wizard resumes by reading from there so
+    # the "you already added N admins" message reflects the
+    # canonical state. There's no settings-key fallback by
+    # design: a state file pre-C1.x may have a stale
+    # ``telegram.super_admins`` key, but the operator can
+    # always re-save the admin list to clean that up.
     admins: list[str] = []
     try:
         with open_session() as session:
@@ -182,20 +187,10 @@ async def get_status() -> OnboardingStatus:
                 if emp.telegram_id is not None:
                     admins.append(str(emp.telegram_id))
     except Exception:
-        # If the table is unreachable (very early boot) fall
-        # back to the legacy meta so the wizard still
-        # shows something useful.
-        logger.exception("failed to read admin employees; falling back to meta")
-        raw_admins = state_get(state_dir, "telegram.super_admins")
-        if raw_admins:
-            try:
-                parsed = json.loads(raw_admins)
-                if isinstance(parsed, list):
-                    admins = [str(x) for x in parsed]
-            except (ValueError, TypeError):
-                logger.warning(
-                    "telegram.super_admins in settings is not valid JSON; treating as empty"
-                )
+        # If the table is unreachable (very early boot) the
+        # wizard still loads; admins stays empty until the
+        # operator re-saves.
+        logger.exception("failed to read admin employees")
 
     # "True" / "true" / "1" all count. Anything else (including
     # missing) is False. Kept as a plain text flag — the only
@@ -205,13 +200,13 @@ async def get_status() -> OnboardingStatus:
     # ``telegram.onboarding_complete``) because "is the
     # operator's first-time setup done?" is a system-level
     # state, not a channel-level one. The channel-level keys
-    # (``telegram.bot_token``, ``telegram.super_admins``, …)
-    # legitimately carry the ``telegram.`` prefix because the
-    # bot identity + chat-id verification ARE Telegram-specific.
-    # Onboarding isn't — C5 will onboard Email or Calendar,
-    # and that flow's "complete?" flag should live next to
-    # this one in the system namespace, not under each
-    # channel.
+    # (``telegram.bot_token``, ``telegram.bot_username``,
+    # ``telegram.verify_code.<chat_id>``) legitimately carry
+    # the ``telegram.`` prefix because the bot identity +
+    # chat-id verification ARE Telegram-specific. Onboarding
+    # isn't — C5 will onboard Email or Calendar, and that
+    # flow's "complete?" flag should live next to this one in
+    # the system namespace, not under each channel.
     #
     # Migration: the v0 keys carry ``telegram.`` as a leftover
     # from when bot setup WAS the only onboarding step. Treat
@@ -587,7 +582,12 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     2. **One-shot** — burn the code on any attempt (success, mismatch,
        or expiry) so a wrong-guess attacker can't grind through the
        6^6 space against a still-valid code.
-    3. **Append the chat_id to ``telegram.super_admins``** on success.
+    3. **Don't persist yet** — the user's chat_id is
+       recorded only after they finish the wizard via
+       ``save_admin`` (the Employee row + ``role='admin'``
+       is the single source of truth). Verify just proves
+       ownership; the operator still has to confirm the
+       final admin list.
     4. Fetch a display name via ``getChat`` for the frontend.
     """
     from datetime import datetime, timezone
@@ -638,50 +638,21 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     if stored != code:
         return VerifyAdminCodeResponse(ok=False, error="Code does not match")
 
-    # Commit this chat_id to the super-admin list immediately — the
-    # user has proven they own the chat, so there's no point making
-    # them click "Finish" before the result sticks. Idempotent.
-    _append_super_admin(chat_id)
+    # The code match is the proof-of-ownership; we don't persist
+    # the chat_id here. The wizard's ``save_admin`` step (the
+    # final "Save" button) is what writes admin rows to the
+    # ``employees`` table — that path is the single source of
+    # truth for "who's an admin". Persisting at this point
+    # would create Employee rows that the operator might
+    # later remove via save_admin's diff step, doubling the
+    # work for no gain.
 
-    # Best-effort: also fetch a display name for the frontend. Don't
-    # fail the verify call if getChat errors out — the code match is
-    # the source of truth.
     display_name = await _fetch_display_name(chat_id)
     logger.info(
         "admin chat_id verified via code",
         extra={"chat_id": chat_id, "display_name": display_name},
     )
     return VerifyAdminCodeResponse(ok=True, display_name=display_name)
-
-
-def _append_super_admin(chat_id: str) -> None:
-    """Add ``chat_id`` to ``telegram.super_admins`` (deduped + sorted).
-
-    No-op if it's already in the list. The list is stored as a JSON
-    array so the bot can read it cheaply on every inbound message.
-    """
-    from magi.runtime.state.settings import state_get
-
-    state_dir = _state_dir()
-    raw = state_get(state_dir, "telegram.super_admins")
-    admins: set[str] = set()
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                admins = {str(x) for x in parsed}
-        except (ValueError, TypeError):
-            logger.warning(
-                "telegram.super_admins is not valid JSON; resetting"
-            )
-    admins.add(chat_id)
-    from magi.runtime.state.settings import state_set
-
-    state_set(state_dir, "telegram.super_admins", json.dumps(sorted(admins)))
-    logger.info(
-        "super_admins list updated",
-        extra={"added": chat_id, "count": len(admins)},
-    )
 
 
 async def _fetch_display_name(chat_id: str) -> str | None:
@@ -736,12 +707,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
         if it was previously a regular employee (this
         handles the rare case where someone was first added
         to the company, then promoted to admin).
-      - The legacy ``settings.telegram.super_admins`` meta
-        key is still written so older auth paths don't 401
-        mid-migration. C8 cleans it up.
+
+    No settings key is written; the Employee table is the
+    single source of truth for "who's an admin". The auth
+    gate (``_is_admin_chat_id`` in ``departments.py``) reads
+    exclusively from this table.
     """
     from magi.runtime.state.orm import Employee, open_session
-    from magi.runtime.state.settings import state_set
 
     state_dir = _state_dir()
     cleaned = sorted({c.strip() for c in payload.chat_ids if c.strip()})
@@ -820,14 +792,5 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
         logger.exception("failed to write admin employees")
         return SaveAdminResponse(ok=False, error=str(exc))
 
-    # Legacy meta key — kept in sync so older auth paths
-    # (e.g. the pre-refactor admin_gate) don't 401 mid-
-    # migration. C8 will retire it once everyone's on the
-    # new auth path.
-    try:
-        state_set(state_dir, "telegram.super_admins", json.dumps(cleaned))
-    except Exception:
-        logger.exception("failed to write legacy super_admins meta")
-
-    logger.info("super admins saved", extra={"count": len(cleaned)})
+    logger.info("admins saved", extra={"count": len(cleaned)})
     return SaveAdminResponse(ok=True, count=len(cleaned))
