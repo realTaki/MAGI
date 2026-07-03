@@ -58,38 +58,6 @@ def _replies() -> dict[str, str]:
     return _BOT_REPLIES
 
 
-def _get_user_role(state_dir: str, chat_id: str) -> str | None:
-    """Return the recorded role for a chat_id, or None if not yet seen."""
-    from magi.runtime.state.settings import state_get
-
-    return state_get(state_dir, f"telegram.user.{chat_id}.role")
-
-
-def _record_user(
-    state_dir: str,
-    chat_id: str,
-    role: str,
-    display_name: str | None = None,
-) -> None:
-    """Persist a per-chat_id role (and display_name if given).
-
-    No-op if the same role is already recorded — keeps first_seen stable
-    for re-tries. Adding a different role for the same chat_id would
-    overwrite (rare; usually means an admin changed roles in settings).
-    """
-    from magi.runtime.state.settings import state_set
-
-    existing = _get_user_role(state_dir, chat_id)
-    if existing != role:
-        state_set(state_dir, f"telegram.user.{chat_id}.role", role)
-    if display_name:
-        from magi.runtime.state.settings import state_get
-
-        current_name = state_get(state_dir, f"telegram.user.{chat_id}.display_name")
-        if current_name != display_name:
-            state_set(state_dir, f"telegram.user.{chat_id}.display_name", display_name)
-
-
 async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle any inbound message from any chat.
 
@@ -186,28 +154,24 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # 3. No employee bound — treat as GUEST.
-    if _get_user_role(state_dir, chat_id) is None:
-        _record_user(state_dir, chat_id, "GUEST", display_name=display_name)
-        logger.info(
-            "telegram: first-touch, recorded as GUEST",
-            extra={"chat_id": chat_id, "display_name": display_name},
-        )
-
-    role = _get_user_role(state_dir, chat_id) or "GUEST"
-    if role == "GUEST":
-        await update.effective_message.reply_text(
-            _replies()["unknown_sender"].format(chat_id=chat_id),
-            parse_mode="HTML",
-        )
-        return
-
-    # Any other recorded role (OTHER_EMPLOYEE / BOT) —
-    # no per-role handler yet; log so we can see them in
-    # the dev container's stdout.
+    #
+    # The chat_id discovery reply goes out to anyone not
+    # bound to an Employee row; the ``Employee.telegram_id``
+    # is the only source of truth for who's been "claimed".
+    # There's nothing else to track here — historically we
+    # wrote ``telegram.user.<chat_id>.{role,display_name}``
+    # to settings, but those duplicated columns on the
+    # Employee row are deprecated in favour of the unified
+    # table and the operator has cleared them from settings.
     logger.info(
-        "telegram: %s role, no handler yet", role,
+        "telegram: no employee bound, sending chat_id discovery",
         extra={"chat_id": chat_id, "display_name": display_name},
     )
+    await update.effective_message.reply_text(
+        _replies()["unknown_sender"].format(chat_id=chat_id),
+        parse_mode="HTML",
+    )
+    return
 
 
 def _find_employee_by_telegram_id(
