@@ -31,10 +31,15 @@ logger = logging.getLogger("magi.runtime.llm.factory")
 def known_providers() -> list[str]:
     """Provider ids the UI can offer in dropdowns.
 
-    Order is the recommended display order: Global first for
-    international deployers, then China, then the bare alias.
+    v0 ships only the Minimax endpoints. Order matches the
+    dropdown: Global first for international deployers, then
+    China. ``"minimax"`` (bare alias) is intentionally NOT
+    listed here — operators pick a region explicitly so there's
+    no ambiguity. ``get_provider`` still accepts ``"minimax"``
+    for backward compat with any pre-v0 employee rows; we just
+    don't surface it in the picker.
     """
-    return ["minimax-global", "minimax-cn", "minimax"]
+    return ["minimax-global", "minimax-cn"]
 
 
 def get_provider(
@@ -48,8 +53,11 @@ def get_provider(
     ----------
     provider_name
         The id stored in ``Employee.provider`` (or the system
-        default). Case-insensitive. ``"minimax"`` alone is a
-        synonym for ``"minimax-cn"``.
+        default). Case-insensitive. ``"minimax"`` alone is
+        still accepted as a synonym for ``"minimax-cn"`` for
+        backward compat — pre-v0 employee rows that picked
+        the bare alias keep working — but it no longer
+        appears in the UI picker.
     api_key
         The vendor API key. Not logged.
     model
@@ -77,11 +85,14 @@ def provider_options_for_ui() -> list[dict[str, str]]:
     """The dropdown entries for the provider picker. Each row
     has ``value`` (the id we store) and ``label`` (what the
     operator sees). New providers just add a row here.
+
+    v0 ships only Minimax. When OpenAI / Anthropic / etc.
+    land, add them here and to :func:`known_providers` so
+    the picker and the validator stay in sync.
     """
     return [
         {"value": "minimax-global", "label": "Minimax (Global)"},
         {"value": "minimax-cn", "label": "Minimax (China)"},
-        {"value": "minimax", "label": "Minimax (default → China)"},
     ]
 
 

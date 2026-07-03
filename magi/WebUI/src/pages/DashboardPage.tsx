@@ -1113,13 +1113,16 @@ type EmployeeScope =
   | { kind: "department"; departmentId: number }
   | { kind: "separated" };
 
+// Mirrors the backend's
+// ``magi.runtime.llm.factory.provider_options_for_ui()``.
+// v0 ships only the Minimax endpoints; OpenAI / Anthropic
+// / etc. land as their providers come online — add a row
+// here AND the branch in the backend factory so the
+// picker and the validator stay in sync.
 const PROVIDER_OPTIONS = [
   { value: "", label: "（未指定）" },
-  { value: "anthropic", label: "Anthropic (Claude)" },
-  { value: "openai", label: "OpenAI" },
-  { value: "google", label: "Google (Gemini)" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "ollama", label: "Ollama (local)" },
+  { value: "minimax-global", label: "Minimax (Global)" },
+  { value: "minimax-cn", label: "Minimax (China)" },
 ] as const;
 
 // Build a DFS-ordered list of departments with each row's depth,
@@ -2448,8 +2451,7 @@ function EmployeesPane() {
                       API Key
                       {viewingEmp.api_key_set && (
                         <span className="ml-2 text-xs font-normal text-ink-soft">
-                          已设置（…{viewingEmp.api_key_last4}）— 留空表示不变，要
-                          rotate 就填新值
+                          已设置
                         </span>
                       )}
                     </label>
@@ -2462,9 +2464,16 @@ function EmployeesPane() {
                           api_key: e.target.value,
                         }))
                       }
+                      // When a key already exists, show its last-4
+                      // as the placeholder so the operator can
+                      // visually confirm "this is the one I want
+                      // to keep". Typing anything overwrites;
+                      // saving with empty string is the no-op
+                      // (PATCH skips the field entirely when
+                      // api_key is "" in the form).
                       placeholder={
-                        viewingEmp.api_key_set
-                          ? "留空保持不变"
+                        viewingEmp.api_key_set && viewingEmp.api_key_last4
+                          ? `sk-…${viewingEmp.api_key_last4}`
                           : "sk-..."
                       }
                       autoComplete="new-password"
