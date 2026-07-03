@@ -27,7 +27,7 @@ import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
@@ -85,6 +85,9 @@ class SessionOut(BaseModel):
     channel: str
     created_at: str
     updated_at: str
+    # D.7: operator-set or LLM-generated title. ``None`` means
+    # "no title yet" — the sidebar falls back to ``preview``.
+    title: str | None = None
     schema_version: int
     messages: list[SessionMessageOut]
 
@@ -96,6 +99,9 @@ class SessionSummaryOut(BaseModel):
     updated_at: str
     message_count: int
     preview: str
+    # D.7: same field as ``Session.title`` — list-endpoint
+    # projection.
+    title: str | None = None
 
 
 class SessionListOut(BaseModel):
@@ -109,6 +115,21 @@ class CreateSessionResponse(BaseModel):
     session_id: str
 
 
+class UpdateSessionRequest(BaseModel):
+    """Body for ``PATCH /api/chat/sessions/{session_id}``.
+
+    Mirrors :class:`magi.channels.webui.api.departments.EmployeeUpdate`
+    semantics (``model_fields_set``): a field's *absence*
+    means "don't change". An explicit ``None`` or empty string
+    means "clear the title".
+
+    Only ``title`` is updatable for v0; future fields
+    (tags, language) would land here.
+    """
+
+    title: str | None = Field(default=None, max_length=80)
+
+
 def _session_to_out(s: Session) -> SessionOut:
     return SessionOut(
         session_id=s.session_id,
@@ -118,6 +139,8 @@ def _session_to_out(s: Session) -> SessionOut:
         created_at=s.created_at,
         updated_at=s.updated_at,
         schema_version=s.schema_version,
+        # D.7: thread the (optional) title through.
+        title=s.title,
         messages=[
             SessionMessageOut(
                 message_id=m.message_id,
@@ -145,6 +168,9 @@ def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut
         updated_at=s.updated_at,
         message_count=s.message_count,
         preview=s.preview,
+        # D.7: surface the title alongside the preview so the
+        # front-end can render ``h.title ?? h.preview``.
+        title=s.title,
     )
 
 
@@ -332,3 +358,104 @@ def delete_session(
         # ALWAYS return 204 — see the comment above.
         return None
     return None
+
+
+@router.patch(
+    "/chat/sessions/{session_id}",
+    response_model=SessionOut,
+)
+def update_session(
+    session_id: str,
+    payload: UpdateSessionRequest,
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+) -> SessionOut:
+    """Rename a session (D.7).
+
+    ``title`` semantics (mirrors the chat-send / ``model_fields_set``
+    pattern used elsewhere in the codebase):
+
+      - **absent from the body** — no-op. The response still
+        returns the current state with whatever title the
+        session already has (so the front-end can use PATCH
+        as a "give me the current state" idempotent read).
+      - **explicit ``null``** — clear the title.
+      - **explicit string** — set after trim + length-clamp
+        to 80 chars (matches ``max_length=80`` on the body).
+
+    Manual renames do **not** bump ``updated_at``: a rename is
+    operator metadata and shouldn't reshuffle the sidebar.
+    The auto-title worker takes the same ``rename`` path with
+    ``bump_updated=True`` because a freshly-titled session is
+    content, not metadata.
+    """
+    chat_id = str(_resolve_chat_id(request))
+
+    if "title" in payload.model_fields_set:
+        raw = payload.title
+        # ``None`` and empty (whitespace-only or ``""``) both
+        # clear. ``SessionStore.rename`` re-clamps to 80 as a
+        # final defensive ceiling.
+        if raw is None or raw.strip() == "":
+            new_title: str | None = None
+        else:
+            new_title = raw
+
+        try:
+            sess = store.rename(
+                chat_id, session_id, new_title, bump_updated=False
+            )
+        except SessionPathError as e:
+            raise MagiHTTPException(
+                status_code=400,
+                code="validation.session_id_invalid",
+                detail=str(e),
+            )
+        except SessionCorruptError as e:
+            logger.error(
+                "rename failed: session file corrupt: %s", e,
+                extra={"session_id": session_id},
+            )
+            raise MagiHTTPException(
+                status_code=500,
+                code="validation.session_corrupt",
+                detail="session file is malformed",
+            )
+        except SessionNotFoundError:
+            raise MagiHTTPException(
+                status_code=404,
+                code="not_found.session",
+                detail=f"session {session_id} not found",
+            )
+        return _session_to_out(sess)
+
+    # No-op path — return current state. Going through
+    # ``store.get`` (rather than synthesizing) surfaces a
+    # 404 if the session vanished between the GET that
+    # showed the row and this PATCH.
+    try:
+        sess = store.get(chat_id, session_id)
+    except SessionPathError as e:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.session_id_invalid",
+            detail=str(e),
+        )
+    except SessionCorruptError as e:
+        logger.error(
+            "get failed: session file corrupt: %s", e,
+            extra={"session_id": session_id},
+        )
+        raise MagiHTTPException(
+            status_code=500,
+            code="validation.session_corrupt",
+            detail="session file is malformed",
+        )
+    if sess is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.session",
+            detail=f"session {session_id} not found",
+        )
+    return _session_to_out(sess)

@@ -443,3 +443,156 @@ def test_delete_unauth_state_no_leak(state, admin):
     assert all(sid != sids[1] for sid in [
         it["session_id"] for it in listing["items"]
     ])
+
+
+# ────────────────────────────────────────────────────────────────── #
+# D.7 — PATCH /api/chat/sessions/{id} (manual rename)
+# ────────────────────────────────────────────────────────────────── #
+
+
+def test_patch_session_renames(client, admin):
+    """``PATCH {title: "..."}`` renames the session on disk and
+    the response shows the new title."""
+    create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
+    sid = create.json()["session_id"]
+
+    r = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "Acme 会议 明天 3 点"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["session_id"] == sid
+    assert body["title"] == "Acme 会议 明天 3 点"
+    # GET roundtrip — file on disk really has it.
+    get = client.get(
+        f"/api/chat/sessions/{sid}", cookies=_admin_cookie(admin)
+    )
+    assert get.json()["title"] == "Acme 会议 明天 3 点"
+
+
+def test_patch_session_clears_title(client, admin):
+    """``null`` and ``""`` both clear the title."""
+    create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
+    sid = create.json()["session_id"]
+    # Set
+    client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "temp"},
+    )
+    # Clear via empty string
+    r1 = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": ""},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["title"] is None
+    # Set again, then clear via null
+    client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "temp"},
+    )
+    r2 = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": None},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["title"] is None
+
+
+def test_patch_session_absent_title_is_noop(client, admin):
+    """``PATCH {}`` (no title field at all) leaves the session
+    untouched and returns its current state.
+
+    Verifies the ``model_fields_set`` semantics — absent ≠
+    null. We capture ``updated_at`` via ``GET`` first (the
+    create-only POST returns just ``session_id``) and confirm
+    it doesn't move on the no-op patch (manual rename also
+    doesn't bump anyway)."""
+    create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
+    sid = create.json()["session_id"]
+    # Fetch the full session to capture ``updated_at``.
+    initial = client.get(
+        f"/api/chat/sessions/{sid}", cookies=_admin_cookie(admin)
+    ).json()
+    initial_updated_at = initial["updated_at"]
+
+    r = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["session_id"] == sid
+    assert body["updated_at"] == initial_updated_at  # unchanged
+
+
+def test_patch_session_clamps_too_long_title(client, admin):
+    """Pydantic ``max_length=80`` rejects 81 chars before the
+    handler even runs (422)."""
+    create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
+    sid = create.json()["session_id"]
+
+    r = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "x" * 81},
+    )
+    assert r.status_code == 422
+
+
+def test_patch_session_trims_whitespace(client, admin):
+    """The store re-trims even when Pydantic passes a long-but-
+    valid string. ``"   hello   "`` → ``"hello"``."""
+    create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
+    sid = create.json()["session_id"]
+    r = client.patch(
+        f"/api/chat/sessions/{sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "   hello world   "},
+    )
+    assert r.status_code == 200
+    assert r.json()["title"] == "hello world"
+
+
+def test_patch_unknown_session_404(client, admin):
+    """ULID-shaped but no file → 404."""
+    fake_sid = "01ABCDEFGHJKMNPQRSTVWXYZAB"
+    r = client.patch(
+        f"/api/chat/sessions/{fake_sid}",
+        cookies=_admin_cookie(admin),
+        json={"title": "x"},
+    )
+    assert r.status_code == 404
+    assert r.json()["code"] == "not_found.session"
+
+
+def test_patch_malformed_session_id_400(client, admin):
+    """Non-ULID id → 400 ``validation.session_id_invalid``.
+    Catch before the DB read so we don't surface a confusing
+    404 for a typo."""
+    r = client.patch(
+        "/api/chat/sessions/short",
+        cookies=_admin_cookie(admin),
+        json={"title": "x"},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.session_id_invalid"
+
+
+def test_patch_requires_admin(client):
+    """No cookie → 401 (AdminGate). Independent of any
+    session state."""
+    r = client.patch(
+        "/api/chat/sessions/01ABCDEFGHJKMNPQRSTVWXYZAB",
+        cookies={},
+        json={"title": "x"},
+    )
+    assert r.status_code == 401
+    assert r.json()["code"] == "auth.not_signed_in"

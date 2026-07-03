@@ -24,6 +24,10 @@ Files:
   - ``bot_replies.md``     : Telegram bot reply templates.
                              YAML key→text; values use Python
                              ``str.format()`` placeholders.
+  - ``chat_titles.md``     : the system prompt for the
+                             background "summarize a conversation
+                             into a 3-5 word title" job. Read by
+                             :mod:`magi.runtime.auto_title`.
 
 Loading is **eager at first use** and cached in module-level
 globals so subsequent calls are O(1). The cache survives
@@ -104,6 +108,17 @@ def load_fallback_persona() -> str:
     persona they actually deploy.
     """
     return _load("fallback_persona")
+
+
+def load_chat_title_prompt() -> str:
+    """The system prompt for the auto-title worker (D.7).
+
+    Reads the bundled ``chat_titles.md``. Used by
+    :mod:`magi.runtime.auto_title` to summarise each
+    session's first user message into a 3-5 word title
+    written back to ``Session.title``.
+    """
+    return _load("chat_titles")
 
 
 def load_bot_replies() -> dict[str, str]:

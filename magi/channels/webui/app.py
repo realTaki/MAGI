@@ -21,6 +21,7 @@ Subsequent checkpoints layer on:
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -62,10 +63,33 @@ class HealthResponse(BaseModel):
 
 
 def create_app() -> FastAPI:
+    # D.7: lifespan hook starts the auto-title background
+    # worker. Kept lazy (inside ``create_app``) so it runs
+    # after ``init_orm`` / ``init_sqlite`` have prepared the
+    # state — module-level startup would race those calls.
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        # Imported lazily because ``magi.runtime.auto_title``
+        # also imports ``magi.runtime.llm``, which is heavy and
+        # not needed for /health. Keeps cold-start tight.
+        from magi.runtime.auto_title import (
+            start_title_worker,
+            stop_title_worker,
+        )
+
+        await start_title_worker()
+        logger.info("auto-title worker started")
+        try:
+            yield
+        finally:
+            await stop_title_worker()
+            logger.info("auto-title worker stopped")
+
     app = FastAPI(
         title="MAGI",
         version=__version__,
         summary="MAGI node — channel-driven (WebUI / Telegram / …).",
+        lifespan=_lifespan,
     )
 
     # Install the i18n-ready error envelope BEFORE the

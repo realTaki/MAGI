@@ -48,12 +48,14 @@ every ``get``/``append`` until all files have moved.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
 import secrets
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -67,6 +69,11 @@ logger = logging.getLogger("magi.runtime.sessions")
 SCHEMA_VERSION = 1
 _SESSIONS_SUBDIR = "sessions"
 _PREVIEW_CHARS = 80
+# Title length ceiling: matches the Pydantic ``max_length`` on
+# ``PATCH /api/chat/sessions/{id}`` body. Truncating here too
+# guards against a hand-crafted endpoint bypass that bypasses
+# the Pydantic body validation.
+_TITLE_MAX_LEN = 80
 _ALLOWED_MESSAGE_ROLES = frozenset({"user", "assistant", "system"})
 
 # Crockford base32 alphabet — no I, L, O, U to avoid
@@ -80,6 +87,54 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 # of digits today, but the path helper is permissive so a
 # future ``MAGI_USER_<handle>`` style doesn't break.
 _CHAT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+# -- per-session locks ------------------------------------------------------
+#
+# Cross-writer serialisation within a single event loop.
+# The lock guarantees that a session file's state (messages
+# list vs. title) is observed coherently by exactly one writer
+# at a time. Cross-process safety still relies on the file
+# atomic-write (``tempfile + os.replace``); this is a
+# single-process defence-in-depth measure for the title-job /
+# chat-send race D.7 introduced.
+#
+# Entries are created on first request and live for the
+# process lifetime. The cache grows unboundedly but v0's
+# per-operator session count is bounded (tens-to-hundreds);
+# memory cost is one ``asyncio.Lock`` per (chat_id, session_id).
+#
+# ``_session_locks_meta_lock`` protects dict mutation (the
+# ``.setdefault`` below) from concurrent first-callers
+# across the asyncio / threading boundaries. Once the entry
+# exists, lookup + ``acquire()`` is already thread-safe by
+# virtue of the ``dict`` being atomic under the GIL.
+_session_locks: dict[tuple[str, str], "asyncio.Lock"] = {}
+_session_locks_meta_lock = threading.Lock()
+
+
+def session_lock(chat_id: str, session_id: str) -> "asyncio.Lock":
+    """Return the per-(chat_id, session_id) ``asyncio.Lock``,
+    creating it lazily on first call.
+
+    Callers acquire the returned lock around
+    ``SessionStore.{append_messages, rename, get}`` for
+    any session they expect to mutate under the D.7 title
+    race window. The lock is intentionally not held across
+    LLM calls (those are slow and would serialise all
+    titles + sends through one mutex — overkill for v0).
+    """
+    key = (chat_id, session_id)
+    lock = _session_locks.get(key)
+    if lock is not None:
+        return lock
+    with _session_locks_meta_lock:
+        lock = _session_locks.get(key)
+        if lock is not None:
+            return lock
+        lock = asyncio.Lock()
+        _session_locks[key] = lock
+    return lock
 
 
 # -- exceptions ------------------------------------------------------------
@@ -131,6 +186,11 @@ class Session:
     created_at: str
     updated_at: str
     messages: list[SessionMessage]
+    # Optional title: ``None`` means "no title yet" (manual
+    # rename unset, or background job not yet run). The
+    # front-end renders ``title ?? preview``. Set by the
+    # PATCH endpoint (manual) or the auto-title worker.
+    title: str | None = None
     schema_version: int = SCHEMA_VERSION
 
 
@@ -143,6 +203,7 @@ class SessionSummary:
     updated_at: str
     message_count: int
     preview: str  # first user text, trimmed to _PREVIEW_CHARS
+    title: str | None = None
 
 
 # -- ULID generator --------------------------------------------------------
@@ -256,6 +317,11 @@ def session_to_dict(s: Session) -> dict:
         "channel": s.channel,
         "created_at": s.created_at,
         "updated_at": s.updated_at,
+        # ``title`` is always emitted (``None`` → JSON null) so
+        # the on-disk shape is unambiguous for debug tools.
+        # ``session_from_dict`` accepts absence for backward
+        # compatibility with files written before D.7.
+        "title": s.title,
         "messages": [
             {
                 "message_id": m.message_id,
@@ -273,6 +339,11 @@ def session_from_dict(d: dict) -> Session:
 
     Raises ``SessionCorruptError`` if anything is wrong. We
     fail closed — never silently coerce or skip.
+
+    Backward compatibility: ``title`` is read via ``d.get(...)``
+    so a file written before D.7 (no ``title`` key) loads with
+    ``title=None``. No schema-version bump is needed for
+    additive optional fields.
     """
     if not isinstance(d, dict):
         raise SessionCorruptError("session root is not a JSON object")
@@ -305,6 +376,13 @@ def session_from_dict(d: dict) -> Session:
                     text=str(m["text"]),
                 )
             )
+        # ``title`` defaults to None when the key is absent
+        # (pre-D.7 files have no title field).
+        title_raw = d.get("title")
+        if title_raw is not None and not isinstance(title_raw, str):
+            raise SessionCorruptError(
+                f"title must be a string or null, got {type(title_raw).__name__}"
+            )
         return Session(
             session_id=str(d["session_id"]),
             chat_id=str(d["chat_id"]),
@@ -313,6 +391,7 @@ def session_from_dict(d: dict) -> Session:
             created_at=str(d["created_at"]),
             updated_at=str(d["updated_at"]),
             messages=messages,
+            title=title_raw,
             schema_version=schema_version,
         )
     except KeyError as e:
@@ -336,6 +415,7 @@ def summary_from_session(s: Session) -> SessionSummary:
         updated_at=s.updated_at,
         message_count=len(s.messages),
         preview=preview,
+        title=s.title,
     )
 
 
@@ -462,6 +542,76 @@ class SessionStore:
         if bump_updated:
             session.updated_at = utcnow_iso()
         _atomic_write_json(path, session_to_dict(session))
+        return session
+
+    def rename(
+        self,
+        chat_id: str,
+        session_id: str,
+        title: str | None,
+        *,
+        bump_updated: bool = True,
+    ) -> Session:
+        """Set or clear the session's ``title``.
+
+        Read-modify-rewrite via the same atomic-write path as
+        :meth:`append_messages`. ``title`` is trimmed and length-
+        clamped to ``_TITLE_MAX_LEN`` chars. ``None`` (or an
+        empty string after trimming) clears the title.
+
+        ``bump_updated=False`` skips the ``updated_at`` bump —
+        used by the manual ``PATCH`` path because a rename is
+        operator metadata and shouldn't reshuffle the sidebar.
+        The background auto-title job passes the default
+        (``bump_updated=True``) so a freshly-titled session
+        floats to the top.
+
+        Raises
+        ------
+        SessionNotFoundError
+            No session file at the canonical path.
+        SessionCorruptError
+            The file exists but is malformed.
+        SessionPathError
+            ``session_id`` is not a valid ULID.
+        """
+        path = session_path(self._workspace, chat_id, session_id)
+        if not path.is_file():
+            raise SessionNotFoundError(
+                f"session {session_id!r} for chat_id {chat_id!r} "
+                "does not exist"
+            )
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            session = session_from_dict(data)
+        except json.JSONDecodeError as e:
+            raise SessionCorruptError(
+                f"session file {path} is not valid JSON: {e}"
+            ) from e
+
+        # Normalise: trim, length-clamp, treat empty as clear.
+        if title is None:
+            new_title: str | None = None
+        else:
+            stripped = title.strip()
+            if not stripped:
+                new_title = None
+            else:
+                new_title = stripped[:_TITLE_MAX_LEN]
+
+        session.title = new_title
+        if bump_updated:
+            session.updated_at = utcnow_iso()
+        _atomic_write_json(path, session_to_dict(session))
+        logger.info(
+            "session renamed",
+            extra={
+                "session_id": session_id,
+                "chat_id": chat_id,
+                "title_set": new_title is not None,
+            },
+        )
         return session
 
     def delete(self, chat_id: str, session_id: str) -> bool:
