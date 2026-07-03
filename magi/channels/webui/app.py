@@ -135,6 +135,11 @@ def create_app() -> FastAPI:
     # from) are mounted first.
     from magi.channels.webui.api import action_items
     app.include_router(action_items.router, prefix="/api")
+    # Soul editor — the persona text the agent loop reads as
+    # the system prompt. Read/write/reset the workspace
+    # ``SOUL.md`` from the Settings tab.
+    from magi.channels.webui.api import soul
+    app.include_router(soul.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets

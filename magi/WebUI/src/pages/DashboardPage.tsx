@@ -2959,6 +2959,7 @@ function SettingsTab(props: {
         data={props.data}
         onBotUpdated={props.onBotUpdated}
       />
+      <SettingsPersonaCard />
       <SettingsWebuiAccessCard
         signedInUser={props.signedInUser}
         onAdminsChanged={props.onAdminsChanged}
@@ -3336,6 +3337,260 @@ function SettingsOnboardingCard(props: { onRestart: () => void }) {
       >
         Restart onboarding
       </button>
+    </ConsoleCard>
+  );
+}
+
+// -- persona card ------------------------------------------------------------
+//
+// Edits the workspace ``SOUL.md`` — the text the agent loop
+// passes as the system prompt on every chat turn. Single
+// company-wide persona for v0; per-employee personas are C4.
+//
+// ``GET /api/soul`` returns the current text + a flag telling
+// us whether the agent is reading the bundled default (file
+// missing on disk) or an already-customised workspace copy.
+// The flag drives a one-line warning banner so the operator
+// knows "saving here overwrites the bundled fallback" — they
+// might not have realised the workspace file was missing.
+//
+// Save / Reset are separate actions: Save writes the textarea
+// content verbatim; Reset overwrites the workspace file with
+// the bundled ``prompts/soul.md`` (the immutable template).
+// Both go through the same atomic-write endpoint and audit
+// row; the only difference is the body and the kind string.
+//
+// Live char counter mirrors the backend's 8 KB cap so an
+// operator pastes a long doc, sees the count climb past the
+// limit, and gets a friendlier hint than the 422 they'll
+// get on save.
+function SettingsPersonaCard() {
+  const [content, setContent] = useState<string>("");
+  const [original, setOriginal] = useState<string>("");
+  const [modifiedAt, setModifiedAt] = useState<string | null>(null);
+  const [isFallback, setIsFallback] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  // 8 KB cap mirrors the backend's
+  // ``magi.channels.webui.api.soul._MAX_SOUL_CHARS``.
+  const SOUL_MAX = 8000;
+  // Warning at 80% so the operator gets a visual cue before
+  // the textarea overflows the layout.
+  const SOUL_WARN = SOUL_MAX * 0.8;
+  const chars = content.length;
+  const overLimit = chars > SOUL_MAX;
+  const nearLimit = chars > SOUL_WARN;
+  const dirty = content !== original;
+
+  async function load() {
+    setLoadError(null);
+    try {
+      const r = await fetch("/api/soul", { credentials: "include" });
+      if (!r.ok) {
+        setLoadError(`Failed to load persona (${r.status})`);
+        return;
+      }
+      const data = (await r.json()) as {
+        content: string;
+        modified_at: string | null;
+        is_bundled_fallback: boolean;
+      };
+      setContent(data.content);
+      setOriginal(data.content);
+      setModifiedAt(data.modified_at);
+      setIsFallback(data.is_bundled_fallback);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Network error");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function save() {
+    setSaveError(null);
+    setSavedNotice(null);
+    const trimmed = content.trim();
+    if (!trimmed) {
+      setSaveError("Persona 内容不能为空（空白不算）");
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch("/api/soul", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: trimmed }),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as {
+          code?: string;
+          detail?: string;
+        };
+        setSaveError(body.detail ?? `Save failed (${r.status})`);
+        return;
+      }
+      const data = (await r.json()) as { modified_at: string };
+      // Sync state so the dirty flag clears and the
+      // "last edited" line reflects the new mtime.
+      const synced = trimmed;
+      setContent(synced);
+      setOriginal(synced);
+      setModifiedAt(data.modified_at);
+      setIsFallback(false);
+      setSavedNotice("已保存。下一条消息就会用新的 persona。");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetToDefault() {
+    if (!confirm("确定把 persona 重置为默认模板？这会覆盖当前的自定义内容。")) {
+      return;
+    }
+    setSaveError(null);
+    setSavedNotice(null);
+    setResetting(true);
+    try {
+      const r = await fetch("/api/soul/reset", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as {
+          code?: string;
+          detail?: string;
+        };
+        setSaveError(body.detail ?? `Reset failed (${r.status})`);
+        return;
+      }
+      // Re-load so the textarea shows the same content the
+      // backend just wrote (canonical truth).
+      await load();
+      setSavedNotice("已重置为默认模板。");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  // ``modifiedAt`` comes back as an ISO UTC string; render a
+  // compact "YYYY-MM-DD HH:MM" in local time. Skipped when
+  // the persona is the bundled fallback (no mtime yet).
+  function formatModified(iso: string | null): string {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return (
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+        `${pad(d.getHours())}:${pad(d.getMinutes())}`
+      );
+    } catch {
+      return iso;
+    }
+  }
+
+  return (
+    <ConsoleCard title="Persona (SOUL.md)">
+      <p className="text-sm text-ink-soft">
+        系统回复时使用的 persona（人设）。编辑后保存即生效 — 下一条消息会用新的
+        persona 调 LLM。重置会恢复成内置的默认模板。
+      </p>
+
+      {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
+
+      {isFallback && !loadError && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          当前没有自定义的 SOUL.md — agent 在用内置的通用 fallback
+          persona。点「保存」会创建自定义版本。
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2">
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={14}
+          spellCheck={false}
+          className={
+            "form-input w-full text-sm font-mono leading-relaxed py-2 px-3 resize-y " +
+            (overLimit ? "border-rose-400 focus:border-rose-500" : "")
+          }
+          style={{ minHeight: "260px", maxHeight: "520px" }}
+        />
+        <div className="flex items-center justify-between text-xs">
+          <span
+            className={
+              overLimit
+                ? "text-rose-600 font-medium"
+                : nearLimit
+                  ? "text-amber-700"
+                  : "text-ink-soft"
+            }
+          >
+            {chars.toLocaleString()} / {SOUL_MAX.toLocaleString()} 字符
+            {overLimit && " — 超出上限，请删减"}
+          </span>
+          {modifiedAt && (
+            <span className="text-ink-soft">
+              最后修改：<span className="font-mono">{formatModified(modifiedAt)}</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {saveError && <p className="form-error mt-3">✗ {saveError}</p>}
+      {savedNotice && <p className="mt-3 text-xs text-emerald-700">✓ {savedNotice}</p>}
+
+      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-sky-light/40">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || resetting || !dirty || overLimit}
+          className="btn btn-primary text-sm py-1.5 px-4"
+          title={
+            !dirty
+              ? "没有改动"
+              : overLimit
+                ? "超出字符上限"
+                : "保存"
+          }
+        >
+          {saving ? "保存中…" : "保存"}
+        </button>
+        <button
+          type="button"
+          onClick={resetToDefault}
+          disabled={saving || resetting}
+          className="btn btn-secondary text-sm py-1.5 px-4"
+        >
+          {resetting ? "重置中…" : "重置为默认"}
+        </button>
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => {
+              setContent(original);
+              setSaveError(null);
+              setSavedNotice(null);
+            }}
+            disabled={saving || resetting}
+            className="btn btn-ghost text-sm py-1.5 px-3"
+          >
+            放弃改动
+          </button>
+        )}
+      </div>
     </ConsoleCard>
   );
 }
