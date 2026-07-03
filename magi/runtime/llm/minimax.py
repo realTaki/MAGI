@@ -54,8 +54,9 @@ _BASE_URLS: dict[str, str] = {
 }
 
 # Default model. Operators can override per-employee by
-# setting ``llm.default_model`` in the meta table or by
-# extending the Employee model with a model column (C1.x).
+# extending the Employee model with a model column (the
+# ``employee_model`` argument passed to ``handle_message``
+# already accepts this).
 _DEFAULT_MODEL = "MiniMax-M2.7"
 
 # Cap on a single reply. 1024 is enough for most chat turns

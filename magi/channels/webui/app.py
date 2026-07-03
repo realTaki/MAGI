@@ -88,10 +88,6 @@ def create_app() -> FastAPI:
     # stays clean: /api/departments, /api/employees.
     app.include_router(departments.router, prefix="/api")
     app.include_router(departments.employees_router, prefix="/api")
-    # LLM system defaults (separate from per-employee config):
-    # GET/PUT/DELETE /api/llm/default, GET /api/llm/providers.
-    from magi.channels.webui.api import llm_settings
-    app.include_router(llm_settings.router, prefix="/api")
     # Telegram binding (chat_id ↔ employee_id, v0 admin endpoint;
     # C2 will replace with a /start <code> flow that uses the
     # same underlying meta key).
