@@ -98,6 +98,12 @@ def create_app() -> FastAPI:
     # in SSE / WebSocket.
     from magi.channels.webui.api import chat
     app.include_router(chat.router, prefix="/api")
+    # Action Items — the "things to do" inbox the dashboard's
+    # Action Items sidebar entry fetches. Hooked last so the
+    # auth-gated routers above (which it re-imports ``AdminGate``
+    # from) are mounted first.
+    from magi.channels.webui.api import action_items
+    app.include_router(action_items.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets

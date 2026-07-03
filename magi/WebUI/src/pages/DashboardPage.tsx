@@ -31,6 +31,7 @@
  */
 import { useEffect, useState } from "react";
 
+import ActionItemsPane from "../components/ActionItemsPane";
 import ConsoleCard from "../components/ConsoleCard";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
@@ -211,7 +212,12 @@ type TabKey = "chat" | "organization" | "knowledge" | "settings";
 // list stack on top of the standard nav column) and the per-item
 // `pane` field that drives the right-side placeholder.
 type ChatItem = SidebarItem & {
-  pane: { title: string; hint: string; meta?: string };
+  // Optional — entries with a live component (today:
+  // ``action-items`` → ``<ActionItemsPane />``) don't carry
+  // a static placeholder. The other "future" entries (Meetings,
+  // Reminders, etc.) keep their ``pane`` so a click shows the
+  // honest "this isn't wired yet" hint.
+  pane?: { title: string; hint: string; meta?: string };
 };
 
 const CHAT_CATEGORIES: ChatItem[] = [
@@ -219,11 +225,9 @@ const CHAT_CATEGORIES: ChatItem[] = [
     id: "action-items",
     label: "Action Items",
     icon: <IconActionItems />,
-    pane: {
-      title: "Action Items",
-      hint: "No action items yet. EVEs will surface follow-ups here once C4 + C5 land.",
-      meta: "C4 / C5",
-    },
+    // The pane reads from ``/api/action_items`` at mount —
+    // see ``components/ActionItemsPane.tsx``. No static
+    // fallback here; an empty list renders as "没有待办".
   },
   {
     id: "meetings",
@@ -446,7 +450,9 @@ function ChatTab() {
           error={chatError}
           onSend={sendChat}
         />
-      ) : (
+      ) : selectedId === "action-items" ? (
+        <ActionItemsPane />
+      ) : selected.pane ? (
         <div className="p-8 text-center flex flex-col items-center justify-center">
           <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>
           <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
@@ -454,7 +460,7 @@ function ChatTab() {
             <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
           )}
         </div>
-      )}
+      ) : null}
     </SidebarShell>
   );
 }
