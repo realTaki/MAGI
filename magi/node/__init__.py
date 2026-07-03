@@ -260,6 +260,15 @@ def _launch_webui(cfg: NodeConfig) -> None:
         "webui channel starting",
         extra={"host": host, "port": port, "reload": cfg.reload},
     )
+    # Pin the reload watcher to the magi package root.
+    # Without this, uvicorn falls back to ``os.getcwd()`` —
+    # which inside the dev container is ``/web`` (the Vite
+    # web root, not the Python source tree). The watcher
+    # silently no-ops against the wrong tree, so D.6 / D.7
+    # edits never reached the running process and a manual
+    # ``docker restart`` was needed to pick them up.
+    reload_dirs = ["/workspace/magi"] if cfg.reload else None
+
     uvicorn.run(
         "magi.channels.webui.app:create_app",
         factory=True,
@@ -267,6 +276,7 @@ def _launch_webui(cfg: NodeConfig) -> None:
         port=port,
         log_level=cfg.log_level.lower(),
         reload=cfg.reload,
+        reload_dirs=reload_dirs,
     )
 
 
