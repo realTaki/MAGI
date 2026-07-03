@@ -1,0 +1,334 @@
+"""CRUD endpoints for chat sessions.
+
+A "session" is a single thread of messages between an
+operator (identified by their TG chat_id / dashboard cookie)
+and the system LLM. Sessions are persisted as JSON files
+under the operator's workspace (see :mod:`magi.runtime.sessions`)
+and are per-user — admin A's session is invisible to admin B.
+
+Endpoints
+---------
+
+- ``POST   /chat/sessions``              create empty session, return id
+- ``GET    /chat/sessions``              list current operator's sessions
+- ``GET    /chat/sessions/{session_id}``  load a single session (full messages)
+- ``DELETE /chat/sessions/{session_id}``  remove a session
+
+The ``{session_id}`` route uses the URL as the only
+identification: there is no separate ``chat_id`` parameter,
+because the cookie already pins the caller. The chat_id is
+derived from the cookie via :func:`_current_admin_chat_id`.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+from sqlalchemy import select
+
+from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.errors import MagiHTTPException
+from magi.runtime.sessions import (
+    Session,
+    SessionCorruptError,
+    SessionError,
+    SessionMessage,
+    SessionNotFoundError,
+    SessionPathError,
+    SessionStore,
+    SessionSummary,
+    new_session_id,
+)
+from magi.runtime.state.orm import Employee, open_session
+
+logger = logging.getLogger("magi.api.chat_sessions")
+
+router = APIRouter(tags=["chat_sessions"])
+
+
+def _state_dir() -> str:
+    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+
+
+def get_session_store() -> SessionStore:
+    """FastAPI dependency — one SessionStore per request.
+
+    We deliberately construct it lazily (per-request) rather
+    than at module import: tests that override
+    ``MAGI_WORKSPACE_DIR`` need each request to see the
+    current value, not the value captured at import time.
+    """
+    return SessionStore(_state_dir())
+
+
+SessionStoreDep = Annotated[SessionStore, Depends(get_session_store)]
+
+
+# -- Pydantic response shapes ------------------------------------------------
+
+
+class SessionMessageOut(BaseModel):
+    message_id: str
+    role: str
+    ts: str
+    text: str
+
+
+class SessionOut(BaseModel):
+    session_id: str
+    chat_id: str
+    employee_id: int
+    channel: str
+    created_at: str
+    updated_at: str
+    schema_version: int
+    messages: list[SessionMessageOut]
+
+
+class SessionSummaryOut(BaseModel):
+    session_id: str
+    created_at: str
+    created_by_employee_id: int
+    updated_at: str
+    message_count: int
+    preview: str
+
+
+class SessionListOut(BaseModel):
+    items: list[SessionSummaryOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class CreateSessionResponse(BaseModel):
+    session_id: str
+
+
+def _session_to_out(s: Session) -> SessionOut:
+    return SessionOut(
+        session_id=s.session_id,
+        chat_id=s.chat_id,
+        employee_id=s.employee_id,
+        channel=s.channel,
+        created_at=s.created_at,
+        updated_at=s.updated_at,
+        schema_version=s.schema_version,
+        messages=[
+            SessionMessageOut(
+                message_id=m.message_id,
+                role=m.role,
+                ts=m.ts,
+                text=m.text,
+            )
+            for m in s.messages
+        ],
+    )
+
+
+def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut:
+    """Convert a SessionSummary into the list-endpoint shape.
+
+    ``employee_id`` is the operator who owns this chat_id
+    today. We surface it explicitly so a future C7 view can
+    label rows; v0 always sees the same value across rows
+    for one admin.
+    """
+    return SessionSummaryOut(
+        session_id=s.session_id,
+        created_at=s.created_at,
+        created_by_employee_id=employee_id,
+        updated_at=s.updated_at,
+        message_count=s.message_count,
+        preview=s.preview,
+    )
+
+
+# -- routes -----------------------------------------------------------------
+
+
+def _resolve_chat_id(request: Request) -> int:
+    """Resolve the cookie's chat_id (stringified as digits).
+
+    Returns ``int`` so the path helper can match TG
+    chat_id semantics. Raises ``chat.unknown_sender`` 401 if
+    the cookie is missing or unparseable — same code as
+    chat.py so the frontend's friendly message covers both
+    endpoints.
+    """
+    raw = request.cookies.get("magi_session") or ""
+    try:
+        cid = int(raw)
+    except (TypeError, ValueError):
+        raise MagiHTTPException(
+            status_code=401,
+            code="chat.unknown_sender",
+            detail="no admin employee row bound to this chat_id",
+        )
+    return cid
+
+
+def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
+    """Resolve the cookie's chat_id to its admin employee id.
+
+    Same check as ``action_items._current_admin_id``: the
+    cookie's chat_id must resolve to an ``Employee`` row
+    with ``role='admin'``. ``AdminGate`` already proved
+    this, but defending again here keeps this router
+    self-contained if a future caller skips the gate.
+    """
+    chat_id = _resolve_chat_id(request)
+    with open_session() as session:
+        emp = session.scalar(
+            select(Employee).where(Employee.telegram_id == chat_id)
+        )
+    if emp is None or emp.role != "admin":
+        raise MagiHTTPException(
+            status_code=401,
+            code="chat.unknown_sender",
+            detail="no admin employee row bound to this chat_id",
+        )
+    return emp.id
+
+
+@router.post(
+    "/chat/sessions",
+    response_model=CreateSessionResponse,
+    status_code=201,
+)
+def create_session(
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+) -> CreateSessionResponse:
+    """Create a new empty session for the current operator.
+
+    The frontend typically doesn't call this directly — the
+    chat send endpoint auto-creates when no session_id is
+    provided. This endpoint exists for explicit lifecycle
+    hooks (e.g. "new chat" that pre-reserves an id, or
+    C7-era tools that want to instantiate a session
+    before the first message).
+    """
+    employee_id = _admin_employee_id(request, store)
+    chat_id = str(_resolve_chat_id(request))
+    sess = store.create(chat_id, employee_id=employee_id, channel="webui")
+    return CreateSessionResponse(session_id=sess.session_id)
+
+
+@router.get(
+    "/chat/sessions",
+    response_model=SessionListOut,
+)
+def list_sessions(
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+    limit: int = 50,
+    offset: int = 0,
+) -> SessionListOut:
+    """List current operator's sessions, newest first.
+
+    ``limit`` is clamped to a sane range: the v0 cap is 200
+    to bound the per-request work (the implementation
+    reads every session file under the chat's directory —
+    fine for a single operator's tens-to-hundreds of
+    sessions, but a misbehaving client cannot push it
+    further).
+    """
+    if limit < 1:
+        limit = 50
+    if limit > 200:
+        limit = 200
+    if offset < 0:
+        offset = 0
+
+    chat_id = str(_resolve_chat_id(request))
+    employee_id = _admin_employee_id(request, store)
+    items, total = store.list_summaries(chat_id, limit=limit, offset=offset)
+    return SessionListOut(
+        items=[
+            _summary_to_out(i, employee_id=employee_id)
+            for i in items
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/chat/sessions/{session_id}",
+    response_model=SessionOut,
+)
+def get_session(
+    session_id: str,
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+) -> SessionOut:
+    """Load a single session — full transcript + metadata."""
+    chat_id = str(_resolve_chat_id(request))
+    try:
+        sess = store.get(chat_id, session_id)
+    except SessionPathError as e:
+        # Malformed session_id from the URL — it's a 400,
+        # not a 404 (the id is invalid, not absent).
+        logger.warning(
+            "session get rejected (bad session_id %r from admin chat %s): %s",
+            session_id, chat_id, e,
+        )
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.session_id_invalid",
+            detail=str(e),
+        )
+    except SessionCorruptError as e:
+        logger.error("session file corrupt: %s", e)
+        raise MagiHTTPException(
+            status_code=500,
+            code="validation.session_corrupt",
+            detail="session file is malformed",
+        )
+    if sess is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.session",
+            detail=f"session {session_id} not found",
+        )
+    return _session_to_out(sess)
+
+
+@router.delete("/chat/sessions/{session_id}", status_code=204)
+def delete_session(
+    session_id: str,
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+):
+    """Remove a session permanently.
+
+    Idempotent: deleting a session that's already gone is
+    a no-op, not an error. Otherwise an admin could DOS
+    themselves by spamming DELETE on stale ids from a
+    older session list.
+    """
+    chat_id = str(_resolve_chat_id(request))
+    try:
+        removed = store.delete(chat_id, session_id)
+    except SessionPathError as e:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.session_id_invalid",
+            detail=str(e),
+        )
+    if not removed:
+        # The 204 status is set by the response_model /
+        # response_class on the route. For clarity, we
+        # ALWAYS return 204 — see the comment above.
+        return None
+    return None

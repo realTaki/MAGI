@@ -55,6 +55,13 @@ from sqlalchemy import select
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.runtime.agent import handle_message
+from magi.runtime.sessions import (
+    SessionMessage,
+    SessionPathError,
+    SessionStore,
+    new_session_id,
+    utcnow_iso as _utcnow_iso,
+)
 from magi.runtime.state.orm import Employee, open_session
 
 logger = logging.getLogger("magi.api.chat")
@@ -149,17 +156,30 @@ def _resolve_caller_credentials(
 class ChatSendRequest(BaseModel):
     """Body for ``POST /api/chat/send``.
 
-    Only ``text`` for v0. Future checkpoints may add
-    ``conversation_id`` (to thread multi-turn chats) and
-    ``model`` (to override the per-employee / system
-    default) — neither is needed yet.
+    ``text`` is the only required field. ``session_id``
+    (optional) ties the message to a persisted session;
+    the cookie's chat_id pins the session to that operator.
+    If absent, the backend auto-creates a new session
+    and returns its id in the response — so the frontend
+    doesn't have to know about session lifecycle.
     """
 
     text: str = Field(min_length=1, max_length=_MAX_INPUT_CHARS)
+    # Upper-bounded 64 chars to bound validation work on
+    # the server side. 64 is comfortably above the
+    # Crockford base32-ULID length (26) so any plausible
+    # future id format is accommodated. A hand-crafted
+    # value outside this length is treated as
+    # ``validation.session_id_invalid``.
+    session_id: str | None = Field(default=None, max_length=64)
 
 
 class ChatSendResponse(BaseModel):
     reply: str
+    # Always returned so the frontend can stash it on a
+    # fresh chat. For an existing-session send it equals
+    # what was sent in.
+    session_id: str
 
 
 @router.post("/chat/send", response_model=ChatSendResponse)
@@ -177,6 +197,19 @@ async def send_chat(
     ``403 chat.llm_credentials_required`` — no silent
     fall-back to the system default. The audit row records
     the operator's ``employee_id`` regardless.
+
+    Session lifecycle (D.6):
+      - The user message is appended to the resolved
+        session **before** the LLM call so a crash mid-call
+        leaves the inbound row visible in the file (matches
+        the audit_log ``chat.inbound`` timing).
+      - The assistant message is appended **after** the LLM
+        returns successfully (matches ``chat.outbound``).
+      - If no ``session_id`` is sent, a new session is
+        created on-the-fly; the id is returned in the
+        response so the frontend can persist it.
+      - If the supplied ``session_id`` is invalid or has
+        been deleted, the same auto-create path runs.
     """
     text = payload.text.strip()
     if not text:
@@ -189,18 +222,68 @@ async def send_chat(
     chat_id = request.cookies.get("magi_session", "")
     # The auth gate already proved this cookie is for an
     # admin Employee row; ``_resolve_caller_credentials``
-    # now strictly returns the per-emp credentials or raises
-    # (no silent fall-back). The operator is told to set
-    # their LLM credentials if they haven't, rather than
-    # getting a reply that "isn't really theirs".
+    # strictly returns the per-emp credentials or raises —
+    # no silent fall-back.
     employee_id, employee_provider, employee_api_key = (
         _resolve_caller_credentials(_state_dir(), chat_id)
     )
+
+    # -- session lifecycle ------------------------------------------
+    # The cookie's chat_id (string of digits) is also the
+    # session's chat_id. ``_resolve_caller_credentials``
+    # never raises for an admin who got past the gate, so
+    # the cookie must be a valid integer — but we trust
+    # the cookie string verbatim for the path key because
+    # the SessionStore path layer rejects anything that
+    # wouldn't round-trip safely.
+    store = SessionStore(_state_dir())
+    session_id = payload.session_id
+    if session_id:
+        try:
+            existing = store.get(chat_id, session_id)
+        except SessionPathError as e:
+            raise MagiHTTPException(
+                status_code=400,
+                code="validation.session_id_invalid",
+                detail=str(e),
+            )
+        # Stale / deleted / never-existed → auto-create
+        # fresh. Keeps the operator unblocked if they
+        # re-open a tab after a manual delete.
+        if existing is None:
+            session_id = None
+    if not session_id:
+        sess = store.create(chat_id, employee_id=employee_id)
+        session_id = sess.session_id
+
+    # Inbound audit + on-disk append happen together.
+    # ``append_messages`` validates roles and updates
+    # ``updated_at``; failures here bubble up as 500
+    # (``chat.session_store_failed``).
+    ts_in = _utcnow_iso()
+    try:
+        store.append_messages(
+            chat_id, session_id,
+            [SessionMessage(
+                role="user", text=text, ts=ts_in,
+                message_id=new_session_id(),
+            )],
+        )
+    except Exception as e:
+        logger.exception(
+            "chat: failed to append user message for session %s", session_id,
+        )
+        raise MagiHTTPException(
+            status_code=500,
+            code="chat.session_store_failed",
+            detail="could not persist chat message",
+        )
 
     reply = await handle_message(
         _state_dir(),
         text=text,
         channel="webui",
+        session_id=session_id,
         employee_id=employee_id,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
@@ -214,4 +297,23 @@ async def send_chat(
     if len(reply) > _MAX_OUTPUT_CHARS:
         reply = reply[: _MAX_OUTPUT_CHARS - 20] + "\n\n…(回复过长，已截断)"
 
-    return ChatSendResponse(reply=reply)
+    # Outbound audit-aligned append. A failure here is
+    # logged but does NOT raise — the operator already
+    # got the reply and a missing history line is worse
+    # than a console line.
+    ts_out = _utcnow_iso()
+    try:
+        store.append_messages(
+            chat_id, session_id,
+            [SessionMessage(
+                role="assistant", text=reply, ts=ts_out,
+                message_id=new_session_id(),
+            )],
+        )
+    except Exception:
+        logger.exception(
+            "chat: failed to append assistant message for session %s",
+            session_id,
+        )
+
+    return ChatSendResponse(reply=reply, session_id=session_id)
