@@ -96,11 +96,15 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # 1+2. Look up the bound employee. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
     # Dispatch rules (per-MAGI perspective):
-    #   - ``admin``    : log only (admin chat grows real
-    #                    admin commands in C6+; v0 keeps
-    #                    the LLM out of the loop so the
-    #                    operator's API key doesn't burn on
-    #                    chitchat).
+    #   - ``admin``    : real chat sender. The agent loop
+    #                    runs; the admin's per-employee LLM
+    #                    credentials (D.4+) are billed. v0
+    #                    used to skip the LLM here ("admin
+    #                    chat grows real admin commands in
+    #                    C6+") but that left the admin
+    #                    unable to use TG on mobile — fixed
+    #                    so admin and assigned share the
+    #                    same handler.
     #   - ``assigned`` : this MAGI serves the person. The
     #                    agent loop runs.
     #   - ``employee`` : another company employee. NOT
@@ -116,13 +120,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     bound = _find_employee_by_telegram_id(state_dir, chat_id)
     if bound is not None:
         emp_id, emp_role, emp_name, emp_separated, emp_provider, emp_key = bound
-        if emp_role == "admin":
-            logger.info(
-                "telegram: admin message (no-op until C6)",
-                extra={"chat_id": chat_id, "display_name": display_name},
-            )
-            return
-        if emp_role != "assigned":
+        if emp_role not in ("admin", "assigned"):
             # ``employee`` / ``guest`` — refuse politely
             # without burning the LLM. The hint about
             # the chat_id is the same one the unknown-
@@ -140,6 +138,13 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 ),
             )
             return
+        # ``admin`` and ``assigned`` both flow through the
+        # same handler. The earlier "admin → no-op" branch
+        # was a v0 guard against burning the admin's API key
+        # on TG chitchat; once the admin has set per-employee
+        # credentials (D.4+) they own that decision, and TG
+        # chat-with-EVE is a real affordance for mobile
+        # operators who don't want to open the WebUI.
         await _handle_employee_message(
             update,
             state_dir,

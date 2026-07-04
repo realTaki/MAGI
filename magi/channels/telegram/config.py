@@ -16,13 +16,21 @@ table; until then, the meta key is fine.
 Why allowlist the emoji at the API layer rather than
 free-text:
 
-- Telegram's reaction API rejects some unicode (paid
-  reactions, custom-emoji IDs that need admin permission).
-  Constraining the choices server-side means the operator
-  can't pick something that silently fails to react.
-- ``ReactionTypeCustomEmoji`` requires the chat to have
-  that emoji enabled; ``ReactionTypeEmoji`` (the standard
-  ones) works in every chat the bot is a member of.
+- Telegram's reaction API only accepts the ~70 standard
+  ``ReactionTypeEmoji`` values (see
+  :class:`telegram.constants.ReactionEmoji`). Anything else
+  falls back to ``ReactionTypeCustomEmoji`` which needs a
+  numeric ``custom_emoji_id`` — passing plain unicode gets
+  a ``400 Bad Request: field "custom_emoji_id" must be a
+  valid number`` from Telegram. The python-telegram-bot
+  SDK does the routing automatically, but the allowlist
+  here stops the operator from picking an emoji that
+  silently fails. ``✅`` and ``💬`` look like good picks
+  but aren't in Telegram's reaction whitelist.
+- ``ReactionTypeCustomEmoji`` (the real thing, with a
+  numeric id) requires the chat to have that emoji enabled
+  — too much configuration for v0. ``ReactionTypeEmoji``
+  works in every chat the bot is a member of.
 - Free-text invites typos (``👀`` vs ``👁``) that look
   identical in some fonts and behave differently in
   Telegram.
@@ -48,12 +56,24 @@ _META_KEY = "tg.read_reaction_emoji"
 # Order is fixed (admin radio group iterates in this order)
 # — keep it stable so a UI reorder isn't a perceived config
 # change for the operator.
+#
+# Every ``value`` here MUST appear in
+# :class:`telegram.constants.ReactionEmoji` — the python-
+# telegram-bot SDK checks a string against that whitelist
+# before passing it to the API. An emoji not in the
+# whitelist is parsed as a ``ReactionTypeCustomEmoji``
+# (which expects a numeric ``custom_emoji_id``) and the
+# bot gets back ``400 Bad Request: field "custom_emoji_id"
+# must be a valid number``. ``✅`` and ``💬`` look like
+# great fits but Telegram doesn't ship them as reaction
+# types — ``🤝`` (handshake) and ``✍`` (writing) cover
+# the same semantic slots within the whitelist.
 REACTION_CHOICES: tuple[tuple[str, str], ...] = (
     ("👀", "👀  Eyes — classic 'seen' signal"),
     ("👍", "👍  Thumbs up — quick ack"),
-    ("✅", "✅  Check — 'received, working on it'"),
+    ("🤝", "🤝  Handshake — 'received, will handle'"),
     ("🤔", "🤔  Thinking — 'processing'"),
-    ("💬", "💬  Speech — 'about to reply'"),
+    ("✍", "✍  Writing — 'drafting reply'"),
 )
 
 # The default when no setting has been saved. Chosen to be
