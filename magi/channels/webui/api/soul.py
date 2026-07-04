@@ -2,8 +2,23 @@
 
 The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
-:meth:`magi.runtime.agent._read_soul`. v0 ships a single
-company-wide persona; per-employee personas are C4+.
+:meth:`magi.runtime.agent._read_soul`. There is one
+``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
+not one per employee. Per-employee personas are C4+ and out
+of scope here.
+
+Who can edit it:
+
+  - ``role == 'admin'`` — full access (current admin
+    console users).
+  - ``role == 'assigned'`` — the "served employee" of this
+    MAGI node. They're the person whose chat this node
+    actually drives; letting them tweak their own persona
+    is the whole point of having one.
+  - ``role in {'employee', 'guest'}`` — denied with 403.
+    These are reserved for multi-MAGI / public-visitor
+    roles (C6+) and have no business editing this node's
+    persona.
 
 Why a dedicated API surface (vs. reusing ``prompts/``):
 
@@ -42,7 +57,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.departments import AdminOrAssignedGate
 from magi.runtime.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
@@ -130,7 +145,7 @@ def _write_atomic(path: Path, content: str) -> str:
 
 
 @router.get("/soul", response_model=SoulReadResponse)
-def read_soul(_admin: AdminGate) -> SoulReadResponse:
+def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
     """Return the current persona text the agent reads.
 
     When the workspace ``SOUL.md`` is missing the agent falls
@@ -164,7 +179,7 @@ def read_soul(_admin: AdminGate) -> SoulReadResponse:
 def update_soul(
     payload: SoulUpdateRequest,
     request: Request,
-    _admin: AdminGate,
+    _admin: AdminOrAssignedGate,
 ) -> SoulUpdateResponse:
     """Persist the new persona text to ``SOUL.md``.
 
@@ -225,7 +240,7 @@ def update_soul(
 @router.post("/soul/reset", response_model=SoulUpdateResponse)
 def reset_soul(
     request: Request,
-    _admin: AdminGate,
+    _admin: AdminOrAssignedGate,
 ) -> SoulUpdateResponse:
     """Reset the workspace ``SOUL.md`` to the bundled default.
 
