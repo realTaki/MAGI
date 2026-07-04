@@ -147,6 +147,18 @@ def create_app() -> FastAPI:
     # immediately, no restart.
     from magi.channels.webui.api import tg_settings
     app.include_router(tg_settings.router, prefix="/api")
+    # System settings — per-MAGI config (timezone today;
+    # future defaults). The token-bill aggregation endpoint
+    # reads the timezone on every call so a Save here is
+    # immediately reflected in the next ``GET
+    # /api/employees/{id}/token-usage``.
+    from magi.channels.webui.api import system_settings
+    app.include_router(system_settings.router, prefix="/api")
+    # Employee metrics — token-usage aggregation. One
+    # endpoint per employee, three periods (week / month /
+    # total) in one response.
+    from magi.channels.webui.api import employee_metrics
+    app.include_router(employee_metrics.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets
