@@ -29,7 +29,7 @@
  * bubbles up to App is the bot + admin list (so the rest of the
  * app, e.g. login dropdowns on a future re-sign-in, stays fresh).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ActionItemsPane from "../components/ActionItemsPane";
 import ConsoleCard from "../components/ConsoleCard";
@@ -481,18 +481,69 @@ function ChatTab() {
     }
   }
 
-  function newChat() {
-    setSessionId(null);
-    setChatMessages([]);
-    setChatInput("");
+  // D.9: clicking the sidebar ``+ 新对话`` row used to just
+  // clear local state and lazily wait for the next /send to
+  // auto-create the file. That meant the operator clicked
+  // the row, typed nothing, and the sidebar's "last edited"
+  // was still the previous thread — confusing. The new path
+  // hits ``POST /api/chat/sessions`` immediately so a fresh
+  // (empty) session shows up in the sidebar right away. The
+  // first /send appends to that id and the auto-title worker
+  // fires as before.
+  //
+  // Guard: rapid double-clicks collapse to one POST via the
+  // ``newChatInflight`` ref. Without it the operator gets two
+  // identical empty rows in the sidebar.
+  const newChatInflight = useRef(false);
+  async function newChat() {
+    if (newChatInflight.current) return;
+    newChatInflight.current = true;
     setChatError(null);
-    // D.8: drop the active session's title + preview so the
-    // header reverts to the default "新对话" copy.
-    setActiveTitle(null);
-    setActivePreview(null);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    // The next /send call will get a fresh session_id back
-    // from the server.
+    try {
+      const r = await fetch("/api/chat/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as {
+          code?: string;
+          detail?: string;
+        };
+        setChatError({
+          code: body.code ?? "new_chat_failed",
+          detail: body.detail ?? `New chat failed (${r.status})`,
+        });
+        return;
+      }
+      const data = (await r.json()) as { session_id: string };
+      // Drop everything from the old session, swap in the new
+      // id. ``chatMessages`` stays empty until the operator
+      // types — no message has been sent on this fresh thread
+      // yet, so there's nothing to render. The pane header
+      // reverts to the default "新对话" copy because both
+      // activeTitle and activePreview are cleared.
+      setSessionId(data.session_id);
+      localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+      setChatMessages([]);
+      setChatInput("");
+      setActiveTitle(null);
+      setActivePreview(null);
+      // Make sure the right pane is showing the conversation
+      // view, not (e.g.) the action items list — clicking
+      // the sidebar entry from elsewhere should always
+      // land on the chat pane.
+      setSelectedId("new-chat");
+      void refreshHistory();
+    } catch (err) {
+      setChatError({
+        code: "network",
+        detail: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      newChatInflight.current = false;
+    }
   }
 
   async function openSession(id: string) {
@@ -685,11 +736,29 @@ function ChatTab() {
   const historyVisible = history.slice(0, HISTORY_VISIBLE_LIMIT);
   const historyOverflow = Math.max(0, historyTotal - historyVisible.length);
 
+  // D.9: Sidebar item click is intercepted so the
+  // ``+ 新对话`` row actually *creates* a fresh session
+  // (rather than just opening an empty pane that lazily
+  // creates on next send). Selecting any other row keeps
+  // the old behaviour of just switching the right pane.
+  function handleSidebarSelect(id: string) {
+    if (id === "new-chat") {
+      void newChat();
+      // Don't ``setSelectedId`` — ``newChat`` is async and
+      // sets ``sessionId`` itself, which triggers the same
+      // nav state via the conditional render below. If the
+      // user clicks again while the POST is in flight the
+      // guard at the top of ``newChat`` handles it.
+      return;
+    }
+    setSelectedId(id);
+  }
+
   return (
     <SidebarShell
       items={[...CHAT_CATEGORIES, ...CHAT_ACTIONS]}
       selectedId={selectedId}
-      onSelect={setSelectedId}
+      onSelect={handleSidebarSelect}
       ariaLabel="Chat navigation"
       belowItems={
         <>
@@ -842,8 +911,6 @@ function ChatTab() {
           sending={chatSending}
           error={chatError}
           onSend={sendChat}
-          onNewChat={newChat}
-          hasActiveSession={sessionId !== null}
           title={activeTitle}
           preview={activePreview}
         />
@@ -888,12 +955,6 @@ function ChatConversationPane(props: {
   sending: boolean;
   error: { code: string; detail: string } | null;
   onSend: () => void;
-  /** D.6: drop the local session pointer + messages. */
-  onNewChat: () => void;
-  /** D.6: whether the operator has a live session currently
-   *  open. The "新对话" button is meaningless when there's
-   *  no thread — disable it. */
-  hasActiveSession: boolean;
   /** D.8: pane header follows the active session. ``null``
    *  means "no session yet" — falls back to the default
    *  "新对话" copy below the title. ``title ?? preview``
@@ -927,9 +988,9 @@ function ChatConversationPane(props: {
     <div className="flex flex-col h-[560px]">
       {/* Header — pane title follows the active session
           (manual title / LLM auto-title / first user preview
-          / "新对话" for empty), plus a "新对话" affordance
-          that drops the active session. Disabled when no
-          session is open. */}
+          / "新对话" for empty). The "新对话" affordance
+          lives in the sidebar (D.9); the pane header is
+          just title + subtitle now. */}
       <div className="px-6 py-3 border-b border-sky-light/40 flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-semibold text-ink truncate" title={headerTitle}>
@@ -939,15 +1000,6 @@ function ChatConversationPane(props: {
             <p className="text-xs text-ink-soft">{headerSubtitle}</p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={props.onNewChat}
-          disabled={!props.hasActiveSession}
-          className="btn btn-secondary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-          title="开一条新对话（清空当前消息）"
-        >
-          新对话
-        </button>
       </div>
 
       {/* Message list. Empty state nudges the operator to type
