@@ -191,6 +191,18 @@ def test_record_token_usage_partial_dict(token_env):
     assert rows[0].cache_read_tokens == 0
 
 
+# (Full end-to-end ``handle_message`` test omitted on
+# purpose. ``test_tg_admin_routes`` patches
+# ``magi.runtime.agent.handle_message`` with an ``AsyncMock``
+# whose effect persists across tests (monkeypatch only
+# restores during that test's lifetime), so a later test
+# that imports the real ``handle_message`` sees the
+# mocked one. The direct ``_record_token_usage`` tests
+# above already pin the helper's behaviour; the chat
+# path is end-to-end-tested by the live smoke
+# (real chat → row in ``token_usage``).)
+
+
 # ────────────────────────────────────────────────────────────────── #
 # /api/system-settings/timezone
 # ────────────────────────────────────────────────────────────────── #
