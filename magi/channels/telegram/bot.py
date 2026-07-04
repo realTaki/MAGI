@@ -311,6 +311,36 @@ async def _handle_employee_message(
         )
         return
 
+    # -- read-receipt reaction (D.11) -----------------------------------
+    # Set the configured emoji on the user's incoming message
+    # *before* doing anything slow (session lookup, LLM call,
+    # outbound append). The "I've seen this and I'm working on
+    # it" signal should land while the operator is still
+    # looking at the chat, not after the LLM has spent 30s
+    # thinking.
+    #
+    # Failure mode: if the bot lacks ``set_message_reaction``
+    # permission in this chat, Telegram raises ``Forbidden``
+    # — we swallow it so a misconfigured chat doesn't kill
+    # the whole inbound path. The operator can fix perms
+    # later; the message still gets a real reply.
+    from magi.channels.telegram.config import get_read_reaction_emoji
+    try:
+        reaction = get_read_reaction_emoji(state_dir)
+        if reaction:
+            await update.get_bot().set_message_reaction(
+                chat_id=update.effective_chat.id,
+                message_id=update.effective_message.message_id,
+                reaction=reaction,
+            )
+    except Exception:
+        logger.exception(
+            "telegram: set_message_reaction failed (chat=%s msg=%s); "
+            "continuing without read-receipt",
+            update.effective_chat.id,
+            update.effective_message.message_id,
+        )
+
     # -- session lifecycle (D.10) --------------------------------------
     # Same shape as ``magi/channels/webui/api/chat.py``:
     #

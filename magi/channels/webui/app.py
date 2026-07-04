@@ -140,6 +140,13 @@ def create_app() -> FastAPI:
     # ``SOUL.md`` from the Settings tab.
     from magi.channels.webui.api import soul
     app.include_router(soul.router, prefix="/api")
+    # Telegram channel settings — read-reaction emoji
+    # (and future per-channel toggles) edited from the
+    # Settings tab. The TG bot reads these on every
+    # inbound message so a Save here takes effect
+    # immediately, no restart.
+    from magi.channels.webui.api import tg_settings
+    app.include_router(tg_settings.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets
