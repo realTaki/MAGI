@@ -38,15 +38,15 @@ in the same directory + ``os.fsync`` + ``os.replace``, mirroring
 leave a half-edited persona on disk (which the agent would
 then read on the next chat turn).
 
-Audit: ``soul.updated`` is logged with the operator's
-``employee_id`` and a SHA-256 of the new content (so the audit
-trail records *what changed* without storing the whole
-persona twice).
+The atomic write is the only durability mechanism here — v0
+doesn't carry an audit log, so a successful ``update_soul``
+/ ``reset_soul`` returns as soon as the file is replaced. The
+file's mtime (returned as ``modified_at``) is the only
+"when did the operator last change the persona" signal.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import tempfile
@@ -204,36 +204,7 @@ def update_soul(
     path = _soul_path()
     modified_at = _write_atomic(path, content)
 
-    # Best-effort audit. Failure to write the audit row is
-    # logged but does NOT roll back the persona write — the
-    # operator's edit has already succeeded; a missing audit
-    # line is worse than a duplicate one (which the audit
-    # reader can dedupe by ``(ts, kind, employee_id)``).
-    try:
-        from magi.runtime.agent import _write_audit
-        employee_id = None
-        chat_id = request.cookies.get("magi_session", "")
-        if chat_id.isdigit():
-            from magi.runtime.state.orm import Employee, open_session
-            with open_session() as s:
-                emp = s.get(Employee, int(chat_id))
-                if emp is not None:
-                    employee_id = emp.id
-        content_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        _write_audit(
-            _state_dir(),
-            kind="soul.updated",
-            employee_id=employee_id,
-            channel="webui",
-            payload={
-                "bytes": len(content.encode("utf-8")),
-                "sha256": content_sha,
-                "modified_at": modified_at,
-            },
-        )
-    except Exception:
-        logger.exception("soul: audit write failed (persona still saved)")
-
+    # persona write succeeded; no audit row to maintain.
     return SoulUpdateResponse(modified_at=modified_at)
 
 
@@ -245,37 +216,12 @@ def reset_soul(
     """Reset the workspace ``SOUL.md`` to the bundled default.
 
     Reads the immutable ``prompts/soul.md`` and writes it to
-    the workspace path. Same atomic-write + audit path as
+    the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
     from magi.runtime.prompts import load_soul
     default = load_soul()
     path = _soul_path()
     modified_at = _write_atomic(path, default)
-
-    try:
-        from magi.runtime.agent import _write_audit
-        employee_id = None
-        chat_id = request.cookies.get("magi_session", "")
-        if chat_id.isdigit():
-            from magi.runtime.state.orm import Employee, open_session
-            with open_session() as s:
-                emp = s.get(Employee, int(chat_id))
-                if emp is not None:
-                    employee_id = emp.id
-        content_sha = hashlib.sha256(default.encode("utf-8")).hexdigest()
-        _write_audit(
-            _state_dir(),
-            kind="soul.reset",
-            employee_id=employee_id,
-            channel="webui",
-            payload={
-                "bytes": len(default.encode("utf-8")),
-                "sha256": content_sha,
-                "modified_at": modified_at,
-            },
-        )
-    except Exception:
-        logger.exception("soul: audit write failed (reset still saved)")
 
     return SoulUpdateResponse(modified_at=modified_at)

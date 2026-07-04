@@ -196,8 +196,9 @@ def _ensure_llm_credentials_item(
 # under "最近完成". 7 days strikes a balance between "useful
 # recent history" and "ancient noise". The dashboard's
 # "最近完成" disclosure caps at this cut-off so very old
-# rows don't render — operators wanting the full audit can
-# look at the audit-log view (Phase 2).
+# rows don't render. Operators wanting a longer history
+# can query ``/api/chat/sessions`` (D.6) for the full
+# session list.
 _COMPLETED_VISIBLE_DAYS = 7
 
 

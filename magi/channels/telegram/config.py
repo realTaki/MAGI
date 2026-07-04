@@ -7,11 +7,12 @@ quiet-hours / typing-indicator / etc. as those land.
 
 Storage: ``state_set(state_dir, key, value)`` /
 ``state_get(state_dir, key)`` — the same key/value store
-``audit_log`` already uses. The data is small (one short
-string), the access pattern is read-on-every-inbound, and
-we don't need schema migrations for a single emoji. C1.1
-will move this into a proper ``enterprise_settings`` SQL
-table; until then, the meta key is fine.
+``tg.read_reaction_emoji`` lives in. The data is small
+(one short string), the access pattern is read-on-every-
+inbound, and we don't need schema migrations for a single
+emoji. C1.1 will move this into a proper
+``enterprise_settings`` SQL table; until then, the meta
+key is fine.
 
 Why allowlist the emoji at the API layer rather than
 free-text:

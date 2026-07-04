@@ -363,9 +363,14 @@ class TokenUsage(Base):
 
     Powers the per-employee token-bill aggregation endpoint
     (see ``magi.channels.webui.api.employee_metrics``).
-    Permanent: unlike ``audit_log`` (a meta-key JSON blob
-    capped at 1000 rows), this table is meant to grow
-    indefinitely so week/month aggregates stay accurate.
+    Permanent: this table is meant to grow indefinitely
+    so week/month aggregates stay accurate. The operator-
+    facing endpoint ``/api/employees/{id}/token-usage``
+    answers the "what did this employee cost?" question;
+    the session JSON files (D.6) answer the "what was
+    said?" question. v0 doesn't carry a separate audit
+    log — those two surfaces cover the same questions
+    the audit view would.
 
     The four token fields follow the Anthropic SDK's
     ``Usage`` shape so the helper in ``agent.py`` can
