@@ -213,19 +213,26 @@ def test_reset_soul_writes_bundled_default(client, soul_env):
 # -- auth gate ------------------------------------------------------------
 
 
-def test_get_soul_without_cookie_is_401(soul_env):
-    """AdminGate rejects cookie-less callers before the
-    handler runs."""
+def test_get_soul_without_cookie_is_403(soul_env):
+    """``AdminOrAssignedGate`` rejects cookie-less callers.
+
+    Note: ``AdminGate`` (used by the rest of the admin
+    surface) returns 401, but the soul gate returns 403
+    because it's a *role* check, not a session check.
+    The semantic shift matters: 401 = "who are you?" (log
+    in); 403 = "I know who you are, you can't do this".
+    """
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
     c = TestClient(app)
     r = c.get("/api/soul")
-    assert r.status_code == 401
+    assert r.status_code == 403
+    assert r.json()["code"] == "auth.soul_edit_forbidden"
 
 
-def test_put_soul_without_cookie_is_401(soul_env):
+def test_put_soul_without_cookie_is_403(soul_env):
     """Same gate covers PUT."""
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
@@ -233,4 +240,82 @@ def test_put_soul_without_cookie_is_401(soul_env):
     app = create_app()
     c = TestClient(app)
     r = c.put("/api/soul", json={"content": "anything"})
-    assert r.status_code == 401
+    assert r.status_code == 403
+
+
+# -- role-based gate ------------------------------------------------------
+#
+# Spec: ``admin`` and ``assigned`` can read/write SOUL.md;
+# ``employee`` / ``guest`` get 403. The fixture's default
+# admin covers the happy paths above; these cases pin the
+# role whitelist so a future "let everyone edit" slip is
+# caught.
+
+
+def _client_with_role(soul_env, *, role: str, chat_id: int):
+    """Build a TestClient whose cookie resolves to an
+    employee with the requested ``role``."""
+    state_dir, _workspace = soul_env
+    from magi.runtime.state.orm import (
+        Employee,
+        init_orm,
+        open_session,
+    )
+
+    init_orm(str(state_dir))
+    with open_session() as s:
+        s.query(Employee).delete()
+        s.add(
+            Employee(
+                name=f"TA-{role}",
+                telegram_id=chat_id,
+                role=role,
+                provider="minimax",
+                api_key="fake",
+            )
+        )
+        s.commit()
+
+    from magi.channels.webui.app import create_app
+    from fastapi.testclient import TestClient
+
+    app = create_app()
+    c = TestClient(app)
+    c.cookies.set("magi_session", str(chat_id))
+    return c
+
+
+def test_assigned_role_can_read_soul(soul_env):
+    c = _client_with_role(soul_env, role="assigned", chat_id=8002)
+    r = c.get("/api/soul")
+    assert r.status_code == 200
+
+
+def test_assigned_role_can_write_soul(soul_env):
+    c = _client_with_role(soul_env, role="assigned", chat_id=8002)
+    r = c.put("/api/soul", json={"content": "assigned employee persona"})
+    assert r.status_code == 200
+
+
+def test_assigned_role_can_reset_soul(soul_env):
+    c = _client_with_role(soul_env, role="assigned", chat_id=8002)
+    r = c.post("/api/soul/reset")
+    assert r.status_code == 200
+
+
+def test_employee_role_cannot_read_soul(soul_env):
+    c = _client_with_role(soul_env, role="employee", chat_id=8003)
+    r = c.get("/api/soul")
+    assert r.status_code == 403
+
+
+def test_employee_role_cannot_write_soul(soul_env):
+    c = _client_with_role(soul_env, role="employee", chat_id=8003)
+    r = c.put("/api/soul", json={"content": "nope"})
+    assert r.status_code == 403
+
+
+def test_guest_role_cannot_write_soul(soul_env):
+    c = _client_with_role(soul_env, role="guest", chat_id=8004)
+    r = c.put("/api/soul", json={"content": "nope"})
+    assert r.status_code == 403

@@ -101,6 +101,69 @@ def admin_gate(request: Request) -> str:
 AdminGate = Annotated[str, Depends(admin_gate)]
 
 
+def _is_admin_or_assigned_chat_id(chat_id: str) -> bool:
+    """True if ``chat_id`` resolves to an employee with role
+    in ``{'admin', 'assigned'}``.
+
+    Used by routes that aren't admin-only but also aren't
+    public — currently the soul editor (``/api/soul``) which
+    the spec lets both admins and assigned employees (the
+    "served employee" of this MAGI node) touch. Employee /
+    guest roles stay locked out.
+
+    Mirrors :func:`_is_admin_chat_id` so a swap of role names
+    in the future touches one place per gate.
+    """
+    from sqlalchemy import select
+
+    from magi.runtime.state.orm import Employee, open_session
+
+    if not chat_id:
+        return False
+    try:
+        cid_int = int(chat_id)
+    except (TypeError, ValueError):
+        return False
+    try:
+        with open_session() as session:
+            emp = session.scalar(
+                select(Employee).where(Employee.telegram_id == cid_int)
+            )
+            if emp is not None and emp.role in ("admin", "assigned"):
+                return True
+    except Exception:
+        logger.exception(
+            "admin_or_assigned_gate: ORM read failed; denying access"
+        )
+    return False
+
+
+def admin_or_assigned_gate(request: Request) -> str:
+    """FastAPI dependency — ``admin`` or ``assigned`` employee.
+
+    Read paths (GET) and write paths (PUT/POST) on
+    ``/api/soul`` both gate through this; the soul editor is
+    the first feature where ``assigned`` employees get a
+    write surface, but they don't get full admin powers
+    (department CRUD, employee CRUD, settings etc. stay
+    admin-only).
+    """
+    chat_id = request.cookies.get("magi_session")
+    if not chat_id or not _is_admin_or_assigned_chat_id(chat_id):
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.soul_edit_forbidden",
+            detail=(
+                "SOUL.md editing requires admin or assigned role; "
+                "your account is neither"
+            ),
+        )
+    return chat_id
+
+
+AdminOrAssignedGate = Annotated[str, Depends(admin_or_assigned_gate)]
+
+
 # -- response shapes ---------------------------------------------------------
 
 class EmployeeBrief(BaseModel):
