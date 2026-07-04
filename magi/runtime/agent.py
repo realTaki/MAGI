@@ -369,20 +369,24 @@ async def handle_message(
     # "what happened" record. Failure here is logged but
     # does NOT raise: a missing token_usage row is a
     # statistical gap, not a user-visible failure mode.
-    # Anonymous calls (``employee_id is None``) are skipped
-    # — the SQL column is NOT NULL and we'd rather drop a
-    # row than bill it to a phantom employee.
-    if employee_id is not None:
-        try:
-            _record_token_usage(
-                state_dir,
-                employee_id=employee_id,
-                channel=channel,
-                provider=provider.name,
-                model=result.model,
-                usage=result.usage or {},
-            )
-        except Exception:
+    #
+    # Every chat call in v0 has a concrete ``employee_id`` —
+    # both channel paths (WebUI cookie admin + TG bound
+    # employee) resolve to a row before reaching the LLM.
+    # If a future channel ever arrives without a
+    # ``chat_id`` → ``Employee`` mapping, the FK NOT NULL
+    # here will surface that gap at write time instead of
+    # silently dropping the row.
+    try:
+        _record_token_usage(
+            state_dir,
+            employee_id=employee_id,
+            channel=channel,
+            provider=provider.name,
+            model=result.model,
+            usage=result.usage or {},
+        )
+    except Exception:
             logger.exception(
                 "agent: token_usage insert failed (employee=%s, "
                 "channel=%s); chat reply already succeeded",

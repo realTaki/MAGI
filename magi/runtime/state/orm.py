@@ -383,9 +383,13 @@ class TokenUsage(Base):
     schema decision (which tz?) that the system-level
     setting handles better.
 
-    ``employee_id`` is NOT NULL: anonymous calls (which
-    ``_write_audit`` accepts for v0 forward-compat) are
-    deliberately not counted toward any employee's bill.
+    ``employee_id`` is NOT NULL: every chat call in v0
+    resolves to a concrete employee before reaching the
+    LLM (WebUI cookie admin + TG bound employee), so the
+    FK is always satisfied. If a future channel arrives
+    without a ``chat_id`` → ``Employee`` mapping, the
+    insert will surface that gap at write time rather
+    than silently dropping the row.
     """
     __tablename__ = "token_usage"
 
