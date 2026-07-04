@@ -1033,8 +1033,15 @@ function ChatConversationPane(props: {
           ))
         )}
         {props.sending && (
+          // D.14 — labeled "正在回复" bubble. Earlier the
+          // pane just showed three pulsing dots which read
+          // ambiguously as "loading something"; a real label
+          // tells the operator the *EVE* is composing, not
+          // the page itself. The dots stay as a small
+          // motion cue so the bubble still feels "alive".
           <div className="flex justify-start">
-            <div className="rounded-2xl bg-sky-pale/60 text-ink-soft border border-sky-light/40 px-4 py-2.5 text-sm">
+            <div className="rounded-2xl bg-sky-pale/60 text-ink-soft border border-sky-light/40 px-4 py-2.5 text-sm flex items-center gap-2">
+              <span>正在回复</span>
               <span className="inline-flex gap-1">
                 <span className="animate-pulse">·</span>
                 <span className="animate-pulse [animation-delay:120ms]">
