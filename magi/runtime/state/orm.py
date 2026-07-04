@@ -34,6 +34,8 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
+    Integer,
     String,
     create_engine,
     select,
@@ -356,6 +358,85 @@ class ActionItem(Base):
         )
 
 
+class TokenUsage(Base):
+    """One row per outbound LLM call.
+
+    Powers the per-employee token-bill aggregation endpoint
+    (see ``magi.channels.webui.api.employee_metrics``).
+    Permanent: unlike ``audit_log`` (a meta-key JSON blob
+    capped at 1000 rows), this table is meant to grow
+    indefinitely so week/month aggregates stay accurate.
+
+    The four token fields follow the Anthropic SDK's
+    ``Usage`` shape so the helper in ``agent.py`` can
+    copy keys verbatim. The v0 UI only renders
+    ``input_tokens`` + ``output_tokens``; cache fields are
+    stored so a future dashboard view doesn't need a schema
+    change to expose them.
+
+    ``ts`` is naive UTC (matching the convention every other
+    timestamp column in this file uses). The aggregation
+    endpoint converts the configured timezone's
+    ``period_start`` / ``period_end`` to UTC before issuing
+    the SQL — see ``_period_bounds`` in
+    ``employee_metrics.py``. Storing tz-aware would force a
+    schema decision (which tz?) that the system-level
+    setting handles better.
+
+    ``employee_id`` is NOT NULL: anonymous calls (which
+    ``_write_audit`` accepts for v0 forward-compat) are
+    deliberately not counted toward any employee's bill.
+    """
+    __tablename__ = "token_usage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(64))
+    input_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    output_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    cache_creation_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    cache_read_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    # Composite index — supports the aggregation endpoint's
+    # ``WHERE employee_id = ? AND ts BETWEEN ? AND ?``.
+    # Listed in ``__table_args__`` so it gets created
+    # alongside the table by ``create_all`` on a fresh DB;
+    # for an existing DB, ``_INDEX_MIGRATIONS`` below
+    # patches it in via ``CREATE INDEX IF NOT EXISTS``.
+    __table_args__ = (
+        Index("ix_token_usage_emp_ts", "employee_id", "ts"),
+    )
+
+    # Read-only relationship for admin / debug views; route
+    # code never traverses it to mutate the employee.
+    employee: Mapped["Employee"] = relationship(
+        foreign_keys=[employee_id], viewonly=True
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"TokenUsage(id={self.id}, employee_id={self.employee_id}, "
+            f"in={self.input_tokens}, out={self.output_tokens}, "
+            f"ts={self.ts.isoformat()})"
+        )
+
+
 # -- bootstrap --------------------------------------------------------------
 
 _engine: Engine | None = None
@@ -511,6 +592,18 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
         "action_items",
         "ix_action_items_employee_recent",
         "(employee_id, created_at DESC)",
+    ),
+    # D.15 — token-bill aggregation. ``create_all`` builds
+    # this alongside the new ``token_usage`` table on fresh
+    # installs; the ``CREATE INDEX IF NOT EXISTS`` here
+    # covers existing DBs (the inline migration runner is
+    # idempotent). The composite covers the
+    # ``WHERE employee_id = ? AND ts BETWEEN ? AND ?`` query
+    # the per-period endpoint issues.
+    (
+        "token_usage",
+        "ix_token_usage_emp_ts",
+        "(employee_id, ts)",
     ),
 ]
 

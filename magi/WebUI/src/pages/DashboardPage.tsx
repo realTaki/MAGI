@@ -1833,6 +1833,27 @@ function EmployeesPane() {
   });
   const [detailError, setDetailError] = useState<string | null>(null);
   const [savingDetail, setSavingDetail] = useState(false);
+  // D.15 — token-usage for the currently-viewed employee.
+  // Loaded on detail-panel open; cleared on close. Three
+  // periods in one response (week / month / total) so the
+  // panel renders all three rows in a single render pass
+  // — no waterfall, no separate useEffects.
+  type TokenUsagePeriod = {
+    input_tokens: number;
+    output_tokens: number;
+    call_count: number;
+    period_start: string;
+    period_end: string;
+  };
+  type TokenUsageOut = {
+    employee_id: number;
+    week: TokenUsagePeriod;
+    month: TokenUsagePeriod;
+    total: TokenUsagePeriod;
+    timezone: string;
+  };
+  const [tokenUsage, setTokenUsage] = useState<TokenUsageOut | null>(null);
+  const [tokenUsageError, setTokenUsageError] = useState<string | null>(null);
 
   // -- fetches ------------------------------------------------------------
 
@@ -1986,12 +2007,56 @@ function EmployeesPane() {
       telegram_id: emp.telegram_id !== null ? String(emp.telegram_id) : "",
     });
     setDetailError(null);
+    // D.15 — kick off the token-usage fetch in the same
+    // tick. The fetch is fire-and-forget; a slow DB just
+    // means the "Loading…" placeholder sticks around a
+    // bit longer. We don't ``await`` so the detail panel
+    // can paint immediately with the rest of the form.
+    void loadTokenUsage(emp.id);
   }
 
   function closeDetail() {
     setViewingId(null);
     setDetailError(null);
+    setTokenUsage(null);
+    setTokenUsageError(null);
   }
+
+  async function loadTokenUsage(empId: number) {
+    setTokenUsage(null);
+    setTokenUsageError(null);
+    try {
+      const r = await fetch(`/api/employees/${empId}/token-usage`, {
+        credentials: "include",
+      });
+      if (!r.ok) {
+        setTokenUsageError(`Failed to load (${r.status})`);
+        return;
+      }
+      const body = (await r.json()) as TokenUsageOut;
+      // Guard against a race: if the operator closed the
+      // panel and opened another employee between fetch
+      // start and resolve, don't paint stale numbers.
+      // (Cheap because the close cleared the state.)
+      if (viewingIdRef.current === empId) {
+        setTokenUsage(body);
+      }
+    } catch (err) {
+      setTokenUsageError(err instanceof Error ? err.message : "Network error");
+    }
+  }
+
+  // Lightweight ref mirror of ``viewingId`` so the async
+  // fetcher can check "is the panel still on this employee?"
+  // without the closure-staleness that ``useState`` would
+  // introduce. The fetcher schedules before this ref is
+  // necessarily the latest; the guard is a soft check
+  // (won't false-positive on a quick re-open of the same
+  // employee, but that's the desired UX).
+  const viewingIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    viewingIdRef.current = viewingId;
+  }, [viewingId]);
 
   async function submitDetail() {
     if (viewingId === null) return;
@@ -2477,6 +2542,70 @@ function EmployeesPane() {
                       )}
                     </div>
                   )}
+                  {/* D.15 — per-employee token usage. Three
+                      periods (week / month / total) in one
+                      fetch. Numbers are read-only stats; the
+                      provider / API key / role form below
+                      stays the editing surface. */}
+                  <div className="rounded-md border border-sky-light/40 bg-white/40 px-3 py-2 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-ink-soft text-xs">Token 用量</span>
+                      {tokenUsage && (
+                        <span className="text-xs text-ink-soft font-mono">
+                          时区 {tokenUsage.timezone}
+                        </span>
+                      )}
+                    </div>
+                    {tokenUsageError && (
+                      <p className="form-error mt-1">✗ {tokenUsageError}</p>
+                    )}
+                    {!tokenUsage && !tokenUsageError && (
+                      <p className="mt-1 text-xs text-ink-soft">Loading…</p>
+                    )}
+                    {tokenUsage && (
+                      <div className="mt-1 space-y-0.5 font-mono text-xs">
+                        <p>
+                          <span className="text-ink-soft">本周</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.week.input_tokens.toLocaleString()} 输入
+                          </span>{" "}
+                          <span className="text-ink-soft">/</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.week.output_tokens.toLocaleString()} 输出
+                          </span>{" "}
+                          <span className="text-ink-soft">
+                            · {tokenUsage.week.call_count} 次调用
+                          </span>
+                        </p>
+                        <p>
+                          <span className="text-ink-soft">本月</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.month.input_tokens.toLocaleString()} 输入
+                          </span>{" "}
+                          <span className="text-ink-soft">/</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.month.output_tokens.toLocaleString()} 输出
+                          </span>{" "}
+                          <span className="text-ink-soft">
+                            · {tokenUsage.month.call_count} 次调用
+                          </span>
+                        </p>
+                        <p>
+                          <span className="text-ink-soft">总计</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.total.input_tokens.toLocaleString()} 输入
+                          </span>{" "}
+                          <span className="text-ink-soft">/</span>{" "}
+                          <span className="text-ink">
+                            {tokenUsage.total.output_tokens.toLocaleString()} 输出
+                          </span>{" "}
+                          <span className="text-ink-soft">
+                            · {tokenUsage.total.call_count} 次调用
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <label className="form-label">角色</label>
                     <select
@@ -3020,6 +3149,7 @@ function SettingsTab(props: {
       />
       <SettingsPersonaCard />
       <SettingsTgReadReactionCard />
+      <SettingsSystemTimezoneCard />
       <SettingsWebuiAccessCard
         signedInUser={props.signedInUser}
         onAdminsChanged={props.onAdminsChanged}
@@ -3784,6 +3914,150 @@ function SettingsTgReadReactionCard() {
           {data.default !== data.current && (
             <p className="text-xs text-ink-soft mt-1">
               未配置时用默认 <span className="font-mono">{data.default}</span>。
+            </p>
+          )}
+        </div>
+      )}
+
+      {saveError && <p className="form-error mt-3">✗ {saveError}</p>}
+      {savedNotice && <p className="mt-3 text-xs text-emerald-700">✓ {savedNotice}</p>}
+
+      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-sky-light/40">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty}
+          className="btn btn-primary text-sm py-1.5 px-4"
+          title={!dirty ? "没有改动" : "保存"}
+        >
+          {saving ? "保存中…" : "保存"}
+        </button>
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => {
+              setPicked(data?.current ?? "");
+              setSaveError(null);
+              setSavedNotice(null);
+            }}
+            disabled={saving}
+            className="btn btn-ghost text-sm py-1.5 px-3"
+          >
+            放弃改动
+          </button>
+        )}
+      </div>
+    </ConsoleCard>
+  );
+}
+
+// -- system timezone card --------------------------------------------------
+//
+// D.15 — the timezone this MAGI node uses for "natural
+// week" / "natural month" bucket boundaries. The token
+// bill aggregation endpoint reads the same value on every
+// call, so a Save here is immediately reflected in the
+// next ``GET /api/employees/{id}/token-usage``.
+//
+// The dropdown lists the full IANA tz database
+// (zoneinfo.available_timezones()) sorted alphabetically.
+// v0 doesn't have a region-grouped preferences panel —
+// the alphabetical list is uniform and works for any
+// locale. The backend rejects unknown tz with 400 so a
+// stale client doesn't get a silent fall-back to UTC.
+function SettingsSystemTimezoneCard() {
+  type TzOut = {
+    current: string;
+    default: string;
+    choices: string[];
+  };
+
+  const [data, setData] = useState<TzOut | null>(null);
+  const [picked, setPicked] = useState<string>("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoadError(null);
+    try {
+      const r = await fetch("/api/system-settings/timezone", {
+        credentials: "include",
+      });
+      if (!r.ok) {
+        setLoadError(`Failed to load (${r.status})`);
+        return;
+      }
+      const body = (await r.json()) as TzOut;
+      setData(body);
+      setPicked(body.current);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Network error");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const dirty = data !== null && picked !== data.current;
+
+  async function save() {
+    setSaveError(null);
+    setSavedNotice(null);
+    setSaving(true);
+    try {
+      const r = await fetch("/api/system-settings/timezone", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timezone: picked }),
+        credentials: "include",
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as {
+          code?: string;
+          detail?: string;
+        };
+        setSaveError(body.detail ?? `Save failed (${r.status})`);
+        return;
+      }
+      const body = (await r.json()) as TzOut;
+      setData(body);
+      setPicked(body.current);
+      setSavedNotice("已保存。下次 token 用量查询就用新时区。");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ConsoleCard title="系统时区">
+      <p className="text-sm text-ink-soft">
+        用于把 token 用量按自然周 / 自然月聚合。改动后立即生效 — 下一次查询员工
+        token 用量时，下界按新时区算。
+      </p>
+
+      {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
+
+      {!loadError && data && (
+        <div className="mt-4 space-y-2">
+          <select
+            value={picked}
+            onChange={(e) => setPicked(e.target.value)}
+            className="form-input text-sm py-2 px-3 w-full sm:w-auto"
+          >
+            {data.choices.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </select>
+          {data.default !== data.current && (
+            <p className="text-xs text-ink-soft">
+              未设置时用默认 <span className="font-mono">{data.default}</span>。
             </p>
           )}
         </div>

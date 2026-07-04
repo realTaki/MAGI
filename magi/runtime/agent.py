@@ -152,6 +152,54 @@ def _write_audit(
     state_set(state_dir, "audit_log", json.dumps(rows, ensure_ascii=False))
 
 
+def _record_token_usage(
+    state_dir: str,
+    *,
+    employee_id: int,
+    channel: str,
+    provider: str,
+    model: str | None,
+    usage: dict,
+) -> None:
+    """Insert one ``token_usage`` row for a successful LLM call.
+
+    Synchronous because we're already past the async boundary
+    (the LLM returned). The SQL insert is one row in a
+    dedicated table; latency is bounded by SQLite WAL commit
+    (~ms). Pushing it onto the asyncio event loop would add
+    bookkeeping for no measurable gain.
+
+    ``usage`` keys follow the Anthropic SDK's ``Usage`` shape
+    (see :class:`magi.runtime.llm.provider.ChatResult.usage`).
+    Unknown keys are ignored; missing keys default to 0 so
+    a provider that returned no usage metadata still gets a
+    row (call count stays honest).
+
+    Raises whatever the ORM raises — caller is responsible
+    for swallowing (we don't want a transient DB hiccup to
+    break a chat that already succeeded).
+    """
+    from magi.runtime.state.orm import TokenUsage, open_session
+
+    in_t = int(usage.get("input_tokens") or 0)
+    out_t = int(usage.get("output_tokens") or 0)
+    cc_t = int(usage.get("cache_creation_input_tokens") or 0)
+    cr_t = int(usage.get("cache_read_input_tokens") or 0)
+
+    with open_session() as session:
+        session.add(TokenUsage(
+            employee_id=employee_id,
+            channel=channel,
+            provider=provider,
+            model=model,
+            input_tokens=in_t,
+            output_tokens=out_t,
+            cache_creation_tokens=cc_t,
+            cache_read_tokens=cr_t,
+        ))
+        session.commit()
+
+
 async def handle_message(
     state_dir: str,
     *,
@@ -315,6 +363,31 @@ async def handle_message(
             "raw_blocks": result.raw_blocks,
         },
     )
+
+    # D.15 — per-employee token accounting. Written after
+    # the audit row so the audit remains the authoritative
+    # "what happened" record. Failure here is logged but
+    # does NOT raise: a missing token_usage row is a
+    # statistical gap, not a user-visible failure mode.
+    # Anonymous calls (``employee_id is None``) are skipped
+    # — the SQL column is NOT NULL and we'd rather drop a
+    # row than bill it to a phantom employee.
+    if employee_id is not None:
+        try:
+            _record_token_usage(
+                state_dir,
+                employee_id=employee_id,
+                channel=channel,
+                provider=provider.name,
+                model=result.model,
+                usage=result.usage or {},
+            )
+        except Exception:
+            logger.exception(
+                "agent: token_usage insert failed (employee=%s, "
+                "channel=%s); chat reply already succeeded",
+                employee_id, channel,
+            )
     logger.info(
         "llm reply",
         extra={
