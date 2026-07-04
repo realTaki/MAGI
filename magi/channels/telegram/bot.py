@@ -409,15 +409,49 @@ async def _handle_employee_message(
                 session_id,
             )
 
-    reply = await handle_message(
-        state_dir,
-        text=text,
-        channel="tg",
-        session_id=session_id,
-        employee_id=employee_id,
-        employee_provider=employee_provider,
-        employee_api_key=employee_api_key,
+    # -- "typing…" indicator (D.14) --------------------------------------
+    # TG clears the typing state automatically when our
+    # ``reply_text`` lands, but only if the LLM reply comes
+    # back within ~5s — past that, the client hides the
+    # indicator. So we fire an immediate ``typing`` then
+    # start a 4-second refresh loop in the background;
+    # cancelled the moment ``handle_message`` returns.
+    typing_stop = asyncio.Event()
+    typing_task = asyncio.create_task(
+        _typing_indicator_loop(
+            update.get_bot(),
+            update.effective_chat.id,
+            typing_stop,
+        ),
+        name=f"tg-typing-{update.effective_chat.id}",
     )
+
+    try:
+        reply = await handle_message(
+            state_dir,
+            text=text,
+            channel="tg",
+            session_id=session_id,
+            employee_id=employee_id,
+            employee_provider=employee_provider,
+            employee_api_key=employee_api_key,
+        )
+    finally:
+        # Always cancel — success, error, exception.
+        # ``reply_text`` below will let TG clear its UI;
+        # without this stop the loop would keep pinging
+        # the API every 4s until the 30s deadline.
+        typing_stop.set()
+        if not typing_task.done():
+            typing_task.cancel()
+            try:
+                await typing_task
+            except (asyncio.CancelledError, Exception):
+                # ``_typing_indicator_loop`` swallows its own
+                # errors; any exception reaching here is
+                # unexpected but never actionable for the
+                # operator — keep the reply path alive.
+                pass
 
     # Telegram has a 4096-char message limit. The agent
     # loop's reply is well under that in practice, but a
@@ -493,6 +527,66 @@ def _resolve_or_create_tg_session(
     # No prior session (or it was corrupt) — mint a new one.
     sess = store.create(chat_id, employee_id=employee_id, channel="tg")
     return sess.session_id
+
+
+# TG "typing…" action expires after ~5s, so we refresh
+# every 4s while the LLM is thinking. The handler starts
+# this loop in the background just before
+# ``handle_message`` and signals it to stop via the returned
+# ``stop_event`` — see ``_handle_employee_message``.
+_TYPING_REFRESH_SECONDS = 4.0
+
+
+async def _typing_indicator_loop(
+    bot,
+    chat_id: int,
+    stop_event: "asyncio.Event",  # noqa: F821 — forward ref avoids an extra import
+) -> None:
+    """Send ``send_chat_action(typing)`` every 4s until
+    ``stop_event`` is set, or 30s elapses, whichever comes
+    first.
+
+    The 30s ceiling is a defensive cap so a hung LLM doesn't
+    cause this coroutine to spam the TG API indefinitely —
+    a normal Anthropic reply lands in under 15s in practice;
+    past 30s something is wrong and a fresh typing signal
+    isn't going to fix the operator's wait.
+
+    ``asyncio.CancelledError`` from the handler's task
+    shutdown also exits cleanly — we don't ``raise`` it, we
+    just return.
+    """
+    deadline = asyncio.get_event_loop().time() + 30.0
+    while not stop_event.is_set():
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            return
+        try:
+            await bot.send_chat_action(
+                chat_id=chat_id,
+                action="typing",
+            )
+        except Exception:
+            # ``Forbidden`` if the bot lost chat access, or a
+            # transient network blip — neither should kill
+            # the inbound path. Log once and stop trying;
+            # spamming TG with retry attempts is worse than
+            # silently dropping the typing indicator.
+            logger.exception(
+                "telegram: typing indicator failed (chat=%s); "
+                "disabling further refreshes", chat_id,
+            )
+            return
+        # Wait up to 4s OR until the reply arrives.
+        try:
+            await asyncio.wait_for(
+                stop_event.wait(), timeout=_TYPING_REFRESH_SECONDS
+            )
+            # stop_event set → reply ready, exit.
+            return
+        except asyncio.TimeoutError:
+            # Refresh period elapsed; loop and re-send.
+            continue
 
 
 def start_bot(state_dir: str) -> Optional[threading.Thread]:
