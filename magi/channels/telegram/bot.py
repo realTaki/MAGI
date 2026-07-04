@@ -269,8 +269,28 @@ async def _handle_employee_message(
     is pure dispatch: text in, reply out, with the agent
     loop doing the audit + fallback. A separated employee
     gets a polite "you're 离职" reply and no LLM call.
+
+    Session lifecycle (D.10): TG now persists chat history
+    the same way WebUI does — ``SessionStore`` writes
+    one file per ``(chat_id, session_id)`` under
+    ``<workspace>/memories/sessions/<chat_id>/<sid>.json``.
+    Unlike WebUI (which has a sidebar "新对话" affordance),
+    TG keeps **one session per chat_id forever** — the
+    employee never asks for a fresh thread from this side.
+    The session is auto-created on the first inbound
+    message and reused for every subsequent turn in that
+    chat, so the file grows into the employee's complete
+    history with this EVE. Per-chat / per-topic session
+    splits are a future C7+ affordance.
     """
     from magi.runtime.agent import handle_message
+    from magi.runtime.sessions import (
+        SessionMessage,
+        SessionStore,
+        new_session_id,
+        session_lock,
+        utcnow_iso,
+    )
 
     if employee_separated:
         # Separated employees can't chat with their EVE —
@@ -291,10 +311,74 @@ async def _handle_employee_message(
         )
         return
 
+    # -- session lifecycle (D.10) --------------------------------------
+    # Same shape as ``magi/channels/webui/api/chat.py``:
+    #
+    #   1. Try the *latest* session for this chat_id
+    #      (``list_summaries(limit=1)`` returns most recent
+    #      first). If one exists and isn't corrupt, reuse it —
+    #      that's "one session per TG chat forever".
+    #   2. Otherwise create a fresh one. First-message case
+    #      also seeds the auto-title worker.
+    #
+    # The "reuse the last session" policy is intentionally
+    # implicit: the TG client never tells the EVE "I want
+    # a new thread"; if a future affordance (C7 command like
+    # ``/new``) lands, it'll arrive here as an explicit
+    # ``session_id = None`` and trigger the create branch.
+    store = SessionStore(state_dir)
+    session_id = _resolve_or_create_tg_session(store, chat_id, employee_id)
+
+    # Inbound append under the per-session lock so the
+    # auto-title worker (D.7) reads a coherent file. Same
+    # 5ms critical section the WebUI chat-send holds.
+    ts_in = utcnow_iso()
+    try:
+        async with session_lock(chat_id, session_id):
+            post = store.append_messages(
+                chat_id, session_id,
+                [SessionMessage(
+                    role="user", text=text, ts=ts_in,
+                    message_id=new_session_id(),
+                )],
+            )
+    except Exception:
+        logger.exception(
+            "telegram: failed to append user message for session %s",
+            session_id,
+        )
+        # Fall through and still try the LLM call — losing
+        # the audit trail is worse than the user seeing a
+        # reply to a message we couldn't persist. They'll
+        # just see the conversation "jump" in the file
+        # history if they ever inspect it.
+        post = None
+
+    # First-user-message of a fresh thread → fire the same
+    # auto-title worker the WebUI uses. The worker is keyed
+    # by ``(chat_id, session_id)`` and uses its own per-
+    # session lock; no TG-specific code needed.
+    if post is not None and len(post.messages) == 1:
+        try:
+            from magi.runtime.auto_title import enqueue_title_job
+            await enqueue_title_job(
+                chat_id=chat_id,
+                session_id=session_id,
+                employee_id=employee_id,
+                employee_provider=employee_provider or "",
+                employee_api_key=employee_api_key or "",
+            )
+        except Exception:
+            logger.exception(
+                "telegram: failed to enqueue title job for session %s",
+                session_id,
+            )
+
     reply = await handle_message(
         state_dir,
         text=text,
         channel="tg",
+        session_id=session_id,
         employee_id=employee_id,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
@@ -308,7 +392,72 @@ async def _handle_employee_message(
     if len(reply) > 4000:
         reply = reply[:3990] + "\n\n…(回复过长，已截断)"
 
+    # Outbound append. Failure is logged but does NOT
+    # raise — the TG user already got the reply via
+    # ``reply_text`` below; a missing history row is worse
+    # than a console error.
+    ts_out = utcnow_iso()
+    try:
+        store.append_messages(
+            chat_id, session_id,
+            [SessionMessage(
+                role="assistant", text=reply, ts=ts_out,
+                message_id=new_session_id(),
+            )],
+        )
+    except Exception:
+        logger.exception(
+            "telegram: failed to append assistant message for session %s",
+            session_id,
+        )
+
     await update.effective_message.reply_text(reply)
+
+
+def _resolve_or_create_tg_session(
+    store: "SessionStore",  # type: ignore[name-defined]  # noqa: F821
+    chat_id: str,
+    employee_id: int,
+) -> str:
+    """Return the session id to use for the next TG message.
+
+    Policy (D.10): **one session per TG chat_id forever.**
+
+    We look up the most recent session for ``chat_id`` and
+    reuse it if it's still on disk and intact. Otherwise
+    we mint a fresh one. This matches what the user
+    experiences — they don't see a "new conversation" affordance
+    in the TG client, so the EVE should treat the chat as
+    a single ongoing thread.
+
+    A corrupt session file (truncated JSON) is skipped and
+    triggers creation of a new one — we lose the corrupt
+    thread's history but don't crash the inbound handler.
+    """
+    try:
+        summaries, _total = store.list_summaries(chat_id, limit=1, offset=0)
+    except Exception:
+        logger.exception(
+            "telegram: session lookup failed for chat %s; minting fresh",
+            chat_id,
+        )
+        summaries = []
+    if summaries:
+        # Verify the file is still readable (not corrupt).
+        # ``list_summaries`` silently skips corrupt files,
+        # so a hit here means the file parsed cleanly.
+        try:
+            store.get(chat_id, summaries[0].session_id)
+            return summaries[0].session_id
+        except Exception:
+            logger.exception(
+                "telegram: latest session %s for chat %s failed re-read; "
+                "creating fresh",
+                summaries[0].session_id, chat_id,
+            )
+    # No prior session (or it was corrupt) — mint a new one.
+    sess = store.create(chat_id, employee_id=employee_id, channel="tg")
+    return sess.session_id
 
 
 def start_bot(state_dir: str) -> Optional[threading.Thread]:
