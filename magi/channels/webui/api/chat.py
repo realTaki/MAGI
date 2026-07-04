@@ -202,8 +202,8 @@ async def send_chat(
     Session lifecycle (D.6):
       - The user message is appended to the resolved
         session **before** the LLM call so a crash mid-call
-        leaves the inbound row visible in the file (matches
-        the audit_log ``chat.inbound`` timing).
+        leaves the inbound row visible in the file. The
+        LLM reply is appended after the call returns.
       - The assistant message is appended **after** the LLM
         returns successfully (matches ``chat.outbound``).
       - If no ``session_id`` is sent, a new session is

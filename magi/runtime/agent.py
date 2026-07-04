@@ -15,24 +15,24 @@ per-conversation state (history, scratchpad) onto a class so
 multi-turn calls can pass it in; the function signature will
 gain a ``conversation_id`` arg without breaking callers.
 
-Audit hooks: ``handle_message`` writes two rows per call —
-inbound (the user's message) and outbound (the LLM reply).
-For v0 the rows go to the ``meta`` table via a tiny
-``audit_log`` JSON blob keyed on timestamp; the proper
-SQLAlchemy ``AuditEvent`` model lands with C1.1's ORM pass
-and replaces this without changing the call sites.
+Persistence side: ``handle_message`` records one row per
+successful LLM call in the ``token_usage`` table (D.15).
+Session history lives in JSON files under
+``<workspace>/memories/sessions/<chat_id>/<sid>.json``
+(D.6). No separate audit log — operator-facing
+``/api/employees/{id}/token-usage`` + ``GET
+/api/chat/sessions/{id}`` cover the same questions
+("what was said", "what was spent") that an audit
+view would.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from magi.runtime.llm import ChatMessage, LLMError, get_provider
-from magi.runtime.state.settings import state_get, state_set
 
 logger = logging.getLogger("magi.runtime.agent")
 
@@ -105,53 +105,6 @@ def _read_soul(state_dir: str) -> str:
     return text or load_fallback_persona()
 
 
-def _write_audit(
-    state_dir: str,
-    *,
-    kind: str,
-    employee_id: int | None,
-    channel: str,
-    payload: dict[str, Any],
-) -> None:
-    """Append one event to the ``audit_log`` meta key.
-
-    Pre-C1.1 the audit table isn't a real SQLAlchemy model;
-    we stash rows as a JSON list under one meta key. The
-    proper hash-chained ``AuditEvent`` model lands with
-    C1.1 and replaces this without changing the agent
-    call signature. The temporary shape is::
-
-        audit_log: [
-          {"ts": "...", "kind": "chat.inbound", "channel": "tg",
-           "employee_id": 1, "payload": {...}},
-          ...
-        ]
-    """
-    log_raw = state_get(state_dir, "audit_log") or "[]"
-    try:
-        rows = json.loads(log_raw)
-    except (ValueError, TypeError):
-        logger.warning("audit_log meta is not valid JSON; resetting")
-        rows = []
-    if not isinstance(rows, list):
-        rows = []
-
-    rows.append(
-        {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "kind": kind,
-            "channel": channel,
-            "employee_id": employee_id,
-            "payload": payload,
-        }
-    )
-    # Cap at 1000 rows for v0; C1.1's proper audit table
-    # handles retention properly. Old rows just fall off.
-    if len(rows) > 1000:
-        rows = rows[-1000:]
-    state_set(state_dir, "audit_log", json.dumps(rows, ensure_ascii=False))
-
-
 def _record_token_usage(
     state_dir: str,
     *,
@@ -206,12 +159,12 @@ async def handle_message(
     text: str,
     channel: str,
     employee_id: int | None = None,
-    # D.6: optional session id. Pure audit annotation for
-    # v0 — the agent loop itself does not (yet) read session
-    # history. The id is echoed into the audit_log rows so
-    # future replay tools can join messages back to the
-    # persisted session file under
-    # ``<workspace>/memories/sessions/<chat_id>/<id>.json``.
+    # D.6: optional session id. Persisted alongside the
+    # message in the session JSON file
+    # (``<workspace>/memories/sessions/<chat_id>/<id>.json``);
+    # v0 also echoes it into the ``token_usage`` row so the
+    # audit-style question "which session burned these
+    # tokens?" can be answered later.
     session_id: str | None = None,
     # Per-employee credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
@@ -249,17 +202,20 @@ async def handle_message(
     text
         The inbound message text.
     channel
-        Tag for the audit row (``"tg"`` / ``"webui"`` /
+        Tag for the ``token_usage`` row (``"tg"`` / ``"webui"`` /
         ``"scheduled"``). Free-form string; no enum yet.
     employee_id
-        Optional employee id, for the audit row. ``None`` for
-        anonymous (WebUI) traffic.
+        Optional employee id, for the ``token_usage`` row.
+        ``None`` is accepted (FK NOT NULL on the SQL column
+        will surface any caller that drops the ball), but
+        v0 never sends ``None`` — both channel paths
+        resolve ``chat_id`` → ``Employee`` before this
+        function runs.
     session_id
-        D.6: optional chat session id. Pure audit-only field
-        in v0 — the agent loop itself does not read session
-        history. Echoed into all ``chat.*`` audit rows so
-        future replay tools can join audit_log entries back
-        to the persisted session file under
+        D.6: optional chat session id. Echoed into the
+        ``token_usage`` row so the question "which session
+        burned these tokens?" can be answered later by
+        joining against the session JSON files under
         ``<workspace>/memories/sessions/<chat_id>/<id>.json``.
     employee_provider / employee_api_key / employee_model
         Per-call LLM credentials. Either all three are set
@@ -268,15 +224,6 @@ async def handle_message(
         employee row; the WebUI chat API does the same via
         the ``magi_session`` admin cookie.
     """
-    # Inbound audit. Written before the LLM call so a crash
-    # in the provider still leaves a record of the message.
-    _write_audit(
-        state_dir,
-        kind="chat.inbound",
-        employee_id=employee_id,
-        channel=channel,
-        payload={"text": text, "session_id": session_id},
-    )
 
     # Strict-mode pre-flight: per-employee credentials must
     # be present in full. We treat empty strings as "not set"
@@ -295,17 +242,6 @@ async def handle_message(
         logger.warning(
             "chat rejected (employee=%s channel=%s): %s",
             employee_id, channel, reason,
-        )
-        _write_audit(
-            state_dir,
-            kind="chat.outbound.error",
-            employee_id=employee_id,
-            channel=channel,
-            payload={
-                "error": reason,
-                "session_id": session_id,
-                "text": _fallback_reply("agent_no_credentials"),
-            },
         )
         return _fallback_reply("agent_no_credentials")
 
@@ -327,56 +263,18 @@ async def handle_message(
             "llm call failed (employee=%s provider=%s): %s",
             employee_id, provider_name, e,
         )
-        _write_audit(
-            state_dir,
-            kind="chat.outbound.error",
-            employee_id=employee_id,
-            channel=channel,
-            payload={
-                "error": str(e),
-                "error_class": type(e).__name__,
-                "provider": provider_name,
-                "model": model,
-                "session_id": session_id,
-                "text": _fallback_reply(),
-            },
-        )
         return _fallback_reply()
 
-    # Outbound audit. ``text`` is the user-facing reply;
-    # ``thinking`` is captured separately for debugging
-    # (never sent to the user). The full raw_blocks list
-    # is included so a future replay tool can reconstruct
-    # the exact upstream response.
-    _write_audit(
-        state_dir,
-        kind="chat.outbound",
-        employee_id=employee_id,
-        channel=channel,
-        payload={
-            "text": result.text,
-            "thinking": result.thinking,
-            "model": result.model,
-            "provider": provider.name,
-            "usage": result.usage,
-            "session_id": session_id,
-            "raw_blocks": result.raw_blocks,
-        },
-    )
-
-    # D.15 — per-employee token accounting. Written after
-    # the audit row so the audit remains the authoritative
-    # "what happened" record. Failure here is logged but
-    # does NOT raise: a missing token_usage row is a
-    # statistical gap, not a user-visible failure mode.
-    #
-    # Every chat call in v0 has a concrete ``employee_id`` —
-    # both channel paths (WebUI cookie admin + TG bound
+    # D.15 — per-employee token accounting. Every chat
+    # call in v0 has a concrete ``employee_id`` — both
+    # channel paths (WebUI cookie admin + TG bound
     # employee) resolve to a row before reaching the LLM.
-    # If a future channel ever arrives without a
-    # ``chat_id`` → ``Employee`` mapping, the FK NOT NULL
-    # here will surface that gap at write time instead of
-    # silently dropping the row.
+    # The FK NOT NULL on ``token_usage.employee_id``
+    # surfaces any future channel that arrives without a
+    # ``chat_id`` → ``Employee`` mapping. Failure here is
+    # logged but does NOT raise: a missing token_usage
+    # row is a statistical gap, not a user-visible
+    # failure mode.
     try:
         _record_token_usage(
             state_dir,
