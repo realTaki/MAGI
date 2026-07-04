@@ -90,8 +90,8 @@ def test_config_round_trip(tg_settings_env):
         set_read_reaction_emoji,
     )
 
-    set_read_reaction_emoji(str(tg_settings_env), "✅")
-    assert get_read_reaction_emoji(str(tg_settings_env)) == "✅"
+    set_read_reaction_emoji(str(tg_settings_env), "🤝")
+    assert get_read_reaction_emoji(str(tg_settings_env)) == "🤝"
 
 
 def test_config_falls_back_on_unknown_value(tg_settings_env):
@@ -104,8 +104,35 @@ def test_config_falls_back_on_unknown_value(tg_settings_env):
     )
     from magi.runtime.state.settings import state_set
 
-    state_set(str(tg_settings_env), "tg.read_reaction_emoji", "🦄")
+    # ✅ is in the Unicode block but NOT in our user-facing
+    # choices (Telegram rejects it as a reaction type) —
+    # the fallback path catches this so a leftover from a
+    # previous config version doesn't silently 400 every
+    # inbound message.
+    state_set(str(tg_settings_env), "tg.read_reaction_emoji", "✅")
     assert get_read_reaction_emoji(str(tg_settings_env)) == DEFAULT_REACTION_EMOJI
+
+
+def test_config_rejects_emoji_not_in_tg_whitelist(tg_settings_env):
+    """The actual Telegram whitelist is the source of truth:
+    even if a value is in our user-facing list, if Telegram
+    doesn't accept it, the SDK will 400. Pinned here so
+    anyone adding a new choice must verify against
+    ``telegram.constants.ReactionEmoji`` first.
+
+    The list is small (~70 entries); our 5 picks must all
+    appear in it. If Telegram ever drops one (very rare),
+    this test starts failing and we know to swap.
+    """
+    from telegram.constants import ReactionEmoji
+    from magi.channels.telegram.config import REACTION_CHOICES
+
+    tg_allowed = {e.value for e in ReactionEmoji}
+    for value, _label in REACTION_CHOICES:
+        assert value in tg_allowed, (
+            f"REACTION_CHOICES value {value!r} not in Telegram's "
+            "ReactionEmoji whitelist — pick a different emoji."
+        )
 
 
 def test_config_reaction_choices_distinct():
@@ -116,6 +143,21 @@ def test_config_reaction_choices_distinct():
     values = [v for v, _ in REACTION_CHOICES]
     assert len(values) == len(set(values))
     assert len(values) == 5  # pin the surface
+
+
+def test_config_reaction_choices_human_labels_present():
+    """Every choice has a non-empty label (used in the radio
+    row's ``<span>``); an empty label would render as a
+    blank radio button."""
+    from magi.channels.telegram.config import REACTION_CHOICES
+
+    for value, label in REACTION_CHOICES:
+        assert label and label.strip(), f"label for {value!r} is empty"
+        # Labels start with the emoji itself for visual
+        # pairing with the radio value.
+        assert label.startswith(value), (
+            f"label for {value!r} doesn't start with the emoji"
+        )
 
 
 # -- API surface ----------------------------------------------------------
@@ -138,22 +180,29 @@ def test_put_persists_and_returns_new_value(client, tg_settings_env):
     the new current."""
     r = client.put(
         "/api/tg-settings/read-reaction",
-        json={"emoji": "🤔"},
+        json={"emoji": "🤝"},
     )
     assert r.status_code == 200
     data = r.json()
-    assert data["current"] == "🤔"
+    assert data["current"] == "🤝"
 
     # Subprocess-equivalent: a fresh ``get_read_reaction_emoji``
     # call reads the same value back.
     from magi.channels.telegram.config import get_read_reaction_emoji
-    assert get_read_reaction_emoji(str(tg_settings_env)) == "🤔"
+    assert get_read_reaction_emoji(str(tg_settings_env)) == "🤝"
 
 
-def test_put_rejects_unknown_emoji(client):
-    """Emoji outside the allowlist → 400 with the dedicated
-    error code so the UI can render a "pick from the list"
-    hint instead of a generic detail string."""
+def test_put_rejects_unicode_that_isnt_in_tg_reaction_whitelist(client):
+    """🦄 is in ``ReactionEmoji`` but not in our user-facing
+    choices list — covered by the first assertion below.
+
+    💬 looks like a great fit semantically ("about to reply")
+    but Telegram's ``ReactionEmoji`` whitelist doesn't include
+    it; passing it to ``set_message_reaction`` would route
+    to ``ReactionTypeCustomEmoji`` and 400. Our user-facing
+    allowlist excludes it before the SDK ever sees it."""
+    # Outside our 5 user-facing choices (🦄 is in the TG
+    # whitelist but not on the radio group).
     r = client.put(
         "/api/tg-settings/read-reaction",
         json={"emoji": "🦄"},
@@ -161,6 +210,21 @@ def test_put_rejects_unknown_emoji(client):
     assert r.status_code == 400
     body = r.json()
     assert body["code"] == "validation.unknown_reaction_emoji"
+
+    # 💬 specifically: in our user-facing list historically
+    # but moved out because Telegram doesn't accept it.
+    r = client.put(
+        "/api/tg-settings/read-reaction",
+        json={"emoji": "💬"},
+    )
+    assert r.status_code == 400
+
+    # Same for ✅.
+    r = client.put(
+        "/api/tg-settings/read-reaction",
+        json={"emoji": "✅"},
+    )
+    assert r.status_code == 400
 
 
 def test_put_rejects_empty_emoji(client):
