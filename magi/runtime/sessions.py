@@ -116,6 +116,27 @@ def _validate_chat_id(chat_id: str) -> None:
         )
 
 
+def _validate_session_id(session_id: str) -> None:
+    """Reject anything outside the ULID shape.
+
+    Pre-D.18 the path check was a directory-traversal guard;
+    D.18 dropped the path layer, but the API contract that
+    "a non-ULID id is a 400 validation.session_id_invalid"
+    survives — callers (chat_sessions.py) catch
+    ``SessionPathError`` for this. We raise it on shape, the
+    same way the v0 path check did, so the API-layer mapping
+    stays unchanged.
+    """
+    if (
+        not isinstance(session_id, str)
+        or len(session_id) != 26
+        or any(c not in _CROCKFORD for c in session_id)
+    ):
+        raise SessionPathError(
+            f"session_id {session_id!r} is not a valid ULID"
+        )
+
+
 def session_lock(chat_id: str, session_id: str) -> None:
     """No-op compat shim.
 
@@ -467,6 +488,7 @@ class SessionStore:
         The row is committed before this returns so a
         subsequent ``get`` always sees the same id.
         """
+        _validate_chat_id(chat_id)
         session_id = new_session_id()
         now = utcnow_iso()
         with open_session() as db:
@@ -512,6 +534,8 @@ class SessionStore:
         can still see the pre-D.17 forensic record without a
         second query.
         """
+        _validate_session_id(session_id)
+        _validate_chat_id(chat_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.chat_id != chat_id:
@@ -567,6 +591,8 @@ class SessionStore:
         ``updated_at`` bump — used by operations that touch
         metadata only.
         """
+        _validate_session_id(session_id)
+        _validate_chat_id(chat_id)
         new_msgs = list(msgs)
         # Validate up-front so a partial append isn't possible.
         for i, m in enumerate(new_msgs):
@@ -616,6 +642,8 @@ class SessionStore:
         used by the manual ``PATCH`` path because a rename is
         operator metadata and shouldn't reshuffle the sidebar.
         """
+        _validate_session_id(session_id)
+        _validate_chat_id(chat_id)
         if title is None:
             new_title: str | None = None
         else:
@@ -781,6 +809,8 @@ class SessionStore:
         no-op (returns ``False``). No trash; v0 doesn't
         support undo.
         """
+        _validate_session_id(session_id)
+        _validate_chat_id(chat_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.chat_id != chat_id:

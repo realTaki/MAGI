@@ -146,17 +146,14 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     body = r.json()
     assert "session_id" in body
     sid = body["session_id"]
-    # File lives at the canonical path under the workspace.
-    # The workspace is pinned via ``MAGI_WORKSPACE_DIR``; the
-    # module-level helper mirrors the on-disk layout exactly.
-    from magi.runtime.sessions import session_path
-    from magi.runtime.workspace import workspace_root
-    on_disk = session_path(
-        Path(workspace_root(os.environ["MAGI_STATE_DIR"])),
-        str(admin.telegram_id),
-        sid,
-    )
-    assert on_disk.is_file(), f"expected session at {on_disk}"
+    # D.18: sessions live in SQLite (``chat_sessions`` table)
+    # instead of a JSON file. Verify the row landed.
+    from magi.runtime.state.orm import ChatSession, open_session
+    with open_session() as db:
+        row = db.get(ChatSession, sid)
+    assert row is not None, f"expected session row for {sid}"
+    assert row.chat_id == str(admin.telegram_id)
+    assert row.employee_id == admin.id
 
 
 def test_list_returns_created_session(client, admin):

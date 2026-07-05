@@ -37,101 +37,93 @@ import json
 import pytest
 
 
-# -- session round-trip --------------------------------------------------
+# -- session round-trip (D.18: ORM, not JSON) ------------------------------
 
 
-def test_session_to_dict_includes_new_fields():
-    """All three new fields are emitted in JSON even
-    when set to default values. Otherwise old files
-    written without them could lose state on the next
-    write."""
-    from magi.runtime.sessions import (
-        Session,
-        SessionMessage,
-        session_to_dict,
-    )
+def test_session_orm_round_trip_includes_new_fields(fresh_db):
+    """D.18 dropped the JSON ``session_to_dict`` /
+    ``session_from_dict`` pair. The contract — ``archive``,
+    ``active_tail_count``, ``last_compaction_at`` survive a
+    round-trip — now lives in the SQLAlchemy ORM. This test
+    pins that.
+    """
+    from magi.runtime.sessions import SessionStore, SessionMessage
 
-    s = Session(
-        session_id="01ABC",
-        chat_id="9001",
-        employee_id=2,
-        channel="webui",
-        created_at="2026-07-01T00:00:00Z",
-        updated_at="2026-07-01T00:00:00Z",
-        messages=[SessionMessage(
-            role="user", text="hi", ts="t", message_id="m1",
-        )],
-        title=None,
-        archive=[],
-        active_tail_count=20,
-        last_compaction_at=None,
-    )
-    d = session_to_dict(s)
-    assert "archive" in d
-    assert "active_tail_count" in d
-    assert "last_compaction_at" in d
-    assert d["archive"] == []
-    assert d["active_tail_count"] == 20
-    assert d["last_compaction_at"] is None
+    store = SessionStore(str(fresh_db))
+    s = store.create("9001", employee_id=2)
+    # Write the new fields via direct ORM and re-read via the
+    # store.
+    from magi.runtime.state.orm import ChatSession, open_session
+    with open_session() as db:
+        row = db.get(ChatSession, s.session_id)
+        row.active_tail_count = 20
+        row.last_compaction_at = None
+        # archived=0 default applies; archive list defaults
+        # to empty by virtue of the message query filtering
+        # ``archived=0``.
+        db.commit()
+    again = store.get("9001", s.session_id)
+    assert again is not None
+    assert again.archive == []
+    assert again.active_tail_count == 20
+    assert again.last_compaction_at is None
 
 
-def test_session_archive_round_trip():
-    """A session with a non-empty archive survives
-    to_dict → from_dict with all entries intact."""
-    from magi.runtime.sessions import (
-        Session,
-        SessionMessage,
-        session_to_dict,
-        session_from_dict,
-    )
+def test_session_archive_round_trip_via_orm(fresh_db):
+    """Archived rows (``archived=1``) round-trip through
+    ``SessionStore.get()`` and end up in ``Session.archive``,
+    not in ``Session.messages`` (the active view).
+    """
+    from magi.runtime.sessions import SessionStore, SessionMessage
 
-    archived = [
-        SessionMessage(
+    store = SessionStore(str(fresh_db))
+    s = store.create("9001", employee_id=2)
+    # Active + archived rows.
+    store.append_messages("9001", s.session_id, [
+        SessionMessage(role="user",      text="new msg",  ts="2026-07-02T00:00:00Z", message_id="m1"),
+        SessionMessage(role="assistant", text="new reply", ts="2026-07-02T00:00:01Z", message_id="m2"),
+    ])
+    from magi.runtime.state.orm import ChatMessage, ChatSession, open_session
+    with open_session() as db:
+        archived_msg = SessionMessage(
             role="user", text="old msg 1",
-            ts="2026-07-01T00:00:00Z",
-            message_id="a1",
-        ),
-        SessionMessage(
+            ts="2026-07-01T00:00:00Z", message_id="a1",
+        )
+        db.add(ChatMessage(
+            session_id=s.session_id, message_id="a1",
+            role="user", text="old msg 1",
+            ts="2026-07-01T00:00:00Z", archived=1,
+        ))
+        db.add(ChatMessage(
+            session_id=s.session_id, message_id="a2",
             role="assistant", text="old reply",
-            ts="2026-07-01T00:00:01Z",
-            message_id="a2",
-        ),
-    ]
-    s = Session(
-        session_id="01ABC",
-        chat_id="9001",
-        employee_id=2,
-        channel="webui",
-        created_at="t",
-        updated_at="t",
-        messages=[SessionMessage(
-            role="user", text="new msg",
-            ts="2026-07-02T00:00:00Z",
-            message_id="m2",
-        )],
-        title=None,
-        archive=archived,
-        active_tail_count=20,
-        last_compaction_at="2026-07-02T00:00:01Z",
-    )
-    d = session_to_dict(s)
-    s2 = session_from_dict(d)
+            ts="2026-07-01T00:00:01Z", archived=1,
+        ))
+        row = db.get(ChatSession, s.session_id)
+        row.last_compaction_at = "2026-07-02T00:00:01Z"
+        row.active_tail_count = 20
+        db.commit()
+
+    s2 = store.get("9001", s.session_id)
+    assert s2 is not None
     assert len(s2.archive) == 2
     assert s2.archive[0].text == "old msg 1"
     assert s2.archive[0].role == "user"
     assert s2.archive[1].role == "assistant"
     assert s2.last_compaction_at == "2026-07-02T00:00:01Z"
     assert s2.active_tail_count == 20
-    # Active list still has the recent message.
-    assert len(s2.messages) == 1
+    # Active list still has the recent messages.
+    assert len(s2.messages) == 2
     assert s2.messages[0].text == "new msg"
 
 
-def test_session_from_dict_backward_compatible():
-    """A file written before D.17 (no archive /
-    active_tail_count / last_compaction_at keys) loads
-    with default values. The schema_version stays 1; no
-    migration needed."""
+def test_session_from_dict_backward_compatible(fresh_db):
+    """D.18 dropped the JSON file format entirely, so a
+    "legacy file" is now anything the migration importer
+    parses via ``session_from_dict`` — a hand-written dict
+    missing the D.17 fields. The parser still defaults them
+    so the migration importer doesn't reject partial files.
+    """
     from magi.runtime.sessions import session_from_dict
 
     old = {
@@ -152,10 +144,10 @@ def test_session_from_dict_backward_compatible():
 
 
 def test_session_active_tail_count_clamped_on_load():
-    """A hand-edited ``active_tail_count: 0`` is clamped
-    back to 20 (the default) rather than persisting as
-    0, which would mean "keep zero messages" — agent
-    loop would have nothing to send to the LLM."""
+    """Same as above — hand-edited ``active_tail_count: 0``
+    clamps back to 20 in the legacy-file parser (used by
+    the migration importer).
+    """
     from magi.runtime.sessions import session_from_dict
 
     bad = {
@@ -176,8 +168,9 @@ def test_session_active_tail_count_clamped_on_load():
 
 def test_session_invalid_archive_role_rejected():
     """An archive entry with role='admin' (not in the
-    allowed set) is a hard load error — better to fail
-    closed than to silently coerce."""
+    allowed set) is a hard load error in the legacy-file
+    parser — better to fail closed than to silently coerce
+    on a corrupt pre-D.18 file."""
     from magi.runtime.sessions import SessionCorruptError, session_from_dict
 
     bad = {
@@ -197,6 +190,34 @@ def test_session_invalid_archive_role_rejected():
     }
     with pytest.raises(SessionCorruptError, match="role"):
         session_from_dict(bad)
+
+
+# -- DB-only fixtures for the round-trip tests below ----------------------
+
+
+@pytest.fixture
+def fresh_db(monkeypatch, tmp_path):
+    """Per-test isolated state dir + fresh ORM engine. Same
+    shape as the one in test_sessions.py — we don't import
+    that one because pytest fixture sharing across files
+    would require a conftest.py and the test surface is
+    small enough that duplication is cheaper than the
+    indirection.
+    """
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
+
+    import magi.runtime.state.orm as orm_mod
+    orm_mod._engine = None
+    orm_mod._SessionLocal = None
+
+    from magi.runtime.state import init_sqlite
+    from magi.runtime.state.orm import init_orm
+    init_sqlite(str(state))
+    init_orm(str(state))
+
+    return state
 
 
 # -- token estimator -----------------------------------------------------
@@ -262,47 +283,47 @@ def test_build_messages_from_session_no_session_returns_one_user_msg(
     assert msgs[0].content == "hi"
 
 
-def test_build_messages_from_session_maps_system_to_user(
-    monkeypatch, tmp_path,
-):
-    """A system message (the summary at messages[0] after
-    compaction) is re-emitted as a ``user`` ChatMessage
-    because Anthropic's wire Literal only allows
-    ``user``/``assistant`` — the LLM treats a leading
-    user message as prior context."""
+def test_build_messages_from_session_maps_system_to_user(fresh_db):
+    """A system message (the summary at ``chat_messages`` row 0
+    after compaction, ``archived=0`` so it's "active") is
+    re-emitted as a ``user`` ChatMessage because Anthropic's
+    wire Literal only allows ``user``/``assistant`` — the LLM
+    treats a leading user message as prior context.
+    """
     from magi.runtime.llm.provider import ChatMessage
     from magi.runtime.agent import _build_messages_from_session
-    from magi.runtime.sessions import (
-        SessionStore,
-        SessionMessage,
-    )
+    from magi.runtime.sessions import SessionStore, SessionMessage
+    from magi.runtime.state.orm import ChatMessage, open_session
 
-    state_dir = str(tmp_path / "state")
-    (tmp_path / "state").mkdir()
-    store = SessionStore(state_dir)
+    store = SessionStore(str(fresh_db))
     sess = store.create("9001", employee_id=2)
 
-    # Simulate a post-compaction session: summary at
-    # index 0, two recent originals after.
-    from magi.runtime.sessions import session_to_dict, session_from_dict
+    # Simulate a post-compaction session by inserting
+    # summary + two recent active rows directly via the
+    # ORM (active rows = archived=0).
+    with open_session() as db:
+        db.add(ChatMessage(
+            session_id=sess.session_id, message_id="s1",
+            role="system", text="[summary] old chat was about X",
+            ts="t", archived=0,
+        ))
+        db.add(ChatMessage(
+            session_id=sess.session_id, message_id="m1",
+            role="user", text="recent 1", ts="t", archived=0,
+        ))
+        db.add(ChatMessage(
+            session_id=sess.session_id, message_id="m2",
+            role="assistant", text="recent 1 reply", ts="t", archived=0,
+        ))
+        db.add(ChatMessage(
+            session_id=sess.session_id, message_id="a1",
+            role="user", text="ARCHIVED old", ts="t", archived=1,
+        ))
+        db.commit()
 
-    sess.messages = [
-        SessionMessage(role="system", text="[summary] old chat was about X",
-                       ts="t", message_id="s1"),
-        SessionMessage(role="user", text="recent 1",
-                       ts="t", message_id="m1"),
-        SessionMessage(role="assistant", text="recent 1 reply",
-                       ts="t", message_id="m2"),
-    ]
-    sess.archive = [
-        SessionMessage(role="user", text="ARCHIVED old",
-                       ts="t", message_id="a1"),
-    ]
-    store._write(sess)
+    msgs = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
 
-    msgs = _build_messages_from_session(state_dir, "9001", sess.session_id, "new")
-
-    # 3 messages from session + 1 new = 4 total
+    # 3 active messages + 1 new = 4 total. Archive excluded.
     assert len(msgs) == 4
     # The system summary is mapped to a user message.
     assert msgs[0].role == "user"
@@ -354,48 +375,23 @@ def test_build_messages_from_session_does_not_load_archive(
     assert "new" in joined
 
 
-def test_build_messages_from_session_handles_legacy_file(
-    monkeypatch, tmp_path,
-):
-    """A pre-D.17 session file (no archive field) loads
-    with default archive and the messages load as-is."""
+def test_build_messages_from_session_handles_session_without_archive(fresh_db):
+    """A session that has never been compacted has only
+    active rows (``archived=0``) in ``chat_messages``. The
+    builder still loads them as-is — no summary mapping,
+    no archive rows to skip.
+    """
     from magi.runtime.agent import _build_messages_from_session
-    from magi.runtime.sessions import (
-        SessionStore,
-        SessionMessage,
-    )
+    from magi.runtime.sessions import SessionStore, SessionMessage
 
-    state_dir = str(tmp_path / "state")
-    (tmp_path / "state").mkdir()
-    store = SessionStore(state_dir)
+    store = SessionStore(str(fresh_db))
     sess = store.create("9001", employee_id=2)
-    sess.messages = [
+    store.append_messages("9001", sess.session_id, [
         SessionMessage(role="user", text="legacy msg",
                        ts="t", message_id="m1"),
-    ]
-    # Bypass _write (which would emit archive=[]) and write
-    # a raw old-format file to simulate a file written
-    # before D.17.
-    import json as _json
-    from magi.runtime.sessions import session_path
-    path = session_path(store._workspace, sess.chat_id, sess.session_id)
-    path.write_text(_json.dumps({
-        "schema_version": 1,
-        "session_id": sess.session_id,
-        "chat_id": sess.chat_id,
-        "employee_id": sess.employee_id,
-        "channel": sess.channel,
-        "created_at": sess.created_at,
-        "updated_at": sess.updated_at,
-        "title": None,
-        "messages": [
-            {"role": "user", "text": "legacy msg",
-             "ts": "t", "message_id": "m1"},
-        ],
-        # No archive / active_tail_count / last_compaction_at
-    }), encoding="utf-8")
+    ])
 
-    msgs = _build_messages_from_session(state_dir, "9001", sess.session_id, "new")
+    msgs = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
     assert len(msgs) == 2
     assert msgs[0].role == "user"
     assert msgs[0].content == "legacy msg"
