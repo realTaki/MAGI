@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from magi.runtime.llm import ChatMessage, LLMError, get_provider
+from magi.runtime.tools.base import ToolContext
+from magi.runtime.tools.registry import get_tool, get_tool_schemas
 
 logger = logging.getLogger("magi.runtime.agent")
 
@@ -166,6 +168,11 @@ async def handle_message(
     # audit-style question "which session burned these
     # tokens?" can be answered later.
     session_id: str | None = None,
+    # D.16: chat_id is needed by the tool context (the
+    # ``send_message`` tool uses it as the TG target). The
+    # WebUI cookie is a stringified int; TG passes its
+    # ``effective_chat.id`` as a string too.
+    chat_id: str = "",
     # Per-employee credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
     # call can be billed to a specific employee. Both must be
@@ -175,6 +182,17 @@ async def handle_message(
     employee_api_key: str | None = None,
     employee_model: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    # D.16: optional override for the agent loop's
+    # tool-iteration cap. ``None`` (the default) means
+    # "read from settings / fall back to default". Tests
+    # pass an explicit small number to keep the suite fast.
+    max_tool_iterations: int | None = None,
+    # D.16: callback the ``send_message`` tool invokes to
+    # deliver an out-of-band TG message. ``None`` means the
+    # tool is effectively disabled for this channel — which
+    # is fine on webui, where the tool itself rejects with
+    # ``is_error=true``.
+    tg_send_callback=None,
 ) -> str:
     """One chat turn. Returns the LLM's reply text.
 
@@ -251,19 +269,212 @@ async def handle_message(
 
     soul = _read_soul(state_dir)
 
+    # D.16: agent tool-use loop. The runtime now sends every
+    # registered tool's schema to the LLM, runs the loop
+    # until the model produces a text reply (stop_reason
+    # ``end_turn``) or hits the iteration cap. See
+    # ``magi/runtime/agent.py:handle_message`` docstring
+    # for the failure-mode rationale; the loop continues
+    # to swallow LLMError as before — the user already
+    # pressed send, and a transport-level exception would
+    # only confuse the UI.
+    from magi.runtime.workspace import workspace_root
+
+    workspace = Path(workspace_root(state_dir))
+    if max_tool_iterations is None:
+        # Lazy import to avoid pulling settings.py at agent
+        # module load (keeps unit tests that mock the
+        # provider from triggering the SQLAlchemy path).
+        from magi.channels.webui.api.system_settings import (
+            get_tool_max_iterations,
+        )
+        max_iter = get_tool_max_iterations(state_dir)
+    else:
+        max_iter = max_tool_iterations
+
+    tool_ctx = ToolContext(
+        state_dir=state_dir,
+        workspace=workspace,
+        chat_id=chat_id,
+        employee_id=employee_id if employee_id is not None else 0,
+        channel=channel,
+    )
+    tool_schemas = get_tool_schemas()
+
     try:
         provider = get_provider(provider_name, api_key, model)
-        result = await provider.chat(
-            system=soul,
-            messages=[ChatMessage(role="user", content=text)],
-            max_tokens=max_tokens,
+    except Exception as e:
+        # ``get_provider`` itself can fail (unknown provider
+        # name, malformed key) — those don't come through as
+        # LLMError. Treat the same as an LLMError: log +
+        # return fallback, no exception to the caller.
+        logger.warning(
+            "agent: get_provider failed (employee=%s provider=%s): %s",
+            employee_id, provider_name, e,
         )
+        return _fallback_reply()
+
+    # Build the initial message list — a single user turn
+    # containing the inbound text. v0 doesn't pre-load the
+    # session's prior history; the plan calls for "full
+    # history load" but the implementation lives in a
+    # follow-up so this PR stays scoped. The LLM still
+    # sees a coherent conversation within a single chat
+    # turn (assistant → tool_result → assistant ...) because
+    # we append those blocks to ``messages`` below.
+    messages: list[ChatMessage] = [
+        ChatMessage(role="user", content=text),
+    ]
+
+    final_text = ""
+    iterations_run = 0
+    try:
+        for _iteration in range(max_iter):
+            iterations_run += 1
+            result = await provider.chat(
+                system=soul,
+                messages=messages,
+                max_tokens=max_tokens,
+                tools=tool_schemas,
+            )
+            final_text = result.text
+
+            # Append the assistant turn (text + raw_blocks).
+            # ``content_blocks`` carries the full assistant
+            # content-block dump so tool_use IDs round-trip
+            # when we send the next tool_result block.
+            messages.append(ChatMessage(
+                role="assistant",
+                content=result.text or "",
+                content_blocks=result.raw_blocks or None,
+            ))
+
+            # No tool calls → done. ``stop_reason`` is the
+            # canonical signal but a model that returns a
+            # plain text reply without ``end_turn`` still
+            # terminates the loop (defensive — some
+            # Anthropic-compatible providers omit it).
+            if not result.tool_uses or result.stop_reason == "end_turn":
+                break
+
+            # Execute every tool_use in this turn. The SDK
+            # allows multiple tool_use blocks in one
+            # assistant message; we run them all and feed
+            # the results back as a single ``user`` message
+            # with one ``tool_result`` block per tool id.
+            tool_results: list[dict] = []
+            for tu in result.tool_uses:
+                tool = get_tool(tu["name"])
+                if tool is None:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu["id"],
+                        "content": f"unknown tool: {tu['name']!r}",
+                        "is_error": True,
+                    })
+                    continue
+                try:
+                    # ``_safe_path`` already validates; if
+                    # the tool raises any unexpected
+                    # exception we still want the LLM to
+                    # see the failure, not the caller.
+                    kwargs = dict(tu.get("input") or {})
+                    if tool.name == "send_message":
+                        # Special-case the TG callback —
+                        # ``Tool.run`` only sees kwargs; the
+                        # callback is injected here so the
+                        # tool stays SDK-agnostic.
+                        kwargs["_tg_send_callback"] = tg_send_callback
+                    tr = await tool.run(tool_ctx, **kwargs)
+                except Exception as e:
+                    logger.exception(
+                        "agent: tool %s crashed (employee=%s, "
+                        "chat=%s)", tu["name"], employee_id, chat_id,
+                    )
+                    tr_content = f"tool {tu['name']!r} crashed: {e}"
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu["id"],
+                        "content": tr_content[:8000],
+                        "is_error": True,
+                    })
+                    continue
+
+                # Truncate tool result content so a 50 MB
+                # log file or shell output can't blow up
+                # the next LLM call. The model gets a
+                # notice appended when truncation kicks in.
+                truncated = tr.content
+                if len(truncated) > 8000:
+                    truncated = truncated[:8000] + "\n…[truncated at 8000 chars]"
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tu["id"],
+                    "content": truncated,
+                    "is_error": tr.is_error,
+                })
+
+            messages.append(ChatMessage(
+                role="user",
+                content="",
+                content_blocks=tool_results,
+            ))
+
+        else:
+            # ``for ... else`` fires when we exit the loop
+            # without ``break`` — i.e. the model kept
+            # requesting tools past ``max_iter``. Log a
+            # warning and return whatever text was
+            # produced on the last iteration (may be empty).
+            logger.warning(
+                "agent: tool loop hit max_iter=%d for chat=%s "
+                "(employee=%s); model still wanted tools",
+                max_iter, chat_id, employee_id,
+            )
     except LLMError as e:
         logger.warning(
             "llm call failed (employee=%s provider=%s): %s",
             employee_id, provider_name, e,
         )
         return _fallback_reply()
+
+    # D.15 — per-employee token accounting. We don't have
+    # # usage per-iteration in v0 (only the last response
+    # is preserved); v0 records the last call's usage as a
+    # proxy. Aggregating across iterations is a future
+    # improvement once the provider layer supports it.
+    try:
+        _record_token_usage(
+            state_dir,
+            employee_id=employee_id,
+            channel=channel,
+            provider=provider.name,
+            model=result.model,
+            usage=result.usage or {},
+        )
+    except Exception:
+        logger.exception(
+            "agent: token_usage insert failed (employee=%s, "
+            "channel=%s); chat reply already succeeded",
+            employee_id, channel,
+        )
+    logger.info(
+        "llm reply",
+        extra={
+            "employee_id": employee_id,
+            "channel": channel,
+            "provider": provider.name,
+            "model": result.model,
+            "text_len": len(final_text),
+            "thinking_len": len(result.thinking) if result.thinking else 0,
+            "iterations": iterations_run,
+            "tool_calls": sum(
+                len(m.content_blocks) for m in messages
+                if m.role == "assistant" and m.content_blocks
+            ),
+        },
+    )
+    return final_text or _fallback_reply()
 
     # D.15 — per-employee token accounting. Every chat
     # call in v0 has a concrete ``employee_id`` — both

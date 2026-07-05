@@ -38,14 +38,32 @@ MessageRole = Literal["user", "assistant"]
 class ChatMessage:
     """One turn of a chat.
 
-    ``role`` is the speaker; ``content`` is the message text.
-    Tool-use / image blocks aren't supported in v0 — when the
-    runtime grows tool calls (C4), this dataclass will gain a
-    ``blocks`` variant or a sibling type.
+    ``role`` is the speaker; ``content`` is the plain text.
+
+    ``content_blocks`` (D.16) carries a list of structured
+    blocks for the cases where text alone isn't enough:
+
+    - ``user`` messages with ``tool_result`` blocks (sent back
+      to the API after a tool ran). When ``content_blocks`` is
+      set the SDK uses it; ``content`` becomes the optional
+      accompanying text ("here are the results").
+    - Assistant ``raw_blocks`` replay (so a prior turn's
+      ``tool_use`` / ``thinking`` blocks round-trip back to
+      the API verbatim — Anthropic requires this; an
+      assistant message that only sends text loses its
+      ``tool_use`` ID and the next tool_result can't bind
+      back to it).
+
+    The provider implementation serialises these into the
+    Anthropic SDK's expected ``{role, content: str |
+    list[Block]}`` shape. v0 only knows ``tool_result`` and
+    the raw-block replay case; image / document blocks
+    aren't on the roadmap yet.
     """
 
     role: MessageRole
     content: str
+    content_blocks: list[dict] | None = None
 
 
 @dataclass
@@ -73,6 +91,16 @@ class ChatResult:
         Full per-block dump (text, thinking, tool_use) for the
         audit row. The runtime writes this verbatim so a future
         "replay" tool can rebuild the conversation exactly.
+    stop_reason
+        The Anthropic ``stop_reason`` string:
+        ``"end_turn"`` (model produced text, agent can stop
+        looping), ``"tool_use"`` (model wants tools to run),
+        ``"max_tokens"`` / ``"stop_sequence"`` (terminal
+        edge cases). v0 only branches on the first two.
+    tool_uses
+        List of ``{"id", "name", "input"}`` blocks the
+        provider extracted from the response. Empty list
+        when the model didn't call any tools.
     """
 
     text: str
@@ -80,6 +108,8 @@ class ChatResult:
     model: str = ""
     usage: dict | None = None
     raw_blocks: list[dict] = field(default_factory=list)
+    stop_reason: str | None = None
+    tool_uses: list[dict] = field(default_factory=list)
 
 
 class LLMProvider(ABC):
@@ -118,6 +148,7 @@ class LLMProvider(ABC):
         system: str | None,
         messages: list[ChatMessage],
         max_tokens: int = 1024,
+        tools: list[dict] | None = None,
     ) -> ChatResult:
         """One chat turn.
 
@@ -127,4 +158,8 @@ class LLMProvider(ABC):
         a list so a future checkpoint can pass prior turns.
         ``max_tokens`` is the upstream cap; defaults to 1024
         which is a safe middle for chat replies.
+        ``tools`` (D.16) is the Anthropic-shape list of tool
+        schemas the LLM may call this turn. ``None`` / ``[]``
+        means "no tools available" — the model falls back to
+        a plain-text reply.
         """

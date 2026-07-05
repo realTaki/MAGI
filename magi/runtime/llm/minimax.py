@@ -123,14 +123,23 @@ class MinimaxProvider(LLMProvider):
         system: str | None,
         messages: list[ChatMessage],
         max_tokens: int = _MAX_TOKENS_DEFAULT,
+        tools: list[dict] | None = None,
     ) -> ChatResult:
         # Translate the runtime's flat message list into the
-        # SDK's expected shape. ``content`` is a string for v0;
-        # when C4 wires up tools we'll switch to a list of
-        # typed blocks here.
-        sdk_messages: list[dict[str, Any]] = [
-            {"role": m.role, "content": m.content} for m in messages
-        ]
+        # SDK's expected shape. ``content`` is a string for
+        # plain text turns; when ``content_blocks`` is set
+        # (D.16: tool_result echoes or assistant raw-block
+        # replays) we pass the structured form so the SDK
+        # preserves the block types.
+        sdk_messages: list[dict[str, Any]] = []
+        for m in messages:
+            if m.content_blocks:
+                sdk_messages.append({
+                    "role": m.role,
+                    "content": m.content_blocks,
+                })
+            else:
+                sdk_messages.append({"role": m.role, "content": m.content})
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -138,6 +147,14 @@ class MinimaxProvider(LLMProvider):
         }
         if system:
             kwargs["system"] = system
+        # ``tools`` is the Anthropic ``[{name, description,
+        # input_schema}]`` list. ``None`` / empty means
+        # "model can't call any tools" — which is also the
+        # default when the agent decides to register zero
+        # tools. We don't pass ``tool_choice``; the model
+        # decides whether to use a tool on its own.
+        if tools:
+            kwargs["tools"] = tools
 
         try:
             # The SDK's ``messages.create`` is sync. Wrap in
@@ -171,13 +188,21 @@ class MinimaxProvider(LLMProvider):
 
         # Walk content blocks. Minimax's response carries the
         # same shape as Anthropic's: an ordered list of blocks
-        # with a ``type`` discriminator. v0 cares about
-        # ``text`` (the reply) and ``thinking`` (chain-of-
-        # thought, audit-only). Future tool_use blocks will
-        # be returned in ``raw_blocks`` but ignored here.
+        # with a ``type`` discriminator. We extract:
+        # - ``text``       → user-facing reply
+        # - ``thinking``   → chain-of-thought (audit-only,
+        #                    never sent to the user)
+        # - ``tool_use``   → agent loop dispatches each one
+        #                    to the registered tool and feeds
+        #                    the result back as the next
+        #                    ``user`` turn (D.16)
+        # - everything else → captured in ``raw_blocks`` for
+        #                    future replay / audit, ignored
+        #                    for the immediate reply
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         raw_blocks: list[dict[str, Any]] = []
+        tool_uses: list[dict[str, Any]] = []
         for block in response.content:
             # Pydantic models in the SDK expose ``model_dump``
             # since 0.30. Fall back to ``__dict__`` if the
@@ -196,9 +221,16 @@ class MinimaxProvider(LLMProvider):
                 text_parts.append(getattr(block, "text", ""))
             elif btype == "thinking":
                 thinking_parts.append(getattr(block, "thinking", ""))
-            # tool_use / others: capture in raw_blocks, ignore
-            # for the reply. C4 will route tool_use through the
-            # skill runner.
+            elif btype == "tool_use":
+                # The SDK gives us a Pydantic model with
+                # ``id``, ``name``, ``input`` attrs. Flatten
+                # to plain dicts so the rest of the runtime
+                # never has to import anthropic types.
+                tool_uses.append({
+                    "id": getattr(block, "id", ""),
+                    "name": getattr(block, "name", ""),
+                    "input": dict(getattr(block, "input", {}) or {}),
+                })
 
         usage_obj = getattr(response, "usage", None)
         if usage_obj is not None and hasattr(usage_obj, "model_dump"):
@@ -217,4 +249,6 @@ class MinimaxProvider(LLMProvider):
             model=getattr(response, "model", self.model),
             usage=usage,
             raw_blocks=raw_blocks,
+            stop_reason=getattr(response, "stop_reason", None),
+            tool_uses=tool_uses,
         )

@@ -152,3 +152,113 @@ def put_system_timezone(
         default=DEFAULT_TIMEZONE,
         choices=sorted(zoneinfo.available_timezones()),
     )
+
+
+# ────────────────────────────────────────────────────────────────── #
+# Tool-loop max iterations (D.16)
+# ────────────────────────────────────────────────────────────────── #
+#
+# Caps how many times the agent loop will call the LLM
+# inside a single chat turn when the model keeps asking
+# for more tools. Each iteration is one round-trip
+# (Anthropic call + tool execution + next request), so the
+# cap also bounds the wall-clock cost of one chat turn.
+#
+# Default 10: enough for a typical "read X, then Y, then
+# reply" tool chain (3-4 iterations typical); high enough
+# that an ambitious "search the codebase and write a
+# summary" flow isn't artificially clipped.
+#
+# Hard cap 50 in the API: a runaway agent calling 100+
+# tools would burn through the LLM quota; even 50 is on
+# the order of 100s of seconds, which is way past
+# reasonable for a single chat reply.
+
+TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
+DEFAULT_TOOL_MAX_ITERATIONS = 10
+MAX_TOOL_MAX_ITERATIONS = 50
+MIN_TOOL_MAX_ITERATIONS = 1
+
+
+def get_tool_max_iterations(state_dir: str) -> int:
+    """Return the configured max tool iterations.
+
+    Falls back to :data:`DEFAULT_TOOL_MAX_ITERATIONS` (10)
+    when the stored value is missing / non-numeric /
+    outside ``[MIN, MAX]``. The bounds-clamp is defensive
+    — a hand-edited 0 would mean "agent can never call
+    any tool", which would silently break the LLM's
+    tool-use loop. We don't want that.
+    """
+    raw = state_get(state_dir, TOOL_MAX_ITERATIONS_KEY)
+    try:
+        value = int(raw) if raw is not None else DEFAULT_TOOL_MAX_ITERATIONS
+    except (TypeError, ValueError):
+        logger.warning(
+            "system.tool_max_iterations stored value %r is not a number; "
+            "falling back to default %d",
+            raw, DEFAULT_TOOL_MAX_ITERATIONS,
+        )
+        return DEFAULT_TOOL_MAX_ITERATIONS
+    if value < MIN_TOOL_MAX_ITERATIONS or value > MAX_TOOL_MAX_ITERATIONS:
+        logger.warning(
+            "system.tool_max_iterations stored value %d is outside "
+            "[%d, %d]; clamping",
+            value, MIN_TOOL_MAX_ITERATIONS, MAX_TOOL_MAX_ITERATIONS,
+        )
+        return max(MIN_TOOL_MAX_ITERATIONS, min(MAX_TOOL_MAX_ITERATIONS, value))
+    return value
+
+
+class ToolMaxIterationsOut(BaseModel):
+    """``GET /api/system-settings/tool-max-iterations`` response."""
+
+    current: int
+    default: int
+    min: int
+    max: int
+
+
+class ToolMaxIterationsUpdateRequest(BaseModel):
+    """``PUT /api/system-settings/tool-max-iterations`` body."""
+
+    value: int = Field(ge=MIN_TOOL_MAX_ITERATIONS, le=MAX_TOOL_MAX_ITERATIONS)
+
+
+@router.get(
+    "/system-settings/tool-max-iterations",
+    response_model=ToolMaxIterationsOut,
+)
+def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
+    return ToolMaxIterationsOut(
+        current=get_tool_max_iterations(_state_dir()),
+        default=DEFAULT_TOOL_MAX_ITERATIONS,
+        min=MIN_TOOL_MAX_ITERATIONS,
+        max=MAX_TOOL_MAX_ITERATIONS,
+    )
+
+
+@router.put(
+    "/system-settings/tool-max-iterations",
+    response_model=ToolMaxIterationsOut,
+)
+def put_tool_max_iterations(
+    payload: ToolMaxIterationsUpdateRequest,
+    _admin: AdminGate,
+) -> ToolMaxIterationsOut:
+    """Persist a new max tool iterations value.
+
+    Validation is Pydantic-side (``Field(ge=MIN, le=MAX)``):
+    a value outside the bounds returns 422 with Pydantic's
+    structured error before this handler runs. We don't
+    need to re-validate here.
+    """
+    from magi.runtime.state.settings import state_set as _state_set
+    _state_set(_state_dir(), TOOL_MAX_ITERATIONS_KEY, str(payload.value))
+    logger.info("system.tool_max_iterations set to %d", payload.value)
+    return ToolMaxIterationsOut(
+        current=payload.value,
+        default=DEFAULT_TOOL_MAX_ITERATIONS,
+        min=MIN_TOOL_MAX_ITERATIONS,
+        max=MAX_TOOL_MAX_ITERATIONS,
+    )
