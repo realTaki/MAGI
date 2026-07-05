@@ -310,6 +310,7 @@ async def send_chat(
         text=text,
         channel="webui",
         session_id=session_id,
+        chat_id=chat_id,
         employee_id=employee_id,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
