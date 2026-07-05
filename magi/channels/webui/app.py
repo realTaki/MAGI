@@ -129,6 +129,11 @@ def create_app() -> FastAPI:
     # so its URL prefix aligns with the chat namespace.
     from magi.channels.webui.api import chat_sessions
     app.include_router(chat_sessions.router, prefix="/api")
+    # D.18 — full-text search across sessions. Same chat_id
+    # scope as ``chat_sessions``; the cookie-derived chat_id
+    # is enforced in the SQL join.
+    from magi.channels.webui.api import chat_search
+    app.include_router(chat_search.router, prefix="/api")
     # Action Items — the "things to do" inbox the dashboard's
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``

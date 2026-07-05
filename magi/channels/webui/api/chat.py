@@ -60,7 +60,6 @@ from magi.runtime.sessions import (
     SessionPathError,
     SessionStore,
     new_session_id,
-    session_lock,
     utcnow_iso as _utcnow_iso,
 )
 from magi.runtime.state.orm import Employee, open_session
@@ -257,23 +256,20 @@ async def send_chat(
         sess = store.create(chat_id, employee_id=employee_id)
         session_id = sess.session_id
 
-    # Inbound audit + on-disk append happen together under
-    # the per-session ``asyncio.Lock`` so the auto-title
-    # worker (D.7) reads a coherent state. We hold the lock
-    # only across the inbound ``append_messages`` — the LLM
-    # call and the outbound append run unlocked. The lock is
-    # serialising-writers for the same session; two
-    # concurrent sends on different sessions are unaffected.
+    # Inbound audit + SQLite append happen atomically inside
+    # ``store.append_messages`` (single INSERT). Pre-D.18 this
+    # block held the per-session ``asyncio.Lock`` so the
+    # auto-title worker (D.7) saw a coherent state; SQLite's
+    # per-statement atomicity replaces that need.
     ts_in = _utcnow_iso()
     try:
-        async with session_lock(chat_id, session_id):
-            post = store.append_messages(
-                chat_id, session_id,
-                [SessionMessage(
-                    role="user", text=text, ts=ts_in,
-                    message_id=new_session_id(),
-                )],
-            )
+        post = store.append_messages(
+            chat_id, session_id,
+            [SessionMessage(
+                role="user", text=text, ts=ts_in,
+                message_id=new_session_id(),
+            )],
+        )
     except Exception as e:
         logger.exception(
             "chat: failed to append user message for session %s", session_id,

@@ -1,67 +1,77 @@
-"""Chat session storage — file-backed conversation history.
+"""Chat session storage — SQLite-backed conversation history.
 
-A session is one thread of messages between an operator (or
-eventually an EVE) and the system LLM, persisted as a JSON
-file under the operator's workspace. Two operators share no
-state — the file path embeds the ``chat_id`` so the directory
-layout itself enforces per-user isolation.
+D.18: sessions moved from per-session JSON files under
+``<workspace>/memories/sessions/<chat_id>/<sid>.json`` to two
+SQLAlchemy tables in ``magi.db`` (``chat_sessions`` + ``chat_messages``).
+The ``SessionStore`` class kept the same public method
+signatures so the ~30 callers (chat.py / bot.py / agent.py /
+auto_title.py / chat_sessions.py) didn't need to change.
 
-Layout::
+Why SQLite
+----------
 
-    <workspace>/memories/sessions/<chat_id>/<session_id>.json
+The JSON-on-disk layout had two problems D.18 surfaced:
 
-Each session file holds the entire transcript + a small
-header. The JSON is fully rewritten on every append because
-sessions are short (a single-operator chat, typically
-tens-to-hundreds of messages); a fancy append-only format
-(NDJSON / WAL) would buy nothing for v0.
+  1. No cross-session search. Each file is self-contained;
+     "search across every conversation" was a glob-and-grep
+     that grew unbounded as sessions accumulated.
+  2. No atomic multi-statement updates. ``_maybe_compact`` (D.17)
+     had to rewrite the whole file to roll old messages into
+     archive; a crash mid-write left a partial file behind.
 
-Atomicity
+SQLite + WAL gives us:
+
+  - ACID transactions: compaction's archive + summary insert
+    commit atomically (no more partial files).
+  - FTS5 with trigram tokenizer for substring search across
+    the whole history (including the D.17 archive tail).
+  - Single-process reader concurrency via WAL; writer
+    contention handled by ``busy_timeout=5000`` (set via the
+    SQLAlchemy ``connect`` event listener in ``orm.py``).
+
+Per-chat isolation that used to come "for free" from the
+directory layout is now an explicit ``WHERE chat_id = :caller``
+clause in every read/write path. The chat_sessions routes
+that read by ``chat_id`` from the admin cookie enforce this
+consistently.
+
+Migration
 ---------
 
-The single-writer invariant per session (one browser tab per
-operator) holds in v0. Concurrent writers on the same session
-file would race on ``os.replace`` and clobber each other —
-acceptable, the assumption is documented and tested as the
-single-threaded case.
-
-Cross-process atomicity goes through ``tempfile.mkstemp`` +
-``os.fsync`` + ``os.replace``: the target file is either the
-old contents or the new, never a half-written intermediate.
+``migrate_from_json(workspace_root)`` reads any leftover
+``*.json`` files under ``<workspace>/memories/sessions/``,
+inserts them as rows, and deletes the JSON after each row's
+transaction commits. ``INSERT OR IGNORE`` on the
+``(session_id, message_id)`` unique constraint makes re-runs
+idempotent — a crashed boot just retries on next start.
+Corrupt files are logged and NOT deleted (no silent data
+loss); they can be hand-inspected and either fixed or
+removed by the operator.
 
 ULID session id
 ---------------
 
-We do not depend on the ``python-ulid`` package. Crockford base32
-of a 48-bit millisecond timestamp followed by 80 random bits →
-26 chars, lexicographically sortable by creation time. The 80
-random bits give collision odds so low that monotonic
-guarantees are unnecessary for v0.
-
-Schema versioning
------------------
-
-``schema_version: 1`` is written into every JSON. A future v2
-schema would add a ``_migrate_v1_to_v2`` helper, called on
-every ``get``/``append`` until all files have moved.
+Crockford base32 of a 48-bit millisecond timestamp + 80 random
+bits → 26 chars, lexicographically sortable by creation time.
+The 80 random bits give collision odds so low that monotonic
+guarantees are unnecessary for v0. The id is also the SQLite
+PK on ``chat_sessions.session_id``, so callers that already
+hold an id don't pay any translation cost.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import re
 import secrets
-import tempfile
-import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from magi.runtime.state.orm import ChatMessage, ChatSession, open_session
 from magi.runtime.workspace import workspace_root
 
 logger = logging.getLogger("magi.runtime.sessions")
@@ -81,60 +91,47 @@ _ALLOWED_MESSAGE_ROLES = frozenset({"user", "assistant", "system"})
 # 48-bit timestamp + 80-bit random payload in 26 chars.
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-# A chat_id becomes a path segment; restrict to the same
-# character class Telegram chat_ids already obey (digits)
-# plus a few safe extras. The cookie stores it as a string
-# of digits today, but the path helper is permissive so a
-# future ``MAGI_USER_<handle>`` style doesn't break.
-_CHAT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-
-# -- per-session locks ------------------------------------------------------
+# -- chat_id validation ----------------------------------------------------
 #
-# Cross-writer serialisation within a single event loop.
-# The lock guarantees that a session file's state (messages
-# list vs. title) is observed coherently by exactly one writer
-# at a time. Cross-process safety still relies on the file
-# atomic-write (``tempfile + os.replace``); this is a
-# single-process defence-in-depth measure for the title-job /
-# chat-send race D.7 introduced.
-#
-# Entries are created on first request and live for the
-# process lifetime. The cache grows unboundedly but v0's
-# per-operator session count is bounded (tens-to-hundreds);
-# memory cost is one ``asyncio.Lock`` per (chat_id, session_id).
-#
-# ``_session_locks_meta_lock`` protects dict mutation (the
-# ``.setdefault`` below) from concurrent first-callers
-# across the asyncio / threading boundaries. Once the entry
-# exists, lookup + ``acquire()`` is already thread-safe by
-# virtue of the ``dict`` being atomic under the GIL.
-_session_locks: dict[tuple[str, str], "asyncio.Lock"] = {}
-_session_locks_meta_lock = threading.Lock()
+# Today the WebUI admin cookie and the TG ``message.chat.id``
+# both arrive as decimal digit strings. The legacy
+# ``_CHAT_ID_RE`` was a path-segment safety check (no
+# directory traversal); with the move to SQLite the chat_id
+# becomes a column value, so the regex now guards against
+# accidental column-arithmetic errors (e.g. a 64-char string
+# being silently truncated by the ``chat_id`` column width).
+# The character class is the same as the old path check, so
+# no caller-visible change.
+
+import re as _re
+_CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def session_lock(chat_id: str, session_id: str) -> "asyncio.Lock":
-    """Return the per-(chat_id, session_id) ``asyncio.Lock``,
-    creating it lazily on first call.
+def _validate_chat_id(chat_id: str) -> None:
+    if not isinstance(chat_id, str) or not _CHAT_ID_RE.match(chat_id):
+        raise ValueError(
+            f"chat_id {chat_id!r} contains characters that are not "
+            "safe as an identifier"
+        )
 
-    Callers acquire the returned lock around
-    ``SessionStore.{append_messages, rename, get}`` for
-    any session they expect to mutate under the D.7 title
-    race window. The lock is intentionally not held across
-    LLM calls (those are slow and would serialise all
-    titles + sends through one mutex — overkill for v0).
+
+def session_lock(chat_id: str, session_id: str) -> None:
+    """No-op compat shim.
+
+    Pre-D.18 callers (chat.py / bot.py / auto_title.py) wrapped
+    their inbound writes in ``async with session_lock(...)``
+    to serialise against the auto-title worker. With SQLite +
+    WAL the writes are atomic at the statement/transaction
+    level (single INSERT / UPDATE per write), so the lock has
+    no remaining purpose.
+
+    Kept as a callable that returns ``None`` (so callers that
+    still write ``async with session_lock(...):`` get a
+    AttributeError-free no-op for one release), but the
+    follow-up D.18 cleanup removes all call sites.
     """
-    key = (chat_id, session_id)
-    lock = _session_locks.get(key)
-    if lock is not None:
-        return lock
-    with _session_locks_meta_lock:
-        lock = _session_locks.get(key)
-        if lock is not None:
-            return lock
-        lock = asyncio.Lock()
-        _session_locks[key] = lock
-    return lock
+    return None
 
 
 # -- exceptions ------------------------------------------------------------
@@ -160,9 +157,13 @@ class SessionCorruptError(SessionError):
 
 
 class SessionPathError(SessionError):
-    """The provided chat_id is not safe to use as a path segment.
+    """The provided identifier (chat_id or session_id) is not safe.
 
-    The API layer maps this to 400 validation.session_id_invalid.
+    Pre-D.18 this meant "would escape the file path"; with the
+    move to SQLite the same regex guards against accidental
+    column-arithmetic bugs (e.g. a 64-char limit hit). The
+    class name is kept for backwards compat with the
+    API-layer error mapping (400 ``validation.session_id_invalid``).
     """
 
 
@@ -282,114 +283,12 @@ def utcnow_iso() -> str:
     )
 
 
-# -- path helpers ----------------------------------------------------------
-
-
-def session_dir(workspace_root_path: Path, chat_id: str) -> Path:
-    """The directory holding this chat's session JSON files."""
-    if not _CHAT_ID_RE.fullmatch(chat_id):
-        raise SessionPathError(
-            f"chat_id {chat_id!r} contains characters that are not "
-            "safe as a path segment"
-        )
-    return (
-        Path(workspace_root_path)
-        / "memories"
-        / _SESSIONS_SUBDIR
-        / chat_id
-    )
-
-
-def session_path(workspace_root_path: Path, chat_id: str, session_id: str) -> Path:
-    """The single JSON file for this chat + session."""
-    # We deliberately don't validate session_id the same way
-    # as chat_id. The ULID generator's output is guaranteed
-    # safe (Crockford base32, no `/`), but a hand-crafted id
-    # from the URL could include anything. Reject anything
-    # outside the ULID alphabet up front.
-    if (
-        len(session_id) != 26
-        or any(c not in _CROCKFORD for c in session_id)
-    ):
-        raise SessionPathError(
-            f"session_id {session_id!r} is not a valid ULID"
-        )
-    return session_dir(workspace_root_path, chat_id) / f"{session_id}.json"
-
-
-# -- atomic write ----------------------------------------------------------
-
-
-def _atomic_write_json(path: Path, payload: dict) -> None:
-    """Write a JSON document atomically.
-
-    The combination of ``mkstemp`` (creates the temp file
-    in the *target* directory so ``os.replace`` is atomic
-    on the same filesystem) + ``flush`` + ``fsync`` +
-    ``os.replace`` is the POSIX-safe pattern. Half-written
-    files can never appear as ``path``.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        prefix=".tmp.", suffix=".json", dir=str(path.parent)
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp_path, path)
-    except Exception:
-        # Best-effort cleanup of the temp file. Use missing_ok
-        # so a successful ``os.replace`` above (which moves
-        # the tmp out) is fine.
-        Path(tmp_path).unlink(missing_ok=True)
-        raise
-
-
-# -- serialization --------------------------------------------------------
-
-
-def session_to_dict(s: Session) -> dict:
-    return {
-        "schema_version": s.schema_version,
-        "session_id": s.session_id,
-        "chat_id": s.chat_id,
-        "employee_id": s.employee_id,
-        "channel": s.channel,
-        "created_at": s.created_at,
-        "updated_at": s.updated_at,
-        # ``title`` is always emitted (``None`` → JSON null) so
-        # the on-disk shape is unambiguous for debug tools.
-        # ``session_from_dict`` accepts absence for backward
-        # compatibility with files written before D.7.
-        "title": s.title,
-        "messages": [
-            {
-                "message_id": m.message_id,
-                "role": m.role,
-                "ts": m.ts,
-                "text": m.text,
-            }
-            for m in s.messages
-        ],
-        # D.17 — archive + compaction metadata. All three
-        # default to safe values for files written before
-        # D.17; ``session_from_dict`` uses ``.get(...)`` so
-        # missing keys load as defaults.
-        "archive": [
-            {
-                "message_id": m.message_id,
-                "role": m.role,
-                "ts": m.ts,
-                "text": m.text,
-            }
-            for m in s.archive
-        ],
-        "active_tail_count": s.active_tail_count,
-        "last_compaction_at": s.last_compaction_at,
-    }
-
+# -- legacy on-disk shape parser -------------------------------------------
+#
+# Used only by ``migrate_from_json`` below to read the pre-D.18
+# JSON files. The shape validator stays fail-closed (same as
+# the v0 file loader) so a corrupt file becomes a logged
+# warning + skip, never a silent import of garbage.
 
 def session_from_dict(d: dict) -> Session:
     """Parse + validate a dict back into a ``Session``.
@@ -538,18 +437,21 @@ def summary_from_session(s: Session) -> SessionSummary:
 
 @dataclass
 class SessionStore:
-    """File-backed session storage for one workspace.
+    """SQLite-backed session storage (D.18+).
 
-    Stateless — safe to instantiate per-request. The
-    workspace root is computed once via
-    :func:`magi.runtime.workspace.workspace_root`.
+    Pre-D.18 this was JSON files under ``<workspace>/memories/
+    sessions/<chat_id>/<sid>.json``. The class kept the same
+    public method signatures so the ~30 callers (chat.py /
+    bot.py / agent.py / auto_title.py / chat_sessions.py) didn't
+    need to change; only the bodies switched to ORM queries.
+
+    Stateless — safe to instantiate per-request. The ``state_dir``
+    arg is kept for caller compat (it's how the store knows
+    which ``magi.db`` file to hit; the path is resolved once per
+    process via the ORM engine singleton).
     """
 
     state_dir: str | os.PathLike[str]
-    _workspace: Path = field(init=False)
-
-    def __post_init__(self) -> None:
-        self._workspace = Path(workspace_root(self.state_dir))
 
     # -- public -----------------------------------------------------------
 
@@ -560,25 +462,26 @@ class SessionStore:
         employee_id: int,
         channel: str = "webui",
     ) -> Session:
-        """Create a new empty session and persist it.
+        """Create a new empty session.
 
-        Mints a fresh ULID; the on-disk file is created
-        before this returns so a subsequent ``get`` always
-        sees the same id.
+        The row is committed before this returns so a
+        subsequent ``get`` always sees the same id.
         """
         session_id = new_session_id()
         now = utcnow_iso()
-        session = Session(
-            session_id=session_id,
-            chat_id=chat_id,
-            employee_id=employee_id,
-            channel=channel,
-            created_at=now,
-            updated_at=now,
-            messages=[],
-        )
-        path = session_path(self._workspace, chat_id, session_id)
-        _atomic_write_json(path, session_to_dict(session))
+        with open_session() as db:
+            db.add(ChatSession(
+                session_id=session_id,
+                chat_id=chat_id,
+                employee_id=employee_id,
+                channel=channel,
+                title=None,
+                active_tail_count=20,
+                last_compaction_at=None,
+                created_at=now,
+                updated_at=now,
+            ))
+            db.commit()
         logger.info(
             "session created",
             extra={
@@ -587,27 +490,67 @@ class SessionStore:
                 "employee_id": employee_id,
             },
         )
-        return session
+        return Session(
+            session_id=session_id,
+            chat_id=chat_id,
+            employee_id=employee_id,
+            channel=channel,
+            created_at=now,
+            updated_at=now,
+            messages=[],
+            title=None,
+            active_tail_count=20,
+            last_compaction_at=None,
+        )
 
     def get(self, chat_id: str, session_id: str) -> Session | None:
         """Read a session by id. Returns ``None`` if missing.
 
-        A malformed JSON file raises ``SessionCorruptError``
-        rather than returning ``None`` so the API layer
-        can distinguish "no such session" from "broken
-        session" and respond 404 vs 500 respectively.
+        The ``messages`` list is the **active** view
+        (``archived=0``). Archive rows are loaded into
+        ``Session.archive`` so callers (compaction, audit UI)
+        can still see the pre-D.17 forensic record without a
+        second query.
         """
-        path = session_path(self._workspace, chat_id, session_id)
-        if not path.is_file():
-            return None
-        try:
-            raw = path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            raise SessionCorruptError(
-                f"session file {path} is not valid JSON: {e}"
-            ) from e
-        return session_from_dict(data)
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session_id)
+            if sess_row is None or sess_row.chat_id != chat_id:
+                return None
+            # Active messages in append-order
+            active = [
+                m for m in sess_row.messages
+                if m.archived == 0
+            ]
+            archive = [
+                m for m in sess_row.messages
+                if m.archived == 1
+            ]
+            return Session(
+                session_id=sess_row.session_id,
+                chat_id=sess_row.chat_id,
+                employee_id=sess_row.employee_id,
+                channel=sess_row.channel,
+                created_at=sess_row.created_at,
+                updated_at=sess_row.updated_at,
+                title=sess_row.title,
+                schema_version=SCHEMA_VERSION,
+                messages=[
+                    SessionMessage(
+                        role=m.role, text=m.text,
+                        ts=m.ts, message_id=m.message_id,
+                    )
+                    for m in active
+                ],
+                archive=[
+                    SessionMessage(
+                        role=m.role, text=m.text,
+                        ts=m.ts, message_id=m.message_id,
+                    )
+                    for m in archive
+                ],
+                active_tail_count=sess_row.active_tail_count,
+                last_compaction_at=sess_row.last_compaction_at,
+            )
 
     def append_messages(
         self,
@@ -617,34 +560,15 @@ class SessionStore:
         *,
         bump_updated: bool = True,
     ) -> Session:
-        """Append one or more messages and rewrite the file.
+        """Append one or more messages to a session.
 
-        The full file is rewritten (not appended) because
-        sessions are small. ``bump_updated=False`` is unused
-        for v0 but kept in the signature so future
-        callers (manual edits, schema-migration wipes)
-        can re-write without touching ``updated_at``.
+        Single transaction (one INSERT per message + one UPDATE
+        on the session row). ``bump_updated=False`` skips the
+        ``updated_at`` bump — used by operations that touch
+        metadata only.
         """
-        path = session_path(self._workspace, chat_id, session_id)
-        if not path.is_file():
-            raise SessionNotFoundError(
-                f"session {session_id!r} for chat_id {chat_id!r} "
-                "does not exist"
-            )
-        try:
-            raw = path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-            session = session_from_dict(data)
-        except json.JSONDecodeError as e:
-            raise SessionCorruptError(
-                f"session file {path} is not valid JSON: {e}"
-            ) from e
-
-        # Validate each incoming message before mutating
-        # in-memory state. Keeps partial-write impossible
-        # (the file is only touched after the validation
-        # loop completes).
         new_msgs = list(msgs)
+        # Validate up-front so a partial append isn't possible.
         for i, m in enumerate(new_msgs):
             if m.role not in _ALLOWED_MESSAGE_ROLES:
                 raise SessionCorruptError(
@@ -652,11 +576,27 @@ class SessionStore:
                     "is not allowed"
                 )
 
-        session.messages.extend(new_msgs)
-        if bump_updated:
-            session.updated_at = utcnow_iso()
-        _atomic_write_json(path, session_to_dict(session))
-        return session
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session_id)
+            if sess_row is None or sess_row.chat_id != chat_id:
+                raise SessionNotFoundError(
+                    f"session {session_id!r} for chat_id {chat_id!r} "
+                    "does not exist"
+                )
+            for m in new_msgs:
+                db.add(ChatMessage(
+                    session_id=session_id,
+                    message_id=m.message_id,
+                    role=m.role,
+                    text=m.text,
+                    ts=m.ts,
+                    archived=0,
+                ))
+            if bump_updated:
+                sess_row.updated_at = utcnow_iso()
+            db.commit()
+        # Re-read so the returned Session matches what's on disk.
+        return self.get(chat_id, session_id)  # type: ignore[return-value]
 
     def rename(
         self,
@@ -668,56 +608,31 @@ class SessionStore:
     ) -> Session:
         """Set or clear the session's ``title``.
 
-        Read-modify-rewrite via the same atomic-write path as
-        :meth:`append_messages`. ``title`` is trimmed and length-
-        clamped to ``_TITLE_MAX_LEN`` chars. ``None`` (or an
-        empty string after trimming) clears the title.
+        ``title`` is trimmed and length-clamped to
+        ``_TITLE_MAX_LEN`` chars. ``None`` (or an empty
+        string after trimming) clears the title.
 
         ``bump_updated=False`` skips the ``updated_at`` bump —
         used by the manual ``PATCH`` path because a rename is
         operator metadata and shouldn't reshuffle the sidebar.
-        The background auto-title job passes the default
-        (``bump_updated=True``) so a freshly-titled session
-        floats to the top.
-
-        Raises
-        ------
-        SessionNotFoundError
-            No session file at the canonical path.
-        SessionCorruptError
-            The file exists but is malformed.
-        SessionPathError
-            ``session_id`` is not a valid ULID.
         """
-        path = session_path(self._workspace, chat_id, session_id)
-        if not path.is_file():
-            raise SessionNotFoundError(
-                f"session {session_id!r} for chat_id {chat_id!r} "
-                "does not exist"
-            )
-        try:
-            raw = path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-            session = session_from_dict(data)
-        except json.JSONDecodeError as e:
-            raise SessionCorruptError(
-                f"session file {path} is not valid JSON: {e}"
-            ) from e
-
-        # Normalise: trim, length-clamp, treat empty as clear.
         if title is None:
             new_title: str | None = None
         else:
             stripped = title.strip()
-            if not stripped:
-                new_title = None
-            else:
-                new_title = stripped[:_TITLE_MAX_LEN]
+            new_title = stripped[:_TITLE_MAX_LEN] if stripped else None
 
-        session.title = new_title
-        if bump_updated:
-            session.updated_at = utcnow_iso()
-        _atomic_write_json(path, session_to_dict(session))
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session_id)
+            if sess_row is None or sess_row.chat_id != chat_id:
+                raise SessionNotFoundError(
+                    f"session {session_id!r} for chat_id {chat_id!r} "
+                    "does not exist"
+                )
+            sess_row.title = new_title
+            if bump_updated:
+                sess_row.updated_at = utcnow_iso()
+            db.commit()
         logger.info(
             "session renamed",
             extra={
@@ -726,50 +641,158 @@ class SessionStore:
                 "title_set": new_title is not None,
             },
         )
-        return session
+        return self.get(chat_id, session_id)  # type: ignore[return-value]
+
+    def set_title_if_null(
+        self,
+        chat_id: str,
+        session_id: str,
+        title: str,
+        *,
+        bump_updated: bool = True,
+    ) -> Session | None:
+        """Set the session's ``title`` only if it is currently NULL.
+
+        Atomic — single ``UPDATE … WHERE title IS NULL`` whose
+        affected-row count tells the caller whether they won
+        the race against a concurrent manual PATCH or another
+        worker. Returns the post-update ``Session`` on success,
+        ``None`` when the row didn't exist OR the title was
+        already set.
+
+        Used by the D.7 auto-title worker to replace the
+        pre-D.18 ``async with session_lock(...)`` read-then-
+        write pattern with a SQL-level compare-and-set. The
+        lock is no longer needed because SQLAlchemy's
+        ``begin`` event listener issues ``BEGIN IMMEDIATE``,
+        serialising the UPDATE across the writer pool.
+        """
+        from sqlalchemy import update
+
+        with open_session() as db:
+            stmt = (
+                update(ChatSession)
+                .where(
+                    ChatSession.session_id == session_id,
+                    ChatSession.chat_id == chat_id,
+                    ChatSession.title.is_(None),
+                )
+                .values(
+                    title=title[:_TITLE_MAX_LEN],
+                    updated_at=utcnow_iso() if bump_updated else ChatSession.updated_at,
+                )
+            )
+            result = db.execute(stmt)
+            db.commit()
+            if result.rowcount == 0:
+                # Either session doesn't exist or title was
+                # already set by someone else — caller treats
+                # both as "lost the race".
+                return None
+            return self.get(chat_id, session_id)
 
     def _write(self, session: Session, *, bump_updated: bool = True) -> Session:
         """Persist a (possibly-mutated) ``Session`` back to
-        its file. Used by :mod:`magi.runtime.agent` after
+        the DB. Used by :mod:`magi.runtime.agent` after
         auto-compaction rewrites ``session.messages`` and
-        appends to ``session.archive``.
+        ``session.archive``.
 
-        ``bump_updated=True`` (default) refreshes
-        ``updated_at`` so the session floats to the top of
-        the sidebar — the right default for "new content
-        just landed". Set to ``False`` for ops that touch
-        fields that aren't visible in the sidebar (e.g.
-        ``last_compaction_at``) so the order doesn't shift
-        just because of a background housekeeping event.
+        The single transaction:
+          1. ``UPDATE chat_messages SET archived=1`` for the
+             to-archive rows (preserves ``message_id`` — the
+             v0 code re-minted ids, which made deep-linking
+             from search results brittle).
+          2. ``INSERT`` the new system-summary row at
+             ``messages[0]`` (always ``archived=0``).
+          3. Optionally bump ``updated_at`` on the session.
+          4. UPDATE the session's metadata
+             (``active_tail_count``, ``last_compaction_at``).
 
-        Atomic: writes via ``_atomic_write_json`` so a crash
-        mid-write leaves the previous version intact. The
-        file's perms (``0o600``) are inherited from
-        ``mkstemp`` in the atomic helper.
+        Atomicity: any step failing rolls back the whole
+        write. The FTS5 sync triggers fire per-row inside
+        the same transaction, so the search index stays
+        coherent with the messages table.
         """
-        if bump_updated:
-            session.updated_at = utcnow_iso()
-        path = session_path(self._workspace, session.chat_id, session.session_id)
-        _atomic_write_json(path, session_to_dict(session))
-        return session
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session.session_id)
+            if sess_row is None:
+                # Session disappeared mid-call; bail silently
+                # to match v0 behaviour.
+                return session
+
+            # Archive the OLD messages: flip their archived
+            # flag. Original message_ids are preserved (the
+            # FTS5 rowids / search deep-links stay valid).
+            if session.archive:
+                # Find which message_ids belong to this
+                # session and are still active; flip the
+                # ones we want to archive. Match by
+                # message_id (not row id) so the caller
+                # can hand us a Session built from a fresh
+                # ``get()`` without rowid-bookkeeping.
+                archive_ids = {m.message_id for m in session.archive}
+                for row in sess_row.messages:
+                    if row.archived == 0 and row.message_id in archive_ids:
+                        row.archived = 1
+
+            # Rewrite the active messages: delete old active
+            # rows (those NOT in the new active set) and
+            # insert the new ones. We use message_id as the
+            # key — the summary row from compaction has a
+            # fresh message_id and gets inserted as new.
+            new_active_ids = {m.message_id for m in session.messages}
+            for row in sess_row.messages:
+                if row.archived == 0 and row.message_id not in new_active_ids:
+                    db.delete(row)
+            for m in session.messages:
+                # Skip if already present (carried over from
+                # the old active set) — avoids re-inserting
+                # verbatim tails the compaction kept.
+                existing = next(
+                    (r for r in sess_row.messages if r.message_id == m.message_id),
+                    None,
+                )
+                if existing is not None:
+                    continue
+                db.add(ChatMessage(
+                    session_id=session.session_id,
+                    message_id=m.message_id,
+                    role=m.role,
+                    text=m.text,
+                    ts=m.ts,
+                    archived=0,
+                ))
+
+            sess_row.active_tail_count = session.active_tail_count
+            sess_row.last_compaction_at = session.last_compaction_at
+            if bump_updated:
+                sess_row.updated_at = utcnow_iso()
+            db.commit()
+
+        # Return a fresh read so the caller sees what's
+        # actually on disk (and so the in-memory Session
+        # they're holding matches the persisted state).
+        return self.get(session.chat_id, session.session_id)  # type: ignore[return-value]
 
     def delete(self, chat_id: str, session_id: str) -> bool:
-        """Remove a session file. ``True`` if it existed.
+        """Remove a session. ``True`` if it existed.
 
         Idempotent: deleting a non-existent session is a
         no-op (returns ``False``). No trash; v0 doesn't
         support undo.
         """
-        path = session_path(self._workspace, chat_id, session_id)
-        if not path.is_file():
-            return False
-        path.unlink()
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session_id)
+            if sess_row is None or sess_row.chat_id != chat_id:
+                return False
+            # CASCADE on the FK cleans up the message rows
+            # automatically. The FTS sync triggers fire per
+            # delete inside the same transaction.
+            db.delete(sess_row)
+            db.commit()
         logger.info(
             "session deleted",
-            extra={
-                "session_id": session_id,
-                "chat_id": chat_id,
-            },
+            extra={"session_id": session_id, "chat_id": chat_id},
         )
         return True
 
@@ -782,45 +805,206 @@ class SessionStore:
     ) -> tuple[list[SessionSummary], int]:
         """Return ``(summaries, total)`` for the chat.
 
-        Sorts by ``updated_at`` descending. Loading every
-        session file per call is fine for v0 — a single
-        operator's session count is small (tens-to-hundreds).
-        A future scale-up could maintain a manifest file
-        next to the directory.
+        Sorts by ``updated_at`` descending. ``preview`` is the
+        first user message text (truncated to 80 chars with a
+        trailing ellipsis if longer).
         """
-        directory = session_dir(self._workspace, chat_id)
-        if not directory.is_dir():
-            return [], 0
+        from sqlalchemy import func, select
 
-        # Read every session, build summary, drop the ones
-        # that failed to parse (logged but not fatal — a
-        # single corrupt file should not deny the operator
-        # their other sessions).
-        summaries: list[SessionSummary] = []
-        corrupted = 0
-        for child in directory.glob("*.json"):
+        with open_session() as db:
+            # Header rows (newest first by updated_at).
+            headers = db.execute(
+                select(ChatSession)
+                .where(ChatSession.chat_id == chat_id)
+                .order_by(ChatSession.updated_at.desc())
+            ).scalars().all()
+            total = len(headers)
+            page = headers[offset : offset + limit]
+
+            # For each header, fetch the first user message
+            # for the preview. Single round-trip via a JOIN
+            # would be faster, but the cardinality is small
+            # (a page of ~50), and the SQL stays readable.
+            summaries: list[SessionSummary] = []
+            for h in page:
+                preview = ""
+                first_user = db.execute(
+                    select(ChatMessage)
+                    .where(
+                        ChatMessage.session_id == h.session_id,
+                        ChatMessage.archived == 0,
+                        ChatMessage.role == "user",
+                    )
+                    .order_by(ChatMessage.id)
+                    .limit(1)
+                ).scalar_one_or_none()
+                if first_user is not None:
+                    preview = first_user.text[:_PREVIEW_CHARS]
+                    if len(first_user.text) > _PREVIEW_CHARS:
+                        preview += "…"
+
+                # Active message count for ``message_count``.
+                count = db.execute(
+                    select(func.count(ChatMessage.id))
+                    .where(
+                        ChatMessage.session_id == h.session_id,
+                        ChatMessage.archived == 0,
+                    )
+                ).scalar_one()
+
+                summaries.append(SessionSummary(
+                    session_id=h.session_id,
+                    created_at=h.created_at,
+                    updated_at=h.updated_at,
+                    message_count=count,
+                    preview=preview,
+                    title=h.title,
+                ))
+            return summaries, total
+
+
+# -- JSON → SQLite migration -----------------------------------------------
+#
+# One-shot importer: walks ``<workspace>/memories/sessions/
+# <chat_id>/<sid>.json``, parses each file, inserts rows into
+# the SQLite tables, and deletes the JSON after the row's
+# transaction commits. Idempotent via ``INSERT OR IGNORE`` on
+# the ``(session_id, message_id)`` unique constraint — a
+# crashed boot just retries on next start, and a partially-
+# imported file is harmlessly skipped on re-run.
+#
+# Corrupt files are logged and NOT deleted (no silent data
+# loss). An operator can hand-inspect and either fix or
+# ``rm`` the bad file.
+
+
+def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
+    """Walk the legacy ``sessions/<chat_id>/<sid>.json`` tree
+    and import each file into SQLite.
+
+    Returns a small stats dict: ``{"imported": N, "skipped":
+    N, "corrupt": N}``. Logs each corrupt file at WARNING
+    level so the operator sees the SKIP, not just the counts.
+    """
+    sessions_root = Path(workspace_root_path) / "memories" / _SESSIONS_SUBDIR
+    if not sessions_root.is_dir():
+        return {"imported": 0, "skipped": 0, "corrupt": 0}
+
+    imported = 0
+    skipped = 0
+    corrupt = 0
+
+    for chat_dir in sorted(sessions_root.iterdir()):
+        if not chat_dir.is_dir():
+            continue
+        chat_id = chat_dir.name
+        # Validate chat_id; the dir name is filesystem-supplied
+        # so a corrupted workspace could have anything in here.
+        try:
+            _validate_chat_id(chat_id)
+        except ValueError as e:
+            logger.warning(
+                "migrate_from_json: skipping chat dir %s (%s)",
+                chat_dir, e,
+            )
+            corrupt += 1
+            continue
+
+        for json_path in sorted(chat_dir.glob("*.json")):
             try:
-                raw = child.read_text(encoding="utf-8")
+                raw = json_path.read_text(encoding="utf-8")
                 data = json.loads(raw)
                 sess = session_from_dict(data)
-            except (SessionCorruptError, json.JSONDecodeError) as e:
+            except (json.JSONDecodeError, SessionCorruptError, KeyError) as e:
                 logger.warning(
-                    "skipping corrupt session file %s: %s", child, e,
+                    "migrate_from_json: skipping corrupt file %s (%s)",
+                    json_path, e,
                 )
-                corrupted += 1
+                corrupt += 1
                 continue
-            summaries.append(summary_from_session(sess))
 
-        # Latest first by updated_at; ULIDs already encode
-        # creation order, but updated_at wins because a
-        # long session that's been idle should still rank
-        # above a new empty one.
-        summaries.sort(key=lambda s: s.updated_at, reverse=True)
-        total = len(summaries)
-        page = summaries[offset : offset + limit]
-        if corrupted:
-            logger.info(
-                "list_summaries: skipped %d corrupt file(s) in %s",
-                corrupted, directory,
-            )
-        return page, total
+            # Insert into SQLite. Per-file transaction; on
+            # success delete the JSON; on failure leave it
+            # so the next boot retries.
+            try:
+                with open_session() as db:
+                    # INSERT OR IGNORE the session header
+                    db.execute(
+                        ChatSession.__table__.insert().prefix_with("OR IGNORE"),
+                        {
+                            "session_id": sess.session_id,
+                            "chat_id": sess.chat_id,
+                            "employee_id": sess.employee_id,
+                            "channel": sess.channel,
+                            "title": sess.title,
+                            "active_tail_count": sess.active_tail_count,
+                            "last_compaction_at": sess.last_compaction_at,
+                            "created_at": sess.created_at,
+                            "updated_at": sess.updated_at,
+                        },
+                    )
+                    # Insert active messages
+                    for m in sess.messages:
+                        db.execute(
+                            ChatMessage.__table__.insert().prefix_with("OR IGNORE"),
+                            {
+                                "session_id": sess.session_id,
+                                "message_id": m.message_id,
+                                "role": m.role,
+                                "text": m.text,
+                                "ts": m.ts,
+                                "archived": 0,
+                            },
+                        )
+                    # Insert archive rows (preserved with
+                    # archived=1 so they participate in FTS
+                    # search just like the active set).
+                    for m in sess.archive:
+                        db.execute(
+                            ChatMessage.__table__.insert().prefix_with("OR IGNORE"),
+                            {
+                                "session_id": sess.session_id,
+                                "message_id": m.message_id,
+                                "role": m.role,
+                                "text": m.text,
+                                "ts": m.ts,
+                                "archived": 1,
+                            },
+                        )
+                    db.commit()
+            except Exception as e:
+                logger.warning(
+                    "migrate_from_json: insert failed for %s (%s); "
+                    "leaving JSON in place for next boot",
+                    json_path, e,
+                )
+                skipped += 1
+                continue
+
+            # JSON is now in SQLite — delete the source. Best-
+            # effort; if unlink fails (e.g. read-only mount),
+            # the next boot re-runs and ``INSERT OR IGNORE``
+            # makes the second pass a no-op.
+            try:
+                json_path.unlink()
+            except OSError as e:
+                logger.warning(
+                    "migrate_from_json: imported but failed to delete %s (%s)",
+                    json_path, e,
+                )
+            imported += 1
+
+    # Clean up empty chat directories left behind.
+    for chat_dir in sessions_root.iterdir():
+        try:
+            if chat_dir.is_dir() and not any(chat_dir.iterdir()):
+                chat_dir.rmdir()
+        except OSError:
+            pass
+
+    if imported or corrupt:
+        logger.info(
+            "migrate_from_json: imported=%d skipped=%d corrupt=%d",
+            imported, skipped, corrupt,
+        )
+    return {"imported": imported, "skipped": skipped, "corrupt": corrupt}

@@ -37,7 +37,10 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
+    UniqueConstraint,
     create_engine,
+    event,
     select,
 )
 from sqlalchemy.engine import Engine
@@ -446,6 +449,130 @@ class TokenUsage(Base):
         )
 
 
+# ────────────────────────────────────────────────────────────────── #
+# Chat sessions — D.18: replaces the per-session JSON files under
+# `<workspace>/memories/sessions/<chat_id>/<sid>.json` with two
+# rows tables. ``chat_sessions`` is the header; ``chat_messages`` is
+# the active + archived message log, where ``archived=0`` is the
+# LLM-facing "active" view (compressed) and ``archived=1`` is the
+# forensic archive (D.17's append-only log).
+#
+# The session row is keyed by the 26-char ULID ``session_id`` so
+# callers that already hold an id (chat.py / bot.py / agent.py) can
+# stay on their existing keys without translation.
+# ────────────────────────────────────────────────────────────────── #
+
+
+class ChatSession(Base):
+    """A chat session header.
+
+    The body of the session (messages + archive) lives in
+    :class:`ChatMessage` and is loaded on demand by
+    :class:`magi.runtime.sessions.SessionStore.get`.
+    """
+
+    __tablename__ = "chat_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    # ``chat_id`` is the cookie / TG chat string (the operator's
+    # telegram_id for WebUI; the user's chat_id for TG). Indexed
+    # so the "list my sessions" endpoint is a single range scan.
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    # D.7 — operator-set or auto-titled. ``null`` until either
+    # has run. Bounded to 80 chars at the Pydantic boundary.
+    title: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # D.17 — snapshot of ``system.compact_keep_recent`` at the
+    # last compaction pass. Pure audit trail; the next
+    # compaction reads the live setting.
+    active_tail_count: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Indexed so ``list_summaries`` ``ORDER BY updated_at DESC`` is
+    # a backward index walk per ``chat_id``.
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+
+    # Read-only back-reference; routes never mutate via this
+    # collection. ``cascade="all, delete-orphan"`` so a session
+    # delete also clears its message rows.
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        viewonly=True,
+        order_by="ChatMessage.id",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"ChatSession(session_id={self.session_id}, "
+            f"chat_id={self.chat_id}, title={self.title!r})"
+        )
+
+
+class ChatMessage(Base):
+    """A single chat message, active or archived.
+
+    Active rows (``archived=0``) are what the LLM sees in the next
+    turn; archived rows (``archived=1``) are the pre-compaction
+    history that ``_maybe_compact`` rolled out of ``active`` so
+    the LLM's context window isn't blown by a long chat. Both are
+    indexed by the same FTS5 virtual table (D.18 search) — search
+    results span the whole conversation, not just the active tail.
+    """
+
+    __tablename__ = "chat_messages"
+
+    # Autoincrement so the FTS5 ``rowid`` mapping is stable.
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(26),
+        ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Caller-supplied ULID (the same id used in D.6–D.17) so the
+    # JSON-to-SQLite migration can carry the id across without
+    # re-minting, and so chat_history rows can be deep-linked.
+    message_id: Mapped[str] = mapped_column(String(26), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # ISO UTC string (matches the JSON format); not DateTime so we
+    # don't need tz-aware handling in code that already passes the
+    # string through.
+    ts: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 0 = active (LLM sees), 1 = archived (compressed out).
+    archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        # Primary lookup pattern: "give me the active tail of
+        # session X ordered by append-order".
+        Index(
+            "ix_chat_messages_session_archived",
+            "session_id",
+            "archived",
+            "id",
+        ),
+        # Uniqueness on (session, message_id) lets the migration
+        # importer do ``INSERT OR IGNORE`` without re-checking
+        # for partial duplicates.
+        UniqueConstraint(
+            "session_id",
+            "message_id",
+            name="uq_chat_messages_session_msg",
+        ),
+    )
+
+    session: Mapped["ChatSession"] = relationship(back_populates="messages", viewonly=True)
+
+    def __repr__(self) -> str:
+        flag = "A" if self.archived else "·"
+        return (
+            f"ChatMessage({flag} id={self.id} session={self.session_id} "
+            f"role={self.role} ts={self.ts})"
+        )
+
+
 # -- bootstrap --------------------------------------------------------------
 
 _engine: Engine | None = None
@@ -476,10 +603,54 @@ def get_engine() -> Engine:
             connect_args={"check_same_thread": False},
             future=True,
         )
+        _register_sqlite_pragmas(_engine)
+        _register_begin_immediate(_engine)
         _SessionLocal = sessionmaker(
             bind=_engine, autocommit=False, autoflush=False, expire_on_commit=False
         )
     return _engine
+
+
+# -- SQLAlchemy connection event listeners ----------------------------------
+#
+# Two PRAGMAs and a transaction-mode override that the raw
+# ``sqlite3`` connections in ``local_db.py`` / ``settings.py``
+# already set on themselves, but which SQLAlchemy connections
+# don't inherit (SQLAlchemy creates fresh DBAPI connections from
+# the pool — each needs the PRAGMAs re-applied).
+#
+# ``busy_timeout`` makes contending writers (TG bot thread +
+# FastAPI loop hitting the same row under D.18 search/append/
+# compaction) wait up to 5 s instead of immediately raising
+# ``database is locked``. ``foreign_keys=ON`` is opt-in per
+# connection in SQLite (off by default for backwards compat).
+#
+# ``begin`` → IMMEDIATE replaces SQLAlchemy's default DEFERRED
+# transactions. With WAL that means every write transaction
+# takes the reserved lock at BEGIN instead of upgrading on the
+# first write, eliminating the ``SQLITE_BUSY`` window where two
+# writers could both think they were alone.
+
+
+def _register_sqlite_pragmas(engine: Engine) -> None:
+    @event.listens_for(engine, "connect")
+    def _set_pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA busy_timeout=5000")
+            cur.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cur.close()
+
+
+def _register_begin_immediate(engine: Engine) -> None:
+    @event.listens_for(engine, "begin")
+    def _begin(dbapi_conn):
+        # SQLAlchemy normally issues "BEGIN" (DEFERRED). Replace
+        # with "BEGIN IMMEDIATE" so writes don't get a SQLITE_BUSY
+        # at upgrade time under contention. Reads inside a
+        # transaction still see a consistent snapshot.
+        dbapi_conn.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 def init_orm(state_dir: str | None = None) -> Engine:
@@ -642,6 +813,78 @@ _UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str, str | None]] = [
 ]
 
 
+# -- FTS5 virtual table (D.18 search) ----------------------------------------
+#
+# ``chat_messages_fts`` is an external-content FTS5 table that
+# mirrors ``chat_messages.text``. Three triggers (ai / ad / au) keep
+# it in sync with INSERT / DELETE / UPDATE on the source table.
+#
+# Tokenizer choice — ``trigram``:
+#
+#   - CJK: 3-character substring match. E.g. searching "压缩触发"
+#     finds messages containing that 3-character run anywhere in
+#     the text. Without trigram (with default unicode61), CJK runs
+#     are a single token and only exact-prefix matches return.
+#   - Latin / digits: same 3-char substring semantics; matches
+#     "son" inside "Jefferson" etc. ``LIKE``-style behaviour
+#     without the operator-vocabulary quirks of LIKE patterns.
+#
+# pysqlite3-binary wheels deliberately don't ship ICU, so the
+# ``tokenize='icu'`` route that would give true CJK word
+# segmentation requires a self-compiled SQLite + libicu link.
+# Trigram is the "good enough for v0, no extra build cost" pick.
+# Operators who type a single CJK character get a "use at least
+# 3 characters" hint from the search UI; everything ≥3 chars
+# just works.
+#
+# If FTS5 itself is missing from the linked SQLite (rare on
+# CPython 3.12 builds, but possible on stripped-down distros),
+# the CREATE TABLE DDL fails. We catch the failure, log a warning,
+# and let ``chat_search`` route return 503 ``search.unavailable``.
+# The ORM init does NOT abort, so a botched FTS install can't
+# brick the whole node.
+
+_FTS_MIGRATIONS: list[tuple[str, str]] = [
+    # Virtual table. ``content='chat_messages'`` means the FTS5
+    # index doesn't store a copy of the text — it pulls live
+    # from the source row by rowid at query time. The downside
+    # (slower snippet() reads) is irrelevant at v0 scale;
+    # the upside (no double-storage, no drift) is huge.
+    (
+        "chat_messages_fts",
+        "CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING fts5("
+        "    text, "
+        "    content='chat_messages', "
+        "    content_rowid='id', "
+        "    tokenize='trigram'"
+        ")",
+    ),
+    # Sync triggers. The standard 3-trigger external-content
+    # pattern from SQLite's FTS5 docs.
+    (
+        "chat_messages_ai",
+        "CREATE TRIGGER IF NOT EXISTS chat_messages_ai AFTER INSERT ON chat_messages BEGIN "
+        "    INSERT INTO chat_messages_fts(rowid, text) VALUES (new.id, new.text); "
+        "END",
+    ),
+    (
+        "chat_messages_ad",
+        "CREATE TRIGGER IF NOT EXISTS chat_messages_ad AFTER DELETE ON chat_messages BEGIN "
+        "    INSERT INTO chat_messages_fts(chat_messages_fts, rowid, text) "
+        "        VALUES('delete', old.id, old.text); "
+        "END",
+    ),
+    (
+        "chat_messages_au",
+        "CREATE TRIGGER IF NOT EXISTS chat_messages_au AFTER UPDATE ON chat_messages BEGIN "
+        "    INSERT INTO chat_messages_fts(chat_messages_fts, rowid, text) "
+        "        VALUES('delete', old.id, old.text); "
+        "    INSERT INTO chat_messages_fts(rowid, text) VALUES (new.id, new.text); "
+        "END",
+    ),
+]
+
+
 def _run_inline_migrations(engine: Engine) -> None:
     from sqlalchemy import text
 
@@ -697,6 +940,52 @@ def _run_inline_migrations(engine: Engine) -> None:
                     f"{index_name} ON {table} ({columns}) "
                     f"{predicate}"
                 )
+            )
+
+        # FTS5 virtual table + sync triggers. Probe the compile
+        # options first; on a stripped SQLite (e.g. Alpine
+        # musllinux without FTS5) we log and skip so ORM init
+        # still succeeds — ``chat_search`` returns 503 in that
+        # case instead of the whole node refusing to boot.
+        try:
+            has_fts5 = (
+                conn.execute(
+                    text(
+                        "SELECT 1 FROM pragma_compile_options "
+                        "WHERE compile_options = 'ENABLE_FTS5'"
+                    )
+                ).first()
+                is not None
+            )
+        except Exception:
+            has_fts5 = False
+        if has_fts5:
+            try:
+                for name, ddl in _FTS_MIGRATIONS:
+                    logger.info("fts migration: %s", name)
+                    conn.execute(text(ddl))
+                # External-content FTS indexes start empty —
+                # populate from any existing chat_messages rows
+                # so a botched restart / partial migration is
+                # self-healing.
+                conn.execute(
+                    text(
+                        "INSERT INTO chat_messages_fts(chat_messages_fts) "
+                        "VALUES('rebuild')"
+                    )
+                )
+            except Exception as e:
+                # Some SQLite builds compile FTS5 but reject
+                # ``tokenize='trigram'`` (rare). Treat that the
+                # same as "no FTS5" and keep the ORM init alive.
+                logger.warning(
+                    "fts migration failed (%s); search route will return 503",
+                    e,
+                )
+        else:
+            logger.warning(
+                "FTS5 not compiled into this SQLite; "
+                "chat search will return 503"
             )
 
 

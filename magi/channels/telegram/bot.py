@@ -293,7 +293,6 @@ async def _handle_employee_message(
         SessionMessage,
         SessionStore,
         new_session_id,
-        session_lock,
         utcnow_iso,
     )
 
@@ -364,19 +363,18 @@ async def _handle_employee_message(
     store = SessionStore(state_dir)
     session_id = _resolve_or_create_tg_session(store, chat_id, employee_id)
 
-    # Inbound append under the per-session lock so the
-    # auto-title worker (D.7) reads a coherent file. Same
-    # 5ms critical section the WebUI chat-send holds.
+    # Inbound append — SQLite's per-statement atomicity replaces
+    # the pre-D.18 per-session ``asyncio.Lock`` that used to
+    # serialise against the auto-title worker.
     ts_in = utcnow_iso()
     try:
-        async with session_lock(chat_id, session_id):
-            post = store.append_messages(
-                chat_id, session_id,
-                [SessionMessage(
-                    role="user", text=text, ts=ts_in,
-                    message_id=new_session_id(),
-                )],
-            )
+        post = store.append_messages(
+            chat_id, session_id,
+            [SessionMessage(
+                role="user", text=text, ts=ts_in,
+                message_id=new_session_id(),
+            )],
+        )
     except Exception:
         logger.exception(
             "telegram: failed to append user message for session %s",

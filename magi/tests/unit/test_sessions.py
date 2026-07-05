@@ -21,8 +21,6 @@ from magi.runtime.sessions import (
     SessionPathError,
     SessionStore,
     new_session_id,
-    session_dir,
-    session_path,
     summary_from_session,
 )
 
