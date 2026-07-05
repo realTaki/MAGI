@@ -202,20 +202,38 @@ class Session:
     # D.17 — compaction state. v0 file format adds these
     # fields without bumping ``schema_version``; all three
     # have dataclass defaults so old session files load
-    # cleanly. ``archive`` is an append-only log of the OLD
-    # messages that were rolled out of ``messages`` during
-    # a compaction pass — operators can read it via the
-    # GET endpoint to reconstruct the full original
-    # conversation, but the LLM never sees it.
-    #
-    # The compaction summary itself is stored as a
-    # ``role="system"`` message at ``messages[0]`` (the
-    # first entry after compaction). archive holds only the
-    # ORIGINAL messages that were moved out — never the
-    # summary.
+    # cleanly. See per-field docstrings below for what each
+    # one is for.
     archive: list[SessionMessage] = field(default_factory=list)
+    """Append-only log of OLD messages that were rolled out
+    of ``messages`` during a compaction pass. Operators
+    can read it via the GET endpoint to reconstruct the
+    full original conversation; the LLM never sees it.
+
+    The compaction summary itself is stored as a
+    ``role="system"`` message at ``messages[0]`` (the
+    first entry after compaction). archive holds only the
+    ORIGINAL messages that were moved out — never the
+    summary."""
+
     active_tail_count: int = 20
+    """Snapshot of how many original ``messages`` were
+    kept verbatim at the most recent compaction (in
+    addition to the summary at index 0).
+
+    This is an audit trail only — "the last compaction
+    preserved K turns". The next compaction reads the
+    LIVE ``system.compact_keep_recent`` setting, NOT this
+    field, so changing the setting in the Settings tab
+    takes effect immediately on the next compaction pass
+    even if this snapshot says something different.
+
+    v0 default: 20 (matches the settings default)."""
+
     last_compaction_at: str | None = None
+    """ISO timestamp of the most recent compaction event.
+    Useful for the dashboard's "this session was compacted
+    N times" / "last compacted at" stat."""
 
 
 @dataclass
