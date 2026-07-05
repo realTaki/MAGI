@@ -195,6 +195,19 @@ def run() -> None:
     from magi.runtime.state.orm import init_orm
     init_orm(cfg.state_dir)
 
+    # D.18 — one-shot import of any leftover pre-D.18 JSON
+    # session files. Idempotent (INSERT OR IGNORE on the
+    # (session_id, message_id) unique constraint), so re-running
+    # on every boot is cheap: if no JSON files exist, the glob
+    # walks zero files. Sessions that already migrated are
+    # skipped via the unique constraint. Corrupt files are
+    # logged and left in place for hand-inspection (no silent
+    # data loss).
+    from pathlib import Path
+    from magi.runtime.sessions import migrate_from_json
+    from magi.runtime.workspace import workspace_root
+    migrate_from_json(Path(workspace_root(cfg.state_dir)))
+
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent — every boot re-checks but
     # only creates what's missing, so deployer edits to SOUL.md

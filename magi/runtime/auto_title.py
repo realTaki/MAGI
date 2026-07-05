@@ -46,8 +46,6 @@ from magi.runtime.llm.provider import ChatMessage
 from magi.runtime.prompts import load_chat_title_prompt
 from magi.runtime.sessions import (
     SessionStore,
-    session_dir as _session_dir_of,
-    session_lock,
     utcnow_iso,
 )
 
@@ -302,30 +300,27 @@ async def _summarize_to_title(job: TitleJob) -> None:
             )
             return
 
-        async with session_lock(job.chat_id, job.session_id):
-            # Re-read under the lock — a manual PATCH or a
-            # race winner may have set the title between our
-            # first read (step 2) and now.
-            fresh = store.get(job.chat_id, job.session_id)
-            if fresh is None or fresh.title is not None:
-                logger.info(
-                    "title skipped: lost the race",
-                    extra={"session_id": job.session_id},
-                )
-                return
-            try:
-                store.rename(
-                    job.chat_id,
-                    job.session_id,
-                    cleaned,
-                    bump_updated=True,
-                )
-            except Exception:
-                logger.exception(
-                    "title skipped: rename failed",
-                    extra={"session_id": job.session_id},
-                )
-                return
+        # Compare-and-set: only write if title is still null.
+        # Pre-D.18 this held an ``asyncio.Lock`` and did
+        # read-then-write; with SQLite + ``BEGIN IMMEDIATE`` the
+        # ``UPDATE … WHERE title IS NULL`` itself is atomic.
+        try:
+            fresh = store.set_title_if_null(
+                job.chat_id, job.session_id, cleaned,
+                bump_updated=True,
+            )
+        except Exception:
+            logger.exception(
+                "title skipped: rename failed",
+                extra={"session_id": job.session_id},
+            )
+            return
+        if fresh is None:
+            logger.info(
+                "title skipped: lost the race (title was already set)",
+                extra={"session_id": job.session_id},
+            )
+            return
         logger.info(
             "title set",
             extra={
