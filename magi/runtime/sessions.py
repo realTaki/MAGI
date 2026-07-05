@@ -186,12 +186,36 @@ class Session:
     created_at: str
     updated_at: str
     messages: list[SessionMessage]
+    """The LLM-facing view: what gets sent to the API.
+    After D.17 compaction this list is rewritten to
+    ``[summary_system_message, m[-K+1], ..., m[-1]]``
+    where ``m[-i]`` is the i-th most recent original
+    message and ``K`` is ``active_tail_count``.
+    """
     # Optional title: ``None`` means "no title yet" (manual
     # rename unset, or background job not yet run). The
     # front-end renders ``title ?? preview``. Set by the
     # PATCH endpoint (manual) or the auto-title worker.
     title: str | None = None
     schema_version: int = SCHEMA_VERSION
+
+    # D.17 — compaction state. v0 file format adds these
+    # fields without bumping ``schema_version``; all three
+    # have dataclass defaults so old session files load
+    # cleanly. ``archive`` is an append-only log of the OLD
+    # messages that were rolled out of ``messages`` during
+    # a compaction pass — operators can read it via the
+    # GET endpoint to reconstruct the full original
+    # conversation, but the LLM never sees it.
+    #
+    # The compaction summary itself is stored as a
+    # ``role="system"`` message at ``messages[0]`` (the
+    # first entry after compaction). archive holds only the
+    # ORIGINAL messages that were moved out — never the
+    # summary.
+    archive: list[SessionMessage] = field(default_factory=list)
+    active_tail_count: int = 20
+    last_compaction_at: str | None = None
 
 
 @dataclass
@@ -331,6 +355,21 @@ def session_to_dict(s: Session) -> dict:
             }
             for m in s.messages
         ],
+        # D.17 — archive + compaction metadata. All three
+        # default to safe values for files written before
+        # D.17; ``session_from_dict`` uses ``.get(...)`` so
+        # missing keys load as defaults.
+        "archive": [
+            {
+                "message_id": m.message_id,
+                "role": m.role,
+                "ts": m.ts,
+                "text": m.text,
+            }
+            for m in s.archive
+        ],
+        "active_tail_count": s.active_tail_count,
+        "last_compaction_at": s.last_compaction_at,
     }
 
 
@@ -340,10 +379,11 @@ def session_from_dict(d: dict) -> Session:
     Raises ``SessionCorruptError`` if anything is wrong. We
     fail closed — never silently coerce or skip.
 
-    Backward compatibility: ``title`` is read via ``d.get(...)``
-    so a file written before D.7 (no ``title`` key) loads with
-    ``title=None``. No schema-version bump is needed for
-    additive optional fields.
+    Backward compatibility: ``title``, ``archive``,
+    ``active_tail_count``, and ``last_compaction_at`` are all
+    read via ``d.get(...)`` so a file written before D.7 / D.17
+    loads with sensible defaults. No schema-version bump is
+    needed for additive optional fields.
     """
     if not isinstance(d, dict):
         raise SessionCorruptError("session root is not a JSON object")
@@ -376,6 +416,34 @@ def session_from_dict(d: dict) -> Session:
                     text=str(m["text"]),
                 )
             )
+
+        # D.17 — archive is the old-messages forensic log.
+        # Pre-D.17 files have no ``archive`` key; default to
+        # empty list so the loaded Session behaves exactly
+        # like v0 (no compaction has happened yet).
+        arch_raw = d.get("archive", [])
+        if not isinstance(arch_raw, list):
+            raise SessionCorruptError("archive is not a list")
+        archive: list[SessionMessage] = []
+        for i, m in enumerate(arch_raw):
+            if not isinstance(m, dict):
+                raise SessionCorruptError(
+                    f"archive[{i}] is not a JSON object"
+                )
+            role = m.get("role")
+            if role not in _ALLOWED_MESSAGE_ROLES:
+                raise SessionCorruptError(
+                    f"archive[{i}].role {role!r} is not allowed"
+                )
+            archive.append(
+                SessionMessage(
+                    message_id=str(m["message_id"]),
+                    role=role,
+                    ts=str(m["ts"]),
+                    text=str(m["text"]),
+                )
+            )
+
         # ``title`` defaults to None when the key is absent
         # (pre-D.7 files have no title field).
         title_raw = d.get("title")
@@ -383,6 +451,31 @@ def session_from_dict(d: dict) -> Session:
             raise SessionCorruptError(
                 f"title must be a string or null, got {type(title_raw).__name__}"
             )
+
+        # ``active_tail_count`` defaults to 20 when missing
+        # (pre-D.17 files). Out-of-range values (e.g. a
+        # hand-edited 0) clamp to ``1`` — at least one
+        # recent turn is always kept.
+        try:
+            active_tail_count = int(d.get("active_tail_count", 20))
+        except (TypeError, ValueError):
+            active_tail_count = 20
+        if active_tail_count < 1:
+            active_tail_count = 20
+
+        last_compaction_raw = d.get("last_compaction_at")
+        last_compaction_at: str | None
+        if last_compaction_raw is None:
+            last_compaction_at = None
+        elif isinstance(last_compaction_raw, str):
+            last_compaction_at = last_compaction_raw
+        else:
+            # Non-string in the file is corrupt; reset to
+            # None rather than fail the whole load (the
+            # session is still usable, just no recent
+            # compaction timestamp).
+            last_compaction_at = None
+
         return Session(
             session_id=str(d["session_id"]),
             chat_id=str(d["chat_id"]),
@@ -393,6 +486,9 @@ def session_from_dict(d: dict) -> Session:
             messages=messages,
             title=title_raw,
             schema_version=schema_version,
+            archive=archive,
+            active_tail_count=active_tail_count,
+            last_compaction_at=last_compaction_at,
         )
     except KeyError as e:
         raise SessionCorruptError(
@@ -612,6 +708,31 @@ class SessionStore:
                 "title_set": new_title is not None,
             },
         )
+        return session
+
+    def _write(self, session: Session, *, bump_updated: bool = True) -> Session:
+        """Persist a (possibly-mutated) ``Session`` back to
+        its file. Used by :mod:`magi.runtime.agent` after
+        auto-compaction rewrites ``session.messages`` and
+        appends to ``session.archive``.
+
+        ``bump_updated=True`` (default) refreshes
+        ``updated_at`` so the session floats to the top of
+        the sidebar — the right default for "new content
+        just landed". Set to ``False`` for ops that touch
+        fields that aren't visible in the sidebar (e.g.
+        ``last_compaction_at``) so the order doesn't shift
+        just because of a background housekeeping event.
+
+        Atomic: writes via ``_atomic_write_json`` so a crash
+        mid-write leaves the previous version intact. The
+        file's perms (``0o600``) are inherited from
+        ``mkstemp`` in the atomic helper.
+        """
+        if bump_updated:
+            session.updated_at = utcnow_iso()
+        path = session_path(self._workspace, session.chat_id, session.session_id)
+        _atomic_write_json(path, session_to_dict(session))
         return session
 
     def delete(self, chat_id: str, session_id: str) -> bool:

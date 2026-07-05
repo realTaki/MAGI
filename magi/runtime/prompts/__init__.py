@@ -121,6 +121,11 @@ def load_chat_title_prompt() -> str:
     return _load("chat_titles")
 
 
+def load_compaction_prompt() -> str:
+    """The system prompt for the auto-compact worker (D.17)."""
+    return _load("compaction")
+
+
 def load_bot_replies() -> dict[str, str]:
     """Return the Telegram bot reply templates as
     ``{template_id: text}``.

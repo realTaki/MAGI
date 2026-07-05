@@ -262,3 +262,135 @@ def put_tool_max_iterations(
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
     )
+
+# D.17 - auto-compact configuration. Three meta keys
+# backed by three helpers. The compaction threshold check
+# happens inside agent.handle_message on every chat
+# turn (before each LLM call); v0 reads the settings fresh
+# on each check so a Save in the UI takes effect
+# immediately on the next inbound message.
+
+COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
+COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
+COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
+
+DEFAULT_COMPACT_CONTEXT_WINDOW = 100000
+DEFAULT_COMPACT_THRESHOLD_PCT = 80
+DEFAULT_COMPACT_KEEP_RECENT = 20
+
+MIN_COMPACT_CONTEXT_WINDOW = 16000
+MAX_COMPACT_CONTEXT_WINDOW = 200000
+MIN_COMPACT_THRESHOLD_PCT = 50
+MAX_COMPACT_THRESHOLD_PCT = 95
+MIN_COMPACT_KEEP_RECENT = 5
+MAX_COMPACT_KEEP_RECENT = 100
+
+
+def _clamp_int(raw, *, default, lo, hi, label):
+    """Parse an int from a meta-key string and clamp to [lo, hi]."""
+    if raw is None or raw == "":
+        return default
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "compact config: %s stored value %r is not a number; "
+            "falling back to default %d",
+            label, raw, default,
+        )
+        return default
+    if v < lo or v > hi:
+        logger.warning(
+            "compact config: %s stored value %d is outside [%d, %d]; clamping",
+            label, v, lo, hi,
+        )
+        return max(lo, min(hi, v))
+    return v
+
+
+def get_compact_context_window(state_dir):
+    return _clamp_int(
+        state_get(state_dir, COMPACT_CONTEXT_WINDOW_KEY),
+        default=DEFAULT_COMPACT_CONTEXT_WINDOW,
+        lo=MIN_COMPACT_CONTEXT_WINDOW,
+        hi=MAX_COMPACT_CONTEXT_WINDOW,
+        label="context_window",
+    )
+
+
+def get_compact_threshold_pct(state_dir):
+    return _clamp_int(
+        state_get(state_dir, COMPACT_THRESHOLD_PCT_KEY),
+        default=DEFAULT_COMPACT_THRESHOLD_PCT,
+        lo=MIN_COMPACT_THRESHOLD_PCT,
+        hi=MAX_COMPACT_THRESHOLD_PCT,
+        label="threshold_pct",
+    )
+
+
+def get_compact_keep_recent(state_dir):
+    return _clamp_int(
+        state_get(state_dir, COMPACT_KEEP_RECENT_KEY),
+        default=DEFAULT_COMPACT_KEEP_RECENT,
+        lo=MIN_COMPACT_KEEP_RECENT,
+        hi=MAX_COMPACT_KEEP_RECENT,
+        label="keep_recent",
+    )
+
+
+class CompactConfigOut(BaseModel):
+    context_window: int
+    threshold_pct: int
+    keep_recent: int
+    default_context_window: int
+    default_threshold_pct: int
+    default_keep_recent: int
+
+
+class CompactConfigUpdateRequest(BaseModel):
+    context_window: int = Field(
+        ge=MIN_COMPACT_CONTEXT_WINDOW, le=MAX_COMPACT_CONTEXT_WINDOW
+    )
+    threshold_pct: int = Field(
+        ge=MIN_COMPACT_THRESHOLD_PCT, le=MAX_COMPACT_THRESHOLD_PCT
+    )
+    keep_recent: int = Field(
+        ge=MIN_COMPACT_KEEP_RECENT, le=MAX_COMPACT_KEEP_RECENT
+    )
+
+
+@router.get("/system-settings/compact-config", response_model=CompactConfigOut)
+def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
+    state = _state_dir()
+    return CompactConfigOut(
+        context_window=get_compact_context_window(state),
+        threshold_pct=get_compact_threshold_pct(state),
+        keep_recent=get_compact_keep_recent(state),
+        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
+        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
+        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
+    )
+
+
+@router.put("/system-settings/compact-config", response_model=CompactConfigOut)
+def put_compact_config(
+    payload: CompactConfigUpdateRequest,
+    _admin: AdminGate,
+) -> CompactConfigOut:
+    """Persist a new compact-config triple."""
+    state = _state_dir()
+    state_set(state, COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
+    state_set(state, COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
+    state_set(state, COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
+    logger.info(
+        "compact-config set: window=%d threshold=%d%% keep=%d",
+        payload.context_window, payload.threshold_pct, payload.keep_recent,
+    )
+    return CompactConfigOut(
+        context_window=payload.context_window,
+        threshold_pct=payload.threshold_pct,
+        keep_recent=payload.keep_recent,
+        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
+        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
+        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
+    )
