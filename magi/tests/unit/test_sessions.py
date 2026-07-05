@@ -80,7 +80,7 @@ def test_create_persists(store):
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
     assert row is not None
-    assert row.chat_id == "12345"
+    assert row.tgid == "12345"
     assert row.employee_id == 7
     assert row.title is None
 

@@ -485,8 +485,16 @@ class SessionStore:
     ) -> Session:
         """Create a new empty session.
 
-        The row is committed before this returns so a
-        subsequent ``get`` always sees the same id.
+        The ``chat_id`` parameter is the **Telegram chat id**
+        — for WebUI sessions it's the admin's telegram_id
+        (the cookie), for TG inbound sessions it's the
+        TG user's chat_id. Stored in the ``tgid`` column
+        since D.18+1; the parameter name stays ``chat_id``
+        so the dozen-odd call sites don't need to change.
+
+        ``employee_id`` is the operator whose history this
+        row belongs to — used as the cross-platform search
+        scope by the ``search_sessions`` tool.
         """
         _validate_chat_id(chat_id)
         session_id = new_session_id()
@@ -494,7 +502,7 @@ class SessionStore:
         with open_session() as db:
             db.add(ChatSession(
                 session_id=session_id,
-                chat_id=chat_id,
+                tgid=chat_id,
                 employee_id=employee_id,
                 channel=channel,
                 title=None,
@@ -533,12 +541,18 @@ class SessionStore:
         ``Session.archive`` so callers (compaction, audit UI)
         can still see the pre-D.17 forensic record without a
         second query.
+
+        ``chat_id`` here means the row's ``tgid`` column —
+        the Telegram chat identifier this session belongs
+        to. We check it as a defense in depth (a caller
+        passing the wrong tgid for a known session_id gets
+        ``None`` instead of a leak).
         """
         _validate_session_id(session_id)
         _validate_chat_id(chat_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.chat_id != chat_id:
+            if sess_row is None or sess_row.tgid != chat_id:
                 return None
             # Active messages in append-order
             active = [
@@ -551,7 +565,7 @@ class SessionStore:
             ]
             return Session(
                 session_id=sess_row.session_id,
-                chat_id=sess_row.chat_id,
+                chat_id=sess_row.tgid,
                 employee_id=sess_row.employee_id,
                 channel=sess_row.channel,
                 created_at=sess_row.created_at,
@@ -604,7 +618,7 @@ class SessionStore:
 
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.chat_id != chat_id:
+            if sess_row is None or sess_row.tgid != chat_id:
                 raise SessionNotFoundError(
                     f"session {session_id!r} for chat_id {chat_id!r} "
                     "does not exist"
@@ -652,7 +666,7 @@ class SessionStore:
 
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.chat_id != chat_id:
+            if sess_row is None or sess_row.tgid != chat_id:
                 raise SessionNotFoundError(
                     f"session {session_id!r} for chat_id {chat_id!r} "
                     "does not exist"
@@ -702,7 +716,7 @@ class SessionStore:
                 update(ChatSession)
                 .where(
                     ChatSession.session_id == session_id,
-                    ChatSession.chat_id == chat_id,
+                    ChatSession.tgid == chat_id,
                     ChatSession.title.is_(None),
                 )
                 .values(
@@ -813,7 +827,7 @@ class SessionStore:
         _validate_chat_id(chat_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.chat_id != chat_id:
+            if sess_row is None or sess_row.tgid != chat_id:
                 return False
             # CASCADE on the FK cleans up the message rows
             # automatically. The FTS sync triggers fire per
@@ -845,7 +859,7 @@ class SessionStore:
             # Header rows (newest first by updated_at).
             headers = db.execute(
                 select(ChatSession)
-                .where(ChatSession.chat_id == chat_id)
+                .where(ChatSession.tgid == chat_id)
                 .order_by(ChatSession.updated_at.desc())
             ).scalars().all()
             total = len(headers)
@@ -963,7 +977,7 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
                         ChatSession.__table__.insert().prefix_with("OR IGNORE"),
                         {
                             "session_id": sess.session_id,
-                            "chat_id": sess.chat_id,
+                            "tgid": sess.chat_id,  # column rename D.18+1
                             "employee_id": sess.employee_id,
                             "channel": sess.channel,
                             "title": sess.title,

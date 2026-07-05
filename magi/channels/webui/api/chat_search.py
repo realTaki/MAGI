@@ -1,22 +1,46 @@
 """Full-text search across chat sessions — D.18.
 
 Searches every message (active + archived, in any session
-belonging to the caller's ``chat_id``) using the FTS5
-virtual table maintained by triggers on ``chat_messages``.
-Results are scoped to the calling admin's ``chat_id`` via
-the SQL join on ``chat_sessions.chat_id`` — a raw FTS
-``MATCH`` would otherwise return rows from other operators
-in the same DB.
+belonging to the caller) using the FTS5 virtual table
+maintained by triggers on ``chat_messages``.
 
-Why scope at SQL (not filesystem)
----------------------------------
+Scope: per-employee
+-------------------
 
-Pre-D.18 the directory layout ``<chat_id>/<sid>.json``
-enforced per-operator isolation for free. With sessions in
-SQLite, the WHERE clause is the new boundary. The auth gate
-(``AdminGate``) only proves "is an admin"; the chat_id
-binding is what scopes data. Both must be present on every
-read.
+The scope is the calling employee's own sessions, identified
+by ``Employee.telegram_id`` (the cookie value). Pre-D.18
+the directory layout ``<chat_id>/<sid>.json`` enforced
+per-operator isolation for free; with sessions in SQLite
+the WHERE clause is the new boundary. Two parallel helpers
+exist:
+
+  - ``_resolve_chat_id`` — returns the cookie value as an
+    ``int``. Used where the data column (``chat_sessions.
+    chat_id``) is what matters.
+  - ``_admin_employee_id`` — returns the ``Employee.id``
+    (PK) of the admin. Used where the data column is
+    ``Employee.telegram_id`` (a FK), or where we want to
+    operate on the row rather than the chat identifier.
+
+The D.18 search endpoint scopes by ``chat_sessions.chat_id``
+which **is** the telegram_id (just stored as a string).
+Semantically the data still belongs to one employee, but
+the column key is ``chat_id`` not ``employee_id``. The
+``search_sessions`` tool (D.18+1) takes a slightly different
+approach: it also takes the calling employee as the scope,
+but exposes the **employee identity** rather than the chat
+identifier, so an LLM working on behalf of one employee
+doesn't accidentally think of itself as "scoped to a chat".
+
+Reused by the ``search_sessions`` tool
+---------------------------------------
+
+The ``search_chat_history()`` function below is the
+implementation behind both the HTTP route and the agent
+tool. The tool calls it directly (no HTTP round-trip); the
+HTTP route wraps the result in a Pydantic shape for the
+frontend. Sharing the function keeps query sanitisation +
+FTS5 availability + chat_id scope in one place.
 
 Query sanitisation
 ------------------
@@ -27,10 +51,6 @@ is split on whitespace and each token is wrapped in
 ``"…"`` (phrase form) so the operators above can't trigger
 a syntax error or change matching semantics. Empty queries
 short-circuit to ``[]`` without touching the DB.
-
-The token wrapper still escapes embedded ``"`` chars so a
-user typing ``she said "hello"`` doesn't break the phrase
-quoting.
 
 Degraded mode
 -------------
@@ -47,14 +67,13 @@ table" and respond accordingly.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import text
 
-from magi.channels.webui.api.chat_sessions import _resolve_chat_id
+from magi.channels.webui.api.chat_sessions import _admin_employee_id, SessionStoreDep
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.runtime.state.orm import open_session
@@ -62,10 +81,6 @@ from magi.runtime.state.orm import open_session
 logger = logging.getLogger("magi.api.chat_search")
 
 router = APIRouter(tags=["chat_search"])
-
-
-def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
 
 
 # -- Pydantic shapes --------------------------------------------------------
@@ -88,18 +103,29 @@ class SearchHit(BaseModel):
     # debugging; the frontend doesn't sort on it (FTS
     # already returns ranked).
     score: float
+    # D.18+1: the row's ``tgid`` (Telegram chat identifier).
+    # Surfaced so cross-platform callers can see which
+    # channel/identity the hit landed in; the agent tool
+    # also uses it to fetch the surrounding messages with
+    # the right scope guard.
+    tgid: str
+    channel: str
 
 
 class SearchResponse(BaseModel):
     q: str
-    chat_id: str
+    # The employee's row id whose history was searched
+    # (cross-platform scope: matches every session row
+    # whose ``employee_id`` equals this, regardless of
+    # ``channel`` / ``tgid``).
+    employee_id: int
     items: list[SearchHit]
     total: int
     limit: int
     offset: int
 
 
-# -- helpers ----------------------------------------------------------------
+# -- shared helpers ---------------------------------------------------------
 
 
 def _chat_search_available() -> bool:
@@ -143,68 +169,67 @@ def _build_match_expr(q: str) -> str:
     return " ".join(parts)
 
 
-# -- route ------------------------------------------------------------------
+class SearchUnavailable(Exception):
+    """Raised by :func:`search_chat_history` when FTS5 isn't
+    built into the SQLite the project is running against.
 
-
-@router.get("/chat/search", response_model=SearchResponse)
-def search_chat(
-    request: Request,
-    _admin: AdminGate,
-    q: Annotated[str, Query(max_length=200)] = "",
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> SearchResponse:
-    """Full-text search across the operator's sessions.
-
-    The caller is identified by the ``magi_session`` cookie.
-    The result set is scoped to sessions whose
-    ``chat_sessions.chat_id`` matches the cookie — other
-    operators' rows are never reachable from this endpoint
-    even if a query happened to match.
+    The HTTP route translates this to ``503 search.unavailable``;
+    the agent tool returns the message text in a
+    ``ToolResult(is_error=True, ...)`` so the LLM sees the
+    same hint.
     """
-    chat_id_int = _resolve_chat_id(request)
-    chat_id = str(chat_id_int)
 
-    # 1. Empty / whitespace query → empty result, no DB hit.
+
+def search_chat_history(
+    *,
+    employee_id: int,
+    q: str,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[SearchHit], int]:
+    """Run a single FTS5 query and return ``(hits, total)``.
+
+    ``employee_id`` is the **cross-platform scope key**:
+    results include every session row whose
+    ``chat_sessions.employee_id`` matches, regardless of
+    ``channel`` (webui / tg / future IMs) or ``tgid``. This
+    matches the user's "search all of one employee's
+    history" intent — an admin who has both webui
+    conversations and TG conversations under the same
+    employee row should see them all in one search.
+
+    ``q`` may be empty / whitespace-only; returns
+    ``([], 0)`` without touching the DB.
+
+    Raises :class:`SearchUnavailable` if FTS5 isn't
+    compiled into this SQLite — both the HTTP route and
+    the agent tool handle that case distinctly (503 vs an
+    error ToolResult).
+    """
     if not q or not q.strip():
-        return SearchResponse(
-            q=q, chat_id=chat_id,
-            items=[], total=0, limit=limit, offset=offset,
-        )
+        return [], 0
 
-    # 2. FTS5 not built into this SQLite → degrade gracefully.
     if not _chat_search_available():
-        raise MagiHTTPException(
-            status_code=503,
-            code="search.unavailable",
-            detail=(
-                "Full-text search is not available in this build "
-                "(SQLite FTS5 missing)"
-            ),
+        raise SearchUnavailable(
+            "Full-text search is not available in this build "
+            "(SQLite FTS5 missing)"
         )
 
-    # 3. Sanitise the query into FTS5 phrase syntax.
     match_expr = _build_match_expr(q)
     if not match_expr:
-        return SearchResponse(
-            q=q, chat_id=chat_id,
-            items=[], total=0, limit=limit, offset=offset,
-        )
+        return [], 0
 
-    # 4. Run the search. The ``JOIN chat_sessions`` is the
-    # per-operator scope — the FTS rowid alone is not
-    # enough to filter to one chat_id.
     base_sql = """
         FROM chat_messages_fts
         JOIN chat_messages m ON m.id = chat_messages_fts.rowid
         JOIN chat_sessions s  ON s.session_id = m.session_id
         WHERE chat_messages_fts MATCH :match_expr
-          AND s.chat_id = :chat_id
+          AND s.employee_id = :employee_id
     """
     count_sql = "SELECT COUNT(*) " + base_sql
     page_sql = (
         "SELECT m.session_id, m.message_id, m.role, m.ts, "
-        "       s.title, "
+        "       s.title, s.channel, s.tgid, "
         "       snippet(chat_messages_fts, 0, '<mark>', '</mark>', '…', 16) AS snippet, "
         "       bm25(chat_messages_fts) AS score "
         + base_sql +
@@ -215,31 +240,22 @@ def search_chat(
         try:
             total = db.execute(
                 text(count_sql),
-                {"match_expr": match_expr, "chat_id": chat_id},
+                {"match_expr": match_expr, "employee_id": employee_id},
             ).scalar_one()
             rows = db.execute(
                 text(page_sql),
                 {
                     "match_expr": match_expr,
-                    "chat_id": chat_id,
+                    "employee_id": employee_id,
                     "limit": limit,
                     "offset": offset,
                 },
             ).fetchall()
         except Exception as e:
-            # SQLite raises on a syntactically invalid MATCH
-            # expression. With the per-token phrase wrapper
-            # this should never happen, but defend against
-            # FTS5-specific surprises (e.g. empty token after
-            # quote stripping in a corner case we missed).
             logger.warning("chat search rejected: %s", e)
-            raise MagiHTTPException(
-                status_code=400,
-                code="search.bad_query",
-                detail=str(e),
-            )
+            raise
 
-        items = [
+        hits = [
             SearchHit(
                 session_id=r.session_id,
                 message_id=r.message_id,
@@ -248,12 +264,52 @@ def search_chat(
                 snippet=r.snippet,
                 title=r.title,
                 score=float(r.score),
+                tgid=r.tgid,
+                channel=r.channel,
             )
             for r in rows
         ]
+        return hits, total
+
+
+# -- HTTP route -------------------------------------------------------------
+
+
+@router.get("/chat/search", response_model=SearchResponse)
+def search_chat(
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+    q: Annotated[str, Query(max_length=200)] = "",
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> SearchResponse:
+    """Full-text search across the operator's sessions.
+
+    Scope: cross-platform via the calling employee's row
+    id. AdminGate proves "is an admin"; ``_admin_employee_id``
+    resolves the cookie's chat_id to the matching Employee
+    row (FK to ``Employee.telegram_id``); the SQL clause
+    ``WHERE s.employee_id = :employee_id`` then picks up
+    every session this employee owns — webui, TG, or any
+    future channel. Other employees' rows are never
+    reachable.
+    """
+    employee_id = _admin_employee_id(request, store)
+
+    try:
+        items, total = search_chat_history(
+            employee_id=employee_id, q=q, limit=limit, offset=offset,
+        )
+    except SearchUnavailable as e:
+        raise MagiHTTPException(
+            status_code=503,
+            code="search.unavailable",
+            detail=str(e),
+        )
 
     return SearchResponse(
-        q=q, chat_id=chat_id,
+        q=q, employee_id=employee_id,
         items=items, total=total,
         limit=limit, offset=offset,
     )

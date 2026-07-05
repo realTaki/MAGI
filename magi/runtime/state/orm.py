@@ -474,11 +474,33 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     session_id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    # ``chat_id`` is the cookie / TG chat string (the operator's
-    # telegram_id for WebUI; the user's chat_id for TG). Indexed
-    # so the "list my sessions" endpoint is a single range scan.
-    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    employee_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # ``tgid`` is the Telegram chat identifier. For WebUI
+    # sessions the value is the admin's telegram_id (the
+    # cookie); for TG inbound sessions it's the TG user's
+    # chat_id. The column is specifically the **Telegram**
+    # chat id — not a generic "chat_id" — because future IM
+    # platforms (Slack, WeChat, etc.) will each have their
+    # own identifier scheme and we don't want to overload one
+    # column with three different semantics. When a non-TG
+    # channel lands, the schema will gain a sibling column
+    # (e.g. ``slack_chat_id``) or a generic
+    # ``(platform, external_id)`` pair; the search scope
+    # stays on ``employee_id`` either way.
+    #
+    # Indexed so the per-channel "list my conversations"
+    # endpoint (``GET /api/chat/sessions``) is a single
+    # range scan per ``tgid``.
+    tgid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # The employee operator whose history this row belongs
+    # to. This is the search-scope key (D.18+1): an admin
+    # searching with the ``search_sessions`` tool sees
+    # every session whose ``employee_id`` matches their
+    # own — webui, TG, and (in future) any other channel,
+    # unified. ``tgid`` is a per-channel row identifier;
+    # ``employee_id`` is the cross-channel identity.
+    employee_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True,
+    )
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     # D.7 — operator-set or auto-titled. ``null`` until either
     # has run. Bounded to 80 chars at the Pydantic boundary.
@@ -612,7 +634,6 @@ def get_engine() -> Engine:
 
 
 # -- SQLAlchemy connection event listeners ----------------------------------
-#
 # Two PRAGMAs and a transaction-mode override that the raw
 # ``sqlite3`` connections in ``local_db.py`` / ``settings.py``
 # already set on themselves, but which SQLAlchemy connections
@@ -756,6 +777,24 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     ("employees", "telegram_id", "BIGINT"),
 ]
 
+# Column renames. ``(table, old_name, new_name)``. The
+# migration is a one-shot ``ALTER TABLE ... RENAME COLUMN``
+# (SQLite 3.25+; CPython 3.12 ships 3.45+) executed the
+# first time a database is opened with the new column name
+# present and the old one absent. Re-runs on the same DB
+# are no-ops. D.18+1 renamed ``chat_sessions.chat_id`` →
+# ``chat_sessions.tgid`` so the column's purpose
+# (Telegram chat identifier only, NOT a generic chat id)
+# is reflected in its name; the WebUI/TG future-IM
+# cross-platform scope now lives on ``employee_id``.
+_RENAME_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
+    (
+        "chat_sessions",
+        "chat_id",
+        "tgid",
+    ),
+]
+
 # Plain index pairs. ``(table, index_name, columns_ddl)``.
 # Run after the plain ALTER TABLE above for read-side speed.
 # Idempotent (``CREATE INDEX IF NOT EXISTS``).
@@ -889,6 +928,36 @@ def _run_inline_migrations(engine: Engine) -> None:
     from sqlalchemy import text
 
     with engine.begin() as conn:
+        # Column renames first — once the column is renamed
+        # to its new name, the ``CREATE TABLE`` of a fresh DB
+        # that already declares the new column will see
+        # ``table_info`` reflect it, and the migrations
+        # below that key off ``table_info`` won't try to
+        # re-create it.
+        for table, old_name, new_name in _RENAME_COLUMN_MIGRATIONS:
+            existing = {
+                row[1]
+                for row in conn.execute(text(f"PRAGMA table_info({table})"))
+            }
+            if new_name in existing:
+                # Already migrated (or fresh DB).
+                continue
+            if old_name not in existing:
+                # Fresh DB with the new schema — nothing to
+                # rename (CREATE TABLE declared ``new_name``
+                # directly).
+                continue
+            logger.info(
+                "inline migration: renaming %s.%s → %s",
+                table, old_name, new_name,
+            )
+            conn.execute(
+                text(
+                    f"ALTER TABLE {table} "
+                    f"RENAME COLUMN {old_name} TO {new_name}"
+                )
+            )
+
         for table, column, ddl in _INLINE_MIGRATIONS:
             # PRAGMA table_info returns one row per column; the
             # second element is the column name.

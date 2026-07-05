@@ -51,7 +51,7 @@ def tg_session_env(monkeypatch, tmp_path):
 def _row_for(chat_id: str):
     """Fetch the session row for ``chat_id`` (helper for assertions)."""
     with open_session() as db:
-        return db.query(ChatSession).filter_by(chat_id=chat_id).first()
+        return db.query(ChatSession).filter_by(tgid=chat_id).first()
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -79,7 +79,7 @@ def test_first_call_creates_session(tg_session_env):
     assert row is not None
     assert row.session_id == sid
     assert row.channel == "tg"
-    assert row.chat_id == "6240201712"
+    assert row.tgid == "6240201712"
     assert row.employee_id == 42
 
 
@@ -102,7 +102,7 @@ def test_second_call_reuses_same_session(tg_session_env):
 
     # Still only one row.
     with open_session() as db:
-        count = db.query(ChatSession).filter_by(chat_id="6240201712").count()
+        count = db.query(ChatSession).filter_by(tgid="6240201712").count()
     assert count == 1
 
 
@@ -130,7 +130,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
     # Operator wipes the session.
     store.delete("6240201712", sid1)
     with open_session() as db:
-        assert db.query(ChatSession).filter_by(chat_id="6240201712").count() == 0
+        assert db.query(ChatSession).filter_by(tgid="6240201712").count() == 0
 
     sid2 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
     assert sid1 != sid2, "after wipe, helper should mint a fresh id"

@@ -152,7 +152,7 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     with open_session() as db:
         row = db.get(ChatSession, sid)
     assert row is not None, f"expected session row for {sid}"
-    assert row.chat_id == str(admin.telegram_id)
+    assert row.tgid == str(admin.telegram_id)
     assert row.employee_id == admin.id
 
 
