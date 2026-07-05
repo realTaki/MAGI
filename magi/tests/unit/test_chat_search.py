@@ -79,14 +79,14 @@ def seed_messages(search_env):
 
     counter = {"n": 0}
 
-    def _seed(chat_id: str, text: str) -> str:
+    def _seed(chat_id: str, text: str, *, employee_id: int = 1) -> str:
         # Each seeded message gets a fresh message_id so the
         # (session_id, message_id) UNIQUE constraint doesn't
         # reject the second seed in the same session.
         counter["n"] += 1
         msg_id = f"m{chat_id}-{counter['n']:04d}"
         store = SessionStore(str(search_env))
-        sess = store.create(chat_id, employee_id=1)
+        sess = store.create(chat_id, employee_id=employee_id)
         with open_session() as db:
             db.add(ChatMessage(
                 session_id=sess.session_id,
@@ -203,30 +203,32 @@ def test_search_too_short_chinese_returns_zero(client, seed_messages):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_search_scoped_to_caller_chat_id(client, search_env, seed_messages):
+def test_search_scoped_to_caller_employee(client, search_env, seed_messages):
     """Admin A's search doesn't return admin B's messages,
     even though both are in the same SQLite DB.
 
-    ``seed_messages`` mints a fresh session for any chat_id
-    passed in. We seed for chat 9001 (admin A) and 9002
-    (admin B), then issue the search as A.
+    Scope is the calling Employee row (D.18+1 cross-platform
+    scope: ``WHERE chat_sessions.employee_id = :emp``). We
+    seed for admin A (employee_id=1) and admin B
+    (employee_id=2) using the same ``tgid`` so the scope
+    is what discriminates — not the chat identifier.
     """
-    seed_messages("9001", "alpha unique-token-xyz alpha")
-    seed_messages("9002", "beta unique-token-xyz beta")
+    seed_messages("9001", "alpha unique-token-xyz alpha", employee_id=1)
+    seed_messages("9001", "beta  unique-token-xyz beta",  employee_id=2)
 
     r = client.get("/api/chat/search?q=unique-token-xyz")
     assert r.status_code == 200
     body = r.json()
-    # Only the row belonging to admin A's chat_id appears.
+    # Only admin A's row appears.
     assert body["total"] == 1
-    assert body["items"][0]["session_id"]
+    assert body["employee_id"] == 1
 
 
 def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
-    """The same query, signed in as admin B, returns admin B's
-    row only (not admin A's)."""
-    seed_messages("9001", "alpha shared-key-123 alpha")
-    seed_messages("9002", "beta shared-key-123 beta")
+    """The same query, signed in as admin B (employee_id=2),
+    returns admin B's row only (not admin A's)."""
+    seed_messages("9001", "alpha shared-key-123 alpha", employee_id=1)
+    seed_messages("9001", "beta  shared-key-123 beta",  employee_id=2)
 
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
@@ -237,6 +239,7 @@ def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 1
+    assert body["employee_id"] == 2
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -281,12 +284,13 @@ def test_search_response_shape(client, seed_messages):
     r = client.get("/api/chat/search?q=compression")
     body = r.json()
     assert body["q"] == "compression"
-    assert body["chat_id"] == "9001"
+    assert body["employee_id"] == 1
     assert body["limit"] == 20
     assert body["offset"] == 0
     item = body["items"][0]
     assert {"session_id", "message_id", "role", "ts",
-            "snippet", "title", "score"}.issubset(item)
+            "snippet", "title", "score",
+            "tgid", "channel"}.issubset(item)
     # The snippet wraps the matched substring in <mark>.
     assert "<mark>" in item["snippet"]
 

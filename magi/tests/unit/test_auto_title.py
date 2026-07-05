@@ -498,7 +498,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
         # Both sessions titled?
         with open_session() as db:
             count = db.query(ChatSession).filter_by(
-                chat_id="9001",
+                tgid="9001",
             ).filter(ChatSession.title.isnot(None)).count()
         if count >= 2:
             break

@@ -111,7 +111,13 @@ def test_tool_registry_returns_four_schemas():
     turn, so a reorder would be a perceptible UI
     change."""
     names = [t["name"] for t in get_tool_schemas()]
-    assert names == ["read_file", "write_file", "list_files", "send_message"]
+    assert names == [
+        "read_file",
+        "write_file",
+        "list_files",
+        "search_sessions",
+        "send_message",
+    ]
 
 
 def test_get_tool_lookup_hits_and_misses():

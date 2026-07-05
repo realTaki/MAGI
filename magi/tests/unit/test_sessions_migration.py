@@ -123,7 +123,7 @@ def test_migrate_imports_active_messages(fresh_db):
     with open_session() as db:
         sess = db.get(ChatSession, "01ABC")
         assert sess is not None
-        assert sess.chat_id == "9001"
+        assert sess.tgid == "9001"
         assert sess.title is None
         active = db.query(ChatMessage).filter_by(
             session_id="01ABC", archived=0,
@@ -211,7 +211,7 @@ def test_migrate_multiple_chat_ids(fresh_db):
     with open_session() as db:
         rows = db.query(ChatSession).all()
     assert {r.session_id for r in rows} == {"01AAA", "02BBB"}
-    assert {r.chat_id for r in rows} == {"9001", "9002"}
+    assert {r.tgid for r in rows} == {"9001", "9002"}
 
 
 def test_migrate_no_json_dir_is_noop(fresh_db):
