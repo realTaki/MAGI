@@ -32,6 +32,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import ActionItemsPane from "../components/ActionItemsPane";
+import ChatSearchPane from "../components/ChatSearchPane";
 import ConsoleCard from "../components/ConsoleCard";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
@@ -298,8 +299,8 @@ const CHAT_ACTIONS: ChatItem[] = [
     icon: <IconSearch />,
     pane: {
       title: "搜索对话",
-      hint: "Full-text search across every conversation with an EVE. The index lives in EVE's local SQLite (sqlite-vec) and the result is a deep link into the matching thread.",
-      meta: "C3",
+      hint: "Full-text search across every conversation with an EVE. The index lives in EVE's local SQLite (FTS5) and the result is a deep link into the matching thread.",
+      meta: "D.18",
     },
   },
 ];
@@ -916,6 +917,8 @@ function ChatTab() {
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
+      ) : selectedId === "search" || selectedId === "view-all" ? (
+        <ChatSearchPane onOpen={openSession} />
       ) : selected.pane ? (
         <div className="p-8 text-center flex flex-col items-center justify-center">
           <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>

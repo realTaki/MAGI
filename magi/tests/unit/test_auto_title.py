@@ -186,12 +186,11 @@ def test_cleanse_returns_empty_for_blank():
 @pytest.mark.asyncio
 async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     """End-to-end: create session → append user message → run
-    ``_summarize_to_title`` → title is set on disk."""
+    ``_summarize_to_title`` → title is set on the DB row."""
     from magi.runtime.sessions import (
         SessionMessage,
         SessionStore,
         new_session_id as _mk_id,
-        session_path as _p,
     )
 
     admin = _seed_admin()
@@ -201,7 +200,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     sess = store.create("9001", employee_id=admin.id)
-    sid = sess.session_id  # the id that *create* wrote to disk
+    sid = sess.session_id
     msg_id = _mk_id()
     store.append_messages(
         "9001",
@@ -229,11 +228,11 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     # Title was written.
     again = store.get("9001", sid)
     assert again.title == "My first question"
-    # File on disk reflects this.
-    assert _p(
-        __import__("pathlib").Path(os.environ["MAGI_WORKSPACE_DIR"]),
-        "9001", sid,
-    ).is_file()
+    # D.18: title lives in the chat_sessions row, not a JSON file.
+    from magi.runtime.state.orm import ChatSession, open_session
+    with open_session() as db:
+        row = db.get(ChatSession, sid)
+    assert row.title == "My first question"
 
 
 @pytest.mark.asyncio
@@ -493,24 +492,15 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
 
     # Wait for the two jobs to land — each takes essentially
     # 0s thanks to the no-op sleep in ``_install_fake_provider``.
+    from magi.runtime.state.orm import ChatSession, open_session
     for _ in range(50):
         await asyncio.sleep(0.01)
         # Both sessions titled?
-        from magi.runtime.sessions import session_dir as _sd
-
-        # Re-derive the worker dir.
-        from magi.runtime.sessions import session_dir
-        directory = session_dir(
-            __import__("pathlib").Path(os.environ["MAGI_WORKSPACE_DIR"]),
-            "9001",
-        )
-        all_titled = True
-        for child in directory.glob("*.json"):
-            raw = child.read_text()
-            if '"title": null' in raw or '"title":' not in raw:
-                all_titled = False
-                break
-        if all_titled and len(list(directory.glob("*.json"))) >= 2:
+        with open_session() as db:
+            count = db.query(ChatSession).filter_by(
+                chat_id="9001",
+            ).filter(ChatSession.title.isnot(None)).count()
+        if count >= 2:
             break
 
     await stop_title_worker()
