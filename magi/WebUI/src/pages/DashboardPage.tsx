@@ -978,6 +978,22 @@ function ChatConversationPane(props: {
     props.title ??
     props.preview ??
     "新对话";
+
+  // Chat-app behaviour: the message list shows newest at
+  // the bottom, and the scroll position lands there on
+  // mount + whenever messages change. We keep the DOM in
+  // append order (msg_old → msg_new, top-down in DOM) and
+  // programmatically scroll to bottom — that way new
+  // messages still append to the end of the array but the
+  // operator always lands on the latest one when they
+  // open the conversation. Without this, opening an old
+  // thread would scroll-lock to msg_old and force the
+  // operator to scroll past the entire history.
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [props.messages, props.sending]);
   // Subtitle: only show the "reply uses SOUL.md persona"
   // hint when the thread is empty / brand new. Once there
   // are messages, the context is obvious and the line would
@@ -1005,10 +1021,25 @@ function ChatConversationPane(props: {
         </div>
       </div>
 
-      {/* Message list. Empty state nudges the operator to type
-          something; once the first message lands, the list
-          owns the rest of the pane height. */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+      {/* Message list. ``flex-col-reverse`` mirrors the
+          behaviour of every chat app the operator is
+          already used to: messages render bottom-up so the
+          most recent message is the one at the scroll
+          bottom (the default scroll position when the pane
+          opens). New messages append at the top of the
+          rendered DOM and ``reverse`` flips them into the
+          bottom of the visible scroll — so the user always
+          sees what just landed without scrolling down.
+
+          The previous layout was ``space-y-3`` (top-down,
+          scroll-top default) which meant opening an old
+          session landed the operator on the very first
+          message of the thread; they'd have to scroll past
+          the entire history to see what was said last. */}
+      <div
+        ref={messageListRef}
+        className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3"
+      >
         {props.messages.length === 0 ? (
           <p className="text-sm text-ink-soft text-center mt-12">
             输入消息开始对话。回车换行，⌘/Ctrl + 回车发送。
