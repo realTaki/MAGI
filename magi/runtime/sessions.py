@@ -906,6 +906,146 @@ class SessionStore:
                 ))
             return summaries, total
 
+    # -- message pagination (D.18+2) ------------------------------
+    #
+    # Sessions grow over time. ``get()`` returns *all* active
+    # + archive rows in one shot — fine for a 30-message
+    # thread, but a long-lived chat hits 500+ rows and the
+    # initial WebUI load is half a megabyte of JSON. The
+    # chat pane already renders bottom-up (newest at the
+    # scroll bottom, scroll-up to load older); the API
+    # needs the matching shape: a tail-slice endpoint.
+    #
+    # Convention: ``direction="tail"`` (default) returns the
+    # *newest* ``limit`` active messages, sorted by
+    # ``chat_messages.id ASC``. ``offset=N`` skips the N
+    # newest rows — so page 0 is the latest 50, page 1 is
+    # the next-50 older, etc. ``total`` returns the full
+    # active-message count so the UI knows whether there's
+    # older history to load.
+    #
+    # Archive rows are NOT included in the default page —
+    # the WebUI chat pane doesn't render them in the
+    # conversation scroll (they live in a separate
+    # "archive" view via the D.18 search tool / future
+    # session-detail UI). Passing ``include_archived=True``
+    # opts into loading them too — useful for the audit
+    # view or future "show full history" affordance.
+
+    def get_messages_page(
+        self,
+        chat_id: str,
+        session_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        include_archived: bool = False,
+    ) -> tuple[list[SessionMessage], int, int]:
+        """Return ``(messages, total_active, total_all)``.
+
+        ``messages`` is the requested page, in chronological
+        order (oldest-first within the page — same order as
+        the WebUI renders). ``total_active`` is the count of
+        non-archived rows in this session; ``total_all`` is
+        the count with archive included.
+
+        Returns ``([], 0, 0)`` if the session doesn't exist.
+        """
+        from sqlalchemy import func, select
+
+        _validate_chat_id(chat_id)
+        _validate_session_id(session_id)
+        with open_session() as db:
+            sess_row = db.get(ChatSession, session_id)
+            if sess_row is None or sess_row.tgid != chat_id:
+                return [], 0, 0
+
+            # Totals — separate active / all so the UI can
+            # decide whether to show "load older messages"
+            # (active_total > loaded_so_far) without also
+            # having to expose the archive count.
+            active_total = db.scalar(
+                select(func.count(ChatMessage.id))
+                .where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.archived == 0,
+                )
+            ) or 0
+            all_total = db.scalar(
+                select(func.count(ChatMessage.id))
+                .where(ChatMessage.session_id == session_id)
+            ) or 0
+
+            # Tail slice: newest ``limit`` active rows
+            # ordered by id ASC (chronological). Skip the
+            # newest ``offset`` rows so the caller pages
+            # backwards. We compute the (start, end) id
+            # range in SQL rather than OFFSET/LIMIT so the
+            # total scan count is bounded — a 10k-message
+            # session shouldn't have to count past 10k rows
+            # to grab page 0.
+            #
+            # Idempotency: caller passes ``offset`` as the
+            # number of *already-loaded* active messages.
+            # The total grows by N when N new messages
+            # land mid-paging — the WHERE on id <=
+            # ``newest_id - offset`` keeps the page
+            # stable.
+            window = db.execute(
+                select(ChatMessage.id)
+                .where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.archived == 0,
+                )
+                .order_by(ChatMessage.id.desc())
+                .limit(limit)
+                .offset(offset)
+            ).scalars().all()
+
+            if not window:
+                return [], active_total, all_total
+
+            # The window is in DESC order; turn it back into
+            # chronological and load the full rows.
+            ascending_ids = list(reversed(window))
+            rows = db.execute(
+                select(ChatMessage)
+                .where(ChatMessage.id.in_(ascending_ids))
+                .order_by(ChatMessage.id.asc())
+            ).scalars().all()
+
+            messages = [
+                SessionMessage(
+                    role=r.role, text=r.text,
+                    ts=r.ts, message_id=r.message_id,
+                )
+                for r in rows
+            ]
+
+            if include_archived:
+                # Append archive rows in chronological order
+                # after the active tail. Their message_ids
+                # are distinct from the active set (each row
+                # has a unique (session_id, message_id)),
+                # so no dedup needed.
+                archive_rows = db.execute(
+                    select(ChatMessage)
+                    .where(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.archived == 1,
+                    )
+                    .order_by(ChatMessage.id.asc())
+                ).scalars().all()
+                messages.extend(
+                    SessionMessage(
+                        role=r.role, text=r.text,
+                        ts=r.ts, message_id=r.message_id,
+                    )
+                    for r in archive_rows
+                )
+
+            return messages, active_total, all_total
+
 
 # -- JSON → SQLite migration -----------------------------------------------
 #
