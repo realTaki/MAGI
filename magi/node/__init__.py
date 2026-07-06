@@ -215,6 +215,18 @@ def run() -> None:
     from magi.runtime.workspace import bootstrap_workspace, workspace_root
     bootstrap_workspace(workspace_root(cfg.state_dir or "/workspace/memories"))
 
+    # D.X — load any MCP servers declared in mcp.json. The
+    # loader is sync at the boot layer because the rest of
+    # ``run()`` is sync; ``bootstrap_mcp_tools`` internally
+    # spins a private event loop. Errors degrade to "no MCP
+    # tools" so a misconfigured MCP config never blocks
+    # startup.
+    try:
+        from magi.runtime.tools.registry import bootstrap_mcp_tools
+        bootstrap_mcp_tools()
+    except Exception as e:  # noqa: BLE001 — never block boot
+        logger.warning("MCP bootstrap skipped: %s", e)
+
     if not cfg.channels:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return
