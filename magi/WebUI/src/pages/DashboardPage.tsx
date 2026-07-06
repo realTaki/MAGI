@@ -33,6 +33,8 @@ import { useEffect, useRef, useState } from "react";
 
 import ActionItemsPane from "../components/ActionItemsPane";
 import ChatSearchPane from "../components/ChatSearchPane";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import { useT } from "../i18n/index";
 import ConsoleCard from "../components/ConsoleCard";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
@@ -98,6 +100,7 @@ function PostLoginLayout(props: {
   onSignOut: () => void;
 }) {
   const [tab, setTab] = useState<TabKey>("organization");
+  const t = useT();
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -123,18 +126,21 @@ function PostLoginLayout(props: {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs text-ink-soft hidden sm:inline">
-              Signed in as{" "}
-              <span className="font-mono text-ink">
-                {props.user.display_name ?? props.user.chat_id}
-              </span>
-            </span>
+            <SignedInLabel
+              displayName={props.user.display_name}
+              chatId={props.user.chat_id}
+            />
+            {/* Language picker — globe icon + dropdown. Sits
+                right of the identity pill and before the
+                sign-out button so the language switch is one
+                click away from any screen. */}
+            <LanguageSwitcher />
             <button
               type="button"
               onClick={props.onSignOut}
               className="btn btn-secondary text-xs"
             >
-              Sign out
+              {t("topbar.signOut")}
             </button>
           </div>
         </div>
@@ -221,14 +227,21 @@ type ChatItem = SidebarItem & {
   pane?: { title: string; hint: string; meta?: string };
 };
 
+// Static sidebar config. Strings are i18n keys, resolved at
+// render via ``t()`` — module-level constants can't call
+// hooks directly so we resolve at the render site instead.
+// ``pane.title`` and ``pane.hint`` are still raw strings
+// because they're operator-facing descriptions of features
+// that aren't yet wired (see the comments above); translating
+// them is fine to leave for later.
 const CHAT_CATEGORIES: ChatItem[] = [
   {
     id: "action-items",
-    label: "Action Items",
+    label: "actionItems.title",
     icon: <IconActionItems />,
     // The pane reads from ``/api/action_items`` at mount —
-    // see ``components/ActionItemsPane.tsx``. No static
-    // fallback here; an empty list renders as "没有待办".
+    // see ``components/ActionItemsPane.tsx``. The empty list
+    // copy lives in ActionItemsPane itself.
   },
   {
     id: "meetings",
@@ -285,20 +298,20 @@ const CHAT_CATEGORIES: ChatItem[] = [
 const CHAT_ACTIONS: ChatItem[] = [
   {
     id: "new-chat",
-    label: "新对话",
+    label: "sidebar.newChat",
     icon: <IconPlus />,
     pane: {
-      title: "新对话",
+      title: "sidebar.newChat",
       hint: "Pick an employee and start a fresh conversation. C3 wires the TG channel up first; this entry point becomes useful once at least one EVE is dispatched (C6).",
       meta: "C3 / C6",
     },
   },
   {
     id: "search",
-    label: "搜索对话",
+    label: "sidebar.search",
     icon: <IconSearch />,
     pane: {
-      title: "搜索对话",
+      title: "sidebar.search",
       hint: "Full-text search across every conversation with an EVE. The index lives in EVE's local SQLite (FTS5) and the result is a deep link into the matching thread.",
       meta: "D.18",
     },
@@ -334,10 +347,29 @@ type SessionSummary = {
   title: string | null;
 };
 
+/** Topbar identity pill — "Signed in as <name>" with the
+ *  i18n label. Extracted so the JSX in PostLoginLayout
+ *  stays readable. */
+function SignedInLabel(props: {
+  displayName: string | null;
+  chatId: string;
+}) {
+  const t = useT();
+  return (
+    <span className="text-xs text-ink-soft hidden sm:inline">
+      {t("topbar.signedInAs")}{" "}
+      <span className="font-mono text-ink">
+        {props.displayName ?? props.chatId}
+      </span>
+    </span>
+  );
+}
+
 function ChatTab() {
   // "view-all" is a synthetic id that aliases the search view (per
   // the design — clicking the last row in the history list should
   // behave like opening search).
+  const t = useT();
   const [selectedId, setSelectedId] = useState<string>(CHAT_CATEGORIES[0].id);
 
   // -- session lifecycle (D.6) -----------------------------------
@@ -921,7 +953,16 @@ function ChatTab() {
         <ChatSearchPane onOpen={openSession} />
       ) : selected.pane ? (
         <div className="p-8 text-center flex flex-col items-center justify-center">
-          <h2 className="text-lg font-semibold text-ink">{selected.pane.title}</h2>
+          {/* pane.title may be a raw string or an i18n key
+              (dotted). Translate when keyed; otherwise pass
+              through. pane.hint stays raw — those are
+              feature-status descriptions, not user-facing
+              navigation copy. */}
+          <h2 className="text-lg font-semibold text-ink">
+            {selected.pane.title.includes(".")
+              ? t(selected.pane.title)
+              : selected.pane.title}
+          </h2>
           <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
           {selected.pane.meta && (
             <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
@@ -970,14 +1011,15 @@ function ChatConversationPane(props: {
    *  no title. Mirrors ``SessionSummary.preview``. */
   preview: string | null;
 }) {
+  const t = useT();
   // Header text:
   //   - active session with a title  → that title
   //   - active session with no title → first user message preview
-  //   - no session yet               → "新对话"
+  //   - no session yet               → chat.headerFallback
   const headerTitle =
     props.title ??
     props.preview ??
-    "新对话";
+    t("chat.headerFallback");
 
   // Chat-app behaviour: the message list shows newest at
   // the bottom, and the scroll position lands there on
@@ -1000,7 +1042,7 @@ function ChatConversationPane(props: {
   // just add noise.
   const headerSubtitle =
     props.messages.length === 0
-      ? "跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。"
+      ? t("chat.subtitle")
       : null;
 
   return (
@@ -1042,7 +1084,7 @@ function ChatConversationPane(props: {
       >
         {props.messages.length === 0 ? (
           <p className="text-sm text-ink-soft text-center mt-12">
-            输入消息开始对话。回车换行，⌘/Ctrl + 回车发送。
+            {t("chat.emptyHint")}
           </p>
         ) : (
           props.messages.map((m) => (
@@ -1075,7 +1117,7 @@ function ChatConversationPane(props: {
           // motion cue so the bubble still feels "alive".
           <div className="flex justify-start">
             <div className="rounded-2xl bg-sky-pale/60 text-ink-soft border border-sky-light/40 px-4 py-2.5 text-sm flex items-center gap-2">
-              <span>正在回复</span>
+              <span>{t("chat.sending")}</span>
               <span className="inline-flex gap-1">
                 <span className="animate-pulse">·</span>
                 <span className="animate-pulse [animation-delay:120ms]">
@@ -1105,18 +1147,15 @@ function ChatConversationPane(props: {
           // tab where the employee detail panel lives. Tells
           // them what to fill in (provider + API key) so the
           // next attempt works without a second round-trip.
-          chat_llm_credentials_required:
-            "还没设置你的 LLM provider 和 API key。切到「员工」tab，找到自己的档案，把 Provider 和 API Key 填上再发消息。",
+          chat_llm_credentials_required: t("chat.errorCredentials"),
           // ``chat.unknown_sender`` would mean the cookie is
           // unbound, which the auth gate catches first — keep
           // a local string here in case the gate is ever
           // bypassed and the chat endpoint surfaces this.
-          chat_unknown_sender:
-            "登录失效了，重新登录一次再试试。",
+          chat_unknown_sender: t("chat.errorAuth"),
           // 401 from the auth gate — typically a stale
           // session after long idle.
-          auth_not_signed_in:
-            "登录失效了，重新登录一次再试试。",
+          auth_not_signed_in: t("chat.errorAuth"),
         };
         // Map dot-style backend codes to underscore keys
         // (the friendly table) since this object uses

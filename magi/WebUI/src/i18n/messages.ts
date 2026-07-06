@@ -1,0 +1,322 @@
+/**
+ * Message catalog — three locales (zh / en / ja).
+ *
+ * Structure: nested objects keyed by namespace (e.g.
+ * ``topbar.signOut``, ``chatSearch.empty.browseHint``).
+ * The ``t()`` runtime walks the dotted path and falls
+ * back to the key string when a translation is missing
+ * — that way a partially-translated page still renders
+ * (with raw keys visible where work is pending) instead
+ * of crashing.
+ *
+ * Conventions:
+ *   - Chinese is the source of truth (existing copy).
+ *   - English / Japanese are translations. When in doubt
+ *     about register, default to neutral polite form
+ *     (``です/ます`` in Japanese).
+ *   - Strings carrying UI affordances (``{{count}}``)
+ *     use ``{count}`` substitution. The runtime is a
+ *     plain lookup, no formatting; ``t()`` returns the
+ *     raw string with the placeholder intact, so the
+ *     caller can ``String#replace`` if needed. v0 doesn't
+ *     ship any parametrised strings, but the convention
+ *     is here for the next translator.
+ */
+
+export type Catalog = {
+  [key: string]: string | Catalog;
+};
+
+const zh: Catalog = {
+  common: {
+    appName: "MAGI",
+    loading: "加载中…",
+    save: "保存",
+    cancel: "取消",
+    confirm: "确认",
+    delete: "删除",
+    edit: "编辑",
+    close: "关闭",
+    back: "返回",
+    next: "下一步",
+    done: "完成",
+  },
+  topbar: {
+    signedInAs: "Signed in as",
+    signOut: "Sign out",
+    language: "语言",
+  },
+  languageSwitcher: {
+    label: "语言",
+    menuAria: "选择界面语言",
+  },
+  login: {
+    title: "MAGI 控制台",
+    subtitle: "用 Telegram ID 登录",
+    chatIdLabel: "Telegram chat ID",
+    chatIdPlaceholder: "例如 6240201712",
+    sendCode: "发送验证码",
+    sending: "发送中…",
+    codeLabel: "验证码",
+    codePlaceholder: "6 位数字",
+    verify: "验证并登录",
+    verifying: "验证中…",
+    resend: "重新发送",
+    helpText: "如果还没设置 Telegram ID，请找管理员开通。",
+    errors: {
+      invalidChatId: "Telegram chat ID 不合法。",
+      codeFailed: "验证码错误或已过期。",
+      networkError: "网络错误，请重试。",
+    },
+  },
+  chatSearch: {
+    title: "搜索对话",
+    emptyHintSearch: "跨所有 session 的全文搜索。中英文至少 3 个字符起才能匹配。",
+    emptyHintBrowse: "按时间倒序展示最近会话。向下滚动加载更多。",
+    searchPlaceholder: "输入关键字...",
+    searchAria: "搜索关键字",
+    searching: "搜索中…",
+    noMatch: "没有匹配的对话。",
+    emptyBrowse: "还没有任何对话。",
+    loadMore: "加载中…",
+    endOfList: "已经到底了 — 共 {total} 个会话",
+    roleUser: "你",
+    roleAssistant: "EVE",
+    roleSystem: "sys",
+    messageCount: "{count} 条",
+  },
+  chat: {
+    headerFallback: "新对话",
+    subtitle: "跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。",
+    inputPlaceholder: "输入消息…",
+    emptyHint: "输入消息开始对话。回车换行，⌘/Ctrl + 回车发送。",
+    sending: "正在回复",
+    send: "发送",
+    errorCredentials: "还没设置你的 LLM provider 和 API key。切到「员工」tab，找到自己的档案，把 Provider 和 API Key 填上再发消息。",
+    errorNetwork: "网络错误，请重试。",
+    errorAuth: "登录失效了，重新登录一次再试试。",
+  },
+  sidebar: {
+    history: "历史对话",
+    viewAll: "查看全部",
+    newChat: "新对话",
+    search: "搜索对话",
+    actionItems: "Action Items",
+    reminders: "提醒",
+    email: "邮件",
+    tasks: "定时任务",
+    reports: "日报",
+    settings: "设置",
+    organization: "组织",
+    employees: "员工",
+    skills: "Skills",
+    knowledge: "Knowledge",
+    audit: "审计",
+  },
+  actionItems: {
+    title: "Action Items",
+    description: "给你的待办。第一次进入 dashboard 时按\"OK, got it\"完成上线的提醒在这里。",
+    empty: "没有待办 — 都搞定了。",
+    recentCompleted: "最近完成",
+    complete: "完成",
+    goToSettings: "去设置",
+  },
+};
+
+const en: Catalog = {
+  common: {
+    appName: "MAGI",
+    loading: "Loading…",
+    save: "Save",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    delete: "Delete",
+    edit: "Edit",
+    close: "Close",
+    back: "Back",
+    next: "Next",
+    done: "Done",
+  },
+  topbar: {
+    signedInAs: "Signed in as",
+    signOut: "Sign out",
+    language: "Language",
+  },
+  languageSwitcher: {
+    label: "Language",
+    menuAria: "Choose interface language",
+  },
+  login: {
+    title: "MAGI Console",
+    subtitle: "Sign in with your Telegram ID",
+    chatIdLabel: "Telegram chat ID",
+    chatIdPlaceholder: "e.g. 6240201712",
+    sendCode: "Send code",
+    sending: "Sending…",
+    codeLabel: "Verification code",
+    codePlaceholder: "6 digits",
+    verify: "Verify and sign in",
+    verifying: "Verifying…",
+    resend: "Resend",
+    helpText: "If you don't have a Telegram ID yet, ask the admin to set one up.",
+    errors: {
+      invalidChatId: "Invalid Telegram chat ID.",
+      codeFailed: "Wrong or expired code.",
+      networkError: "Network error — please try again.",
+    },
+  },
+  chatSearch: {
+    title: "Search conversations",
+    emptyHintSearch: "Full-text search across every session. CJK / Latin queries of 3+ characters work.",
+    emptyHintBrowse: "Most-recent sessions, newest first. Scroll down for more.",
+    searchPlaceholder: "Type a keyword…",
+    searchAria: "Search keyword",
+    searching: "Searching…",
+    noMatch: "No matching conversations.",
+    emptyBrowse: "No conversations yet.",
+    loadMore: "Loading…",
+    endOfList: "End of list — {total} sessions in total",
+    roleUser: "You",
+    roleAssistant: "EVE",
+    roleSystem: "sys",
+    messageCount: "{count} msgs",
+  },
+  chat: {
+    headerFallback: "New chat",
+    subtitle: "Talk directly with the system LLM. Replies follow the persona defined in SOUL.md.",
+    inputPlaceholder: "Type a message…",
+    emptyHint: "Type a message to start. Enter for newline, ⌘/Ctrl + Enter to send.",
+    sending: "Replying",
+    send: "Send",
+    errorCredentials: "Your LLM provider and API key aren't set. Switch to the Employees tab, open your profile, fill in Provider and API Key, then retry.",
+    errorNetwork: "Network error — please try again.",
+    errorAuth: "Session expired. Please sign in again.",
+  },
+  sidebar: {
+    history: "History",
+    viewAll: "View all",
+    newChat: "New chat",
+    search: "Search",
+    actionItems: "Action Items",
+    reminders: "Reminders",
+    email: "Email",
+    tasks: "Scheduled tasks",
+    reports: "Daily reports",
+    settings: "Settings",
+    organization: "Organization",
+    employees: "Employees",
+    skills: "Skills",
+    knowledge: "Knowledge",
+    audit: "Audit",
+  },
+  actionItems: {
+    title: "Action Items",
+    description: "Your to-dos. The first-time onboarding reminders live here; complete them with the \"OK, got it\" button.",
+    empty: "No to-dos — all done.",
+    recentCompleted: "Recently completed",
+    complete: "Done",
+    goToSettings: "Open settings",
+  },
+};
+
+const ja: Catalog = {
+  common: {
+    appName: "MAGI",
+    loading: "読み込み中…",
+    save: "保存",
+    cancel: "キャンセル",
+    confirm: "確認",
+    delete: "削除",
+    edit: "編集",
+    close: "閉じる",
+    back: "戻る",
+    next: "次へ",
+    done: "完了",
+  },
+  topbar: {
+    signedInAs: "ログイン中",
+    signOut: "サインアウト",
+    language: "言語",
+  },
+  languageSwitcher: {
+    label: "言語",
+    menuAria: "表示言語を選択",
+  },
+  login: {
+    title: "MAGI コンソール",
+    subtitle: "Telegram ID でログイン",
+    chatIdLabel: "Telegram chat ID",
+    chatIdPlaceholder: "例: 6240201712",
+    sendCode: "コードを送信",
+    sending: "送信中…",
+    codeLabel: "認証コード",
+    codePlaceholder: "6 桁の数字",
+    verify: "確認してログイン",
+    verifying: "確認中…",
+    resend: "再送",
+    helpText: "Telegram ID をお持ちでない場合は管理者にお問い合わせください。",
+    errors: {
+      invalidChatId: "Telegram chat ID が不正です。",
+      codeFailed: "コードが間違っているか、有効期限が切れています。",
+      networkError: "ネットワークエラーが発生しました。再試行してください。",
+    },
+  },
+  chatSearch: {
+    title: "会話を検索",
+    emptyHintSearch: "全セッションを全文検索します。CJK / 英語は 3 文字以上で検索できます。",
+    emptyHintBrowse: "最新のセッションを新しい順に表示します。下にスクロールすると続きを読み込みます。",
+    searchPlaceholder: "キーワードを入力…",
+    searchAria: "検索キーワード",
+    searching: "検索中…",
+    noMatch: "一致する会話はありません。",
+    emptyBrowse: "まだ会話がありません。",
+    loadMore: "読み込み中…",
+    endOfList: "これ以上ありません — 合計 {total} 件",
+    roleUser: "あなた",
+    roleAssistant: "EVE",
+    roleSystem: "sys",
+    messageCount: "{count} 件",
+  },
+  chat: {
+    headerFallback: "新しい会話",
+    subtitle: "システム LLM と直接対話します。SOUL.md で定義されたペルソナで返信します。",
+    inputPlaceholder: "メッセージを入力…",
+    emptyHint: "メッセージを入力してください。Enter で改行、⌘/Ctrl + Enter で送信。",
+    sending: "返信中",
+    send: "送信",
+    errorCredentials: "LLM プロバイダと API キーが設定されていません。「従業員」タブで自分のプロフィールを開き、Provider と API Key を入力してから再度お試しください。",
+    errorNetwork: "ネットワークエラーが発生しました。再試行してください。",
+    errorAuth: "セッションが切れました。再度ログインしてください。",
+  },
+  sidebar: {
+    history: "履歴",
+    viewAll: "すべて表示",
+    newChat: "新しい会話",
+    search: "検索",
+    actionItems: "アクション",
+    reminders: "リマインダー",
+    email: "メール",
+    tasks: "定时タスク",
+    reports: "日報",
+    settings: "設定",
+    organization: "組織",
+    employees: "従業員",
+    skills: "スキル",
+    knowledge: "ナレッジ",
+    audit: "監査",
+  },
+  actionItems: {
+    title: "アクション",
+    description: "To-Do リスト。初回オンボーディングのリマインダーは「OK, got it」で完了できます。",
+    empty: "To-Do はありません — すべて完了済みです。",
+    recentCompleted: "最近完了",
+    complete: "完了",
+    goToSettings: "設定を開く",
+  },
+};
+
+export const MESSAGES: Record<"zh" | "en" | "ja", Catalog> = {
+  zh,
+  en,
+  ja,
+};

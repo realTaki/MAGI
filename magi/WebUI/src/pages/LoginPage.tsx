@@ -29,6 +29,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useT } from "../i18n/index";
 
 type Phase = "send" | "code" | "verifying" | "error";
 
@@ -42,6 +43,7 @@ export default function LoginPage(props: {
   onLoggedIn: (chatId: string) => void;
   onBack: () => void;
 }) {
+  const t = useT();
   const [accounts, setAccounts] = useState<AllowedAccount[] | null>(null);
   const [selectedChatId, setSelectedChatId] = useState<string>("");
   const [code, setCode] = useState("");
@@ -158,11 +160,10 @@ export default function LoginPage(props: {
         <div className="w-full max-w-md">
           <div className="glass-card p-8">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">
-              Sign in
+              {t("login.title")}
             </h1>
             <p className="mt-2 text-ink-soft">
-              Pick your account — MAGI will send a 6-digit code to the
-              linked Telegram chat. Type it back here to log in.
+              {t("login.subtitle")}
             </p>
 
             {accountsLoading && (
@@ -251,7 +252,7 @@ export default function LoginPage(props: {
                     disabled={verifying || code.length !== 6}
                     className="btn btn-primary px-4 py-3 shrink-0"
                   >
-                    {verifying ? "Verifying…" : "Sign in"}
+                    {verifying ? t("login.verifying") : t("login.verify")}
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-ink-soft">

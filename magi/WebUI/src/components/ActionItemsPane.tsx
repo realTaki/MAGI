@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useT } from "../i18n/index";
 
 type ActionItem = {
   id: number;
@@ -69,6 +70,7 @@ function formatRelative(
 }
 
 export default function ActionItemsPane() {
+  const t = useT();
   const [data, setData] = useState<ActionItemListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Items currently mid-complete — disables the "完成" button
@@ -173,9 +175,9 @@ export default function ActionItemsPane() {
     return (
       <div className="p-8 flex flex-col h-[560px]">
         <div className="px-6 py-3 border-b border-sky-light/40">
-          <h2 className="text-base font-semibold text-ink">Action Items</h2>
+          <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
           <p className="text-xs text-ink-soft">
-            给你的待办。第一次进入 dashboard 时按"OK, got it"完成上线的提醒在这里。
+            {t("actionItems.description")}
           </p>
         </div>
         <div className="flex-1 flex items-center justify-center px-6">
@@ -189,7 +191,7 @@ export default function ActionItemsPane() {
     return (
       <div className="p-8 flex flex-col h-[560px]">
         <div className="px-6 py-3 border-b border-sky-light/40">
-          <h2 className="text-base font-semibold text-ink">Action Items</h2>
+          <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
         </div>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-ink-soft">Loading…</p>
@@ -201,7 +203,7 @@ export default function ActionItemsPane() {
   return (
     <div className="flex flex-col h-[560px]">
       <div className="px-6 py-3 border-b border-sky-light/40">
-        <h2 className="text-base font-semibold text-ink">Action Items</h2>
+        <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
         <p className="text-xs text-ink-soft">
           给你的待办。第一次进入 dashboard 时按"OK, got it"完成上线的提醒在这里。
         </p>
@@ -210,7 +212,7 @@ export default function ActionItemsPane() {
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
         {open.length === 0 ? (
           <p className="text-sm text-ink-soft text-center mt-12">
-            没有待办 — 都搞定了。
+            {t("actionItems.empty")}
           </p>
         ) : (
           open.map((it) => (
@@ -232,7 +234,7 @@ export default function ActionItemsPane() {
                     href={it.target_url}
                     className="btn btn-secondary text-xs"
                   >
-                    去设置
+                    {t("actionItems.goToSettings")}
                   </a>
                 )}
                 <button
@@ -241,7 +243,7 @@ export default function ActionItemsPane() {
                   disabled={inflight.has(it.id)}
                   className="btn btn-primary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  完成
+                  {t("actionItems.complete")}
                 </button>
               </div>
             </div>
@@ -251,7 +253,7 @@ export default function ActionItemsPane() {
         {completed.length > 0 && (
           <details className="mt-4">
             <summary className="text-xs text-ink-soft cursor-pointer select-none">
-              最近完成 ({completed.length})
+              {t("actionItems.recentCompleted")} ({completed.length})
             </summary>
             <ul className="mt-2 space-y-1">
               {completed.map((c) => (
