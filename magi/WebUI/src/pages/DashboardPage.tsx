@@ -403,6 +403,32 @@ function ChatTab() {
   const [chatMessages, setChatMessages] = useState<
     Array<{ id: number; role: "user" | "assistant"; text: string }>
   >([]);
+  // D.18+2: pagination state for the chat pane.
+  //
+  // ``loadedCount`` is the number of active messages currently
+  // rendered in ``chatMessages``; ``totalActive`` is the
+  // server-reported count of all active rows in the
+  // session. ``loadedCount < totalActive`` means older
+  // messages are still on the server, and the chat pane
+  // surfaces a "加载更早消息" affordance at the top.
+  //
+  // Why two separate state slots rather than comparing
+  // ``chatMessages.length`` to a single ``total``:
+  //   - ``chatMessages`` is replaced wholesale on session
+  //     switch (see ``loadSession``) — its length is the
+  //     count of *currently-rendered* rows, which equals
+  //     ``loadedCount`` until the operator clicks the
+  //     load-more button.
+  //   - ``totalActive`` survives a session switch's reset
+  //     so a fast open-and-close doesn't accidentally
+  //     hide "more available" mid-render.
+  //
+  // ``pagingOlder`` is the in-flight flag for the
+  // load-more fetch — disables the button so a slow
+  // network doesn't trigger two parallel requests.
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [totalActive, setTotalActive] = useState(0);
+  const [pagingOlder, setPagingOlder] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   // ``chatError`` carries the stable backend error ``code`` so
@@ -425,16 +451,30 @@ function ChatTab() {
 
   async function loadSession(id: string) {
     setChatError(null);
-    const r = await fetch(`/api/chat/sessions/${id}`, {
-      credentials: "include",
-    });
+    // Reset pagination state on session switch — the next
+    // fetch starts at the latest page (offset 0 = newest
+    // tail). The previous session's older-page history is
+    // dropped along with the rendered messages.
+    setLoadedCount(0);
+    setTotalActive(0);
+
+    // D.18+2 — switch to the paginated messages endpoint
+    // (the full-session endpoint is still useful for the
+    // audit / "view full transcript" UI; for the chat pane
+    // we want a single round-trip on open + lazy "load
+    // older" on demand).
+    const PAGE_SIZE = 50;
+    const r = await fetch(
+      `/api/chat/sessions/${id}/messages?limit=${PAGE_SIZE}&offset=0`,
+      { credentials: "include" },
+    );
     if (!r.ok) {
-      // 404 → stale id (manually deleted or migrated).
-      // Drop the localStorage pointer so the next send
-      // auto-creates; clear messages so the operator
-      // sees an empty thread instead of a flash of
-      // someone else's content.
       if (r.status === 404) {
+        // 404 → stale id (manually deleted or migrated).
+        // Drop the localStorage pointer so the next send
+        // auto-creates; clear messages so the operator
+        // sees an empty thread instead of a flash of
+        // someone else's content.
         localStorage.removeItem(SESSION_STORAGE_KEY);
         setSessionId(null);
         setChatMessages([]);
@@ -456,30 +496,106 @@ function ChatTab() {
     }
     const data = (await r.json()) as {
       session_id: string;
-      title: string | null;
       messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+      total_active: number;
     };
     setSessionId(data.session_id);
     localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
     setChatMessages(
       data.messages.map((m, i) => ({
-        // idx is fine for keys — reassignment is rare
-        // and the messages array fully replaces on load.
+        // id starts at 0 for the newest page; a future
+        // loadOlder() prepends older messages with negative
+        // ids so they sort below the current ones. The
+        // React key uses index-in-array anyway so we
+        // could go either way; negative ids just make
+        // intent obvious in dev tools.
         id: i,
         role: m.role as "user" | "assistant",
         text: m.text,
-      }))
+      })),
     );
+    setLoadedCount(data.messages.length);
+    setTotalActive(data.total_active);
     // D.8: capture the session's own title + first user message
-    // so the pane header can render them. ``title`` is what the
-    // operator renamed to or what the LLM worker generated;
-    // ``preview`` is the first user text (the sidebar's fallback
-    // when there's no title). Stashed separately from ``sessionId``
-    // so a stale id (404 path above) drops them cleanly.
-    setActiveTitle(data.title ?? null);
-    setActivePreview(
-      data.messages.find((m) => m.role === "user")?.text ?? null,
-    );
+    // so the pane header can render them. We don't get the
+    // title from the paginated endpoint, so fall back to a
+    // separate ``/api/chat/sessions/{id}`` fetch in the
+    // background — the chat pane renders immediately on
+    // the messages, and the header updates once the title
+    // round-trip finishes. Empty header in the meantime
+    // is fine (the section already has a sensible default).
+    void refreshTitle(id, data.messages);
+  }
+
+  // Best-effort title fetch — the paginated messages endpoint
+  // doesn't carry the session header, so we hit the legacy
+  // ``GET /api/chat/sessions/{id}`` for the title + preview.
+  // Non-fatal if it 404s (the messages endpoint already
+  // 404'd above and we bailed).
+  async function refreshTitle(id: string, messagesFromFirstPage: Array<{ role: string; text: string }>) {
+    try {
+      const r = await fetch(`/api/chat/sessions/${id}`, { credentials: "include" });
+      if (!r.ok) return;
+      const data = (await r.json()) as { title: string | null };
+      setActiveTitle(data.title ?? null);
+      // Preview is the first user message — derive from the
+      // already-loaded page 0 if we don't get it from the
+      // server.
+      setActivePreview(
+        messagesFromFirstPage.find((m) => m.role === "user")?.text ?? null,
+      );
+    } catch {
+      // Network error on the title fetch is non-fatal.
+      setActivePreview(
+        messagesFromFirstPage.find((m) => m.role === "user")?.text ?? null,
+      );
+    }
+  }
+
+  // D.18+2 — load the next older page of messages.
+  //
+  // Called by the "加载更早消息" button at the top of the
+  // chat pane. Prepends the older page to the existing
+  // ``chatMessages`` array (they sort before the newer
+  // ones); updates ``loadedCount`` to track how many
+  // active rows are now in state. The button stays
+  // visible while ``loadedCount < totalActive`` and hides
+  // once we hit the end.
+  async function loadOlderMessages() {
+    if (pagingOlder || loadedCount >= totalActive) return;
+    const sid = sessionId;
+    if (!sid) return;
+    setPagingOlder(true);
+    const PAGE_SIZE = 50;
+    try {
+      const r = await fetch(
+        `/api/chat/sessions/${sid}/messages?limit=${PAGE_SIZE}&offset=${loadedCount}`,
+        { credentials: "include" },
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as {
+        messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+        total_active: number;
+      };
+      // Older messages get negative ids so they sort
+      // before the existing ones (which start at 0 and
+      // grow upward). This also gives the React list a
+      // stable key without ``message_id`` collisions
+      // (each (session_id, message_id) is unique but
+      // they overlap on UI key uniqueness only when the
+      // same message appears in two pages — which it
+      // doesn't because the offsets are disjoint).
+      const older = data.messages.map((m, i) => ({
+        id: -(loadedCount + i + 1),
+        role: m.role as "user" | "assistant",
+        text: m.text,
+      }));
+      setChatMessages((prev) => [...older, ...prev]);
+      setLoadedCount((n) => n + data.messages.length);
+      setTotalActive(data.total_active);
+    } finally {
+      setPagingOlder(false);
+    }
   }
 
   async function refreshHistory() {
@@ -946,6 +1062,10 @@ function ChatTab() {
           onSend={sendChat}
           title={activeTitle}
           preview={activePreview}
+          hasMoreOlder={loadedCount < totalActive && totalActive > 0}
+          totalActive={totalActive}
+          loadingOlder={pagingOlder}
+          onLoadOlder={loadOlderMessages}
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
@@ -1010,6 +1130,21 @@ function ChatConversationPane(props: {
   /** First user message text — fallback label when there's
    *  no title. Mirrors ``SessionSummary.preview``. */
   preview: string | null;
+  // D.18+2: lazy "load older messages" affordance.
+  /** When ``true``, the pane renders a "加载更早消息"
+   *  button above the rendered messages. The button is
+   *  hidden once we've loaded everything
+   *  (``loadedCount >= totalActive``). */
+  hasMoreOlder: boolean;
+  /** Server-reported total active-message count. The
+   *  button line shows "loaded / total" so the operator
+   *  knows how much remains. */
+  totalActive: number;
+  /** In-flight flag — disables the button so a slow
+   *  network doesn't trigger two parallel requests. */
+  loadingOlder: boolean;
+  /** Triggered by clicking the load-older button. */
+  onLoadOlder: () => void;
 }) {
   const t = useT();
   // Header text:
@@ -1087,26 +1222,56 @@ function ChatConversationPane(props: {
             {t("chat.emptyHint")}
           </p>
         ) : (
-          props.messages.map((m) => (
-            <div
-              key={m.id}
-              className={
-                "flex " +
-                (m.role === "user" ? "justify-end" : "justify-start")
-              }
-            >
+          <>
+            {/* D.18+2 — "load older messages" affordance.
+                Lives at the top of the scroll list, only when
+                the server reports more rows than we've
+                loaded. Clicking prepends the next older page
+                to ``props.messages``; the scroll position is
+                intentionally *not* auto-jumped — the
+                operator just sees the new rows appear above
+                the existing ones (which is the natural
+                behaviour for "the history just got longer").
+                We also show a small "已加载 N / 共 M" line
+                so the operator knows how much remains. */}
+            {props.hasMoreOlder && (
+              <div className="flex flex-col items-center gap-1 pt-1 pb-3">
+                <button
+                  type="button"
+                  onClick={props.onLoadOlder}
+                  disabled={props.loadingOlder}
+                  className="btn btn-secondary text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {props.loadingOlder ? t("chat.loadingOlder") : t("chat.loadOlder")}
+                </button>
+                <span className="text-[10px] text-ink-soft">
+                  {t("chat.loadedCount")
+                    .replace("{loaded}", String(props.messages.length))
+                    .replace("{total}", String(props.totalActive))}
+                </span>
+              </div>
+            )}
+            {props.messages.map((m) => (
               <div
+                key={m.id}
                 className={
-                  "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
-                  (m.role === "user"
-                    ? "bg-sky-deep text-white"
-                    : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                  "flex " +
+                  (m.role === "user" ? "justify-end" : "justify-start")
                 }
               >
-                {m.text}
+                <div
+                  className={
+                    "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
+                    (m.role === "user"
+                      ? "bg-sky-deep text-white"
+                      : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                  }
+                >
+                  {m.text}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </>
         )}
         {props.sending && (
           // D.14 — labeled "正在回复" bubble. Earlier the
@@ -3630,8 +3795,17 @@ function SettingsOnboardingCard(props: { onRestart: () => void }) {
 // limit, and gets a friendlier hint than the 422 they'll
 // get on save.
 function SettingsPersonaCard() {
-  const [content, setContent] = useState<string>("");
-  const [original, setOriginal] = useState<string>("");
+  const t = useT();
+  // Two separate content slots:
+  //   - ``savedContent`` is the on-disk truth — what the
+  //     agent actually uses on every reply. Rendered as
+  //     read-only monospace above the draft area.
+  //   - ``draftContent`` is what the operator is currently
+  //     editing. Mirrored to the editable textarea below.
+  // The two diverge as soon as the operator types; ``dirty``
+  // tells us when the Save button should be enabled.
+  const [savedContent, setSavedContent] = useState<string>("");
+  const [draftContent, setDraftContent] = useState<string>("");
   const [modifiedAt, setModifiedAt] = useState<string | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -3646,17 +3820,17 @@ function SettingsPersonaCard() {
   // Warning at 80% so the operator gets a visual cue before
   // the textarea overflows the layout.
   const SOUL_WARN = SOUL_MAX * 0.8;
-  const chars = content.length;
+  const chars = draftContent.length;
   const overLimit = chars > SOUL_MAX;
   const nearLimit = chars > SOUL_WARN;
-  const dirty = content !== original;
+  const dirty = draftContent !== savedContent;
 
   async function load() {
     setLoadError(null);
     try {
       const r = await fetch("/api/soul", { credentials: "include" });
       if (!r.ok) {
-        setLoadError(`Failed to load persona (${r.status})`);
+        setLoadError(`${t("persona.loadFailed")} (${r.status})`);
         return;
       }
       const data = (await r.json()) as {
@@ -3664,8 +3838,8 @@ function SettingsPersonaCard() {
         modified_at: string | null;
         is_bundled_fallback: boolean;
       };
-      setContent(data.content);
-      setOriginal(data.content);
+      setSavedContent(data.content);
+      setDraftContent(data.content);
       setModifiedAt(data.modified_at);
       setIsFallback(data.is_bundled_fallback);
     } catch (err) {
@@ -3675,12 +3849,16 @@ function SettingsPersonaCard() {
 
   useEffect(() => {
     void load();
+    // ``t`` is stable across renders (the i18n context
+    // returns a memoised value), so this doesn't refire on
+    // locale switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function save() {
     setSaveError(null);
     setSavedNotice(null);
-    const trimmed = content.trim();
+    const trimmed = draftContent.trim();
     if (!trimmed) {
       setSaveError("Persona 内容不能为空（空白不算）");
       return;
@@ -3698,18 +3876,18 @@ function SettingsPersonaCard() {
           code?: string;
           detail?: string;
         };
-        setSaveError(body.detail ?? `Save failed (${r.status})`);
+        setSaveError(body.detail ?? `${t("persona.saveFailed")} (${r.status})`);
         return;
       }
       const data = (await r.json()) as { modified_at: string };
-      // Sync state so the dirty flag clears and the
-      // "last edited" line reflects the new mtime.
-      const synced = trimmed;
-      setContent(synced);
-      setOriginal(synced);
+      // Promote the draft to the new saved version. Both
+      // slots collapse to the same value so ``dirty`` clears
+      // and the read-only view above updates immediately.
+      setSavedContent(trimmed);
+      setDraftContent(trimmed);
       setModifiedAt(data.modified_at);
       setIsFallback(false);
-      setSavedNotice("已保存。下一条消息就会用新的 persona。");
+      setSavedNotice(t("persona.savedNotice"));
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -3718,7 +3896,7 @@ function SettingsPersonaCard() {
   }
 
   async function resetToDefault() {
-    if (!confirm("确定把 persona 重置为默认模板？这会覆盖当前的自定义内容。")) {
+    if (!confirm(t("persona.resetConfirm"))) {
       return;
     }
     setSaveError(null);
@@ -3734,13 +3912,13 @@ function SettingsPersonaCard() {
           code?: string;
           detail?: string;
         };
-        setSaveError(body.detail ?? `Reset failed (${r.status})`);
+        setSaveError(body.detail ?? `${t("persona.resetFailed")} (${r.status})`);
         return;
       }
-      // Re-load so the textarea shows the same content the
-      // backend just wrote (canonical truth).
+      // Re-load so both savedContent and draftContent pick
+      // up the canonical truth the backend just wrote.
       await load();
-      setSavedNotice("已重置为默认模板。");
+      setSavedNotice(t("persona.resetNotice"));
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -3766,29 +3944,69 @@ function SettingsPersonaCard() {
   }
 
   return (
-    <ConsoleCard title="Persona (SOUL.md)">
-      <p className="text-sm text-ink-soft">
-        系统回复时使用的 persona（人设）。编辑后保存即生效 — 下一条消息会用新的
-        persona 调 LLM。重置会恢复成内置的默认模板。
-      </p>
+    <ConsoleCard title={t("persona.title")}>
+      <p className="text-sm text-ink-soft">{t("persona.description")}</p>
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 
       {isFallback && !loadError && (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          当前没有自定义的 SOUL.md — agent 在用内置的通用 fallback
-          persona。点「保存」会创建自定义版本。
+          {t("persona.fallbackBanner")}
         </div>
       )}
 
-      <div className="mt-4 space-y-2">
+      {/* ── Current / saved view (read-only) ───────────────
+          Monospace, scrollable. The header label tells the
+          operator "this is what's currently in effect";
+          without this split, the operator can edit a draft
+          and lose track of which version the agent is
+          actually using. ``whitespace-pre-wrap`` keeps the
+          multi-line markdown legible. ``max-h-[420px]`` is
+          a hard cap so a long persona doesn't push the
+          Save button off-screen. */}
+      <div className="mt-4">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-xs font-medium text-ink-soft uppercase tracking-wide">
+            {t("persona.currentLabel")}
+          </h3>
+          {modifiedAt && (
+            <span className="text-[10px] text-ink-soft">
+              {t("persona.modifiedLabel")}：
+              <span className="font-mono">{formatModified(modifiedAt)}</span>
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-[11px] text-ink-soft">
+          {t("persona.currentHint")}
+        </p>
+        <pre
+          data-testid="persona-current"
+          className="mt-2 px-3 py-2 rounded-md border border-sky-light/40 bg-sky-pale/30 text-xs font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[420px] overflow-auto"
+        >
+          {savedContent || "(空)"}
+        </pre>
+      </div>
+
+      {/* ── Edit draft ─────────────────────────────────── */}
+      <div className="mt-4">
+        <h3 className="text-xs font-medium text-ink-soft uppercase tracking-wide">
+          {t("persona.draftLabel")}
+          {dirty && (
+            <span className="ml-2 text-amber-700 normal-case tracking-normal">
+              · {t("persona.dirty")}
+            </span>
+          )}
+        </h3>
+        <p className="mt-1 text-[11px] text-ink-soft">
+          {t("persona.draftHint")}
+        </p>
         <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
+          value={draftContent}
+          onChange={(e) => setDraftContent(e.target.value)}
           rows={14}
           spellCheck={false}
           className={
-            "form-input w-full text-sm font-mono leading-relaxed py-2 px-3 resize-y " +
+            "mt-2 form-input w-full text-sm font-mono leading-relaxed py-2 px-3 resize-y " +
             (overLimit ? "border-rose-400 focus:border-rose-500" : "")
           }
           style={{ minHeight: "260px", maxHeight: "520px" }}
@@ -3803,14 +4021,11 @@ function SettingsPersonaCard() {
                   : "text-ink-soft"
             }
           >
-            {chars.toLocaleString()} / {SOUL_MAX.toLocaleString()} 字符
-            {overLimit && " — 超出上限，请删减"}
+            {t("persona.charsLine")
+              .replace("{chars}", chars.toLocaleString())
+              .replace("{max}", SOUL_MAX.toLocaleString())}
+            {overLimit && t("persona.overLimitHint")}
           </span>
-          {modifiedAt && (
-            <span className="text-ink-soft">
-              最后修改：<span className="font-mono">{formatModified(modifiedAt)}</span>
-            </span>
-          )}
         </div>
       </div>
 
@@ -3825,13 +4040,13 @@ function SettingsPersonaCard() {
           className="btn btn-primary text-sm py-1.5 px-4"
           title={
             !dirty
-              ? "没有改动"
+              ? t("persona.dirty")
               : overLimit
-                ? "超出字符上限"
-                : "保存"
+                ? t("persona.overLimitHint")
+                : t("persona.saveButton")
           }
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? `${t("persona.saveButton")}…` : t("persona.saveButton")}
         </button>
         <button
           type="button"
@@ -3839,13 +4054,13 @@ function SettingsPersonaCard() {
           disabled={saving || resetting}
           className="btn btn-secondary text-sm py-1.5 px-4"
         >
-          {resetting ? "重置中…" : "重置为默认"}
+          {resetting ? `${t("persona.resetButton")}…` : t("persona.resetButton")}
         </button>
         {dirty && (
           <button
             type="button"
             onClick={() => {
-              setContent(original);
+              setDraftContent(savedContent);
               setSaveError(null);
               setSavedNotice(null);
             }}

@@ -78,6 +78,32 @@ class SessionMessageOut(BaseModel):
     text: str
 
 
+class SessionMessagesPage(BaseModel):
+    """A single page of session messages (D.18+2 pagination).
+
+    Returned by ``GET /api/chat/sessions/{id}/messages``.
+
+    ``total_active`` is the count of *active* messages in
+    the session; ``total_all`` includes archive. The UI uses
+    ``loaded_count < total_active`` to decide whether to
+    show the "加载更早消息" affordance.
+
+    ``messages`` is in chronological order (oldest first
+    within the page — the WebUI renders top-down). The
+    next page (older messages) is fetched via ``offset``;
+    the previous page (newer messages) isn't needed because
+    the chat pane always renders bottom-up and the head
+    stays at the scroll bottom.
+    """
+
+    session_id: str
+    messages: list[SessionMessageOut]
+    total_active: int
+    total_all: int
+    offset: int
+    limit: int
+
+
 class SessionOut(BaseModel):
     session_id: str
     chat_id: str
@@ -459,3 +485,109 @@ def update_session(
             detail=f"session {session_id} not found",
         )
     return _session_to_out(sess)
+
+
+# ────────────────────────────────────────────────────────────────── #
+# Pagination endpoint — D.18+2
+# ────────────────────────────────────────────────────────────────── #
+#
+# Long sessions shouldn't ship their entire transcript on
+# initial load. ``GET /api/chat/sessions/{id}/messages``
+# returns a single chronological page of the **active**
+# message tail, sized via ``limit`` (default 50, max 100)
+# and offset via ``offset`` (number of *newest* rows to
+# skip — so the chat pane can fetch page 0 first, then
+# page 1 by passing offset=limit once the operator scrolls
+# back to the top).
+#
+# The pagination key is ``chat_messages.id`` (auto-
+# incrementing, monotonic), not ``ts`` — two messages can
+# share an ISO timestamp (the agent loop writes both the
+# user's text and the assistant's reply within a single
+# millisecond), so ordering by ``ts`` would not be
+# stable. Ordering by ``id`` is monotonic per insertion
+# and therefore a stable, gap-free page boundary.
+#
+# Archive rows (D.17's compaction outputs) are *not*
+# included in the default page; the WebUI chat pane
+# doesn't render them in the conversation scroll. Pass
+# ``?include_archived=true`` to opt into loading them —
+# used by future audit / "show full history" views.
+
+
+@router.get(
+    "/chat/sessions/{session_id}/messages",
+    response_model=SessionMessagesPage,
+)
+def get_session_messages(
+    session_id: str,
+    request: Request,
+    _admin: AdminGate,
+    store: SessionStoreDep,
+    limit: int = 50,
+    offset: int = 0,
+    include_archived: bool = False,
+) -> SessionMessagesPage:
+    """Tail-slice page of the session's active messages.
+
+    The route always orders by ``chat_messages.id ASC``
+    (chronological insert order) and slices by ``limit``
+    + ``offset`` counting from the **newest** end. To get
+    the next page of older messages, increment
+    ``offset`` by the previous ``limit``.
+    """
+    chat_id = str(_resolve_chat_id(request))
+    # Inline clamp so the route behaves the same as the
+    # ``Query(ge=…, le=…)`` form would. ``Query`` would also
+    # work but needs explicit ``Annotated`` types that pydantic
+    # sometimes can't resolve under ``from __future__
+    # import annotations``; the manual clamp is fine for
+    # these bounded ranges and keeps the typing flat.
+    if limit < 1:
+        limit = 50
+    if limit > 100:
+        limit = 100
+    if offset < 0:
+        offset = 0
+    try:
+        msgs, total_active, total_all = store.get_messages_page(
+            chat_id, session_id,
+            limit=limit, offset=offset,
+            include_archived=include_archived,
+        )
+    except SessionPathError as e:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.session_id_invalid",
+            detail=str(e),
+        )
+
+    if not msgs and offset == 0:
+        # No messages AND we asked for page 0 — likely the
+        # session doesn't exist (vs. an empty session).
+        # Distinguishing the two cases: try ``store.get``
+        # and 404 if it returns None.
+        sess = store.get(chat_id, session_id)
+        if sess is None:
+            raise MagiHTTPException(
+                status_code=404,
+                code="not_found.session",
+                detail=f"session {session_id} not found",
+            )
+
+    return SessionMessagesPage(
+        session_id=session_id,
+        messages=[
+            SessionMessageOut(
+                message_id=m.message_id,
+                role=m.role,
+                ts=m.ts,
+                text=m.text,
+            )
+            for m in msgs
+        ],
+        total_active=total_active,
+        total_all=total_all,
+        offset=offset,
+        limit=limit,
+    )
