@@ -96,7 +96,7 @@ export default function LanguageSwitcher() {
         <div
           role="menu"
           aria-label="Language"
-          className="absolute right-0 mt-1 w-32 rounded-md border border-sky-light/60 bg-white shadow-lg overflow-hidden z-10"
+          className="absolute right-0 mt-1 w-32 rounded-md border border-sky-light/60 bg-white shadow-lg overflow-hidden z-50"
         >
           {SUPPORTED_LOCALES.map((l) => {
             const active = l === locale;
