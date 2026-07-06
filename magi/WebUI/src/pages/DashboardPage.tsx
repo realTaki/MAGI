@@ -630,69 +630,44 @@ function ChatTab() {
     }
   }
 
-  // D.9: clicking the sidebar ``+ 新对话`` row used to just
-  // clear local state and lazily wait for the next /send to
-  // auto-create the file. That meant the operator clicked
-  // the row, typed nothing, and the sidebar's "last edited"
-  // was still the previous thread — confusing. The new path
-  // hits ``POST /api/chat/sessions`` immediately so a fresh
-  // (empty) session shows up in the sidebar right away. The
-  // first /send appends to that id and the auto-title worker
-  // fires as before.
+  // (D.18+3 — see ``newChat`` below. The previous behaviour
+  // eagerly POSTed ``/api/chat/sessions`` so the sidebar
+  // showed a fresh row right away. That filled the sidebar
+  // with empty rows when the operator clicked the row,
+  // changed their mind, and never sent a message. We now
+  // keep the action purely client-side; the session is
+  // minted by the first /send.)
+  // D.18+3: clicking the sidebar "+ 新对话" row is a **pure
+  // UI** action — clear local state, drop the persisted
+  // session id, switch to the empty chat pane. No network
+  // call. The session row only lands in SQLite (and shows
+  // up in the sidebar history) when the operator actually
+  // hits Send on the first message.
   //
-  // Guard: rapid double-clicks collapse to one POST via the
-  // ``newChatInflight`` ref. Without it the operator gets two
-  // identical empty rows in the sidebar.
-  const newChatInflight = useRef(false);
-  async function newChat() {
-    if (newChatInflight.current) return;
-    newChatInflight.current = true;
+  // Rationale: the previous version eagerly POSTed to
+  // ``/api/chat/sessions`` so a fresh empty row appeared
+  // in the sidebar right away. An operator who clicked the
+  // row, then changed their mind and never sent anything,
+  // left an empty session in the sidebar forever — lots of
+  // noise. The backend's ``POST /api/chat/send`` already
+  // auto-creates when ``session_id`` is missing, so we
+  // just defer the session creation to that path.
+  //
+  // No ``newChatInflight`` ref needed any more — there's no
+  // race against a POST. A rapid double-click just clears
+  // state twice, which is idempotent.
+  function newChat() {
+    setSessionId(null);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    setChatMessages([]);
+    setChatInput("");
     setChatError(null);
-    try {
-      const r = await fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          code?: string;
-          detail?: string;
-        };
-        setChatError({
-          code: body.code ?? "new_chat_failed",
-          detail: body.detail ?? `New chat failed (${r.status})`,
-        });
-        return;
-      }
-      const data = (await r.json()) as { session_id: string };
-      // Drop everything from the old session, swap in the new
-      // id. ``chatMessages`` stays empty until the operator
-      // types — no message has been sent on this fresh thread
-      // yet, so there's nothing to render. The pane header
-      // reverts to the default "新对话" copy because both
-      // activeTitle and activePreview are cleared.
-      setSessionId(data.session_id);
-      localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
-      setChatMessages([]);
-      setChatInput("");
-      setActiveTitle(null);
-      setActivePreview(null);
-      // Make sure the right pane is showing the conversation
-      // view, not (e.g.) the action items list — clicking
-      // the sidebar entry from elsewhere should always
-      // land on the chat pane.
-      setSelectedId("new-chat");
-      void refreshHistory();
-    } catch (err) {
-      setChatError({
-        code: "network",
-        detail: err instanceof Error ? err.message : "Network error",
-      });
-    } finally {
-      newChatInflight.current = false;
-    }
+    setActiveTitle(null);
+    setActivePreview(null);
+    // Belt-and-braces: if the operator clicked "+ 新对话"
+    // from a different tab (Action Items, Settings), make
+    // sure the right pane is the conversation view.
+    setSelectedId("new-chat");
   }
 
   async function openSession(id: string) {
@@ -3796,16 +3771,27 @@ function SettingsOnboardingCard(props: { onRestart: () => void }) {
 // get on save.
 function SettingsPersonaCard() {
   const t = useT();
-  // Two separate content slots:
-  //   - ``savedContent`` is the on-disk truth — what the
-  //     agent actually uses on every reply. Rendered as
-  //     read-only monospace above the draft area.
-  //   - ``draftContent`` is what the operator is currently
-  //     editing. Mirrored to the editable textarea below.
-  // The two diverge as soon as the operator types; ``dirty``
-  // tells us when the Save button should be enabled.
-  const [savedContent, setSavedContent] = useState<string>("");
+  // One textarea. The loaded value IS the editable value:
+  // the operator sees the on-disk SOUL.md content right away
+  // (no separate read-only block) and edits in place. Click
+  // Save to commit; click Reset to restore the bundled default.
+  //
+  // ``savedContent`` is a *baseline* — the value the textarea
+  // had immediately after the last load / save / reset. The
+  // ``dirty`` flag (``draftContent !== savedContent``) tells
+  // us when the operator has unsaved changes and drives the
+  // Save button's disabled state + the "放弃改动" revert
+  // affordance.
+  //
+  // Why one textarea instead of "current view + draft" —
+  // the operator wants to **see what the agent is using**
+  // and **edit it**. Two views force them to translate
+  // between "what's in the editor" and "what the agent
+  // sees"; one view + Save makes the contract explicit:
+  // until you press Save, the textarea is your scratch
+  // pad, not the agent's persona.
   const [draftContent, setDraftContent] = useState<string>("");
+  const [savedContent, setSavedContent] = useState<string>("");
   const [modifiedAt, setModifiedAt] = useState<string | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -3838,6 +3824,9 @@ function SettingsPersonaCard() {
         modified_at: string | null;
         is_bundled_fallback: boolean;
       };
+      // Both slots collapse to the same value — the
+      // textarea shows what's on disk, ``dirty`` is false
+      // until the operator types something.
       setSavedContent(data.content);
       setDraftContent(data.content);
       setModifiedAt(data.modified_at);
@@ -3880,9 +3869,9 @@ function SettingsPersonaCard() {
         return;
       }
       const data = (await r.json()) as { modified_at: string };
-      // Promote the draft to the new saved version. Both
-      // slots collapse to the same value so ``dirty`` clears
-      // and the read-only view above updates immediately.
+      // Promote the textarea value to "saved" baseline.
+      // ``dirty`` flips false; the textarea stays exactly
+      // where the operator left it (no need to re-mount).
       setSavedContent(trimmed);
       setDraftContent(trimmed);
       setModifiedAt(data.modified_at);
@@ -3915,8 +3904,8 @@ function SettingsPersonaCard() {
         setSaveError(body.detail ?? `${t("persona.resetFailed")} (${r.status})`);
         return;
       }
-      // Re-load so both savedContent and draftContent pick
-      // up the canonical truth the backend just wrote.
+      // Re-load so the textarea picks up the canonical
+      // truth the backend just wrote.
       await load();
       setSavedNotice(t("persona.resetNotice"));
     } catch (err) {
@@ -3955,48 +3944,24 @@ function SettingsPersonaCard() {
         </div>
       )}
 
-      {/* ── Current / saved view (read-only) ───────────────
-          Monospace, scrollable. The header label tells the
-          operator "this is what's currently in effect";
-          without this split, the operator can edit a draft
-          and lose track of which version the agent is
-          actually using. ``whitespace-pre-wrap`` keeps the
-          multi-line markdown legible. ``max-h-[420px]`` is
-          a hard cap so a long persona doesn't push the
-          Save button off-screen. */}
+      {/* Single editable textarea.
+          ``rows={14}`` + ``min/maxHeight`` give a comfortable
+          multi-line editing surface that doesn't push the
+          Save button off-screen on long personas. The
+          "未保存" marker floats to the right when ``dirty``
+          is true, so the operator always knows whether
+          their last edit has been committed. */}
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
           <h3 className="text-xs font-medium text-ink-soft uppercase tracking-wide">
-            {t("persona.currentLabel")}
+            {t("persona.draftLabel")}
           </h3>
-          {modifiedAt && (
-            <span className="text-[10px] text-ink-soft">
-              {t("persona.modifiedLabel")}：
-              <span className="font-mono">{formatModified(modifiedAt)}</span>
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-[11px] text-ink-soft">
-          {t("persona.currentHint")}
-        </p>
-        <pre
-          data-testid="persona-current"
-          className="mt-2 px-3 py-2 rounded-md border border-sky-light/40 bg-sky-pale/30 text-xs font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[420px] overflow-auto"
-        >
-          {savedContent || "(空)"}
-        </pre>
-      </div>
-
-      {/* ── Edit draft ─────────────────────────────────── */}
-      <div className="mt-4">
-        <h3 className="text-xs font-medium text-ink-soft uppercase tracking-wide">
-          {t("persona.draftLabel")}
           {dirty && (
-            <span className="ml-2 text-amber-700 normal-case tracking-normal">
+            <span className="text-[10px] text-amber-700 normal-case tracking-normal">
               · {t("persona.dirty")}
             </span>
           )}
-        </h3>
+        </div>
         <p className="mt-1 text-[11px] text-ink-soft">
           {t("persona.draftHint")}
         </p>
@@ -4011,7 +3976,7 @@ function SettingsPersonaCard() {
           }
           style={{ minHeight: "260px", maxHeight: "520px" }}
         />
-        <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center justify-between text-xs mt-1">
           <span
             className={
               overLimit
@@ -4026,6 +3991,12 @@ function SettingsPersonaCard() {
               .replace("{max}", SOUL_MAX.toLocaleString())}
             {overLimit && t("persona.overLimitHint")}
           </span>
+          {modifiedAt && (
+            <span className="text-ink-soft">
+              {t("persona.modifiedLabel")}：
+              <span className="font-mono">{formatModified(modifiedAt)}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -4060,6 +4031,9 @@ function SettingsPersonaCard() {
           <button
             type="button"
             onClick={() => {
+              // Revert the textarea to the on-disk truth.
+              // ``dirty`` flips false; the saved version stays
+              // the same so the next comparison is meaningful.
               setDraftContent(savedContent);
               setSaveError(null);
               setSavedNotice(null);
@@ -4067,7 +4041,7 @@ function SettingsPersonaCard() {
             disabled={saving || resetting}
             className="btn btn-ghost text-sm py-1.5 px-3"
           >
-            放弃改动
+            {t("persona.discardChanges")}
           </button>
         )}
       </div>
