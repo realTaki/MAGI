@@ -180,25 +180,26 @@ function InlineTabBar(props: {
   current: TabKey;
   onChange: (t: TabKey) => void;
 }) {
-  const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: "chat", label: "Chat" },
-    { key: "organization", label: "组织" },
-    { key: "knowledge", label: "Knowledge" },
-    { key: "settings", label: "Settings" },
+  const t = useT();
+  const tabs: Array<{ key: TabKey; labelKey: string }> = [
+    { key: "chat", labelKey: "sidebar.tabChat" },
+    { key: "organization", labelKey: "sidebar.tabOrg" },
+    { key: "knowledge", labelKey: "sidebar.tabKnowledge" },
+    { key: "settings", labelKey: "sidebar.tabSettings" },
   ];
   return (
-    <nav className="flex items-center gap-1" aria-label="Dashboard sections">
-      {tabs.map((t) => {
-        const active = t.key === props.current;
+    <nav className="flex items-center gap-1" aria-label={t("sidebar.tabAria")}>
+      {tabs.map((tt) => {
+        const active = tt.key === props.current;
         return (
           <button
-            key={t.key}
+            key={tt.key}
             type="button"
-            onClick={() => props.onChange(t.key)}
+            onClick={() => props.onChange(tt.key)}
             className={`tab-pill tab-pill--on-light ${active ? "is-active" : ""}`}
             aria-current={active ? "page" : undefined}
           >
-            {t.label}
+            {t(tt.labelKey)}
           </button>
         );
       })}
@@ -1244,8 +1245,18 @@ function ChatConversationPane(props: {
                 }
               >
                 <div
+                  // ``min-w-0`` lets the bubble shrink inside
+                  // the flex parent (``max-w-[80%]`` is only
+                  // enforced when the child can actually be
+                  // narrower than its content). Without it, a
+                  // single long un-broken token (URL, English
+                  // paragraph without spaces) makes the bubble
+                  // overflow the right edge of the chat pane.
+                  // ``break-words`` complements that by
+                  // wrapping inside the bubble when even 80%
+                  // of the row would still be too wide.
                   className={
-                    "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
+                    "max-w-[80%] min-w-0 break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
                     (m.role === "user"
                       ? "bg-sky-deep text-white"
                       : "bg-sky-pale/60 text-ink border border-sky-light/40")
@@ -3356,6 +3367,36 @@ function KnowledgeContactsPane() {
 //
 // Per-checkpoint settings (LLM provider keys, audit retention,
 // quiet hours) get added here as those checkpoints land.
+//
+// As the panel count crossed ~6 in D.18, a single column got
+// hard to scan. The layout now mirrors <OrganizationTab> /
+// <KnowledgeTab>: a left nav with one entry per panel, and
+// only the selected panel rendered on the right. Each panel
+// still owns its own fetch + state — switching panels swaps
+// the right pane, no state leaks between them, and the
+// left-nav's highlighted entry tells the operator where they
+// are at a glance.
+type SettingSection =
+  | "channels"
+  | "persona"
+  | "tg-read"
+  | "tz"
+  | "tool-loop"
+  | "auto-compact"
+  | "webui-access"
+  | "onboarding";
+
+const SETTINGS_SECTIONS: SidebarItem[] = [
+  { id: "channels", label: "settings.navChannels", icon: <IconConnectors /> },
+  { id: "persona", label: "settings.navPersona", icon: <IconSkills /> },
+  { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
+  { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
+  { id: "tool-loop", label: "settings.navToolLoop", icon: <IconScheduledTasks /> },
+  { id: "auto-compact", label: "settings.navAutoCompact", icon: <IconScheduledTasks /> },
+  { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconEmployees /> },
+  { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
+];
+
 function SettingsTab(props: {
   data: OnboardingData | null;
   signedInUser: { chat_id: string; display_name: string | null };
@@ -3365,22 +3406,50 @@ function SettingsTab(props: {
   ) => void;
   onRestart: () => void;
 }) {
+  const t = useT();
+  const [section, setSection] = useState<SettingSection>("channels");
   return (
     <div className="space-y-4">
-      <SettingsChannelsCard
-        data={props.data}
-        onBotUpdated={props.onBotUpdated}
-      />
-      <SettingsPersonaCard />
-      <SettingsTgReadReactionCard />
-      <SettingsSystemTimezoneCard />
-      <SettingsCompactCard />
-      <SettingsToolLoopCard />
-      <SettingsWebuiAccessCard
-        signedInUser={props.signedInUser}
-        onAdminsChanged={props.onAdminsChanged}
-      />
-      <SettingsOnboardingCard onRestart={props.onRestart} />
+      <div>
+        <h2 className="text-lg font-semibold text-ink">{t("settings.heading")}</h2>
+        <p className="mt-1 text-sm text-ink-soft">{t("settings.intro")}</p>
+      </div>
+      <SidebarShell
+        items={SETTINGS_SECTIONS.map((it) => ({
+          ...it,
+          // Translate the i18n key in the consumer (sidebar
+          // shell expects pre-resolved labels). ``label`` is
+          // dotted — resolve via t() here so downstream
+          // components don't need their own i18n hooks.
+          label: it.label.includes(".")
+            ? t(it.label)
+            : it.label,
+        }))}
+        selectedId={section}
+        onSelect={(id) => setSection(id as SettingSection)}
+        ariaLabel={t("settings.navAria")}
+      >
+        {section === "channels" && (
+          <SettingsChannelsCard
+            data={props.data}
+            onBotUpdated={props.onBotUpdated}
+          />
+        )}
+        {section === "persona" && <SettingsPersonaCard />}
+        {section === "tg-read" && <SettingsTgReadReactionCard />}
+        {section === "tz" && <SettingsSystemTimezoneCard />}
+        {section === "tool-loop" && <SettingsToolLoopCard />}
+        {section === "auto-compact" && <SettingsCompactCard />}
+        {section === "webui-access" && (
+          <SettingsWebuiAccessCard
+            signedInUser={props.signedInUser}
+            onAdminsChanged={props.onAdminsChanged}
+          />
+        )}
+        {section === "onboarding" && (
+          <SettingsOnboardingCard onRestart={props.onRestart} />
+        )}
+      </SidebarShell>
     </div>
   );
 }
@@ -4245,6 +4314,7 @@ function SettingsTgReadReactionCard() {
 // locale. The backend rejects unknown tz with 400 so a
 // stale client doesn't get a silent fall-back to UTC.
 function SettingsSystemTimezoneCard() {
+  const t = useT();
   type TzOut = {
     current: string;
     default: string;
@@ -4305,6 +4375,8 @@ function SettingsSystemTimezoneCard() {
       setData(body);
       setPicked(body.current);
       setSavedNotice("已保存。下次 token 用量查询就用新时区。");
+      // (saved notice remains in zh for v0; localized copy
+      // lands when we extract a setting-specific notice key.)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -4313,10 +4385,9 @@ function SettingsSystemTimezoneCard() {
   }
 
   return (
-    <ConsoleCard title="系统时区">
+    <ConsoleCard title={t("settings.timezone")}>
       <p className="text-sm text-ink-soft">
-        用于把 token 用量按自然周 / 自然月聚合。改动后立即生效 — 下一次查询员工
-        token 用量时，下界按新时区算。
+        {t("settings.timezoneDesc")}
       </p>
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
