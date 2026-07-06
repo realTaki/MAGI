@@ -43,6 +43,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/index";
 
 type SearchHit = {
   session_id: string;
@@ -98,6 +99,7 @@ const SEARCH_LIMIT = 20;
 const BROWSE_PAGE = 20;
 
 export default function ChatSearchPane({ onOpen }: Props) {
+  const t = useT();
   const [query, setQuery] = useState("");
 
   // Search-mode state (existing FTS5 path).
@@ -290,11 +292,9 @@ export default function ChatSearchPane({ onOpen }: Props) {
   return (
     <div className="flex flex-col h-[560px]">
       <div className="px-6 py-3 border-b border-sky-light/40">
-        <h2 className="text-base font-semibold text-ink">搜索对话</h2>
+        <h2 className="text-base font-semibold text-ink">{t("chatSearch.title")}</h2>
         <p className="mt-1 text-xs text-ink-soft">
-          {inSearchMode
-            ? "跨所有 session 的全文搜索。中英文至少 3 个字符起才能匹配。"
-            : "按时间倒序展示最近会话。向下滚动加载更多。"}
+          {inSearchMode ? t("chatSearch.emptyHintSearch") : t("chatSearch.emptyHintBrowse")}
         </p>
       </div>
 
@@ -303,9 +303,9 @@ export default function ChatSearchPane({ onOpen }: Props) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="输入关键字..."
+          placeholder={t("chatSearch.searchPlaceholder")}
           autoFocus
-          aria-label="搜索关键字"
+          aria-label={t("chatSearch.searchAria")}
           className="w-full px-3 py-2 rounded-md border border-sky-light/60 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ocean/40"
         />
       </div>
@@ -316,7 +316,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
           <>
             {searchLoading && (
               <p className="text-sm text-ink-soft text-center mt-12">
-                搜索中…
+                {t("chatSearch.searching")}
               </p>
             )}
             {!searchLoading && searchError && (
@@ -326,7 +326,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
             )}
             {!searchLoading && !searchError && searchData && searchData.items.length === 0 && (
               <p className="text-sm text-ink-soft text-center mt-12">
-                没有匹配的对话。
+                {t("chatSearch.noMatch")}
               </p>
             )}
             {!searchLoading && !searchError && searchData && searchData.items.length > 0 && (
@@ -354,7 +354,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
 
             {browseItems.length === 0 && !browseLoading && !browseError && (
               <p className="text-sm text-ink-soft text-center mt-12">
-                还没有任何对话。
+                {t("chatSearch.emptyBrowse")}
               </p>
             )}
 
@@ -381,12 +381,12 @@ export default function ChatSearchPane({ onOpen }: Props) {
                 ref={sentinelRef}
                 className="py-4 text-center text-xs text-ink-soft"
               >
-                {browseLoading ? "加载中…" : ""}
+                {browseLoading ? t("chatSearch.loadMore") : ""}
               </div>
             )}
             {browseExhausted && browseItems.length > 0 && (
               <p className="py-4 text-center text-xs text-ink-soft">
-                已经到底了 — 共 {browseTotal} 个会话
+                {t("chatSearch.endOfList").replace("{total}", String(browseTotal))}
               </p>
             )}
           </>
@@ -407,6 +407,7 @@ function SearchHitRow({
   hit: SearchHit;
   onOpen: (sessionId: string) => void;
 }) {
+  const t = useT();
   return (
     <li
       className="rounded-lg border border-sky-light/40 bg-white/60 hover:bg-white transition cursor-pointer"
@@ -427,10 +428,10 @@ function SearchHitRow({
           </h3>
           <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-soft border border-sky-light/40 rounded px-1.5 py-0.5">
             {hit.role === "user"
-              ? "你"
+              ? t("chatSearch.roleUser")
               : hit.role === "assistant"
-                ? "EVE"
-                : "sys"}
+                ? t("chatSearch.roleAssistant")
+                : t("chatSearch.roleSystem")}
           </span>
         </div>
         <p
@@ -453,6 +454,7 @@ function SessionSummaryRow({
   summary: SessionSummary;
   onOpen: (sessionId: string) => void;
 }) {
+  const t = useT();
   // Build a single display line. ``title`` wins (manual or
   // auto-titled); otherwise show the first user message
   // preview (truncated by the backend). The footer shows
@@ -477,7 +479,7 @@ function SessionSummaryRow({
             {displayTitle}
           </h3>
           <span className="shrink-0 text-[10px] text-ink-soft border border-sky-light/40 rounded px-1.5 py-0.5">
-            {summary.message_count} 条
+            {t("chatSearch.messageCount").replace("{count}", String(summary.message_count))}
           </span>
         </div>
         <p className="text-xs text-ink-soft line-clamp-2">

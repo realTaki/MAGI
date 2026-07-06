@@ -4,6 +4,7 @@
  * "active" treatment when the row matches the current selection.
  * Used by SidebarShell; not used directly.
  */
+import { useT } from "../i18n/index";
 import type { SidebarItem } from "./SidebarShell";
 
 export default function SidebarNavItem(props: {
@@ -11,6 +12,7 @@ export default function SidebarNavItem(props: {
   active: boolean;
   onClick: () => void;
 }) {
+  const t = useT();
   return (
     <li>
       <button
@@ -31,7 +33,15 @@ export default function SidebarNavItem(props: {
         >
           {props.item.icon}
         </span>
-        <span className="font-medium">{props.item.label}</span>
+        {/* ``item.label`` may be either a raw string (legacy
+            callers) or an i18n key like ``"sidebar.newChat"``.
+            Detect keys by dotted prefix and translate; fall
+            through to the raw value otherwise. */}
+        <span className="font-medium">
+          {props.item.label.includes(".")
+            ? t(props.item.label)
+            : props.item.label}
+        </span>
       </button>
     </li>
   );
