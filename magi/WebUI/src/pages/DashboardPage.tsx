@@ -1166,13 +1166,23 @@ function ChatConversationPane(props: {
       : null;
 
   return (
-    <div className="flex flex-col h-[560px]">
+    // ``h-full`` + the parent ``flex-1`` lets the pane fill
+    // whatever space ``SidebarShell`` gives it. Previously the
+    // pane was a fixed ``h-[560px]`` — that worked when the
+    // page was short, but a long message list pushed the page
+    // past 560 px and the composer landed outside the visible
+    // area. Switching to ``flex flex-col h-full min-h-0`` keeps
+    // the pane pinned to the bottom of the sidebar's content
+    // column: header + scrolling messages + composer all stay
+    // in the visible scroll area regardless of how the body
+    // grows.
+    <div className="flex flex-col h-full min-h-0">
       {/* Header — pane title follows the active session
           (manual title / LLM auto-title / first user preview
           / "新对话" for empty). The "新对话" affordance
           lives in the sidebar (D.9); the pane header is
           just title + subtitle now. */}
-      <div className="px-6 py-3 border-b border-sky-light/40 flex items-start gap-3">
+      <div className="shrink-0 px-6 py-3 border-b border-sky-light/40 flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-semibold text-ink truncate" title={headerTitle}>
             {headerTitle}
@@ -1200,7 +1210,14 @@ function ChatConversationPane(props: {
           the entire history to see what was said last. */}
       <div
         ref={messageListRef}
-        className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3"
+        // ``min-h-0`` + ``flex-1`` lets this list own the
+        // remaining vertical space between header and
+        // composer. Without ``min-h-0`` the flex parent
+        // refuses to shrink below the children's intrinsic
+        // size, so ``overflow-y-auto`` never triggers and the
+        // composer gets pushed off-screen instead of staying
+        // pinned at the bottom of the pane.
+        className="flex-1 min-h-0 overflow-y-auto px-6 py-4 flex flex-col gap-3"
       >
         {props.messages.length === 0 ? (
           <p className="text-sm text-ink-soft text-center mt-12">
@@ -1252,11 +1269,14 @@ function ChatConversationPane(props: {
                   // single long un-broken token (URL, English
                   // paragraph without spaces) makes the bubble
                   // overflow the right edge of the chat pane.
-                  // ``break-words`` complements that by
-                  // wrapping inside the bubble when even 80%
-                  // of the row would still be too wide.
+                  // ``break-all`` (= CSS ``word-break: break-all``)
+                  // wraps anywhere — even mid-token — so a
+                  // continuous string of CJK / Latin chars /
+                  // ``xxx...``-style blobs always stay inside
+                  // the bubble. ``whitespace-pre-wrap`` keeps
+                  // user-entered newlines intact.
                   className={
-                    "max-w-[80%] min-w-0 break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
+                    "max-w-[80%] min-w-0 break-all rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
                     (m.role === "user"
                       ? "bg-sky-deep text-white"
                       : "bg-sky-pale/60 text-ink border border-sky-light/40")
@@ -1332,8 +1352,11 @@ function ChatConversationPane(props: {
       {/* Composer — textarea + send button. The button
           stays enabled when input is empty too; the onSend
           handler early-returns on whitespace-only input so
-          an accidental click does nothing. */}
-      <div className="border-t border-sky-light/40 px-6 py-3 bg-white/40">
+          an accidental click does nothing. ``shrink-0``
+          prevents the composer from being squeezed by a
+          long message list — it stays pinned to the
+          bottom of the pane regardless of message count. */}
+      <div className="shrink-0 border-t border-sky-light/40 px-6 py-3 bg-white/40">
         <div className="flex items-end gap-2">
           <textarea
             value={props.input}

@@ -42,17 +42,30 @@ export default function SidebarShell(props: {
 }) {
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex min-h-[420px]">
+      {/*
+        Pinned to the viewport so the sidebar history list /
+        and the right pane each get their own scroll column.
+        Without ``h-[calc(100vh-X)]`` the card grows with its
+        content (a long history list made the whole page
+        taller than the viewport, so the rest of the chat UI
+        — composer, message list bottom — slid below the
+        fold). The header + main padding above take ~7rem,
+        so we leave that out of the available height.
+      */}
+      <div className="flex h-[calc(100vh-7rem)] min-h-[420px]">
         {/* Light sky-tinted sidebar. Subtle but distinct from
             the surrounding sky gradient body — reads as
             "navigation panel", not a heavy dark bar. Active =
             sky-deep blue pill so the user always knows where
-            they are. */}
+            they are. ``min-h-0`` lets the inner scrollable
+            history list (rendered via ``belowItems``) own
+            its own overflow instead of pushing the whole
+            card taller. */}
         <nav
-          className="w-56 shrink-0 bg-sky-pale/70 backdrop-blur-md border-r border-sky-light/40 p-3 flex flex-col"
+          className="w-56 shrink-0 bg-sky-pale/70 backdrop-blur-md border-r border-sky-light/40 p-3 flex flex-col min-h-0"
           aria-label={props.ariaLabel}
         >
-          <ul className="space-y-1">
+          <ul className="space-y-1 shrink-0">
             {props.items.map((it) => (
               <SidebarNavItem
                 key={it.id}
@@ -62,9 +75,16 @@ export default function SidebarShell(props: {
               />
             ))}
           </ul>
-          {props.belowItems}
+          {/*
+            ``flex-1 + min-h-0 + overflow-y-auto`` turns the
+            belowItems region (Chat tab uses it for the
+            history list) into its own scroll column. The
+            scroll stays inside the sidebar; the page
+            itself never grows past viewport.
+          */}
+          <div className="flex-1 min-h-0 overflow-y-auto">{props.belowItems}</div>
         </nav>
-        <div className="flex-1 p-6">{props.children}</div>
+        <div className="flex-1 min-h-0 p-6 overflow-hidden">{props.children}</div>
       </div>
     </div>
   );
