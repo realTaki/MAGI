@@ -50,7 +50,6 @@ const zh: Catalog = {
     navLabel: "设置分组",
     navAria: "设置面板导航",
     heading: "设置",
-    intro: "按需切换左边分组。每个面板独立加载数据，互不影响。",
     // Left-nav entries — order matches SettingsTab's render order.
     navChannels: "通道",
     navPersona: "Persona",
@@ -227,7 +226,6 @@ const en: Catalog = {
     navLabel: "Sections",
     navAria: "Settings panel navigation",
     heading: "Settings",
-    intro: "Switch panels on the left. Each panel loads its own data; nothing else changes.",
     navChannels: "Channels",
     navPersona: "Persona",
     navTgRead: "TG read emoji",
@@ -397,7 +395,6 @@ const ja: Catalog = {
     navLabel: "セクション",
     navAria: "設定パネルのナビゲーション",
     heading: "設定",
-    intro: "左のセクションを切り替えてください。各パネルは個別にデータを読み込みます。",
     navChannels: "チャンネル",
     navPersona: "Persona",
     navTgRead: "TG 既読 emoji",

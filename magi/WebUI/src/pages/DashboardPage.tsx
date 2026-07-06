@@ -3433,10 +3433,6 @@ function SettingsTab(props: {
   const [section, setSection] = useState<SettingSection>("channels");
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-ink">{t("settings.heading")}</h2>
-        <p className="mt-1 text-sm text-ink-soft">{t("settings.intro")}</p>
-      </div>
       <SidebarShell
         items={SETTINGS_SECTIONS.map((it) => ({
           ...it,
