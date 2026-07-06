@@ -30,6 +30,13 @@ adam = [
     "psycopg[binary]>=3.2.0",
     "pgvector>=0.3.6",
     "jinja2>=3.1.4",
+    # D.X — MCP (Model Context Protocol) client. Optional:
+    # the tool loader falls back gracefully when this lib
+    # is missing or when no mcp.json is configured, so
+    # an Adam install without MCP just runs without the
+    # MCP tool wedge. Listed as required because the
+    # typical Adam deployment uses MCP.
+    "mcp>=1.0.0",
 ]
 eve = [
     "python-telegram-bot[ext]>=21.7",

@@ -28,6 +28,15 @@ logger = logging.getLogger("magi.runtime.tools.registry")
 # ``reset_cache()``.
 _tools_cache: list["Tool"] | None = None
 
+# MCP tools are loaded once at boot via
+# :func:`bootstrap_mcp_tools` and appended on top of
+# ``_tools_cache``. A separate slot keeps the two surfaces
+# (built-in tools / MCP-discovered tools) distinct so a
+# ``reset_cache`` call doesn't have to re-connect MCP. The
+# agent loop never reads this directly; ``get_tools``
+# merges the two lists.
+_mcp_tools_cache: list["Tool"] | None = None
+
 
 def _build_tools() -> list["Tool"]:
     """Construct one instance of every v0 tool.
@@ -52,11 +61,18 @@ def _build_tools() -> list["Tool"]:
 
 
 def get_tools() -> list["Tool"]:
-    """Return all v0 tools (cached after first call)."""
+    """Return all registered tools (cached after first call).
+
+    Built-in tools are appended first; MCP tools (loaded at
+    boot) come after. Order matters to the LLM (the agent
+    loop passes ``schemas`` in order; some models put more
+    weight on the first few tools), so MCP belongs at the
+    end of the menu.
+    """
     global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
-    return _tools_cache
+    return _tools_cache + (_mcp_tools_cache or [])
 
 
 def get_tool(name: str) -> "Tool | None":
@@ -86,3 +102,37 @@ def reset_cache() -> None:
     on the next call. Production code never calls this."""
     global _tools_cache
     _tools_cache = None
+
+
+def bootstrap_mcp_tools(config_path: str | None = None) -> list["Tool"]:
+    """One-shot MCP loader used by :mod:`magi.node` at startup.
+
+    Sync from the caller's POV — it runs the asyncio
+    bootstrap in a private event loop and returns the
+    discovered tools (also cached so subsequent
+    :func:`get_tools` calls reuse them).
+
+    Errors degrade to "no MCP tools". The boot never fails
+    because MCP didn't make it through. See
+    ``load_mcp_tools_blocking`` for the loop mechanics.
+    """
+    global _mcp_tools_cache
+    from magi.runtime.tools.mcp_loader import load_mcp_tools_blocking
+
+    tools = load_mcp_tools_blocking(config_path)
+    _mcp_tools_cache = list(tools)
+    if tools:
+        logger.info("MCP bootstrap registered %d tool(s): %s",
+                    len(tools), ", ".join(t.name for t in tools))
+    return tools
+
+
+def reset_mcp_cache() -> None:
+    """Drop only the MCP tool cache.
+
+    Unlike :func:`reset_cache` (which wipes the built-in
+    tools too), this is used by tests that want to swap the
+    MCP config without rebuilding the slow built-in list.
+    """
+    global _mcp_tools_cache
+    _mcp_tools_cache = None

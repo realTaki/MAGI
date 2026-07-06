@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Template for the MAGI node's MCP (Model Context Protocol) servers.",
+    "Copy this file to mcp.json in your workspace root and edit the entries;",
+    "the MCP loader falls back to this template if mcp.json is missing.",
+    "",
+    "Each entry under mcpServers becomes one upstream server. Disabled entries",
+    "(set \"disabled\": true) are skipped on boot. The loader never fails — a",
+    "broken server just leaves the rest of the registry intact.",
+    "",
+    "Connection types:",
+    "  stdio            command + args (a local subprocess). Default.",
+    "  sse              server-sent events over HTTP (older transport).",
+    "  streamable_http  JSON-over-HTTP (canonical MCP transport). Alias \"http\".",
+    "",
+    "Per-server timeouts (seconds, all optional):",
+    "  connect_timeout, execute_timeout, sse_read_timeout."
+  ],
+  "mcpServers": {
+    "fetch": {
+      "_comment": "Example: uvx-installed web fetch server (uncomment to enable).",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "disabled": true
+    }
+  }
+}
