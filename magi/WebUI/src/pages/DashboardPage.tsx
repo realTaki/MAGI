@@ -99,7 +99,13 @@ function PostLoginLayout(props: {
   onRestart: () => void;
   onSignOut: () => void;
 }) {
-  const [tab, setTab] = useState<TabKey>("organization");
+  // D.18+3 — default to the chat tab. The chat pane is the
+  // primary surface of the dashboard (where the operator's
+  // day-to-day work happens); the previously-default
+  // "organization" tab made the chat UI feel hidden on first
+  // load. ``ChatTab`` already routes to its own "new chat"
+  // view, so landing on chat is the right entry point.
+  const [tab, setTab] = useState<TabKey>("chat");
   const t = useT();
 
   return (
@@ -108,7 +114,7 @@ function PostLoginLayout(props: {
           intensified" rather than a dark bar; the body gradient
           shows through. Tabs are sky-blue active, ink-soft idle
           — clean, no dark glass. */}
-      <header className="border-b border-sky-light/40 bg-white/60 backdrop-blur-xl">
+      <header className="relative z-30 border-b border-sky-light/40 bg-white/60 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-6 h-12 flex items-center gap-6">
           <div className="flex items-center gap-2 shrink-0">
             <img
@@ -237,59 +243,60 @@ type ChatItem = SidebarItem & {
 const CHAT_CATEGORIES: ChatItem[] = [
   {
     id: "action-items",
-    label: "actionItems.title",
+    label: "sidebar.actionItems",
     icon: <IconActionItems />,
-    // The pane reads from ``/api/action_items`` at mount —
-    // see ``components/ActionItemsPane.tsx``. The empty list
-    // copy lives in ActionItemsPane itself.
+    pane: {
+      title: "sidebar.actionItems",
+      hint: "sidebar.actionItemsHint",
+    },
   },
   {
     id: "meetings",
-    label: "Meetings",
+    label: "sidebar.meetings",
     icon: <IconMeetings />,
     pane: {
-      title: "Meetings",
-      hint: "No meetings scheduled. EVEs will book and surface meetings here once C4 lands.",
+      title: "sidebar.meetings",
+      hint: "sidebar.meetingsHint",
       meta: "C4",
     },
   },
   {
     id: "reminders",
-    label: "Reminders",
+    label: "sidebar.reminders",
     icon: <IconReminders />,
     pane: {
-      title: "Reminders",
-      hint: "No reminders. EVEs will deliver them here (and on TG) once C5 lands.",
+      title: "sidebar.reminders",
+      hint: "sidebar.remindersHint",
       meta: "C5",
     },
   },
   {
     id: "email",
-    label: "Email",
+    label: "sidebar.email",
     icon: <IconEmail />,
     pane: {
-      title: "Email",
-      hint: "No email. The mail channel isn't wired yet — Phase 2.",
+      title: "sidebar.email",
+      hint: "sidebar.emailHint",
       meta: "Phase 2",
     },
   },
   {
     id: "scheduled-tasks",
-    label: "Scheduled Tasks",
+    label: "sidebar.tasks",
     icon: <IconScheduledTasks />,
     pane: {
-      title: "Scheduled Tasks",
-      hint: "No scheduled tasks. EVEs will queue and report on them once C5 lands.",
+      title: "sidebar.tasks",
+      hint: "sidebar.tasksHint",
       meta: "C5",
     },
   },
   {
     id: "daily-reports",
-    label: "Daily Reports",
+    label: "sidebar.reports",
     icon: <IconDailyReports />,
     pane: {
-      title: "Daily Reports",
-      hint: "No daily reports yet. The proactive engine will generate them once C5 lands.",
+      title: "sidebar.reports",
+      hint: "sidebar.reportsHint",
       meta: "C5",
     },
   },
@@ -302,7 +309,7 @@ const CHAT_ACTIONS: ChatItem[] = [
     icon: <IconPlus />,
     pane: {
       title: "sidebar.newChat",
-      hint: "Pick an employee and start a fresh conversation. C3 wires the TG channel up first; this entry point becomes useful once at least one EVE is dispatched (C6).",
+      hint: "sidebar.newChatHint",
       meta: "C3 / C6",
     },
   },
@@ -312,7 +319,7 @@ const CHAT_ACTIONS: ChatItem[] = [
     icon: <IconSearch />,
     pane: {
       title: "sidebar.search",
-      hint: "Full-text search across every conversation with an EVE. The index lives in EVE's local SQLite (FTS5) and the result is a deep link into the matching thread.",
+      hint: "sidebar.searchHint",
       meta: "D.18",
     },
   },
@@ -1048,17 +1055,19 @@ function ChatTab() {
         <ChatSearchPane onOpen={openSession} />
       ) : selected.pane ? (
         <div className="p-8 text-center flex flex-col items-center justify-center">
-          {/* pane.title may be a raw string or an i18n key
-              (dotted). Translate when keyed; otherwise pass
-              through. pane.hint stays raw — those are
-              feature-status descriptions, not user-facing
-              navigation copy. */}
+          {/* pane.title and pane.hint may be raw strings or
+              i18n keys (dotted). Translate when keyed;
+              otherwise pass through. */}
           <h2 className="text-lg font-semibold text-ink">
             {selected.pane.title.includes(".")
               ? t(selected.pane.title)
               : selected.pane.title}
           </h2>
-          <p className="mt-2 text-sm text-ink-soft max-w-md">{selected.pane.hint}</p>
+          <p className="mt-2 text-sm text-ink-soft max-w-md">
+            {selected.pane.hint.includes(".")
+              ? t(selected.pane.hint)
+              : selected.pane.hint}
+          </p>
           {selected.pane.meta && (
             <p className="mt-3 text-xs text-ink-soft">{selected.pane.meta}</p>
           )}
@@ -3214,6 +3223,7 @@ function KnowledgeTab() {
 // on, not operational state. C4 lands the SkillRunner + 4 MVP
 // skills and the per-EVE assignment UI.
 function KnowledgeSkillsPane() {
+  const t = useT();
   return (
     <div className="space-y-4">
       <div>
@@ -3225,7 +3235,7 @@ function KnowledgeSkillsPane() {
         </p>
         <p className="mt-2 text-xs text-ink-soft">C4 — Skill runner + 4 MVP skills</p>
       </div>
-      <ConsoleCard title="Registry">
+      <ConsoleCard title={t("settings.registry")}>
         <p className="text-sm text-ink-soft">0 skills registered</p>
         <p className="mt-1 text-xs text-ink-soft">
           The 4 MVP skills will appear here automatically.
@@ -3309,6 +3319,7 @@ function KnowledgeConnectorRow(props: {
 // lifecycle belongs). This pane is a placeholder pointing at
 // C1.1 so the section is reachable.
 function KnowledgeContactsPane() {
+  const t = useT();
   return (
     <div className="space-y-4">
       <div>
@@ -3322,7 +3333,7 @@ function KnowledgeContactsPane() {
           C1.1 — ORM + directory CRUD
         </p>
       </div>
-      <ConsoleCard title="Directory">
+      <ConsoleCard title={t("settings.directory")}>
         <p className="text-sm text-ink-soft">0 employees</p>
         <p className="mt-1 text-xs text-ink-soft">
           C1.1 fills this in. The super-admin list (a different
@@ -3394,6 +3405,7 @@ function SettingsChannelsCard(props: {
   data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
 
   const tgConnected = !!props.data?.bot.username;
@@ -3405,7 +3417,7 @@ function SettingsChannelsCard(props: {
     : "(not configured)";
 
   return (
-    <ConsoleCard title="Channels">
+    <ConsoleCard title={t("settings.channels")}>
       <p className="text-sm text-ink-soft">
         Platform adapters the node can mount. WebUI is the
         console you're using; Telegram is the IM channel the
@@ -3521,6 +3533,7 @@ function SettingsWebuiAccessCard(props: {
     next: Array<{ chatId: string; displayName: string | null }>,
   ) => void;
 }) {
+  const t = useT();
   // WebUI Access = employees WHERE role=admin. The unified
   // table means a single GET returns the list, the new
   // employees / remove flow can delete rows directly, and
@@ -3598,7 +3611,7 @@ function SettingsWebuiAccessCard(props: {
   }
 
   return (
-    <ConsoleCard title="WebUI Access">
+    <ConsoleCard title={t("settings.webuiAccess")}>
       <p className="text-sm text-ink-soft">
         Sign-in list. Each row is an <code>Employee</code> with
         <span className="font-medium"> role=admin</span> and a
@@ -3728,8 +3741,9 @@ function RoleBadge(props: {
 }
 
 function SettingsOnboardingCard(props: { onRestart: () => void }) {
+  const t = useT();
   return (
-    <ConsoleCard title="Onboarding">
+    <ConsoleCard title={t("settings.onboarding")}>
       <p className="text-sm text-ink-soft">
         Re-run the first-time setup wizard. Saved bot and admin
         rows stay in SQLite; the wizard will resume from wherever
@@ -4067,6 +4081,7 @@ function SettingsPersonaCard() {
 // anything the API returns is one of those, so the radio
 // rows are guaranteed to round-trip.
 function SettingsTgReadReactionCard() {
+  const t = useT();
   type ReactionChoice = { value: string; label: string };
   type ReactionOut = {
     current: string;
@@ -4141,7 +4156,7 @@ function SettingsTgReadReactionCard() {
   }
 
   return (
-    <ConsoleCard title="TG 已读 emoji">
+    <ConsoleCard title={t("settings.tgReadEmoji")}>
       <p className="text-sm text-ink-soft">
         员工给 EVE bot 发消息时，bot 给那条消息加一个 emoji 作为「已收到 / 在处理」的信号。
         改完保存即生效，下一条消息就生效。
@@ -4372,6 +4387,7 @@ function SettingsSystemTimezoneCard() {
 // the form here mirrors those bounds so the operator can't
 // even type a value that the API would 422 on.
 function SettingsToolLoopCard() {
+  const t = useT();
   type IterationsOut = {
     current: number;
     default: number;
@@ -4456,7 +4472,7 @@ function SettingsToolLoopCard() {
   }
 
   return (
-    <ConsoleCard title="Tool loop 最大轮数">
+    <ConsoleCard title={t("settings.toolLoop")}>
       <p className="text-sm text-ink-soft">
         一次对话中，LLM 可以连续调用多少次 tool（read_file / write_file / list_files /
         send_message）才会停。超出后 agent 直接返回 fallback reply。
@@ -4542,6 +4558,7 @@ function SettingsToolLoopCard() {
 // the range gets a fast client-side error instead of a
 // round-trip + 422.
 function SettingsCompactCard() {
+  const t = useT();
   type CompactOut = {
     context_window: number;
     threshold_pct: number;
@@ -4649,7 +4666,7 @@ function SettingsCompactCard() {
   }
 
   return (
-    <ConsoleCard title="Auto-Compact">
+    <ConsoleCard title={t("settings.autoCompact")}>
       <p className="text-sm text-ink-soft">
         长 session 在消息数累积到 context_window × threshold_pct% 时触发压缩:
         老的 N 条调 LLM 生成 summary (写到 messages[0])、原文进 archive、
