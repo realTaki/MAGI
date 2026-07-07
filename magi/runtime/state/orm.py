@@ -692,6 +692,15 @@ def init_orm(state_dir: str | None = None) -> Engine:
     if state_dir is not None:
         # Honour an explicit override (mostly for tests).
         os.environ["MAGI_STATE_DIR"] = state_dir
+    # The proactive runtime (Task / TaskRun) ships in a
+    # separate package; import it here so its tables
+    # register on ``Base.metadata`` before ``create_all``
+    # runs. Doing this inside ``init_orm`` (rather than
+    # at module top) keeps the eager-import surface
+    # tight — callers that never touch the proactive
+    # module don't pay apscheduler's import cost
+    # until something asks for a scheduled task.
+    import magi.runtime.proactive.orm_models  # noqa: F401 — registers on Base
     Base.metadata.create_all(engine)
     _run_inline_migrations(engine)
     _seed_default_root(engine)
@@ -823,6 +832,32 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
         "token_usage",
         "ix_token_usage_emp_ts",
         "(employee_id, ts)",
+    ),
+    # 定时 / 循环任务 (proactive runtime) — indexes
+    # backfilled for existing DBs that pre-date the
+    # proactive feature. The model declares the same
+    # names in __table_args__; on fresh installs
+    # ``create_all`` builds these alongside the new
+    # tables. ``tasks(enabled, last_run_at)`` covers the
+    # scheduler boot scan ("what's enabled and possibly
+    # due?") and the operator's primary listing. The
+    # ``task_runs`` composite covers the history pane's
+    # primary access pattern: per task, ordered by
+    # started_at desc.
+    (
+        "tasks",
+        "ix_tasks_enabled_last_run",
+        "(enabled, last_run_at)",
+    ),
+    (
+        "tasks",
+        "ix_tasks_employee",
+        "(employee_id)",
+    ),
+    (
+        "task_runs",
+        "ix_task_runs_task_started",
+        "(task_id, started_at)",
     ),
 ]
 

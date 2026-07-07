@@ -227,6 +227,30 @@ def run() -> None:
     except Exception as e:  # noqa: BLE001 — never block boot
         logger.warning("MCP bootstrap skipped: %s", e)
 
+    # Start the proactive task scheduler. ``start_scheduler``
+    # is non-fatal — if apscheduler / MCP / DB had a
+    # transient issue we keep going; tasks will simply
+    # not fire until the next node restart. The
+    # dedicated event loop lives on its own thread so
+    # long-running tasks can never stall a request
+    # handler.
+    try:
+        from magi.runtime.proactive.scheduler import start_scheduler
+        start_scheduler(cfg.state_dir)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("scheduler bootstrap skipped: %s", e)
+
+    # Register a shutdown hook so a SIGTERM / uvicorn
+    # lifespan teardown drains the executor + closes
+    # the cron scheduler cleanly. Atexit is a backup for
+    # bare ``magi.node.run`` callers.
+    try:
+        import atexit
+        from magi.runtime.proactive.scheduler import stop_scheduler
+        atexit.register(stop_scheduler)
+    except Exception:  # noqa: BLE001
+        pass
+
     if not cfg.channels:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return

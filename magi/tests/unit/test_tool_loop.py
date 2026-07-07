@@ -117,6 +117,7 @@ def test_tool_registry_returns_four_schemas():
         "list_files",
         "search_sessions",
         "send_message",
+        "schedule_task",
     ]
 
 

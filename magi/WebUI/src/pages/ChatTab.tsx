@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ActionItemsPane from "../components/ActionItemsPane";
 import ChatSearchPane from "../components/ChatSearchPane";
+import TaskListPane from "../components/TaskListPane";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconActionItems,
@@ -106,11 +107,6 @@ const CHAT_CATEGORIES: ChatItem[] = [
     id: "scheduled-tasks",
     label: "sidebar.tasks",
     icon: <IconScheduledTasks />,
-    pane: {
-      title: "sidebar.tasks",
-      hint: "sidebar.tasksHint",
-      meta: "C5",
-    },
   },
   {
     id: "daily-reports",
@@ -855,6 +851,8 @@ export default function ChatTab() {
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
+      ) : selectedId === "scheduled-tasks" ? (
+        <TaskListPane />
       ) : selectedId === "search" || selectedId === "view-all" ? (
         <ChatSearchPane onOpen={openSession} />
       ) : selected.pane ? (
