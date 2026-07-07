@@ -83,26 +83,109 @@ export default function KnowledgeTab() {
 //
 // The skill registry lives here rather than in the Admin tab
 // because skills are *capabilities* the deployer (and EVEs) draw
-// on, not operational state. C4 lands the SkillRunner + 4 MVP
-// skills and the per-EVE assignment UI.
+// on, not operational state.
+//
+// Fetches ``GET /api/skills`` (admin-gated, served by
+// ``magi.channels.webui.api.skills``) on mount. Each row
+// shows the frontmatter ``name`` + one-line description +
+// the file path (so the operator can edit it from their
+// own workstation without opening the WebUI). The LLM-side
+// equivalent is the ``load_skill`` tool — same data, two
+// surfaces.
 function KnowledgeSkillsPane() {
+  type SkillMeta = {
+    name: string;
+    description: string;
+    path: string;
+    version?: string | null;
+  };
   const t = useT();
+  const [skills, setSkills] = useState<SkillMeta[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/skills", { credentials: "include" });
+        if (!r.ok) {
+          if (!cancelled) setLoadError(`${t("settings.toolsLoadFailed")} (${r.status})`);
+          return;
+        }
+        const body = (await r.json()) as SkillMeta[];
+        if (!cancelled) setSkills(body);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Network error");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pathDir = (p: string) => {
+    // Show only the parent dir + filename so the operator
+    // can spot ``SKILL.md`` quickly. Full path stays in
+    // the ``title`` for hover.
+    const m = p.match(/([^/]+SKILL\.md)$/);
+    return m ? m[1] : p;
+  };
+
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Skills</h2>
+        <h2 className="text-lg font-semibold text-ink">{t("settings.knowledgeSkillsHeading")}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Reusable actions EVEs can call — schedule reminders,
-          book meetings, search the knowledge base, collect info.
-          The 4 MVP skills land with C4.
+          {t("settings.knowledgeSkillsIntro")}
         </p>
-        <p className="mt-2 text-xs text-ink-soft">C4 — Skill runner + 4 MVP skills</p>
       </div>
-      <ConsoleCard title={t("settings.registry")}>
-        <p className="text-sm text-ink-soft">0 skills registered</p>
-        <p className="mt-1 text-xs text-ink-soft">
-          The 4 MVP skills will appear here automatically.
-        </p>
+      <ConsoleCard title={t("settings.knowledgeSkillsHeading")}>
+        {loadError && <p className="form-error">✗ {loadError}</p>}
+        {skills === null && !loadError && (
+          <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
+        )}
+        {skills !== null && skills.length === 0 && !loadError && (
+          <p className="text-sm text-ink-soft">
+            {t("settings.knowledgeSkillsEmpty")}
+          </p>
+        )}
+        {skills !== null && skills.length > 0 && (
+          <table className="data-table w-full">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
+                <th className="py-2 pr-4 font-medium">{t("settings.knowledgeSkillsPath")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {skills.map((s) => (
+                <tr
+                  key={s.name}
+                  className="border-b border-sky-light/30 last:border-0"
+                >
+                  <td className="py-2 pr-4 text-ink font-mono text-xs font-medium">
+                    {s.name}
+                    {s.version && (
+                      <span className="ml-2 text-[10px] text-ink-soft">
+                        v{s.version}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-ink-soft text-xs">
+                    {s.description}
+                  </td>
+                  <td className="py-2 pr-4 text-[10px] text-ink-soft font-mono" title={s.path}>
+                    {pathDir(s.path)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </ConsoleCard>
     </div>
   );

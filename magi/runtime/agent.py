@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from magi.runtime.llm import ChatMessage, LLMError, get_provider
+from magi.runtime.skills import format_skills_block, get_skill_loader
 from magi.runtime.tools.base import ToolContext
 from magi.runtime.tools.registry import get_tool, get_tool_schemas
 from magi.runtime.tokens import estimate_messages_tokens
@@ -567,7 +568,16 @@ async def handle_message(
             )
 
             result = await provider.chat(
-                system=soul,
+                # Skills: frontmatter list appended to the
+                # SOUL system prompt. ``format_skills_block``
+                # returns ``""`` when no skills are registered,
+                # so we short-circuit to ``soul`` verbatim and
+                # save the per-turn tokens. Read every turn
+                # rather than caching: an operator may drop a
+                # SKILL.md into the workspace and the next
+                # restart picks it up; the per-turn cost is
+                # negligible (a couple dozen lines of text).
+                system=(soul + format_skills_block(get_skill_loader().list())).strip() or soul,
                 messages=messages,
                 max_tokens=max_tokens,
                 tools=tool_schemas,

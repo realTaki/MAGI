@@ -175,6 +175,12 @@ def create_app() -> FastAPI:
     # render an operator-facing "what can my MAGI do?" view.
     from magi.channels.webui.api import tools
     app.include_router(tools.router, prefix="/api")
+    # Skills — read-only catalog of SKILL.md files in
+    # workspace/skills/. Knowledge → Skills is the operator-
+    # facing surface; the LLM-side equivalent is the
+    # ``load_skill`` tool (``magi.runtime.skills.loader_tool``).
+    from magi.channels.webui.api import skills
+    app.include_router(skills.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets

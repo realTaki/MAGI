@@ -240,6 +240,25 @@ def run() -> None:
     except Exception as e:  # noqa: BLE001
         logger.warning("scheduler bootstrap skipped: %s", e)
 
+    # Force-initialise the SKILL.md loader so the boot
+    # log names every registered skill in one place, and
+    # so the very first chat turn already sees the
+    # ``load_skill`` tool + system-prompt block. We could
+    # defer this to first-use (the loader is a lazy
+    # singleton), but the boot-time scan is the cheapest
+    # place for an operator to notice a malformed
+    # SKILL.md — fail loud, fail early.
+    try:
+        from magi.runtime.skills import get_skill_loader
+        loader = get_skill_loader()
+        logger.info(
+            "skills: %d registered (workspace=%s)",
+            len(loader.list()),
+            loader._workspace_root,  # noqa: SLF001
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("skills bootstrap skipped: %s", e)
+
     # Register a shutdown hook so a SIGTERM / uvicorn
     # lifespan teardown drains the executor + closes
     # the cron scheduler cleanly. Atexit is a backup for
