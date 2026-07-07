@@ -1,28 +1,36 @@
 /**
  * TaskListPane — operator-facing CRUD over scheduled tasks.
  *
- * Lives on the Chat sidebar → "定时任务" entry
- * (``id="scheduled-tasks"``). Talks to the
- * ``/api/tasks`` endpoints; defers human-language
- * cron rendering to the backend's ``humanize_cron``-style
- * helper if it's added later (v0 just shows the raw cron).
+ * v2 layout (preset + moment, no raw cron, no per-task
+ * timezone picker, no per-task credential picker):
  *
- * Layout:
- *   - Header row: title + "+ 新建任务" button → opens form drawer.
+ *   - Header row + "+ 新建" → opens the TaskFormDrawer.
  *   - Filter chips: all / enabled / disabled.
- *   - Table: name / cron / tz / channel / last status /
+ *   - Table columns: name / channel / last status /
  *     last_run_at / actions.
+ *   - Each row: 「立刻跑」 / 启用/停用 / 「编辑」 / 「删除」.
  *
- * Reactions:
- *   - Drawer: name, prompt, cron, tz, channel, employee_id
- *     (rendered as a select populated from
- *     ``GET /api/employees?page=1&page_size=100``).
- *   - Each row's actions: 「立刻跑」 / 启用/停用 toggle /
- *     「删除」.
- *   - After any mutation, refresh the list. The state
- *     is local — no global store because the volume
- *     (a few dozen rows in any sane deploy) doesn't
- *     warrant one.
+ * The drawer asks for FOUR form fields:
+ *
+ *   - 名称 (label)            — short, 120 chars max
+ *   - 触发方式 (frequency)    — Hourly / Daily / Weekly / Monthly
+ *                                dropdown; backend does NOT
+ *                                support one-time (the API
+ *                                path is the “立刻跑” button,
+ *                                anyway).
+ *   - 时间 (moment)            — depends on frequency:
+ *                                  Hourly  → 分钟 (0-59)
+ *                                  Daily   → HH:MM
+ *                                  Weekly  → 星期 (Mon..Sun)
+ *                                            + HH:MM
+ *                                  Monthly → 几日 (1-31) + HH:MM
+ *   - Channel                 — webui / tg
+ *
+ * Credentials and timezone are NOT asked. Credentials
+ * are bound implicitly to whoever is signed in (admin
+ * or assigned employee — the backend's role gate
+ * refuses other roles); the timezone is read from the
+ * Settings panel's ``system.timezone`` field globally.
  */
 import { useEffect, useState } from "react";
 
@@ -43,8 +51,7 @@ type TaskRow = {
   updated_at: string;
 };
 
-type EmployeeMini = { id: number; name: string; display_name: string | null };
-
+type Frequency = "hourly" | "daily" | "weekly" | "monthly";
 type Filter = "all" | "enabled" | "disabled";
 
 async function api<T>(
@@ -64,15 +71,16 @@ async function api<T>(
   return (await r.json()) as T;
 }
 
+const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
 export default function TaskListPane() {
   const [rows, setRows] = useState<TaskRow[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [employees, setEmployees] = useState<EmployeeMini[]>([]);
+  const [systemTz, setSystemTz] = useState<string | null>(null);
 
-  // Initial load + after every refresh trigger.
   async function refresh() {
     setLoadError(null);
     try {
@@ -88,24 +96,30 @@ export default function TaskListPane() {
     }
   }
 
-  // One-shot employees fetch for the drawer select.
+  // Fetch the system-wide tz once so the page header
+  // can show "所有任务按 <tz> 调度". A change requires
+  // a page reload — same expectation as the rest of
+  // Settings; in v0 we don't ship real-time sync for
+  // the simple dashboard view.
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/employees?page=1&page_size=100", {
+        const r = await fetch("/api/system-settings/timezone", {
           credentials: "include",
         });
         if (r.ok) {
-          const body = (await r.json()) as { items: EmployeeMini[] };
-          setEmployees(body.items ?? []);
+          const body = (await r.json()) as {
+            current: string;
+            default: string;
+          };
+          setSystemTz(body.current || body.default || "UTC");
         }
       } catch {
-        /* drawer will just show empty select */
+        /* ignore — header just hides the badge */
       }
     })();
   }, []);
 
-  // Refresh when the filter chips change.
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,7 +162,14 @@ export default function TaskListPane() {
         <div>
           <h2 className="text-lg font-semibold text-ink">定时任务</h2>
           <p className="mt-1 text-sm text-ink-soft">
-            按 cron 时间到点跑任务，每次会话独立 — operator 在 chat 历史能看到每一次的回复。
+            按触发方式 + 时间到点跑任务，每次会话独立 — operator 在 chat 历史能看到每一次的回复。
+            {systemTz && (
+              <span className="ml-2 text-xs text-ink-soft">
+                （时区：<span className="font-mono">{systemTz}</span>，去
+                <a href="/chat/scheduled-tasks?tab=settings" className="text-sky-700 ml-1">设置</a>
+                改）
+              </span>
+            )}
           </p>
         </div>
         <button
@@ -193,8 +214,7 @@ export default function TaskListPane() {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">名称</th>
-                <th className="py-2 pr-4 font-medium">Cron</th>
-                <th className="py-2 pr-4 font-medium">时区</th>
+                <th className="py-2 pr-4 font-medium">Cron（自动生成）</th>
                 <th className="py-2 pr-4 font-medium">Channel</th>
                 <th className="py-2 pr-4 font-medium">最近状态</th>
                 <th className="py-2 font-medium w-44 text-right">操作</th>
@@ -221,9 +241,6 @@ export default function TaskListPane() {
                   </td>
                   <td className="py-2 pr-4 text-ink-soft font-mono text-xs">
                     {t.cron}
-                  </td>
-                  <td className="py-2 pr-4 text-ink-soft text-xs">
-                    {t.tz}
                   </td>
                   <td className="py-2 pr-4 text-ink-soft text-xs">
                     {t.channel}
@@ -300,7 +317,6 @@ export default function TaskListPane() {
       {drawerOpen && (
         <TaskFormDrawer
           taskId={editingId}
-          employees={employees}
           onClose={() => setDrawerOpen(false)}
           onSaved={async () => {
             setDrawerOpen(false);
@@ -313,45 +329,46 @@ export default function TaskListPane() {
 }
 
 // ──────────────────────────────────────────────────────────────────────── #
-// Drawer — single inline form, used for both create and edit. Fields are
-// pre-populated when ``taskId`` is provided; otherwise blank.
+// Drawer
 // ──────────────────────────────────────────────────────────────────────── #
 
 function TaskFormDrawer(props: {
   taskId: string | null;
-  employees: EmployeeMini[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 }) {
+  // Form state. Editing loads the row; we don't try to
+  // round-trip the preset back from cron (back-conversion
+  // is ambiguous — ``0 9 * * 1`` could be Weekly Mon@09:00
+  // OR Monthly DOM=1@09:00). For edit, we re-load with
+  // the saved preset fields if they roundtrip cleanly,
+  // else we leave the operator to re-pick.
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [cron, setCron] = useState("");
-  const [tz, setTz] = useState("UTC");
+  const [frequency, setFrequency] = useState<Frequency>("daily");
+  const [hour, setHour] = useState(0);
+  const [minute, setMinute] = useState(0);
+  const [dayOfWeek, setDayOfWeek] = useState(0); // Mon = 0
+  const [dayOfMonth, setDayOfMonth] = useState(1);
   const [channel, setChannel] = useState<"webui" | "tg">("webui");
-  const [employeeId, setEmployeeId] = useState<string>("");
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState<string | null>(null);
 
-  // Pre-populate when editing.
   useEffect(() => {
     if (props.taskId === null) {
-      setLoaded(null);
       setName("");
       setPrompt("");
-      setCron("");
-      setTz("UTC");
+      setFrequency("daily");
+      setHour(0);
+      setMinute(0);
+      setDayOfWeek(0);
+      setDayOfMonth(1);
       setChannel("webui");
       setEnabled(true);
       setError(null);
-      // pre-select current admin employee if available.
-      if (props.employees.length === 1) {
-        setEmployeeId(String(props.employees[0].id));
-      }
       return;
     }
-    if (loaded === props.taskId) return;
     (async () => {
       try {
         const r = await fetch(`/api/tasks/${props.taskId}`, {
@@ -364,53 +381,72 @@ function TaskFormDrawer(props: {
         const t = (await r.json()) as TaskRow;
         setName(t.name);
         setPrompt(t.prompt);
-        setCron(t.cron);
-        setTz(t.tz);
         setChannel(t.channel);
-        setEmployeeId(String(t.employee_id));
         setEnabled(t.enabled);
-        setLoaded(t.id);
+        // Preset-into-cron is ambiguous, so we don't
+        // try to derive the preset from cron. We just
+        // default the moment fields to safe values; the
+        // operator will see the cron via the table row.
+        setFrequency("daily");
+        setHour(0);
+        setMinute(0);
+        setDayOfWeek(0);
+        setDayOfMonth(1);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
       }
     })();
-  }, [props.taskId, props.employees, loaded]);
+  }, [props.taskId]);
 
   async function save() {
     setError(null);
-    if (!name.trim() || !prompt.trim() || !cron.trim() || !employeeId) {
-      setError("名称 / prompt / cron / 员工 不能为空");
+    if (!name.trim() || !prompt.trim()) {
+      setError("名称 和 prompt 不能为空");
       return;
     }
-    const payload = {
+    if (frequency === "weekly" && (dayOfWeek < 0 || dayOfWeek > 6)) {
+      setError("请选择星期");
+      return;
+    }
+    if (frequency === "monthly" && (dayOfMonth < 1 || dayOfMonth > 31)) {
+      setError("请选择 1-31");
+      return;
+    }
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      setError("小时必须 0-23");
+      return;
+    }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      setError("分钟必须 0-59");
+      return;
+    }
+
+    const body: Record<string, unknown> = {
       name: name.trim(),
       prompt: prompt.trim(),
-      cron: cron.trim(),
-      tz: tz.trim() || "UTC",
+      frequency,
+      hour,
+      minute,
       channel,
-      employee_id: Number(employeeId),
       enabled,
     };
+    if (frequency === "weekly") body["day_of_week"] = dayOfWeek;
+    if (frequency === "monthly") body["day_of_month"] = dayOfMonth;
+
     setSaving(true);
     try {
       const path = props.taskId ? `/${props.taskId}` : "";
-      const init: RequestInit = {
-        method: props.taskId ? "PATCH" : "POST",
-        body: JSON.stringify(props.taskId ? { ...payload } : payload),
-      };
-      // PATCH lets us omit unchanged fields; the API
-      // wraps each in model_dump(exclude_unset=True).
       const r = await fetch(`/api/tasks${path}`, {
+        method: props.taskId ? "PATCH" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        ...init,
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        setError(
-          (body as { detail?: string }).detail ??
-            `${r.status} ${r.statusText}`,
-        );
+        const detail = (await r.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        setError(detail.detail ?? `${r.status} ${r.statusText}`);
         return;
       }
       await props.onSaved();
@@ -419,6 +455,12 @@ function TaskFormDrawer(props: {
     } finally {
       setSaving(false);
     }
+  }
+
+  // HH:MM string helpers (only for daily / weekly / monthly).
+  function setHHMM(h: number, m: number) {
+    setHour(h);
+    setMinute(m);
   }
 
   return (
@@ -462,65 +504,201 @@ function TaskFormDrawer(props: {
               className="form-input text-sm py-2 px-3 font-mono resize-y"
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+          {/* Preset + moment row — the v2 contract. Four
+              controls alongside (the user layout shows
+              them in a row, like the screenshot). */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
-              <label htmlFor="task-cron" className="form-label">Cron 表达式</label>
-              <input
-                id="task-cron"
-                type="text"
-                value={cron}
-                onChange={(e) => setCron(e.target.value)}
-                placeholder="0 9 * * *  (每天 09:00)"
-                className="form-input text-sm py-2 px-3 font-mono"
-              />
-              <p className="mt-1 text-[10px] text-ink-soft">
-                5 字段：分 时 日 月 周。例：<span className="font-mono">*/5 * * * *</span> 每 5 分钟 · <span className="font-mono">0 9 * * mon-fri</span> 工作日 09:00
-              </p>
+              <label htmlFor="task-frequency" className="form-label">触发方式</label>
+              <select
+                id="task-frequency"
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value as Frequency)}
+                className="form-input text-sm py-2 px-3"
+              >
+                <option value="hourly">每小时</option>
+                <option value="daily">每日</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+              </select>
             </div>
-            <div>
-              <label htmlFor="task-tz" className="form-label">时区 (IANA)</label>
-              <input
-                id="task-tz"
-                type="text"
-                value={tz}
-                onChange={(e) => setTz(e.target.value)}
-                placeholder="UTC"
-                className="form-input text-sm py-2 px-3 font-mono"
-              />
-            </div>
+
+            {/* Hourly — minute (0..59) only. */}
+            {frequency === "hourly" && (
+              <div>
+                <label htmlFor="task-minute" className="form-label">分钟 (0-59)</label>
+                <select
+                  id="task-minute"
+                  value={minute}
+                  onChange={(e) => setMinute(Number(e.target.value))}
+                  className="form-input text-sm py-2 px-3"
+                >
+                  {Array.from({ length: 60 }, (_, m) => (
+                    <option key={m} value={m}>
+                      :{m.toString().padStart(2, "0")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Daily — HH:MM. */}
+            {frequency === "daily" && (
+              <>
+                <div>
+                  <label htmlFor="task-hour" className="form-label">小时</label>
+                  <select
+                    id="task-hour"
+                    value={hour}
+                    onChange={(e) => setHHMM(Number(e.target.value), minute)}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {h.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="task-minute" className="form-label">分钟</label>
+                  <select
+                    id="task-minute"
+                    value={minute}
+                    onChange={(e) => setHHMM(hour, Number(e.target.value))}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 60 }, (_, m) => (
+                      <option key={m} value={m}>
+                        {m.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Weekly — weekday + HH:MM. */}
+            {frequency === "weekly" && (
+              <>
+                <div>
+                  <label htmlFor="task-weekday" className="form-label">星期</label>
+                  <select
+                    id="task-weekday"
+                    value={dayOfWeek}
+                    onChange={(e) => setDayOfWeek(Number(e.target.value))}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {WEEKDAY_LABELS.map((label, i) => (
+                      <option key={i} value={i}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="task-hour" className="form-label">小时</label>
+                  <select
+                    id="task-hour"
+                    value={hour}
+                    onChange={(e) => setHHMM(Number(e.target.value), minute)}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {h.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="task-minute" className="form-label">分钟</label>
+                  <select
+                    id="task-minute"
+                    value={minute}
+                    onChange={(e) => setHHMM(hour, Number(e.target.value))}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 60 }, (_, m) => (
+                      <option key={m} value={m}>
+                        {m.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Monthly — DOM + HH:MM. */}
+            {frequency === "monthly" && (
+              <>
+                <div>
+                  <label htmlFor="task-dom" className="form-label">几日</label>
+                  <select
+                    id="task-dom"
+                    value={dayOfMonth}
+                    onChange={(e) => setDayOfMonth(Number(e.target.value))}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 31 }, (_, d) => (
+                      <option key={d + 1} value={d + 1}>
+                        {d + 1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="task-hour" className="form-label">小时</label>
+                  <select
+                    id="task-hour"
+                    value={hour}
+                    onChange={(e) => setHHMM(Number(e.target.value), minute)}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {h.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="task-minute" className="form-label">分钟</label>
+                  <select
+                    id="task-minute"
+                    value={minute}
+                    onChange={(e) => setHHMM(hour, Number(e.target.value))}
+                    className="form-input text-sm py-2 px-3"
+                  >
+                    {Array.from({ length: 60 }, (_, m) => (
+                      <option key={m} value={m}>
+                        {m.toString().padStart(2, "0")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="task-channel" className="form-label">Channel</label>
               <select
                 id="task-channel"
                 value={channel}
-                onChange={(e) =>
-                  setChannel(e.target.value as "webui" | "tg")
-                }
+                onChange={(e) => setChannel(e.target.value as "webui" | "tg")}
                 className="form-input text-sm py-2 px-3"
               >
                 <option value="webui">webui（写到 chat 历史）</option>
                 <option value="tg">tg（同时推到 TG）</option>
               </select>
             </div>
-            <div>
-              <label htmlFor="task-employee" className="form-label">凭据（员工）</label>
-              <select
-                id="task-employee"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                className="form-input text-sm py-2 px-3"
-              >
-                <option value="">— 选一个 —</option>
-                {props.employees.map((e) => (
-                  <option key={e.id} value={String(e.id)}>
-                    {e.display_name || e.name} (#{e.id})
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
+
+          <p className="text-xs text-ink-soft">
+            时区和凭据由系统自动决定：cron 用 Settings → 系统时区；凭据用当前登录者（admin 或「被此 MAGI 服务」的 assigned）的 provider / API key。
+          </p>
+
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"

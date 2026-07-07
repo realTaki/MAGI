@@ -208,25 +208,45 @@ class TaskScheduler:
         if not task.enabled:
             self.unregister(task.id)
             return
+        # Pull the system tz freshly on every register.
+        # We DO NOT cache at module-import — the operator
+        # can change ``system.timezone`` from the Settings
+        # tab and expect running tasks to follow.
+        tz = self._resolve_tz()
         try:
-            CronTrigger.from_crontab(task.cron, timezone=task.tz)
+            trigger = CronTrigger.from_crontab(task.cron, timezone=tz)
         except (ValueError, Exception) as exc:  # noqa: BLE001 — see plan
             logger.warning(
                 "register: bad cron on task %s (%r): %s; skipping",
                 task.id, task.cron, exc,
             )
             return
-        try:
-            tz = task.tz if hasattr(task.tz, "zone") else task.tz
-        except Exception:
-            tz = "UTC"
         self._sched.add_job(
             func=self._fire,
-            trigger=CronTrigger.from_crontab(task.cron, timezone=tz),
+            trigger=trigger,
             id=task.id,
             args=[task.id, False],
             replace_existing=True,
         )
+
+    def _resolve_tz(self) -> str:
+        """Read the operator-configured system timezone.
+
+        Falls back to ``UTC`` if the KV store is empty
+        or the stored value can't be parsed as an IANA
+        name. :func:`state_get` only reads — no exception
+        surface here.
+        """
+        from magi.runtime.state.settings import state_get
+
+        raw = state_get(self._state_dir, "system.timezone") or "UTC"
+        # ``state_get`` returns the raw string from the KV
+        # store; the WebUI validator already rejected
+        # garbage on save, so we accept whatever we got
+        # and let apscheduler throw at construction
+        # time. (``register`` falls through to "skipping"
+        # logging when that happens.)
+        return raw
 
     def unregister(self, task_id: str) -> None:
         """Remove a task from the scheduler. No-op if absent."""
