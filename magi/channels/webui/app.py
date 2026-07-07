@@ -164,6 +164,12 @@ def create_app() -> FastAPI:
     # total) in one response.
     from magi.channels.webui.api import employee_metrics
     app.include_router(employee_metrics.router, prefix="/api")
+    # Scheduled tasks — operator-facing CRUD + manual
+    # trigger. Routed at /api/tasks/*; the LLM-side
+    # ``schedule_task`` tool bypasses this router and
+    # talks to the registry directly.
+    from magi.channels.webui.api import tasks
+    app.include_router(tasks.router, prefix="/api")
     # Tools — read-only list of every tool the LLM can call
     # (built-ins + MCP-loaded). The Knowledge tab uses it to
     # render an operator-facing "what can my MAGI do?" view.

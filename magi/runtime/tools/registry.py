@@ -47,6 +47,7 @@ def _build_tools() -> list["Tool"]:
     """
     from magi.runtime.tools.list_files import ListFilesTool
     from magi.runtime.tools.read_file import ReadFileTool
+    from magi.runtime.tools.schedule_task import ScheduleTaskTool
     from magi.runtime.tools.search_sessions import SearchSessionsTool
     from magi.runtime.tools.send_message import SendMessageTool
     from magi.runtime.tools.write_file import WriteFileTool
@@ -57,6 +58,7 @@ def _build_tools() -> list["Tool"]:
         ListFilesTool(),
         SearchSessionsTool(),
         SendMessageTool(),
+        ScheduleTaskTool(),
     ]
 
 
