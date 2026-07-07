@@ -127,3 +127,13 @@ export const IconEmployees = ({ className }: IconProps) => (
     <path d="M15 14.5c3 0 6 1.5 6 4" />
   </Icon>
 );
+
+// Wrench — used for the Tools pane in the Knowledge tab.
+// Slight indented variant: the bolt-and-nut symbol reads
+// "settings / capability" without leaning on the more common
+// gear icon (which we already have implicit via SidebarShell).
+export const IconTools = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z" />
+  </Icon>
+);

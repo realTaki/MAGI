@@ -164,6 +164,11 @@ def create_app() -> FastAPI:
     # total) in one response.
     from magi.channels.webui.api import employee_metrics
     app.include_router(employee_metrics.router, prefix="/api")
+    # Tools — read-only list of every tool the LLM can call
+    # (built-ins + MCP-loaded). The Knowledge tab uses it to
+    # render an operator-facing "what can my MAGI do?" view.
+    from magi.channels.webui.api import tools
+    app.include_router(tools.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets
