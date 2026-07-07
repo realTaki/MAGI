@@ -290,7 +290,14 @@ export default function ChatSearchPane({ onOpen }: Props) {
   const inSearchMode = query.trim().length > 0;
 
   return (
-    <div className="flex flex-col h-[560px]">
+    // ``h-full`` lets us inherit SidebarShell's column
+    // height (the shell's outer card is ``h-[calc(100vh-7rem)]``).
+    // Previously this was a hard-coded ``h-[560px]`` which
+    // left the bottom of the panel empty on viewports
+    // taller than ~700 px, and overflowed the sidebar on
+    // shorter viewports. Matching the chat / task panes'
+    // pattern keeps the layout consistent across tabs.
+    <div className="flex flex-col h-full min-h-0">
       <div className="px-6 py-3 border-b border-sky-light/40">
         <h2 className="text-base font-semibold text-ink">{t("chatSearch.title")}</h2>
         <p className="mt-1 text-xs text-ink-soft">
@@ -310,12 +317,12 @@ export default function ChatSearchPane({ onOpen }: Props) {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {/* ── Search mode ───────────────────────────────── */}
         {inSearchMode && (
           <>
             {searchLoading && (
-              <p className="text-sm text-ink-soft text-center mt-12">
+              <p className="text-sm text-ink-soft text-center mt-6">
                 {t("chatSearch.searching")}
               </p>
             )}
@@ -325,7 +332,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
               </div>
             )}
             {!searchLoading && !searchError && searchData && searchData.items.length === 0 && (
-              <p className="text-sm text-ink-soft text-center mt-12">
+              <p className="text-sm text-ink-soft text-center mt-6">
                 {t("chatSearch.noMatch")}
               </p>
             )}
@@ -353,7 +360,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
             )}
 
             {browseItems.length === 0 && !browseLoading && !browseError && (
-              <p className="text-sm text-ink-soft text-center mt-12">
+              <p className="text-sm text-ink-soft text-center mt-6">
                 {t("chatSearch.emptyBrowse")}
               </p>
             )}

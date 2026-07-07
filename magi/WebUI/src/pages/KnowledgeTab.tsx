@@ -294,7 +294,7 @@ export function KnowledgeToolsPane() {
       <ConsoleCard title={t("settings.toolsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
         {tools === null && !loadError && (
-          <p className="text-sm text-ink-soft">Loading…</p>
+          <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
         )}
         {tools !== null && tools.length === 0 && !loadError && (
           <p className="text-sm text-ink-soft">
@@ -306,7 +306,7 @@ export function KnowledgeToolsPane() {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
-                <th className="py-2 pr-4 font-medium">Description</th>
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
                 <th className="py-2 font-medium w-28 text-right">
                   {t("settings.toolsInputs")}
                 </th>
