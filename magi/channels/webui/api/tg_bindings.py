@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
-from magi.runtime.state.orm import Employee, open_session
+from magi.agent.state.orm import Employee, open_session
 
 router = APIRouter(tags=["telegram"])
 

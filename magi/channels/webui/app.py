@@ -69,10 +69,10 @@ def create_app() -> FastAPI:
     # state — module-level startup would race those calls.
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        # Imported lazily because ``magi.runtime.auto_title``
-        # also imports ``magi.runtime.llm``, which is heavy and
+        # Imported lazily because ``magi.agent.auto_title``
+        # also imports ``magi.agent.llm``, which is heavy and
         # not needed for /health. Keeps cold-start tight.
-        from magi.runtime.auto_title import (
+        from magi.agent.auto_title import (
             start_title_worker,
             stop_title_worker,
         )
@@ -178,7 +178,7 @@ def create_app() -> FastAPI:
     # Skills — read-only catalog of SKILL.md files in
     # workspace/skills/. Knowledge → Skills is the operator-
     # facing surface; the LLM-side equivalent is the
-    # ``load_skill`` tool (``magi.runtime.skills.loader_tool``).
+    # ``load_skill`` tool (``magi.agent.skills.loader_tool``).
     from magi.channels.webui.api import skills
     app.include_router(skills.router, prefix="/api")
 

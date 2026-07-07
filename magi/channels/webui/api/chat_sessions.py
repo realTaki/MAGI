@@ -3,7 +3,7 @@
 A "session" is a single thread of messages between an
 operator (identified by their TG chat_id / dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
-under the operator's workspace (see :mod:`magi.runtime.sessions`)
+under the operator's workspace (see :mod:`magi.agent.sessions`)
 and are per-user — admin A's session is invisible to admin B.
 
 Endpoints
@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.sessions import (
+from magi.agent.sessions import (
     Session,
     SessionCorruptError,
     SessionError,
@@ -43,7 +43,7 @@ from magi.runtime.sessions import (
     SessionSummary,
     new_session_id,
 )
-from magi.runtime.state.orm import Employee, open_session
+from magi.agent.state.orm import Employee, open_session
 
 logger = logging.getLogger("magi.api.chat_sessions")
 

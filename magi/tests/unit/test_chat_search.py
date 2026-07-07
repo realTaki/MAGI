@@ -39,12 +39,12 @@ def search_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.runtime.state.orm as orm_mod
+    import magi.agent.state.orm as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.runtime.state import init_sqlite
-    from magi.runtime.state.orm import Employee, init_orm, open_session
+    from magi.agent.state import init_sqlite
+    from magi.agent.state.orm import Employee, init_orm, open_session
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -74,8 +74,8 @@ def _seed_chat_message(chat_id: str, text: str) -> str:
     )
 @pytest.fixture
 def seed_messages(search_env):
-    from magi.runtime.sessions import SessionStore, new_session_id
-    from magi.runtime.state.orm import ChatMessage, open_session
+    from magi.agent.sessions import SessionStore, new_session_id
+    from magi.agent.state.orm import ChatMessage, open_session
 
     counter = {"n": 0}
 

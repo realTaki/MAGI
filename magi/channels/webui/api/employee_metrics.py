@@ -8,7 +8,7 @@ in the operator-configured timezone (see
 month = 1st of month, both inclusive of "now".
 
 The data source is the ``token_usage`` table
-(``magi.runtime.state.orm.TokenUsage``) — one row per
+(``magi.agent.state.orm.TokenUsage``) — one row per
 outbound LLM call, written by ``agent._record_token_usage``
 after the audit row. The aggregation is a single SQL
 ``SELECT SUM(...)`` per period, no Python-side scan.
@@ -43,7 +43,7 @@ from sqlalchemy import func, select
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.system_settings import get_system_timezone
-from magi.runtime.state.orm import TokenUsage, open_session
+from magi.agent.state.orm import TokenUsage, open_session
 
 logger = logging.getLogger("magi.api.employee_metrics")
 

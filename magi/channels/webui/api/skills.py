@@ -1,7 +1,7 @@
 """``/api/skills`` — read-only skill registry surface.
 
 The actual machine-readable catalog lives in
-:mod:`magi.runtime.skills.loader` and is a module
+:mod:`magi.agent.skills.loader` and is a module
 singleton. This router just wraps it for the WebUI /
 admin consoles — no caching, no live-rewatch; the loader
 itself caches once at process start. A successful
@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.skills import get_skill_loader
+from magi.agent.skills import get_skill_loader
 
 logger = logging.getLogger("magi.channels.webui.api.skills")
 

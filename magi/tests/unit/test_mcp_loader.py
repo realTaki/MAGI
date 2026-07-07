@@ -31,9 +31,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from magi.runtime.tools import mcp_loader
-from magi.runtime.tools.base import ToolContext, ToolResult
-from magi.runtime.tools.registry import (
+from magi.agent.tools import mcp_loader
+from magi.agent.tools.base import ToolContext, ToolResult
+from magi.agent.tools.registry import (
     bootstrap_mcp_tools,
     get_tool,
     get_tool_schemas,

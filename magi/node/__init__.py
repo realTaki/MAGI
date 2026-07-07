@@ -192,7 +192,7 @@ def run() -> None:
     # is a no-op for existing tables, so this is safe on every
     # boot. Runs in the same ``magi.db`` file as the hand-rolled
     # KV store; the two write to disjoint tables.
-    from magi.runtime.state.orm import init_orm
+    from magi.agent.state.orm import init_orm
     init_orm(cfg.state_dir)
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
@@ -204,15 +204,15 @@ def run() -> None:
     # logged and left in place for hand-inspection (no silent
     # data loss).
     from pathlib import Path
-    from magi.runtime.sessions import migrate_from_json
-    from magi.runtime.workspace import workspace_root
+    from magi.agent.sessions import migrate_from_json
+    from magi.agent.workspace import workspace_root
     migrate_from_json(Path(workspace_root(cfg.state_dir)))
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent — every boot re-checks but
     # only creates what's missing, so deployer edits to SOUL.md
     # (or anything else) survive across restarts.
-    from magi.runtime.workspace import bootstrap_workspace, workspace_root
+    from magi.agent.workspace import bootstrap_workspace, workspace_root
     bootstrap_workspace(workspace_root(cfg.state_dir or "/workspace/memories"))
 
     # D.X — load any MCP servers declared in mcp.json. The
@@ -222,7 +222,7 @@ def run() -> None:
     # tools" so a misconfigured MCP config never blocks
     # startup.
     try:
-        from magi.runtime.tools.registry import bootstrap_mcp_tools
+        from magi.agent.tools.registry import bootstrap_mcp_tools
         bootstrap_mcp_tools()
     except Exception as e:  # noqa: BLE001 — never block boot
         logger.warning("MCP bootstrap skipped: %s", e)
@@ -235,7 +235,7 @@ def run() -> None:
     # long-running tasks can never stall a request
     # handler.
     try:
-        from magi.runtime.proactive.scheduler import start_scheduler
+        from magi.agent.proactive.scheduler import start_scheduler
         start_scheduler(cfg.state_dir)
     except Exception as e:  # noqa: BLE001
         logger.warning("scheduler bootstrap skipped: %s", e)
@@ -249,7 +249,7 @@ def run() -> None:
     # place for an operator to notice a malformed
     # SKILL.md — fail loud, fail early.
     try:
-        from magi.runtime.skills import get_skill_loader
+        from magi.agent.skills import get_skill_loader
         loader = get_skill_loader()
         logger.info(
             "skills: %d registered (workspace=%s)",
@@ -265,7 +265,7 @@ def run() -> None:
     # bare ``magi.node.run`` callers.
     try:
         import atexit
-        from magi.runtime.proactive.scheduler import stop_scheduler
+        from magi.agent.proactive.scheduler import stop_scheduler
         atexit.register(stop_scheduler)
     except Exception:  # noqa: BLE001
         pass
@@ -303,7 +303,7 @@ def _init_state(cfg: NodeConfig) -> None:
         return
 
     state_dir = cfg.state_dir or "/workspace/memories"
-    from magi.runtime.state import init_sqlite
+    from magi.agent.state import init_sqlite
 
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})

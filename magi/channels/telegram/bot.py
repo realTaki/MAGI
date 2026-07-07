@@ -32,15 +32,15 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 logger = logging.getLogger("magi.channels.telegram.bot")
 
-# All bot replies now live in ``magi/runtime/prompts/bot_replies.yaml``
+# All bot replies now live in ``magi/agent/prompts/bot_replies.yaml``
 # — see that file for wording. The dispatchers below call
-# :func:`magi.runtime.prompts.load_bot_replies` once and look up
+# :func:`magi.agent.prompts.load_bot_replies` once and look up
 # templates by id. Keeping the templates out of code means an
 # operator can tweak wording without touching Python. The
 # lazy import + per-process cache in ``prompts/__init__.py``
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
-from magi.runtime.prompts import load_bot_replies  # noqa: E402
+from magi.agent.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
 # messages, which is fine — values are templates, not
@@ -201,8 +201,8 @@ def _find_employee_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.runtime.state.orm import Employee, open_session
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.state.settings import state_get
 
     try:
         cid_int = int(chat_id)
@@ -288,8 +288,8 @@ async def _handle_employee_message(
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.runtime.agent import handle_message
-    from magi.runtime.sessions import (
+    from magi.agent.agent import handle_message
+    from magi.agent.sessions import (
         SessionMessage,
         SessionStore,
         new_session_id,
@@ -393,7 +393,7 @@ async def _handle_employee_message(
     # session lock; no TG-specific code needed.
     if post is not None and len(post.messages) == 1:
         try:
-            from magi.runtime.auto_title import enqueue_title_job
+            from magi.agent.auto_title import enqueue_title_job
             await enqueue_title_job(
                 chat_id=chat_id,
                 session_id=session_id,
@@ -599,7 +599,7 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     and keep the loop alive with an ``asyncio.Event`` that never gets
     set. The daemon thread is killed when the process exits.
     """
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.settings import state_get
 
     token = state_get(state_dir, "telegram.bot_token")
     if not token:

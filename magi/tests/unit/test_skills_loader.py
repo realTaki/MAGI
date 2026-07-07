@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from magi.runtime.skills import (
+from magi.agent.skills import (
     format_skills_block,
     get_skill_loader,
 )
-from magi.runtime.skills.loader import (
+from magi.agent.skills.loader import (
     SkillLoader,
     _reset_for_tests,
 )

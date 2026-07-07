@@ -62,7 +62,7 @@ def client(soul_env):
 
     # Lazy import — keeps the test module fast to import and
     # ensures the env var is set before the factory builds.
-    from magi.runtime.state.orm import (
+    from magi.agent.state.orm import (
         Employee,
         init_orm,
         open_session,
@@ -256,7 +256,7 @@ def _client_with_role(soul_env, *, role: str, chat_id: int):
     """Build a TestClient whose cookie resolves to an
     employee with the requested ``role``."""
     state_dir, _workspace = soul_env
-    from magi.runtime.state.orm import (
+    from magi.agent.state.orm import (
         Employee,
         init_orm,
         open_session,

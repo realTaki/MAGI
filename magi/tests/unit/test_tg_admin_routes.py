@@ -25,8 +25,8 @@ def tg_admin_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    from magi.runtime.state import init_sqlite
-    from magi.runtime.state.orm import Employee, init_orm, open_session
+    from magi.agent.state import init_sqlite
+    from magi.agent.state.orm import Employee, init_orm, open_session
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -34,7 +34,7 @@ def tg_admin_env(monkeypatch, tmp_path):
 
 
 def _seed_employee(state_dir: str, *, chat_id: int, role: str):
-    from magi.runtime.state.orm import Employee, open_session
+    from magi.agent.state.orm import Employee, open_session
 
     with open_session() as s:
         s.query(Employee).delete()
@@ -89,9 +89,9 @@ async def test_admin_message_reaches_handler(tg_admin_env):
     # by short-circuiting ``handle_message`` to return a
     # canned string. (Patching at the import location is
     # needed because ``bot.py`` does
-    # ``from magi.runtime.agent import handle_message``
+    # ``from magi.agent.agent import handle_message``
     # inside the handler.)
-    import magi.runtime.agent as agent_mod
+    import magi.agent.agent as agent_mod
     agent_mod.handle_message = AsyncMock(return_value="hi back")
 
     await _on_message(update, MagicMock())
@@ -112,7 +112,7 @@ async def test_assigned_message_reaches_handler(tg_admin_env):
     from magi.channels.telegram.bot import _on_message
     update = _make_update(chat_id=9876543210, message_id=43, text="hello")
 
-    import magi.runtime.agent as agent_mod
+    import magi.agent.agent as agent_mod
     agent_mod.handle_message = AsyncMock(return_value="hi back")
 
     await _on_message(update, MagicMock())

@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from magi.runtime.sessions import SessionStore
-from magi.runtime.state import init_sqlite
-from magi.runtime.state.orm import ChatSession, init_orm, open_session
+from magi.agent.sessions import SessionStore
+from magi.agent.state import init_sqlite
+from magi.agent.state.orm import ChatSession, init_orm, open_session
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -39,7 +39,7 @@ def tg_session_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.runtime.state.orm as orm_mod
+    import magi.agent.state.orm as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -165,7 +165,7 @@ def test_messages_persist_to_session(tg_session_env):
     """End-to-end: helper creates a session, append_messages
     persists the inbound + outbound rows, get sees them."""
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
-    from magi.runtime.sessions import SessionMessage, new_session_id
+    from magi.agent.sessions import SessionMessage, new_session_id
 
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)

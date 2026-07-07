@@ -48,11 +48,11 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.proactive.cron_utils import preset_to_cron, validate_cron
-from magi.runtime.proactive.orm_models import Task, TaskRun
-from magi.runtime.proactive.scheduler import get_scheduler
-from magi.runtime.sessions import new_session_id
-from magi.runtime.state.orm import Employee
+from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron
+from magi.agent.proactive.orm_models import Task, TaskRun
+from magi.agent.proactive.scheduler import get_scheduler
+from magi.agent.sessions import new_session_id
+from magi.agent.state.orm import Employee
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -280,7 +280,7 @@ def create_task(
     # system TZ was in force when the row was created).
     # The runtime, however, ignores it: every fire reads
     # the current ``system.timezone`` via
-    # :func:`magi.runtime.state.settings.state_get`.
+    # :func:`magi.agent.state.settings.state_get`.
     system_tz = _resolve_system_tz()
     t = Task(
         id=task_id,
@@ -425,7 +425,7 @@ def run_task_now(
         # fallback so the button still works in
         # ``pytest`` mode. The runner writes the row's
         # terminal state directly.
-        from magi.runtime.proactive.runner import execute_task
+        from magi.agent.proactive.runner import execute_task
         import asyncio
         try:
             asyncio.run(execute_task(
@@ -574,7 +574,7 @@ def _resolve_system_tz() -> str:
     ``system.timezone`` so the operator sees the same
     value everywhere.
     """
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.settings import state_get
     raw = state_get(_state_dir(), "system.timezone")
     if not raw:
         return "UTC"

@@ -18,9 +18,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from magi.runtime.sessions import SessionStore
-from magi.runtime.state import init_sqlite
-from magi.runtime.state.orm import Employee, init_orm, open_session
+from magi.agent.sessions import SessionStore
+from magi.agent.state import init_sqlite
+from magi.agent.state.orm import Employee, init_orm, open_session
 
 
 # A fake LLM reply used when we monkey-patch ``handle_message``
@@ -38,7 +38,7 @@ def state(tmp_path, monkeypatch) -> Path:
     """Set up an isolated state_dir + workspace_dir for the test.
 
     We also reset the module-global SQLAlchemy engine in
-    :mod:`magi.runtime.state.orm` — without that, the
+    :mod:`magi.agent.state.orm` — without that, the
     second test reuses the first test's engine, which
     points at a different (already-deleted) sqlite file.
     The engine is a process-global; per-test isolation
@@ -56,7 +56,7 @@ def state(tmp_path, monkeypatch) -> Path:
     # every test after the first inserts into a path that
     # no longer exists → IntegrityError on duplicate key
     # from a half-flushed engine with stale conn pool.
-    import magi.runtime.state.orm as _orm_mod
+    import magi.agent.state.orm as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
 
@@ -88,7 +88,7 @@ def client(state, admin, monkeypatch) -> TestClient:
     """The app with ``handle_message`` stubbed so /chat/send doesn't
     need a real LLM."""
     from magi.channels.webui.api import chat as chat_mod
-    from magi.runtime import agent as agent_mod
+    from magi.agent import agent as agent_mod
 
     async def fake_handle_message(*args, **kwargs):
         return _FAKE_REPLY
@@ -116,7 +116,7 @@ def _reset_orm_engine():
     sqlite file path is stale) and the inserts collide on
     seeded admin rows.
     """
-    import magi.runtime.state.orm as _orm_mod
+    import magi.agent.state.orm as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
     yield
@@ -148,7 +148,7 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     sid = body["session_id"]
     # D.18: sessions live in SQLite (``chat_sessions`` table)
     # instead of a JSON file. Verify the row landed.
-    from magi.runtime.state.orm import ChatSession, open_session
+    from magi.agent.state.orm import ChatSession, open_session
     with open_session() as db:
         row = db.get(ChatSession, sid)
     assert row is not None, f"expected session row for {sid}"
