@@ -45,12 +45,10 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from magi.channels.webui.api.chat_sessions import _admin_employee_id
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.proactive.cron_utils import validate_cron
+from magi.runtime.proactive.cron_utils import preset_to_cron, validate_cron
 from magi.runtime.proactive.orm_models import Task, TaskRun
 from magi.runtime.proactive.scheduler import get_scheduler
 from magi.runtime.sessions import new_session_id
@@ -67,60 +65,57 @@ router = APIRouter(tags=["tasks"])
 
 
 class TaskIn(BaseModel):
+    """Create-task payload — preset + moments, not raw cron.
+
+    The operator picks a frequency (``hourly`` / ``daily`` /
+    ``weekly`` / ``monthly``) and the matching moment
+    fields. The server stitches them into a 5-field cron
+    string via :func:`preset_to_cron` and stores the
+    rendered form in ``Task.cron``. The DB column stays
+    a free-form ``cron`` field — future edges (custom
+    ranges, lists, etc.) land as additional preset
+    kinds without forcing a migration.
+    """
+
     name: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=8000)
-    cron: str = Field(min_length=1, max_length=120)
-    tz: str = "UTC"
+    # Preset payload — see :class:`preset_to_cron` for the
+    # mapping per frequency.
+    frequency: Literal["hourly", "daily", "weekly", "monthly"]
+    hour: int = 0
+    minute: int = 0
+    day_of_week: Optional[int] = None   # 0..6, Mon=0
+    day_of_month: Optional[int] = None  # 1..31
     channel: str = Field(default="webui", pattern=r"^(webui|tg)$")
 
-    @field_validator("cron")
+    @field_validator("frequency")
     @classmethod
-    def _v_cron(cls, v: str) -> str:
-        try:
-            validate_cron(v)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
-        return v
-
-    @field_validator("tz")
-    @classmethod
-    def _v_tz(cls, v: str) -> str:
-        try:
-            ZoneInfo(v)
-        except ZoneInfoNotFoundError as exc:
-            raise ValueError(f"unknown IANA timezone: {v!r}") from exc
+    def _v_freq(cls, v: str) -> str:
+        if v not in ("hourly", "daily", "weekly", "monthly"):
+            raise ValueError(f"unsupported frequency: {v!r}")
         return v
 
 
 class TaskPatch(BaseModel):
+    """Partial update — preset fields + enabled.
+
+    Cron is derived from the preset at write-time and
+    replaced atomically on every update (no concept of
+    "edit only the cron string"; the operator always
+    picks a new preset). ``employee_id`` is *not*
+    editable here — moving the credentials bound to a
+    task is out of scope for v0.
+    """
+
     name: Optional[str] = None
     prompt: Optional[str] = None
-    cron: Optional[str] = None
-    tz: Optional[str] = None
+    frequency: Optional[Literal["hourly", "daily", "weekly", "monthly"]] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    day_of_week: Optional[int] = None
+    day_of_month: Optional[int] = None
     channel: Optional[str] = None
     enabled: Optional[bool] = None
-
-    @field_validator("cron")
-    @classmethod
-    def _v_cron(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        try:
-            validate_cron(v)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
-        return v
-
-    @field_validator("tz")
-    @classmethod
-    def _v_tz(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        try:
-            ZoneInfo(v)
-        except ZoneInfoNotFoundError as exc:
-            raise ValueError(f"unknown IANA timezone: {v!r}") from exc
-        return v
 
     @field_validator("channel")
     @classmethod
@@ -179,7 +174,7 @@ def _task_to_out(t: Task) -> TaskOut:
         name=t.name,
         prompt=t.prompt,
         cron=t.cron,
-        tz=t.tz,
+        tz=_resolve_system_tz(),
         channel=t.channel,
         employee_id=t.employee_id,
         enabled=bool(t.enabled),
@@ -260,11 +255,12 @@ def create_task(
 ) -> TaskOut:
     """Create a new task.
 
-    ``employee_id`` defaults to the calling admin (the
-    common case). An optional ``X-Employee-Id`` header
-    lets an admin schedule on behalf of another employee
-    (kept for future operator consoles — not surfaced in
-    the WebUI today).
+    The operator picks a frequency + moment fields; the
+    server renders them into the canonical 5-field cron
+    via :func:`preset_to_cron`. The timestamp column
+    ``tz`` is no longer per-task — the scheduler always
+    reads the operator's system-wide setting
+    (``system.timezone``).
     """
     operator_id = _resolve_creator_id(request, payload, session)
     existing = (
@@ -276,14 +272,22 @@ def create_task(
             code="task.name_conflict",
             detail=f"a task with name {payload.name!r} already exists",
         )
+    cron, _preset_used = _render_cron_from_payload(payload)
     task_id = new_session_id()
     now = _now_iso()
+    # ``tz`` is reserved on the model for backend
+    # bookkeeping (DEBUGABILITY — we want to know which
+    # system TZ was in force when the row was created).
+    # The runtime, however, ignores it: every fire reads
+    # the current ``system.timezone`` via
+    # :func:`magi.runtime.state.settings.state_get`.
+    system_tz = _resolve_system_tz()
     t = Task(
         id=task_id,
         name=payload.name,
         prompt=payload.prompt,
-        cron=payload.cron,
-        tz=payload.tz,
+        cron=cron,
+        tz=system_tz,
         channel=payload.channel,
         employee_id=operator_id,
         enabled=1,
@@ -312,16 +316,47 @@ def update_task(
             status_code=404, code="not_found.task",
             detail=f"task {task_id} not found",
         )
+    # Convert the preset payload (if any) into a single
+    # ``cron`` field, atomically replacing what the model
+    # stored.
+    preset_fields = ("frequency", "hour", "minute", "day_of_week", "day_of_month")
+    if any(getattr(payload, f, None) is not None for f in preset_fields):
+        cron, _ = _render_cron_from_payload(_PatchProxy(payload))
+        t.cron = cron
     data = payload.model_dump(exclude_unset=True)
+    # Drop the preset bits — they were translated into
+    # ``cron`` above; persisting both would leak noise.
+    for f in preset_fields:
+        data.pop(f, None)
+    data.pop("frequency", None)
     for k, v in data.items():
         setattr(t, k, v)
     if "enabled" in data:
         t.enabled = 1 if t.enabled else 0
+    # ``tz`` is now always derived from system settings on
+    # fire; we keep the column stamped to the latest system
+    # tz so the row's audit info stays useful.
+    t.tz = _resolve_system_tz()
     t.updated_at = _now_iso()
     session.commit()
     session.refresh(t)
     _register_with_scheduler(t)
     return _task_to_out(t)
+
+
+class _PatchProxy:
+    """Tiny shim so :func:`_render_cron_from_payload` reads
+    the same shape from either :class:`TaskIn` or
+    :class:`TaskPatch`. Both expose the same preset
+    attributes (``frequency`` / ``hour`` / etc.) so we
+    just attribute-forward through the input model.
+    """
+
+    def __init__(self, src) -> None:
+        self._src = src
+
+    def __getattr__(self, item):
+        return getattr(self._src, item)
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
@@ -425,17 +460,23 @@ def list_task_runs(
 # ──────────────────────────────────────────────────────────────────────── #
 
 
-def _resolve_creator_id(request: Request, _payload: TaskIn, session: Session) -> int:
+def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     """Decide the owner of the new task.
 
     Resolution order:
-      1. ``X-Employee-Id`` header (explicit).
-      2. Fall back to the cookie's admin employee id
-         via :func:`_admin_employee_id` (chat_sessions'
-         helper, which opens its own session).
+      1. ``X-Employee-Id`` header (explicit, may be used
+         by future operator consoles; v0 WebUI doesn't
+         expose it).
+      2. Fall back to the cookie's signed-in employee.
+         Allowed roles are ``admin`` (signed in via the
+         super-admin form) and ``assigned`` (the person
+         this MAGI serves). ``employee`` and ``guest``
+         are barred — they don't sign in.
 
-    v0 keeps both branches simple; future "operator
-    console" UIs pass X-Employee-Id.
+    Returns the resolved ``employee_id``. The task's
+    credentials are bound to whoever this returns (i.e.
+    cron time fires + LLM call charges the creator's
+    own provider / API key).
     """
     raw = request.headers.get("X-Employee-Id")
     if raw is not None and raw.strip():
@@ -446,27 +487,43 @@ def _resolve_creator_id(request: Request, _payload: TaskIn, session: Session) ->
                 status_code=400, code="validation.employee_id",
                 detail="X-Employee-Id must be an integer",
             ) from exc
-        if session.get(Employee, cand) is None:
+        emp = session.get(Employee, cand)
+        if emp is None:
             raise MagiHTTPException(
                 status_code=404, code="not_found.employee",
                 detail=f"employee {cand} not found",
             )
-        return cand
-    # ``_admin_employee_id`` needs a ``SessionStore`` (not a Session);
-    # we don't have one in scope here, so call its helper path
-    # inline: read the cookie, look up the employee row in the
-    # same SQL session the request already has.
+        _enforce_creator_role(emp.role)
+        return emp.id
+    # Fall back to the cookie: same path as chat_sessions,
+    # but the role gate is looser — ``assigned`` is also
+    # welcome. ``_admin_employee_id`` enforces ``role ==
+    # "admin"``; we duplicate it inline with the broader
+    # gate.
     from magi.channels.webui.api.chat_sessions import _resolve_chat_id
     chat_id = _resolve_chat_id(request)
-    from magi.runtime.state.orm import open_session as _open
-    with _open() as s:
-        emp = s.scalar(select(Employee).where(Employee.telegram_id == chat_id))
-    if emp is None or emp.role != "admin":
+    emp = session.scalar(
+        select(Employee).where(Employee.telegram_id == chat_id)
+    )
+    if emp is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
-            detail="no admin employee row bound to this chat_id",
+            detail="no employee row bound to this chat_id; sign in first",
         )
+    _enforce_creator_role(emp.role)
     return emp.id
+
+
+def _enforce_creator_role(role: str) -> None:
+    if role not in _ROLE_MAY_CREATE:
+        raise MagiHTTPException(
+            status_code=403,
+            code="tasks.creator_forbidden",
+            detail=(
+                f"role {role!r} cannot create tasks; "
+                f"allowed: {sorted(_ROLE_MAY_CREATE)}"
+            ),
+        )
 
 
 def _register_with_scheduler(task: Task) -> None:
@@ -497,3 +554,60 @@ def _unregister_from_scheduler(task_id: str) -> None:
 def _state_dir() -> str:
     import os
     return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+
+
+# Constants for the creator-role gate. ``admin`` and
+# ``assigned`` employees may create tasks (charged to their
+# own credentials); ``employee`` and ``guest`` don't sign
+# in to a MAGI node and so have no use for scheduled
+# tasks. Mirrors the gate in ``schedule_task`` so the
+# API and the LLM tool are consistent.
+_ROLE_MAY_CREATE = {"admin", "assigned"}
+
+
+def _resolve_system_tz() -> str:
+    """Read the configured system timezone.
+
+    Falls back to ``UTC`` when the KV store is empty or
+    the stored value isn't a valid IANA name. We share
+    this helper with the WebUI panel that writes
+    ``system.timezone`` so the operator sees the same
+    value everywhere.
+    """
+    from magi.runtime.state.settings import state_get
+    raw = state_get(_state_dir(), "system.timezone")
+    if not raw:
+        return "UTC"
+    return raw  # the WebUI validates the IANA name on save
+
+
+def _render_cron_from_payload(
+    payload,
+    preset_only: bool = False,
+) -> tuple[str, dict]:
+    """Render preset payload → (cron, fields_used) tuple.
+
+    If ``preset_only`` is true, returns the already-rendered
+    cron from the model. Otherwise it stitches the preset +
+    moment fields into the 5-field string via
+    :func:`preset_to_cron`.
+
+    The returned ``fields_used`` dict (an empty dict today)
+    is reserved for future surfaces — e.g. the WebUI may
+    ask for the rendered cron + a backwards-compatibility
+    descriptor of the underlying preset.
+    """
+    try:
+        cron = preset_to_cron(
+            payload.frequency,
+            hour=payload.hour or 0,
+            minute=payload.minute or 0,
+            day_of_week=payload.day_of_week,
+            day_of_month=payload.day_of_month,
+        )
+    except (ValueError, TypeError) as exc:
+        raise MagiHTTPException(
+            status_code=400, code="validation.cron_preset",
+            detail=str(exc),
+        ) from exc
+    return cron, {}

@@ -155,3 +155,80 @@ def _format_hhmm(hour: str, minute: str) -> str:
         return f"{int(hour):02d}:{int(minute):02d}"
     except (TypeError, ValueError):
         return f"{hour}:{minute}"
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+# Preset builder — the WebUI / API surfaces an enum (`hourly` / `daily` /
+# `weekly` / `monthly`) plus a small set of moment fields (HH:MM,
+# day-of-week, day-of-month, minute-of-hour). ``preset_to_cron``
+# stitches those into the 5-field cron string apscheduler expects.
+#
+# Why not just let the user type cron? In the user's words:
+# "不要让用户自己写 cron". The Pydantic validator still runs
+# the result through ``validate_cron`` so bad input from a stale
+# client doesn't silently land.
+# ──────────────────────────────────────────────────────────────────────── #
+
+from typing import Literal, Optional
+
+CronFrequency = Literal["hourly", "daily", "weekly", "monthly"]
+
+
+def preset_to_cron(
+    frequency: CronFrequency,
+    *,
+    hour: int = 0,
+    minute: int = 0,
+    day_of_week: Optional[int] = None,
+    day_of_month: Optional[int] = None,
+) -> str:
+    """Render the preset + moment fields into a 5-field cron.
+
+    Mapping (minute / hour / day / month / dow):
+
+    - hourly:  ``M  * * * *`` — fires every minute the hour rolls.
+                 Caller passes ``minute`` for "fire at minute X
+                 past every hour"; hour is ignored.
+    - daily:   ``M H * * *`` — fires once at HH:MM every day.
+    - weekly:  ``M H * * DOW`` — fires once at HH:MM on one DOW
+                 (Python ``datetime.weekday()``, 0=Mon..6=Sun;
+                 cron uses 0=Sun..6=Sat so we translate).
+    - monthly: ``M H DOM * *`` — fires once at HH:MM on the
+                 given DOM (1..31).
+
+    Hour must be 0..23, minute 0..59, DOM 1..31, DOW 0..6
+    (``weekday()`` style with Monday=0; we shift to cron style
+    on output). Invalid combinations raise ``ValueError``.
+
+    The point is NOT to ship every cron edge case (ranges,
+    lists, ``*/N``) in v0. The 4 presets above cover the
+    common cases the operator reaches for. The raw ``cron``
+    column survives in the DB / API for future expansion
+    without a migration.
+    """
+    if not (0 <= int(minute) <= 59):
+        raise ValueError(f"minute must be 0..59, got {minute!r}")
+    if not (0 <= int(hour) <= 23):
+        raise ValueError(f"hour must be 0..23, got {hour!r}")
+    m = int(minute)
+    h = int(hour)
+    if frequency == "hourly":
+        return f"{m} * * * *"
+    if frequency == "daily":
+        return f"{m} {h} * * *"
+    if frequency == "weekly":
+        if day_of_week is None:
+            raise ValueError("weekly preset requires day_of_week (0..6, Mon=0)")
+        if not (0 <= int(day_of_week) <= 6):
+            raise ValueError(f"day_of_week must be 0..6, got {day_of_week!r}")
+        # Convert Python's Mon=0..Sun=6 to cron's Sun=0..Sat=6.
+        cron_dow = (int(day_of_week) + 1) % 7
+        return f"{m} {h} * * {cron_dow}"
+    if frequency == "monthly":
+        if day_of_month is None:
+            raise ValueError("monthly preset requires day_of_month (1..31)")
+        if not (1 <= int(day_of_month) <= 31):
+            raise ValueError(f"day_of_month must be 1..31, got {day_of_month!r}")
+        return f"{m} {h} {int(day_of_month)} * *"
+    raise ValueError(f"unknown frequency: {frequency!r}")
+

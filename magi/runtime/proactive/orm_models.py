@@ -95,10 +95,16 @@ class Task(Base):
     # the API/tool boundaries; an invalid value is a 400,
     # not silent fallback.
     cron: Mapped[str] = mapped_column(String(120), nullable=False)
-    # IANA name for ``CronTrigger(timezone=...)``. Defaults
-    # to UTC; per-task overrides let a deployer pin
-    # 9am-local-time behaviour independently of the host's
-    # tz. Validated against ``zoneinfo.available_timezones()``.
+    # IANA name recorded at write-time as a forensic
+    # breadcrumb (audit-trail style — "what system tz
+    # was in force when this row was created?"). The
+    # runtime **ignores** this column: every fire reads
+    # the operator's current ``system.timezone`` setting
+    # so changing the global tz moves every task to
+    # the new local-time schedule without touching
+    # each row. Default UTC keeps existing rows
+    # readable; we still require the column to be
+    # populated (the API writes it on every insert).
     tz: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     # "webui" or "tg". Same closed set as ``chat_sessions.channel``;
     # pinned to one of two strings to keep the channel wiring

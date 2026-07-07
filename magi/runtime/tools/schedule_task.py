@@ -1,33 +1,36 @@
 """``schedule_task`` tool — LLM-callable task creation.
 
 Public surface: the LLM can call this from any conversation
-to set up a recurring check or alert. Gate:
+to set up a recurring check or alert.
 
-- **Admin only.** The tool refuses for non-admin
-  employees (model role ``admin`` in the ``employees``
-  table). This keeps an ``assigned``-role user from
-  being able to schedule things on behalf of an
-  organisation they administer-as-credential-bearer but
-  not-as-policy-maker.
-- **Idempotent on name.** A second call with the same
-  ``name`` updates the existing row rather than creating
-  a duplicate (the LLM retries often on transient
-  errors).
+Schema (v2 — preset + moment, no raw cron, no per-task
+timezone, no per-task credentials):
 
-Wire-up:
-- Module path: ``magi.runtime.tools.schedule_task``.
-- Registered into :func:`magi.runtime.tools.registry.get_tools`
-  alongside the other built-ins; the registry's lazy
-  import pattern means apscheduler isn't loaded for
-  tests that don't touch scheduling.
+  - ``name``        operator label, ≤120 chars
+  - ``prompt``      natural-language instruction
+  - ``frequency``   ``hourly`` / ``daily`` / ``weekly`` / ``monthly``
+  - ``hour``        0..23 (ignored for hourly)
+  - ``minute``      0..59 (for hourly: fires every minute the
+                     hour rolls)
+  - ``day_of_week`` 0..6, Mon=0 (weekly only)
+  - ``day_of_month`` 1..31 (monthly only)
+  - ``channel``     ``webui`` / ``tg`` (default ``webui``)
 
-The tool deliberately does NOT take ``employee_id`` —
-the scheduler charges the current chat's operator's
-credentials. ``channel`` defaults to ``"webui"``; the
-operator can set ``tg`` if they want the reply pushed to
-their TG chat (TG push is wired in the runner via the
-existing ``send_message`` tool context, when the agent
-loop decides to use it).
+Timezone + credentials come from the calling admin /
+``assigned`` employee; the runner charges the operator's
+own provider / API key. This mirrors the WebUI flow so
+the operator's mental model stays consistent: "when this
+fires, it runs as me".
+
+Admin gate: non-admin / non-assigned employees get
+``is_error=True``. Same logic as the API (``admin`` and
+``assigned`` only — ``employee`` and ``guest`` are
+barred since they don't sign in to a MAGI node).
+
+Idempotent on ``name``: a second call with the same
+name updates the existing row in place. The LLM retries
+often on transient errors and we want a single
+configurable task, not duplicates.
 """
 
 from __future__ import annotations
@@ -37,38 +40,44 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.runtime.proactive.cron_utils import validate_cron
+from magi.runtime.proactive.cron_utils import preset_to_cron
 from magi.runtime.proactive.orm_models import Task
 from magi.runtime.proactive.scheduler import get_scheduler
 from magi.runtime.sessions import new_session_id
 from magi.runtime.state.orm import Employee, open_session
+from magi.runtime.state.settings import state_get
 from magi.runtime.tools.base import Tool, ToolContext, ToolResult
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("magi.runtime.tools.schedule_task")
 
 _NAME_MAX = 120
 _PROMPT_MAX = 8000
 
+# Same gate as the API: only ``admin`` and ``assigned``
+# may create a task. ``employee`` and ``guest`` get
+# ``is_error=True``.
+_ROLE_MAY_CREATE = {"admin", "assigned"}
+
 
 class ScheduleTaskTool(Tool):
-    """Create or update a recurring scheduled task.
-
-    Use when the operator asks you to set up a
-    recurring check, daily summary, "every hour show me
-    X", "Friday at 5pm tell me Y", etc.
-    """
-
     name = "schedule_task"
     description = (
         "Create or update a recurring scheduled task. Requires "
-        "admin scope. Each fire is an independent chat session; "
-        "the conversation history shows every cron-driven reply "
-        "as its own session under the operator's chat history."
-        " Inputs: name (unique label ≤120 chars), prompt (the "
-        "natural-language instruction to run each time), cron "
-        "(5-field: '0 9 * * *' style — minute hour day month "
-        "day_of_week), channel ('webui' or 'tg'), and an optional "
-        "tz (IANA name, default 'UTC')."
+        "admin or assigned-employee scope (i.e. the calling "
+        "operator is signed in to this MAGI). Each fire is an "
+        "independent chat session; the conversation history "
+        "shows every cron-driven reply as its own session under "
+        "the operator's chat history. The task fires on "
+        "the operator's system-wide timezone (configured in "
+        "Settings → 系统时区). Inputs: name (unique label "
+        "≤120 chars), prompt (the natural-language instruction "
+        "to run each time), frequency ('hourly' / 'daily' / "
+        "'weekly' / 'monthly'), hour (0..23, ignored when "
+        "frequency='hourly'), minute (0..59), day_of_week "
+        "(0..6 Mon=0, for weekly only), day_of_month (1..31, "
+        "for monthly only), channel ('webui' / 'tg', default "
+        "'webui')."
     )
     input_schema = {
         "type": "object",
@@ -76,9 +85,9 @@ class ScheduleTaskTool(Tool):
             "name": {
                 "type": "string",
                 "description": (
-                    "Short operator label, ≤120 chars. The same name "
-                    "later updates the existing task instead of "
-                    "creating a duplicate."
+                    "Short operator label, ≤120 chars. The same "
+                    "name later updates the existing task "
+                    "instead of creating a duplicate."
                 ),
             },
             "prompt": {
@@ -89,13 +98,52 @@ class ScheduleTaskTool(Tool):
                     "message of a fresh session."
                 ),
             },
-            "cron": {
+            "frequency": {
                 "type": "string",
+                "enum": ["hourly", "daily", "weekly", "monthly"],
                 "description": (
-                    "5-field cron expression (minute hour day month "
-                    "day_of_week). Examples: '*/5 * * * *' (every "
-                    "5 min), '0 9 * * *' (daily 09:00), '0 9 * * "
-                    "mon-fri' (weekdays 09:00)."
+                    "Preset cadence. The server translates this "
+                    "+ the matching moment fields into a canonical "
+                    "5-field cron string; we don't accept raw cron."
+                ),
+            },
+            "hour": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23,
+                "default": 0,
+                "description": (
+                    "Hour of day. Ignored when frequency='hourly'. "
+                    "Combined with minute into the cron fire time."
+                ),
+            },
+            "minute": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59,
+                "default": 0,
+                "description": (
+                    "Minute of hour. For hourly: 'fire at minute "
+                    "X past every hour'. For daily/weekly/monthly: "
+                    "the minute of the HH:MM fire time."
+                ),
+            },
+            "day_of_week": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 6,
+                "description": (
+                    "Only used when frequency='weekly'. 0=Mon, "
+                    "1=Tue, ..., 6=Sun (matches Python's "
+                    "``datetime.weekday()`` convention)."
+                ),
+            },
+            "day_of_month": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31,
+                "description": (
+                    "Only used when frequency='monthly'. 1..31."
                 ),
             },
             "channel": {
@@ -103,20 +151,15 @@ class ScheduleTaskTool(Tool):
                 "enum": ["webui", "tg"],
                 "default": "webui",
                 "description": (
-                    "Where the fired reply surfaces. 'webui' creates "
-                    "a chat session visible in the operator's history "
-                    "list. 'tg' additionally lets the agent's "
-                    "send_message tool push a reply to the operator's "
-                    "TG chat."
+                    "Where the fired reply surfaces. 'webui' "
+                    "creates a chat session visible in the "
+                    "operator's history list. 'tg' additionally "
+                    "lets the agent's send_message tool push a "
+                    "reply to the operator's TG chat."
                 ),
             },
-            "tz": {
-                "type": "string",
-                "default": "UTC",
-                "description": "IANA timezone (e.g. 'UTC', 'Asia/Shanghai').",
-            },
         },
-        "required": ["name", "prompt", "cron"],
+        "required": ["name", "prompt", "frequency"],
     }
 
     async def run(
@@ -126,7 +169,7 @@ class ScheduleTaskTool(Tool):
     ) -> ToolResult:
         name = (kwargs.get("name") or "").strip()
         prompt = (kwargs.get("prompt") or "").strip()
-        cron = (kwargs.get("cron") or "").strip()
+        frequency = (kwargs.get("frequency") or "").strip()
         if not name or len(name) > _NAME_MAX:
             return ToolResult(
                 content=f"name must be non-empty and ≤{_NAME_MAX} chars",
@@ -137,46 +180,57 @@ class ScheduleTaskTool(Tool):
                 content=f"prompt must be non-empty and ≤{_PROMPT_MAX} chars",
                 is_error=True,
             )
-        if not cron:
-            return ToolResult(content="cron is required", is_error=True)
-        # Cron validation runs synchronously — APScheduler
-        # raises ValueError on malformed input.
+        if frequency not in ("hourly", "daily", "weekly", "monthly"):
+            return ToolResult(
+                content=f"frequency must be one of hourly/daily/weekly/monthly, got {frequency!r}",
+                is_error=True,
+            )
+
+        # Translate the preset into canonical cron at the
+        # tool's boundary so the tool API matches the WebUI
+        # API exactly (and a malformed preset surfaces as
+        # ``is_error=True`` rather than silently landing).
         try:
-            validate_cron(cron)
+            cron = preset_to_cron(
+                frequency,
+                hour=int(kwargs.get("hour") or 0),
+                minute=int(kwargs.get("minute") or 0),
+                day_of_week=kwargs.get("day_of_week"),
+                day_of_month=kwargs.get("day_of_month"),
+            )
         except ValueError as exc:
-            return ToolResult(content=f"invalid cron: {exc}", is_error=True)
+            return ToolResult(content=f"invalid preset: {exc}", is_error=True)
+
         channel = kwargs.get("channel") or "webui"
         if channel not in ("webui", "tg"):
             return ToolResult(
                 content=f"channel must be one of webui/tg, got {channel!r}",
                 is_error=True,
             )
-        tz = (kwargs.get("tz") or "UTC").strip() or "UTC"
 
-        # ── Admin gate ────────────────────────────────────────────────
-        # Read the operator's record directly. We
-        # intentionally don't trust ``ctx.employee_id``
-        # alone — the agent loop always populates it
-        # but a future tool runner might call us from
-        # the wrong context. Verifying against the DB
-        # is cheap and closes that gap.
+        # ── Admin / assigned gate ──────────────────────────────────────
+        # Verify the calling operator. We pull role
+        # from the DB (not ``ctx.employee_id``-trust) so
+        # a mis-wired caller can't punch above its
+        # authority.
         with open_session() as db:
             emp = db.get(Employee, ctx.employee_id)
             if emp is None:
                 return ToolResult(content="caller not found", is_error=True)
-            if emp.role != "admin":
+            if emp.role not in _ROLE_MAY_CREATE:
                 return ToolResult(
                     content=(
-                        "schedule_task requires admin scope; "
-                        "the current operator is not an admin."
+                        f"schedule_task requires admin or "
+                        f"assigned-employee scope; "
+                        f"role {emp.role!r} is not permitted."
                     ),
                     is_error=True,
                 )
             operator_id = emp.id
 
         # ── Idempotent upsert by name ──────────────────────────────────
-        task_id = new_session_id()  # ULID — the helper's misnamed but correct
         is_update = False
+        task_id = new_session_id()
         with open_session() as db:
             existing = db.execute(
                 select(Task).where(Task.name == name)
@@ -184,7 +238,6 @@ class ScheduleTaskTool(Tool):
             if existing is not None:
                 existing.prompt = prompt
                 existing.cron = cron
-                existing.tz = tz
                 existing.channel = channel
                 existing.enabled = 1
                 existing.consecutive_failures = 0
@@ -197,7 +250,7 @@ class ScheduleTaskTool(Tool):
                     name=name,
                     prompt=prompt,
                     cron=cron,
-                    tz=tz,
+                    tz=_resolve_system_tz(),
                     channel=channel,
                     employee_id=operator_id,
                     enabled=1,
@@ -208,11 +261,6 @@ class ScheduleTaskTool(Tool):
             db.commit()
 
         # ── Live-register with the apscheduler singleton ───────────────
-        # If the scheduler isn't running (e.g. tests,
-        # or v0 single-node shipped without it), swallow
-        # and return success — the DB row is the
-        # source of truth and the next process restart
-        # will pick the row up via ``_rehydrate_from_db``.
         try:
             scheduler = get_scheduler()
         except RuntimeError:
@@ -223,13 +271,11 @@ class ScheduleTaskTool(Tool):
             return ToolResult(
                 content=(
                     f"{'updated' if is_update else 'created'} task "
-                    f"{name!r} (id={task_id}). Note: scheduler is not "
-                    f"running; the task will activate on the next node start."
+                    f"{name!r} (id={task_id}). Note: scheduler is "
+                    f"not running; the task activates on next "
+                    f"node start."
                 )
             )
-        # Re-read so we have a fully-populated Task to pass
-        # to ``register`` (avoids the wrong-field-detached-instance
-        # trap).
         with open_session() as db:
             task = db.get(Task, task_id)
             if task is not None:
@@ -237,10 +283,27 @@ class ScheduleTaskTool(Tool):
         return ToolResult(
             content=(
                 f"{'updated' if is_update else 'created'} task "
-                f"{name!r} (id={task_id}, cron={cron!r}, tz={tz!r}, "
-                f"channel={channel!r})"
+                f"{name!r} (id={task_id}, frequency={frequency!r}, "
+                f"cron={cron!r}, channel={channel!r})"
             )
         )
+
+
+def _resolve_system_tz() -> str:
+    """Read the configured timezone; default UTC.
+
+    Tool path can run before the FastAPI endpoint so we
+    don't import ``system_settings`` here — the KV table
+    is the same one ``system.timezone`` writes.
+    """
+    raw = state_get(__import__("os").environ.get("MAGI_STATE_DIR", "/workspace/memories"), "system.timezone")
+    if not raw:
+        return "UTC"
+    try:
+        ZoneInfo(raw)
+    except ZoneInfoNotFoundError:
+        return "UTC"
+    return raw
 
 
 def _now_iso() -> str:
