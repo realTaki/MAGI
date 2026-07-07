@@ -17,6 +17,12 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     # HTTP client (used by EVE's agent_client and llm/ollama)
     "httpx>=0.27.0",
+    # SKILL.md frontmatter parser (skills/ loader) — keep
+    # PyYAML on the critical path so the operator's
+    # skills parse correctly on every install. The
+    # loader also has a tiny line-prefix fallback for
+    # flat ``key: value`` shapes if PyYAML is missing.
+    "pyyaml>=6.0",
     # Structured logging
     "structlog>=24.4.0",
 ]

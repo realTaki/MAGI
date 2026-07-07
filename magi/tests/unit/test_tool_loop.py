@@ -118,6 +118,7 @@ def test_tool_registry_returns_four_schemas():
         "search_sessions",
         "send_message",
         "schedule_task",
+        "load_skill",
     ]
 
 
