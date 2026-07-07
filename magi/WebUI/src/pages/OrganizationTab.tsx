@@ -35,6 +35,7 @@ import { useEffect, useRef, useState } from "react";
 import ConsoleCard from "../components/ConsoleCard";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import { IconDepartments, IconEmployees } from "../components/icons";
+import { useT } from "../i18n/index";
 
 type OrgSection = "departments" | "employees";
 
@@ -44,6 +45,7 @@ const ORG_SECTIONS: SidebarItem[] = [
 ];
 
 export default function OrganizationTab() {
+  const t = useT();
   const [section, setSection] = useState<OrgSection>("departments");
 
   return (
@@ -51,7 +53,7 @@ export default function OrganizationTab() {
       items={ORG_SECTIONS}
       selectedId={section}
       onSelect={(id) => setSection(id as OrgSection)}
-      ariaLabel="Organization sections"
+      ariaLabel={t("sidebar.orgNavAria")}
     >
       {section === "departments" && <DepartmentsPane />}
       {section === "employees" && <EmployeesPane />}
@@ -187,6 +189,7 @@ function flattenTree(
 }
 
 function DepartmentsPane() {
+  const t = useT();
   const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
   const [employees, setEmployees] = useState<EmployeeRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -573,7 +576,9 @@ function DepartmentsPane() {
                             onClick={() => toggleCollapsed(d.id)}
                             title={isCollapsed ? "展开子部门" : "收起子部门"}
                             aria-label={
-                              isCollapsed ? "expand children" : "collapse children"
+                              isCollapsed
+                                ? t("sidebar.orgExpandChildren")
+                                : t("sidebar.orgCollapseChildren")
                             }
                             className="inline-flex items-center justify-center w-4 h-4 text-sky-deep hover:text-ocean transition"
                           >
@@ -646,6 +651,7 @@ function DepartmentsPane() {
 // an inline detail panel for the LLM provider / API key
 // configuration.
 function EmployeesPane() {
+  const t = useT();
   const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
   // ``employeeList`` is the full paginated response; the table
   // renders ``employeeList.items`` while the pager reads the
@@ -1065,7 +1071,7 @@ function EmployeesPane() {
           {/* Left: scope picker — "未指定部门" + every department */}
           <nav
             className="w-56 shrink-0 bg-sky-pale/70 backdrop-blur-md border-r border-sky-light/40 p-3"
-            aria-label="Employee scope"
+            aria-label={t("sidebar.orgScopeNavAria")}
           >
             <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-ocean/70">
               范围
