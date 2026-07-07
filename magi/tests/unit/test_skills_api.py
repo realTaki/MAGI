@@ -17,9 +17,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from magi.channels.webui.app import create_app
-from magi.runtime.skills import _reset_for_tests
-from magi.runtime.state import init_sqlite
-from magi.runtime.state.orm import Employee, init_orm, open_session
+from magi.agent.skills import _reset_for_tests
+from magi.agent.state import init_sqlite
+from magi.agent.state.orm import Employee, init_orm, open_session
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def env(monkeypatch, tmp_path, workspace):
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(workspace))
 
-    import magi.runtime.state.orm as orm_mod
+    import magi.agent.state.orm as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

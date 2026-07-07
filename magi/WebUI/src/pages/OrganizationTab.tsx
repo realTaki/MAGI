@@ -127,7 +127,7 @@ type EmployeeScope =
   | { kind: "separated" };
 
 // Mirrors the backend's
-// ``magi.runtime.llm.factory.provider_options_for_ui()``.
+// ``magi.agent.llm.factory.provider_options_for_ui()``.
 // v0 ships only the Minimax endpoints; OpenAI / Anthropic
 // / etc. land as their providers come online — add a row
 // here AND the branch in the backend factory so the

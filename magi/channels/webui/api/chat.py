@@ -2,7 +2,7 @@
 message to the LLM" route.
 
 v0: synchronous request / response. The frontend POSTs a
-text, we call :func:`magi.runtime.agent.handle_message` and
+text, we call :func:`magi.agent.agent.handle_message` and
 return the reply string. C7 replaces this with a streaming
 endpoint (SSE or WebSocket) so the user sees tokens as they
 arrive; v0 just blocks until the full reply is ready.
@@ -54,15 +54,15 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.agent import handle_message
-from magi.runtime.sessions import (
+from magi.agent.agent import handle_message
+from magi.agent.sessions import (
     SessionMessage,
     SessionPathError,
     SessionStore,
     new_session_id,
     utcnow_iso as _utcnow_iso,
 )
-from magi.runtime.state.orm import Employee, open_session
+from magi.agent.state.orm import Employee, open_session
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -292,7 +292,7 @@ async def send_chat(
     # already structured to accept one when chat-send grows
     # to thread it through.
     if len(post.messages) == 1:
-        from magi.runtime.auto_title import enqueue_title_job
+        from magi.agent.auto_title import enqueue_title_job
         await enqueue_title_job(
             chat_id=chat_id,
             session_id=session_id,

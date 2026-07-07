@@ -38,17 +38,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from magi.runtime.llm.provider import ChatMessage, ChatResult
-from magi.runtime.tools._safe_path import safe_resolve
-from magi.runtime.tools.base import ToolContext, ToolResult
-from magi.runtime.tools.list_files import ListFilesTool
-from magi.runtime.tools.read_file import ReadFileTool
-from magi.runtime.tools.registry import (
+from magi.agent.llm.provider import ChatMessage, ChatResult
+from magi.agent.tools._safe_path import safe_resolve
+from magi.agent.tools.base import ToolContext, ToolResult
+from magi.agent.tools.list_files import ListFilesTool
+from magi.agent.tools.read_file import ReadFileTool
+from magi.agent.tools.registry import (
     get_tool,
     get_tool_schemas,
 )
-from magi.runtime.tools.send_message import SendMessageTool
-from magi.runtime.tools.write_file import WriteFileTool
+from magi.agent.tools.send_message import SendMessageTool
+from magi.agent.tools.write_file import WriteFileTool
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -99,7 +99,7 @@ def test_minimax_provider_chat_signature_accepts_tools_kwarg():
     provider can't drop it accidentally."""
     import inspect
 
-    from magi.runtime.llm.provider import LLMProvider
+    from magi.agent.llm.provider import LLMProvider
 
     sig = inspect.signature(LLMProvider.chat)
     assert "tools" in sig.parameters
@@ -191,7 +191,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     # tmp_path. Without this, the second test onwards
     # writes to the first test's DB and the third test's
     # rows appear in the fourth test's results.
-    import magi.runtime.state.orm as orm_mod
+    import magi.agent.state.orm as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     return ToolContext(

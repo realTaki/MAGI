@@ -60,8 +60,8 @@ def _super_admins() -> set[str]:
     for state files written before the unified table landed
     (C1.x). The fallback path is retired in C8.
     """
-    from magi.runtime.state.orm import Employee, open_session
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.state.settings import state_get
 
     state_dir = _state_dir()
     result: set[str] = set()
@@ -159,7 +159,7 @@ _LOGIN_KEY = "telegram.login_code"
 
 
 def _load_login_code(chat_id: str) -> dict | None:
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.settings import state_get
 
     raw = state_get(_state_dir(), f"{_LOGIN_KEY}.{chat_id}")
     if not raw:
@@ -171,7 +171,7 @@ def _load_login_code(chat_id: str) -> dict | None:
 
 
 def _store_login_code(chat_id: str, code: str, issued_at: datetime, expires_at: float) -> None:
-    from magi.runtime.state.settings import state_set
+    from magi.agent.state.settings import state_set
 
     state_set(
         _state_dir(),
@@ -188,7 +188,7 @@ def _store_login_code(chat_id: str, code: str, issued_at: datetime, expires_at: 
 
 
 def _clear_login_code(chat_id: str) -> None:
-    from magi.runtime.state.settings import state_delete
+    from magi.agent.state.settings import state_delete
 
     state_delete(_state_dir(), f"{_LOGIN_KEY}.{chat_id}")
 
@@ -223,7 +223,7 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     or the network is down) just means we fall back to showing
     the bare chat_id.
     """
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     accounts: list[AllowedLoginAccount] = []
@@ -321,7 +321,7 @@ async def send_login_code(
                     error=f"Wait {remaining}s before requesting a new code.",
                 )
 
-    from magi.runtime.state.settings import state_get
+    from magi.agent.state.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     if not bot_token:

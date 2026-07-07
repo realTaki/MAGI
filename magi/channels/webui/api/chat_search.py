@@ -59,7 +59,7 @@ If FTS5 isn't compiled into the SQLite the project ships
 with (rare on CPython 3.12+, but possible on stripped
 distros), the route returns ``503 search.unavailable``
 instead of crashing. The boot-time probe in
-:mod:`magi.runtime.state.orm` skips the FTS DDL on a no-FTS
+:mod:`magi.agent.state.orm` skips the FTS DDL on a no-FTS
 SQLite, so this endpoint just has to detect "no virtual
 table" and respond accordingly.
 """
@@ -76,7 +76,7 @@ from sqlalchemy import text
 from magi.channels.webui.api.chat_sessions import _admin_employee_id, SessionStoreDep
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.runtime.state.orm import open_session
+from magi.agent.state.orm import open_session
 
 logger = logging.getLogger("magi.api.chat_search")
 

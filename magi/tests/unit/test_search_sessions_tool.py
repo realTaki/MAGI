@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 
-from magi.runtime.sessions import SessionStore
-from magi.runtime.state import init_sqlite
-from magi.runtime.state.orm import ChatMessage, init_orm, open_session
-from magi.runtime.tools.base import ToolContext
-from magi.runtime.tools.search_sessions import SearchSessionsTool
+from magi.agent.sessions import SessionStore
+from magi.agent.state import init_sqlite
+from magi.agent.state.orm import ChatMessage, init_orm, open_session
+from magi.agent.tools.base import ToolContext
+from magi.agent.tools.search_sessions import SearchSessionsTool
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -43,7 +43,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.runtime.state.orm as orm_mod
+    import magi.agent.state.orm as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -66,7 +66,7 @@ def _seed(
     append order. Returns the auto-generated session_id.
     """
     from datetime import datetime, timezone
-    from magi.runtime.sessions import SessionMessage, new_session_id
+    from magi.agent.sessions import SessionMessage, new_session_id
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     store = SessionStore(str(state_dir))
@@ -373,7 +373,7 @@ def test_search_sessions_schema_has_required_fields():
     """The Anthropic-shaped schema advertises the
     ``q`` + optional ``context_n`` / ``limit`` inputs the
     LLM is meant to provide."""
-    from magi.runtime.tools.registry import get_tool_schemas
+    from magi.agent.tools.registry import get_tool_schemas
 
     schemas = {s["name"]: s for s in get_tool_schemas()}
     assert "search_sessions" in schemas

@@ -24,7 +24,7 @@ governance (audit, RBAC, hash-chained logs) baked in from day one.
 | **EVE**    | The employee-side node, one per employee. Default channel: **Telegram**. Pulls enterprise-wide data (directory, settings, enterprise skills) from Adam and caches locally. |
 | *admin*    | The user role (HR / IT) that uses Adam's Web UI. Kept lowercase on purpose.           |
 
-**Adam and EVE are the same node.** There is one `magiruntime` package (agent loop, dynamic context, skill runner, proactive engine, LLM provider, audit) and one process image. Every architectural choice is an independent config axis — no axis is hardcoded by role:
+**Adam and EVE are the same node.** There is one `magiagent` package (agent loop, dynamic context, skill runner, proactive engine, LLM provider, audit) and one process image. Every architectural choice is an independent config axis — no axis is hardcoded by role:
 
 | Axis             | Env var                  | Default by role          | Notes                                                              |
 |------------------|--------------------------|--------------------------|--------------------------------------------------------------------|

@@ -1,7 +1,7 @@
 """Tools — list every tool the LLM can invoke.
 
 End-user-facing read-only view of
-:meth:`magi.runtime.tools.registry.get_tool_schemas`. Useful for
+:meth:`magi.agent.tools.registry.get_tool_schemas`. Useful for
 the operator to verify what their MAGI install can actually
 do — ``mcp.json`` loaded the right servers, no LLM tool wedge
 broke, etc.
@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from magi.channels.webui.api.departments import AdminGate
-from magi.runtime.tools.registry import get_tool_schemas
+from magi.agent.tools.registry import get_tool_schemas
 
 router = APIRouter(tags=["tools"])
 

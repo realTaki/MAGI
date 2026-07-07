@@ -305,7 +305,7 @@ export function KnowledgeContactsPane() {
 //
 // Live today. Reads the tool registry from
 // ``GET /api/tools`` (which calls
-// ``magi.runtime.tools.registry.get_tool_schemas()`` under the
+// ``magi.agent.tools.registry.get_tool_schemas()`` under the
 // hood, so the list reflects both built-in tools and any
 // MCP-loaded ones). The render is a table — name, a short
 // description (first 200 chars from the backend), and a small

@@ -2,7 +2,7 @@
 
 The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
-:meth:`magi.runtime.agent._read_soul`. There is one
+:meth:`magi.agent.agent._read_soul`. There is one
 ``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
 not one per employee. Per-employee personas are C4+ and out
 of scope here.
@@ -34,7 +34,7 @@ Why a dedicated API surface (vs. reusing ``prompts/``):
 
 Atomic write: the file is rewritten via ``tempfile.mkstemp``
 in the same directory + ``os.fsync`` + ``os.replace``, mirroring
-:mod:`magi.runtime.sessions` so a crash mid-write can never
+:mod:`magi.agent.sessions` so a crash mid-write can never
 leave a half-edited persona on disk (which the agent would
 then read on the next chat turn).
 
@@ -58,7 +58,7 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.departments import AdminOrAssignedGate
-from magi.runtime.workspace import workspace_root
+from magi.agent.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -116,7 +116,7 @@ class SoulUpdateResponse(BaseModel):
 def _write_atomic(path: Path, content: str) -> str:
     """Atomic write to ``path``; returns ISO UTC mtime after.
 
-    Mirrors :mod:`magi.runtime.sessions` so the two file
+    Mirrors :mod:`magi.agent.sessions` so the two file
     surfaces (sessions, soul) follow the same crash-safety
     pattern. Caller is responsible for the audit row.
     """
@@ -167,7 +167,7 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
             is_bundled_fallback=False,
         )
     except FileNotFoundError:
-        from magi.runtime.prompts import load_fallback_persona
+        from magi.agent.prompts import load_fallback_persona
         return SoulReadResponse(
             content=load_fallback_persona(),
             modified_at=None,
@@ -219,7 +219,7 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
-    from magi.runtime.prompts import load_soul
+    from magi.agent.prompts import load_soul
     default = load_soul()
     path = _soul_path()
     modified_at = _write_atomic(path, default)
