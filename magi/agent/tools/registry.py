@@ -50,6 +50,7 @@ def _build_tools() -> list["Tool"]:
         BashOutputTool,
         BashRunTool,
     )
+    from magi.agent.tools.edit_file import EditFileTool
     from magi.agent.tools.list_files import ListFilesTool
     from magi.agent.tools.read_file import ReadFileTool
     from magi.agent.tools.schedule_task import ScheduleTaskTool
@@ -73,6 +74,7 @@ def _build_tools() -> list["Tool"]:
     return [
         ReadFileTool(),
         WriteFileTool(),
+        EditFileTool(),
         ListFilesTool(),
         SearchSessionsTool(),
         SendMessageTool(),
