@@ -38,12 +38,14 @@ type EmployeeScope =
 
 // Mirrors the backend's
 // ``magi.agent.llm.factory.provider_options_for_ui()``.
-// v0 ships only the Minimax endpoints; OpenAI / Anthropic
-// / etc. land as their providers come online — add a row
-// here AND the branch in the backend factory so the
-// picker and the validator stay in sync.
+// v0 ships the Anthropic-API-compatible family
+// (Claude + the two Minimax regions); OpenAI / Ollama
+// / etc. land as their providers come online — add a
+// row here AND the branch in the backend factory so
+// the picker and the validator stay in sync.
 const PROVIDER_OPTIONS = [
   { value: "", label: "（未指定）" },
+  { value: "claude", label: "Anthropic (Claude)" },
   { value: "minimax-global", label: "Minimax (Global)" },
   { value: "minimax-cn", label: "Minimax (China)" },
 ] as const;
