@@ -226,3 +226,78 @@ def test_get_skill_loader_singleton(monkeypatch, tmp_path):
     a = get_skill_loader()
     b = get_skill_loader()
     assert a is b
+
+
+# -- dual-source loader: bundle + operator roots -----------------------
+
+
+def test_loader_reads_bundle_when_operator_dir_empty(tmp_path, monkeypatch):
+    """A fresh deploy with no operator-edited skills still
+    sees the bundled examples (``magi/skills/*``). The
+    loader is configured with the real bundle path; the
+    operator dir is a separate, empty tmp_path."""
+    ws = tmp_path / "ws"
+    (ws / "skills").mkdir(parents=True)
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
+    _reset_for_tests()
+    loader = SkillLoader(ws)
+    names = {s.name for s in loader.list()}
+    # The three bundled example skills ship in the image.
+    assert {"codebase_search", "reminder_template", "web_lookup"} <= names
+    # Their paths come from the bundle, not the operator dir.
+    for s in loader.list():
+        if s.name in {"codebase_search", "reminder_template", "web_lookup"}:
+            assert "magi/skills/" in str(s.path), s.path
+
+
+def test_operator_skill_overrides_bundle_silently(tmp_path, monkeypatch, caplog):
+    """Operator puts a same-named SKILL.md in workspace/skills/;
+    it replaces the bundled version without a warning
+    (the normal "I customised web_lookup to my domain" flow).
+
+    The path stored in the registry should be the operator
+    copy, not the bundle copy.
+    """
+    import logging
+
+    ws = tmp_path / "ws"
+    op_skill = ws / "skills" / "web_lookup"
+    op_skill.mkdir(parents=True)
+    (op_skill / "SKILL.md").write_text(
+        "---\n"
+        "name: web_lookup\n"
+        "description: operator-customised web_lookup\n"
+        "---\n"
+        "operator body",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
+    _reset_for_tests()
+    with caplog.at_level(logging.WARNING, logger="magi.agent.skills.loader"):
+        loader = SkillLoader(ws)
+    # Find the web_lookup entry — it should point at the
+    # operator path, not the bundle path.
+    web = next(s for s in loader.list() if s.name == "web_lookup")
+    assert str(web.path).endswith("ws/skills/web_lookup/SKILL.md")
+    assert web.description == "operator-customised web_lookup"
+    # And the override happened silently — no WARNING about
+    # the duplicate name. (DEBUG log is fine; the suite
+    # caps at WARNING to keep noise down.)
+    override_warnings = [
+        r for r in caplog.records
+        if "duplicate name" in r.getMessage() and "web_lookup" in r.getMessage()
+    ]
+    assert override_warnings == [], (
+        f"operator override should be silent, got: {[r.getMessage() for r in override_warnings]}"
+    )
+
+
+def test_loader_with_empty_bundle_still_finds_operator_skills(tmp_path, monkeypatch):
+    """Tests that want to ignore the bundle entirely can
+    pass a non-existent bundle_dir. The operator side
+    must still be scanned — the constructor must NOT
+    fail closed if the bundle is missing."""
+    ws = tmp_path / "ws"
+    _write_skill(ws, "alpha")
+    loader = SkillLoader(ws, bundle_dir=tmp_path / "no-bundle-here")
+    assert [s.name for s in loader.list()] == ["alpha"]

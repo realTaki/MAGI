@@ -80,16 +80,35 @@ def _write(workspace: Path, name: str, description: str = "test desc", body: str
 
 
 def test_list_skills_round_trip(client, workspace):
-    """Three skills → three rows in the API output, sorted
-    by name alphabetically."""
+    """Three operator skills + three bundled examples
+    (codebase_search / reminder_template / web_lookup)
+    are merged and sorted by name. The dual-source
+    loader sees both ``magi/skills/`` (the bundle
+    shipped in the image) and the operator-edited
+    ``<workspace>/skills/``; this test pins the
+    merged-row contract for the API.
+    """
     _write(workspace, "alpha")
     _write(workspace, "zebra")
     _write(workspace, "mango")
     r = client.get("/api/skills")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert [s["name"] for s in body] == ["alpha", "mango", "zebra"]
-    assert all(s["version"] == "1.0" for s in body)
+    names = [s["name"] for s in body]
+    # Operator skills must be present.
+    assert {"alpha", "mango", "zebra"} <= set(names)
+    # Bundled skills must also be present.
+    assert {"codebase_search", "reminder_template", "web_lookup"} <= set(names)
+    # The whole list is sorted alphabetically (the loader
+    # sorts by name; the API does not re-shuffle).
+    assert names == sorted(names)
+    # The three operator rows have the version we wrote.
+    op_versions = {
+        s["name"]: s["version"]
+        for s in body
+        if s["name"] in {"alpha", "mango", "zebra"}
+    }
+    assert all(v == "1.0" for v in op_versions.values())
 
 
 def test_list_skills_empty_when_no_skills(client):
