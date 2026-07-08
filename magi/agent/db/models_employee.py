@@ -1,23 +1,24 @@
-"""Org-domain ORM tables — ``employees`` and ``departments``.
+"""ORM table ``employees`` — one row per person in the company.
 
-The two tables encode the company org tree: ``Department``
-self-references through ``parent_id`` (the tree shape),
-``Employee`` references its ``Department`` through
-``department_id`` (membership), and ``Department.manager_id``
-points at the leading employee. Cycles are prevented at
-the API layer (POST/PATCH refuse a parent that would close
-a loop); the schema doesn't enforce it because SQLite
-ignores ``CHECK (id != parent_id)`` constraints on insert
-anyway.
+Schema is intentionally minimal — the C1.1 baseline has
+the dept assignment + LLM provider config (each employee
+can route to a different model when their EVE handles
+traffic). C1.2 grows the lifecycle (email, status, quiet
+hours); C2 adds the telegram_id binding.
 
-The ``_seed_default_root`` helper in :mod:`magi.agent.db.engine`
-ensures a top-level ``"MAGI.org"`` row exists on a fresh
-DB so the org tree always has an anchor.
+The cross-table relationships (department, led_department)
+point at :class:`Department` (in
+:mod:`magi.agent.db.models_department`). FK columns use
+string literals so this file has no runtime dependency
+on the Department module; the ``relationship(back_populates=...)``
+strings are resolved when SQLAlchemy configures the
+mapper, after both modules are imported.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
@@ -30,21 +31,24 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from magi.agent.db.base import Base
 
 
+if TYPE_CHECKING:
+    # Type-only import for the relationship back-refs.
+    # No runtime dependency — keeps the module loading
+    # order trivial (FK strings resolve at mapper
+    # configuration time, after both modules import).
+    from magi.agent.db.models_department import Department
+
+
 class Employee(Base):
     """A person in the company.
 
-    Schema kept minimal on purpose — C1.1 has the dept assignment
-    + LLM provider config (each employee can route to a different
-    model when their EVE handles traffic). C1.2 grows the
-    lifecycle (email, status, quiet hours) and C2 adds the
-    telegram_id binding.
-
-    ``api_key`` is the employee's LLM-provider key. It is treated
-    as a secret — never returned in plain text by any endpoint,
-    only as a boolean ``api_key_set`` flag + a ``last4`` suffix
-    so the UI can show ``"sk-…abcd"`` without leaking the full
-    value. Stored plain-text for C0; the C8 hardening pass
-    encrypts at rest with a deployer-supplied ``MAGI_SECRET``.
+    ``api_key`` is the employee's LLM-provider key. It is
+    treated as a secret — never returned in plain text by
+    any endpoint, only as a boolean ``api_key_set`` flag +
+    a ``last4`` suffix so the UI can show ``"sk-…abcd"``
+    without leaking the full value. Stored plain-text for
+    C0; the C8 hardening pass encrypts at rest with a
+    deployer-supplied ``MAGI_SECRET``.
     """
 
     __tablename__ = "employees"
@@ -111,7 +115,8 @@ class Employee(Base):
     # but kept in the codebase for back-compat with
     # any state that hasn't been migrated yet.
     # Uniqueness is enforced via the ``ux_employees_telegram_id``
-    # index created in :data:`magi.agent.db.migrations._UNIQUE_INDEX_MIGRATIONS`
+    # index created in
+    # :data:`magi.agent.db.migrations._UNIQUE_INDEX_MIGRATIONS`
     # — a plain ``UNIQUE`` constraint here would block ALTER
     # TABLE on a pre-existing table (SQLite refuses "Cannot
     # add a UNIQUE column"). The index is ``WHERE telegram_id
@@ -128,19 +133,20 @@ class Employee(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    # The department this employee belongs to (not to be confused
-    # with ``Department.manager`` which is the "lead" pointer).
-    # Single FK column + backref from Department.employees so the
-    # dashboard can ask "who is in this dept" without a second
-    # query.
+    # The department this employee belongs to (not to be
+    # confused with ``Department.manager`` which is the
+    # "lead" pointer). Single FK column + backref from
+    # Department.employees so the dashboard can ask
+    # "who is in this dept" without a second query.
     department: Mapped["Department | None"] = relationship(
         back_populates="employees",
         foreign_keys=[department_id],
     )
 
-    # The department this employee leads, if any. ``remote_side``
-    # disambiguates the two FKs (Department.manager and
-    # Department.manager_id) on the parent side.
+    # The department this employee leads, if any.
+    # ``remote_side`` disambiguates the two FKs
+    # (Department.manager and Department.manager_id) on
+    # the parent side.
     led_department: Mapped["Department | None"] = relationship(
         back_populates="manager",
         foreign_keys="Department.manager_id",
@@ -148,69 +154,3 @@ class Employee(Base):
 
     def __repr__(self) -> str:
         return f"Employee(id={self.id}, name={self.name!r}, department_id={self.department_id})"
-
-
-class Department(Base):
-    """A node in the company org tree.
-
-    The tree is encoded by ``parent_id``: top-level departments
-    have ``parent_id = NULL``; every other department's parent
-    is another department in the same table. Cycles are
-    prevented at the API layer (POST/PATCH refuse a parent that
-    would close a loop).
-
-    ``manager_id`` references ``employees.id`` and is nullable —
-    a department can exist without a manager assigned yet.
-    """
-
-    __tablename__ = "departments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("departments.id", ondelete="RESTRICT"),
-        nullable=True,
-    )
-    manager_id: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-
-    # Self-referential tree. ``remote_side=id`` is the magic that
-    # tells SQLAlchemy which side of the parent_id FK is the
-    # "many" side, so ``children`` is a list of departments
-    # rather than a back to the parent.
-    children: Mapped[list["Department"]] = relationship(
-        back_populates="parent",
-        cascade="all, delete-orphan",
-        single_parent=True,
-    )
-    parent: Mapped["Department | None"] = relationship(
-        back_populates="children",
-        remote_side="Department.id",
-    )
-
-    manager: Mapped["Employee | None"] = relationship(
-        back_populates="led_department",
-        foreign_keys=[manager_id],
-    )
-
-    # Employees that belong to this department. Backref from
-    # ``Employee.department``. ``viewonly=True`` so the
-    # Department endpoint doesn't accidentally mutate
-    # employees via the collection.
-    employees: Mapped[list["Employee"]] = relationship(
-        back_populates="department",
-        foreign_keys="Employee.department_id",
-        viewonly=True,
-    )
-
-    def __repr__(self) -> str:
-        return f"Department(id={self.id}, name={self.name!r}, parent_id={self.parent_id})"

@@ -182,7 +182,7 @@ def _seed_default_root(engine: Engine) -> None:
     # Local import — Department is defined in models_org which
     # depends on ``Base`` already being constructed (a forward
     # import here would break the package init order).
-    from magi.agent.db.models_org import Department
+    from magi.agent.db.models_department import Department
 
     with Session(engine) as session:
         if session.scalar(select(Department.id).limit(1)) is not None:
@@ -224,8 +224,10 @@ def init_orm(state_dir: str | None = None) -> Engine:
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.agent.db.models_org  # noqa: F401 — registers on Base
-    import magi.agent.db.models_dashboard  # noqa: F401
+    import magi.agent.db.models_employee  # noqa: F401 — registers on Base
+    import magi.agent.db.models_department  # noqa: F401
+    import magi.agent.db.models_action_item  # noqa: F401
+    import magi.agent.db.models_token_usage  # noqa: F401
     import magi.agent.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     import magi.agent.memory.models  # noqa: F401 — memory table

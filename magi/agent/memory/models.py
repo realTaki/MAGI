@@ -190,6 +190,8 @@ class MemoryEntry(Base):
         )
 
 
-# Forward reference resolution — matches the pattern in
-# :mod:`magi.agent.db.models_dashboard`.
-from magi.agent.db.models_org import Employee  # noqa: E402
+# Forward reference resolution — the relationship strings
+# above resolve at mapper-config time, after both modules
+# are imported. We import ``Employee`` here so the type
+# checker sees it; SQLAlchemy only needs the string.
+from magi.agent.db.models_employee import Employee  # noqa: E402
