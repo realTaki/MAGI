@@ -1,6 +1,33 @@
-"""SKILL.md loader — scans the workspace for skills on demand.
+"""SKILL.md loader — scans two roots for skills on demand.
 
-A skill is a directory under ``<workspace>/skills/<name>/``
+A skill is a directory under either root, containing a
+``SKILL.md`` file with YAML frontmatter:
+
+    ---
+    name: web_lookup                # required, must match the dir name
+    description: 互联网检索 ......   # required, used in the system block
+    version: "1.0"                  # optional
+    ---
+
+    # markdown body follows
+
+Two roots are scanned, in this order:
+  - ``magi/skills/`` — the **bundle** shipped with the
+    image. Always available; lives next to the package
+    source. Acts as the default catalog the deployer
+    can customise away.
+  - ``<workspace>/skills/`` — the **operator** directory.
+    Derived from ``MAGI_WORKSPACE_DIR`` (or the default
+    ``<state_dir>/..``). Operator-edited SKILL.md files
+    here override bundle entries with the same name
+    without warning — that is the normal "I want to
+    customise this skill" flow.
+
+  ---
+
+The loader reads the frontmatter (description only — the body
+
+    ---
 containing a ``SKILL.md`` file with YAML frontmatter:
 
     ---
@@ -48,6 +75,14 @@ logger = logging.getLogger("magi.agent.skills.loader")
 
 _SKILL_SUBDIR_NAME = "skills"
 _SKILL_FILENAME = "SKILL.md"
+
+# Path to the bundle shipped with the image. ``skill_loader.py``
+# lives at ``magi/agent/tools/skill_loader.py``; the bundle sits
+# at ``magi/skills/`` — one level up from the package, one
+# level further up from the package's parent. Resolved at
+# import time so the path is stable across ``MAGI_WORKSPACE_DIR``
+# overrides.
+_BUNDLE_SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills"
 # 1-2 sentence description is the sweet spot — fits the
 # system-prompt block without bloating, tells the LLM
 # when to reach for ``load_skill``.
@@ -167,7 +202,16 @@ def _truncate_description(text: str) -> str:
 
 
 class SkillLoader:
-    """One-pass scanner of ``<workspace>/skills/*/SKILL.md``.
+    """One-pass scanner of the bundle root + the operator root.
+
+    Two passes during ``__init__``:
+
+      1. Bundle first (``magi/skills/``) — populates the
+         registry with the defaults shipped in the image.
+      2. Operator second (``<workspace>/skills/``) — any
+         same-named skill here overwrites the bundle
+         entry. No warning: "I edited web_lookup to fit
+         my domain" is the normal flow, not a collision.
 
     The class is **stateful** in that the registry is built
     once at construction; access through
@@ -182,9 +226,27 @@ class SkillLoader:
     use case shows up.
     """
 
-    def __init__(self, workspace_root: Path) -> None:
+    def __init__(
+        self,
+        workspace_root: Path,
+        bundle_dir: Path | None = None,
+    ) -> None:
+        """Build the registry.
+
+        ``workspace_root`` is the operator root
+        (``<workspace>/skills/``). ``bundle_dir`` is the
+        image-shipped default catalog (``magi/skills/``);
+        defaults to the package's own ``_BUNDLE_SKILLS_DIR``
+        constant. Pass ``bundle_dir=Path("/nonexistent")``
+        (or any non-existent path) to skip the bundle
+        entirely — useful for tests that only want the
+        operator half.
+        """
         self._workspace_root = Path(workspace_root)
         self._skills_dir = self._workspace_root / _SKILL_SUBDIR_NAME
+        self._bundle_dir = (
+            Path(bundle_dir) if bundle_dir is not None else _BUNDLE_SKILLS_DIR
+        )
         self._registry: dict[str, SkillMeta] = {}
         self._load()
 
@@ -202,29 +264,57 @@ class SkillLoader:
     def _load(self) -> None:
         """Idempotent: clearing the registry first means
         calling :meth:`__init__` twice on the same dir
-        behaves the same as once (used by tests)."""
+        behaves the same as once (used by tests).
+
+        Two passes — bundle first (the defaults), then
+        operator (overrides bundle entries with the same
+        name; no warning, that is the normal customisation
+        flow). Each root is logged separately so the
+        operator sees which path contributed what.
+        """
         self._registry.clear()
-        if not self._skills_dir.exists():
-            logger.info(
-                "skills: %s does not exist; no skills loaded",
-                self._skills_dir,
-            )
-            return
-        if not self._skills_dir.is_dir():
-            logger.warning(
-                "skills: %s is not a directory; no skills loaded",
-                self._skills_dir,
-            )
-            return
-        for skill_dir in sorted(p for p in self._skills_dir.iterdir() if p.is_dir()):
-            self._load_one(skill_dir)
+        bundle_count = self._load_root(self._bundle_dir, source="bundle")
+        operator_count_before = len(self._registry)
+        self._load_root(self._skills_dir, source="operator")
+        operator_count = len(self._registry) - operator_count_before
         logger.info(
-            "skills: %d loaded from %s",
-            len(self._registry),
-            self._skills_dir,
+            "skills: %d loaded (%d from bundle, %d from operator)",
+            len(self._registry), bundle_count, operator_count,
         )
 
-    def _load_one(self, skill_dir: Path) -> None:
+    def _load_root(self, root: Path, *, source: str) -> int:
+        """Scan one root, register its skills, return count.
+
+        Missing or non-directory root → 0 skills, logged at
+        INFO/WARN by severity. Operator with no
+        ``skills/`` subdir yet is the common case on a
+        fresh deploy — INFO, not WARN, so the boot log
+        stays clean.
+        """
+        if not root.exists():
+            level = logger.info if source == "operator" else logger.warning
+            level(
+                "skills: %s root %s does not exist; no skills from %s",
+                source, root, source,
+            )
+            return 0
+        if not root.is_dir():
+            logger.warning(
+                "skills: %s root %s is not a directory; skipping",
+                source, root,
+            )
+            return 0
+        before = len(self._registry)
+        for skill_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+            self._load_one(skill_dir, source=source)
+        loaded = len(self._registry) - before
+        logger.info(
+            "skills: %d loaded from %s root %s",
+            loaded, source, root,
+        )
+        return loaded
+
+    def _load_one(self, skill_dir: Path, *, source: str = "operator") -> None:
         skill_path = skill_dir / _SKILL_FILENAME
         if not skill_path.is_file():
             logger.debug(
@@ -266,14 +356,27 @@ class SkillLoader:
             return
         description = _truncate_description(description_raw)
         version = fm.get("version", "").strip() or None
-        # Duplicate-name handling: last-write wins, with a
-        # warning so the deployer sees the conflict.
+        # Duplicate-name handling:
+        #   - operator over bundle → silent. That is the
+        #     normal "I edited web_lookup to my domain" flow;
+        #     warning every boot would be noise.
+        #   - bundle over operator (shouldn't happen given
+        #     the load order, but defensive) → warning.
+        #   - same-source duplicates → warning so the
+        #     deployer sees the conflict.
         if name in self._registry:
-            logger.warning(
-                "skills: duplicate name %r — overwriting previous "
-                "definition at %s with %s",
-                name, self._registry[name].path, skill_path,
-            )
+            existing = self._registry[name]
+            if source == "operator" and existing.path.is_relative_to(_BUNDLE_SKILLS_DIR):
+                logger.debug(
+                    "skills: operator %s overrides bundle %s for name %r",
+                    skill_path, existing.path, name,
+                )
+            else:
+                logger.warning(
+                    "skills: duplicate name %r — overwriting previous "
+                    "definition at %s with %s",
+                    name, existing.path, skill_path,
+                )
         self._registry[name] = SkillMeta(
             name=name,
             description=description,
@@ -303,7 +406,9 @@ def get_skill_loader() -> SkillLoader:
     global _skill_loader
     with _skill_loader_lock:
         if _skill_loader is None:
-            _skill_loader = SkillLoader(_workspace_root())
+            _skill_loader = SkillLoader(
+                _workspace_root(), bundle_dir=_BUNDLE_SKILLS_DIR,
+            )
         return _skill_loader
 
 
