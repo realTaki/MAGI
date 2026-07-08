@@ -30,6 +30,7 @@ from magi.agent.sessions.models import (
     SessionMessage,
     SessionSummary,
     _ALLOWED_MESSAGE_ROLES,
+    _PREVIEW_CHARS,
     summary_from_session,
 )
 from magi.agent.state.orm import ChatMessage, ChatSession, open_session

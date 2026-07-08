@@ -393,7 +393,7 @@ async def _handle_employee_message(
     # session lock; no TG-specific code needed.
     if post is not None and len(post.messages) == 1:
         try:
-            from magi.agent.auto_title import enqueue_title_job
+            from magi.agent.sessions.auto_title import enqueue_title_job
             await enqueue_title_job(
                 chat_id=chat_id,
                 session_id=session_id,
