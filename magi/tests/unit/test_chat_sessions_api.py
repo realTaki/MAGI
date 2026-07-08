@@ -88,7 +88,7 @@ def client(state, admin, monkeypatch) -> TestClient:
     """The app with ``handle_message`` stubbed so /chat/send doesn't
     need a real LLM."""
     from magi.channels.webui.api import chat as chat_mod
-    from magi.agent import agent as agent_mod
+    from magi.agent import loop as agent_mod
 
     async def fake_handle_message(*args, **kwargs):
         return _FAKE_REPLY

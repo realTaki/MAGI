@@ -249,7 +249,7 @@ def run() -> None:
     # place for an operator to notice a malformed
     # SKILL.md — fail loud, fail early.
     try:
-        from magi.agent.skills import get_skill_loader
+        from magi.agent.tools.skill_loader import get_skill_loader
         loader = get_skill_loader()
         logger.info(
             "skills: %d registered (workspace=%s)",

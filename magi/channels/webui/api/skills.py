@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.skills import get_skill_loader
+from magi.agent.tools.skill_loader import get_skill_loader
 
 logger = logging.getLogger("magi.channels.webui.api.skills")
 
