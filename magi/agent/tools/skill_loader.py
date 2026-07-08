@@ -98,12 +98,27 @@ class SkillMeta:
     The body is **not** stored here. ``format_skills_block``
     only needs ``name`` and ``description``. The body is
     read on demand by :class:`magi.agent.skills.loader_tool.SkillLoaderTool`.
+
+    The three optional frontmatter fields (``license`` /
+    ``allowed_tools`` / ``metadata``) are read but not
+    yet acted on — they're stashed here so a future
+    feature (allow-list, audit log, license attribution)
+    doesn't need a schema change.
     """
 
     name: str
     description: str
     path: Path
     version: Optional[str] = None
+    license: Optional[str] = None
+    # ``allowed-tools`` in the frontmatter is a YAML list
+    # (Anthropic skill spec). We store as ``list[str]``;
+    # missing / non-list frontmatter values become
+    # ``None`` so callers can use ``is None`` as the
+    # "no restriction" check.
+    allowed_tools: Optional[list[str]] = None
+    # ``metadata`` is a free-form ``{key: value}`` map.
+    metadata: Optional[dict[str, str]] = None
 
 
 def _workspace_root() -> Path:
@@ -122,17 +137,32 @@ def _workspace_root() -> Path:
     return Path(state_dir).parent
 
 
-def _parse_frontmatter(raw: str) -> tuple[dict, str]:
+def _parse_frontmatter(raw: str) -> tuple[dict, str, dict]:
     """Extract YAML frontmatter at the file's head + return the body.
 
-    Frontmatter is delimited by ``---`` lines. We try PyYAML
-    first; on import failure we fall back to a tiny
-    ``key: value`` parser that handles our own flat
-    templates. Either way the body starts **after** the
-    closing ``---``.
+    Returns a 3-tuple ``(str_dict, body, typed_dict)``:
+
+    - ``str_dict`` — every value coerced to ``str`` via
+      ``str(v)``. The flat ``key: value`` shape v0
+      callers (the system-prompt metadata block) read
+      from. Stable across PyYAML-present / PyYAML-missing
+      paths.
+    - ``body`` — the markdown after the closing ``---``.
+    - ``typed_dict`` — best-effort PyYAML-typed parse
+      (when PyYAML is installed). The new optional
+      fields (:class:`SkillMeta.allowed_tools` /
+      ``metadata``) read from here. Falls back to an
+      empty dict when PyYAML is missing (v0 doesn't
+      need them).
+
+    Frontmatter is delimited by ``---`` lines. We try
+    PyYAML first; on import failure we fall back to a
+    tiny ``key: value`` parser that handles our own
+    flat templates. Either way the body starts
+    **after** the closing ``---``.
     """
     if not raw.startswith("---"):
-        return {}, raw
+        return {}, raw, {}
     lines = raw.splitlines()
     # Find the closing ``---`` line (line index >= 1).
     close_idx = -1
@@ -141,10 +171,11 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
             close_idx = i
             break
     if close_idx == -1:
-        return {}, raw  # malformed frontmatter → treat as raw
+        return {}, raw, {}  # malformed frontmatter → treat as raw
     fm_lines = lines[1:close_idx]
     body = "\n".join(lines[close_idx + 1 :])
     fm: dict[str, str] = {}
+    typed: dict[str, Any] = {}
     # PyYAML first.
     try:
         import yaml  # PyYAML
@@ -153,8 +184,9 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
         # ``str`` / ``int`` / ``bool`` / ``float`` here.
         parsed = yaml.safe_load("\n".join(fm_lines)) or {}
         if isinstance(parsed, dict):
+            typed = dict(parsed)
             fm = {str(k): ("" if v is None else str(v)) for k, v in parsed.items()}
-            return fm, body
+            return fm, body, typed
     except ImportError:
         pass
     # Fallback: ``key: value`` per line, value is the rest of
@@ -176,7 +208,7 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str]:
         ):
             value = value[1:-1]
         fm[key.strip()] = value
-    return fm, body
+    return fm, body, typed
 
 
 def _skill_name_from_dir(skill_dir: Path) -> Optional[str]:
@@ -330,7 +362,7 @@ class SkillLoader:
                 skill_path, exc,
             )
             return
-        fm, _body = _parse_frontmatter(raw)
+        fm, _body, typed = _parse_frontmatter(raw)
         # Name resolution priority: explicit frontmatter
         # ``name`` → directory basename. We DON'T enforce
         # that the two match (someday a deployer will want
@@ -383,7 +415,178 @@ class SkillLoader:
             description=description,
             path=skill_path,
             version=version,
+            # Optional frontmatter fields. v0 doesn't act
+            # on them; a future allow-list / audit /
+            # license-attribution feature can read them
+            # without a schema change.
+            license=typed.get("license"),
+            allowed_tools=_coerce_str_list(typed.get("allowed-tools")),
+            metadata=_coerce_str_dict(typed.get("metadata")),
         )
+
+
+def _coerce_str_list(value: Any) -> Optional[list[str]]:
+    """Coerce a frontmatter ``allowed-tools`` value to
+    ``list[str]`` or ``None``.
+
+    - ``None`` (key absent) → ``None``
+    - YAML list of strings → ``[str, ...]``
+    - Anything else (str, int, dict) → ``None``
+      silently. The system doesn't crash on weird
+      frontmatter; it just ignores the field. A
+      warning would be too noisy given how often
+      the line is repeated.
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(v) for v in value if v is not None]
+    return None
+
+
+def _coerce_str_dict(value: Any) -> Optional[dict[str, str]]:
+    """Coerce a frontmatter ``metadata`` value to
+    ``dict[str, str]`` or ``None``."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {str(k): str(v) for k, v in value.items() if k is not None}
+    return None
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+# Body path processing — Progressive Disclosure Level 3
+# ──────────────────────────────────────────────────────────────────────── #
+
+
+# File extensions we recognise as "documents the LLM
+# might want to read with read_file". The LLM uses this
+# to decide "is this a sibling file I should look at"
+# vs "is this just prose / a code snippet".
+_RECOGNISED_DOC_EXTS = (
+    ".md", ".txt", ".json", ".yaml", ".yml",
+)
+
+
+def _process_skill_paths(
+    body: str,
+    skill_dir: Path,
+) -> str:
+    """Rewrite relative file references in the skill body
+    to absolute paths so the LLM can ``read_file`` them
+    directly.
+
+    Three patterns, mirroring the reference skill loader
+    (which calls this "Progressive Disclosure Level 3"):
+
+      1. ``scripts/foo.py`` / ``references/bar.md`` —
+         plain relative paths. Resolved against
+         ``skill_dir`` only if the file exists there.
+      2. ``see reference.md`` / ``read forms.md`` —
+         prose references to a sibling file. Same
+         resolution rule.
+      3. ``[`text`](relpath)`` — markdown links.
+         ``./`` prefix stripped, then resolved.
+
+    Each rewrite turns the relative reference into
+    ``"<abs path> (use read_file to access)"`` so
+    the LLM knows how to fetch the file.
+
+    Resolution is **existence-checked** — a path that
+    doesn't exist on disk is left alone. This avoids
+    hallucinating non-existent files when the skill
+    body mentions a file the deployer didn't ship.
+    """
+    # Pattern 1: directory-based relative paths
+    # (``scripts/`` / ``references/`` / ``assets/``). The
+    # reference also accepts a leading ``python `` prefix
+    # for command-style references. We match the bare
+    # directory-style and the ``python <path>`` form.
+    def _replace_dir_path(match: "re.Match[str]") -> str:
+        prefix = match.group(1) or ""
+        rel = match.group(2)
+        abs_path = skill_dir / rel
+        if abs_path.exists():
+            return f"{prefix}{abs_path}"
+        return match.group(0)
+
+    # Pattern 1: directory-based relative paths
+    # (``scripts/`` / ``references/`` / ``assets/``).
+    # Matches bare ``scripts/foo.py`` anywhere in the
+    # body, and the ``python <path>`` / `` `<path>``
+    # command-style forms. The reference's pattern
+    # covers both; the optional ``(python\s+|\s`)``
+    # prefix captures the command-style for prefix
+    # preservation, and the bare form is captured by
+    # the path group alone (no leading prefix chars
+    # in the match).
+    pattern_dirs = (
+        r"(?:(python\s+|\s`))?"          # optional "python " or " `"
+        r"((?:scripts|references|assets)/"  # one of the 3 dirs
+        r"[^\s`)\]]+)"                    # the rest of the path
+    )
+    body = re.sub(pattern_dirs, _replace_dir_path, body)
+
+    # Pattern 2: prose references like "see reference.md"
+    # / "read forms.md". Suffix is the trailing
+    # punctuation / whitespace we want to preserve.
+    def _replace_doc_path(match: "re.Match[str]") -> str:
+        prefix_word = match.group(1)
+        filename = match.group(2)
+        suffix = match.group(3) or ""
+        abs_path = skill_dir / filename
+        if abs_path.exists():
+            return (
+                f"{prefix_word}`{abs_path}` "
+                f"(use read_file to access){suffix}"
+            )
+        return match.group(0)
+
+    pattern_docs = (
+        r"\b(see|read|refer to|check)\s+"
+        r"([a-zA-Z0-9_.\-]+\.(?:md|txt|json|yaml|yml))"
+        r"([.,;:\s])"
+    )
+    body = re.sub(pattern_docs, _replace_doc_path, body, flags=re.IGNORECASE)
+
+    # Pattern 3: markdown links — ``[`text`](relpath)``,
+    # ``[text](relpath)``, with optional ``./`` prefix.
+    # Cap the path segment at 200 chars to avoid
+    # runaway backtracking on weird content.
+    def _replace_md_link(match: "re.Match[str]") -> str:
+        link_text = match.group(1)
+        rel = match.group(2)
+        # Strip leading ``./`` for the resolve.
+        clean = rel[2:] if rel.startswith("./") else rel
+        abs_path = skill_dir / clean
+        if abs_path.exists():
+            return f"[{link_text}](`{abs_path}`) (use read_file to access)"
+        return match.group(0)
+
+    pattern_md = (
+        r"\[([^]\n]{1,80})\]\("
+        r"((?:\./)?[^)\n]{1,200})"
+        r"\)"
+    )
+    body = re.sub(pattern_md, _replace_md_link, body)
+
+    return body
+
+
+def _skill_root_dir_line(skill_dir: Path) -> str:
+    """The first line of the body the LLM sees when it
+    ``load_skill``s a skill. Tells the LLM where the
+    sibling files live so it can compose absolute
+    paths itself if it needs to.
+
+    Kept as a separate helper so the wording can be
+    tweaked without touching the path-rewriting logic.
+    """
+    return (
+        f"**Skill Root Directory:** `{skill_dir}`\n\n"
+        f"All files and references in this skill are "
+        f"relative to this directory.\n\n---\n\n"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────── #

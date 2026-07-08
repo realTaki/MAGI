@@ -28,10 +28,15 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
-from magi.agent.tools.skill_loader import get_skill_loader
+from magi.agent.tools.skill_loader import (
+    _process_skill_paths,
+    _skill_root_dir_line,
+    get_skill_loader,
+)
 
 logger = logging.getLogger("magi.agent.skills.loader_tool")
 
@@ -44,29 +49,59 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _BODY_MAX_BYTES = 32 * 1024
 
 
-def _read_skill_body(path) -> str:
-    """Read + truncate the skill body, preserving UTF-8.
+def _read_skill_body(path, skill_dir: Path) -> str:
+    """Read + truncate + path-rewrite the skill body.
 
-    Splitting at ``_BODY_MAX_BYTES`` byte boundary means we
-    never slice inside a multi-byte rune — the result is
-    always valid UTF-8.
+    Three steps:
+
+      1. Read the file, byte-truncate at
+         ``_BODY_MAX_BYTES`` (UTF-8 safe — we never
+         slice inside a multi-byte rune). The
+         frontmatter is stripped here — the LLM
+         already saw ``name``/``description`` in the
+         system-prompt block, so re-emitting the
+         raw frontmatter is noise.
+      2. Rewrite relative file references in the body
+         to absolute paths via
+         :func:`_process_skill_paths` (Progressive
+         Disclosure Level 3).
+      3. Prepend the "Skill Root Directory" line so the
+         LLM knows where sibling files live.
     """
     raw = path.read_bytes()
-    if len(raw) <= _BODY_MAX_BYTES:
-        return raw.decode("utf-8", errors="replace")
-    # Truncate at byte boundary, then add a marker
-    # so the LLM knows there's more it cannot see.
-    truncated = raw[:_BODY_MAX_BYTES]
-    # Walk back to the start of the last code point so
-    # the truncated string is valid utf-8.
-    while truncated and (truncated[-1] & 0xC0) == 0x80:
-        truncated = truncated[:-1]
-    text = truncated.decode("utf-8", errors="replace")
-    text += (
-        f"\n\n…[truncated at {_BODY_MAX_BYTES} bytes; the rest of "
-        f"the skill is unavailable through this tool]"
-    )
-    return text
+    truncated_marker = ""
+    if len(raw) > _BODY_MAX_BYTES:
+        # Truncate at byte boundary, then add a marker
+        # so the LLM knows there's more it cannot see.
+        truncated = raw[:_BODY_MAX_BYTES]
+        # Walk back to the start of the last code point so
+        # the truncated string is valid utf-8.
+        while truncated and (truncated[-1] & 0xC0) == 0x80:
+            truncated = truncated[:-1]
+        raw = truncated
+        truncated_marker = (
+            f"\n\n…[truncated at {_BODY_MAX_BYTES} bytes; the rest of "
+            f"the skill is unavailable through this tool]"
+        )
+    text = raw.decode("utf-8", errors="replace")
+    # Strip the YAML frontmatter. The closing ``---``
+    # is the second ``---`` line; everything after is
+    # the body. We use the same logic the loader uses
+    # at registration time — keep them in sync.
+    if text.startswith("---"):
+        lines = text.splitlines()
+        close_idx = -1
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                close_idx = i
+                break
+        if close_idx != -1:
+            text = "\n".join(lines[close_idx + 1 :])
+    # Run the path rewriter BEFORE prepending the root
+    # line, so the rewriter doesn't accidentally rewrite
+    # the absolute path we just inserted.
+    text = _process_skill_paths(text, skill_dir)
+    return _skill_root_dir_line(skill_dir) + text + truncated_marker
 
 
 class SkillLoaderTool(Tool):
@@ -150,7 +185,7 @@ class SkillLoaderTool(Tool):
                 content="invalid skill path", is_error=True,
             )
         try:
-            body = _read_skill_body(meta.path)
+            body = _read_skill_body(meta.path, meta.path.parent)
         except OSError as exc:
             logger.warning(
                 "load_skill: %s read failed: %s", meta.path, exc,
