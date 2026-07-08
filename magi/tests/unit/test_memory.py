@@ -1,4 +1,8 @@
-"""Tests for the per-employee long-term memory subsystem.
+"""Tests for MAGI's mid-term memory subsystem.
+
+Person records (kind=person) are NOT here — they
+live in the contacts package, tested separately in
+``test_contacts.py``.
 
 Four surfaces pinned:
 
@@ -12,12 +16,12 @@ Four surfaces pinned:
     (admin / assigned write; employee / guest get
     ``is_error=True``).
   - Idempotency: ``delete_memory`` of a non-existent
-    id returns success (no false ``is_error``); adding
-    a ``person`` row requires ``person_employee_id``.
+    id returns success (no false ``is_error``);
+    bad ``kind`` returns ``is_error=True``.
 
-Tests build a real SQLite via the same ``fresh_db``-style
-fixture the session tests use (per-test tmp state dir,
-fresh ORM engine). No LLM is exercised.
+Tests build a real SQLite via the same ``fresh_db``-
+style fixture the session tests use (per-test tmp
+state dir, fresh ORM engine). No LLM is exercised.
 """
 
 from __future__ import annotations
@@ -30,9 +34,6 @@ from magi.agent.db import Employee, init_orm, open_session
 from magi.agent.memory.magi import (
     KIND_IMPORTANT,
     KIND_ONGOING,
-    KIND_PERSON,
-    SCOPE_PRIMARY,
-    SCOPE_SECONDARY,
     MemoryStore,
     format_memory_block,
 )
@@ -43,7 +44,7 @@ from magi.agent.memory.magi.tools import (
     DeleteMemoryTool,
     UpdateMemoryTool,
 )
-from magi.agent.tools.base import ToolContext, ToolResult
+from magi.agent.tools.base import ToolContext
 
 
 # -- fixtures ---------------------------------------------------------------
@@ -51,13 +52,7 @@ from magi.agent.tools.base import ToolContext, ToolResult
 
 @pytest.fixture
 def fresh_db(monkeypatch, tmp_path):
-    """Per-test isolated state dir + fresh ORM engine.
-
-    Same shape as the session tests' ``fresh_db``. The
-    memory tests don't need the proactive package
-    imported (the engine's eager-import does that for
-    us, which is fine).
-    """
+    """Per-test isolated state dir + fresh ORM engine."""
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
@@ -72,12 +67,10 @@ def fresh_db(monkeypatch, tmp_path):
 
 @pytest.fixture
 def seed_employees(fresh_db):
-    """Insert two employees: alice (admin) and bob (assigned).
-
-    The store's primary-scope memory defaults to
-    ``employee_id`` = the caller. The tests use alice
-    for write calls and bob to populate a
-    ``person`` directory entry.
+    """Insert three employees: alice (admin), bob
+    (assigned), charlie (employee). The tool gate
+    tests use charlie to confirm the role check
+    fires for non-allowed roles.
     """
     with open_session() as db:
         alice = Employee(
@@ -133,20 +126,9 @@ def test_store_adds_important_row(fresh_db, seed_employees):
     )
     assert view.id > 0
     assert view.kind == KIND_IMPORTANT
-    assert view.scope == SCOPE_PRIMARY
     assert view.subject == "Q3 expense policy"
     assert view.completed_at is None
-
-
-def test_store_add_person_requires_person_employee_id(fresh_db, seed_employees):
-    store = MemoryStore(fresh_db)
-    with pytest.raises(ValueError, match="person_employee_id"):
-        store.add(
-            seed_employees["alice"].id,
-            kind=KIND_PERSON,
-            subject="Bob",
-            body="In finance.",
-        )
+    assert view.importance == 3  # default
 
 
 def test_store_get_returns_none_for_missing_id(fresh_db):
@@ -220,27 +202,6 @@ def test_store_list_orders_by_importance_then_recency(
     assert names == ["High", "Mid", "Low"]
 
 
-def test_store_list_filters_by_scope(fresh_db, seed_employees):
-    store = MemoryStore(fresh_db)
-    owner = seed_employees["alice"].id
-    store.add(
-        owner, kind=KIND_PERSON,
-        subject="Bob (primary)", body="...",
-        scope=SCOPE_PRIMARY,
-        person_employee_id=seed_employees["bob"].id,
-    )
-    store.add(
-        owner, kind=KIND_PERSON,
-        subject="Charlie (secondary)", body="...",
-        scope=SCOPE_SECONDARY,
-        person_employee_id=seed_employees["charlie"].id,
-    )
-    primary = store.list_for_owner(owner, scope=SCOPE_PRIMARY)
-    secondary = store.list_for_owner(owner, scope=SCOPE_SECONDARY)
-    assert {r.subject for r in primary} == {"Bob (primary)"}
-    assert {r.subject for r in secondary} == {"Charlie (secondary)"}
-
-
 # -- format_memory_block --------------------------------------------------
 
 
@@ -261,24 +222,16 @@ def test_format_memory_block_groups_by_kind(fresh_db, seed_employees):
         subject="Follow up with Acme",
         body="Initial outreach last Tuesday.",
     )
-    store.add(
-        owner, kind=KIND_PERSON,
-        subject="Bob",
-        body="In finance, telegram_id 9002.",
-        person_employee_id=seed_employees["bob"].id,
-    )
 
     rows = store.list_for_owner(owner)
     block = format_memory_block(rows)
-    assert "## Long-term memory" in block
-    # The three section headers.
+    assert "## Long-term memory (MAGI)" in block
+    # The two section headers.
     assert "重要的事" in block
     assert "正在进行" in block
-    assert "认识的人" in block
     # Each subject appears in the rendered block.
     assert "Q3 expense policy" in block
     assert "Follow up with Acme" in block
-    assert "Bob" in block
 
 
 # -- LLM tools -------------------------------------------------------------
@@ -295,7 +248,6 @@ def test_add_memory_tool_admin_succeeds(fresh_db, seed_employees):
         importance=5,
     ))
     assert not result.is_error
-    assert "memory_id" not in result.content  # shape is the row JSON
     assert "Q3 expense policy" in result.content
 
 

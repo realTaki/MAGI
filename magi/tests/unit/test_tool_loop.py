@@ -119,12 +119,18 @@ def test_tool_registry_returns_expected_schemas():
         "send_message",
         "schedule_task",
         "load_skill",
-        # Memory management — the LLM calls these
+        # MAGI memory management — the LLM calls these
         # when the operator says "记住 X" / "完成了".
         "add_memory",
         "update_memory",
         "complete_memory",
         "delete_memory",
+        # Contact directory — the LLM calls these
+        # when the operator says "记住 Lily 在财务部".
+        "add_contact",
+        "update_contact",
+        "delete_contact",
+        "search_contacts",
     ]
 
 

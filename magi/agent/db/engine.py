@@ -231,6 +231,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
+    import magi.agent.memory.contacts.models  # noqa: F401 — contacts table
     Base.metadata.create_all(engine)
     _run_inline_migrations(engine)
     _seed_default_root(engine)

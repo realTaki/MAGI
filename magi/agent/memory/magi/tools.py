@@ -1,9 +1,9 @@
-"""LLM-callable memory tools.
+"""LLM-callable memory tools for MAGI's mid-term memory.
 
 The agent loop exposes these to the LLM through the
-standard :mod:`magi.agent.tools.registry` mechanism. The
-LLM decides when to call them based on operator
-instructions ("记住 X" / "在跟进 Y" / "Lily 是谁来着").
+standard :mod:`magi.agent.tools.registry` mechanism.
+The LLM decides when to call them based on operator
+instructions ("记住 X" / "在跟进 Y" / "完成了").
 
 Four separate tools rather than one ``memory`` tool
 with a verb discriminator:
@@ -14,6 +14,11 @@ with a verb discriminator:
   - The error surface is per-tool: a malformed
     ``add_memory`` call returns ``is_error=True`` to
     that specific tool result, not to the whole turn.
+
+Person records are NOT writable through these tools —
+they live in :mod:`magi.agent.memory.contacts` and
+have their own tool set (the LLM-managed directory of
+people the MAGI knows about).
 
 Admin gate: same as the API — only ``admin`` and
 ``assigned`` employees can write to their own memory.
@@ -30,18 +35,15 @@ import logging
 from typing import Any
 
 from magi.agent.db import Employee, open_session
-from magi.agent.memory.models import (
+from magi.agent.memory.magi.models import (
     ALL_KINDS,
-    ALL_SCOPES,
-    KIND_PERSON,
-    SCOPE_PRIMARY,
     SOURCE_EVE,
 )
-from magi.agent.memory.store import MemoryStore
+from magi.agent.memory.magi.store import MemoryStore
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 
 
-logger = logging.getLogger("magi.agent.memory.tools")
+logger = logging.getLogger("magi.agent.memory.magi.tools")
 
 _WRITE_ROLES = {"admin", "assigned"}
 
@@ -92,38 +94,25 @@ def _ok(payload: dict) -> ToolResult:
 
 
 class AddMemoryTool(Tool):
-    """Persist a new memory row.
+    """Persist a new fact into MAGI's mid-term memory.
 
     The LLM calls this when the operator asks to
     remember something ("记住 X" / "记下 Y" / "the
-    contract is due on 9/30" / "Lily is the finance
-    lead"). The body is markdown; the LLM is
-    responsible for the prose.
-
-    Idempotency: for ``kind=person`` the LLM is
-    expected to call this only for *new* people. The
-    store's :meth:`MemoryStore.find_person` exposes
-    the existing row so the LLM can decide to call
-    :class:`UpdateMemoryTool` instead. (v0 doesn't
-    enforce a unique constraint at the DB level
-    because a person record may legitimately have
-    multiple rows if the operator wants to track
-    "Lily — finance" and "Lily — Q3 owner" as
-    separate facts about the same person.)
+    contract is due on 9/30"). The body is markdown;
+    the LLM is responsible for the prose.
     """
 
     name = "add_memory"
     description = (
-        "Persist a new fact into the operator's long-term memory. "
-        "Use when the operator says '记住 X' / '记下 Y' / '把 ... 记 "
-        "录下来' — or when the LLM judges a fact worth remembering "
-        "across conversations (company policy, contract deadline, "
-        "ongoing project, a person the operator mentioned). "
-        "kinds: 'important' (long-arc facts), 'ongoing' (work in "
-        "flight, has a completion), 'person' (directory entry — "
-        "requires person_employee_id). scope: 'primary' (the "
-        "operator's own facts) or 'secondary' (someone else's "
-        "directory entry — typically kind=person)."
+        "Persist a new fact into MAGI's mid-term memory. "
+        "Use when the operator says '记住 X' / '记下 Y' / "
+        "'把 ... 记录下来' — or when the LLM judges a "
+        "fact worth remembering across conversations "
+        "(company policy, contract deadline, ongoing "
+        "project). kinds: 'important' (long-arc facts), "
+        "'ongoing' (work in flight, has a completion). "
+        "Person records are NOT written here — use the "
+        "contacts tools for people."
     )
     input_schema = {
         "type": "object",
@@ -131,7 +120,7 @@ class AddMemoryTool(Tool):
             "kind": {
                 "type": "string",
                 "enum": sorted(ALL_KINDS),
-                "description": "important | ongoing | person",
+                "description": "important | ongoing",
             },
             "subject": {
                 "type": "string",
@@ -159,21 +148,6 @@ class AddMemoryTool(Tool):
                     "2-3 so the operator can deprioritise."
                 ),
             },
-            "scope": {
-                "type": "string",
-                "enum": sorted(ALL_SCOPES),
-                "description": (
-                    "primary = operator's own memory. secondary = "
-                    "someone else's directory entry."
-                ),
-            },
-            "person_employee_id": {
-                "type": "integer",
-                "description": (
-                    "Required when kind=person. The employees.id "
-                    "of the person being described."
-                ),
-            },
         },
         "required": ["kind", "subject", "body"],
     }
@@ -194,8 +168,6 @@ class AddMemoryTool(Tool):
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
-                scope=kwargs.get("scope", SCOPE_PRIMARY),
-                person_employee_id=kwargs.get("person_employee_id"),
                 importance=kwargs.get("importance", 3),
                 source=SOURCE_EVE,
             )
@@ -208,20 +180,19 @@ class UpdateMemoryTool(Tool):
     """Patch an existing memory row by id.
 
     The LLM finds the id via the system-prompt block
-    ("memory id 17 says …") or via the ``list_memory``
-    read tool (TODO when added). Mutable fields only
-    — ``kind`` and ``person_employee_id`` are
-    intentionally not editable to keep the row's
-    identity stable across edits.
+    ("memory id 17 says …"). Mutable fields only —
+    ``kind`` and ``employee_id`` are intentionally not
+    editable to keep the row's identity stable across
+    edits.
     """
 
     name = "update_memory"
     description = (
         "Patch an existing memory row by id. Use when the operator "
-        "says '更新 X' / '改成 ...' / 'the deadline is now 10/15' / "
-        "'Lily now reports to Mark'. Mutable: subject, body, "
-        "importance, scope. Immutable: kind, person_employee_id "
-        "(delete + re-add if you really need to change those)."
+        "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
+        "Mutable: subject, body, importance. Immutable: kind, "
+        "employee_id (delete + re-add if you really need to change "
+        "those)."
     )
     input_schema = {
         "type": "object",
@@ -233,10 +204,6 @@ class UpdateMemoryTool(Tool):
             "subject": {"type": "string"},
             "body": {"type": "string"},
             "importance": {"type": "integer", "minimum": 1, "maximum": 5},
-            "scope": {
-                "type": "string",
-                "enum": sorted(ALL_SCOPES),
-            },
         },
         "required": ["memory_id"],
     }
@@ -260,7 +227,6 @@ class UpdateMemoryTool(Tool):
                 subject=kwargs.get("subject"),
                 body=kwargs.get("body"),
                 importance=kwargs.get("importance"),
-                scope=kwargs.get("scope"),
             )
         except LookupError as e:
             return _err(str(e))
@@ -327,8 +293,7 @@ class DeleteMemoryTool(Tool):
     description = (
         "Delete a memory row by id. Idempotent — deleting a "
         "non-existent id returns success. Use when the operator "
-        "says '忘了 X' / '那条记错了删掉' / 'Lily no longer works "
-        "here'."
+        "says '忘了 X' / '那条记错了删掉'."
     )
     input_schema = {
         "type": "object",

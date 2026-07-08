@@ -1,56 +1,47 @@
-"""MAGI long-term memory — per-assigned-employee facts.
+"""MAGI's mid-term memory — what the MAGI itself knows.
 
-What lives here:
-
-  - **Important** — long-arc facts the LLM should not
-    forget (company policy, contract deadline,
-    "never do X" rules).
-  - **Ongoing** — work in flight; the LLM tracks
-    progress and marks the row done via
-    :class:`CompleteMemoryTool`.
-  - **People** — directory entries. "Lily is in
-    finance, telegram_id=9001". The LLM uses these to
-    recognise names when the operator mentions them
-    or asks "send Lily a message".
-
-Per-MAGI scope: each MAGI has its own ``memory_entries``
-rows, keyed by ``employee_id`` (the assigned employee
-on this MAGI). On a single-instance setup that's one
-employee per MAGI; the model generalises to multi-
-tenant by adding a ``tenant_id`` later.
+Stores the things the operator has told the EVE to
+"remember" (company policies, contract deadlines,
+ongoing projects, follow-ups). This is **MAGI's own
+memory** — not a record of people. Person records
+("Lily 在财务部") live in
+:mod:`magi.agent.memory.contacts`.
 
 The LLM manages the table through four tools
-(:mod:`.tools`) — not automatically on every chat
-turn. The operator must say "记住 X" (or the LLM
-must judge the fact long-arc enough to persist).
+(:mod:`.tools`): add / update / complete / delete.
+Writes are not automatic — the operator must say
+"记住 X" or the LLM must judge the fact long-arc
+enough to persist.
+
+The system-prompt formatter
+(:func:`.prompt.format_memory_block`) renders the
+operator's important + ongoing rows as a Markdown
+block appended to the LLM's system prompt. The block
+is empty when there's nothing to remember; the agent
+loop short-circuits to keep the prompt lean.
 
 Layout:
 
   - :mod:`.models`  — :class:`MemoryEntry` ORM table
   - :mod:`.store`   — :class:`MemoryStore` CRUD
   - :mod:`.prompt`  — :func:`format_memory_block`
-                      (system-prompt formatter)
   - :mod:`.tools`   — the four LLM-callable tools
 """
 
 from __future__ import annotations
 
-from magi.agent.memory.models import (
+from magi.agent.memory.magi.models import (
     ALL_KINDS,
-    ALL_SCOPES,
     KIND_IMPORTANT,
     KIND_ONGOING,
-    KIND_PERSON,
-    SCOPE_PRIMARY,
-    SCOPE_SECONDARY,
     SOURCE_EVE,
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
     MemoryEntry,
 )
-from magi.agent.memory.prompt import format_memory_block
-from magi.agent.memory.store import MemoryStore, MemoryView
-from magi.agent.memory.tools import (
+from magi.agent.memory.magi.prompt import format_memory_block
+from magi.agent.memory.magi.store import MemoryStore, MemoryView
+from magi.agent.memory.magi.tools import (
     AddMemoryTool,
     CompleteMemoryTool,
     DeleteMemoryTool,
@@ -61,12 +52,8 @@ from magi.agent.memory.tools import (
 __all__ = [
     # enums
     "ALL_KINDS",
-    "ALL_SCOPES",
     "KIND_IMPORTANT",
     "KIND_ONGOING",
-    "KIND_PERSON",
-    "SCOPE_PRIMARY",
-    "SCOPE_SECONDARY",
     "SOURCE_EVE",
     "SOURCE_MANUAL",
     "SOURCE_SYSTEM",

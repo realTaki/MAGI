@@ -52,6 +52,12 @@ def _build_tools() -> list["Tool"]:
     from magi.agent.tools.search_sessions import SearchSessionsTool
     from magi.agent.tools.send_message import SendMessageTool
     from magi.agent.tools.write_file import WriteFileTool
+    from magi.agent.memory.contacts.tools import (
+        AddContactTool,
+        DeleteContactTool,
+        SearchContactsTool,
+        UpdateContactTool,
+    )
     from magi.agent.memory.magi.tools import (
         AddMemoryTool,
         CompleteMemoryTool,
@@ -75,6 +81,12 @@ def _build_tools() -> list["Tool"]:
         UpdateMemoryTool(),
         CompleteMemoryTool(),
         DeleteMemoryTool(),
+        # Contact directory — what the MAGI knows
+        # about people. Operator-driven, not auto.
+        AddContactTool(),
+        UpdateContactTool(),
+        DeleteContactTool(),
+        SearchContactsTool(),
     ]
 
 
