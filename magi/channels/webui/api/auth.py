@@ -48,7 +48,7 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def _super_admins() -> set[str]:
@@ -60,7 +60,7 @@ def _super_admins() -> set[str]:
     for state files written before the unified table landed
     (C1.x). The fallback path is retired in C8.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Employee, open_session, require_state_dir
     from magi.agent.db.settings import state_get
 
     state_dir = _state_dir()

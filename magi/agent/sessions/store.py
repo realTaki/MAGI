@@ -33,7 +33,8 @@ from magi.agent.sessions.models import (
     _PREVIEW_CHARS,
     summary_from_session,
 )
-from magi.agent.db import ChatMessage, ChatSession, open_session
+from magi.agent.db.engine import open_session
+from magi.agent.sessions.tables import ChatMessage, ChatSession
 
 
 logger = logging.getLogger("magi.agent.sessions.store")

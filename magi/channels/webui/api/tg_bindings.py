@@ -28,13 +28,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
-from magi.agent.db import Employee, open_session
+from magi.agent.db import Employee, open_session, require_state_dir
 
 router = APIRouter(tags=["telegram"])
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 class TGBindRequest(BaseModel):

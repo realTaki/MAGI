@@ -47,7 +47,7 @@ _TELEGRAM_TIMEOUT_SECONDS = 5.0
 
 def _state_dir() -> str:
     """Read MAGI_STATE_DIR each call — keeps state_dir testable + env-friendly."""
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 # -- request / response schemas -----------------------------------------
@@ -164,7 +164,7 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Employee, open_session, require_state_dir
     from magi.agent.db.settings import state_get
 
     state_dir = _state_dir()

@@ -43,7 +43,7 @@ from sqlalchemy import func, select
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.system_settings import get_system_timezone
-from magi.agent.db import TokenUsage, open_session
+from magi.agent.db import TokenUsage, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.employee_metrics")
 
@@ -51,7 +51,7 @@ router = APIRouter(tags=["employee-metrics"])
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 @dataclass(frozen=True)

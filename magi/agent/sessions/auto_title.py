@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Optional
 
 from magi.agent.llm.errors import LLMError
+from magi.agent.db.engine import require_state_dir
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.agent.prompts import load_chat_title_prompt
@@ -353,7 +354,7 @@ def _state_dir_for_job() -> str:
     module import, so tests that override the env var mid-run
     see the new value.
     """
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def _cleanse_title(raw: str) -> str:
