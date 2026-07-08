@@ -105,15 +105,20 @@ def test_minimax_provider_chat_signature_accepts_tools_kwarg():
     assert "tools" in sig.parameters
 
 
-def test_tool_registry_returns_expected_schemas():
+def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
     """Stable list of v0 tool names. ``list`` order
     matters — the LLM sees tools in this order every
     turn, so a reorder would be a perceptible UI
-    change."""
+    change. ``MAGI_STATE_DIR`` is set so the registry
+    can build role-gate tools (which lazily open a
+    session)."""
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     names = [t["name"] for t in get_tool_schemas()]
     assert names == [
         "read_file",
         "write_file",
+        "edit_file",
         "list_files",
         "search_sessions",
         "send_message",
@@ -140,7 +145,12 @@ def test_tool_registry_returns_expected_schemas():
     ]
 
 
-def test_get_tool_lookup_hits_and_misses():
+def test_get_tool_lookup_hits_and_misses(tmp_path, monkeypatch):
+    """Registry lookup. ``MAGI_STATE_DIR`` is set so the
+    registry can build role-gate tools (which lazily
+    open a session)."""
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     assert get_tool("read_file") is not None
     assert get_tool("does_not_exist") is None
 
@@ -384,3 +394,295 @@ async def test_send_message_rejects_oversized_text(workspace_ctx):
 # cover the tools + schema + safety surface; the loop
 # itself is exercised by the live smoke in
 # ``tests/manual/test_tools_live.py``.)
+
+
+# ───────────────────────────────────────────────────────────────── #
+# read_file — windowed mode (offset / limit)
+# ───────────────────────────────────────────────────────────────── #
+
+
+@pytest.mark.asyncio
+async def test_read_file_windowed_returns_line_numbers(workspace_ctx):
+    """With ``offset`` the tool returns ``"     N|<line>"``
+    output (1-indexed, right-aligned). The reference
+    bash tool uses the same shape so the LLM can
+    cross-reference line numbers across tools.
+    """
+    (workspace_ctx.workspace / "script.py").write_text(
+        "alpha\nbravo\ncharlie\ndelta\n",
+        encoding="utf-8",
+    )
+    result = await ReadFileTool().run(
+        workspace_ctx, path="script.py", offset=2, limit=2,
+    )
+    assert result.is_error is False
+    # Lines 2-3 (1-indexed) of the file.
+    assert "     2|bravo" in result.content
+    assert "     3|charlie" in result.content
+    # Line 1 and 4 are NOT in the window.
+    assert "alpha" not in result.content
+    assert "delta" not in result.content
+    # Header announces the window.
+    assert "[lines 2-3 of 4" in result.content
+    # Suffix offers the next page.
+    assert "offset=4" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_file_windowed_offset_past_end_errors(workspace_ctx):
+    """``offset`` past EOF is a clean error, not a
+    silent empty result."""
+    (workspace_ctx.workspace / "short.txt").write_text(
+        "one\ntwo\n", encoding="utf-8",
+    )
+    result = await ReadFileTool().run(
+        workspace_ctx, path="short.txt", offset=100,
+    )
+    assert result.is_error is True
+    assert "past the end" in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_file_windowed_no_more_pages_omits_suffix(workspace_ctx):
+    """When the window reaches the end of the file,
+    the "more lines" suffix is omitted (the LLM
+    doesn't get a useless prompt to keep paging).
+    """
+    (workspace_ctx.workspace / "tiny.txt").write_text(
+        "one\ntwo\n", encoding="utf-8",
+    )
+    result = await ReadFileTool().run(
+        workspace_ctx, path="tiny.txt", offset=1, limit=10,
+    )
+    assert result.is_error is False
+    # All 2 lines returned, no continuation hint.
+    assert "one" in result.content
+    assert "two" in result.content
+    assert "more lines" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_read_full_file_still_no_line_numbers(workspace_ctx):
+    """Without ``offset``/``limit`` we keep the
+    v0 format: raw text, byte-truncated at 8 KB.
+    The line-numbered output is opt-in via offset —
+    callers that just want the file don't get
+    noisy prefixes.
+    """
+    (workspace_ctx.workspace / "raw.txt").write_text(
+        "first\nsecond\n", encoding="utf-8",
+    )
+    result = await ReadFileTool().run(workspace_ctx, path="raw.txt")
+    assert result.is_error is False
+    # Plain text — no ``N|`` prefix.
+    assert "first\nsecond" in result.content
+    assert "|" not in result.content.split("\n")[0]
+
+
+# ───────────────────────────────────────────────────────────────── #
+# edit_file
+# ───────────────────────────────────────────────────────────────── #
+
+
+@pytest.mark.asyncio
+async def test_edit_file_replaces_unique_match(workspace_ctx):
+    """Happy path: the LLM sends a unique ``old_str``
+    and a ``new_str``; the file is updated and
+    the original content is preserved everywhere
+    else."""
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "config.yaml"
+    target.write_text(
+        "name: app\nversion: 1\nport: 8080\n",
+        encoding="utf-8",
+    )
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="config.yaml",
+        old_str="port: 8080",
+        new_str="port: 9090",
+    )
+    assert result.is_error is False
+    assert "replaced" in result.content.lower()
+    # Disk reflects the change; the rest of the
+    # file is untouched.
+    assert target.read_text(encoding="utf-8") == (
+        "name: app\nversion: 1\nport: 9090\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_non_unique_match(workspace_ctx):
+    """If ``old_str`` appears more than once the
+    tool fails with a clear message — silently
+    patching the first occurrence is the kind of
+    footgun the LLM needs a guard against.
+    """
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "dupe.txt"
+    target.write_text("foo\nbar\nfoo\n", encoding="utf-8")
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="dupe.txt",
+        old_str="foo",
+        new_str="baz",
+    )
+    assert result.is_error is True
+    assert "2 times" in result.content
+    # File unchanged.
+    assert target.read_text(encoding="utf-8") == "foo\nbar\nfoo\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_missing_match(workspace_ctx):
+    """``old_str`` not in the file → clear error,
+    not a silent append / replacement of nothing.
+    """
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "f.txt"
+    target.write_text("hello\n", encoding="utf-8")
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="f.txt",
+        old_str="goodbye",
+        new_str="anything",
+    )
+    assert result.is_error is True
+    assert "not found" in result.content
+
+
+@pytest.mark.asyncio
+async def test_edit_file_supports_empty_new_str(workspace_ctx):
+    """``new_str=""`` deletes the matched chunk.
+    Common LLM pattern: drop a debug print.
+    """
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "code.py"
+    target.write_text(
+        "def f():\n    print('debug')\n    return 1\n",
+        encoding="utf-8",
+    )
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="code.py",
+        old_str="    print('debug')\n",
+        new_str="",
+    )
+    assert result.is_error is False
+    assert target.read_text(encoding="utf-8") == (
+        "def f():\n    return 1\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_traversal(workspace_ctx):
+    """Path resolution goes through ``safe_resolve`` —
+    a ``../etc/passwd`` attempt is rejected, same
+    as read/write.
+    """
+    from magi.agent.tools.edit_file import EditFileTool
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="../etc/passwd",
+        old_str="root",
+        new_str="nobody",
+    )
+    assert result.is_error is True
+    assert "escapes workspace" in result.content
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_non_utf8(workspace_ctx):
+    """Editing a non-UTF-8 file fails with a clear
+    message rather than corrupting bytes."""
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "binary.bin"
+    target.write_bytes(b"\x80\x81\x82not-utf-8")
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="binary.bin",
+        old_str="not-utf-8",
+        new_str="anything",
+    )
+    assert result.is_error is True
+    assert "not valid UTF-8" in result.content
+
+
+@pytest.mark.asyncio
+async def test_edit_file_rejects_oversized_old_str(workspace_ctx):
+    """A 100 KB ``old_str`` is almost always the LLM
+    pasting the whole file. Cap it at 64 KB with a
+    helpful message.
+    """
+    from magi.agent.tools.edit_file import EditFileTool
+    target = workspace_ctx.workspace / "big.txt"
+    target.write_text("hello\n", encoding="utf-8")
+    tool = EditFileTool()
+    result = await tool.run(
+        workspace_ctx,
+        path="big.txt",
+        old_str="x" * (70 * 1024),
+        new_str="y",
+    )
+    assert result.is_error is True
+    assert "smaller chunk" in result.content
+
+
+@pytest.mark.asyncio
+async def test_edit_file_atomicity_preserves_previous_on_failure(
+    workspace_ctx, monkeypatch,
+):
+    """A failed write must NOT leave the file
+    half-written. We simulate a failure by
+    monkey-patching ``os.replace`` to raise and
+    verify the original content is still on disk.
+    """
+    from magi.agent.tools import edit_file
+    from magi.agent.tools.edit_file import EditFileTool
+
+    target = workspace_ctx.workspace / "atomic.txt"
+    original = "line1\nline2\nline3\n"
+    target.write_text(original, encoding="utf-8")
+
+    real_replace = edit_file.os.replace
+    def boom(src, dst):
+        raise OSError("simulated disk full")
+    monkeypatch.setattr(edit_file.os, "replace", boom)
+    try:
+        tool = EditFileTool()
+        result = await tool.run(
+            workspace_ctx,
+            path="atomic.txt",
+            old_str="line2",
+            new_str="NEW",
+        )
+    finally:
+        monkeypatch.setattr(edit_file.os, "replace", real_replace)
+
+    assert result.is_error is True
+    # Original is intact — no half-written tmp file
+    # leaked, no truncate happened.
+    assert target.read_text(encoding="utf-8") == original
+    # No leftover .tmp file (the cleanup path ran).
+    leftovers = [
+        p.name for p in target.parent.iterdir()
+        if p.name.startswith(".atomic.txt.")
+    ]
+    assert leftovers == [], f"leftover tmp files: {leftovers}"
+
+
+def test_edit_file_appears_in_registry(tmp_path, monkeypatch):
+    """Sanity: edit_file is registered alongside the
+    other file tools.
+    """
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    from magi.agent.tools.registry import get_tool_schemas
+    names = [t["name"] for t in get_tool_schemas()]
+    assert "edit_file" in names

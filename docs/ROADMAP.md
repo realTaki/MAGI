@@ -230,7 +230,11 @@ worst-day operational scenarios.
 | First Alembic baseline (replaces `_run_inline_migrations`) | **Next** (end of C1.3) | Multiple callouts in code |
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
-| `tokens.py` to `llm/` (DONE) | n/a | Done in this refactor series |
+| `tokens.py` to `llm/` | **Done** | (in this refactor series) |
+| File tools — `edit_file` (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| File tools — `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
+| File tools — `tiktoken` token-aware truncation | **Later** | Trigger: LLM complains "truncated but still too much" — adds a native dep |
+| File tools — `edit_file` `replace_globally` switch | **Later** | Trigger: real need for "rename var across whole file" workflows |
 
 ---
 
