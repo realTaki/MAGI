@@ -43,7 +43,7 @@ from magi.agent.sessions import (
     SessionSummary,
     new_session_id,
 )
-from magi.agent.state.orm import Employee, open_session
+from magi.agent.db import Employee, open_session
 
 logger = logging.getLogger("magi.api.chat_sessions")
 

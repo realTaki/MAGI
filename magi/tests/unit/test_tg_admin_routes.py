@@ -25,8 +25,8 @@ def tg_admin_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    from magi.agent.state import init_sqlite
-    from magi.agent.state.orm import Employee, init_orm, open_session
+    from magi.agent.db import init_sqlite
+    from magi.agent.db import Employee, init_orm, open_session
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -34,7 +34,7 @@ def tg_admin_env(monkeypatch, tmp_path):
 
 
 def _seed_employee(state_dir: str, *, chat_id: int, role: str):
-    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.db import Employee, open_session
 
     with open_session() as s:
         s.query(Employee).delete()

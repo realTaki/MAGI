@@ -21,7 +21,7 @@ import pytest
 @pytest.fixture
 def tg_settings_env(monkeypatch, tmp_path):
     """Fresh state dir per test. The config module reads
-    ``MAGI_STATE_DIR`` via :mod:`magi.agent.state.settings`,
+    ``MAGI_STATE_DIR`` via :mod:`magi.agent.db.settings`,
     so a tmp dir keeps tests isolated and idempotent.
 
     Calls :func:`init_sqlite` (not just :func:`init_orm`)
@@ -32,7 +32,7 @@ def tg_settings_env(monkeypatch, tmp_path):
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    from magi.agent.state import init_sqlite
+    from magi.agent.db import init_sqlite
     init_sqlite(str(state))
     return state
 
@@ -41,7 +41,7 @@ def tg_settings_env(monkeypatch, tmp_path):
 def client(tg_settings_env):
     """TestClient with an admin cookie; mirrors the other
     settings-API fixtures in this suite."""
-    from magi.agent.state.orm import (
+    from magi.agent.db import (
         Employee,
         init_orm,
         open_session,
@@ -102,7 +102,7 @@ def test_config_falls_back_on_unknown_value(tg_settings_env):
         DEFAULT_REACTION_EMOJI,
         get_read_reaction_emoji,
     )
-    from magi.agent.state.settings import state_set
+    from magi.agent.db.settings import state_set
 
     # ✅ is in the Unicode block but NOT in our user-facing
     # choices (Telegram rejects it as a reaction type) —

@@ -67,7 +67,7 @@ from magi.channels.webui.api.chat_search import (
     search_chat_history,
 )
 from magi.agent.sessions import SessionStore
-from magi.agent.state.orm import ChatMessage, ChatSession, open_session
+from magi.agent.db import ChatMessage, ChatSession, open_session
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 
 _MAX_HITS = 20

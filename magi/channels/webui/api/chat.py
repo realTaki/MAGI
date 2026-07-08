@@ -62,7 +62,7 @@ from magi.agent.sessions import (
     new_session_id,
     utcnow_iso as _utcnow_iso,
 )
-from magi.agent.state.orm import Employee, open_session
+from magi.agent.db import Employee, open_session
 
 logger = logging.getLogger("magi.api.chat")
 

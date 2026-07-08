@@ -40,12 +40,12 @@ def admin_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.state.orm as orm_mod
+    import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.state import init_sqlite
-    from magi.agent.state.orm import Employee, init_orm, open_session
+    from magi.agent.db import init_sqlite
+    from magi.agent.db import Employee, init_orm, open_session
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -166,7 +166,7 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
     differ — the UI uses this to decide whether to show
     a separate "show archive" affordance later."""
     from magi.agent.sessions import SessionStore, SessionMessage, new_session_id
-    from magi.agent.state.orm import ChatMessage, open_session
+    from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 3)
@@ -197,7 +197,7 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
     order — they sort by ``id`` ASC, which is the
     insertion order)."""
     from magi.agent.sessions import SessionStore, new_session_id
-    from magi.agent.state.orm import ChatMessage, open_session
+    from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 2)

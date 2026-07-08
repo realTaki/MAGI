@@ -25,7 +25,7 @@ def workspace_root(state_dir: str | os.PathLike[str]) -> Path:
     """Derive the workspace root from the state directory.
 
     The default layout puts the SQLite at ``<root>/state/magi.db``
-    (see ``magi.agent.state.init_sqlite``), so the workspace
+    (see ``magi.agent.db.init_sqlite``), so the workspace
     root is the parent of the state directory. If a future
     deployer sets ``MAGI_WORKSPACE_DIR`` directly (state lives
     outside the workspace tree), the override is honored.

@@ -78,7 +78,7 @@ def _write_skill(
 
 def test_loader_finds_a_single_skill(workspace):
     _write_skill(workspace, "alpha")
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     skills = loader.list()
     assert [s.name for s in skills] == ["alpha"]
     assert skills[0].description.startswith("alpha skill")
@@ -89,14 +89,14 @@ def test_loader_sorts_skills_alphabetically(workspace):
     _write_skill(workspace, "zebra")
     _write_skill(workspace, "alpha")
     _write_skill(workspace, "mango")
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["alpha", "mango", "zebra"]
 
 
 def test_loader_skips_dir_without_skill_md(workspace):
     (workspace / "skills" / "empty-skill").mkdir()
     _write_skill(workspace, "alpha")
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["alpha"]
 
 
@@ -109,15 +109,21 @@ def test_loader_skips_skill_with_no_description(workspace, caplog):
         "---\nname: undocumented\n---\n\nbody\n", encoding="utf-8"
     )
     _write_skill(workspace, "real")
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["real"]
 
 
 def test_loader_handles_missing_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "nope"))
-    # ``nope/skills/`` does not exist.
+    # ``nope/skills/`` does not exist. Pass a non-existent
+    # bundle_dir so the loader is exercised single-source;
+    # the dual-source contract is pinned by the new tests
+    # at the bottom of the file.
     _reset_for_tests()
-    loader = SkillLoader(tmp_path / "nope")
+    loader = SkillLoader(
+        tmp_path / "nope",
+        bundle_dir=tmp_path / "no-bundle",
+    )
     assert loader.list() == []
 
 
@@ -137,7 +143,7 @@ def test_loader_overrides_duplicate(workspace):
         "---\nname: dup\ndescription: second dup\n---\n", encoding="utf-8"
     )
     _reset_for_tests()
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     # The same ``SkillMeta.name`` ('dup') would overwrite;
     # but 'dup' and 'dup2' are different names → both kept.
     # This actually proves the "warn on collision" path
@@ -175,7 +181,7 @@ def test_loader_duplicate_name_overrides(workspace):
         encoding="utf-8",
     )
     _reset_for_tests()
-    loader = SkillLoader(workspace)
+    loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     # Both pass — they have distinct resolved names.
     assert {s.name for s in loader.list()} == {"alpha", "alpha2"}
 
@@ -190,7 +196,7 @@ def test_format_skills_block_is_empty_without_skills():
 def test_format_skills_block_lists_each_skill(workspace):
     _write_skill(workspace, "alpha", description="alpha skill", version="1.2")
     _write_skill(workspace, "zebra", description="zebra skill")
-    block = format_skills_block(SkillLoader(workspace).list())
+    block = format_skills_block(SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle").list())
     assert "## Available skills" in block
     assert "**alpha**" in block
     assert "(v1.2)" in block
@@ -207,7 +213,7 @@ def test_format_skills_block_respects_metadata_only(workspace):
         description="alpha skill",
         body="very long secrets " * 100,
     )
-    block = format_skills_block(SkillLoader(workspace).list())
+    block = format_skills_block(SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle").list())
     assert "very long secrets" not in block
     assert len(block) < 2000  # way under body cap
 

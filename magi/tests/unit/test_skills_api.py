@@ -18,8 +18,8 @@ from fastapi.testclient import TestClient
 
 from magi.channels.webui.app import create_app
 from magi.agent.tools.skill_loader import _reset_for_tests
-from magi.agent.state import init_sqlite
-from magi.agent.state.orm import Employee, init_orm, open_session
+from magi.agent.db import init_sqlite
+from magi.agent.db import Employee, init_orm, open_session
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def env(monkeypatch, tmp_path, workspace):
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(workspace))
 
-    import magi.agent.state.orm as orm_mod
+    import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -112,12 +112,16 @@ def test_list_skills_round_trip(client, workspace):
 
 
 def test_list_skills_empty_when_no_skills(client):
-    """No SKILL.md on disk → empty list, not 404 (the
-    surface is genuinely empty in v0 for a fresh
-    deploy)."""
+    """No operator SKILL.md on disk → the bundled
+    examples still show up. The surface is never truly
+    empty now that the loader scans ``magi/skills/`` —
+    and that's the point of the bundle: a fresh deploy
+    has the 3 example skills available immediately.
+    """
     r = client.get("/api/skills")
     assert r.status_code == 200
-    assert r.json() == []
+    names = {s["name"] for s in r.json()}
+    assert {"codebase_search", "reminder_template", "web_lookup"} <= names
 
 
 def test_list_skills_requires_admin(env, workspace):

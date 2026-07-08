@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from magi.agent.state.orm import (
+from magi.agent.db import (
     Department,
     Employee,
     get_session,
@@ -56,7 +56,7 @@ def _is_admin_chat_id(chat_id: str) -> bool:
     """
     from sqlalchemy import select
 
-    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.db import Employee, open_session
 
     try:
         cid_int = int(chat_id)
@@ -116,7 +116,7 @@ def _is_admin_or_assigned_chat_id(chat_id: str) -> bool:
     """
     from sqlalchemy import select
 
-    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.db import Employee, open_session
 
     if not chat_id:
         return False
@@ -216,7 +216,7 @@ class EmployeeOut(BaseModel):
 
     ``role`` is the per-MAGI-perspective classification
     (admin / employee / assigned / other). See
-    :class:`magi.agent.state.orm.Employee` for the semantics.
+    :class:`magi.agent.db.Employee` for the semantics.
     ``telegram_id`` is the bound TG chat id when known
     (``None`` until the /start binding flow runs).
     """
@@ -235,7 +235,7 @@ class EmployeeOut(BaseModel):
 
 # Roles the operator can assign via the API. The four
 # values match the per-MAGI-perspective enum documented
-# on :class:`magi.agent.state.orm.Employee.role`.
+# on :class:`magi.agent.db.Employee.role`.
 # ``employee`` and ``guest`` are reserved for the multi-
 # instance future (C6+) but the enum already supports
 # them, so we don't reject manual assignments.

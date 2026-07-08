@@ -192,7 +192,7 @@ def run() -> None:
     # is a no-op for existing tables, so this is safe on every
     # boot. Runs in the same ``magi.db`` file as the hand-rolled
     # KV store; the two write to disjoint tables.
-    from magi.agent.state.orm import init_orm
+    from magi.agent.db import init_orm
     init_orm(cfg.state_dir)
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
@@ -303,7 +303,7 @@ def _init_state(cfg: NodeConfig) -> None:
         return
 
     state_dir = cfg.state_dir or "/workspace/memories"
-    from magi.agent.state import init_sqlite
+    from magi.agent.db import init_sqlite
 
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})

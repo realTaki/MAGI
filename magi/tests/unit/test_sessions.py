@@ -42,12 +42,12 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.state.orm as orm_mod
+    import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.state import init_sqlite
-    from magi.agent.state.orm import init_orm
+    from magi.agent.db import init_sqlite
+    from magi.agent.db import init_orm
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -73,7 +73,7 @@ def _msg(role: str, text: str = "hi", ts: str = "2026-07-03T00:00:00Z") -> Sessi
 
 def test_create_persists(store):
     """``create`` returns a populated Session and ``get`` sees it."""
-    from magi.agent.state.orm import ChatSession, open_session
+    from magi.agent.db import ChatSession, open_session
 
     s = store.create("12345", employee_id=7)
     # Session row landed in the DB.
@@ -158,7 +158,7 @@ def test_append_validates_role(store):
 
 def test_delete_idempotent(store):
     """``delete`` returns True the first time, False after."""
-    from magi.agent.state.orm import ChatSession, open_session
+    from magi.agent.db import ChatSession, open_session
     s = store.create("124", employee_id=7)
     assert store.delete("124", s.session_id) is True
     with open_session() as db:
@@ -169,7 +169,7 @@ def test_delete_idempotent(store):
 
 def test_delete_cascades_to_messages(store):
     """Deleting a session also clears its message rows."""
-    from magi.agent.state.orm import ChatMessage, open_session
+    from magi.agent.db import ChatMessage, open_session
     s = store.create("124", employee_id=7)
     store.append_messages("124", s.session_id, [_msg("user"), _msg("assistant")])
     store.delete("124", s.session_id)
@@ -221,7 +221,7 @@ def test_list_summaries_message_count_excludes_archive(store):
     store.append_messages("124", s.session_id, msgs)
     # Manually flip two rows to archived=1 to simulate a
     # compaction pass.
-    from magi.agent.state.orm import ChatMessage, open_session
+    from magi.agent.db import ChatMessage, open_session
     with open_session() as db:
         rows = db.query(ChatMessage).filter_by(session_id=s.session_id).all()
         for r in rows[:2]:

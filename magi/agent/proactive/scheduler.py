@@ -68,7 +68,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.runner import execute_task
-from magi.agent.state.orm import open_session
+from magi.agent.db import open_session
 
 logger = logging.getLogger("magi.agent.proactive.scheduler")
 
@@ -237,7 +237,7 @@ class TaskScheduler:
         name. :func:`state_get` only reads — no exception
         surface here.
         """
-        from magi.agent.state.settings import state_get
+        from magi.agent.db.settings import state_get
 
         raw = state_get(self._state_dir, "system.timezone") or "UTC"
         # ``state_get`` returns the raw string from the KV

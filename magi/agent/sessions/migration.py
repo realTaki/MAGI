@@ -22,7 +22,7 @@ from pathlib import Path
 from magi.agent.sessions.errors import SessionCorruptError
 from magi.agent.sessions.ids import _validate_chat_id
 from magi.agent.sessions.models import session_from_dict
-from magi.agent.state.orm import ChatMessage, ChatSession, open_session
+from magi.agent.db import ChatMessage, ChatSession, open_session
 
 
 logger = logging.getLogger("magi.agent.sessions.migration")

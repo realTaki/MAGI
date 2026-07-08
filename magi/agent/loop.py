@@ -143,7 +143,7 @@ def _record_token_usage(
     for swallowing (we don't want a transient DB hiccup to
     break a chat that already succeeded).
     """
-    from magi.agent.state.orm import TokenUsage, open_session
+    from magi.agent.db import TokenUsage, open_session
 
     in_t = int(usage.get("input_tokens") or 0)
     out_t = int(usage.get("output_tokens") or 0)
