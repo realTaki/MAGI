@@ -19,14 +19,14 @@ import json
 import logging
 from pathlib import Path
 
-from magi.agent.sessions.errors import SessionCorruptError
-from magi.agent.sessions.ids import _validate_chat_id
-from magi.agent.sessions.models import session_from_dict
+from magi.agent.session.errors import SessionCorruptError
+from magi.agent.session.ids import _validate_chat_id
+from magi.agent.session.models import session_from_dict
 from magi.agent.db.engine import open_session
-from magi.agent.sessions.tables import ChatMessage, ChatSession
+from magi.agent.session.tables import ChatMessage, ChatSession
 
 
-logger = logging.getLogger("magi.agent.sessions.migration")
+logger = logging.getLogger("magi.agent.session.migration")
 
 _SESSIONS_SUBDIR = "sessions"
 

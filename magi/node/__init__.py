@@ -204,7 +204,7 @@ def run() -> None:
     # logged and left in place for hand-inspection (no silent
     # data loss).
     from pathlib import Path
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.workspace import workspace_root
     migrate_from_json(Path(workspace_root(cfg.state_dir)))
 

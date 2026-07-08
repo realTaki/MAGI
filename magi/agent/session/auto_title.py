@@ -24,7 +24,7 @@ back to ``preview``), nothing else.
 
 The chat-send endpoint pairs the title-job write with an
 ``asyncio.Lock`` (see
-:func:`magi.agent.sessions.session_lock`); the worker
+:func:`magi.agent.session.session_lock`); the worker
 acquires the same lock around its read-then-write so the two
 flows never interleave on the same ``(chat_id, session_id)``.
 The lock is per session, not global — distinct sessions
@@ -45,8 +45,8 @@ from magi.agent.db.engine import require_state_dir
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.agent.prompts import load_chat_title_prompt
-from magi.agent.sessions.ids import utcnow_iso
-from magi.agent.sessions.store import SessionStore
+from magi.agent.session.ids import utcnow_iso
+from magi.agent.session.store import SessionStore
 
 logger = logging.getLogger("magi.agent.auto_title")
 

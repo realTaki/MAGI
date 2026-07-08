@@ -1,4 +1,4 @@
-"""Tests for :func:`magi.agent.sessions.migrate_from_json` (D.18).
+"""Tests for :func:`magi.agent.session.migrate_from_json` (D.18).
 
 Pins the boot-time importer that walks the legacy
 ``<workspace>/memories/sessions/<chat_id>/<sid>.json`` tree
@@ -99,7 +99,7 @@ def _write_legacy_session(
 def test_migrate_imports_active_messages(fresh_db):
     """Active messages land in ``chat_messages`` with
     ``archived=0`` and the FTS5 trigger picks them up."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import (
         ChatMessage,
         ChatSession,
@@ -138,7 +138,7 @@ def test_migrate_imports_active_messages(fresh_db):
 
 def test_migrate_imports_archive_with_archived_flag(fresh_db):
     """Archive rows land in ``chat_messages`` with ``archived=1``."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatMessage, open_session
 
     state, workspace = fresh_db
@@ -171,7 +171,7 @@ def test_migrate_imports_archive_with_archived_flag(fresh_db):
 
 def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
     """Header fields (title, last_compaction_at) round-trip."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -194,7 +194,7 @@ def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
 def test_migrate_multiple_chat_ids(fresh_db):
     """Multiple chat_id subdirs are walked; sessions are
     imported per chat."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -216,7 +216,7 @@ def test_migrate_multiple_chat_ids(fresh_db):
 
 def test_migrate_no_json_dir_is_noop(fresh_db):
     """No legacy tree → ``(0, 0, 0)`` and no DB writes."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -235,7 +235,7 @@ def test_migrate_no_json_dir_is_noop(fresh_db):
 def test_migrate_is_idempotent(fresh_db):
     """Second call on the same tree is a no-op — the unique
     constraint on ``(session_id, message_id)`` rejects dupes."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatMessage, ChatSession, open_session
 
     state, workspace = fresh_db
@@ -268,7 +268,7 @@ def test_migrate_idempotent_when_json_left_in_place(fresh_db, monkeypatch):
     this as ``imported=1`` on the second pass — same total
     rows before and after.
     """
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
     from pathlib import Path
 
@@ -308,7 +308,7 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
     """A malformed JSON file is logged at WARNING, NOT deleted,
     and the rest of the tree still imports."""
     import logging
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -320,7 +320,7 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
     bad_path = workspace / "memories" / "sessions" / "9001" / "01BAD.json"
     bad_path.write_text("{ not valid json", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING, logger="magi.agent.sessions"):
+    with caplog.at_level(logging.WARNING, logger="magi.agent.session"):
         stats = migrate_from_json(workspace)
 
     # The good one imported; the corrupt one was logged +
@@ -338,7 +338,7 @@ def test_migrate_invalid_chat_id_dir_is_skipped(fresh_db):
     """A directory whose name violates the chat_id regex is
     skipped with a warning (logged) rather than crashing the
     whole migration."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
 
     state, workspace = fresh_db
     # Create a chat dir with a name outside the regex
@@ -360,7 +360,7 @@ def test_migrate_cleans_up_empty_chat_dirs(fresh_db):
     """After all the JSON files inside a chat dir are
     imported, the empty parent directory is removed so the
     layout collapses to nothing."""
-    from magi.agent.sessions import migrate_from_json
+    from magi.agent.session import migrate_from_json
 
     state, workspace = fresh_db
     _write_legacy_session(workspace, "9001", "01ABC",

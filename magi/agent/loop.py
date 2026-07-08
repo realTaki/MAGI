@@ -37,7 +37,7 @@ from magi.agent.tools.skill_loader import format_skills_block, get_skill_loader
 from magi.agent.tools.base import ToolContext
 from magi.agent.tools.registry import get_tool, get_tool_schemas
 from magi.agent.llm.tokens import estimate_messages_tokens
-from magi.agent.sessions import (
+from magi.agent.session import (
     SessionStore,
     SessionMessage,
     new_session_id,

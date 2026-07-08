@@ -14,17 +14,17 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
-from magi.agent.sessions.errors import (
+from magi.agent.session.errors import (
     SessionCorruptError,
     SessionNotFoundError,
 )
-from magi.agent.sessions.ids import (
+from magi.agent.session.ids import (
     _validate_chat_id,
     _validate_session_id,
     new_session_id,
     utcnow_iso,
 )
-from magi.agent.sessions.models import (
+from magi.agent.session.models import (
     SCHEMA_VERSION,
     Session,
     SessionMessage,
@@ -34,10 +34,10 @@ from magi.agent.sessions.models import (
     summary_from_session,
 )
 from magi.agent.db.engine import open_session
-from magi.agent.sessions.tables import ChatMessage, ChatSession
+from magi.agent.session.tables import ChatMessage, ChatSession
 
 
-logger = logging.getLogger("magi.agent.sessions.store")
+logger = logging.getLogger("magi.agent.session.store")
 
 
 # Title length ceiling: matches the Pydantic ``max_length`` on

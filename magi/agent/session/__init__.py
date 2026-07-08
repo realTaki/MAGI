@@ -1,4 +1,4 @@
-"""Chat session storage — SQLite-backed conversation history.
+"""Chat session management — store, lifecycle, auto-titler.
 
 D.18: sessions moved from per-session JSON files under
 ``<workspace>/memories/sessions/<chat_id>/<sid>.json`` to two
@@ -6,6 +6,13 @@ SQLAlchemy tables in ``magi.db`` (``chat_sessions`` + ``chat_messages``).
 The ``SessionStore`` class kept the same public method
 signatures so the ~30 callers (chat.py / bot.py / agent.py /
 auto_title.py / chat_sessions.py) didn\'t need to change.
+
+Singular ``session`` (not ``sessions``) because this package
+is the *manager* of the chat-session concept — the data
+model, the store, the auto-title worker, the migration
+importer. The actual bulk storage lives one layer down
+in :mod:`magi.agent.db` (the SQLAlchemy tables and
+engine).
 
 Why SQLite
 ----------
@@ -75,21 +82,21 @@ import logging
 
 # Re-export the public surface. Module layout above; the
 # names below are what the ~30 external callers import.
-from magi.agent.sessions.errors import (
+from magi.agent.session.errors import (
     SessionCorruptError,
     SessionError,
     SessionNotFoundError,
     SessionPathError,
 )
-from magi.agent.sessions.ids import (
+from magi.agent.session.ids import (
     _validate_chat_id,
     _validate_session_id,
     new_session_id,
     session_lock,
     utcnow_iso,
 )
-from magi.agent.sessions.migration import migrate_from_json
-from magi.agent.sessions.models import (
+from magi.agent.session.migration import migrate_from_json
+from magi.agent.session.models import (
     SCHEMA_VERSION,
     Session,
     SessionMessage,
@@ -97,10 +104,10 @@ from magi.agent.sessions.models import (
     session_from_dict,
     summary_from_session,
 )
-from magi.agent.sessions.store import SessionStore
+from magi.agent.session.store import SessionStore
 
 
-logger = logging.getLogger("magi.agent.sessions")
+logger = logging.getLogger("magi.agent.session")
 
 
 __all__ = [
