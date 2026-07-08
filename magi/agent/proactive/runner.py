@@ -44,8 +44,8 @@ from sqlalchemy.orm import Session
 from magi.agent.loop import handle_message
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.sessions import new_session_id, utcnow_iso
-from magi.agent.state.orm import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session
-from magi.agent.state.settings import state_get
+from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session
+from magi.agent.db.settings import state_get
 
 logger = logging.getLogger("magi.agent.proactive.runner")
 

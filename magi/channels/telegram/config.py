@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import logging
 
-from magi.agent.state.settings import state_get, state_set
+from magi.agent.db.settings import state_get, state_set
 
 logger = logging.getLogger("magi.channels.telegram.config")
 

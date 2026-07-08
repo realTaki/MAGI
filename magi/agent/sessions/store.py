@@ -4,7 +4,7 @@ Stateless; safe to instantiate per-request. The ``state_dir``
 field is kept for caller compat (chat.py / bot.py /
 chat_sessions.py / auto_title all build a ``SessionStore(
 state_dir=...)``). The path is resolved once per process via
-the ORM engine singleton — see :mod:`magi.agent.state.orm`.
+the ORM engine singleton — see :mod:`magi.agent.db.orm`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from magi.agent.sessions.models import (
     _PREVIEW_CHARS,
     summary_from_session,
 )
-from magi.agent.state.orm import ChatMessage, ChatSession, open_session
+from magi.agent.db import ChatMessage, ChatSession, open_session
 
 
 logger = logging.getLogger("magi.agent.sessions.store")

@@ -191,7 +191,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     # tmp_path. Without this, the second test onwards
     # writes to the first test's DB and the third test's
     # rows appear in the fourth test's results.
-    import magi.agent.state.orm as orm_mod
+    import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     return ToolContext(

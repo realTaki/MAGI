@@ -18,8 +18,8 @@ from pathlib import Path
 import pytest
 
 from magi.agent.sessions import SessionStore
-from magi.agent.state import init_sqlite
-from magi.agent.state.orm import ChatSession, init_orm, open_session
+from magi.agent.db import init_sqlite
+from magi.agent.db import ChatSession, init_orm, open_session
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -39,7 +39,7 @@ def tg_session_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.state.orm as orm_mod
+    import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

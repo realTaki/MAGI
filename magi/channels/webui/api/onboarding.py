@@ -164,8 +164,8 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
-    from magi.agent.state.orm import Employee, open_session
-    from magi.agent.state.settings import state_get
+    from magi.agent.db import Employee, open_session
+    from magi.agent.db.settings import state_get
 
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
@@ -272,8 +272,8 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     from magi.channels.webui.api.action_items import (
         _ensure_llm_credentials_item,
     )
-    from magi.agent.state.orm import Employee, open_session
-    from magi.agent.state.settings import state_set
+    from magi.agent.db import Employee, open_session
+    from magi.agent.db.settings import state_set
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
@@ -331,7 +331,7 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     status path; ``/restart`` is the one place that writes a
     delete for it too.
     """
-    from magi.agent.state.settings import state_delete
+    from magi.agent.db.settings import state_delete
 
     try:
         state_delete(_state_dir(), "onboarding.complete")
@@ -395,7 +395,7 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
     round-trip for no gain; the only way a stale token lands in the
     DB is if the deployer's network is hijacked between clicks.
     """
-    from magi.agent.state.settings import state_set
+    from magi.agent.db.settings import state_set
 
     state_dir = _state_dir()
     try:
@@ -461,7 +461,7 @@ def _generate_code() -> str:
 async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
     """Shared body for the public endpoints and the back-compat alias."""
     from datetime import datetime, timezone
-    from magi.agent.state.settings import state_get, state_set
+    from magi.agent.db.settings import state_get, state_set
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     if not bot_token:
@@ -480,7 +480,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     # LAST SENT timestamp stored in settings (separate from the code's
     # own expiry so the cooldown applies even if the previous code is
     # already expired).
-    from magi.agent.state.settings import state_get
+    from magi.agent.db.settings import state_get
     previous = state_get(_state_dir(), f"telegram.verify_code.{chat_id}")
     if previous:
         try:
@@ -560,7 +560,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     if not data.get("ok"):
         # If the send failed, the code is now stale. Remove it so a
         # re-send issues a fresh one.
-        from magi.agent.state.settings import state_delete
+        from magi.agent.db.settings import state_delete
 
         state_delete(_state_dir(), f"telegram.verify_code.{chat_id}")
         description = data.get("description", "Unknown error from Telegram")
@@ -591,7 +591,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     4. Fetch a display name via ``getChat`` for the frontend.
     """
     from datetime import datetime, timezone
-    from magi.agent.state.settings import state_get
+    from magi.agent.db.settings import state_get
 
     chat_id = payload.chat_id.strip()
     code = payload.code.strip()
@@ -623,7 +623,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
         expires_at = 0
     now_ts = datetime.now(timezone.utc).timestamp()
 
-    from magi.agent.state.settings import state_delete
+    from magi.agent.db.settings import state_delete
     if not expires_at or now_ts >= expires_at:
         state_delete(_state_dir(), f"telegram.verify_code.{chat_id}")
         return VerifyAdminCodeResponse(
@@ -658,7 +658,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
 async def _fetch_display_name(chat_id: str) -> str | None:
     """Call Telegram ``getChat`` so the UI can show "Verified — Alice"
     instead of just a bare chat_id. Failures degrade silently to None."""
-    from magi.agent.state.settings import state_get
+    from magi.agent.db.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     if not bot_token:
@@ -713,7 +713,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     gate (``_is_admin_chat_id`` in ``departments.py``) reads
     exclusively from this table.
     """
-    from magi.agent.state.orm import Employee, open_session
+    from magi.agent.db import Employee, open_session
 
     state_dir = _state_dir()
     cleaned = sorted({c.strip() for c in payload.chat_ids if c.strip()})

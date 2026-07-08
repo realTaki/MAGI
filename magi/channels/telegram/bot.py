@@ -201,8 +201,8 @@ def _find_employee_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.agent.state.orm import Employee, open_session
-    from magi.agent.state.settings import state_get
+    from magi.agent.db import Employee, open_session
+    from magi.agent.db.settings import state_get
 
     try:
         cid_int = int(chat_id)
@@ -599,7 +599,7 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     and keep the loop alive with an ``asyncio.Event`` that never gets
     set. The daemon thread is killed when the process exits.
     """
-    from magi.agent.state.settings import state_get
+    from magi.agent.db.settings import state_get
 
     token = state_get(state_dir, "telegram.bot_token")
     if not token:

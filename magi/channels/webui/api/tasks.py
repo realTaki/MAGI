@@ -52,7 +52,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.sessions import new_session_id
-from magi.agent.state.orm import Employee
+from magi.agent.db import Employee
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -280,7 +280,7 @@ def create_task(
     # system TZ was in force when the row was created).
     # The runtime, however, ignores it: every fire reads
     # the current ``system.timezone`` via
-    # :func:`magi.agent.state.settings.state_get`.
+    # :func:`magi.agent.db.settings.state_get`.
     system_tz = _resolve_system_tz()
     t = Task(
         id=task_id,
@@ -574,7 +574,7 @@ def _resolve_system_tz() -> str:
     ``system.timezone`` so the operator sees the same
     value everywhere.
     """
-    from magi.agent.state.settings import state_get
+    from magi.agent.db.settings import state_get
     raw = state_get(_state_dir(), "system.timezone")
     if not raw:
         return "UTC"

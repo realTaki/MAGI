@@ -7,17 +7,17 @@ Two tables back the "定时/循环任务" feature (see
 - ``task_runs``    : one row per execution attempt (cron or manual)
 
 Why these live in :mod:`magi.agent.proactive` instead of
-:meth:`magi.agent.state.orm` directly: the proactive
+:meth:`magi.agent.db.engine` directly: the proactive
 runtime is a new module family; keeping the schema near the
 runtime code makes "what does this table serve?" obvious in
 a single ``grep``. The Base class is still imported from
-:mod:`magi.agent.state.orm` so the SQLite file is shared
+:mod:`magi.agent.db.orm` so the SQLite file is shared
 and ``init_orm`` can ``create_all`` these tables alongside
 ``employees`` / ``chat_sessions`` etc.
 
 Schema versioning follows the existing C1.1 model:
 ``Base.metadata.create_all`` for first-deploy, plus entries
-in ``_INDEX_MIGRATIONS`` (see :mod:`magi.agent.state.orm`)
+in ``_INDEX_MIGRATIONS`` (see :mod:`magi.agent.db.orm`)
 to upgrade pre-existing DBs to the new index set when
 these tables are added later.
 
@@ -64,7 +64,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 # Re-use the project's shared Base so ``init_orm`` /
 # ``create_all`` see these tables on the same MetaData —
 # critical for SQLite's single-file-per-DB layout.
-from magi.agent.state.orm import Base
+from magi.agent.db import Base
 
 
 class Task(Base):
