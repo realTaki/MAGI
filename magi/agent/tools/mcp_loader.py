@@ -188,7 +188,9 @@ class MCPTool:
                 content="",
                 error=(
                     f"MCP tool '{self._server_tool_name}' (server {server!r}) "
-                    f"timed out after {self._execute_timeout}s"
+                    f"timed out after {self._execute_timeout}s. The remote "
+                    f"server may be slow or unresponsive — retry later or "
+                    f"check the server's logs."
                 ),
             )
         except Exception as e:

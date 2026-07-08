@@ -454,3 +454,53 @@ def _run_async(coro: Any) -> Any:
     handwritten helper."""
     import asyncio
     return asyncio.run(coro)
+
+
+# -- MCPTool.run error messages -----------------------------------------
+
+
+def test_mcp_tool_timeout_error_suggests_next_step(monkeypatch):
+    """A timed-out MCP tool call returns an error
+    message that helps the LLM decide what to do
+    next (retry, swap tool, give up). The reference
+    MCP loader uses ``"may be slow or unresponsive"``;
+    we follow that pattern so the LLM has the hint.
+    """
+    import asyncio
+    from magi.agent.tools.mcp_loader import MCPTool
+
+    class _FakeSession:
+        async def call_tool(self, *args, **kwargs):
+            # Sleep past the execute_timeout so
+            # ``asyncio.timeout`` raises.
+            await asyncio.sleep(2)
+            raise AssertionError("should not reach")
+
+    fake_session = _FakeSession()
+    tool = MCPTool(
+        server_name="github",
+        server_tool_name="create_issue",
+        description="",
+        parameters={},
+        session=fake_session,
+        execute_timeout=0.1,  # 100 ms
+    )
+
+    class _Ctx:
+        pass
+
+    result = _run_async(tool.run(_Ctx()))
+    # The result is the project's ToolResult; check the
+    # is_error + content-field contract (the MCP
+    # factory puts error text in ``content`` so the
+    # LLM reads it like a normal tool output, not via
+    # a separate ``error`` field).
+    assert result.is_error is True
+    # The "may be slow or unresponsive" hint is the
+    # whole point of this test.
+    assert "may be slow or unresponsive" in result.content
+    # And the identifying bits: which tool, which
+    # server, how long.
+    assert "github" in result.content
+    assert "create_issue" in result.content
+    assert "0.1" in result.content
