@@ -307,3 +307,292 @@ def test_loader_with_empty_bundle_still_finds_operator_skills(tmp_path, monkeypa
     _write_skill(ws, "alpha")
     loader = SkillLoader(ws, bundle_dir=tmp_path / "no-bundle-here")
     assert [s.name for s in loader.list()] == ["alpha"]
+
+
+# -- optional frontmatter fields (license / allowed_tools / metadata) -
+
+
+def test_loader_passes_through_license_field(workspace):
+    """``license: MIT`` in the frontmatter is read into
+    ``SkillMeta.license``. v0 doesn't act on it, but a
+    future allow-list / license-attribution feature can
+    read it without a schema change.
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "license: MIT\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    loader = SkillLoader(workspace)
+    meta = loader.get("alpha")
+    assert meta is not None
+    assert meta.license == "MIT"
+
+
+def test_loader_passes_through_allowed_tools_list(workspace):
+    """``allowed-tools: [foo, bar]`` is read as a
+    ``list[str]``. v0 doesn't enforce the list; it's
+    stashed for the future allow-list feature.
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "allowed-tools:\n"
+        "  - read_file\n"
+        "  - write_file\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    loader = SkillLoader(workspace)
+    meta = loader.get("alpha")
+    assert meta is not None
+    assert meta.allowed_tools == ["read_file", "write_file"]
+
+
+def test_loader_passes_through_metadata_dict(workspace):
+    """``metadata: {key: val}`` is read as a
+    ``dict[str, str]``.
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "metadata:\n"
+        "  owner: finance\n"
+        "  version_tag: v1.0\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    loader = SkillLoader(workspace)
+    meta = loader.get("alpha")
+    assert meta is not None
+    assert meta.metadata == {"owner": "finance", "version_tag": "v1.0"}
+
+
+def test_loader_optional_fields_default_to_none(workspace):
+    """A SKILL.md without the optional frontmatter
+    fields has all three as ``None`` (not empty list /
+    empty dict). Callers can use ``is None`` to test
+    "no restriction set".
+    """
+    _write_skill(workspace, "alpha")
+    loader = SkillLoader(workspace)
+    meta = loader.get("alpha")
+    assert meta is not None
+    assert meta.license is None
+    assert meta.allowed_tools is None
+    assert meta.metadata is None
+
+
+# -- _process_skill_paths (Progressive Disclosure Level 3) ---------
+
+
+def test_process_skill_paths_rewrites_directory_relative_paths(tmp_path):
+    """``scripts/foo.py`` → absolute path when the file
+    exists in the skill dir.
+    """
+    from magi.agent.tools.skill_loader import _process_skill_paths
+    skill_dir = tmp_path / "alpha"
+    skill_dir.mkdir()
+    (skill_dir / "scripts").mkdir()
+    (skill_dir / "scripts" / "with_server.py").write_text(
+        "print('hi')", encoding="utf-8",
+    )
+    out = _process_skill_paths("run scripts/with_server.py", skill_dir)
+    # The relative path is now the absolute path (and
+    # the surrounding prose "run " is preserved).
+    assert str(skill_dir / "scripts" / "with_server.py") in out
+    # The bare form ``scripts/with_server.py`` was
+    # replaced — it's no longer a free-standing token
+    # in the output (the absolute path embeds the
+    # filename as its tail, but the leading
+    # ``scripts/`` directory component is gone).
+    assert "run scripts/with_server.py" not in out
+
+
+def test_process_skill_paths_rewrites_prose_references(tmp_path):
+    """``see reference.md`` → ``see `abs/path` (use
+    read_file to access)``. LLM can copy-paste the
+    absolute path into a ``read_file`` call.
+    """
+    from magi.agent.tools.skill_loader import _process_skill_paths
+    skill_dir = tmp_path / "alpha"
+    skill_dir.mkdir()
+    (skill_dir / "reference.md").write_text("# ref", encoding="utf-8")
+    out = _process_skill_paths("see reference.md for details", skill_dir)
+    assert str(skill_dir / "reference.md") in out
+    assert "use read_file to access" in out
+    # The bare relative isn't left in place.
+    assert "see reference.md" not in out
+
+
+def test_process_skill_paths_rewrites_markdown_links(tmp_path):
+    """Markdown link ``[`text`](relpath)`` →
+    ``[`text`](`abs/path`) (use read_file to access)``.
+    """
+    from magi.agent.tools.skill_loader import _process_skill_paths
+    skill_dir = tmp_path / "alpha"
+    skill_dir.mkdir()
+    (skill_dir / "guide.md").write_text("guide", encoding="utf-8")
+    out = _process_skill_paths(
+        "Read [`guide.md`](guide.md) for context.", skill_dir
+    )
+    assert f"[`guide.md`](`{skill_dir / 'guide.md'}`)" in out
+    assert "use read_file to access" in out
+
+
+def test_process_skill_paths_leaves_nonexistent_paths_alone(tmp_path):
+    """If a path doesn't exist on disk, the body is
+    left untouched. Avoids hallucinating files the
+    deployer didn't ship.
+    """
+    from magi.agent.tools.skill_loader import _process_skill_paths
+    skill_dir = tmp_path / "alpha"
+    skill_dir.mkdir()
+    out = _process_skill_paths("see ghost.md for context", skill_dir)
+    assert out == "see ghost.md for context"
+    assert str(skill_dir) not in out
+
+
+def test_skill_root_dir_line_announces_path(tmp_path):
+    """The "Skill Root Directory" line is the first
+    thing the LLM sees — tells it where sibling
+    files live.
+    """
+    from magi.agent.tools.skill_loader import _skill_root_dir_line
+    line = _skill_root_dir_line(tmp_path / "alpha")
+    assert "Skill Root Directory" in line
+    assert str(tmp_path / "alpha") in line
+    # The separator is part of the format (LLM reads
+    # this as a section break).
+    assert "---" in line
+
+
+# -- load_skill body output ------------------------------
+
+
+def test_load_skill_body_prepends_root_dir_line(workspace):
+    """The body the LLM sees starts with the "Skill
+    Root Directory" line so it knows the base for any
+    relative file reference.
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "---\n"
+        "the body",
+        encoding="utf-8",
+    )
+    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+
+    # Reset the singleton so the new SKILL.md is picked up.
+    from magi.agent.tools.skill_loader import _reset_for_tests
+    _reset_for_tests()
+
+    result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))
+    assert result.is_error is False
+    assert "Skill Root Directory" in result.content
+    assert str(skill_dir) in result.content
+    # Body still present.
+    assert "the body" in result.content
+
+
+def test_load_skill_body_rewrites_known_sibling_paths(workspace):
+    """End-to-end: a body that says ``run scripts/x.py``
+    comes back to the LLM with the absolute path
+    appended, so the LLM knows exactly where the
+    sibling file is.
+
+    Pattern 1 (directory-based relative paths)
+    just substitutes the path — the "use
+    read_file to access" hint comes from Pattern 2
+    (prose references) and Pattern 3 (markdown
+    links).
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    scripts = skill_dir / "scripts"
+    scripts.mkdir()
+    (scripts / "with_server.py").write_text("ok", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "---\n"
+        "Run: `python scripts/with_server.py`",
+        encoding="utf-8",
+    )
+
+    from magi.agent.tools.skill_loader import _reset_for_tests
+    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+    _reset_for_tests()
+
+    result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))
+    assert result.is_error is False
+    # Pattern 1: relative path is replaced with absolute
+    # path. The absolute path is ``/.../scripts/with_server.py``
+    # — the body used to say
+    # ``Run: `python scripts/with_server.py``` and now
+    # says ``Run: `python /.../scripts/with_server.py```.
+    # We check for the absolute path AND for the
+    # trailing ``.py``` (prose prefix preserved).
+    assert "Run: `python " in result.content
+    assert str(skill_dir / "scripts" / "with_server.py") in result.content
+    assert result.content.rstrip().endswith("`")
+    # Frontmatter is stripped — the LLM already saw
+    # the metadata in the system prompt.
+    assert "description: alpha skill" not in result.content
+    # The Skill Root Directory line is prepended so
+    # the LLM knows the base.
+    assert "Skill Root Directory" in result.content
+    assert str(skill_dir) in result.content
+
+
+def test_load_skill_body_adds_read_file_hint_for_prose_reference(workspace):
+    """Pattern 2: ``see reference.md`` →
+    ``see `abs/path` (use read_file to access)``.
+    """
+    skill_dir = workspace / "skills" / "alpha"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "reference.md").write_text("# ref", encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: alpha\n"
+        "description: alpha skill for test\n"
+        "---\n"
+        "see reference.md for details",
+        encoding="utf-8",
+    )
+
+    from magi.agent.tools.skill_loader import _reset_for_tests
+    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+    _reset_for_tests()
+
+    result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))
+    assert result.is_error is False
+    assert str(skill_dir / "reference.md") in result.content
+    assert "use read_file to access" in result.content
+
+
+# asyncio_run helper (matches the pattern in test_skills_tool.py)
+import asyncio as _asyncio
+
+
+def asyncio_run(coro):
+    return _asyncio.run(coro)
