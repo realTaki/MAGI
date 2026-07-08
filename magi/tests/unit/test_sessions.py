@@ -1,4 +1,4 @@
-"""In-process tests for :mod:`magi.agent.session` (D.18+).
+"""In-process tests for :mod:`magi.agent.memory.session` (D.18+).
 
 D.18 moved sessions from per-file JSON into two SQLAlchemy
 tables (``chat_sessions`` + ``chat_messages``). The tests below
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from magi.agent.session import (
+from magi.agent.memory.session import (
     Session,
     SessionMessage,
     SessionStore,
@@ -101,7 +101,7 @@ def test_session_id_safe_via_path(store):
     contract). A valid ULID-shape session_id that just doesn't
     exist raises ``SessionNotFoundError`` instead.
     """
-    from magi.agent.session import SessionNotFoundError, SessionPathError
+    from magi.agent.memory.session import SessionNotFoundError, SessionPathError
     s = store.create("124", employee_id=1)
     # Bad shape → ``SessionPathError`` (the shape guard).
     with pytest.raises(SessionPathError):
@@ -137,14 +137,14 @@ def test_append_and_get(store):
 
 def test_append_to_missing_raises(store):
     """Appending to a non-existent session raises SessionNotFoundError."""
-    from magi.agent.session import SessionNotFoundError
+    from magi.agent.memory.session import SessionNotFoundError
     with pytest.raises(SessionNotFoundError):
         store.append_messages("124", new_session_id(), [_msg("user")])
 
 
 def test_append_validates_role(store):
     """Bad role values are rejected before any DB write."""
-    from magi.agent.session import SessionCorruptError
+    from magi.agent.memory.session import SessionCorruptError
     s = store.create("124", employee_id=7)
     bad = SessionMessage(role="admin", text="x", ts="t", message_id=new_session_id())
     with pytest.raises(SessionCorruptError):
@@ -239,7 +239,7 @@ def test_list_summaries_message_count_excludes_archive(store):
 
 def test_chat_ids_isolated(store):
     """Two chat_ids do not see each other's sessions."""
-    from magi.agent.session import SessionNotFoundError
+    from magi.agent.memory.session import SessionNotFoundError
     a = store.create("aaa", employee_id=1)
     b = store.create("bbb", employee_id=2)
     assert store.get("aaa", a.session_id) is not None
@@ -348,7 +348,7 @@ def test_rename_clear(store):
 
 
 def test_rename_missing_session_raises_not_found(store):
-    from magi.agent.session import SessionNotFoundError
+    from magi.agent.memory.session import SessionNotFoundError
     with pytest.raises(SessionNotFoundError):
         store.rename("100", new_session_id(), "orphan")
 
@@ -431,5 +431,5 @@ def test_session_lock_is_now_a_noop():
     migrated yet (none should remain, but the contract is
     explicitly a no-op) get a safe AttributeError-free no-op.
     """
-    from magi.agent.session import session_lock
+    from magi.agent.memory.session import session_lock
     assert session_lock("any-chat", "any-session") is None

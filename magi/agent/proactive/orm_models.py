@@ -26,7 +26,7 @@ Columns / defaults
 
 - ``id`` is a Crockford ULID (same as ``chat_sessions.session_id``).
   ``str(ULID())`` returns the canonical 26-char form; we use
-  ``new_ulid()`` from :mod:`magi.agent.session` to keep
+  ``new_ulid()`` from :mod:`magi.agent.memory.session` to keep
   one helper across the codebase.
 - Timestamps are ISO UTC strings (``datetime.utcnow().isoformat()``),
   matching the convention in ``magi.agent.session``.

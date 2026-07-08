@@ -3,7 +3,7 @@
 Owns the on-disk shape of the session data
 (``chat_sessions`` + ``chat_messages``). The in-memory
 session dataclasses (:class:`Session` / :class:`SessionMessage`
-in :mod:`magi.agent.session.models`) are the public type
+in :mod:`magi.agent.memory.session.models`) are the public type
 the rest of the codebase uses; these ORM classes are the
 storage layer underneath.
 
@@ -61,7 +61,7 @@ class ChatSession(Base):
 
     The body of the session (messages + archive) lives in
     :class:`ChatMessage` and is loaded on demand by
-    :class:`magi.agent.session.SessionStore.get`.
+    :class:`magi.agent.memory.session.SessionStore.get`.
     """
 
     __tablename__ = "chat_sessions"

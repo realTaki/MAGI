@@ -28,7 +28,7 @@ in routes + tests.
 
 The session-domain tables (:class:`ChatSession`,
 :class:`ChatMessage`) live in
-:mod:`magi.agent.session.tables` — they're owned by
+:mod:`magi.agent.memory.session.tables` — they're owned by
 the ``session`` package (singular: this is the
 *manager* of sessions, not a place where sessions are
 *stored* in bulk). The db package re-exports them so
@@ -58,7 +58,7 @@ from magi.agent.db.models_token_usage import TokenUsage
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
 # surface (``from magi.agent.db import ChatSession``).
-from magi.agent.session.tables import ChatMessage, ChatSession
+from magi.agent.memory.session.tables import ChatMessage, ChatSession
 
 
 __all__ = [

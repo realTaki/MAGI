@@ -15,7 +15,7 @@ import secrets
 import time
 from datetime import datetime, timezone
 
-from magi.agent.session.errors import SessionPathError
+from magi.agent.memory.session.errors import SessionPathError
 
 
 # Crockford base32 alphabet — no I, L, O, U to avoid

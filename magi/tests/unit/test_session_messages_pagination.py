@@ -69,7 +69,7 @@ def _seed_messages(store, chat_id: str, count: int) -> str:
     The synthetic text is just ``"msg-{idx}"`` — enough
     to be distinct without being noisy.
     """
-    from magi.agent.session import SessionMessage, new_session_id
+    from magi.agent.memory.session import SessionMessage, new_session_id
 
     sess = store.create(chat_id, employee_id=1)
     msgs = [
@@ -92,7 +92,7 @@ def _seed_messages(store, chat_id: str, count: int) -> str:
 def test_get_messages_page_returns_tail_slice(admin_env):
     """Newest ``limit`` active messages in chronological
     order. ``offset=0`` is the latest page."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -111,7 +111,7 @@ def test_get_messages_page_returns_tail_slice(admin_env):
 def test_get_messages_page_offset_skips_newest(admin_env):
     """``offset=limit`` returns the next older page — msg-1
     and msg-2, in that order."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -128,7 +128,7 @@ def test_get_messages_page_offset_zero_size_limit(admin_env):
     messages with no gaps and no duplicates. Offset
     counts from the newest end, so page 0 is msg-4,
     page 1 is msg-3, etc."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -147,7 +147,7 @@ def test_get_messages_page_past_end_returns_empty(admin_env):
     """Asking past the end returns ``[]`` but the totals
     still reflect the full count — the UI uses this to
     hide the load-more button."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 3)
@@ -165,7 +165,7 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
     default page. ``total_active`` and ``total_all``
     differ — the UI uses this to decide whether to show
     a separate "show archive" affordance later."""
-    from magi.agent.session import SessionStore, SessionMessage, new_session_id
+    from magi.agent.memory.session import SessionStore, SessionMessage, new_session_id
     from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
@@ -196,7 +196,7 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
     appended after the active page (also in chronological
     order — they sort by ``id`` ASC, which is the
     insertion order)."""
-    from magi.agent.session import SessionStore, new_session_id
+    from magi.agent.memory.session import SessionStore, new_session_id
     from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
@@ -227,7 +227,7 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
     """An unknown session_id returns zeros and an empty
     page. The HTTP layer is responsible for translating
     ``([], 0, 0)`` into a 404 when offset==0."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     msgs, total_active, total_all = store.get_messages_page(
@@ -242,7 +242,7 @@ def test_get_messages_page_respects_chat_id_scope(admin_env):
     """A session belonging to chat_id 9002 is invisible
     when queried via chat_id 9001 — same WHERE-clause
     enforcement as the rest of the API."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
@@ -274,7 +274,7 @@ def client(admin_env):
 def test_messages_route_default_page(client, admin_env):
     """``GET /api/chat/sessions/{id}/messages`` (no params)
     returns up to 50 active messages + totals."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -294,7 +294,7 @@ def test_messages_route_pagination_via_offset(client, admin_env):
     """Two pages with ``limit=2, offset=0`` and
     ``offset=2`` cover a 5-message session without gaps
     or duplicates."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -345,7 +345,7 @@ def test_messages_route_cross_chat_isolation(client, admin_env):
     pagination. The route scopes the WHERE clause by
     chat_id; an attacker who knows the session_id still
     gets a 404."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
@@ -358,7 +358,7 @@ def test_messages_route_past_end_returns_empty_with_totals(client, admin_env):
     """``offset`` past the end returns ``messages: []`` but
     the totals still reflect the full session size — the
     UI hides the load-more button on this signal."""
-    from magi.agent.session import SessionStore
+    from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 2)

@@ -290,7 +290,7 @@ async def _handle_employee_message(
     splits are a future C7+ affordance.
     """
     from magi.agent.loop import handle_message
-    from magi.agent.session import (
+    from magi.agent.memory.session import (
         SessionMessage,
         SessionStore,
         new_session_id,
@@ -394,7 +394,7 @@ async def _handle_employee_message(
     # session lock; no TG-specific code needed.
     if post is not None and len(post.messages) == 1:
         try:
-            from magi.agent.session.auto_title import enqueue_title_job
+            from magi.agent.memory.session.auto_title import enqueue_title_job
             await enqueue_title_job(
                 chat_id=chat_id,
                 session_id=session_id,
