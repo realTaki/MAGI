@@ -9,7 +9,7 @@ Three surfaces pinned:
     default sensibly when missing (backward compat with
     pre-D.17 files).
 
-  - ``magi.agent.tokens.estimate_messages_tokens``:
+  - ``magi.agent.llm.tokens.estimate_messages_tokens``:
     the trigger heuristic returns plausible numbers for
     the inputs we expect (long session vs short).
 
@@ -225,7 +225,7 @@ def fresh_db(monkeypatch, tmp_path):
 
 def test_estimate_string_tokens_basic():
     """4 chars ≈ 1 token. The empty string is 0."""
-    from magi.agent.tokens import estimate_string_tokens
+    from magi.agent.llm.tokens import estimate_string_tokens
 
     assert estimate_string_tokens("") == 0
     assert estimate_string_tokens("abcd") == 1
@@ -238,7 +238,7 @@ def test_estimate_messages_tokens_handles_text_and_blocks():
     """Each message contributes text chars + per-message
     overhead. ``content_blocks`` JSON adds to the chars."""
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.tokens import estimate_messages_tokens
+    from magi.agent.llm.tokens import estimate_messages_tokens
 
     msgs = [
         ChatMessage(role="user", content="a" * 400),  # 100 text + 4 overhead
@@ -259,7 +259,7 @@ def test_estimate_messages_tokens_handles_text_and_blocks():
 
 def test_estimate_messages_tokens_empty():
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.tokens import estimate_messages_tokens
+    from magi.agent.llm.tokens import estimate_messages_tokens
 
     assert estimate_messages_tokens([]) == 0
 

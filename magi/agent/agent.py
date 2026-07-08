@@ -36,7 +36,7 @@ from magi.agent.llm import ChatMessage, LLMError, get_provider
 from magi.agent.skills import format_skills_block, get_skill_loader
 from magi.agent.tools.base import ToolContext
 from magi.agent.tools.registry import get_tool, get_tool_schemas
-from magi.agent.tokens import estimate_messages_tokens
+from magi.agent.llm.tokens import estimate_messages_tokens
 from magi.agent.sessions import (
     SessionStore,
     SessionMessage,

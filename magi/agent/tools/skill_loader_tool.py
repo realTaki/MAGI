@@ -30,8 +30,8 @@ import logging
 import re
 from typing import Any
 
-from magi.agent.skills import get_skill_loader
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.agent.tools.skill_loader import get_skill_loader
 
 logger = logging.getLogger("magi.agent.skills.loader_tool")
 
