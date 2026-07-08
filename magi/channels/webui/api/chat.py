@@ -292,7 +292,7 @@ async def send_chat(
     # already structured to accept one when chat-send grows
     # to thread it through.
     if len(post.messages) == 1:
-        from magi.agent.auto_title import enqueue_title_job
+        from magi.agent.sessions.auto_title import enqueue_title_job
         await enqueue_title_job(
             chat_id=chat_id,
             session_id=session_id,
