@@ -15,6 +15,8 @@ governance (audit, RBAC, hash-chained logs) baked in from day one.
 > incorrect behaviours. Use at your own risk in production or production-like
 > environments. Contributions and bug reports are welcome.
 
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the long-term plan (C0–C8).
+
 ## Naming and architecture
 
 | Name       | Role                                                                                  |
