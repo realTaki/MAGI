@@ -43,7 +43,7 @@ from sqlalchemy import select
 from magi.agent.proactive.cron_utils import preset_to_cron
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
-from magi.agent.sessions import new_session_id
+from magi.agent.session import new_session_id
 from magi.agent.db import Employee, open_session
 from magi.agent.db.settings import state_get
 from magi.agent.tools.base import Tool, ToolContext, ToolResult

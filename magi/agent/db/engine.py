@@ -226,7 +226,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     # asks for a row from that table.
     import magi.agent.db.models_org  # noqa: F401 — registers on Base
     import magi.agent.db.models_dashboard  # noqa: F401
-    import magi.agent.sessions.tables  # noqa: F401 — sessions-owned tables
+    import magi.agent.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     Base.metadata.create_all(engine)
     _run_inline_migrations(engine)

@@ -55,7 +55,7 @@ from sqlalchemy import select
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.loop import handle_message
-from magi.agent.sessions import (
+from magi.agent.session import (
     SessionMessage,
     SessionPathError,
     SessionStore,
@@ -292,7 +292,7 @@ async def send_chat(
     # already structured to accept one when chat-send grows
     # to thread it through.
     if len(post.messages) == 1:
-        from magi.agent.sessions.auto_title import enqueue_title_job
+        from magi.agent.session.auto_title import enqueue_title_job
         await enqueue_title_job(
             chat_id=chat_id,
             session_id=session_id,

@@ -4,15 +4,15 @@ Pure data — no I/O, no SQLAlchemy. The parser
 (``session_from_dict``) is here because it's just
 deserialising the v0 on-disk shape into the dataclasses;
 the migration that walks the directory and calls it lives
-in :mod:`magi.agent.sessions.migration`.
+in :mod:`magi.agent.session.migration`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from magi.agent.sessions.errors import SessionCorruptError
-from magi.agent.sessions.ids import _CROCKFORD
+from magi.agent.session.errors import SessionCorruptError
+from magi.agent.session.ids import _CROCKFORD
 
 
 SCHEMA_VERSION = 1

@@ -51,7 +51,7 @@ from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
-from magi.agent.sessions import new_session_id
+from magi.agent.session import new_session_id
 from magi.agent.db import Employee, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")

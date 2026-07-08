@@ -28,10 +28,12 @@ in routes + tests.
 
 The session-domain tables (:class:`ChatSession`,
 :class:`ChatMessage`) live in
-:mod:`magi.agent.sessions.tables` — they're owned by
-the sessions package, not the db package. The db
-package re-exports them so existing ``from
-magi.agent.db import ChatSession`` imports keep working.
+:mod:`magi.agent.session.tables` — they're owned by
+the ``session`` package (singular: this is the
+*manager* of sessions, not a place where sessions are
+*stored* in bulk). The db package re-exports them so
+existing ``from magi.agent.db import ChatSession``
+imports keep working.
 """
 
 from __future__ import annotations
@@ -51,10 +53,10 @@ from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_dashboard import ActionItem, TokenUsage
 from magi.agent.db.models_org import Department, Employee
 
-# Session-domain tables — owned by ``magi.agent.sessions``
+# Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
 # surface (``from magi.agent.db import ChatSession``).
-from magi.agent.sessions.tables import ChatMessage, ChatSession
+from magi.agent.session.tables import ChatMessage, ChatSession
 
 
 __all__ = [
