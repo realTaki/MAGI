@@ -24,7 +24,7 @@ from magi.agent.skills import (
     format_skills_block,
     get_skill_loader,
 )
-from magi.agent.skills.loader import (
+from magi.agent.tools.skill_loader import (
     SkillLoader,
     _reset_for_tests,
 )

@@ -89,9 +89,9 @@ async def test_admin_message_reaches_handler(tg_admin_env):
     # by short-circuiting ``handle_message`` to return a
     # canned string. (Patching at the import location is
     # needed because ``bot.py`` does
-    # ``from magi.agent.agent import handle_message``
+    # ``from magi.agent.loop import handle_message``
     # inside the handler.)
-    import magi.agent.agent as agent_mod
+    import magi.agent.loop as agent_mod
     agent_mod.handle_message = AsyncMock(return_value="hi back")
 
     await _on_message(update, MagicMock())
@@ -112,7 +112,7 @@ async def test_assigned_message_reaches_handler(tg_admin_env):
     from magi.channels.telegram.bot import _on_message
     update = _make_update(chat_id=9876543210, message_id=43, text="hello")
 
-    import magi.agent.agent as agent_mod
+    import magi.agent.loop as agent_mod
     agent_mod.handle_message = AsyncMock(return_value="hi back")
 
     await _on_message(update, MagicMock())

@@ -2,7 +2,7 @@
 message to the LLM" route.
 
 v0: synchronous request / response. The frontend POSTs a
-text, we call :func:`magi.agent.agent.handle_message` and
+text, we call :func:`magi.agent.loop.handle_message` and
 return the reply string. C7 replaces this with a streaming
 endpoint (SSE or WebSocket) so the user sees tokens as they
 arrive; v0 just blocks until the full reply is ready.
@@ -54,7 +54,7 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.agent import handle_message
+from magi.agent.loop import handle_message
 from magi.agent.sessions import (
     SessionMessage,
     SessionPathError,
