@@ -8,7 +8,7 @@ task's cron fires. Each invocation:
 2. Creates a brand-new :class:`ChatSession` plus a
    user-message :class:`ChatMessage` carrying the task's
    prompt.
-3. Calls :func:`magi.agent.agent.handle_message` with the
+3. Calls :func:`magi.agent.loop.handle_message` with the
    employee credentials already in scope.
 4. Pulls the latest TokenUsage row (the agent loop just
    wrote one) onto the :class:`TaskRun` for cost-roll-up.
@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.agent import handle_message
+from magi.agent.loop import handle_message
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.sessions import new_session_id, utcnow_iso
 from magi.agent.state.orm import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session

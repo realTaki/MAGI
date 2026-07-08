@@ -1,19 +1,21 @@
-"""Skill loader — SKILL.md → Agent.
+"""Skill loader — back-compat re-export facade.
 
-Public surface (re-exported below):
+The skill machinery moved to :mod:`magi.agent.tools`:
 
-- :class:`SkillLoader` — scans ``<workspace>/skills/*/SKILL.md``
-- :func:`get_skill_loader` — module singleton accessor
-- :class:`SkillMeta` — one row of the registry
-- :func:`format_skills_block` — render the system-prompt
-  block for ``handle_message``.
+  - :mod:`magi.agent.tools.skill_loader`        — SkillLoader,
+    get_skill_loader, format_skills_block, SkillMeta
+  - :mod:`magi.agent.tools.skill_loader_tool`   — SkillLoaderTool
+    (the ``load_skill`` Tool)
 
-The companion ``SkillLoaderTool`` lives in
-:mod:`magi.agent.skills.loader_tool` and is registered
-through the standard tool registry in :mod:`magi.agent.tools`.
+This module stays as a thin re-export so the existing
+``from magi.agent.skills import format_skills_block, ...``
+callers (agent.py / node/__init__.py / tests) don't need
+to change in lockstep with the move. Treat the
+``magi.agent.tools.*`` modules as canonical and this one
+as a deprecated back-compat shim.
 """
 
-from magi.agent.skills.loader import (
+from magi.agent.tools.skill_loader import (
     SkillLoader,
     SkillMeta,
     _reset_for_tests,

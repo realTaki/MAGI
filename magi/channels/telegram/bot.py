@@ -288,7 +288,7 @@ async def _handle_employee_message(
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.agent.agent import handle_message
+    from magi.agent.loop import handle_message
     from magi.agent.sessions import (
         SessionMessage,
         SessionStore,

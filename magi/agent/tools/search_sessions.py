@@ -173,7 +173,7 @@ class SearchSessionsTool(Tool):
         # Scope: the calling admin's chat_id. The agent
         # loop populates ``ctx.chat_id`` from the
         # ``magi_session`` cookie on every call (see
-        # ``magi.agent.agent.handle_message``), so the
+        # ``magi.agent.loop.handle_message``), so the
         # SQL ``s.chat_id = :chat_id`` clause keeps the
         # result inside one employee's history.
         # Cross-platform scope: every session row whose

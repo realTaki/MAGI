@@ -13,7 +13,7 @@ Three surfaces pinned:
     the trigger heuristic returns plausible numbers for
     the inputs we expect (long session vs short).
 
-  - ``magi.agent.agent._build_messages_from_session``:
+  - ``magi.agent.loop._build_messages_from_session``:
     loads prior-turn messages into ChatMessage order and
     maps roles correctly (system summary at messages[0]
     becomes a ``user`` ChatMessage so Anthropic's wire
@@ -273,7 +273,7 @@ def test_build_messages_from_session_no_session_returns_one_user_msg(
     """First turn of a brand-new conversation has no
     session yet → just the user message."""
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.agent import _build_messages_from_session
+    from magi.agent.loop import _build_messages_from_session
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
@@ -291,7 +291,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     treats a leading user message as prior context.
     """
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.agent import _build_messages_from_session
+    from magi.agent.loop import _build_messages_from_session
     from magi.agent.sessions import SessionStore, SessionMessage
     from magi.agent.state.orm import ChatMessage, open_session
 
@@ -344,7 +344,7 @@ def test_build_messages_from_session_does_not_load_archive(
     """The archive list is NOT loaded — only the active
     ``messages`` list. Operators view archive via
     ``GET /api/chat/sessions/{id}``."""
-    from magi.agent.agent import _build_messages_from_session
+    from magi.agent.loop import _build_messages_from_session
     from magi.agent.sessions import (
         SessionStore,
         SessionMessage,
@@ -381,7 +381,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     builder still loads them as-is — no summary mapping,
     no archive rows to skip.
     """
-    from magi.agent.agent import _build_messages_from_session
+    from magi.agent.loop import _build_messages_from_session
     from magi.agent.sessions import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
@@ -408,7 +408,7 @@ async def test_maybe_compact_noop_when_under_threshold(
     """A short message list is well under the threshold
     → ``_maybe_compact`` returns immediately without
     touching the list or calling any LLM."""
-    from magi.agent.agent import _maybe_compact
+    from magi.agent.loop import _maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.sessions import (
         SessionStore,
@@ -461,7 +461,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     """Even with a tiny threshold, if the message count
     is below ``keep_recent`` there's nothing to compress
     (no old messages to archive)."""
-    from magi.agent.agent import _maybe_compact
+    from magi.agent.loop import _maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.sessions import (
         SessionStore,
@@ -506,7 +506,7 @@ async def test_maybe_compact_noop_when_no_session_id(
     yet. ``_maybe_compact`` is a no-op even when the
     message list (single user msg) is well under the
     threshold."""
-    from magi.agent.agent import _maybe_compact
+    from magi.agent.loop import _maybe_compact
     from magi.agent.llm.provider import ChatMessage
 
     state_dir = str(tmp_path / "state")
