@@ -50,8 +50,10 @@ from magi.agent.db.engine import (
     require_state_dir,
 )
 from magi.agent.db.local_db import init_sqlite
-from magi.agent.db.models_dashboard import ActionItem, TokenUsage
-from magi.agent.db.models_org import Department, Employee
+from magi.agent.db.models_action_item import ActionItem
+from magi.agent.db.models_department import Department
+from magi.agent.db.models_employee import Employee
+from magi.agent.db.models_token_usage import TokenUsage
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
