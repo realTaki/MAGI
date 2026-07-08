@@ -52,7 +52,7 @@ def _build_tools() -> list["Tool"]:
     from magi.agent.tools.search_sessions import SearchSessionsTool
     from magi.agent.tools.send_message import SendMessageTool
     from magi.agent.tools.write_file import WriteFileTool
-    from magi.agent.memory.tools import (
+    from magi.agent.memory.magi.tools import (
         AddMemoryTool,
         CompleteMemoryTool,
         DeleteMemoryTool,

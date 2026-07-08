@@ -74,7 +74,7 @@ def _seed_chat_message(chat_id: str, text: str) -> str:
     )
 @pytest.fixture
 def seed_messages(search_env):
-    from magi.agent.session import SessionStore, new_session_id
+    from magi.agent.memory.session import SessionStore, new_session_id
     from magi.agent.db import ChatMessage, open_session
 
     counter = {"n": 0}

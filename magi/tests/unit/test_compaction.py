@@ -47,7 +47,7 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
     round-trip — now lives in the SQLAlchemy ORM. This test
     pins that.
     """
-    from magi.agent.session import SessionStore, SessionMessage
+    from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
     s = store.create("9001", employee_id=2)
@@ -74,7 +74,7 @@ def test_session_archive_round_trip_via_orm(fresh_db):
     ``SessionStore.get()`` and end up in ``Session.archive``,
     not in ``Session.messages`` (the active view).
     """
-    from magi.agent.session import SessionStore, SessionMessage
+    from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
     s = store.create("9001", employee_id=2)
@@ -124,7 +124,7 @@ def test_session_from_dict_backward_compatible(fresh_db):
     missing the D.17 fields. The parser still defaults them
     so the migration importer doesn't reject partial files.
     """
-    from magi.agent.session import session_from_dict
+    from magi.agent.memory.session import session_from_dict
 
     old = {
         "schema_version": 1,
@@ -148,7 +148,7 @@ def test_session_active_tail_count_clamped_on_load():
     clamps back to 20 in the legacy-file parser (used by
     the migration importer).
     """
-    from magi.agent.session import session_from_dict
+    from magi.agent.memory.session import session_from_dict
 
     bad = {
         "schema_version": 1,
@@ -171,7 +171,7 @@ def test_session_invalid_archive_role_rejected():
     allowed set) is a hard load error in the legacy-file
     parser — better to fail closed than to silently coerce
     on a corrupt pre-D.18 file."""
-    from magi.agent.session import SessionCorruptError, session_from_dict
+    from magi.agent.memory.session import SessionCorruptError, session_from_dict
 
     bad = {
         "schema_version": 1,
@@ -292,7 +292,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     """
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.loop import _build_messages_from_session
-    from magi.agent.session import SessionStore, SessionMessage
+    from magi.agent.memory.session import SessionStore, SessionMessage
     from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(fresh_db))
@@ -345,7 +345,7 @@ def test_build_messages_from_session_does_not_load_archive(
     ``messages`` list. Operators view archive via
     ``GET /api/chat/sessions/{id}``."""
     from magi.agent.loop import _build_messages_from_session
-    from magi.agent.session import (
+    from magi.agent.memory.session import (
         SessionStore,
         SessionMessage,
     )
@@ -382,7 +382,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     no archive rows to skip.
     """
     from magi.agent.loop import _build_messages_from_session
-    from magi.agent.session import SessionStore, SessionMessage
+    from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
     sess = store.create("9001", employee_id=2)
@@ -410,7 +410,7 @@ async def test_maybe_compact_noop_when_under_threshold(
     touching the list or calling any LLM."""
     from magi.agent.loop import _maybe_compact
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.session import (
+    from magi.agent.memory.session import (
         SessionStore,
         SessionMessage,
     )
@@ -463,7 +463,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     (no old messages to archive)."""
     from magi.agent.loop import _maybe_compact
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.session import (
+    from magi.agent.memory.session import (
         SessionStore,
         SessionMessage,
     )

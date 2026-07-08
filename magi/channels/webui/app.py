@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
         # Imported lazily because ``magi.agent.auto_title``
         # also imports ``magi.agent.llm``, which is heavy and
         # not needed for /health. Keeps cold-start tight.
-        from magi.agent.session.auto_title import (
+        from magi.agent.memory.session.auto_title import (
             start_title_worker,
             stop_title_worker,
         )

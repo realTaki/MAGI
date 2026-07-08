@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 from magi.agent.db import Employee, init_orm, open_session
-from magi.agent.memory import (
+from magi.agent.memory.magi import (
     KIND_IMPORTANT,
     KIND_ONGOING,
     KIND_PERSON,
@@ -36,8 +36,8 @@ from magi.agent.memory import (
     MemoryStore,
     format_memory_block,
 )
-from magi.agent.memory.store import MemoryView
-from magi.agent.memory.tools import (
+from magi.agent.memory.magi.store import MemoryView
+from magi.agent.memory.magi.tools import (
     AddMemoryTool,
     CompleteMemoryTool,
     DeleteMemoryTool,

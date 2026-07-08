@@ -1,6 +1,6 @@
 """MemoryStore — SQLite-backed CRUD for ``MemoryEntry``.
 
-Same shape as :class:`magi.agent.session.SessionStore`:
+Same shape as :class:`magi.agent.memory.session.SessionStore`:
 stateless, safe to instantiate per-request, single
 ``state_dir`` arg kept for caller compat. All operations
 go through the shared :func:`open_session` so the

@@ -82,21 +82,21 @@ import logging
 
 # Re-export the public surface. Module layout above; the
 # names below are what the ~30 external callers import.
-from magi.agent.session.errors import (
+from magi.agent.memory.session.errors import (
     SessionCorruptError,
     SessionError,
     SessionNotFoundError,
     SessionPathError,
 )
-from magi.agent.session.ids import (
+from magi.agent.memory.session.ids import (
     _validate_chat_id,
     _validate_session_id,
     new_session_id,
     session_lock,
     utcnow_iso,
 )
-from magi.agent.session.migration import migrate_from_json
-from magi.agent.session.models import (
+from magi.agent.memory.session.migration import migrate_from_json
+from magi.agent.memory.session.models import (
     SCHEMA_VERSION,
     Session,
     SessionMessage,
@@ -104,10 +104,10 @@ from magi.agent.session.models import (
     session_from_dict,
     summary_from_session,
 )
-from magi.agent.session.store import SessionStore
+from magi.agent.memory.session.store import SessionStore
 
 
-logger = logging.getLogger("magi.agent.session")
+logger = logging.getLogger("magi.agent.memory.session")
 
 
 __all__ = [

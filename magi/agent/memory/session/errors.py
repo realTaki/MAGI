@@ -1,6 +1,6 @@
 """Session module exception hierarchy.
 
-Lives in its own module so :mod:`magi.agent.session.ids`
+Lives in its own module so :mod:`magi.agent.memory.session.ids`
 can raise ``SessionPathError`` for shape validation without
 a circular import (ids.py is imported by models.py for the
 Crockford alphabet; models.py is imported by ids.py for
