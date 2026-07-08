@@ -62,7 +62,7 @@ from magi.agent.sessions import (
     new_session_id,
     utcnow_iso as _utcnow_iso,
 )
-from magi.agent.db import Employee, open_session
+from magi.agent.db import Employee, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -78,7 +78,7 @@ _MAX_OUTPUT_CHARS = 4000
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def _resolve_caller_credentials(

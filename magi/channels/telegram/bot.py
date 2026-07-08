@@ -41,6 +41,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.agent.prompts import load_bot_replies  # noqa: E402
+from magi.agent.db.engine import require_state_dir  # noqa: E402
 
 # Loaded once per process. The dict is shared across
 # messages, which is fine — values are templates, not
@@ -91,7 +92,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         or update.effective_chat.title
     )
 
-    state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    state_dir = require_state_dir()
 
     # 1+2. Look up the bound employee. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
@@ -201,7 +202,7 @@ def _find_employee_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Employee, open_session, require_state_dir
     from magi.agent.db.settings import state_get
 
     try:

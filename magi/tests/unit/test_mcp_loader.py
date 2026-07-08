@@ -244,6 +244,12 @@ def test_bootstrap_mcp_populates_registry(tmp_path: Path, monkeypatch: pytest.Mo
     :func:`get_tools` returns it."""
     _example_config(tmp_path)
     monkeypatch.setenv("MAGI_MCP_CONFIG", str(tmp_path / "mcp.json"))
+    # The registry build path triggers ``init_orm`` on first
+    # call; the engine refuses to fall back to a host-system
+    # path now, so we point it at a tmp dir.
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
     # We don't actually want to connect anywhere — fake the
     # loader to return one synthetic tool.

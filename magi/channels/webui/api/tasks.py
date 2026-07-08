@@ -52,7 +52,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.sessions import new_session_id
-from magi.agent.db import Employee
+from magi.agent.db import Employee, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -553,7 +553,7 @@ def _unregister_from_scheduler(task_id: str) -> None:
 
 def _state_dir() -> str:
     import os
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 # Constants for the creator-role gate. ``admin`` and

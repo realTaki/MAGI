@@ -58,6 +58,7 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.departments import AdminOrAssignedGate
+from magi.agent.db.engine import require_state_dir
 from magi.agent.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
@@ -76,7 +77,7 @@ _SOUL_FILENAME = "SOUL.md"
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def _soul_path() -> Path:

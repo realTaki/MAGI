@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.departments import AdminGate
 from magi.agent.db.settings import state_get, state_set
+from magi.agent.db.engine import require_state_dir
 
 logger = logging.getLogger("magi.api.system_settings")
 
@@ -51,7 +52,7 @@ DEFAULT_TIMEZONE = "UTC"
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def get_system_timezone(state_dir: str) -> str:

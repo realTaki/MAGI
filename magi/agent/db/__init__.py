@@ -45,6 +45,7 @@ from magi.agent.db.engine import (
     get_session,
     init_orm,
     open_session,
+    require_state_dir,
 )
 from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_dashboard import ActionItem, TokenUsage
@@ -63,6 +64,7 @@ __all__ = [
     "get_session",
     "init_orm",
     "open_session",
+    "require_state_dir",
     "init_sqlite",
     # org
     "Employee",

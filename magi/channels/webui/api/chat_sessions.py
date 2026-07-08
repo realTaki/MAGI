@@ -43,7 +43,7 @@ from magi.agent.sessions import (
     SessionSummary,
     new_session_id,
 )
-from magi.agent.db import Employee, open_session
+from magi.agent.db import Employee, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.chat_sessions")
 
@@ -51,7 +51,7 @@ router = APIRouter(tags=["chat_sessions"])
 
 
 def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    return require_state_dir()
 
 
 def get_session_store() -> SessionStore:

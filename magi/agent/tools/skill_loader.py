@@ -62,6 +62,7 @@ templates and won't cover quirks. We pin PyYAML in
 """
 
 from __future__ import annotations
+from magi.agent.db.engine import require_state_dir
 
 import logging
 import os
@@ -117,7 +118,7 @@ def _workspace_root() -> Path:
     override = os.environ.get("MAGI_WORKSPACE_DIR")
     if override:
         return Path(override)
-    state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    state_dir = require_state_dir()
     return Path(state_dir).parent
 
 

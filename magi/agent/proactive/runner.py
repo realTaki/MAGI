@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 from magi.agent.loop import handle_message
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.sessions import new_session_id, utcnow_iso
-from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session
+from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 
 logger = logging.getLogger("magi.agent.proactive.runner")
@@ -373,7 +373,7 @@ def _failure_threshold() -> int:
     editing the value in the Settings API takes effect
     on the very next failed run.
     """
-    state_dir = os.environ.get("MAGI_STATE_DIR", "/workspace/memories")
+    state_dir = require_state_dir()
     raw = state_get(state_dir, "task.failure_threshold")
     if raw is None or not raw.strip():
         return _DEFAULT_FAILURE_THRESHOLD
