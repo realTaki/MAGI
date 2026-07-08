@@ -105,7 +105,7 @@ def test_minimax_provider_chat_signature_accepts_tools_kwarg():
     assert "tools" in sig.parameters
 
 
-def test_tool_registry_returns_four_schemas():
+def test_tool_registry_returns_expected_schemas():
     """Stable list of v0 tool names. ``list`` order
     matters — the LLM sees tools in this order every
     turn, so a reorder would be a perceptible UI
@@ -119,6 +119,12 @@ def test_tool_registry_returns_four_schemas():
         "send_message",
         "schedule_task",
         "load_skill",
+        # Memory management — the LLM calls these
+        # when the operator says "记住 X" / "完成了".
+        "add_memory",
+        "update_memory",
+        "complete_memory",
+        "delete_memory",
     ]
 
 
