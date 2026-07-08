@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.skills import (
+from magi.agent.tools.skill_loader import (
     format_skills_block,
     get_skill_loader,
 )

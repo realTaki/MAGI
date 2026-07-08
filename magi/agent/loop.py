@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from magi.agent.llm import ChatMessage, LLMError, get_provider
-from magi.agent.skills import format_skills_block, get_skill_loader
+from magi.agent.tools.skill_loader import format_skills_block, get_skill_loader
 from magi.agent.tools.base import ToolContext
 from magi.agent.tools.registry import get_tool, get_tool_schemas
 from magi.agent.llm.tokens import estimate_messages_tokens
