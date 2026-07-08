@@ -235,6 +235,10 @@ worst-day operational scenarios.
 | File tools — `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 | File tools — `tiktoken` token-aware truncation | **Later** | Trigger: LLM complains "truncated but still too much" — adds a native dep |
 | File tools — `edit_file` `replace_globally` switch | **Later** | Trigger: real need for "rename var across whole file" workflows |
+| MCP — per-server rate limit / auto-pause on flake | **Later** | Trigger: dashboard reports "MCP server flake" — pause for N min after M timeouts |
+| MCP — tool call audit log (name / args / duration / result size) | **Later** | Trigger: operator wants to know "how many times was `fetch` called last week" |
+| MCP — `mcp.json` hot-reload | **Later** | Trigger: deployer wants to add a server without restarting MAGI |
+| MCP — tool output token cap (10 MB fetch explodes context) | **Later** | Trigger: any MCP tool call surfaces a "context length exceeded" downstream |
 
 ---
 
