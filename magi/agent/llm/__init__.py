@@ -1,11 +1,21 @@
 """LLM provider layer — abstracts the upstream chat API.
 
 The runtime speaks one interface (``LLMProvider``) regardless of
-which vendor actually serves the request. v0 ships a single
-concrete implementation, ``MinimaxProvider`` (Anthropic-API-
-compatible, China + Global endpoints); later checkpoints add
-``AnthropicProvider``, ``OpenAIProvider``, ``OllamaProvider``,
-each as a new file plus a one-line entry in
+which vendor actually serves the request. v0 ships three
+concrete implementations, all on the Anthropic Messages API
+wire format:
+
+  - :class:`magi.agent.llm.claude.ClaudeProvider` — Anthropic's
+    first-party API.
+  - :class:`magi.agent.llm.minimax.MinimaxProvider` — Minimax's
+    two regions (China + Global).
+  - Both subclass :class:`magi.agent.llm.anthropic.AnthropicProvider`
+    which centralises the SDK call, error mapping, and
+    response walking.
+
+New vendors on a different wire format (e.g. OpenAI) would
+land as a new file subclassing :class:`LLMProvider` directly,
+plus a one-line branch in
 :func:`magi.agent.llm.factory.get_provider`.
 
 Public surface re-exported here so callers don't need to know
