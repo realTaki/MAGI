@@ -44,10 +44,8 @@ from magi.agent.llm.errors import LLMError
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.agent.prompts import load_chat_title_prompt
-from magi.agent.sessions import (
-    SessionStore,
-    utcnow_iso,
-)
+from magi.agent.sessions.ids import utcnow_iso
+from magi.agent.sessions.store import SessionStore
 
 logger = logging.getLogger("magi.agent.auto_title")
 
