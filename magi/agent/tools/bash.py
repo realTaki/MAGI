@@ -252,34 +252,97 @@ class BashRunTool(Tool):
     servers, ``mongod``, ``python -m http.server``).
     The foreground path is bounded by a 600 s timeout.
 
-    The process is locked to the workspace root
-    (``ToolContext.workspace``) — the command can
-    read/write files inside the tree but cannot
-    ``cd /`` out of it. ``cd`` to a subdirectory is
-    fine; the new ``cwd`` is the absolute path the
-    process is now in, and the next command in the
-    same shell session will start there (but we don't
-    persist shell sessions across tool calls — every
-    invocation is a fresh subshell).
+    The subprocess's **initial cwd is the workspace
+    root** (``ToolContext.workspace``). We don't
+    enforce stay-inside-workspace on subsequent
+    ``cd`` calls — the LLM is trusted to stay
+    inside the tree, matching the reference bash
+    tool's posture. The actual safety boundary is the
+    operator's container / deploy boundary.
     """
 
     name = "bash"
 
-    description = (
-        "Execute a shell command in foreground (return "
-        "stdout/stderr/exit_code) or background (return a "
-        "bash_id; poll with bash_output, kill with bash_kill). "
-        "Use for shell operations: git, npm, docker, curl, "
-        "etc. For file operations, prefer read_file / write_file "
-        "/ list_files — those validate paths against the "
-        "workspace and avoid the cost of forking a process.\n\n"
-        "Working directory: the workspace root. ``cd`` to a "
-        "subdirectory is fine; ``cd /`` or any path that "
-        "escapes the workspace will fail.\n\n"
-        "Background commands: pass ``run_in_background=true``. "
-        "The tool returns immediately with a ``bash_id``; "
-        "use bash_output to monitor, bash_kill to terminate."
-    )
+    def _build_description(self) -> str:
+        """OS-specific description block.
+
+        Different shells (bash vs PowerShell) have
+        different idioms for chaining commands
+        (``&&`` vs ``;``), path quoting, and the
+        long-running-process pattern. We render the
+        relevant version up-front so the LLM picks
+        the right syntax on the first call — it's
+        easier than reading generic text and
+        re-deriving the platform rules.
+
+        Body unchanged across platforms; only the
+        example block (chain syntax, sample long-
+        running command) flips.
+        """
+        if self.is_windows:
+            examples_block = (
+                "Tips:\n"
+                "  - Quote file paths with spaces: cd \"My Documents\"\n"
+                "  - Chain dependent commands with semicolon: "
+                "git add . ; git commit -m \"msg\"\n"
+                "  - Use absolute paths instead of cd when possible\n"
+                "  - For background commands, monitor with bash_output "
+                "and terminate with bash_kill\n\n"
+                "Examples:\n"
+                "  - git status\n"
+                "  - npm test\n"
+                "  - python -m http.server 8080 "
+                "(with run_in_background=true)"
+            )
+        else:
+            examples_block = (
+                "Tips:\n"
+                "  - Quote file paths with spaces: cd \"My Documents\"\n"
+                "  - Chain dependent commands with &&: "
+                "git add . && git commit -m \"msg\"\n"
+                "  - Use absolute paths instead of cd when possible\n"
+                "  - For background commands, monitor with bash_output "
+                "and terminate with bash_kill\n\n"
+                "Examples:\n"
+                "  - git status\n"
+                "  - npm test\n"
+                "  - python3 -m http.server 8080 "
+                "(with run_in_background=true)"
+            )
+        return (
+            f"Execute a {self.shell_name} command in foreground (return "
+            "stdout/stderr/exit_code) or background (return a bash_id; "
+            "poll with bash_output, kill with bash_kill).\n\n"
+            "For terminal operations like git, npm, docker, curl, etc. "
+            "DO NOT use for file operations — use the read_file / "
+            "write_file / list_files tools. Those validate paths "
+            "against the workspace and avoid the cost of forking a "
+            "process.\n\n"
+            "Parameters:\n"
+            "  - command (required): the command to execute. "
+            "Quote file paths with spaces using double quotes.\n"
+            "  - timeout (optional): timeout in seconds for foreground "
+            f"commands (default 120, max 600). Ignored when run_in_background=true.\n"
+            "  - run_in_background (optional): set true for long-running "
+            "commands (servers, mongod, etc.). Returns a bash_id "
+            "immediately; poll with bash_output, terminate with "
+            "bash_kill.\n\n"
+            + examples_block
+        )
+
+    @property
+    def description(self) -> str:
+        # Built lazily on first read. The reference
+        # implementation builds it in __init__; we
+        # delay because the LLM schema is rendered
+        # at first registry access, not at every
+        # BashRunTool construction.
+        cached = getattr(self, "_description_cache", None)
+        if cached is not None:
+            return cached
+        cached = self._build_description()
+        self._description_cache = cached
+        return cached
 
     input_schema = {
         "type": "object",
@@ -323,6 +386,10 @@ class BashRunTool(Tool):
         # in the tool registry.
         self.is_windows = platform.system() == "Windows"
         self.shell_name = "PowerShell" if self.is_windows else "bash"
+        # Lazily populated by ``description``; cleared on
+        # each instance so the property is correct if
+        # ``is_windows`` is ever mutated (v0: never).
+        self._description_cache: str | None = None
 
     # -- run -----------------------------------------------------------
 
