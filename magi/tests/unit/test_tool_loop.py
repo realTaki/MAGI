@@ -119,6 +119,12 @@ def test_tool_registry_returns_expected_schemas():
         "send_message",
         "schedule_task",
         "load_skill",
+        # Shell execution — three tools the LLM uses
+        # together to run + monitor + kill background
+        # shell processes.
+        "bash",
+        "bash_output",
+        "bash_kill",
         # MAGI memory management — the LLM calls these
         # when the operator says "记住 X" / "完成了".
         "add_memory",

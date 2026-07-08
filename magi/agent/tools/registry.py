@@ -45,6 +45,11 @@ def _build_tools() -> list["Tool"]:
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
     """
+    from magi.agent.tools.bash import (
+        BashKillTool,
+        BashOutputTool,
+        BashRunTool,
+    )
     from magi.agent.tools.list_files import ListFilesTool
     from magi.agent.tools.read_file import ReadFileTool
     from magi.agent.tools.schedule_task import ScheduleTaskTool
@@ -73,6 +78,13 @@ def _build_tools() -> list["Tool"]:
         SendMessageTool(),
         ScheduleTaskTool(),
         SkillLoaderTool(),
+        # Shell execution — three tools the LLM uses
+        # together: ``bash`` runs (foreground or
+        # background), ``bash_output`` polls a
+        # background process, ``bash_kill`` terminates.
+        BashRunTool(),
+        BashOutputTool(),
+        BashKillTool(),
         # Memory management — LLM-driven, not auto.
         # The operator must say "记住 X" (or the LLM
         # must judge the fact long-arc enough) for
