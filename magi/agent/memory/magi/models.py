@@ -1,4 +1,4 @@
-"""ORM table for MAGI's long-term memory.
+"""ORM table for MAGI's mid-term memory.
 
 What lives here:
 
@@ -9,34 +9,18 @@ What lives here:
     LLM is mid-flight on. Set ``completed_at`` when done;
     the row stays in the table for the audit trail but
     drops out of the system-prompt block.
-  - **People** — "Lily is in finance, telegram_id=9001,
-    Q3 owner of the expense-approval queue". The
-    ``person_employee_id`` FK points at the ``employees``
-    row of the person being described; ``employee_id`` on
-    this row is the *subject* (whose memory this lives
-    in). On a single-MAGI deployment these usually
-    coincide; in a multi-tenant future they could diverge.
 
-Scope (``primary`` vs ``secondary``) is the freshness /
-detail dial:
-
-  - ``primary`` — the assigned employee on this MAGI.
-    Dense: anything the LLM should reach for first
-    (their tasks, their preferences, the people they
-    work with). Goes into the system-prompt block.
-  - ``secondary`` — other employees the assigned
-    person bumps into. Sparse: "name + dept + role" is
-    enough to recognise them when the LLM is asked to
-    "send Lily a message". Not in the system-prompt
-    block; the LLM ``load_memory`` tool fetches on
-    demand.
+This is **MAGI's own mid-term memory** — the things the
+operator has told the EVE to "remember". Person records
+("Lily is in finance, telegram_id=9001") are **not** here;
+they live in :mod:`magi.agent.memory.contacts` because
+they describe a person, not a fact about the world.
 
 The LLM writes to this table through the
 ``add_memory`` / ``update_memory`` / ``complete_memory`` /
-``delete_memory`` tools
-(:mod:`magi.agent.memory.tools`). It does NOT mutate the
-table on every chat turn — only when the operator
-explicitly says "remember that ..." or the LLM judges the
+``delete_memory`` tools (in :mod:`.tools`). It does NOT
+mutate the table on every chat turn — only when the
+operator explicitly says "记住 X" or the LLM judges the
 fact worth persisting (operator policy, long-arc
 context, future-deadline follow-ups).
 """
@@ -53,23 +37,18 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.agent.db.base import Base
 
 
-# Memory kinds — what's stored.
+# Memory kinds — what's stored. Person records are NOT
+# here (they live in contacts); only facts and ongoing
+# work.
 KIND_IMPORTANT = "important"   # 长效事实 / 政策 / 合同
 KIND_ONGOING = "ongoing"       # 正在进行的事
-KIND_PERSON = "person"         # 一个人的档案
 
-ALL_KINDS = frozenset({KIND_IMPORTANT, KIND_ONGOING, KIND_PERSON})
-
-# Memory scope — the "how much" dial.
-SCOPE_PRIMARY = "primary"       # 主记忆：assigned employee 本人的事
-SCOPE_SECONDARY = "secondary"   # 认识人的辅助记忆：directory 级别
-
-ALL_SCOPES = frozenset({SCOPE_PRIMARY, SCOPE_SECONDARY})
+ALL_KINDS = frozenset({KIND_IMPORTANT, KIND_ONGOING})
 
 # Sources — where the row came from. Mostly used for the
 # dashboard ("was this operator-edited or auto-extracted
@@ -82,45 +61,32 @@ SOURCE_SYSTEM = "system"   # Seeded by the platform (onboarding
 
 
 class MemoryEntry(Base):
-    """One row of long-term memory.
+    """One row of MAGI's mid-term memory.
 
     Indexed for the two access patterns the system
     actually uses:
 
-      - "give me the primary memory for employee X
+      - "give me my important + ongoing memory
         (system prompt block)" — covers 90% of reads.
-      - "give me the person record for employee Y" — the
-        ``send_message`` tool's "find this person" path.
+      - "give me the most-recent N rows for the
+        ``list_memory`` tool" — the LLM's audit / load
+        path.
     """
 
     __tablename__ = "memory_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Whose memory this is. Almost always the MAGI's
-    # ``assigned`` employee on a single-instance setup;
-    # could differ in a multi-MAGI future.
+    # The MAGI's own assigned employee. On a single-
+    # instance setup this is the one assigned employee
+    # for this node; could differ in a multi-tenant
+    # future. ON DELETE CASCADE: removing the employee
+    # clears their memory (the row is meaningless
+    # without the owner).
     employee_id: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # The person BEING DESCRIBED, when ``kind=person``.
-    # Self-FK to ``employees`` (the row may describe
-    # another employee on the same MAGI). ``None`` for
-    # ``important`` / ``ongoing`` kinds — those describe
-    # facts / tasks, not people.
-    #
-    # ``ON DELETE SET NULL`` because the described
-    # person may get hard-deleted (rare — soft delete
-    # is the usual path); the memory row outlives the
-    # person so the operator doesn't lose context.
-    person_employee_id: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    scope: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SCOPE_PRIMARY
-    )
     # Short human-readable title. Used as the bullet
     # in the system-prompt block. Bounded so a
     # runaway LLM can't dump 4 KB of text into a
@@ -158,40 +124,17 @@ class MemoryEntry(Base):
     )
 
     __table_args__ = (
-        # Primary read path: "give me employee X's
-        # primary memory, ordered by importance desc".
+        # Primary read path: "give me my memory,
+        # excluding completed, ordered by importance".
         Index(
-            "ix_memory_entries_owner_scope",
-            "employee_id", "scope", "completed_at", "importance",
+            "ix_memory_entries_owner_importance",
+            "employee_id", "completed_at", "importance",
         ),
-        # "Look up the memory row describing employee Y"
-        # — the people-directory path.
-        Index(
-            "ix_memory_entries_person",
-            "person_employee_id", "kind",
-        ),
-    )
-
-    # Read-only relationships so the LLM / API can
-    # render a person's name without a second query.
-    owner: Mapped["Employee | None"] = relationship(
-        foreign_keys=[employee_id], viewonly=True
-    )
-    person: Mapped["Employee | None"] = relationship(
-        foreign_keys=[person_employee_id], viewonly=True
     )
 
     def __repr__(self) -> str:
         flag = "✓" if self.completed_at else "·"
         return (
             f"MemoryEntry({flag} id={self.id} kind={self.kind!r} "
-            f"scope={self.scope!r} subj={self.subject!r} "
-            f"imp={self.importance})"
+            f"subj={self.subject!r} imp={self.importance})"
         )
-
-
-# Forward reference resolution — the relationship strings
-# above resolve at mapper-config time, after both modules
-# are imported. We import ``Employee`` here so the type
-# checker sees it; SQLAlchemy only needs the string.
-from magi.agent.db.models_employee import Employee  # noqa: E402

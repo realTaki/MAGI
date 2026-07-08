@@ -10,36 +10,31 @@ what's on disk.
 Two read patterns:
 
   - :meth:`list_for_owner` — the system-prompt
-    formatter's main call. Filters by ``scope``,
-    excludes completed ``ongoing`` rows.
-  - :meth:`find_person` — directory lookup. Given a
-    person_employee_id, return the memory row
-    describing that person (one per person, by
-    convention).
+    formatter's main call. Filters completed ``ongoing``
+    rows; orders by importance desc.
+  - :meth:`list_recent` — the LLM's ``list_memory``
+    tool. Includes completed rows; capped at ``limit``.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from sqlalchemy import select
 
 from magi.agent.db import open_session
-from magi.agent.memory.models import (
+from magi.agent.memory.magi.models import (
     ALL_KINDS,
-    ALL_SCOPES,
     KIND_ONGOING,
-    KIND_PERSON,
-    SCOPE_PRIMARY,
     SOURCE_EVE,
     MemoryEntry,
 )
 
 
-logger = logging.getLogger("magi.agent.memory.store")
+logger = logging.getLogger("magi.agent.memory.magi.store")
 
 # Caps mirroring the Pydantic layer (the WebUI form has
 # the same numbers). Truncating here too guards against
@@ -50,16 +45,11 @@ _IMPORTANCE_MIN = 1
 _IMPORTANCE_MAX = 5
 
 
-def _now_iso() -> str:
-    """UTC ISO with the trailing ``Z`` (matches the
-    session package convention — the dashboard reads
-    both, so they should look the same)."""
+def _now_naive_utc() -> "datetime":
+    """Naive UTC datetime — matches the convention
+    every other timestamp column in the schema uses."""
     from datetime import datetime, timezone
-    return (
-        datetime.now(timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True)
@@ -74,9 +64,7 @@ class MemoryView:
 
     id: int
     employee_id: int
-    person_employee_id: Optional[int]
     kind: str
-    scope: str
     subject: str
     body: str
     importance: int
@@ -90,9 +78,7 @@ class MemoryView:
         return cls(
             id=row.id,
             employee_id=row.employee_id,
-            person_employee_id=row.person_employee_id,
             kind=row.kind,
-            scope=row.scope,
             subject=row.subject,
             body=row.body,
             importance=row.importance,
@@ -110,9 +96,7 @@ class MemoryView:
         return {
             "id": self.id,
             "employee_id": self.employee_id,
-            "person_employee_id": self.person_employee_id,
             "kind": self.kind,
-            "scope": self.scope,
             "subject": self.subject,
             "body": self.body,
             "importance": self.importance,
@@ -143,16 +127,14 @@ class MemoryStore:
         kind: str,
         subject: str,
         body: str,
-        scope: str = SCOPE_PRIMARY,
-        person_employee_id: Optional[int] = None,
         importance: int = 3,
         source: str = SOURCE_EVE,
     ) -> MemoryView:
         """Insert one memory row.
 
-        Validates ``kind`` / ``scope`` against the
-        enum-ish constants in :mod:`.models` and
-        length-clamps ``subject`` / ``body``. Raises
+        Validates ``kind`` against the enum-ish
+        constants in :mod:`.models` and length-clamps
+        ``subject`` / ``body``. Raises
         :class:`ValueError` on a bad enum (the
         LLM-facing tool catches it and returns
         ``is_error=True``).
@@ -160,10 +142,6 @@ class MemoryStore:
         if kind not in ALL_KINDS:
             raise ValueError(
                 f"kind {kind!r} not in {sorted(ALL_KINDS)}"
-            )
-        if scope not in ALL_SCOPES:
-            raise ValueError(
-                f"scope {scope!r} not in {sorted(ALL_SCOPES)}"
             )
         if not (1 <= importance <= 5):
             importance = max(_IMPORTANCE_MIN, min(_IMPORTANCE_MAX, importance))
@@ -173,20 +151,11 @@ class MemoryStore:
             raise ValueError("subject is required")
         if not body:
             raise ValueError("body is required")
-        # ``kind=person`` is a directory entry — the
-        # ``person_employee_id`` is mandatory so the
-        # directory lookup path has a key.
-        if kind == KIND_PERSON and person_employee_id is None:
-            raise ValueError(
-                "kind=person requires person_employee_id"
-            )
 
         with open_session() as db:
             row = MemoryEntry(
                 employee_id=employee_id,
-                person_employee_id=person_employee_id,
                 kind=kind,
-                scope=scope,
                 subject=subject,
                 body=body,
                 importance=importance,
@@ -202,7 +171,6 @@ class MemoryStore:
                 "memory_id": row.id,
                 "employee_id": employee_id,
                 "kind": kind,
-                "scope": scope,
                 "importance": importance,
             },
         )
@@ -219,7 +187,6 @@ class MemoryStore:
         self,
         employee_id: int,
         *,
-        scope: Optional[str] = None,
         kind: Optional[str] = None,
         include_completed: bool = False,
         limit: int = 50,
@@ -228,10 +195,9 @@ class MemoryStore:
 
         Defaults:
 
-          - ``scope=None`` means "any scope" (the
-            system-prompt formatter passes
-            ``scope="primary"`` explicitly to get just
-            the working set).
+          - ``kind=None`` means "any kind" (the
+            system-prompt formatter passes no kind
+            so it sees both important and ongoing).
           - Completed ``ongoing`` rows are filtered
             out unless ``include_completed=True`` (so
             the system prompt doesn't accumulate
@@ -248,8 +214,6 @@ class MemoryStore:
             stmt = select(MemoryEntry).where(
                 MemoryEntry.employee_id == employee_id
             )
-            if scope is not None:
-                stmt = stmt.where(MemoryEntry.scope == scope)
             if kind is not None:
                 stmt = stmt.where(MemoryEntry.kind == kind)
             if not include_completed:
@@ -273,31 +237,6 @@ class MemoryStore:
             rows = db.execute(stmt).scalars().all()
         return [MemoryView.from_row(r) for r in rows]
 
-    def find_person(
-        self,
-        person_employee_id: int,
-        owner_employee_id: int,
-    ) -> Optional[MemoryView]:
-        """Return the directory entry for a person.
-
-        One per (owner, person) pair by convention —
-        the LLM's ``add_memory`` tool updates the
-        existing row if called twice for the same
-        person. We enforce the uniqueness here by
-        filtering on both FKs.
-        """
-        with open_session() as db:
-            row = db.execute(
-                select(MemoryEntry).where(
-                    MemoryEntry.employee_id == owner_employee_id,
-                    MemoryEntry.person_employee_id == person_employee_id,
-                    MemoryEntry.kind == KIND_PERSON,
-                )
-            ).scalar_one_or_none()
-        if row is None:
-            return None
-        return MemoryView.from_row(row)
-
     def update(
         self,
         memory_id: int,
@@ -305,17 +244,16 @@ class MemoryStore:
         subject: Optional[str] = None,
         body: Optional[str] = None,
         importance: Optional[int] = None,
-        scope: Optional[str] = None,
     ) -> MemoryView:
         """Patch one or more mutable fields.
 
-        ``kind`` and ``person_employee_id`` are
-        immutable (changing them would silently
-        mis-categorise the row); the LLM-facing tool
-        documents this and returns ``is_error=True``
-        if asked. ``completed_at`` is set via
-        :meth:`complete` rather than this method so
-        the call site reads cleanly.
+        ``kind`` and ``employee_id`` are immutable
+        (changing them would silently mis-categorise
+        the row); the LLM-facing tool documents this
+        and returns ``is_error=True`` if asked.
+        ``completed_at`` is set via :meth:`complete`
+        rather than this method so the call site
+        reads cleanly.
         """
         with open_session() as db:
             row = db.get(MemoryEntry, memory_id)
@@ -329,12 +267,6 @@ class MemoryStore:
                 row.importance = max(
                     _IMPORTANCE_MIN, min(_IMPORTANCE_MAX, importance)
                 )
-            if scope is not None:
-                if scope not in ALL_SCOPES:
-                    raise ValueError(
-                        f"scope {scope!r} not in {sorted(ALL_SCOPES)}"
-                    )
-                row.scope = scope
             db.commit()
             db.refresh(row)
         logger.info(
@@ -356,7 +288,7 @@ class MemoryStore:
             row = db.get(MemoryEntry, memory_id)
             if row is None:
                 raise LookupError(f"memory {memory_id!r} not found")
-            row.completed_at = datetime_now()
+            row.completed_at = _now_naive_utc()
             db.commit()
             db.refresh(row)
         logger.info(
@@ -384,13 +316,6 @@ class MemoryStore:
             extra={"memory_id": memory_id},
         )
         return True
-
-
-def datetime_now():
-    """Tiny helper — kept module-level so tests can
-    monkeypatch it without touching the class."""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 __all__ = [
