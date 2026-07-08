@@ -239,5 +239,5 @@ magi/WebUI/*.tsbuildinfo
 # -----------------------------------------------------------------------------
 # Runtime data — local SQLite / bind-mounted volumes
 # -----------------------------------------------------------------------------
-workspace/
+/workspace/
 data/
