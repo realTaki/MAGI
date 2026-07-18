@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from magi.agent.memory.session.errors import (
+    ChannelMismatchError,
     SessionCorruptError,
     SessionNotFoundError,
 )
@@ -188,6 +189,7 @@ class SessionStore:
         msgs: Iterable[SessionMessage],
         *,
         bump_updated: bool = True,
+        channel: str | None = None,
     ) -> Session:
         """Append one or more messages to a session.
 
@@ -195,6 +197,24 @@ class SessionStore:
         on the session row). ``bump_updated=False`` skips the
         ``updated_at`` bump — used by operations that touch
         metadata only.
+
+        Channel ownership (D.22):
+          ``channel`` is the caller's channel tag (e.g.
+          ``"tg"``, ``"webui"``, ``"scheduled"``). When
+          provided AND the row's stored ``channel`` is
+          non-empty AND the two don't match, raises
+          :class:`ChannelMismatchError` — the cross-channel
+          race guard. Reads (list, get) are intentionally
+          NOT gated this way so the same employee can
+          browse their TG history from the WebUI console.
+
+          An empty / null stored channel (legacy pre-D.22
+          row that predates the field, or the column's
+          default) does NOT raise — ownership is unknown,
+          so the writer wins. Pass ``channel=None`` to
+          skip the check entirely (useful for back-fill
+          tooling that operates on history, not live
+          inbound).
         """
         _validate_session_id(session_id)
         _validate_chat_id(chat_id)
@@ -213,6 +233,26 @@ class SessionStore:
                 raise SessionNotFoundError(
                     f"session {session_id!r} for chat_id {chat_id!r} "
                     "does not exist"
+                )
+            # D.22 channel-ownership guard. Reads
+            # (SessionStore.get) are deliberately NOT gated
+            # so the same employee can browse TG history
+            # from WebUI; only writes (append + the inbound
+            # that drives handle_message) need the check.
+            if (
+                channel is not None
+                and sess_row.channel
+                and sess_row.channel != channel
+            ):
+                logger.warning(
+                    "channel mismatch on append: session %s owned "
+                    "by %r, caller is %r",
+                    session_id, sess_row.channel, channel,
+                )
+                raise ChannelMismatchError(
+                    session_id=session_id,
+                    session_channel=sess_row.channel,
+                    caller_channel=channel,
                 )
             for m in new_msgs:
                 db.add(ChatMessage(

@@ -83,6 +83,7 @@ import logging
 # Re-export the public surface. Module layout above; the
 # names below are what the ~30 external callers import.
 from magi.agent.memory.session.errors import (
+    ChannelMismatchError,
     SessionCorruptError,
     SessionError,
     SessionNotFoundError,
@@ -116,6 +117,7 @@ __all__ = [
     "SessionNotFoundError",
     "SessionCorruptError",
     "SessionPathError",
+    "ChannelMismatchError",
     # ids
     "new_session_id",
     "utcnow_iso",

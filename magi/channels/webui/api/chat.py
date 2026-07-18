@@ -56,6 +56,7 @@ from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.loop import handle_message
 from magi.agent.memory.session import (
+    ChannelMismatchError,
     SessionMessage,
     SessionPathError,
     SessionStore,
@@ -261,6 +262,11 @@ async def send_chat(
     # block held the per-session ``asyncio.Lock`` so the
     # auto-title worker (D.7) saw a coherent state; SQLite's
     # per-statement atomicity replaces that need.
+    #
+    # D.22: ``channel="webui"`` is the cross-channel guard —
+    # if the session was created on TG, the store raises
+    # ``ChannelMismatchError`` and we 403 the caller instead
+    # of mixing two LLM loops into one history.
     ts_in = _utcnow_iso()
     try:
         post = store.append_messages(
@@ -269,8 +275,30 @@ async def send_chat(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
             )],
+            channel="webui",
         )
-    except Exception as e:
+    except ChannelMismatchError as e:
+        # D.22: the session was created on a different
+        # channel (most commonly TG). Refuse to write so
+        # two LLM loops don't fight over the same history.
+        # The UI surfaces this as a banner next to the
+        # message input; the user can continue the
+        # conversation on the original channel.
+        logger.info(
+            "chat: refusing cross-channel write "
+            "(session=%s owned by %r, caller=webui)",
+            session_id, e.session_channel,
+        )
+        raise MagiHTTPException(
+            status_code=403,
+            code="chat.session_channel_mismatch",
+            detail=(
+                f"this session was started on "
+                f"{e.session_channel!r}; continue the "
+                "conversation on that channel."
+            ),
+        )
+    except Exception:
         logger.exception(
             "chat: failed to append user message for session %s", session_id,
         )
@@ -323,7 +351,11 @@ async def send_chat(
     # Outbound audit-aligned append. A failure here is
     # logged but does NOT raise — the operator already
     # got the reply and a missing history line is worse
-    # than a console line.
+    # than a console line. The same ``channel="webui"``
+    # guard applies (D.22); a mismatch here would mean
+    # ``handle_message`` somehow ran against a TG-owned
+    # session, which the inbound check above already
+    # blocked. Belt and braces.
     ts_out = _utcnow_iso()
     try:
         store.append_messages(
@@ -332,6 +364,7 @@ async def send_chat(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
             )],
+            channel="webui",
         )
     except Exception:
         logger.exception(

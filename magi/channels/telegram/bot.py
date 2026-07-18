@@ -367,6 +367,15 @@ async def _handle_employee_message(
     # Inbound append — SQLite's per-statement atomicity replaces
     # the pre-D.18 per-session ``asyncio.Lock`` that used to
     # serialise against the auto-title worker.
+    #
+    # D.22: ``channel="tg"`` is the cross-channel guard.
+    # TG always owns the sessions it creates (we don't share
+    # session_ids across channels), so in practice the check
+    # never fires here — but it does if a future WebUI→TG
+    # handoff ever lands. Failure is logged and treated as
+    # "inbound couldn't be persisted" below; the user gets
+    # a generic reply so a misrouted message doesn't crash
+    # the bot.
     ts_in = utcnow_iso()
     try:
         post = store.append_messages(
@@ -375,6 +384,7 @@ async def _handle_employee_message(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
             )],
+            channel="tg",
         )
     except Exception:
         logger.exception(
@@ -472,6 +482,7 @@ async def _handle_employee_message(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
             )],
+            channel="tg",
         )
     except Exception:
         logger.exception(
