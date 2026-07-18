@@ -24,6 +24,34 @@ Session history lives in JSON files under
 /api/chat/sessions/{id}`` cover the same questions
 ("what was said", "what was spent") that an audit
 view would.
+
+Interrupt-aware loop (D.21)
+--------------------------
+Channels append the user's message to the session store
+**before** invoking ``handle_message`` — the agent loop
+itself does not own the inbound queue. Inside the tool-
+iteration loop, every iteration polls the store for fresh
+user messages:
+
+  - If the store has grown since the loop's last poll,
+    new user messages are spliced into the in-memory
+    ``messages`` list **after** truncating any trailing
+    assistant+tool_use/tool_result blocks (Anthropic's
+    API rejects role messages interleaved with
+    tool blocks).
+  - The iteration counter resets to zero so the model
+    gets a fresh ``max_iter`` budget to respond to the
+    new message.
+  - One log line (``agent.interrupt``) is emitted so an
+    operator can see "the user interrupted the agent
+    halfway through tool execution".
+
+The contract is: a user can send more messages while the
+agent is mid-tool-chain; those messages land in the
+session store (TG / WebUI already does this), and the
+loop picks them up on the next iteration. The channel
+side does NOT need any extra wiring — the polling
+happens entirely inside :func:`handle_message`.
 """
 
 from __future__ import annotations
@@ -170,24 +198,146 @@ def _build_messages_from_session(
     chat_id: str,
     session_id: str | None,
     new_user_text: str,
-) -> list["ChatMessage"]:
+) -> tuple[list["ChatMessage"], set[str]]:
     """Load the prior-turn history into the LLM-facing
-    message list (D.17). Returns the existing
-    ``sess.messages`` followed by the brand-new user
-    text. ``sess.archive`` is intentionally NOT read;
-    it's the forensic record and the LLM never sees it.
+    message list (D.17). Returns ``(messages, seen_ids)``
+    where ``messages`` is the existing ``sess.messages``
+    followed by the brand-new user text, and ``seen_ids``
+    is the set of message_ids the loop has already seen
+    (so subsequent :func:`_drain_pending_user_messages`
+    polls don't re-read them). ``sess.archive`` is
+    intentionally NOT read; it's the forensic record and
+    the LLM never sees it.
     """
     if not session_id:
-        return [ChatMessage(role="user", content=new_user_text)]
+        # No session: the inbound is its own message; no
+        # history to track.
+        return [ChatMessage(role="user", content=new_user_text)], set()
     sess = SessionStore(state_dir).get(chat_id, session_id)
     if sess is None:
-        return [ChatMessage(role="user", content=new_user_text)]
+        return [ChatMessage(role="user", content=new_user_text)], set()
     out: list[ChatMessage] = []
+    seen: set[str] = set()
     for m in sess.messages:
         llm_role = "user" if m.role in ("user", "system") else "assistant"
         out.append(ChatMessage(role=llm_role, content=m.text))
+        seen.add(m.message_id)
+    # ``new_user_text`` was already appended to the store
+    # by the channel-side caller before invoking
+    # ``handle_message``; the loop tracks that id so it
+    # doesn't re-drain it on the first poll.
     out.append(ChatMessage(role="user", content=new_user_text))
-    return out
+    return out, seen
+
+
+def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
+    """Truncate ``messages`` so the last entry is a plain
+    text message (no ``content_blocks``).
+
+    Anthropic's Messages API rejects request payloads where
+    a plain ``user`` text message is interleaved with the
+    tool_use → tool_result chain from a prior assistant
+    turn — the API expects tool_use blocks to be answered
+    by an immediately-following tool_result block. When an
+    interrupt splices a new user message in, the tail of
+    ``messages`` may look like:
+
+        [..., assistant(tool_use), user(tool_result, ...), user("hi")]
+
+    and the last ``user("hi")`` breaks the chain. We drop
+    any trailing message that carries ``content_blocks`` so
+    the next LLM call sees a clean boundary.
+
+    The truncation only touches the in-memory list; the
+    session store's history is left intact (it's the audit
+    trail, not the LLM-facing view).
+    """
+    while messages and messages[-1].content_blocks:
+        messages.pop()
+
+
+def _drain_pending_user_messages(
+    state_dir: str,
+    chat_id: str,
+    session_id: str | None,
+    messages: list["ChatMessage"],
+    seen_message_ids: set[str],
+) -> bool:
+    """Pull fresh user messages from the session store into
+    ``messages`` (D.21 — interrupt-aware loop).
+
+    Returns ``True`` when at least one new user message
+    was spliced in, ``False`` otherwise. The caller uses
+    the return value to decide whether to reset the
+    iteration counter.
+
+    Algorithm:
+
+      1. ``SessionStore.get`` is the source of truth.
+         Anything not in ``seen_message_ids`` is "new"
+         since the loop's last poll (or since the loop
+         started, on the first call).
+      2. New messages with ``role="user"`` are spliced
+         in chronological order. New ``assistant`` rows
+         are skipped — the channel-side writer appends
+         the assistant's final reply **after**
+         ``handle_message`` returns, so any assistant
+         row in the store at this point is from a
+         prior turn and is already in our
+         in-memory list.
+      3. Before splicing, call
+         :func:`_truncate_at_safe_boundary` so the new
+         user message lands at a legal point in the
+         tool_use / tool_result chain.
+      4. Every new id (regardless of role) is added to
+         ``seen_message_ids`` so the next poll doesn't
+         re-read it. ``seen_message_ids`` is mutated
+         in-place by the caller.
+
+    Failures inside ``SessionStore.get`` are logged and
+    treated as "no new messages" — a transient store
+    hiccup must not crash the in-flight agent loop.
+    """
+    if not session_id:
+        return False
+    try:
+        sess = SessionStore(state_dir).get(chat_id, session_id)
+    except Exception:
+        logger.exception(
+            "agent: store read failed during interrupt poll "
+            "(chat=%s, session=%s); continuing without drain",
+            chat_id, session_id,
+        )
+        return False
+    if sess is None:
+        return False
+
+    new_user_texts: list[str] = []
+    for m in sess.messages:
+        # Track every new id we see, regardless of role, so
+        # we don't re-poll the same row on the next
+        # iteration.
+        if m.message_id in seen_message_ids:
+            continue
+        seen_message_ids.add(m.message_id)
+        if m.role == "user":
+            new_user_texts.append(m.text)
+
+    if not new_user_texts:
+        return False
+
+    # Truncate the tool-use / tool-result chain so the new
+    # user message lands at a legal boundary.
+    _truncate_at_safe_boundary(messages)
+    for text in new_user_texts:
+        messages.append(ChatMessage(role="user", content=text))
+
+    logger.info(
+        "agent.interrupt: spliced %d new user message(s) into "
+        "in-flight loop (chat=%s, session=%s)",
+        len(new_user_texts), chat_id, session_id,
+    )
+    return True
 
 
 async def _call_llm_for_summary(
@@ -534,20 +684,48 @@ async def handle_message(
         return _fallback_reply()
 
     # D.17 — load session history. ``_build_messages_from_session``
-    # returns the prior-turn messages (in ``sess.messages``,
-    # which is exactly the LLM-facing view: summary at index
-    # 0 if a compaction has happened, else the most recent K
-    # verbatim turns) plus the brand-new user text. ``archive``
-    # is NOT included — it's the forensic record only.
-    messages: list[ChatMessage] = _build_messages_from_session(
+    # returns ``(messages, seen_ids)``: the prior-turn messages
+    # (in ``sess.messages``, which is exactly the LLM-facing
+    # view: summary at index 0 if a compaction has happened,
+    # else the most recent K verbatim turns) plus the brand-
+    # new user text, and the set of message_ids the loop has
+    # already seen so subsequent interrupt polls don't re-read
+    # them. ``archive`` is NOT included — it's the forensic
+    # record only.
+    messages, seen_message_ids = _build_messages_from_session(
         state_dir, chat_id, session_id, text,
     )
 
     final_text = ""
     iterations_run = 0
     try:
-        for _iteration in range(max_iter):
+        # ``while ... else``: ``else`` fires when the
+        # condition becomes False without a ``break`` —
+        # i.e. the model kept requesting tools past
+        # ``max_iter``. A plain ``for _iteration in
+        # range(max_iter)`` would have the same shape,
+        # but we need the loop body to be able to
+        # **reset** ``iterations_run`` (D.21 interrupt
+        # path) without leaving the loop body. A
+        # ``while`` lets us track the iteration count
+        # explicitly; ``max_iter`` is still the hard cap.
+        while iterations_run < max_iter:
             iterations_run += 1
+            # D.21 — interrupt poll. Runs **before** compaction
+            # so the user's fresh input lands in ``messages``
+            # and is included in the next LLM call (and, on
+            # compaction, in the next compaction pass too).
+            # Returns ``True`` when new user messages were
+            # spliced in; we reset ``iterations_run`` so the
+            # model gets a fresh ``max_iter`` budget to react
+            # to the new input rather than dying on the budget
+            # of the previous turn.
+            if _drain_pending_user_messages(
+                state_dir, chat_id, session_id,
+                messages, seen_message_ids,
+            ):
+                iterations_run = 0
+                continue  # re-enter the loop with the new input
             # D.17 — compact the in-memory message list if it
             # has grown past the configured threshold. Runs
             # before EVERY LLM call so a long tool chain
