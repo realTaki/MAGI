@@ -31,6 +31,16 @@ from dataclasses import asdict, dataclass, field
 import uvicorn
 
 from magi import __version__
+# Top-level import (not lazy): ``NodeConfig.from_env`` is
+# called at module-load time by the ``magi --check``
+# healthcheck (see deploy/Dockerfile.dev). A lazy import
+# inside ``from_env`` itself would happen too late — the
+# class body has already executed by then and ``from_env``
+# references ``require_state_dir`` as a module global.
+# Putting the import here makes the name resolution
+# deterministic regardless of which entry point runs
+# first.
+from magi.agent.db import require_state_dir  # noqa: E402
 
 logger = logging.getLogger("magi.node")
 

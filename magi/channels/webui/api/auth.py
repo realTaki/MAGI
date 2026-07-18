@@ -31,6 +31,20 @@ from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+# Top-level import (not lazy): ``_state_dir`` is a module-
+# level helper called by every handler in this file.
+# A lazy import inside ``_state_dir`` would resolve fine
+# when called from inside a function — BUT the auth
+# routes run inside the same FastAPI worker that imports
+# this module at boot, and any other module that imports
+# ``_state_dir`` (transitively, via
+# ``from .auth import _state_dir`` or similar) would
+# resolve the name at import time, before the function
+# body ever runs. Same root cause as the D.22 fix on
+# ``magi/node/__init__.py``: hoist the import.
+from magi.agent.db import Employee, open_session, require_state_dir  # noqa: E402
+from magi.agent.db.settings import state_get  # noqa: E402
+
 logger = logging.getLogger("magi.api.auth")
 
 router = APIRouter(tags=["auth"])
@@ -60,9 +74,6 @@ def _super_admins() -> set[str]:
     for state files written before the unified table landed
     (C1.x). The fallback path is retired in C8.
     """
-    from magi.agent.db import Employee, open_session, require_state_dir
-    from magi.agent.db.settings import state_get
-
     state_dir = _state_dir()
     result: set[str] = set()
     try:
