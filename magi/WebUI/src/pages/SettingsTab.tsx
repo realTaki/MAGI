@@ -38,7 +38,6 @@ import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardin
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
-import { SettingsTgDoneReactionCard } from "../components/settings/SettingsTgDoneReactionCard";
 import { SettingsToolLoopCard } from "../components/settings/SettingsToolLoopCard";
 import { SettingsWebuiAccessCard } from "../components/settings/SettingsWebuiAccessCard";
 import { useT } from "../i18n/index";
@@ -48,7 +47,6 @@ export type SettingSection =
   | "channels"
   | "persona"
   | "tg-read"
-  | "tg-done"
   | "tz"
   | "tool-loop"
   | "auto-compact"
@@ -59,7 +57,6 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "channels", label: "settings.navChannels", icon: <IconConnectors /> },
   { id: "persona", label: "settings.navPersona", icon: <IconSkills /> },
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
-  { id: "tg-done", label: "settings.navTgDone", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "tool-loop", label: "settings.navToolLoop", icon: <IconScheduledTasks /> },
   { id: "auto-compact", label: "settings.navAutoCompact", icon: <IconScheduledTasks /> },
@@ -106,7 +103,6 @@ export default function SettingsTab(props: SettingsTabProps) {
         )}
         {section === "persona" && <SettingsPersonaCard />}
         {section === "tg-read" && <SettingsTgReadReactionCard />}
-        {section === "tg-done" && <SettingsTgDoneReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
         {section === "tool-loop" && <SettingsToolLoopCard />}
         {section === "auto-compact" && <SettingsCompactCard />}

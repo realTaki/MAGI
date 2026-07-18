@@ -45,11 +45,11 @@ export default function LandingPage(props: {
             </button>
           </div>
 
-          <p className="mt-6 text-xs text-ink-soft">
-            {props.isFirstTime
-              ? "First time here — Set up runs the first-time wizard."
-              : "Enter your Telegram chat_id and the code the bot sends to log in."}
-          </p>
+          {props.isFirstTime && (
+            <p className="mt-6 text-xs text-ink-soft">
+              First time here — Set up runs the first-time wizard.
+            </p>
+          )}
         </div>
       </div>
     </main>
