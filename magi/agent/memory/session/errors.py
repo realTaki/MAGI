@@ -39,3 +39,42 @@ class SessionPathError(SessionError):
     class name is kept for backwards compat with the
     API-layer error mapping (400 ``validation.session_id_invalid``).
     """
+
+
+class ChannelMismatchError(SessionError):
+    """The caller's channel does not own the session.
+
+    Sessions are pinned to a single channel at creation
+    time (TG / webui / scheduled). Reads (list, get) are
+    cross-channel by design — the same employee may browse
+    their TG history from the WebUI console — but **writes**
+    (append_messages, the inbound that triggers
+    handle_message) must come from the owner channel. The
+    cross-channel race ("two LLM loops writing the same
+    session simultaneously") is the failure mode this guard
+    closes.
+
+    Surfaces to the API as 403 ``chat.session_channel_mismatch``
+    with the session's owning channel in the detail string
+    so the UI can render "this session was started on TG,
+    continue the conversation there".
+
+    A session whose ``channel`` column is empty (legacy
+    pre-D.18 row) does NOT trigger this error — the
+    ownership is unknown, so the writer wins.
+    """
+
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        session_channel: str,
+        caller_channel: str,
+    ) -> None:
+        self.session_id = session_id
+        self.session_channel = session_channel
+        self.caller_channel = caller_channel
+        super().__init__(
+            f"session {session_id!r} is owned by channel "
+            f"{session_channel!r}; caller is {caller_channel!r}"
+        )
