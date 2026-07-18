@@ -239,6 +239,9 @@ worst-day operational scenarios.
 | MCP — tool call audit log (name / args / duration / result size) | **Later** | Trigger: operator wants to know "how many times was `fetch` called last week" |
 | MCP — `mcp.json` hot-reload | **Later** | Trigger: deployer wants to add a server without restarting MAGI |
 | MCP — tool output token cap (10 MB fetch explodes context) | **Later** | Trigger: any MCP tool call surfaces a "context length exceeded" downstream |
+| Skills — `load_skill` body section slicing (offset / limit) | **Later** | Trigger: skill body > 10 KB and LLM wants a specific section |
+| Skills — usage audit (which skills the LLM calls, how often) | **Later** | Trigger: operator wants to optimise the skill catalog (drop unused, expand popular) |
+| Skills — `allowed-tools` enforcement (frontmatter field is read but not yet enforced) | **Later** | Trigger: operator wants "this employee can only use read_file, not bash" |
 
 ---
 
