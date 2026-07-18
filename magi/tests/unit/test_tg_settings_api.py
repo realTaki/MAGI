@@ -74,13 +74,13 @@ def client(tg_settings_env):
 
 
 def test_config_default_when_unset(tg_settings_env):
-    """No prior write → ``DEFAULT_REACTION_EMOJI`` (👀)."""
+    """No prior write → ``DEFAULT_READ_REACTION_EMOJI`` (👀)."""
     from magi.channels.telegram.config import (
-        DEFAULT_REACTION_EMOJI,
+        DEFAULT_READ_REACTION_EMOJI,
         get_read_reaction_emoji,
     )
 
-    assert get_read_reaction_emoji(str(tg_settings_env)) == DEFAULT_REACTION_EMOJI
+    assert get_read_reaction_emoji(str(tg_settings_env)) == DEFAULT_READ_REACTION_EMOJI
 
 
 def test_config_round_trip(tg_settings_env):
@@ -99,7 +99,7 @@ def test_config_falls_back_on_unknown_value(tg_settings_env):
     default rather than crashing the inbound handler.
     """
     from magi.channels.telegram.config import (
-        DEFAULT_REACTION_EMOJI,
+        DEFAULT_READ_REACTION_EMOJI,
         get_read_reaction_emoji,
     )
     from magi.agent.db.settings import state_set
@@ -110,7 +110,7 @@ def test_config_falls_back_on_unknown_value(tg_settings_env):
     # previous config version doesn't silently 400 every
     # inbound message.
     state_set(str(tg_settings_env), "tg.read_reaction_emoji", "✅")
-    assert get_read_reaction_emoji(str(tg_settings_env)) == DEFAULT_REACTION_EMOJI
+    assert get_read_reaction_emoji(str(tg_settings_env)) == DEFAULT_READ_REACTION_EMOJI
 
 
 def test_config_rejects_emoji_not_in_tg_whitelist(tg_settings_env):
@@ -142,7 +142,10 @@ def test_config_reaction_choices_distinct():
 
     values = [v for v, _ in REACTION_CHOICES]
     assert len(values) == len(set(values))
-    assert len(values) == 5  # pin the surface
+    # Pin the surface — if a future change adds or removes
+    # an entry, this test fires so the author consciously
+    # re-checks the WebUI radio group layout.
+    assert len(values) == 10  # 5 read-side + 5 done-side
 
 
 def test_config_reaction_choices_human_labels_present():
@@ -172,7 +175,7 @@ def test_get_returns_current_and_choices(client):
     assert "choices" in data
     # No prior write → current == default.
     assert data["current"] == data["default"]
-    assert len(data["choices"]) == 5
+    assert len(data["choices"]) == 10
 
 
 def test_put_persists_and_returns_new_value(client, tg_settings_env):
@@ -258,3 +261,176 @@ def test_put_requires_admin(client):
         json={"emoji": "👀"},
     )
     assert r.status_code == 401
+
+
+# -- done-reaction: config module -----------------------------------------
+
+
+def test_done_config_default_when_unset(tg_settings_env):
+    """No prior write → ``DEFAULT_DONE_REACTION_EMOJI`` (🏆).
+
+    The done reaction defaults to a "task complete" emoji
+    because the user asked for that semantic; 🏆 is the
+    closest match in Telegram's reaction whitelist (✅
+    isn't available there).
+    """
+    from magi.channels.telegram.config import (
+        DEFAULT_DONE_REACTION_EMOJI,
+        get_done_reaction_emoji,
+    )
+
+    assert get_done_reaction_emoji(str(tg_settings_env)) == DEFAULT_DONE_REACTION_EMOJI
+
+
+def test_done_config_round_trip(tg_settings_env):
+    """Set then read returns the same value. Independent of
+    the read-reaction setting — the two keys must not
+    collide."""
+    from magi.channels.telegram.config import (
+        get_done_reaction_emoji,
+        get_read_reaction_emoji,
+        set_done_reaction_emoji,
+        set_read_reaction_emoji,
+    )
+
+    set_read_reaction_emoji(str(tg_settings_env), "👀")
+    set_done_reaction_emoji(str(tg_settings_env), "💯")
+    # Reading each key returns only its own value.
+    assert get_read_reaction_emoji(str(tg_settings_env)) == "👀"
+    assert get_done_reaction_emoji(str(tg_settings_env)) == "💯"
+
+
+def test_done_config_falls_back_on_unknown_value(tg_settings_env):
+    """A hand-edited / corrupted done key falls back to the
+    default rather than crashing the inbound handler —
+    mirrors :func:`test_config_falls_back_on_unknown_value`
+    for the read key.
+    """
+    from magi.channels.telegram.config import (
+        DEFAULT_DONE_REACTION_EMOJI,
+        get_done_reaction_emoji,
+    )
+    from magi.agent.db.settings import state_set
+
+    state_set(str(tg_settings_env), "tg.done_reaction_emoji", "✅")
+    assert get_done_reaction_emoji(str(tg_settings_env)) == DEFAULT_DONE_REACTION_EMOJI
+
+
+def test_done_choices_share_whitelist_with_read():
+    """Both reactions share ``REACTION_CHOICES`` because
+    Telegram has a single reaction whitelist. Any future
+    extension must add to this one list — not create a
+    second allowlist that would let the operator pick
+    an emoji the SDK can't send.
+    """
+    from magi.channels.telegram.config import (
+        REACTION_CHOICES,
+        get_done_reaction_emoji,
+    )
+
+    # If a future change adds a "done-only" emoji, this
+    # assertion fires and forces the test author to
+    # consciously split the allowlist.
+    assert all(v in {x for x, _ in REACTION_CHOICES} for v in ("👀", "🏆"))
+
+
+# -- done-reaction: API surface ------------------------------------------
+
+
+def test_done_get_returns_current_and_choices(client):
+    r = client.get("/api/tg-settings/done-reaction")
+    assert r.status_code == 200
+    data = r.json()
+    assert "current" in data
+    assert "default" in data
+    assert "choices" in data
+    assert data["current"] == data["default"]
+    # Same choice count as the read endpoint — they share
+    # the same underlying allowlist.
+    assert len(data["choices"]) == len(
+        client.get("/api/tg-settings/read-reaction").json()["choices"]
+    )
+
+
+def test_done_put_persists_and_returns_new_value(client, tg_settings_env):
+    """``PUT`` saves through the config module and echoes
+    the new current."""
+    r = client.put(
+        "/api/tg-settings/done-reaction",
+        json={"emoji": "💯"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["current"] == "💯"
+
+    from magi.channels.telegram.config import get_done_reaction_emoji
+    assert get_done_reaction_emoji(str(tg_settings_env)) == "💯"
+
+
+def test_done_put_rejects_emoji_not_in_allowlist(client):
+    """Same allowlist enforcement as the read reaction —
+    see :func:`test_put_rejects_unicode_that_isnt_in_tg_reaction_whitelist`."""
+    # 🦄 is in the TG whitelist but not in our 10 user-facing
+    # choices.
+    r = client.put(
+        "/api/tg-settings/done-reaction",
+        json={"emoji": "🦄"},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.unknown_reaction_emoji"
+
+    # ✅ is the user's semantic preference but Telegram
+    # rejects it as a reaction — the allowlist catches it.
+    r = client.put(
+        "/api/tg-settings/done-reaction",
+        json={"emoji": "✅"},
+    )
+    assert r.status_code == 400
+
+
+def test_done_put_rejects_empty_emoji(client):
+    """Empty string → 422 (Pydantic ``min_length=1``)."""
+    r = client.put(
+        "/api/tg-settings/done-reaction",
+        json={"emoji": ""},
+    )
+    assert r.status_code == 422
+
+
+def test_done_get_requires_admin(client):
+    """Cookie-less caller → 401."""
+    from magi.channels.webui.app import create_app
+    from fastapi.testclient import TestClient
+
+    bare = TestClient(create_app())
+    r = bare.get("/api/tg-settings/done-reaction")
+    assert r.status_code == 401
+
+
+def test_done_put_requires_admin(client):
+    """Same admin gate on PUT."""
+    from magi.channels.webui.app import create_app
+    from fastapi.testclient import TestClient
+
+    bare = TestClient(create_app())
+    r = bare.put(
+        "/api/tg-settings/done-reaction",
+        json={"emoji": "🏆"},
+    )
+    assert r.status_code == 401
+
+
+def test_read_and_done_puts_are_independent(client, tg_settings_env):
+    """Saving the read reaction must not touch the done
+    reaction (and vice versa). The two ``set_*`` paths
+    write to separate meta keys."""
+    client.put("/api/tg-settings/read-reaction", json={"emoji": "🤝"})
+    client.put("/api/tg-settings/done-reaction", json={"emoji": "💯"})
+
+    from magi.channels.telegram.config import (
+        get_done_reaction_emoji,
+        get_read_reaction_emoji,
+    )
+
+    assert get_read_reaction_emoji(str(tg_settings_env)) == "🤝"
+    assert get_done_reaction_emoji(str(tg_settings_env)) == "💯"
