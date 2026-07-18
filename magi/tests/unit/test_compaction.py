@@ -277,7 +277,7 @@ def test_build_messages_from_session_no_session_returns_one_user_msg(
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
-    msgs = _build_messages_from_session(state_dir, "9001", None, "hi")
+    msgs, _seen = _build_messages_from_session(state_dir, "9001", None, "hi")
     assert len(msgs) == 1
     assert msgs[0].role == "user"
     assert msgs[0].content == "hi"
@@ -321,7 +321,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
         ))
         db.commit()
 
-    msgs = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
+    msgs, _seen = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
 
     # 3 active messages + 1 new = 4 total. Archive excluded.
     assert len(msgs) == 4
@@ -366,7 +366,7 @@ def test_build_messages_from_session_does_not_load_archive(
     ]
     store._write(sess)
 
-    msgs = _build_messages_from_session(state_dir, "9001", sess.session_id, "new")
+    msgs, _seen = _build_messages_from_session(state_dir, "9001", sess.session_id, "new")
     # 1 active + 1 new = 2, NOT 4 (archive excluded).
     assert len(msgs) == 2
     joined = " ".join(m.content for m in msgs)
@@ -391,7 +391,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
                        ts="t", message_id="m1"),
     ])
 
-    msgs = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
+    msgs, _seen = _build_messages_from_session(str(fresh_db), "9001", sess.session_id, "new")
     assert len(msgs) == 2
     assert msgs[0].role == "user"
     assert msgs[0].content == "legacy msg"
