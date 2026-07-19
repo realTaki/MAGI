@@ -6,6 +6,37 @@ inside a checkpoint (e.g. D.0, D.6, D.17, D.18) are drops
 and tracked in the changelog / commit history, not in this
 file.
 
+## Status snapshot (2026-07-19)
+
+| Stage | Done / Partial / Next | Headline |
+|---|---|---|
+| C0 — first-touch deploy | **Done** | WebUI + TG + SQLite + ORM, end-to-end |
+| C1.1 — schema baseline | **Done** | ORM + FTS5 + default-root seed |
+| C1.2 — employee lifecycle | **Done** | Full CRUD + per-employee LLM routing |
+| C1.3 — Alembic + WebUI completion | **Next** | Alembic baseline + `/api/eves` `/api/audit` `/api/login` still pending |
+| C2 — chat history | **~90%** | All CRUD/auto-compact/auto-title done; **TG self-serve `/start <code>` still pending**; D.22/D.23/D.24/interrupt/reactions landed |
+| C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-employee LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
+| C4 — per-employee persona + memory UI | **~30%** | `action_items.source="eve"` done; per-employee SOUL.md, memory-to-prompt wiring, memory management UI all pending |
+| C5 — more channels (Email + Calendar) | **0%** | Not started |
+| C6 — cross-MAGI + cross-employee | **~5%** | Role enum in place; `/api/eves/{id}/dispatch`, cross-employee query still pending |
+| C7 — WebSocket stream console | **0%** | Not started |
+| C8 — hardening (encryption, degraded mode, audit outbox) | **0%** | Not started |
+
+**Overall**: late C2 / early C3. The two biggest
+**Next** items are:
+
+1. **C3 dispatcher** — replace the C0 first-touch
+   handler with a real per-channel `asyncio.gather`,
+   wire per-employee LLM routing through the
+   dispatcher (currently bypassed via the cookie
+   resolution path), and stand up `/ingest/audit` +
+   `/ingest/heartbeat` for Adam↔EVE.
+2. **C4 memory-to-prompt** — call
+   `format_memory_block()` +
+   `format_contact_block()` + the session active
+   block from `loop.py`, then build the `/api/memory`
+   WebUI surface.
+
 The plan is reverse-engineered from code comments and
 runtime-config intent (C-stage names are referenced in
 docstrings, configuration keys, and module docstrings
@@ -52,6 +83,8 @@ stubbed or absent.
 | Memory subsystem (magi / contacts / session) | **Partial** | Tables + tools exist; agent loop doesn't render them yet |
 | Bash tool (run / output / kill) | **Done** | `magi/agent/tools/bash.py` |
 | File tools (read / write / list) | **Done** | `magi/agent/tools/{read_file,write_file,list_files}.py` |
+| `edit_file` tool (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 
 **Not in C0 (deferred):**
 
@@ -96,13 +129,14 @@ discipline C0 deliberately punted on).
 | `api/employees` router: full CRUD + assign to dept | **Done** | `magi/channels/webui/api/employees.py` |
 | Employee lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_employee.py` docstring |
 | `api/departments` manager picker v2 | **Later** | Current C1.1 picker is minimal; full picker scheduled in C1.2 + C1.3 |
+| Per-employee LLM provider routing (assigned → own key) | **Done** | `Employee.provider` + `Employee.api_key` are read by `loop.py` on each `handle_message`; admin row currently doubles as the per-employee key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
 
 | Item | Status | Notes |
 |---|---|---|
 | First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Next** | Multiple comments call this out: "end of C1.3" |
-| All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Next** | `app.py` lists them under "C1.2 — more routers" |
+| All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
 ---
@@ -121,6 +155,15 @@ end-to-end.
 | `chat_messages` table + FTS5 search (D.18) | **Done** | `memory/session/tables.py` + `migrations.py` FTS5 sync |
 | Auto-compact (D.17) — `archive` table + tail count | **Done** | `_maybe_compact` in `loop.py`; `archive` field on `Session`; `active_tail_count` snapshot |
 | Auto-title worker (D.7) | **Done** | `memory/session/auto_title.py` |
+| Session identity keyed by `Employee.id`, not chat_id (D.23) | **Done** | `SessionStore` first arg is `employee_id`; row carries `chat_id` as the per-channel delivery address; cross-channel read scope is "everything owned by this employee" |
+| Cross-channel session write guard (D.22) | **Done** | `SessionStore.append_messages` raises `ChannelMismatchError` when stored `channel != caller channel`; mapped to HTTP 403 `chat.session_channel_mismatch` in `chat.py` |
+| Cookie identity by `Employee.id`, not telegram_id (D.24) | **Done** | `magi_session` cookie = `str(employee.id)`; `_admin_employee_id` / `AdminGate` read by primary key; `/me` returns `{employee_id, telegram_id, display_name}` |
+| TG side: one persistent session per chat, auto-created | **Done** | `_resolve_or_create_tg_session` (D.10) |
+| TG inbound → session store before `handle_message` | **Done** | D.10/D.11 — channel-mismatch guard + audit trail before LLM call |
+| Interrupt-aware agent loop (D.21) | **Done** | `_drain_pending_user_messages` splices follow-up user messages into the live tool loop and resets `iterations_run` |
+| TG `concurrent_updates=True` (so interrupt poll has new messages to drain) | **Done** | Without this, python-telegram-bot's dispatcher serialises per-chat updates and the interrupt poll never fires |
+| `send_message` tool out-of-band channel | **Done** | TG `_handle_employee_message` injects a `tg_send_callback` into `handle_message`; tool calls `bot.send_message(chat_id, text)` |
+| TG inbound reactions: read-emoji + done-emoji | **Done** | Configurable via `/api/tg-settings/read-reaction` + `/done-reaction` (5 emoji each, validated against Telegram's `ReactionEmoji` whitelist); default 👀 / 🏆 |
 
 **Not in C2 (deferred):**
 
@@ -128,6 +171,7 @@ end-to-end.
   to a per-employee"`. Currently `SOUL.md` is
   workspace-global.
 - Cross-employee chat routing (C6+) — see C6.
+- Self-serve `/start <code>` — still admin-driven.
 
 ---
 
@@ -139,11 +183,11 @@ that talk to each other.
 | Item | Status | Notes |
 |---|---|---|
 | Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `node/__init__.py: "C3 will replace this with the real agent-loop dispatcher"` |
-| Multi-channel asyncio.gather for the runtime | **Next** | `node/__init__.py: "in C3 once the Telegram runtime exists (asyncio.gather)"` |
+| Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `node/__init__.py` |
 | `/ingest/audit` route (EVE → Adam) | **Next** | `app.py: "C3 — /ingest/audit, /ingest/heartbeat"` |
 | `/ingest/heartbeat` route (EVE → Adam) | **Next** | Same |
 | Adam ↔ EVE auth via `MAGI_SHARED_SECRET` | **Done** | `NodeConfig` knows the env vars; HTTP client + server impl lands in C3 |
-| Per-employee LLM provider routing (assigned → own key) | **Partial** | `Employee.provider` + `Employee.api_key` exist; C3 is when the dispatcher actually wires them per-employee |
+| Per-employee LLM provider routing (assigned → own key) | **Done** | `Employee.provider` + `Employee.api_key` are read by `loop.py` on each `handle_message`; admin row currently doubles as the per-employee key source |
 | Per-channel channel + dept policy (dept must be non-NULL) | **Later** | `engine.py: "C3 / C6 will likely require every employee to belong to a non-root department"` |
 
 ---
@@ -161,8 +205,8 @@ driven action items.
 | `action_items.source = "eve"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVE side writes them |
 | `action_items.priority = "high"` for time-sensitive follow-ups | **Done** | Same |
 | `action_items.payload_json` per-kind structured fields | **Later** | YAGNI for the rows we can foresee (per the model docstring); add when C4 needs structured per-kind fields |
-| Memory subsystem fully wired into `loop.py` prompt assembly | **Next** | Format functions exist; `loop.py` doesn't call them yet — see the "What's next" section below |
-| Memory management UI in WebUI (operator sees / edits / deletes rows) | **Next** | Currently the table is LLM-only; no `/api/memory` route |
+| Memory subsystem fully wired into `loop.py` prompt assembly | **Next** | Format functions exist (`format_memory_block` + `format_contact_block` + session active block); `loop.py` doesn't call them yet |
+| Memory management UI in WebUI (operator sees / edits / deletes rows) | **Next** | Currently the table is LLM-only; no `/api/memory` route; `KnowledgeTab` shows skills but not memory/contacts |
 | Per-employee settings (C4+ setting keys) | **Later** | `system_settings.py: "A future C4+ setting"` |
 
 ---
@@ -242,8 +286,143 @@ worst-day operational scenarios.
 | Skills — `load_skill` body section slicing (offset / limit) | **Later** | Trigger: skill body > 10 KB and LLM wants a specific section |
 | Skills — usage audit (which skills the LLM calls, how often) | **Later** | Trigger: operator wants to optimise the skill catalog (drop unused, expand popular) |
 | Skills — `allowed-tools` enforcement (frontmatter field is read but not yet enforced) | **Later** | Trigger: operator wants "this employee can only use read_file, not bash" |
+| Skills — `license` / `allowed_tools` / `metadata` optional frontmatter | **Done** | `magi/agent/memory/session/auto_title.py`-adjacent; skill loader reads these for display, not enforcement yet |
+| Settings UI consolidation (Agent loop + Auto-compact → one card) | **Done** | `SettingsAgentCard` replaces the two old cards; navPersona renamed to "个性化设置" |
+| WebUI LoginPage "用 Telegram ID 登录" subtitle | **Removed** | Future IM platforms won't all be TG |
 
 ---
+
+## Recent drops (post-ROADMAP, documented here for completeness)
+
+Work that landed after this file was last refreshed.
+Grouped by D.x number for cross-reference with the
+commit history.
+
+### D.10 / D.11 — TG session persistence + D.22 cross-channel guard
+
+- TG inbound messages persist to `chat_sessions` /
+  `chat_messages` (SQLite) BEFORE `handle_message`
+  runs, the same way WebUI does. One persistent
+  session per TG chat (`_resolve_or_create_tg_session`
+  reuses the most recent TG-owned session, mints a
+  new one otherwise).
+- **D.22 cross-channel write guard**:
+  `SessionStore.append_messages` raises
+  `ChannelMismatchError` when the stored row's
+  `channel != caller channel`. Read paths
+  (`get` / `list_summaries`) intentionally don't
+  gate by channel — same employee can browse TG
+  history from WebUI. The WebUI chat API maps the
+  exception to HTTP 403 `chat.session_channel_mismatch`.
+
+### D.17 — Auto-compact
+
+- Long sessions accumulate context; once the
+  in-memory message list crosses
+  `context_window × threshold_pct%`, the agent
+  loop calls the LLM to summarise older messages
+  into a single system message, archives the
+  originals, and keeps only the most recent N in
+  the active list. All three knobs are configurable
+  from the WebUI Settings → Agent 设置 panel.
+- FTS5 search still hits the active tail; archived
+  rows are forensic-only and require an opt-in
+  `include_archived=true` flag on the messages
+  endpoint.
+
+### D.18 — FTS5 search + sessions SQLite migration
+
+- `chat_messages` got an FTS5 virtual table with
+  the trigram tokenizer (CJK-friendly substring
+  matches).
+- The session store migrated from JSON files
+  under `<workspace>/memories/sessions/<chat_id>/`
+  to SQLite rows. Migration ran
+  `migrate_from_json` once at boot.
+
+### D.21 — Interrupt-aware agent loop
+
+- `_drain_pending_user_messages` polls the session
+  store at the top of every loop iteration; when a
+  new user message lands (because the channel
+  handler persisted it before calling
+  `handle_message`), it's spliced in at a safe
+  boundary in the tool_use / tool_result chain and
+  `iterations_run` is reset so the LLM gets a
+  fresh budget to react.
+- **TG side**: requires
+  `Application.builder().concurrent_updates(True)`
+  in `start_bot` — without it, python-telegram-bot
+  serialises per-chat updates at the dispatcher
+  level and the interrupt poll never has anything
+  new to drain (the second user message sits in the
+  bot's queue until the prior handler fully
+  returns). Test in `test_tg_concurrent_updates.py`.
+
+### D.23 — Session identity keyed by `Employee.id`
+
+- `SessionStore` first arg is `employee_id: int`,
+  not `chat_id: str`. `chat_id` is now keyword-only
+  on `create()` and stamps the per-channel delivery
+  address on the row's `tgid` column. This lets the
+  same Employee own sessions across channels (TG +
+  WebUI) with a single identity.
+- Read scope: anything whose `employee_id` matches
+  the caller (cross-channel by design — see Open
+  Question 7).
+- Write scope: cross-channel writes raise
+  `ChannelMismatchError` (D.22).
+
+### D.24 — Cookie identity by `Employee.id`
+
+- `magi_session` cookie value is `str(employee.id)`
+  (was `str(telegram_id)`). `AdminGate` reads by
+  primary key. `_employee_id_for_chat_id()` is the
+  helper that translates a TG chat_id → employee_id
+  for the login flow; `verify_login_code` then sets
+  the cookie to the looked-up employee id.
+- `/api/auth/me` returns `{employee_id, telegram_id,
+  display_name, is_super_admin}` — the operator's
+  cross-channel identity.
+
+### TG reactions (read-emoji + done-emoji)
+
+- TG inbound gets a configurable read-emoji
+  (default 👀) as soon as the handler starts;
+  replaced by a configurable done-emoji (default 🏆)
+  when the LLM reply lands. TG itself auto-clears
+  the prior reaction when a new one is set on the
+  same message — no need for a "clear then set"
+  two-step.
+- Whitelist of 5 emoji each, validated against
+  Telegram's `ReactionEmoji` enum at write time.
+  Configurable from `/api/tg-settings/read-reaction`
+  and `/done-reaction`.
+
+### Settings UI consolidation
+
+- "Agent 循环" + "自动压缩" merged into one card
+  "Agent 设置" (`SettingsAgentCard`). The two
+  sub-sections have independent state (their own
+  save buttons); no combined PUT.
+- "Persona" sidebar entry renamed to "个性化设置"
+  (the underlying `id` is unchanged for
+  back-compat).
+- LoginPage "用 Telegram ID 登录" subtitle removed
+  — future IM platforms won't all be TG.
+
+### `send_message` tool out-of-band channel
+
+- New tool: LLM can deliver an intermediate
+  message without ending the tool loop (e.g.
+  "Reading your SOUL..."). WebUI rejects with
+  `is_error=true` (operator already sees the
+  final reply inline). TG side requires the
+  channel handler to inject `tg_send_callback`
+  into `handle_message`'s kwargs; without it, the
+  tool returns "TG callback not wired into the
+  tool context". Test in
+  `test_tg_send_message_callback.py`.
 
 ## Open questions for the user
 
@@ -269,6 +448,31 @@ asking before sinking more time:
    deployer get the secret into the container?
    File-mounted? Env var? Vault? The encryption
    code needs an answer before the rollout.
+6. **D.24 cookie compatibility** — old cookies stored
+   `str(telegram_id)`; the new `str(employee.id)`
+   breaks existing sessions on upgrade. For dev this
+   is fine, but pre-production deploys need a
+   migration path (force re-login, or transparently
+   re-resolve `tgid → employee.id` on first request
+   that 401s on a `tgid`-shaped cookie). What's the
+   preferred approach?
+7. **D.23 cross-channel read vs write semantics** —
+   read paths (`get`, `list_summaries`,
+   `get_messages_page`) intentionally do **not**
+   gate by channel — the operator can browse their
+   TG history from the WebUI. This is currently
+   implicit in the store. C6 may want a UI toggle
+   ("WebUI sessions only / all sessions") to avoid
+   the surprise of seeing TG-only threads in the
+   WebUI sidebar. Worth deciding before the UI
+   grows around the implicit behaviour.
+8. **Skill hot-reload** — operator edits
+   `workspace/skills/<name>/SKILL.md`, currently
+   requires a MAGI restart to take effect. The
+   skill loader supports re-scan-on-boot; inotify /
+   polling is one-off cheap. Trigger: operator
+   complains "I edited the skill and it didn't pick
+   up".
 
 ---
 
