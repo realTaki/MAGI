@@ -438,6 +438,20 @@ async def _handle_employee_message(
         name=f"tg-typing-{update.effective_chat.id}",
     )
 
+    # ``send_message`` tool needs an out-of-band channel to
+    # the TG bot — the agent loop owns the bot reference
+    # (so the tool stays SDK-agnostic). Without this
+    # callback the tool returns
+    # "TG callback not wired into the tool context".
+    bot = update.get_bot()
+    chat_id_int = update.effective_chat.id
+
+    async def _tg_send_callback(to_chat_id: int, text_to_send: str) -> None:
+        await bot.send_message(
+            chat_id=to_chat_id,
+            text=text_to_send,
+        )
+
     try:
         reply = await handle_message(
             state_dir,
@@ -448,6 +462,7 @@ async def _handle_employee_message(
             employee_id=employee_id,
             employee_provider=employee_provider,
             employee_api_key=employee_api_key,
+            tg_send_callback=_tg_send_callback,
         )
     finally:
         # Always cancel — success, error, exception.
