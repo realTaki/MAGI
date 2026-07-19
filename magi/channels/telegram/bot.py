@@ -376,10 +376,13 @@ async def _handle_employee_message(
     # "inbound couldn't be persisted" below; the user gets
     # a generic reply so a misrouted message doesn't crash
     # the bot.
+    #
+    # D.23: the first argument is now ``employee_id`` (the
+    # session key, cross-channel), not the TG chat_id.
     ts_in = utcnow_iso()
     try:
         post = store.append_messages(
-            chat_id, session_id,
+            employee_id, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
@@ -440,6 +443,7 @@ async def _handle_employee_message(
             state_dir,
             text=text,
             channel="tg",
+            chat_id=chat_id,  # for ``_build_messages_from_session`` / D.21 interrupt poll
             session_id=session_id,
             employee_id=employee_id,
             employee_provider=employee_provider,
@@ -477,7 +481,7 @@ async def _handle_employee_message(
     ts_out = utcnow_iso()
     try:
         store.append_messages(
-            chat_id, session_id,
+            employee_id, session_id,
             [SessionMessage(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
@@ -532,42 +536,65 @@ def _resolve_or_create_tg_session(
 ) -> str:
     """Return the session id to use for the next TG message.
 
-    Policy (D.10): **one session per TG chat_id forever.**
+    Policy (D.10): **one TG session per TG chat_id forever.**
 
     We look up the most recent session for ``chat_id`` and
-    reuse it if it's still on disk and intact. Otherwise
-    we mint a fresh one. This matches what the user
-    experiences — they don't see a "new conversation" affordance
-    in the TG client, so the EVE should treat the chat as
-    a single ongoing thread.
+    reuse it **if it belongs to the TG channel**. The
+    cookie on WebUI is the same ``chat_id`` (the
+    employee's telegram_id), so the most-recent-session
+    could be a webui-created one — D.22's
+    :class:`ChannelMismatchError` would then reject the
+    inbound append, leaving the operator staring at a
+    "read" emoji with no reply. Skipping non-TG rows and
+    minting a fresh TG session closes that loop.
 
     A corrupt session file (truncated JSON) is skipped and
     triggers creation of a new one — we lose the corrupt
     thread's history but don't crash the inbound handler.
     """
     try:
-        summaries, _total = store.list_summaries(chat_id, limit=1, offset=0)
+        summaries, _total = store.list_summaries(employee_id, limit=1, offset=0)
     except Exception:
         logger.exception(
-            "telegram: session lookup failed for chat %s; minting fresh",
-            chat_id,
+            "telegram: session lookup failed for employee %s; minting fresh",
+            employee_id,
         )
         summaries = []
     if summaries:
-        # Verify the file is still readable (not corrupt).
-        # ``list_summaries`` silently skips corrupt files,
-        # so a hit here means the file parsed cleanly.
+        candidate_id = summaries[0].session_id
         try:
-            store.get(chat_id, summaries[0].session_id)
-            return summaries[0].session_id
+            sess = store.get(employee_id, candidate_id)
         except Exception:
             logger.exception(
-                "telegram: latest session %s for chat %s failed re-read; "
+                "telegram: latest session %s for employee %s failed re-read; "
                 "creating fresh",
-                summaries[0].session_id, chat_id,
+                candidate_id, employee_id,
             )
-    # No prior session (or it was corrupt) — mint a new one.
-    sess = store.create(chat_id, employee_id=employee_id, channel="tg")
+            sess = None
+        if sess is not None:
+            # D.22 channel-ownership guard. The most-recent
+            # session for this employee may belong to WebUI
+            # in which case the inbound append would
+            # :class:`ChannelMismatchError` and the user
+            # would see a "read" emoji with no reply.
+            # Minting a fresh TG session is the recovery
+            # path: the operator gets a new TG-side
+            # thread; the old webui session is left
+            # untouched for the WebUI session list.
+            if sess.channel == "tg":
+                return candidate_id
+            logger.info(
+                "telegram: latest session %s for employee %s is owned "
+                "by %r; minting a fresh TG session",
+                candidate_id, employee_id, sess.channel,
+            )
+    # No prior TG session (or none existed) — mint a new one.
+    # D.23: first arg is now employee_id; ``chat_id=`` is the
+    # per-channel delivery address stamped on the row's
+    # ``tgid`` column for outbound ``send_message`` later.
+    sess = store.create(
+        employee_id, channel="tg", chat_id=chat_id,
+    )
     return sess.session_id
 
 

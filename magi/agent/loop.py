@@ -195,7 +195,7 @@ def _record_token_usage(
 
 def _build_messages_from_session(
     state_dir: str,
-    chat_id: str,
+    employee_id: int,
     session_id: str | None,
     new_user_text: str,
 ) -> tuple[list["ChatMessage"], set[str]]:
@@ -208,12 +208,17 @@ def _build_messages_from_session(
     polls don't re-read them). ``sess.archive`` is
     intentionally NOT read; it's the forensic record and
     the LLM never sees it.
+
+    D.23: ``employee_id`` is the cross-channel session
+    key. The previous ``chat_id`` argument is gone — the
+    session is identified by who owns it, not by which
+    channel they happened to be on.
     """
     if not session_id:
         # No session: the inbound is its own message; no
         # history to track.
         return [ChatMessage(role="user", content=new_user_text)], set()
-    sess = SessionStore(state_dir).get(chat_id, session_id)
+    sess = SessionStore(state_dir).get(employee_id, session_id)
     if sess is None:
         return [ChatMessage(role="user", content=new_user_text)], set()
     out: list[ChatMessage] = []
@@ -258,7 +263,7 @@ def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
 
 def _drain_pending_user_messages(
     state_dir: str,
-    chat_id: str,
+    employee_id: int,
     session_id: str | None,
     messages: list["ChatMessage"],
     seen_message_ids: set[str],
@@ -301,12 +306,12 @@ def _drain_pending_user_messages(
     if not session_id:
         return False
     try:
-        sess = SessionStore(state_dir).get(chat_id, session_id)
+        sess = SessionStore(state_dir).get(employee_id, session_id)
     except Exception:
         logger.exception(
             "agent: store read failed during interrupt poll "
-            "(chat=%s, session=%s); continuing without drain",
-            chat_id, session_id,
+            "(employee=%s, session=%s); continuing without drain",
+            employee_id, session_id,
         )
         return False
     if sess is None:
@@ -334,8 +339,8 @@ def _drain_pending_user_messages(
 
     logger.info(
         "agent.interrupt: spliced %d new user message(s) into "
-        "in-flight loop (chat=%s, session=%s)",
-        len(new_user_texts), chat_id, session_id,
+        "in-flight loop (employee=%s, session=%s)",
+        len(new_user_texts), employee_id, session_id,
     )
     return True
 
@@ -420,7 +425,7 @@ def _employee_id_for_log(state_dir: str) -> int | None:
 
 async def _maybe_compact(
     state_dir: str,
-    chat_id: str,
+    employee_id: int,
     session_id: str | None,
     messages: list["ChatMessage"],
     *,
@@ -495,7 +500,7 @@ async def _maybe_compact(
     # summary to active, update active_tail_count and
     # last_compaction_at. Atomic write via _write().
     store = SessionStore(state_dir)
-    sess = store.get(chat_id, session_id)
+    sess = store.get(employee_id, session_id)
     if sess is None:
         return  # session disappeared mid-call; skip
     sess.archive.extend(_chat_to_session_message(m) for m in to_archive)
@@ -693,7 +698,7 @@ async def handle_message(
     # them. ``archive`` is NOT included — it's the forensic
     # record only.
     messages, seen_message_ids = _build_messages_from_session(
-        state_dir, chat_id, session_id, text,
+        state_dir, employee_id, session_id, text,
     )
 
     final_text = ""
@@ -721,7 +726,7 @@ async def handle_message(
             # to the new input rather than dying on the budget
             # of the previous turn.
             if _drain_pending_user_messages(
-                state_dir, chat_id, session_id,
+                state_dir, employee_id, session_id,
                 messages, seen_message_ids,
             ):
                 iterations_run = 0
@@ -737,7 +742,7 @@ async def handle_message(
             # history.
             await _maybe_compact(
                 state_dir,
-                chat_id,
+                employee_id,
                 session_id,
                 messages,
                 employee_provider=employee_provider or "",
