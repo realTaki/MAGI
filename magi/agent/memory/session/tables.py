@@ -121,7 +121,7 @@ class ChatSession(Base):
     def __repr__(self) -> str:
         return (
             f"ChatSession(session_id={self.session_id}, "
-            f"chat_id={self.chat_id}, title={self.title!r})"
+            f"tgid={self.tgid}, title={self.title!r})"
         )
 
 

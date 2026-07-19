@@ -440,3 +440,32 @@ def test_session_lock_is_now_a_noop():
     """
     from magi.agent.memory.session import session_lock
     assert session_lock("any-chat", "any-session") is None
+
+
+# --------------------------------------------------------------------------- #
+# 11. ChatSession.__repr__ doesn't blow up on the missing chat_id attr
+# --------------------------------------------------------------------------- #
+
+
+def test_chatsession_repr_uses_tgid(store):
+    """``ChatSession`` has a ``tgid`` column (D.23 renamed the
+    per-channel delivery address from ``chat_id`` to ``tgid``).
+    A previous ``__repr__`` mistakenly referenced
+    ``self.chat_id`` and crashed with ``AttributeError`` the
+    first time anything tried to log or debug-print a
+    session row. The fixed repr must round-trip via the
+    real column name."""
+    from magi.agent.db import ChatSession, open_session
+
+    s = store.create(1, chat_id="9001")
+    with open_session() as db:
+        row = db.get(ChatSession, s.session_id)
+    assert row is not None
+    text = repr(row)
+    # The repr must mention the tgid we set, not crash, and
+    # not silently drop to a half-formed string.
+    assert "tgid=9001" in text
+    assert "session_id=" in text
+    assert "title=" in text
+    # And it must not still be referencing the old field.
+    assert "chat_id=" not in text
