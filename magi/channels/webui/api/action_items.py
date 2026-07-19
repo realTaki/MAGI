@@ -215,24 +215,29 @@ def _current_admin_id(
     closed with a ``chat.unknown_sender`` 401 — the same
     code as chat.py, so the frontend's friendly
     "登录失效了" message handles both endpoints.
+
+    D.24: cookie carries ``employee.id`` (an int). Lookup
+    is by primary key, not by ``telegram_id`` — that
+    matched the pre-D.24 cookie (which carried a TG
+    chat_id), but with the employee-id cookie the
+    ``Employee.telegram_id == cid_int`` query only
+    matches by sheer coincidence.
     """
-    chat_id = request.cookies.get("magi_session") or ""
+    raw = request.cookies.get("magi_session") or ""
     try:
-        cid_int = int(chat_id)
+        employee_id = int(raw)
     except (TypeError, ValueError):
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this chat_id",
+            detail="no admin employee row bound to this session",
         )
-    emp = session.scalar(
-        select(Employee).where(Employee.telegram_id == cid_int)
-    )
+    emp = session.get(Employee, employee_id)
     if emp is None or emp.role != "admin":
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this chat_id",
+            detail="no admin employee row bound to this session",
         )
     return emp.id
 
