@@ -387,3 +387,114 @@ def test_search_sessions_schema_has_required_fields():
     assert "context_n" in props
     assert props["context_n"]["type"] == "integer"
     assert schema["input_schema"]["required"] == ["q"]
+
+
+# ────────────────────────────────────────────────────────────────── #
+# truncation footer
+# ────────────────────────────────────────────────────────────────── #
+#
+# The tool caps the rendered output at 8 KB. When the cap
+# is reached the response carries a footer summarising how
+# many hits were omitted. When nothing was truncated the
+# footer must be ABSENT — the previous code initialised the
+# sentinel to ``len(hits)`` and printed "N additional hits
+# omitted" on every successful search.
+
+
+@pytest.mark.asyncio
+async def test_search_sessions_no_truncation_omits_footer(fresh_db):
+    """A search with hits that fit comfortably under the 8 KB
+    cap must NOT include the truncation footer."""
+    state_dir, _ = fresh_db
+    _seed(
+        state_dir, chat_id="9001", employee_id=1, channel="webui",
+        messages=[
+            ("user", "hello world"),
+            ("assistant", "hi there"),
+        ],
+    )
+    ctx = _ctx(state_dir, chat_id="9001", employee_id=1)
+    result = await SearchSessionsTool().run(
+        ctx, q="hello", context_n=2,
+    )
+    assert result.is_error is False
+    # The footer text must be absent — nothing was truncated.
+    assert "additional hit" not in result.content
+    assert "omitted" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_search_sessions_truncation_footer_counts_correctly(
+    fresh_db,
+):
+    """When truncation fires the footer must report
+    ``len(hits) - len(blocks)`` hits omitted — not the
+    1-indexed ``i-1`` the buggy version used, and not
+    ``len(hits)`` (which would say "all hits were omitted"
+    even when half of them rendered)."""
+    state_dir, _ = fresh_db
+    # Seed MANY long messages per session, with a unique
+    # marker so the FTS query hits all of them. The tool's
+    # internal hit limit caps at 20; with 20 hits and a fat
+    # ``context_n`` each block easily crosses 8 KB.
+    from magi.agent.memory.session import (
+        SessionMessage, new_session_id,
+    )
+    from datetime import datetime, timezone
+
+    store = SessionStore(str(state_dir))
+    n_sessions = 20
+    for k in range(n_sessions):
+        sess = store.create(
+            1, chat_id="9001", channel="webui",
+        )
+        marker = f"uniquetoken-{k:04d}"
+        # Each session carries 200 padding messages so a
+        # ``context_n=200`` window inflates every block past
+        # 8 KB / 20 = ~400 bytes. Together they overflow
+        # the 8 KB output cap well before all 20 hits render.
+        padding = [
+            SessionMessage(
+                role="user",
+                text=("padding line " * 8),
+                ts=datetime.now(timezone.utc).isoformat(),
+                message_id=new_session_id(),
+            )
+            for _ in range(200)
+        ]
+        padding.append(SessionMessage(
+            role="user", text=f"hit {marker}",
+            ts=datetime.now(timezone.utc).isoformat(),
+            message_id=new_session_id(),
+        ))
+        store.append_messages(1, sess.session_id, padding)
+
+    ctx = _ctx(state_dir, chat_id="9001", employee_id=1)
+    result = await SearchSessionsTool().run(
+        ctx, q="uniquetoken", context_n=200, limit=20,
+    )
+    assert result.is_error is False
+    # Truncation must have fired.
+    assert "additional hit" in result.content, (
+        f"expected truncation footer; got content starting with "
+        f"{result.content[:200]!r}"
+    )
+    import re
+    m = re.search(r"…\((\d+) additional hit", result.content)
+    assert m is not None
+    omitted = int(m.group(1))
+    header_m = re.search(
+        r"returning (\d+) of (\d+)", result.content,
+    )
+    assert header_m is not None
+    rendered = int(header_m.group(1))
+    total = int(header_m.group(2))
+    assert total == n_sessions
+    assert rendered > 0
+    assert rendered < total, (
+        "test setup must trigger truncation; rendered == total"
+    )
+    assert omitted == total - rendered, (
+        f"footer says {omitted} omitted; expected {total - rendered} "
+        f"(total {total} - rendered {rendered})"
+    )

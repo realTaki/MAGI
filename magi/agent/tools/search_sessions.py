@@ -215,7 +215,14 @@ class SearchSessionsTool(Tool):
         # hits and append a clear summary line.
         blocks: list[str] = []
         bytes_used = 0
-        truncated_at = len(hits)
+        # Sentinel: ``None`` = "nothing was truncated". The
+        # previous initialiser used ``len(hits)``, which made
+        # every successful search report "N additional hits
+        # omitted" even when nothing was truncated — because
+        # ``if truncated_at:`` is truthy whenever ``len(hits) >
+        # 0``. The footer only makes sense once truncation has
+        # actually fired.
+        truncated_at: int | None = None
         for i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
                 hit, ctx.state_dir, context_n,
@@ -223,7 +230,11 @@ class SearchSessionsTool(Tool):
             )
             block_bytes = len(block.encode("utf-8"))
             if bytes_used + block_bytes > _MAX_OUTPUT_BYTES:
-                truncated_at = i - 1
+                # ``i`` is the 1-indexed position of the hit we
+                # *would have* rendered next; ``len(blocks)`` is
+                # the count we actually rendered. Everything
+                # from ``len(blocks)+1`` onwards is omitted.
+                truncated_at = len(hits) - len(blocks)
                 break
             blocks.append(block)
             bytes_used += block_bytes
