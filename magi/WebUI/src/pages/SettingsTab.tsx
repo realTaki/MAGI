@@ -1,5 +1,5 @@
 /**
- * SettingsTab — left-nav + 8 setting cards.
+ * SettingsTab — left-nav + 7 setting cards.
  *
  * Each card is its own component in
  * ``magi/WebUI/src/components/settings/``; this file is
@@ -32,13 +32,12 @@ import {
   IconScheduledTasks,
   IconSkills,
 } from "../components/icons";
+import { SettingsAgentCard } from "../components/settings/SettingsAgentCard";
 import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCard";
-import { SettingsCompactCard } from "../components/settings/SettingsCompactCard";
 import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
-import { SettingsToolLoopCard } from "../components/settings/SettingsToolLoopCard";
 import { SettingsWebuiAccessCard } from "../components/settings/SettingsWebuiAccessCard";
 import { useT } from "../i18n/index";
 import type { OnboardingData } from "./onboardingTypes";
@@ -48,8 +47,7 @@ export type SettingSection =
   | "persona"
   | "tg-read"
   | "tz"
-  | "tool-loop"
-  | "auto-compact"
+  | "agent"
   | "webui-access"
   | "onboarding";
 
@@ -58,8 +56,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "persona", label: "settings.navPersona", icon: <IconSkills /> },
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
-  { id: "tool-loop", label: "settings.navToolLoop", icon: <IconScheduledTasks /> },
-  { id: "auto-compact", label: "settings.navAutoCompact", icon: <IconScheduledTasks /> },
+  { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconEmployees /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
@@ -104,8 +101,7 @@ export default function SettingsTab(props: SettingsTabProps) {
         {section === "persona" && <SettingsPersonaCard />}
         {section === "tg-read" && <SettingsTgReadReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
-        {section === "tool-loop" && <SettingsToolLoopCard />}
-        {section === "auto-compact" && <SettingsCompactCard />}
+        {section === "agent" && <SettingsAgentCard />}
         {section === "webui-access" && (
           <SettingsWebuiAccessCard
             signedInUser={props.signedInUser}

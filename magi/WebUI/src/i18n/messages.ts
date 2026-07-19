@@ -52,11 +52,10 @@ const zh: Catalog = {
     heading: "设置",
     // Left-nav entries — order matches SettingsTab's render order.
     navChannels: "通道",
-    navPersona: "Persona",
+    navPersona: "个性化设置",
     navTgRead: "TG reaction",
     navTz: "系统时区",
-    navToolLoop: "Agent 循环",
-    navAutoCompact: "自动压缩",
+    navAgent: "Agent 设置",
     navWebuiAccess: "WebUI 访问",
     navOnboarding: "重新配置",
     // Console card titles on the Settings tab.
@@ -94,6 +93,8 @@ const zh: Catalog = {
     onboardingDesc: "重新跑一次初始配置向导（会重置已保存的 bot token + admin 列表）。",
     toolLoopDesc: "agent 循环在一次 /send 内最多调工具的次数。超过会强制结束当前轮。",
     autoCompactDesc: "agent 上下文累积到阈值后自动把老消息压缩为 summary，避免 LLM 上下文窗口溢出。",
+    agent: "Agent 设置",
+    agentDesc: "Agent 运行时的两个核心参数：单次 /send 内的 tool 调用次数上限，以及上下文累积到阈值后的自动压缩策略。",
     timezoneDesc: "用于把 token 用量按自然周 / 自然月聚合。下一条数据按新时区算。",
   },
   topbar: {
@@ -107,7 +108,6 @@ const zh: Catalog = {
   },
   login: {
     title: "MAGI 控制台",
-    subtitle: "用 Telegram ID 登录",
     chatIdLabel: "Telegram chat ID",
     chatIdPlaceholder: "例如 6240201712",
     sendCode: "发送验证码",
@@ -255,8 +255,7 @@ const en: Catalog = {
     navPersona: "Persona",
     navTgRead: "TG reaction",
     navTz: "Timezone",
-    navToolLoop: "Agent loop",
-    navAutoCompact: "Auto-Compact",
+    navAgent: "Agent",
     navWebuiAccess: "WebUI Access",
     navOnboarding: "Onboarding",
     registry: "Registry",
@@ -292,6 +291,8 @@ const en: Catalog = {
     onboardingDesc: "Re-run the onboarding wizard (resets the saved bot token + admin list).",
     toolLoopDesc: "Maximum number of tool calls the agent loop can make in a single /send turn. Going over forces the turn to end.",
     autoCompactDesc: "When accumulated context hits the threshold, MAGI summarises older messages to keep the LLM context window from overflowing.",
+    agent: "Agent",
+    agentDesc: "Two runtime knobs for the agent: the tool-call cap per /send turn, and the auto-compaction strategy once context accumulates.",
     timezoneDesc: "Used to bucket token usage by natural week / month. The next query uses the new timezone.",
   },
   topbar: {
@@ -305,7 +306,6 @@ const en: Catalog = {
   },
   login: {
     title: "MAGI Console",
-    subtitle: "Sign in with your Telegram ID",
     chatIdLabel: "Telegram chat ID",
     chatIdPlaceholder: "e.g. 6240201712",
     sendCode: "Send code",
@@ -445,11 +445,10 @@ const ja: Catalog = {
     navAria: "設定パネルのナビゲーション",
     heading: "設定",
     navChannels: "チャンネル",
-    navPersona: "Persona",
+    navPersona: "パーソナライズ",
     navTgRead: "TG reaction",
     navTz: "タイムゾーン",
-    navToolLoop: "Agent ループ",
-    navAutoCompact: "自動圧縮",
+    navAgent: "Agent 設定",
     navWebuiAccess: "WebUI アクセス",
     navOnboarding: "再設定",
     registry: "Registry",
@@ -485,6 +484,8 @@ const ja: Catalog = {
     onboardingDesc: "オンボーディングウィザードを再実行します（保存済みの bot token + admin リストがリセットされます）。",
     toolLoopDesc: "1 回の /send ターンで agent loop がツールを呼び出せる最大回数。超過するとターンが強制終了されます。",
     autoCompactDesc: "蓄積コンテキストが閾値に達すると古いメッセージを要約して、LLM のコンテキストウィンドウ溢れを防ぎます。",
+    agent: "Agent 設定",
+    agentDesc: "Agent のランタイム設定：/send 1 ターン内のツール呼び出し上限と、コンテキスト蓄積後の自動圧縮方針。",
     timezoneDesc: "トークン使用量を自然な週 / 月で集計するためのタイムゾーン。次回のクエリから新しいタイムゾーンが使われます。",
   },
   topbar: {
@@ -498,7 +499,6 @@ const ja: Catalog = {
   },
   login: {
     title: "MAGI コンソール",
-    subtitle: "Telegram ID でログイン",
     chatIdLabel: "Telegram chat ID",
     chatIdPlaceholder: "例: 6240201712",
     sendCode: "コードを送信",
