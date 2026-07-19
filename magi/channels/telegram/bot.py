@@ -695,7 +695,37 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         return None
 
     username = state_get(state_dir, "telegram.bot_username")
-    application = Application.builder().token(token).build()
+    # ``concurrent_updates=True`` lets a follow-up TG message
+    # for the same chat enter ``_on_message`` **while** the
+    # previous turn's ``handle_message`` is still in flight
+    # (still looping on tool calls). Without this, the
+    # python-telegram-bot runtime serialises per-chat updates
+    # at the dispatcher level, so a fresh user message that
+    # arrives mid-tool-chain sits in the bot's queue until the
+    # prior turn fully completes — D.21's interrupt poll
+    # (``_drain_pending_user_messages``) never has anything
+    # to drain, and the user sees "two separate batches of
+    # send_message calls" instead of the new message being
+    # spliced into the live loop. With concurrent updates
+    # on, the new inbound is persisted to the session store
+    # before the prior handler returns, so the next poll
+    # picks it up, resets the iteration counter, and the
+    # tool chain effectively starts fresh around the new
+    # input.
+    #
+    # The natural serialisation point is
+    # ``SessionStore.append_messages`` — concurrent appends
+    # are safe under SQLite's row-level locking (D.22 channel
+    # guard + D.23 employee scoping are already enforced
+    # there). The TG inbound handler remains cheap (one
+    # INSERT + the async bot.send_message), and the LLM
+    # call / tool chain runs to completion regardless.
+    application = (
+        Application.builder()
+        .token(token)
+        .concurrent_updates(True)
+        .build()
+    )
     application.add_handler(MessageHandler(filters.ALL, _on_message))
 
     async def _run_forever() -> None:
