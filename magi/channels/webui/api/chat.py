@@ -241,7 +241,13 @@ async def send_chat(
     session_id = payload.session_id
     if session_id:
         try:
-            existing = store.get(chat_id, session_id)
+            # D.23: session key is now ``employee_id`` (the
+            # cross-channel identity of the operator), not
+            # the cookie's chat_id. The chat_id is still
+            # carried on the row's ``tgid`` column for
+            # legacy / outbound-delivery reasons, but it is
+            # NOT a session key.
+            existing = store.get(employee_id, session_id)
         except SessionPathError as e:
             raise MagiHTTPException(
                 status_code=400,
@@ -254,7 +260,13 @@ async def send_chat(
         if existing is None:
             session_id = None
     if not session_id:
-        sess = store.create(chat_id, employee_id=employee_id)
+        # ``chat_id=`` here is the per-channel delivery
+        # address stamped on the row's ``tgid`` column. For
+        # WebUI rows it's the cookie value (a legacy /
+        # outbound-delivery hint — see SessionStore.create).
+        sess = store.create(
+            employee_id, channel="webui", chat_id=chat_id,
+        )
         session_id = sess.session_id
 
     # Inbound audit + SQLite append happen atomically inside
@@ -270,7 +282,7 @@ async def send_chat(
     ts_in = _utcnow_iso()
     try:
         post = store.append_messages(
-            chat_id, session_id,
+            employee_id, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
@@ -359,7 +371,7 @@ async def send_chat(
     ts_out = _utcnow_iso()
     try:
         store.append_messages(
-            chat_id, session_id,
+            employee_id, session_id,
             [SessionMessage(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),

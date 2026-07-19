@@ -177,7 +177,7 @@ def test_drain_no_session_id_is_noop(state_dir: Path) -> None:
     msgs: list[ChatMessage] = []
     seen: set[str] = set()
     drained = _drain_pending_user_messages(
-        str(state_dir), "chat-x", None, msgs, seen,
+        str(state_dir), 0, None, msgs, seen,
     )
     assert drained is False
     assert msgs == []
@@ -191,9 +191,9 @@ def test_drain_returns_false_when_store_unchanged(
     ``seen`` — so the poll returns ``False`` and ``msgs``
     is untouched."""
     store = SessionStore(str(state_dir))
-    sess = store.create("c1", employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id="c1")
     store.append_messages(
-        "c1", sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="hi", ts=utcnow_iso(),
             message_id=new_session_id(),
@@ -203,7 +203,7 @@ def test_drain_returns_false_when_store_unchanged(
     seen = set()  # pretend we never saw it — drain should pick it up
 
     drained = _drain_pending_user_messages(
-        str(state_dir), "c1", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     # The store's message wasn't in ``seen`` so it was
     # picked up; not the "no change" path.
@@ -218,10 +218,10 @@ def test_drain_returns_false_when_seen_covers_everything(
     the store — i.e. the loop has already processed all
     user messages."""
     store = SessionStore(str(state_dir))
-    sess = store.create("c2", employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id="c2")
     mid = new_session_id()
     store.append_messages(
-        "c2", sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="hi", ts=utcnow_iso(),
             message_id=mid,
@@ -231,7 +231,7 @@ def test_drain_returns_false_when_seen_covers_everything(
     seen = {mid}
 
     drained = _drain_pending_user_messages(
-        str(state_dir), "c2", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     assert drained is False
     assert msgs == [ChatMessage(role="user", content="hi")]
@@ -243,9 +243,9 @@ def test_drain_splices_new_user_messages_in_order(
     """Two new user messages arrive between iterations;
     both land in the in-memory list, in store order."""
     store = SessionStore(str(state_dir))
-    sess = store.create("c3", employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id="c3")
     store.append_messages(
-        "c3", sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="first", ts=utcnow_iso(),
             message_id=new_session_id(),
@@ -255,14 +255,14 @@ def test_drain_splices_new_user_messages_in_order(
     seen = set()  # first poll, no ids seen yet
 
     drained = _drain_pending_user_messages(
-        str(state_dir), "c3", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     assert drained is True
     assert [m.content for m in msgs] == ["first", "first"]
 
     # Second batch arrives.
     store.append_messages(
-        "c3", sess.session_id,
+        1, sess.session_id,
         [
             SessionMessage(
                 role="user", text="second", ts=utcnow_iso(),
@@ -275,7 +275,7 @@ def test_drain_splices_new_user_messages_in_order(
         ],
     )
     drained = _drain_pending_user_messages(
-        str(state_dir), "c3", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     assert drained is True
     assert [m.content for m in msgs] == [
@@ -292,9 +292,9 @@ def test_drain_truncates_trailing_tool_blocks(
     API rejects a plain ``user`` text message interleaved
     with tool blocks."""
     store = SessionStore(str(state_dir))
-    sess = store.create("c4", employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id="c4")
     store.append_messages(
-        "c4", sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="search", ts=utcnow_iso(),
             message_id=new_session_id(),
@@ -321,7 +321,7 @@ def test_drain_truncates_trailing_tool_blocks(
     # will pick it up and the trailing tool blocks must
     # be truncated.
     drained = _drain_pending_user_messages(
-        str(state_dir), "c4", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     assert drained is True
     # Trailing tool blocks dropped; new user message lands
@@ -338,9 +338,9 @@ def test_drain_skips_new_assistant_rows(
     spliced into the in-memory list — that's the loop's
     own job, not the poller's."""
     store = SessionStore(str(state_dir))
-    sess = store.create("c5", employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id="c5")
     store.append_messages(
-        "c5", sess.session_id,
+        1, sess.session_id,
         [
             SessionMessage(
                 role="user", text="hi", ts=utcnow_iso(),
@@ -356,7 +356,7 @@ def test_drain_skips_new_assistant_rows(
     seen: set[str] = set()
 
     drained = _drain_pending_user_messages(
-        str(state_dir), "c5", sess.session_id, msgs, seen,
+        str(state_dir), 1, sess.session_id, msgs, seen,
     )
     # Both rows are new; only the user one is spliced.
     assert drained is True
@@ -484,9 +484,9 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # handle_message).
     chat_id = "interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(chat_id, employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id=chat_id)
     store.append_messages(
-        chat_id, sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="search for python",
             ts=utcnow_iso(), message_id=new_session_id(),
@@ -502,21 +502,24 @@ async def test_handle_message_picks_up_interrupting_user_message(
 
     inject_after = {"calls": 0}
 
-    def _get_with_interrupt(self, c: str, s: str) -> Any:
+    def _get_with_interrupt(self, employee_id: int, s: str) -> Any:
+        # D.23: the store's first positional arg is now
+        # ``employee_id`` (int), not a chat_id string. The
+        # patched signature mirrors that.
         inject_after["calls"] += 1
-        result = real_get(self, c, s)
+        result = real_get(self, employee_id, s)
         if result is not None and inject_after["calls"] >= 2:
             # Append the interrupting message if not yet.
             existing_ids = {m.message_id for m in result.messages}
             if not any(m.text == "actually search for rust" for m in result.messages):
                 self.append_messages(
-                    c, s,
+                    employee_id, s,
                     [SessionMessage(
                         role="user", text="actually search for rust",
                         ts=utcnow_iso(), message_id=new_session_id(),
                     )],
                 )
-                result = real_get(self, c, s)
+                result = real_get(self, employee_id, s)
         return result
 
     monkeypatch.setattr(store.__class__, "get", _get_with_interrupt)
@@ -543,7 +546,9 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # assistant reply (the channel-side writer does that
     # after handle_message returns), so we only check the
     # user rows here.
-    final = SessionStore(str(state_dir)).get(chat_id, sess.session_id)
+    # D.23: store key is employee_id (int), not the
+    # channel's chat_id string.
+    final = SessionStore(str(state_dir)).get(1, sess.session_id)
     assert final is not None
     user_texts = [m.text for m in final.messages if m.role == "user"]
     assert user_texts == [
@@ -567,9 +572,9 @@ async def test_handle_message_no_interrupt_works_normally(
 
     chat_id = "no-interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(chat_id, employee_id=1, channel="webui")
+    sess = store.create(1, channel="webui", chat_id=chat_id)
     store.append_messages(
-        chat_id, sess.session_id,
+        1, sess.session_id,
         [SessionMessage(
             role="user", text="list stuff",
             ts=utcnow_iso(), message_id=new_session_id(),

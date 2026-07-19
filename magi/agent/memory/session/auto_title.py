@@ -220,7 +220,11 @@ async def _summarize_to_title(job: TitleJob) -> None:
         state_dir = _state_dir_for_job()
         store = SessionStore(state_dir)
 
-        sess = store.get(job.chat_id, job.session_id)
+        # D.23: store key is the operator's employee_id, not
+        # the channel's chat_id. The latter is still on the
+        # job for outbound ``send_message`` later, but the
+        # store does its lookup by employee.
+        sess = store.get(job.employee_id, job.session_id)
         if sess is None:
             logger.info(
                 "title skipped: session gone",
@@ -304,8 +308,10 @@ async def _summarize_to_title(job: TitleJob) -> None:
         # read-then-write; with SQLite + ``BEGIN IMMEDIATE`` the
         # ``UPDATE … WHERE title IS NULL`` itself is atomic.
         try:
+            # D.23: store key is employee_id (see the
+            # matching get() call above).
             fresh = store.set_title_if_null(
-                job.chat_id, job.session_id, cleaned,
+                job.employee_id, job.session_id, cleaned,
                 bump_updated=True,
             )
         except Exception:

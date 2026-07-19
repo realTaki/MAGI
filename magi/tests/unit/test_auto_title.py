@@ -199,11 +199,11 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     )
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
     msg_id = _mk_id()
     store.append_messages(
-        "9001",
+        admin.id,
         sid,
         [SessionMessage(
             role="user",
@@ -226,7 +226,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     )
 
     # Title was written.
-    again = store.get("9001", sid)
+    again = store.get(admin.id, sid)
     assert again.title == "My first question"
     # D.18: title lives in the chat_sessions row, not a JSON file.
     from magi.agent.db import ChatSession, open_session
@@ -248,11 +248,11 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
 
     store.append_messages(
-        "9001", sid,
+        admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id=_mk_id(),
@@ -290,13 +290,13 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     # should see no first-user-message and bail without
     # calling the provider. (Match the real id from
     # ``create``.)
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
 
     await _summarize_to_title(TitleJob(
         chat_id="9001", session_id=sess.session_id, employee_id=admin.id,
         employee_provider="minimax", employee_api_key="fake-key",
     ))
-    assert store.get("9001", sess.session_id).title is None
+    assert store.get(admin.id, sess.session_id).title is None
     assert sum(len(p.calls) for p in providers) == 0
 
 
@@ -344,10 +344,10 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     monkeypatch.setattr(at_mod, "get_provider", _raising_factory)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
     store.append_messages(
-        "9001", sid,
+        admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
@@ -359,7 +359,7 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
         chat_id="9001", session_id=sid, employee_id=admin.id,
         employee_provider="minimax", employee_api_key="bad",
     ))
-    assert store.get("9001", sid).title is None  # title wasn't set
+    assert store.get(admin.id, sid).title is None  # title wasn't set
 
 
 @pytest.mark.asyncio
@@ -378,10 +378,10 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     monkeypatch.setattr(at_mod, "get_provider", _boom)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
     store.append_messages(
-        "9001", sid,
+        admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
@@ -393,7 +393,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
         chat_id="9001", session_id=sid, employee_id=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
-    assert store.get("9001", sid).title is None
+    assert store.get(admin.id, sid).title is None
 
 
 @pytest.mark.asyncio
@@ -405,10 +405,10 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="x" * 200)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
     store.append_messages(
-        "9001", sid,
+        admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
@@ -419,7 +419,7 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
         chat_id="9001", session_id=sid, employee_id=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
-    assert len(store.get("9001", sid).title) == 80
+    assert len(store.get(admin.id, sid).title) == 80
 
 
 @pytest.mark.asyncio
@@ -432,10 +432,10 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="")
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create("9001", employee_id=admin.id)
+    sess = store.create(admin.id, chat_id="9001")
     sid = sess.session_id
     store.append_messages(
-        "9001", sid,
+        admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
@@ -446,7 +446,7 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
         chat_id="9001", session_id=sid, employee_id=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
-    assert store.get("9001", sid).title is None
+    assert store.get(admin.id, sid).title is None
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -473,10 +473,10 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
     for _ in range(2):
-        sess = store.create("9001", employee_id=admin.id)
+        sess = store.create(admin.id, chat_id="9001")
         sid = sess.session_id
         store.append_messages(
-            "9001", sid,
+            admin.id, sid,
             [SessionMessage(
                 role="user", text="hi", ts="2026-07-03T10:00:00Z",
                 message_id=_mk_id(),

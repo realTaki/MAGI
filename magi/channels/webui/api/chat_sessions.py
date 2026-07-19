@@ -267,8 +267,17 @@ def create_session(
     before the first message).
     """
     employee_id = _admin_employee_id(request, store)
+    # D.23: ``chat_id`` is the per-channel delivery
+    # address stamped on the row's ``tgid`` column. We
+    # still carry the cookie's telegram_id here so a
+    # future cross-channel query tool can use the row's
+    # tgid to address the operator's TG bot. The store
+    # key, however, is ``employee_id`` — see
+    # :meth:`SessionStore.create`.
     chat_id = str(_resolve_chat_id(request))
-    sess = store.create(chat_id, employee_id=employee_id, channel="webui")
+    sess = store.create(
+        employee_id, channel="webui", chat_id=chat_id,
+    )
     return CreateSessionResponse(session_id=sess.session_id)
 
 
@@ -301,7 +310,15 @@ def list_sessions(
 
     chat_id = str(_resolve_chat_id(request))
     employee_id = _admin_employee_id(request, store)
-    items, total = store.list_summaries(chat_id, limit=limit, offset=offset)
+    # D.23: list scope is the operator's employee_id, not
+    # the cookie's chat_id. ``store.list_summaries``
+    # returns every row whose ``employee_id`` matches —
+    # webui, TG, and (in future) any other channel the
+    # operator owns. The frontend renders the channel
+    # alongside each row (D.22 added the field).
+    items, total = store.list_summaries(
+        employee_id, limit=limit, offset=offset,
+    )
     return SessionListOut(
         items=[
             _summary_to_out(i, employee_id=employee_id)
@@ -324,15 +341,15 @@ def get_session(
     store: SessionStoreDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    chat_id = str(_resolve_chat_id(request))
+    employee_id = _admin_employee_id(request, store)
     try:
-        sess = store.get(chat_id, session_id)
+        sess = store.get(employee_id, session_id)
     except SessionPathError as e:
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
-            "session get rejected (bad session_id %r from admin chat %s): %s",
-            session_id, chat_id, e,
+            "session get rejected (bad session_id %r from employee %s): %s",
+            session_id, employee_id, e,
         )
         raise MagiHTTPException(
             status_code=400,
@@ -370,8 +387,9 @@ def delete_session(
     older session list.
     """
     chat_id = str(_resolve_chat_id(request))
+    employee_id = _admin_employee_id(request, store)
     try:
-        removed = store.delete(chat_id, session_id)
+        removed = store.delete(employee_id, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -416,7 +434,7 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    chat_id = str(_resolve_chat_id(request))
+    employee_id = _admin_employee_id(request, store)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
@@ -430,7 +448,7 @@ def update_session(
 
         try:
             sess = store.rename(
-                chat_id, session_id, new_title, bump_updated=False
+                employee_id, session_id, new_title, bump_updated=False
             )
         except SessionPathError as e:
             raise MagiHTTPException(
@@ -461,7 +479,7 @@ def update_session(
     # 404 if the session vanished between the GET that
     # showed the row and this PATCH.
     try:
-        sess = store.get(chat_id, session_id)
+        sess = store.get(employee_id, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -536,7 +554,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    chat_id = str(_resolve_chat_id(request))
+    employee_id = _admin_employee_id(request, store)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic
@@ -551,7 +569,7 @@ def get_session_messages(
         offset = 0
     try:
         msgs, total_active, total_all = store.get_messages_page(
-            chat_id, session_id,
+            employee_id, session_id,
             limit=limit, offset=offset,
             include_archived=include_archived,
         )
@@ -567,7 +585,7 @@ def get_session_messages(
         # session doesn't exist (vs. an empty session).
         # Distinguishing the two cases: try ``store.get``
         # and 404 if it returns None.
-        sess = store.get(chat_id, session_id)
+        sess = store.get(employee_id, session_id)
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,

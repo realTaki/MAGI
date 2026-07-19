@@ -91,6 +91,7 @@ from magi.agent.memory.session.errors import (
 )
 from magi.agent.memory.session.ids import (
     _validate_chat_id,
+    _validate_employee_id,
     _validate_session_id,
     new_session_id,
     session_lock,
@@ -134,5 +135,6 @@ __all__ = [
     "migrate_from_json",
     # internal helpers exposed for sibling modules
     "_validate_chat_id",
+    "_validate_employee_id",
     "_validate_session_id",
 ]

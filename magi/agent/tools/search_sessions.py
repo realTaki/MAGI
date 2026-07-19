@@ -256,14 +256,18 @@ def _format_hit_block(hit, state_dir: str, context_n: int) -> str:
     and return just the snippet — the LLM gets a clear
     hint instead of misleading neighbours.
 
-    ``hit.tgid`` is the row's Telegram chat identifier —
-    used to scope the ``SessionStore.get`` call so we
-    don't accidentally fetch a different session that
-    happens to share the same id (defence in depth; the
-    store also checks internally).
+    ``hit.tgid`` is the row's Telegram chat identifier
+    (per-channel delivery address; carried on the row
+    since D.18). The :meth:`SessionStore.get` lookup is
+    scoped by ``ctx.employee_id`` (the search call
+    already resolved every hit to this employee) — the
+    store's defence-in-depth check on ``employee_id``
+    covers the cross-employee case.
     """
     # Locate the hit in either the active or archive list.
-    session = SessionStore(state_dir).get(hit.tgid, hit.session_id)
+    session = SessionStore(state_dir).get(
+        ctx.employee_id, hit.session_id,
+    )
     if session is None:
         # Race: hit was deleted between FTS5 hit and read.
         return (

@@ -34,6 +34,15 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 # no caller-visible change.
 _CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
+# D.23 — session identity is now ``employee_id: int`` (an
+# int coerced to its decimal string form on the wire), not
+# the channel-shaped ``chat_id``. ``_EMPLOYEE_ID_RE`` is the
+# validation regex for that new key; ``_CHAT_ID_RE`` is kept
+# for the D.18 JSON importer (``migration.py``) which still
+# uses the column's ``tgid`` value to build the legacy
+# ``<workspace>/memories/sessions/<tgid>/<sid>.json`` path.
+_EMPLOYEE_ID_RE = _re.compile(r"^[0-9]{1,19}$")
+
 
 def new_session_id(now_ms: int | None = None) -> str:
     """Return a 26-char Crockford-base32 ULID.
@@ -92,6 +101,39 @@ def _validate_chat_id(chat_id: str) -> None:
         raise ValueError(
             f"chat_id {chat_id!r} contains characters that are not "
             "safe as an identifier"
+        )
+
+
+def _validate_employee_id(employee_id) -> None:
+    """D.23 — the session key is now ``employee_id`` (int).
+
+    Accepted forms (all coerced to the same ``int``):
+
+      - ``int`` (preferred) — caller's ORM/cookie path.
+      - ``str`` of decimal digits — when crossing a JSON
+        boundary or a cookie that stores the id as a
+        stringified int (the cookie is currently a
+        ``telegram_id`` string, but a future "switch to
+        employee_id cookie" path will pass it through
+        here as a string).
+
+    The ``int`` form is checked first so a hand-crafted
+    caller that mistakenly passes a non-numeric string
+    raises with a clearer error message than a column-
+    overflow later.
+    """
+    if isinstance(employee_id, int):
+        if employee_id < 0:
+            raise ValueError(
+                f"employee_id {employee_id!r} must be non-negative"
+            )
+        return
+    if (
+        not isinstance(employee_id, str)
+        or not _EMPLOYEE_ID_RE.match(employee_id)
+    ):
+        raise ValueError(
+            f"employee_id {employee_id!r} is not a valid integer id"
         )
 
 
