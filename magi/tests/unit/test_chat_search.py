@@ -86,7 +86,9 @@ def seed_messages(search_env):
         counter["n"] += 1
         msg_id = f"m{chat_id}-{counter['n']:04d}"
         store = SessionStore(str(search_env))
-        sess = store.create(chat_id, employee_id=employee_id)
+        # D.23: first arg is employee_id, chat_id is the
+        # per-channel delivery address stamped on the row.
+        sess = store.create(employee_id, chat_id=chat_id)
         with open_session() as db:
             db.add(ChatMessage(
                 session_id=sess.session_id,
@@ -112,7 +114,7 @@ def client(search_env):
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", "9001")
+    c.cookies.set("magi_session", "1")
     return c
 
 
@@ -234,7 +236,9 @@ def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
     from fastapi.testclient import TestClient
 
     c = TestClient(create_app())
-    c.cookies.set("magi_session", "9002")
+    # D.24: cookie is the employee_id. Admin B is the
+    # second seeded employee → id=2.
+    c.cookies.set("magi_session", "2")
     r = c.get("/api/chat/search?q=shared-key-123")
     assert r.status_code == 200
     body = r.json()

@@ -7,15 +7,29 @@ Two-step flow (mirror of admin verification):
        same key namespace as a precaution.
 
     2. ``POST /api/auth/verify-login-code { chat_id, code }``
-       On match, sets the ``magi_session`` cookie to the chat_id and
-       returns 200. The cookie is HTTPOnly + SameSite=Lax; for C0 we
-       skip signed-cookie / token-store machinery (C8 hardening).
+       On match, sets the ``magi_session`` cookie to the
+       **employee_id** (stringified int) and returns 200. The cookie
+       is HTTPOnly + SameSite=Lax; for C0 we skip signed-cookie /
+       token-store machinery (C8 hardening).
 
-Authorization: ``GET /api/auth/me`` returns 200 + user info if the
-cookie's chat_id is in ``telegram.super_admins``; 401 otherwise. The
-``is_super_admin`` check is the only thing this endpoint relies on —
-we don't keep a separate users table, so "logging out" is just
-clearing the cookie (``POST /api/auth/logout``).
+Authorization model (D.24):
+  The cookie's value identifies the **employee**, not the
+  channel. The login input (``chat_id``) is a TG delivery
+  address; the cookie output is an employee id. An employee
+  can be bound to multiple channels — the cookie identity
+  stays stable across all of them. ``/me`` resolves the
+  cookie's employee id to the row and reports both
+  ``employee_id`` and ``telegram_id`` (the latter may be
+  ``None`` for admins who never bound a TG bot).
+
+  Reads (list / get sessions) are scoped by ``employee_id``
+  on the server side (see :class:`SessionStore` D.23) —
+  an employee sees their own history across every channel,
+  regardless of which one was used to create a given row.
+  Writes (continue-send / append) are still channel-owned
+  via D.22's :class:`ChannelMismatchError`: an employee can
+  only continue a conversation on the channel that
+  originally created it.
 """
 
 from __future__ import annotations
@@ -65,24 +79,29 @@ def _state_dir() -> str:
     return require_state_dir()
 
 
-def _super_admins() -> set[str]:
-    """Read the super-admin allowlist as a set of chat_id strings.
+def _super_admins() -> set[int]:
+    """Read the super-admin allowlist as a set of employee ids.
 
-    Source of truth: the ``employees`` table (rows with
-    ``role='admin'`` and a non-null ``telegram_id``). Falls
-    back to the legacy ``telegram.super_admins`` meta key
-    for state files written before the unified table landed
-    (C1.x). The fallback path is retired in C8.
+    The identity is now the **employee**, not the chat_id — an
+    employee with a bound TG chat_id is the same identity as
+    that same employee signing in via WebUI. The legacy
+    ``telegram.super_admins`` meta key (pre-D.24) stores
+    chat_ids; the fallback path resolves each legacy
+    chat_id to its current ``Employee.id`` so old state
+    files keep working.
+
+    Source of truth is the ``employees`` table (rows with
+    ``role='admin'``). The fallback path is retired in C8
+    once no production state still carries the legacy key.
     """
     state_dir = _state_dir()
-    result: set[str] = set()
+    result: set[int] = set()
     try:
         with open_session() as session:
             for emp in session.scalars(
                 select(Employee).where(Employee.role == "admin")
             ).all():
-                if emp.telegram_id is not None:
-                    result.add(str(emp.telegram_id))
+                result.add(emp.id)
         if result:
             return result
     except Exception:
@@ -99,7 +118,27 @@ def _super_admins() -> set[str]:
         return set()
     if not isinstance(parsed, list):
         return set()
-    return {str(x) for x in parsed}
+    # Legacy entries were telegram chat_ids (decimal digit
+    # strings). Resolve each to the current Employee.id via
+    # the ``telegram_id`` column so the cookie identity
+    # matches the new schema.
+    legacy_chat_ids: list[int] = []
+    for x in parsed:
+        try:
+            legacy_chat_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    if not legacy_chat_ids:
+        return set()
+    try:
+        with open_session() as session:
+            rows = session.scalars(
+                select(Employee).where(Employee.telegram_id.in_(legacy_chat_ids))
+            ).all()
+            return {emp.id for emp in rows}
+    except Exception:
+        logger.exception("super_admins: legacy meta lookup failed")
+        return set()
 
 
 # -- request / response schemas -----------------------------------------
@@ -113,9 +152,17 @@ class AllowedLoginAccount(BaseModel):
     employees with bound TG chat_ids. The frontend doesn't branch on
     the value today — it just uses it to disambiguate rows that
     happen to share a display name.
+
+    D.24: ``employee_id`` is the cross-channel identity that
+    will become the cookie value after the code verifies.
+    The frontend keeps sending ``chat_id`` on the verify
+    call (the wire format is unchanged) but the cookie
+    identity is the employee, so we surface the
+    employee_id alongside for future UI work.
     """
 
     chat_id: str
+    employee_id: int
     display_name: str | None = None
     role: str
 
@@ -145,7 +192,19 @@ class VerifyLoginCodeResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
-    chat_id: str
+    """Response of ``/me``.
+
+    D.24: the cookie is keyed by ``employee_id``, not
+    chat_id. The response surfaces the employee identity
+    so the frontend can display it directly; the
+    ``telegram_id`` is the per-channel delivery address
+    bound to this employee (may be ``None`` for admins
+    who never bound a TG bot) and is exposed for any
+    future "send to my TG" affordance.
+    """
+
+    employee_id: int
+    telegram_id: int | None = None
     display_name: str | None = None
     is_super_admin: bool = True  # for C0: the only kind of logged-in user
 
@@ -204,6 +263,31 @@ def _clear_login_code(chat_id: str) -> None:
     state_delete(_state_dir(), f"{_LOGIN_KEY}.{chat_id}")
 
 
+def _employee_id_for_chat_id(chat_id: str) -> int | None:
+    """Resolve a TG chat_id (the login input) to its employee id.
+
+    Returns ``None`` if the chat_id isn't bound to any
+    ``Employee`` row. The login flow uses this to translate
+    "what the user typed" into the cookie identity; the
+    cookie value is the employee_id (D.24) so a future
+    channel (Slack / WeChat) can resolve its own address
+    to the same identity.
+    """
+    try:
+        cid_int = int(chat_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        with open_session() as session:
+            emp = session.scalar(
+                select(Employee).where(Employee.telegram_id == cid_int)
+            )
+            return emp.id if emp is not None else None
+    except Exception:
+        logger.exception("login: telegram_id → employee lookup failed")
+        return None
+
+
 # -- endpoints ---------------------------------------------------------
 
 
@@ -239,15 +323,33 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     accounts: list[AllowedLoginAccount] = []
 
-    # 1. Super admins (wizard-configured).
-    for chat_id in sorted(_super_admins()):
+    # 1. Super admins (wizard-configured). The list now
+    # resolves employee ids → their bound TG chat_ids so
+    # the dropdown still shows the chat_id the user
+    # actually types on the login page. Admins without a
+    # TG binding can't be reached via the bot today; the
+    # ``/allowed-chat-ids`` response drops them rather
+    # than rendering an un-usable row.
+    admin_employee_ids = _super_admins()
+    admin_telegram_ids: dict[int, int] = {}
+    if admin_employee_ids:
+        with open_session() as session:
+            for emp in session.scalars(
+                select(Employee).where(Employee.id.in_(admin_employee_ids))
+            ).all():
+                if emp.telegram_id is not None:
+                    admin_telegram_ids[emp.id] = emp.telegram_id
+
+    for employee_id in sorted(admin_telegram_ids):
+        chat_id_int = admin_telegram_ids[employee_id]
+        chat_id = str(chat_id_int)
         display_name: str | None = None
         if bot_token:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.post(
                         f"https://api.telegram.org/bot{bot_token}/getChat",
-                        json={"chat_id": int(chat_id)},
+                        json={"chat_id": chat_id_int},
                     )
                 if resp.status_code == 200 and (resp.json().get("ok")):
                     chat = resp.json().get("result") or {}
@@ -263,6 +365,7 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
         accounts.append(
             AllowedLoginAccount(
                 chat_id=chat_id,
+                employee_id=employee_id,
                 display_name=display_name,
                 role="super_admin",
             )
@@ -296,20 +399,35 @@ async def send_login_code(
 ) -> SendLoginCodeResponse:
     """Send a 6-digit code to ``chat_id`` for login.
 
-    No-op if the chat_id isn't in the super-admins list — we don't
-    want random TG users to be able to spam a magic-link code into
-    the bot. The user-facing error in that case is identical to a
-    successful send (anti-enumeration), but the bot never sends a
-    message and no code is stored.
+    No-op if the chat_id isn't bound to a super-admin employee —
+    we don't want random TG users to be able to spam a
+    magic-link code into the bot. The user-facing error in
+    that case is identical to a successful send
+    (anti-enumeration), but the bot never sends a message
+    and no code is stored.
+
+    D.24: the input is still a TG chat_id (what the user
+    types), but the allowlist is now the **employee_id**.
+    We resolve the chat_id → employee_id once at the top,
+    then key the cooldown / code store by employee_id so
+    the lookup is independent of which channel the user
+    used to log in (a future Slack / IM channel will
+    resolve its own address to the same employee_id).
     """
     chat_id = payload.chat_id.strip()
     if not chat_id.lstrip("-").isdigit():
         return SendLoginCodeResponse(ok=False, error="chat_id must be numeric")
 
-    if chat_id not in _super_admins():
-        # Anti-enumeration: respond as if we sent, but no-op behind
-        # the scenes. The frontend shows the same "code sent" UX so
-        # an attacker can't probe which chat_ids are admins.
+    # Resolve chat_id → employee_id. The super-admin
+    # allowlist is keyed by employee_id; if the chat_id
+    # doesn't resolve to an admin employee, no code goes
+    # out.
+    employee_id = _employee_id_for_chat_id(chat_id)
+    if employee_id is None or employee_id not in _super_admins():
+        # Anti-enumeration: respond as if we sent, but no-op
+        # behind the scenes. The frontend shows the same
+        # "code sent" UX so an attacker can't probe which
+        # chat_ids are admins.
         logger.info(
             "login-code send: chat_id is not a super_admin; suppressed",
             extra={"chat_id": chat_id},
@@ -389,13 +507,24 @@ async def verify_login_code(
     payload: VerifyLoginCodeRequest,
     response: Response,
 ) -> VerifyLoginCodeResponse:
-    """Check the code, then set the session cookie on success."""
+    """Check the code, then set the session cookie on success.
+
+    D.24: the cookie value is the **employee_id**, not the
+    chat_id. The chat_id is still on the wire (it's what
+    the user typed and what the bot delivered the code
+    to) but the cookie identity is the cross-channel
+    employee — so signing in via WebUI works whether the
+    admin's only channel is the bot, or a future Slack,
+    or no chat channel at all (an admin who manages
+    other employees but never bound a TG bot).
+    """
     chat_id = payload.chat_id.strip()
     code = payload.code.strip()
     if not code.isdigit() or len(code) != 6:
         return VerifyLoginCodeResponse(ok=False, error="Code must be 6 digits")
 
-    if chat_id not in _super_admins():
+    employee_id = _employee_id_for_chat_id(chat_id)
+    if employee_id is None or employee_id not in _super_admins():
         # Anti-enumeration: same response as a wrong code.
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
@@ -423,21 +552,26 @@ async def verify_login_code(
     if str(stored.get("code", "")) != code:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
-    # Sign in: set the session cookie. For C0 the cookie value IS
-    # the chat_id — we trust the HTTPOnly flag to keep it client-side
-    # inaccessible, and the /me endpoint verifies the value is still
-    # in the super-admins list. C8 will replace with a signed token +
-    # a real session table.
+    # Sign in: set the session cookie. D.24 — the cookie
+    # value is the employee_id (cross-channel identity),
+    # not the chat_id. The HTTPOnly flag keeps it
+    # client-side inaccessible; the ``/me`` endpoint and
+    # every AdminGate lookup resolve it back to a live
+    # ``Employee`` row to gate access. C8 will replace
+    # this with a signed token + a real session table.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=chat_id,
+        value=str(employee_id),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
         # path="/" so every endpoint sees it
         path="/",
     )
-    logger.info("user signed in", extra={"chat_id": chat_id})
+    logger.info(
+        "user signed in",
+        extra={"chat_id": chat_id, "employee_id": employee_id},
+    )
     return VerifyLoginCodeResponse(ok=True)
 
 
@@ -455,14 +589,45 @@ async def me(
 ) -> MeResponse:
     """Return the current user, or 401 if no valid session.
 
-    "Valid" means: the cookie's chat_id is in ``telegram.super_admins``.
-    We don't bother fetching the display name here — the dashboard can
-    do that lazily once it knows the user is signed in.
+    "Valid" means: the cookie's employee_id resolves to a
+    row in ``employees`` with role='admin'. D.24 — the
+    cookie is the employee_id (cross-channel identity),
+    not the chat_id the user typed on the login page.
+    The ``telegram_id`` field in the response is the
+    bound TG chat id, looked up from the same row.
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
-    if not magi_session or magi_session not in _super_admins():
+    if not magi_session or not magi_session.isdigit():
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
-    return MeResponse(chat_id=magi_session, display_name=None)
+    employee_id = int(magi_session)
+    if employee_id not in _super_admins():
+        raise MagiHTTPException(
+            status_code=401, code="auth.not_signed_in", detail="Not signed in"
+        )
+    # We already proved the cookie is a valid admin
+    # employee_id; re-read the row to surface the
+    # telegram_id + display name. If the row has since
+    # been deleted (admin removed mid-session), we fall
+    # back to None — the cookie is still good for this
+    # request, just no metadata to enrich the response
+    # with.
+    try:
+        with open_session() as session:
+            emp = session.get(Employee, employee_id)
+        if emp is None:
+            return MeResponse(
+                employee_id=employee_id,
+                telegram_id=None,
+                display_name=None,
+            )
+        return MeResponse(
+            employee_id=emp.id,
+            telegram_id=emp.telegram_id,
+            display_name=emp.name,
+        )
+    except Exception:
+        logger.exception("me: employee lookup failed for cookie value")
+        return MeResponse(employee_id=employee_id)

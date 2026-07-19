@@ -70,8 +70,11 @@ def _seed(
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     store = SessionStore(str(state_dir))
+    # D.23: store key is employee_id (int); the chat_id arg
+    # is the per-channel delivery address stamped on the
+    # row's tgid column.
     sess = store.create(
-        chat_id, employee_id=employee_id, channel=channel,
+        employee_id, chat_id=chat_id, channel=channel,
     )
     msgs = [
         SessionMessage(
@@ -80,7 +83,7 @@ def _seed(
         )
         for role, text in messages
     ]
-    store.append_messages(chat_id, sess.session_id, msgs)
+    store.append_messages(employee_id, sess.session_id, msgs)
     return sess.session_id
 
 

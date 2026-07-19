@@ -128,7 +128,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
 
     sid1 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
     # Operator wipes the session.
-    store.delete("6240201712", sid1)
+    store.delete(42, sid1)
     with open_session() as db:
         assert db.query(ChatSession).filter_by(tgid="6240201712").count() == 0
 
@@ -171,14 +171,16 @@ def test_messages_persist_to_session(tg_session_env):
     store = SessionStore(state_dir)
 
     sid = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
-    store.append_messages("6240201712", sid, [
+    # D.23: store key is employee_id (int) — match what
+    # the helper used to mint the row.
+    store.append_messages(42, sid, [
         SessionMessage(
             role="user", text="hi",
             ts="2026-07-03T10:00:00Z",
             message_id=new_session_id(),
         ),
     ])
-    store.append_messages("6240201712", sid, [
+    store.append_messages(42, sid, [
         SessionMessage(
             role="assistant", text="hello!",
             ts="2026-07-03T10:00:05Z",
@@ -186,7 +188,7 @@ def test_messages_persist_to_session(tg_session_env):
         ),
     ])
 
-    fetched = store.get("6240201712", sid)
+    fetched = store.get(42, sid)
     assert fetched is not None
     roles = [m.role for m in fetched.messages]
     assert "user" in roles

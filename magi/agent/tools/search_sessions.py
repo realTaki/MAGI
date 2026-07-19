@@ -219,6 +219,7 @@ class SearchSessionsTool(Tool):
         for i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
                 hit, ctx.state_dir, context_n,
+                ctx.employee_id,
             )
             block_bytes = len(block.encode("utf-8"))
             if bytes_used + block_bytes > _MAX_OUTPUT_BYTES:
@@ -244,7 +245,7 @@ class SearchSessionsTool(Tool):
         return ToolResult(content=header + body + footer)
 
 
-def _format_hit_block(hit, state_dir: str, context_n: int) -> str:
+def _format_hit_block(hit, state_dir: str, context_n: int, employee_id: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
@@ -266,7 +267,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int) -> str:
     """
     # Locate the hit in either the active or archive list.
     session = SessionStore(state_dir).get(
-        ctx.employee_id, hit.session_id,
+        employee_id, hit.session_id,
     )
     if session is None:
         # Race: hit was deleted between FTS5 hit and read.

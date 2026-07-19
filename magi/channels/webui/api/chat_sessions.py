@@ -203,46 +203,71 @@ def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut
 # -- routes -----------------------------------------------------------------
 
 
-def _resolve_chat_id(request: Request) -> int:
-    """Resolve the cookie's chat_id (stringified as digits).
+def _telegram_id_str_for_employee_id(employee_id: int) -> str:
+    """Look up the operator's bound TG chat_id as a string.
 
-    Returns ``int`` so the path helper can match TG
-    chat_id semantics. Raises ``chat.unknown_sender`` 401 if
-    the cookie is missing or unparseable — same code as
-    chat.py so the frontend's friendly message covers both
-    endpoints.
+    D.24: the cookie identity is the employee_id, but
+    ``SessionStore.create`` still takes a ``chat_id=``
+    keyword that stamps the per-channel delivery address
+    on the row's ``tgid`` column. WebUI rows that
+    originated here get the operator's bound TG chat id
+    (or ``""`` if the operator never bound one) so future
+    cross-channel tooling can still address the bot.
+
+    Cheap one-shot ORM read — the row is already in the
+    session cache by the time we get here from the
+    AdminGate / cookie checks above.
+    """
+    with open_session() as session:
+        emp = session.get(Employee, employee_id)
+    if emp is None or emp.telegram_id is None:
+        return ""
+    return str(emp.telegram_id)
+
+
+def _resolve_employee_id(request: Request) -> int:
+    """Resolve the cookie's ``magi_session`` value to the
+    current employee's id.
+
+    D.24: the cookie carries the **employee_id** (stringified
+    int) — not the TG chat_id. This helper is the single
+    place that translates "what's in the cookie" into
+    "who is the caller" for the rest of the chat_sessions
+    router. Raises ``chat.unknown_sender`` 401 if the
+    cookie is missing or unparseable — same code as
+    chat.py so the frontend's friendly message covers
+    both endpoints.
     """
     raw = request.cookies.get("magi_session") or ""
     try:
-        cid = int(raw)
+        eid = int(raw)
     except (TypeError, ValueError):
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this chat_id",
+            detail="no signed-in employee",
         )
-    return cid
+    return eid
 
 
 def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
-    """Resolve the cookie's chat_id to its admin employee id.
+    """Resolve the cookie to its admin employee id and
+    gate by role.
 
-    Same check as ``action_items._current_admin_id``: the
-    cookie's chat_id must resolve to an ``Employee`` row
-    with ``role='admin'``. ``AdminGate`` already proved
-    this, but defending again here keeps this router
+    D.24: the cookie value IS the employee_id (no
+    telegram_id lookup needed). ``AdminGate`` already
+    proved the cookie is a live admin session; this
+    helper re-verifies the role to keep the router
     self-contained if a future caller skips the gate.
     """
-    chat_id = _resolve_chat_id(request)
+    employee_id = _resolve_employee_id(request)
     with open_session() as session:
-        emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == chat_id)
-        )
+        emp = session.get(Employee, employee_id)
     if emp is None or emp.role != "admin":
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this chat_id",
+            detail="no admin employee row bound to this session",
         )
     return emp.id
 
@@ -274,7 +299,7 @@ def create_session(
     # tgid to address the operator's TG bot. The store
     # key, however, is ``employee_id`` — see
     # :meth:`SessionStore.create`.
-    chat_id = str(_resolve_chat_id(request))
+    chat_id = _telegram_id_str_for_employee_id(employee_id)
     sess = store.create(
         employee_id, channel="webui", chat_id=chat_id,
     )
@@ -308,7 +333,6 @@ def list_sessions(
     if offset < 0:
         offset = 0
 
-    chat_id = str(_resolve_chat_id(request))
     employee_id = _admin_employee_id(request, store)
     # D.23: list scope is the operator's employee_id, not
     # the cookie's chat_id. ``store.list_summaries``
@@ -386,7 +410,6 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    chat_id = str(_resolve_chat_id(request))
     employee_id = _admin_employee_id(request, store)
     try:
         removed = store.delete(employee_id, session_id)

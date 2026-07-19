@@ -124,7 +124,7 @@ def _reset_orm_engine():
 
 def _admin_cookie(admin: Employee) -> dict:
     """Cookie payload for the admin route."""
-    return {"magi_session": str(admin.telegram_id)}
+    return {"magi_session": str(admin.id)}
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -251,7 +251,9 @@ def test_send_without_session_id_autocreates(client, admin):
         # session_path requires the workspace_root to match.
         # Force-recompute via the global env-var path which
         # is the one SessionStore uses.
-        s = store.get("9001", sid)
+        # D.23: store key is the operator's employee_id,
+        # not the chat_id string the admin cookie carries.
+        s = store.get(admin.id, sid)
         assert s is not None
         # Either one user message (if LLM was hit) or user+assistant
         # (which is the production case). We accept any of those
@@ -331,21 +333,27 @@ def test_chat_ids_isolated(client, state):
         s.commit()
 
     # Alice creates two sessions, Bob one.
+    # D.24: cookie is the employee_id. Alice and Bob
+    # were seeded after the fixture's primary admin
+    # (id=1), so they're id=2 and id=3 in
+    # auto-increment order.
+    alice_id = 2
+    bob_id = 3
     for _ in range(2):
         client.post(
             "/api/chat/sessions",
-            cookies={"magi_session": "9101"},
+            cookies={"magi_session": str(alice_id)},
         )
     client.post(
         "/api/chat/sessions",
-        cookies={"magi_session": "9102"},
+        cookies={"magi_session": str(bob_id)},
     )
 
     a_list = client.get(
-        "/api/chat/sessions", cookies={"magi_session": "9101"}
+        "/api/chat/sessions", cookies={"magi_session": str(alice_id)}
     ).json()
     b_list = client.get(
-        "/api/chat/sessions", cookies={"magi_session": "9102"}
+        "/api/chat/sessions", cookies={"magi_session": str(bob_id)}
     ).json()
     assert a_list["total"] == 2
     assert b_list["total"] == 1
@@ -357,7 +365,7 @@ def test_chat_ids_isolated(client, state):
     # And Alice can't read Bob's session by guessing the id.
     b_sid = next(iter(b_ids))
     r = client.get(
-        f"/api/chat/sessions/{b_sid}", cookies={"magi_session": "9101"}
+        f"/api/chat/sessions/{b_sid}", cookies={"magi_session": str(alice_id)}
     )
     # Either 404 (Alice's chat_id dir doesn't have b_sid file)
     # OR 200 with b's content (if the path overlaps — but with

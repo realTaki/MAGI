@@ -66,7 +66,7 @@ def client(tg_settings_env):
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", "9001")
+    c.cookies.set("magi_session", "1")
     return c
 
 
