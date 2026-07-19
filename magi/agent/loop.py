@@ -389,7 +389,7 @@ async def _call_llm_for_summary(
     except Exception as e:
         logger.exception(
             "compact: LLM call failed (employee=%s); skipping",
-            employee_id_for_log(state_dir),
+            _employee_id_for_log(state_dir),
         )
         return None
 
@@ -903,41 +903,3 @@ async def handle_message(
         },
     )
     return final_text or _fallback_reply()
-
-    # D.15 — per-employee token accounting. Every chat
-    # call in v0 has a concrete ``employee_id`` — both
-    # channel paths (WebUI cookie admin + TG bound
-    # employee) resolve to a row before reaching the LLM.
-    # The FK NOT NULL on ``token_usage.employee_id``
-    # surfaces any future channel that arrives without a
-    # ``chat_id`` → ``Employee`` mapping. Failure here is
-    # logged but does NOT raise: a missing token_usage
-    # row is a statistical gap, not a user-visible
-    # failure mode.
-    try:
-        _record_token_usage(
-            state_dir,
-            employee_id=employee_id,
-            channel=channel,
-            provider=provider.name,
-            model=result.model,
-            usage=result.usage or {},
-        )
-    except Exception:
-            logger.exception(
-                "agent: token_usage insert failed (employee=%s, "
-                "channel=%s); chat reply already succeeded",
-                employee_id, channel,
-            )
-    logger.info(
-        "llm reply",
-        extra={
-            "employee_id": employee_id,
-            "channel": channel,
-            "provider": provider.name,
-            "model": result.model,
-            "text_len": len(result.text),
-            "thinking_len": len(result.thinking) if result.thinking else 0,
-        },
-    )
-    return result.text
