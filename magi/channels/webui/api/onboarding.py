@@ -37,6 +37,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from magi.agent.db import require_state_dir
+
 logger = logging.getLogger("magi.api.onboarding")
 
 router = APIRouter(tags=["onboarding"])
@@ -164,7 +166,7 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
-    from magi.agent.db import Employee, open_session, require_state_dir
+    from magi.agent.db import Employee, open_session
     from magi.agent.db.settings import state_get
 
     state_dir = _state_dir()
