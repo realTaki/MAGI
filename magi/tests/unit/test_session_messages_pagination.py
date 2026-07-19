@@ -71,7 +71,9 @@ def _seed_messages(store, chat_id: str, count: int) -> str:
     """
     from magi.agent.memory.session import SessionMessage, new_session_id
 
-    sess = store.create(chat_id, employee_id=1)
+    # D.23: store key is employee_id (int); chat_id is the
+    # per-channel delivery address stamped on the row.
+    sess = store.create(1, chat_id=chat_id)
     msgs = [
         SessionMessage(
             role="user", text=f"msg-{i}",
@@ -80,7 +82,7 @@ def _seed_messages(store, chat_id: str, count: int) -> str:
         )
         for i in range(count)
     ]
-    store.append_messages(chat_id, sess.session_id, msgs)
+    store.append_messages(1, sess.session_id, msgs)
     return sess.session_id
 
 
@@ -98,7 +100,7 @@ def test_get_messages_page_returns_tail_slice(admin_env):
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, total_all = store.get_messages_page(
-        "9001", sid, limit=2, offset=0,
+        1, sid, limit=2, offset=0,
     )
     assert total_active == 5
     assert total_all == 5
@@ -117,7 +119,7 @@ def test_get_messages_page_offset_skips_newest(admin_env):
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, _ = store.get_messages_page(
-        "9001", sid, limit=2, offset=2,
+        1, sid, limit=2, offset=2,
     )
     assert total_active == 5
     assert [m.text for m in msgs] == ["msg-1", "msg-2"]
@@ -136,7 +138,7 @@ def test_get_messages_page_offset_zero_size_limit(admin_env):
     seen = []
     for off in range(5):
         msgs, _, _ = store.get_messages_page(
-            "9001", sid, limit=1, offset=off,
+            1, sid, limit=1, offset=off,
         )
         assert len(msgs) == 1, f"offset {off} should have 1 row"
         seen.append(msgs[0].text)
@@ -153,7 +155,7 @@ def test_get_messages_page_past_end_returns_empty(admin_env):
     sid = _seed_messages(store, "9001", 3)
 
     msgs, total_active, total_all = store.get_messages_page(
-        "9001", sid, limit=10, offset=99,
+        1, sid, limit=10, offset=99,
     )
     assert msgs == []
     assert total_active == 3
@@ -183,7 +185,7 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
         db.commit()
 
     msgs, total_active, total_all = store.get_messages_page(
-        "9001", sid, limit=10, offset=0,
+        1, sid, limit=10, offset=0,
     )
     assert len(msgs) == 3  # active only
     assert total_active == 3
@@ -211,7 +213,7 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
         db.commit()
 
     msgs, total_active, total_all = store.get_messages_page(
-        "9001", sid, limit=10, offset=0, include_archived=True,
+        1, sid, limit=10, offset=0, include_archived=True,
     )
     # 2 active + 1 archive = 3 total.
     assert total_active == 2
@@ -238,17 +240,29 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
     assert total_all == 0
 
 
-def test_get_messages_page_respects_chat_id_scope(admin_env):
-    """A session belonging to chat_id 9002 is invisible
-    when queried via chat_id 9001 — same WHERE-clause
-    enforcement as the rest of the API."""
+def test_get_messages_page_respects_employee_id_scope(admin_env):
+    """A session belonging to employee 2 is invisible when
+    queried via employee 1 — same WHERE-clause enforcement
+    as the rest of the API.
+
+    D.23: the store key is now ``employee_id``; the
+    pre-D.23 chat_id scope test is rewritten here in
+    terms of the new key, since the chat_id column no
+    longer drives the WHERE clause.
+    """
     from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
+    # _seed_messages uses employee_id=1 (TA-pagination);
+    # the second admin row (TB-other) gets employee_id=2
+    # — the auto-increment order of the fixture's inserts.
+    # Querying with employee_id=2 (TB-other) for the
+    # session that belongs to employee_id=1 must return
+    # nothing.
 
     msgs, total_active, _ = store.get_messages_page(
-        "9001", sid, limit=10, offset=0,
+        2, sid, limit=10, offset=0,
     )
     assert msgs == []
     assert total_active == 0
@@ -267,7 +281,7 @@ def client(admin_env):
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", "9001")
+    c.cookies.set("magi_session", "1")
     return c
 
 
@@ -340,15 +354,20 @@ def test_messages_route_401_without_cookie(admin_env):
     assert r.status_code == 401
 
 
-def test_messages_route_cross_chat_isolation(client, admin_env):
-    """Alice (9001) cannot read Bob's (9002) session via
-    pagination. The route scopes the WHERE clause by
-    chat_id; an attacker who knows the session_id still
-    gets a 404."""
+def test_messages_route_cross_employee_isolation(client, admin_env):
+    """Alice (employee 1) cannot read Bob's (employee 2)
+    session via pagination. The route scopes the WHERE
+    clause by ``employee_id`` (D.23); an attacker who
+    knows the session_id still gets a 404.
+    """
     from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
-    sid = _seed_messages(store, "9002", 3)
+    # Bob's session: employee_id=2, chat_id="9002" (the
+    # chat_id is the per-channel delivery address —
+    # historical / metadata only now).
+    sess = store.create(2, chat_id="9002", channel="webui")
+    sid = sess.session_id
 
     r = client.get(f"/api/chat/sessions/{sid}/messages")
     assert r.status_code == 404

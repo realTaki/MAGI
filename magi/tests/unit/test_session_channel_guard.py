@@ -95,10 +95,15 @@ def _make_session(
     state: Path, channel: str, chat_id: str = "9001",
     employee_id: int = 1,
 ) -> str:
-    """Create a session with the given owner channel."""
+    """Create a session with the given owner channel.
+
+    D.23: store key is the operator's employee_id; the
+    chat_id argument here is the per-channel delivery
+    address stamped on the row's ``tgid`` column.
+    """
     store = SessionStore(str(state))
     sess = store.create(
-        chat_id, employee_id=employee_id, channel=channel,
+        employee_id, chat_id=chat_id, channel=channel,
     )
     return sess.session_id
 
@@ -118,8 +123,9 @@ def test_append_with_matching_channel_succeeds(state: Path) -> None:
         role="user", text="hi", ts=utcnow_iso(),
         message_id=new_session_id(),
     )
+    # D.23: store key is employee_id (int).
     sess = store.append_messages(
-        "9001", sid, [msg], channel="tg",
+        1, sid, [msg], channel="tg",
     )
     assert any(m.text == "hi" for m in sess.messages)
 
@@ -136,7 +142,7 @@ def test_append_with_mismatched_channel_raises(state: Path) -> None:
     )
     with pytest.raises(ChannelMismatchError) as ei:
         store.append_messages(
-            "9001", sid, [msg], channel="webui",
+            1, sid, [msg], channel="webui",
         )
     assert ei.value.session_channel == "tg"
     assert ei.value.caller_channel == "webui"
@@ -155,7 +161,7 @@ def test_append_with_omitted_channel_skips_check(state: Path) -> None:
         message_id=new_session_id(),
     )
     # No ``channel=`` kwarg → no guard.
-    sess = store.append_messages("9001", sid, [msg])
+    sess = store.append_messages(1, sid, [msg])
     assert any(m.text == "backfill" for m in sess.messages)
 
 
@@ -192,7 +198,7 @@ def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
         role="user", text="legit tg msg", ts=utcnow_iso(),
         message_id=new_session_id(),
     )
-    store.append_messages("9001", sid, [seed], channel="tg")
+    store.append_messages(1, sid, [seed], channel="tg")
 
     # Attempt the cross-channel write.
     bad = SessionMessage(
@@ -201,11 +207,11 @@ def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
     )
     with pytest.raises(ChannelMismatchError):
         store.append_messages(
-            "9001", sid, [bad], channel="webui",
+            1, sid, [bad], channel="webui",
         )
 
     # Re-read: only the seed message is present.
-    sess = store.get("9001", sid)
+    sess = store.get(1, sid)
     assert sess is not None
     user_texts = [m.text for m in sess.messages if m.role == "user"]
     assert user_texts == ["legit tg msg"]
@@ -220,11 +226,11 @@ def test_get_does_not_check_channel(state: Path) -> None:
         role="user", text="hi", ts=utcnow_iso(),
         message_id=new_session_id(),
     )
-    store.append_messages("9001", sid, [seed], channel="tg")
+    store.append_messages(1, sid, [seed], channel="tg")
 
     # ``get`` doesn't take a channel — must work for any
     # caller, no guard.
-    sess = store.get("9001", sid)
+    sess = store.get(1, sid)
     assert sess is not None
     assert any(m.text == "hi" for m in sess.messages)
 
@@ -272,7 +278,7 @@ def _post_send(
     return client.post(
         "/api/chat/send",
         json={"text": text, "session_id": session_id},
-        cookies={"magi_session": str(admin.telegram_id)},
+        cookies={"magi_session": str(admin.id)},
     )
 
 
@@ -296,7 +302,9 @@ def test_webui_send_to_tg_owned_session_is_403(
     client._fake_handle.assert_not_called()  # type: ignore[attr-defined]
 
     # The session's history is unchanged.
-    sess = SessionStore(str(state)).get(str(admin.telegram_id), sid)
+    # D.23: store key is employee_id (int), not the
+    # channel's chat_id string.
+    sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     user_texts = [m.text for m in sess.messages if m.role == "user"]
     assert user_texts == []
@@ -317,7 +325,8 @@ def test_webui_send_to_webui_owned_session_is_200(
     assert body["reply"] == "never-called"  # from the AsyncMock
 
     # Inbound + outbound both appended.
-    sess = SessionStore(str(state)).get(str(admin.telegram_id), sid)
+    # D.23: store key is employee_id (int).
+    sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     roles = [m.role for m in sess.messages]
     assert roles == ["user", "assistant"]
@@ -355,7 +364,7 @@ def test_webui_list_includes_cross_channel_sessions(
 
     r = client.get(
         "/api/chat/sessions",
-        cookies={"magi_session": str(admin.telegram_id)},
+        cookies={"magi_session": str(admin.id)},
     )
     assert r.status_code == 200
     body = r.json()

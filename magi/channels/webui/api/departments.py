@@ -38,15 +38,14 @@ router = APIRouter(tags=["departments"])
 
 # -- auth gate --------------------------------------------------------------
 
-def _is_admin_chat_id(chat_id: str) -> bool:
-    """True if ``chat_id`` is bound to an Employee with role=admin.
+def _is_admin_employee_id(employee_id: int) -> bool:
+    """True if the ``Employee`` row with the given id has role=admin.
 
-    Single source of truth: reads from the ``employees`` table
-    where the onboarding wizard writes admins. There is no
-    separate settings key for the admin allowlist — a single
-    source of truth avoids drift between ORM rows and a meta
-    blob, and lets ``save_admin`` / ``PATCH /employees/{id}``
-    be the only two paths that ever grant admin status.
+    D.24: the ``magi_session`` cookie carries the
+    ``employee_id`` (cross-channel identity), not the chat_id.
+    The admin allowlist is keyed by employee id; a future
+    channel will resolve its own delivery address to the same
+    employee id and re-use this same check.
 
     An ORM read failure (table not yet initialised, etc.) is a
     hard ``False`` — the gate fails closed rather than silently
@@ -54,23 +53,11 @@ def _is_admin_chat_id(chat_id: str) -> bool:
     the only auth path; the chat endpoint and action_items
     endpoint both pre-check via this same gate.
     """
-    from sqlalchemy import select
-
     from magi.agent.db import Employee, open_session
 
     try:
-        cid_int = int(chat_id)
-    except (TypeError, ValueError):
-        return False
-
-    try:
         with open_session() as session:
-            # ``Employee.telegram_id`` is the source of truth;
-            # look up by telegram_id rather than by id because
-            # the chat_id and the row id are different numbers.
-            emp = session.scalar(
-                select(Employee).where(Employee.telegram_id == cid_int)
-            )
+            emp = session.get(Employee, employee_id)
             if emp is not None and emp.role == "admin":
                 return True
     except Exception:
@@ -82,20 +69,29 @@ def _is_admin_chat_id(chat_id: str) -> bool:
 def admin_gate(request: Request) -> str:
     """FastAPI dependency — verify the caller is a super admin.
 
-    Reads the session cookie directly rather than calling into
-    the auth router, so this module is decoupled from it. The
-    auth router validates the same cookie in its ``/me``
-    handler, so by the time a request gets here the cookie is
-    known to be a live session; this gate just re-checks the
-    caller is still in the super-admins list (a stale cookie
-    after an admin removal shouldn't sneak past).
+    D.24: reads the ``employee_id`` from the cookie and
+    looks up the row's role directly. The auth router
+    validates the same cookie in its ``/me`` handler, so by
+    the time a request gets here the cookie is known to be a
+    live session; this gate just re-checks the caller is
+    still in the super-admins list (a stale cookie after an
+    admin removal shouldn't sneak past).
+
+    Returns the cookie's employee_id as a string for
+    call-site convenience (the chat_sessions router casts it
+    back to ``int``).
     """
-    chat_id = request.cookies.get("magi_session")
-    if not chat_id or not _is_admin_chat_id(chat_id):
+    raw = request.cookies.get("magi_session")
+    if not raw or not raw.isdigit():
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
-    return chat_id
+    employee_id = int(raw)
+    if not _is_admin_employee_id(employee_id):
+        raise MagiHTTPException(
+            status_code=401, code="auth.not_signed_in", detail="Not signed in"
+        )
+    return raw
 
 
 AdminGate = Annotated[str, Depends(admin_gate)]

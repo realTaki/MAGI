@@ -83,20 +83,20 @@ def _state_dir() -> str:
 
 
 def _resolve_caller_credentials(
-    state_dir: str, chat_id: str
+    state_dir: str, employee_id: int
 ) -> tuple[int, str, str]:
     """Look up the operator's employee row by their
-    ``telegram_id`` and return ``(employee_id, provider,
-    api_key)``.
+    ``employee_id`` (the cookie value post-D.24) and
+    return ``(employee_id, provider, api_key)``.
 
     Raises ``MagiHTTPException`` rather than returning a
     sentinel:
 
-      - ``401 chat.unknown_sender`` if the cookie's chat_id
-        doesn't resolve to a row. The auth gate should have
-        caught this first, but we re-check defensively so
-        a future code path that skips the gate still
-        fails closed.
+      - ``401 chat.unknown_sender`` if the employee id
+        doesn't resolve to a row. The auth gate should
+        have caught this first, but we re-check
+        defensively so a future code path that skips the
+        gate still fails closed.
       - ``403 chat.llm_credentials_required`` if the row
         exists but ``provider`` or ``api_key`` is unset.
         The frontend uses this code to render a "please
@@ -109,22 +109,11 @@ def _resolve_caller_credentials(
     different LLM's reply.
     """
     try:
-        cid_int = int(chat_id)
-    except (TypeError, ValueError):
-        raise MagiHTTPException(
-            status_code=401,
-            code="chat.unknown_sender",
-            detail="no employee row bound to this chat_id",
-        )
-
-    try:
         with open_session() as session:
-            emp = session.scalar(
-                select(Employee).where(Employee.telegram_id == cid_int)
-            )
+            emp = session.get(Employee, employee_id)
     except Exception:
         logger.exception(
-            "chat: ORM lookup failed for chat_id %s", chat_id,
+            "chat: ORM lookup failed for employee_id %s", employee_id,
         )
         raise MagiHTTPException(
             status_code=500,
@@ -152,6 +141,27 @@ def _resolve_caller_credentials(
             ),
         )
     return emp.id, emp.provider, emp.api_key
+
+
+def _telegram_id_str_for_employee(employee_id: int) -> str:
+    """Look up the bound TG chat_id (delivery address) for
+    an employee. Returns ``""`` if the employee never bound
+    a TG chat — the row's ``tgid`` column gets ``""`` and
+    any future cross-channel tooling sees an empty delivery
+    address. Cheap one-shot ORM read.
+    """
+    try:
+        with open_session() as session:
+            emp = session.get(Employee, employee_id)
+    except Exception:
+        logger.exception(
+            "chat: telegram_id lookup failed for employee %s",
+            employee_id,
+        )
+        return ""
+    if emp is None or emp.telegram_id is None:
+        return ""
+    return str(emp.telegram_id)
 
 
 class ChatSendRequest(BaseModel):
@@ -220,14 +230,35 @@ async def send_chat(
             detail="text must not be empty",
         )
 
-    chat_id = request.cookies.get("magi_session", "")
-    # The auth gate already proved this cookie is for an
-    # admin Employee row; ``_resolve_caller_credentials``
-    # strictly returns the per-emp credentials or raises —
-    # no silent fall-back.
+    # D.24: the cookie's value IS the employee_id. The
+    # auth gate already proved it's a live admin session;
+    # ``_resolve_caller_credentials`` re-checks the row
+    # exists and surfaces the LLM credentials. The cookie
+    # is the cross-channel identity; the per-channel
+    # delivery address (TG chat_id) is looked up
+    # separately by ``_telegram_id_for_employee_id``
+    # below — WebUI doesn't need it for send / read but
+    # we stamp it on the session row for cross-channel
+    # tooling.
+    cookie_raw = request.cookies.get("magi_session", "")
+    try:
+        cookie_employee_id = int(cookie_raw)
+    except (TypeError, ValueError):
+        # Should be caught by AdminGate already; defence
+        # in depth.
+        raise MagiHTTPException(
+            status_code=401,
+            code="chat.unknown_sender",
+            detail="no signed-in employee",
+        )
     employee_id, employee_provider, employee_api_key = (
-        _resolve_caller_credentials(_state_dir(), chat_id)
+        _resolve_caller_credentials(_state_dir(), cookie_employee_id)
     )
+    # D.24: per-channel delivery address for the row's
+    # tgid column. WebUI doesn't need it for send/read, but
+    # cross-channel tooling may address the operator's bot
+    # from this column. ``""`` if the operator never bound TG.
+    tgid = _telegram_id_str_for_employee(employee_id)
 
     # -- session lifecycle ------------------------------------------
     # The cookie's chat_id (string of digits) is also the
@@ -261,11 +292,14 @@ async def send_chat(
             session_id = None
     if not session_id:
         # ``chat_id=`` here is the per-channel delivery
-        # address stamped on the row's ``tgid`` column. For
-        # WebUI rows it's the cookie value (a legacy /
-        # outbound-delivery hint — see SessionStore.create).
+        # address stamped on the row's ``tgid`` column. D.24:
+        # the cookie identity is the employee, but each row
+        # still carries the operator's bound TG chat_id (or
+        # ``""`` if they never bound one) so a future
+        # cross-channel query tool can address their bot.
+        tgid = _telegram_id_str_for_employee(employee_id)
         sess = store.create(
-            employee_id, channel="webui", chat_id=chat_id,
+            employee_id, channel="webui", chat_id=tgid,
         )
         session_id = sess.session_id
 
@@ -334,7 +368,7 @@ async def send_chat(
     if len(post.messages) == 1:
         from magi.agent.memory.session.auto_title import enqueue_title_job
         await enqueue_title_job(
-            chat_id=chat_id,
+            chat_id=tgid,
             session_id=session_id,
             employee_id=employee_id,
             employee_provider=employee_provider,
@@ -346,7 +380,7 @@ async def send_chat(
         text=text,
         channel="webui",
         session_id=session_id,
-        chat_id=chat_id,
+        chat_id=tgid,
         employee_id=employee_id,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
