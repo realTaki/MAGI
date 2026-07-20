@@ -695,25 +695,33 @@ export function KnowledgeMemoryPane() {
 
 // -- pane: tools -----------------------------------------------------------
 //
-// Live today. Reads the tool registry from
-// ``GET /api/tools`` (which calls
-// ``magi.agent.tools.registry.get_tool_schemas()`` under the
-// hood, so the list reflects both built-in tools and any
-// MCP-loaded ones). The render is a table — name, a short
-// description (first 200 chars from the backend), and a small
-// indicator for whether the tool takes structured input.
+// Live today. Reads the tool registry from ``GET /api/tools``.
+// The pane renders two cards — one for built-in tools
+// (those shipped by the registry's hard-coded list in
+// :mod:`magi.agent.tools.registry`) and one for MCP tools
+// (those loaded via ``mcp.json``). The split is informational:
+// when an operator can't find a tool, knowing whether they
+// should be looking at the card that ships with MAGI or at
+// the one driven by their config cuts the debugging surface
+// in half.
 //
-// Built-in vs MCP distinction is NOT exposed: the operator
-// doesn't care where a tool came from, only what their MAGI
-// can do. A future "source" column is one line in the API +
-// one column here; pre-empting it before MCP ships would
-// be premature (the project memory's "minimal by default"
-// rule).
+// The pane itself has no ``<h2>`` heading — the sidebar
+// already labels this section, and each card titles itself.
+// A single InfoTip at the top carries the long description
+// so the page body stays compact.
 export function KnowledgeToolsPane() {
   type ToolRow = {
     name: string;
     description: string;
     prop_count: number;
+    // Where the tool came from. ``"builtin"`` is the
+    // hard-coded list in :mod:`magi.agent.tools.registry`;
+    // ``"mcp"`` is anything surfaced by an MCP server the
+    // operator configured in ``mcp.json``. Driving the
+    // two-card split client-side keeps the API stable if
+    // we add a third source later (skills as tools,
+    // C.4+).
+    source: "builtin" | "mcp";
     // Sorted list of role names this tool is gated to.
     // Empty array = no role gate (the LLM sees the tool
     // regardless of caller). Today every built-in declares
@@ -763,89 +771,147 @@ export function KnowledgeToolsPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Group the registry by source so the dashboard renders
+  // two cards (built-in, MCP). MCP is empty on a fresh
+  // install; the empty-state copy in each card explains
+  // where the missing tools would appear.
+  const builtIn = tools?.filter((tool) => tool.source === "builtin") ?? [];
+  const mcp = tools?.filter((tool) => tool.source === "mcp") ?? [];
+
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-ink">{t("settings.toolsHeading")}</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t("settings.toolsIntro")}
-        </p>
+      {/*
+        Top-of-pane InfoTip carries the long prose. We
+        intentionally skip a top-of-pane ``<h2>``: the
+        sidebar already labels this section, and each card
+        titles itself. Single ``?`` instead of one per card
+        to avoid asking the same question twice.
+      */}
+      <div className="flex justify-end">
+        <InfoTip text={t("settings.toolsIntro")} />
       </div>
-      <ConsoleCard title={t("settings.toolsHeading")}>
-        {loadError && <p className="form-error">✗ {loadError}</p>}
-        {tools === null && !loadError && (
-          <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
-        )}
-        {tools !== null && tools.length === 0 && !loadError && (
-          <p className="text-sm text-ink-soft">
-            {t("settings.toolsEmpty")}
-          </p>
-        )}
-        {tools !== null && tools.length > 0 && (
-          <table className="data-table w-full">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
-                <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
-                <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
-                <th className="py-2 pr-4 font-medium">
-                  {t("settings.toolsAllowedRoles")}
-                </th>
-                <th className="py-2 font-medium w-28 text-right">
-                  {t("settings.toolsInputs")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {tools.map((tool) => (
-                <tr
-                  key={tool.name}
-                  className="border-b border-sky-light/30 last:border-0"
-                >
-                  <td className="py-2 pr-4 text-ink font-mono text-xs">
-                    {tool.name}
-                  </td>
-                  <td className="py-2 pr-4 text-ink-soft text-xs">
-                    {tool.description}
-                  </td>
-                  <td className="py-2 pr-4 text-xs">
-                    {tool.allowed_roles.length === 0 ? (
-                      <span className="italic text-ink-soft">
-                        {t("settings.toolsAllowedRolesAll")}
-                      </span>
-                    ) : (
-                      <span className="flex flex-wrap gap-1">
-                        {tool.allowed_roles.map((role) => (
-                          <span
-                            key={role}
-                            className="inline-block rounded border border-sky-light/60
-                                       bg-sky-pale/40 px-1.5 py-0.5
-                                       font-mono text-[10px] text-ink"
-                            // title="..." lives on the chip itself
-                            // so the column stays compact — the
-                            // tool's full description is already
-                            // in the cell next door. Interpolation
-                            // via the chained ``.replace()`` pattern
-                            // (see :func:`useT` in ``i18n/index.tsx``).
-                            title={t("settings.toolsAllowedRolesChipTitle")
-                              .replace("{role}", role)}
-                          >
-                            {role}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right text-xs text-ink-soft">
-                    {tool.prop_count > 0
-                      ? `${tool.prop_count}`
-                      : t("settings.toolsInputsNone")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </ConsoleCard>
+
+      {/* Shared table renderer — the two cards below only
+          differ in their title / empty copy. */}
+      {_renderToolsCard(t, builtIn, t("settings.toolsBuiltInHeading"),
+        t("settings.toolsBuiltInEmpty"))}
+      {_renderToolsCard(t, mcp, t("settings.toolsMcpHeading"),
+        t("settings.toolsMcpEmpty"))}
+
+      {/*
+        Top-of-pane load / error surfaced AFTER both cards
+        so a failed request doesn't leave the user staring
+        at empty boxes. Reuses the existing load-error /
+        loading copy; the per-card empty copy above handles
+        the "registry loaded but this side is empty" case.
+      */}
+      {loadError && (
+        <p className="form-error">✗ {loadError}</p>
+      )}
+      {tools === null && !loadError && (
+        <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
+      )}
     </div>
+  );
+}
+
+/** Render a single ConsoleCard for one source (builtin or
+ *  MCP). Pulled out as a top-level helper so the two cards
+ *  in :func:`KnowledgeToolsPane` share markup — only the
+ *  title and the empty-state copy differ.
+ *
+ *  ``tools.length === 0`` triggers the empty copy; on a
+ *  fresh install this is the expected state for the MCP
+ *  side, less common for the built-in side. We don't try
+ *  to distinguish "loaded empty" from "never loaded" —
+ *  the operator-visible behaviour is identical (nothing
+ *  to show), and the underlying truth is recovered by
+ *  reloading ``GET /api/tools``.
+ */
+function _renderToolsCard(
+  t: (key: string) => string,
+  tools: ReadonlyArray<{
+    name: string;
+    description: string;
+    prop_count: number;
+    allowed_roles: string[];
+  }>,
+  title: string,
+  emptyCopy: string,
+) {
+  return (
+    <ConsoleCard title={title}>
+      {tools.length === 0 ? (
+        <p className="text-sm text-ink-soft">{emptyCopy}</p>
+      ) : (
+        <table className="data-table w-full">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+              <th className="py-2 pr-4 font-medium">
+                {t("settings.toolsName")}
+              </th>
+              <th className="py-2 pr-4 font-medium">
+                {t("settings.toolsDescription")}
+              </th>
+              <th className="py-2 pr-4 font-medium">
+                {t("settings.toolsAllowedRoles")}
+              </th>
+              <th className="py-2 font-medium w-28 text-right">
+                {t("settings.toolsInputs")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {tools.map((tool) => (
+              <tr
+                key={tool.name}
+                className="border-b border-sky-light/30 last:border-0"
+              >
+                <td className="py-2 pr-4 text-ink font-mono text-xs">
+                  {tool.name}
+                </td>
+                <td className="py-2 pr-4 text-ink-soft text-xs">
+                  {tool.description}
+                </td>
+                <td className="py-2 pr-4 text-xs">
+                  {tool.allowed_roles.length === 0 ? (
+                    <span className="italic text-ink-soft">
+                      {t("settings.toolsAllowedRolesAll")}
+                    </span>
+                  ) : (
+                    <span className="flex flex-wrap gap-1">
+                      {tool.allowed_roles.map((role) => (
+                        <span
+                          key={role}
+                          className="inline-block rounded border border-sky-light/60
+                                     bg-sky-pale/40 px-1.5 py-0.5
+                                     font-mono text-[10px] text-ink"
+                          // ``title=`` lives on the chip itself
+                          // so the column stays compact — the
+                          // tool's full description is already
+                          // in the cell next door. Interpolation
+                          // via the chained ``.replace()``
+                          // pattern (see :func:`useT` in
+                          // ``i18n/index.tsx``).
+                          title={t("settings.toolsAllowedRolesChipTitle")
+                            .replace("{role}", role)}
+                        >
+                          {role}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </td>
+                <td className="py-2 text-right text-xs text-ink-soft">
+                  {tool.prop_count > 0
+                    ? `${tool.prop_count}`
+                    : t("settings.toolsInputsNone")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </ConsoleCard>
   );
 }

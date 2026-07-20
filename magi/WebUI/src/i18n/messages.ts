@@ -100,7 +100,13 @@ const zh: Catalog = {
     tgDoneEmoji: "完成",
     toolLoop: "Agent 循环上限",
     toolsHeading: "工具列表",
+    // Long description — surfaces in a single ``?`` icon at
+    // the top of the pane, NOT as a page heading. Each card
+    // titles itself ("内置工具" / "MCP 工具") so the operator
+    // doesn't see the same word "工具列表" three times.
     toolsIntro: "当前 MAGI 节点上 agent 能调用的所有 tool — 内置的 file / chat / search 类，加上通过 mcp.json 加载的 MCP 工具。",
+    toolsBuiltInHeading: "内置工具",
+    toolsMcpHeading: "MCP 工具",
     toolsName: "名称",
     toolsDescription: "描述",
     toolsAllowedRoles: "可见角色",
@@ -116,7 +122,13 @@ const zh: Catalog = {
     toolsAllowedRolesChipTitle: "角色 {role} 可以调用此工具",
     toolsInputs: "输入参数",
     toolsInputsNone: "无",
-    toolsEmpty: "暂无工具注册。检查一下 mcp.json。",
+    // Per-card empty copy. The built-in card is empty only
+    // if :mod:`magi.agent.tools.registry` has nothing for
+    // the current build (shouldn't happen in v0); the MCP
+    // card is empty on a fresh install because no
+    // ``mcp.json`` is configured.
+    toolsBuiltInEmpty: "当前节点没有内置工具。",
+    toolsMcpEmpty: "暂无 MCP 工具 — 在 mcp.json 配置后重启节点。",
     toolsLoadFailed: "加载工具列表失败",
     toolsLoading: "加载中…",
     autoCompact: "自动压缩",
@@ -335,7 +347,12 @@ const en: Catalog = {
     tgReadEmoji: "Read",
     tgDoneEmoji: "Done",
     toolsHeading: "Tools",
+    // Surfaces in the top-of-pane ``?`` icon — kept short
+    // because the operator already knows what "Tools" means
+    // from the sidebar.
     toolsIntro: "Every tool the agent can call on this MAGI node — built-in file / chat / search tools, plus anything loaded via mcp.json.",
+    toolsBuiltInHeading: "Built-in tools",
+    toolsMcpHeading: "MCP tools",
     toolsName: "Name",
     toolsDescription: "Description",
     toolsAllowedRoles: "Allowed roles",
@@ -343,7 +360,8 @@ const en: Catalog = {
     toolsAllowedRolesChipTitle: "Operators with role {role} can call this tool",
     toolsInputs: "Inputs",
     toolsInputsNone: "none",
-    toolsEmpty: "No tools registered. Check mcp.json.",
+    toolsBuiltInEmpty: "No built-in tools registered for this node.",
+    toolsMcpEmpty: "No MCP tools — configure mcp.json and restart the node to surface them here.",
     toolsLoadFailed: "Failed to load tool list",
     toolsLoading: "Loading…",
     toolLoop: "Tool loop max iterations",
@@ -558,6 +576,8 @@ const ja: Catalog = {
     tgDoneEmoji: "完了",
     toolsHeading: "ツール一覧",
     toolsIntro: "この MAGI ノードで agent が呼び出せるツール一覧 — 内蔵の file / chat / search ツールと、mcp.json で読み込まれた MCP ツール。",
+    toolsBuiltInHeading: "内蔵ツール",
+    toolsMcpHeading: "MCP ツール",
     toolsName: "名前",
     toolsDescription: "説明",
     toolsAllowedRoles: "呼び出し可能なロール",
@@ -565,7 +585,8 @@ const ja: Catalog = {
     toolsAllowedRolesChipTitle: "ロール {role} のオペレーターはこのツールを呼び出せます",
     toolsInputs: "入力",
     toolsInputsNone: "なし",
-    toolsEmpty: "ツールが登録されていません。mcp.json を確認してください。",
+    toolsBuiltInEmpty: "このノードには内蔵ツールが登録されていません。",
+    toolsMcpEmpty: "MCP ツールなし — mcp.json を設定してノードを再起動するとここに表示されます。",
     toolsLoadFailed: "ツール一覧の読み込みに失敗しました",
     toolsLoading: "読み込み中…",
     toolLoop: "Tool loop 最大反復回数",

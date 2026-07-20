@@ -274,27 +274,92 @@ def test_tools_response_keeps_role_order_alphabetical(
     assert body["items"][0]["allowed_roles"] == ["admin", "middle", "zzz"]
 
 
-def test_tools_response_calls_get_tools_with_no_role_filter(
+def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The dashboard view is informational, not gated. The
     endpoint explicitly passes ``caller_role=None`` so the
     full registry surfaces — even tools whose
     :attr:`ALLOWED_ROLES` would otherwise strip them from
-    a role-filtered view."""
+    a role-filtered view.
+
+    The endpoint uses :func:`get_tools_grouped` (the
+    (builtin, mcp) tuple helper) rather than :func:`get_tools`
+    — the spy patches the helper the route actually calls.
+    """
     from magi.channels.webui.api import tools as tools_api
     seen: list = []
-    real = tools_api.get_tools
+    real = tools_api.get_tools_grouped
 
     def spy(caller_role=None):  # type: ignore[no-untyped-def]
         seen.append(caller_role)
         return real(caller_role=caller_role)
 
-    monkeypatch.setattr(tools_api, "get_tools", spy)
+    monkeypatch.setattr(tools_api, "get_tools_grouped", spy)
     r = client.get("/api/tools")
     assert r.status_code == 200
     assert seen == [None], (
-        "audit endpoint must call get_tools(caller_role=None) "
+        "audit endpoint must call get_tools_grouped(caller_role=None) "
         "so the full registry surfaces; gating here would "
         "strip admin-only tools from the operator's view"
     )
+
+
+
+def test_tools_response_tags_builtins_as_builtin(
+    client: TestClient,
+) -> None:
+    """Built-in tools come back with ``source="builtin"`` —
+    the dashboard renders them in the dedicated card."""
+    registry_mod._tools_cache = [_FakeTool()]
+    registry_mod._mcp_tools_cache = None
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"][0]["source"] == "builtin"
+
+
+def test_tools_response_tags_mcp_tools_as_mcp(
+    client: TestClient,
+) -> None:
+    """MCP tools come back with ``source="mcp"``."""
+    registry_mod._tools_cache = []
+    registry_mod._mcp_tools_cache = [_McpTool()]
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"][0]["source"] == "mcp"
+    assert body["items"][0]["name"] == "github__create_issue"
+
+
+def test_tools_response_partitions_by_source(
+    client: TestClient,
+) -> None:
+    """Mixed registry — built-in first, MCP second,
+    each correctly tagged. The dashboard's filter groups
+    client-side by ``source``; this pins the wire shape."""
+    registry_mod._tools_cache = [_FakeTool()]
+    registry_mod._mcp_tools_cache = [_McpTool()]
+
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    pairs = sorted(
+        (it["source"], it["name"]) for it in body["items"]
+    )
+    # Name-sorted within the flat list — the dashboard's
+    # client-side ``source`` groupBy produces two cards.
+    assert pairs == [
+        ("builtin", "fake__demo"),
+        ("mcp", "github__create_issue"),
+    ]
+
+
+def test_tools_response_default_source_field_present(client: TestClient) -> None:
+    """Regression guard for the ``source`` field — older
+    clients (pre-split) wouldn't see it, so the schema
+    guarantees it from now on."""
+    registry_mod._tools_cache = [_FakeTool()]
+    r = client.get("/api/tools")
+    body = r.json()
+    assert "source" in body["items"][0]
