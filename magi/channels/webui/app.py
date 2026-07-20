@@ -138,10 +138,11 @@ def create_app() -> FastAPI:
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``
     # from) are mounted first.
-    from magi.channels.webui.api import action_items, contacts, memory
+    from magi.channels.webui.api import action_items, contacts, memory, prompts
     app.include_router(action_items.router, prefix="/api")
     app.include_router(contacts.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
+    app.include_router(prompts.router, prefix="/api")
     # Soul editor — the persona text the agent loop reads as
     # the system prompt. Read/write/reset the workspace
     # ``SOUL.md`` from the Settings tab.
