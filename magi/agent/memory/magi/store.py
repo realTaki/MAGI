@@ -26,6 +26,7 @@ from typing import Iterable, Optional
 from sqlalchemy import select
 
 from magi.agent.db import open_session
+from magi.agent.db.base import utcnow_naive
 from magi.agent.memory.magi.models import (
     ALL_KINDS,
     KIND_ONGOING,
@@ -43,13 +44,6 @@ _SUBJECT_MAX = 200
 _BODY_MAX = 8 * 1024
 _IMPORTANCE_MIN = 1
 _IMPORTANCE_MAX = 5
-
-
-def _now_naive_utc() -> "datetime":
-    """Naive UTC datetime — matches the convention
-    every other timestamp column in the schema uses."""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True)
@@ -288,7 +282,7 @@ class MemoryStore:
             row = db.get(MemoryEntry, memory_id)
             if row is None:
                 raise LookupError(f"memory {memory_id!r} not found")
-            row.completed_at = _now_naive_utc()
+            row.completed_at = utcnow_naive()
             db.commit()
             db.refresh(row)
         logger.info(

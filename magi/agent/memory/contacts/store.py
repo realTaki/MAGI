@@ -19,6 +19,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from magi.agent.db import open_session
+from magi.agent.db.base import utcnow_naive
 from magi.agent.memory.contacts.models import (
     ContactEntry,
     SOURCE_EVE,
@@ -29,11 +30,6 @@ logger = logging.getLogger("magi.agent.memory.contacts.store")
 
 _NOTES_MAX = 8 * 1024
 _ROLE_MAX = 64
-
-
-def _now_naive_utc() -> "datetime":
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(frozen=True)
@@ -130,7 +126,7 @@ class ContactStore:
                     ContactEntry.person_id == person_id,
                 )
             ).scalar_one_or_none()
-            now = _now_naive_utc()
+            now = utcnow_naive()
             if row is None:
                 row = ContactEntry(
                     owner_id=owner_id,
@@ -225,7 +221,7 @@ class ContactStore:
                 row.notes = notes.strip()[:_NOTES_MAX]
             if role is not None:
                 row.role = role.strip()[:_ROLE_MAX] or None
-            row.last_seen_at = _now_naive_utc()
+            row.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
         logger.info(
