@@ -84,7 +84,7 @@ export default function SidebarShell(props: {
           */}
           <div className="flex-1 min-h-0 overflow-y-auto">{props.belowItems}</div>
         </nav>
-        <div className="flex-1 min-h-0 p-6 overflow-hidden">{props.children}</div>
+        <div className="flex-1 min-h-0 p-6 overflow-y-auto">{props.children}</div>
       </div>
     </div>
   );
