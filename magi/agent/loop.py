@@ -462,7 +462,11 @@ async def _maybe_compact(
         return
 
     total = estimate_messages_tokens(messages)
-    threshold = get_compact_context_window(state_dir) *         get_compact_threshold_pct(state_dir) // 100
+    threshold = (
+        get_compact_context_window(state_dir)
+        * get_compact_threshold_pct(state_dir)
+        // 100
+    )
     if total <= threshold:
         return
 

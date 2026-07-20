@@ -151,17 +151,28 @@ def _telegram_id_str_for_employee(employee_id: int) -> str:
     address. Cheap one-shot ORM read.
     """
     try:
+        # Read the value INSIDE the ``with`` block and return
+        # a plain ``str``. The previous implementation
+        # returned the live ORM ``Employee`` and accessed
+        # ``.telegram_id`` outside the session — works today
+        # because ``telegram_id`` is an eager-loaded scalar
+        # column, but it's a detached-instance trap: a
+        # future change to lazy-load the column would turn
+        # this into a ``DetachedInstanceError`` on the next
+        # ORM-engine reset. Returning the string kills the
+        # trap at the source.
         with open_session() as session:
             emp = session.get(Employee, employee_id)
+            telegram_id = emp.telegram_id if emp is not None else None
     except Exception:
         logger.exception(
             "chat: telegram_id lookup failed for employee %s",
             employee_id,
         )
         return ""
-    if emp is None or emp.telegram_id is None:
+    if telegram_id is None:
         return ""
-    return str(emp.telegram_id)
+    return str(telegram_id)
 
 
 class ChatSendRequest(BaseModel):
@@ -258,7 +269,6 @@ async def send_chat(
     # tgid column. WebUI doesn't need it for send/read, but
     # cross-channel tooling may address the operator's bot
     # from this column. ``""`` if the operator never bound TG.
-    tgid = _telegram_id_str_for_employee(employee_id)
 
     # -- session lifecycle ------------------------------------------
     # The cookie's chat_id (string of digits) is also the
@@ -297,6 +307,13 @@ async def send_chat(
         # still carries the operator's bound TG chat_id (or
         # ``""`` if they never bound one) so a future
         # cross-channel query tool can address their bot.
+        #
+        # Only fetched on the auto-create path — when the
+        # caller already has a session_id, the existing row
+        # already carries its own tgid; we don't need to
+        # re-read it here. Avoids one ORM round-trip per
+        # ``/api/chat/send`` (the existing-session branch
+        # is the common path).
         tgid = _telegram_id_str_for_employee(employee_id)
         sess = store.create(
             employee_id, channel="webui", chat_id=tgid,

@@ -223,7 +223,7 @@ def run() -> None:
     # only creates what's missing, so deployer edits to SOUL.md
     # (or anything else) survive across restarts.
     from magi.agent.workspace import bootstrap_workspace, workspace_root
-    bootstrap_workspace(workspace_root(cfg.state_dir or "/workspace/memories"))
+    bootstrap_workspace(workspace_root(cfg.state_dir))
 
     # D.X — load any MCP servers declared in mcp.json. The
     # loader is sync at the boot layer because the rest of
