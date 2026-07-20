@@ -197,3 +197,84 @@ def test_messages_persist_to_session(tg_session_env):
     assert fetched.channel == "tg"
     assert fetched.chat_id == "6240201712"
     assert fetched.employee_id == 42
+
+
+# ────────────────────────────────────────────────────────────────── #
+# D.10 cross-channel continuity (regression)
+# ────────────────────────────────────────────────────────────────── #
+#
+# Pre-fix the helper used ``list_summaries`` with no channel
+# filter, then re-checked ``channel == 'tg'`` in Python. When
+# the most recent any-channel row belonged to WebUI (the
+# same employee owns sessions across channels since D.23),
+# the helper would mint a fresh TG session every time. In
+# real usage the operator alternating TG ↔ WebUI fragmented
+# the TG history into N rows, contradicting the "one TG
+# session per chat_id forever" promise in the helper
+# docstring.
+#
+# The fix is ``find_latest_tg_session`` (a SQL-side
+# ``WHERE channel = 'tg'`` filter), so this test pins that
+# the latest TG row is reused across channel boundaries.
+
+
+def test_tg_session_reused_after_webui_message_in_between(
+    tg_session_env,
+):
+    """Operator sends a TG message, then a WebUI message,
+    then another TG message. The second TG inbound must
+    land on the same TG session as the first — the WebUI
+    message in between must NOT cause a new TG row to be
+    minted.
+
+    Three rounds:
+
+      1. ``_resolve_or_create_tg_session`` → mint ``sid_a``.
+      2. Operator opens WebUI on the same employee_id and
+         creates a fresh webui session ``sid_webui`` with a
+         newer ``updated_at`` than ``sid_a``.
+      3. ``_resolve_or_create_tg_session`` again — must
+         return ``sid_a``, NOT a fresh id.
+    """
+    from magi.channels.telegram.bot import _resolve_or_create_tg_session
+
+    state_dir, _workspace = tg_session_env
+    store = SessionStore(state_dir)
+
+    # Round 1: first TG inbound.
+    sid_a = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    assert isinstance(sid_a, str)
+
+    # Round 2: WebUI session for the same employee. Created
+    # AFTER the TG row, so its ``updated_at`` is newer.
+    # Without the channel filter, the buggy helper would
+    # see this as "latest" and mint a fresh TG session.
+    sid_webui = store.create(
+        42, channel="webui", chat_id="6240201712",
+    ).session_id
+
+    # Round 3: another TG inbound — must reuse ``sid_a``.
+    sid_a2 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    assert sid_a2 == sid_a, (
+        "TG session must be reused even after a newer "
+        "WebUI session exists; got a fresh id "
+        f"({sid_a2!r}) instead of the original {sid_a!r}"
+    )
+
+    # Only one TG row exists.
+    with open_session() as db:
+        tg_count = (
+            db.query(ChatSession)
+            .filter_by(employee_id=42, channel="tg")
+            .count()
+        )
+    assert tg_count == 1, (
+        f"expected 1 TG session, found {tg_count} — the "
+        "cross-channel continuity contract is broken"
+    )
+
+    # The webui row is still there, untouched.
+    with open_session() as db:
+        webui_row = db.get(ChatSession, sid_webui)
+    assert webui_row is not None
+    assert webui_row.channel == "webui"
