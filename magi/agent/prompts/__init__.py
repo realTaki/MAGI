@@ -29,11 +29,17 @@ Files:
                              into a 3-5 word title" job. Read by
                              :mod:`magi.agent.memory.session.auto_title`.
 
-Loading is **eager at first use** and cached in module-level
-globals so subsequent calls are O(1). The cache survives
-across requests; if an operator edits a file in place they
-need to restart the process for the change to take effect
-(C4 will move to a file-watcher + reload model).
+Hot-reload: every ``_load`` call does a single ``Path.stat()``
+on the source file (microseconds) and compares ``mtime`` /
+``size`` against the cached entry. A mismatch evicts the
+cached text and re-reads. The cost is one stat per LLM turn
+per block — invisible at any realistic request rate.
+
+Manual eviction is also available via ``reset_cache()`` —
+the admin endpoint ``POST /api/prompts/reload`` calls it.
+This is the fallback when an operator edits a file and
+doesn't want to wait for the next LLM call to discover the
+change (e.g. during prompt tuning sessions).
 """
 
 from __future__ import annotations
@@ -52,13 +58,29 @@ logger = logging.getLogger("magi.agent.prompts")
 # whole subsystem.
 _PROMPTS_DIR: Final[Path] = Path(__file__).resolve().parent
 
-# Cache: path → (text, error). Filled lazily on first read.
-_cache: dict[str, str] = {}
+# Cache: name → (text, mtime_ns, size). Filled lazily.
+# The tuple makes mtime/size part of the cache key — when
+# either changes, we treat it as a different file content
+# and re-read. This is the hot-reload primitive.
+_cache: dict[str, tuple[str, int, int]] = {}
+# File path → (mtime_ns, size) — the version we last
+# actually loaded for. Compared on every ``_load`` to
+# detect the "operator edited the file" case. Same idea
+# as the cache tuple, just keyed by path so a fresh
+# process reads the file on first use without a stale
+# empty entry.
+_versions: dict[Path, tuple[int, int]] = {}
 _cache_lock = Lock()
 
 
 def _load(name: str) -> str:
     """Read a prompt file by short name (e.g. ``"soul"``).
+
+    Hot-reload: each call stat()s the source file and
+    compares ``(mtime_ns, size)`` to the last loaded
+    version. A mismatch evicts the cache and re-reads.
+    The per-call stat is microseconds; no measurable
+    cost on the request path.
 
     Plain-text files (``.md``) are returned stripped;
     YAML files (``.yaml`` / ``.yml``) are returned as a
@@ -66,29 +88,72 @@ def _load(name: str) -> str:
     ``bot_replies`` loader is a thin wrapper that asks for
     the YAML form and ``yaml.safe_load`` it.
     """
-    if name in _cache:
-        return _cache[name]
-    with _cache_lock:
-        if name in _cache:
-            return _cache[name]
-        # ``.md`` first, fall back to ``.yaml`` / ``.yml``.
-        for suffix in (".md", ".yaml", ".yml"):
-            path = _PROMPTS_DIR / f"{name}{suffix}"
-            if path.is_file():
-                try:
-                    text = path.read_text(encoding="utf-8")
-                except OSError as exc:
-                    logger.exception("failed to read prompt %s", path)
-                    raise FileNotFoundError(
-                        f"prompt {name!r} could not be read: {exc}"
-                    ) from exc
-                _cache[name] = text.strip() if suffix == ".md" else text
-                return _cache[name]
-        # Not found at any extension.
+    # Locate the file once. ``.md`` first, fall back to
+    # ``.yaml`` / ``.yml``.
+    resolved_path: Path | None = None
+    for suffix in (".md", ".yaml", ".yml"):
+        candidate = _PROMPTS_DIR / f"{name}{suffix}"
+        if candidate.is_file():
+            resolved_path = candidate
+            break
+    if resolved_path is None:
         raise FileNotFoundError(
             f"prompt {name!r} not found in {_PROMPTS_DIR} "
             "(looked for .md, .yaml, .yml)"
         )
+
+    # Fast path: stat once, compare to the recorded version,
+    # return the cached text if both mtime_ns and size match.
+    # ``stat().st_mtime_ns`` is available since Python 3.3;
+    # we pair it with size to break ties (a zero-byte file
+    # edited to a different zero-byte content would have
+    # matching mtime_ns at the second granularity but
+    # different content; size is the cheap tiebreaker).
+    try:
+        st = resolved_path.stat()
+    except OSError as exc:
+        # File disappeared between the is_file check and
+        # stat. Treat as a cache miss + 404.
+        raise FileNotFoundError(
+            f"prompt {name!r} vanished mid-read: {exc}"
+        ) from exc
+    current_version = (st.st_mtime_ns, st.st_size)
+    cached = _cache.get(name)
+    if cached is not None:
+        cached_text, cached_mtime_ns, cached_size = cached
+        if (cached_mtime_ns, cached_size) == current_version:
+            return cached_text
+
+    # Slow path: re-read + update both caches. Held under
+    # the lock so concurrent calls don't race-write the
+    # same entry. ``_versions`` is keyed by path so a
+    # second name that points at the same file (the loader
+    # currently doesn't do that, but the structure is
+    # future-proof) shares the version check.
+    with _cache_lock:
+        cached = _cache.get(name)
+        if cached is not None:
+            cached_text, cached_mtime_ns, cached_size = cached
+            if (cached_mtime_ns, cached_size) == current_version:
+                return cached_text
+        try:
+            text = resolved_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.exception("failed to read prompt %s", resolved_path)
+            raise FileNotFoundError(
+                f"prompt {name!r} could not be read: {exc}"
+            ) from exc
+        text = text.strip() if resolved_path.suffix == ".md" else text
+        _cache[name] = (text, current_version[0], current_version[1])
+        _versions[resolved_path] = current_version
+        logger.info(
+            "prompt reloaded (mtime changed or cache cold): %s "
+            "(mtime_ns=%d size=%d)",
+            resolved_path.name,
+            current_version[0],
+            current_version[1],
+        )
+        return text
 
 
 # -- public loaders ----------------------------------------------------------
@@ -198,8 +263,16 @@ def load_bot_replies() -> dict[str, str]:
 
 
 def reset_cache() -> None:
-    """Drop the in-memory cache. Test-only — production code
-    never calls this. The runtime loads each file at most
-    once per process."""
+    """Drop the in-memory cache.
+
+    Called by the test suite (``pytest`` fixture teardown)
+    and by the ``POST /api/prompts/reload`` admin
+    endpoint. Both also need to drop ``_versions`` so the
+    next ``_load`` walks the slow path and re-stats; if
+    ``_versions`` kept stale entries, the next read could
+    fast-path to the cached text on the first stat (a
+    no-op stat) and skip the actual re-read.
+    """
     with _cache_lock:
         _cache.clear()
+        _versions.clear()

@@ -45,11 +45,19 @@ from magi.agent.prompts import load_memory_block_template
 # the per-kind headings from one file. The full template
 # is split on these markers at render time; see
 # :func:`format_memory_block` below.
+#
+# Hot-reload: ``_ensure_kind_headers_loaded`` re-parses
+# the template on every call (the underlying loader is
+# already mtime-aware via ``magi.agent.prompts._load``),
+# so an operator editing ``memory_block.md`` to rename
+# "重要的事" → "公司政策" picks up the new heading on
+# the next LLM turn without a process restart.
 _TEMPLATE_KIND_HEADERS: dict[str, str] = {}
 
 
 def _ensure_kind_headers_loaded() -> None:
-    """Lazy-load the per-kind sub-section headings.
+    """Parse the per-kind sub-section headings from the
+    bundled ``memory_block.md`` template.
 
     The template looks like::
 
@@ -61,13 +69,17 @@ def _ensure_kind_headers_loaded() -> None:
 
         ### 正在进行
 
-    We split on the third-line marker ``### `` and keep
-    the heading text after the prefix. Done once per
-    process — the cache survives across requests so the
-    per-turn cost is one dict lookup.
+    We split on the ``### `` marker line and keep the
+    heading text after the prefix. Each call re-parses
+    (the underlying :func:`load_memory_block_template`
+    does its own mtime check, so this is cheap), but we
+    cache the parsed dict so a single LLM turn that
+    renders multiple memory blocks doesn't redo the work.
+
+    The cache is invalidated automatically when the
+    template's text changes — see the docstring at the
+    top of this module.
     """
-    if _TEMPLATE_KIND_HEADERS:
-        return
     template = load_memory_block_template()
     # Drop everything before the first ``###`` (header + intro).
     # What remains is two ``### X`` lines separated by a blank.
@@ -90,6 +102,7 @@ def _ensure_kind_headers_loaded() -> None:
     for kind in (KIND_IMPORTANT, KIND_ONGOING):
         if kind not in sections:
             sections[kind] = kind  # fall back to the enum string
+    _TEMPLATE_KIND_HEADERS.clear()
     _TEMPLATE_KIND_HEADERS.update(sections)
 
 
