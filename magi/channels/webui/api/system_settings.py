@@ -29,9 +29,8 @@ Default timezone: used to be a hard-coded
 aggregations lined up with their wall-clock. Now
 resolves lazily to the **server's** local timezone
 via :func:`_system_default_timezone` (uses
-:mod:`tzlocal`); UTC when the server has no timezone
-configured (CI runners). Operators in other
-timezones can still set this once during setup via
+:mod:`tzlocal`). Operators in other timezones can
+still set this once during setup via
 ``PUT /api/system-settings/timezone``.
 """
 
@@ -68,9 +67,7 @@ def _system_default_timezone() -> str:
     We default to the **server's** local timezone — a
     container in Shanghai comes up as ``"Asia/Shanghai"``
     so weekly/monthly aggregations line up with the
-    operator's wall-clock without a setup step. CI runners
-    with no timezone config fall back to ``"UTC"`` (the
-    prior behaviour, preserved).
+    operator's wall-clock without a setup step.
 
     The resolution is wrapped in a function (not a
     module-level constant) so the test suite can
@@ -82,14 +79,17 @@ def _system_default_timezone() -> str:
     try:
         return get_localzone().key
     except Exception:
-        # Last-resort fallback: ``get_localzone`` can
-        # raise on a stripped-down container with no
-        # ``/etc/localtime``. UTC is the prior default,
-        # so we keep it as the safety net.
+        # ``get_localzone`` can raise on a stripped-down
+        # container with no ``/etc/localtime`` — we have
+        # nothing better to fall back to than an IANA
+        # string the rest of the stack can parse, so
+        # emit a warning and let the operator see a
+        # well-formed timezone name in the response.
         logger.warning(
-            "could not resolve server timezone; falling back to UTC"
+            "could not resolve server timezone via tzlocal; "
+            "falling back to Etc/UTC"
         )
-        return "UTC"
+        return "Etc/UTC"
 
 
 def _state_dir() -> str:
@@ -100,11 +100,11 @@ def get_system_timezone(state_dir: str) -> str:
     """Return the configured timezone name (e.g. ``"UTC"``,
     ``"Asia/Shanghai"``).
 
-    Falls back to :func:`_system_default_timezone` (server's
-    local timezone; UTC when unset) when the
-    stored value is empty / invalid. Validation runs
-    through :class:`zoneinfo.ZoneInfo` so a hand-edited
-    garbage value can't crash the aggregation endpoint.
+    Falls back to :func:`_system_default_timezone`
+    (server's local timezone) when the stored value is
+    empty / invalid. Validation runs through
+    :class:`zoneinfo.ZoneInfo` so a hand-edited garbage
+    value can't crash the aggregation endpoint.
     """
     raw = state_get(state_dir, SYSTEM_TZ_KEY)
     if not raw:

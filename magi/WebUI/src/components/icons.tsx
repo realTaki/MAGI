@@ -137,3 +137,15 @@ export const IconTools = ({ className }: IconProps) => (
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-2.4 2.5-2.5z" />
   </Icon>
 );
+
+// `?` in a circle — used for the InfoTip component. Sits
+// next to a card title; hover or focus surfaces a tooltip
+// with a longer explanation that doesn't need to live in
+// the card body.
+export const IconHelp = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2 2-2 3" />
+    <circle cx="12.5" cy="16.5" r="0.6" fill="currentColor" stroke="none" />
+  </Icon>
+);
