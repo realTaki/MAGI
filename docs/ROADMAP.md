@@ -16,7 +16,7 @@ file.
 | C1.3 — Alembic + WebUI completion | **Next** | Alembic baseline + `/api/eves` `/api/audit` `/api/login` still pending |
 | C2 — chat history | **~90%** | All CRUD/auto-compact/auto-title done; **TG self-serve `/start <code>` still pending**; D.22/D.23/D.24/interrupt/reactions landed |
 | C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-employee LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
-| C4 — per-employee persona + memory UI | **~30%** | `action_items.source="eve"` done; per-employee SOUL.md, memory-to-prompt wiring, memory management UI all pending |
+| C4 — per-employee persona + memory UI | **~55%** | `action_items.source="eve"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-employee SOUL.md, memory management UI still pending |
 | C5 — more channels (Email + Calendar) | **0%** | Not started |
 | C6 — cross-MAGI + cross-employee | **~5%** | Role enum in place; `/api/eves/{id}/dispatch`, cross-employee query still pending |
 | C7 — WebSocket stream console | **0%** | Not started |
@@ -205,7 +205,7 @@ driven action items.
 | `action_items.source = "eve"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVE side writes them |
 | `action_items.priority = "high"` for time-sensitive follow-ups | **Done** | Same |
 | `action_items.payload_json` per-kind structured fields | **Later** | YAGNI for the rows we can foresee (per the model docstring); add when C4 needs structured per-kind fields |
-| Memory subsystem fully wired into `loop.py` prompt assembly | **Next** | Format functions exist (`format_memory_block` + `format_contact_block` + session active block); `loop.py` doesn't call them yet |
+| Memory subsystem fully wired into `loop.py` prompt assembly | **Done** | `_build_system_prompt` in `loop.py` renders SOUL → memory (important + ongoing in-flight) → contact (per-chat, real display_name) → skills; tests in `test_agent_system_prompt.py` pin ordering + scope + resilience |
 | Memory management UI in WebUI (operator sees / edits / deletes rows) | **Next** | Currently the table is LLM-only; no `/api/memory` route; `KnowledgeTab` shows skills but not memory/contacts |
 | Per-employee settings (C4+ setting keys) | **Later** | `system_settings.py: "A future C4+ setting"` |
 
@@ -423,6 +423,98 @@ commit history.
   tool returns "TG callback not wired into the
   tool context". Test in
   `test_tg_send_message_callback.py`.
+
+### System-prompt assembly wires all four blocks
+
+- `_build_system_prompt` in `loop.py` now
+  composes, in fixed order: **SOUL** →
+  **Long-term memory** (MAGI's important +
+  ongoing in-flight rows, scoped to
+  `owner_id == employee_id`) → **Current
+  chatter** (per-chat contact record for the
+  current `chat_id`, rendered with the
+  Employee's real `display_name ?? name`,
+  **not** the raw `person_id` FK) →
+  **Available skills** (frontmatter summary).
+- Each block short-circuits on empty rows so a
+  fresh deploy still gets a sensible prompt.
+  ORM failures inside any block degrade
+  gracefully (the block is dropped, the rest
+  of the prompt still renders).
+- Tests in `test_agent_system_prompt.py` pin:
+  block ordering, per-employee scope,
+  per-chat contact scope, the `display_name`
+  rendering invariant, and the four
+  resilience cases (memory / contact ORM
+  failure, empty blocks, etc.).
+- Pre-C4 work: the per-chat contact header
+  used to render `**{person_id}**` (a raw
+  integer FK); the agent loop now resolves
+  the Employee's name in the same ORM
+  read that already happens for the
+  `chat_id → person_id` translation, so the
+  LLM never sees an integer it has to look
+  up via a tool call.
+
+### Prompt text centralized in `magi/agent/prompts/`
+
+- All natural-language text the runtime
+  emits to the LLM lives in one place:
+  `soul.md`, `fallback_persona.md`,
+  `chat_titles.md`, `compaction.md`,
+  `bot_replies.yaml`, plus the three new
+  per-block templates:
+  - `memory_block.md` — header + intro +
+    per-kind sub-section headings
+    (`### 重要的事`, `### 正在进行`)
+  - `contact_block.md` — `## Current chatter`
+    header + intro
+  - `skills_block.md` — `## Available skills`
+    header + intro
+- Loader at `magi/agent/prompts/__init__.py`
+  caches each file once per process; the
+  cache survives across requests. A future
+  C8 file-watcher will close the loop so an
+  operator edit takes effect without a
+  restart.
+- The Python formatters (`format_memory_block`,
+  `format_contact_block`, `format_skills_block`)
+  no longer carry prose. They load the
+  template, parse the `### ` markers (memory
+  block only), and append runtime data. An
+  operator tuning prompt wording now opens
+  the `.md` file in an editor, never the
+  Python file.
+
+### Timestamp helpers unified (deprecation-warning cleanup)
+
+- Python 3.12 emits `DeprecationWarning`
+  for `datetime.utcnow()`. Two helpers now
+  replace it:
+  - `magi.agent.db.base.utcnow_naive()` —
+    used by every ORM `default=` /
+    `onupdate=`. Lives in `db/base.py`
+    (lowest layer) so model files import
+    it without triggering the
+    `memory → contacts → tools → db`
+    circular import.
+  - `magi.agent.memory.session.ids.utcnow_iso()`
+    — session-package ISO strings (the
+    `String(32)` columns rather than
+    `DateTime`).
+- Production code now contains zero
+  `datetime.utcnow()` calls; the deprecation
+  warnings in the test run are all from
+  test files (intentionally left alone —
+  tests are short-lived and don't need the
+  migration).
+- DB column type still `DateTime` (naive,
+  UTC). Switching to `DateTime(timezone=True)`
+  is a future Alembic migration task that
+  moves the schema column type, the store-level
+  ISO serialisation, and the cross-module
+  ordering all together — see
+  [ROADMAP C1.3 Alembic baseline](file:///Users/.../ROADMAP.md#c13--alembic-baseline--webui-completion).
 
 ## Open questions for the user
 
