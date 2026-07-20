@@ -741,6 +741,17 @@ async def handle_message(
     # is fine on webui, where the tool itself rejects with
     # ``is_error=true``.
     tg_send_callback=None,
+    # Calling operator's role. Used to filter which tools
+    # the LLM sees (see ``get_tool_schemas(caller_role=...)``
+    # in :mod:`magi.agent.tools.registry`): admin-only tools
+    # like ``schedule_task`` and the action-item trio
+    # (``add_todo`` / ``complete_todo`` / ``list_todo``) are
+    # stripped from the menu when the caller isn't
+    # ``admin`` or ``assigned``. ``None`` skips the filter —
+    # tests, headless callers, or contexts where the role
+    # hasn't been plumbed yet. Chat handlers always pass an
+    # explicit role.
+    caller_role: str | None = None,
 ) -> str:
     """One chat turn. Returns the LLM's reply text.
 
@@ -847,7 +858,7 @@ async def handle_message(
         employee_id=employee_id if employee_id is not None else 0,
         channel=channel,
     )
-    tool_schemas = get_tool_schemas()
+    tool_schemas = get_tool_schemas(caller_role=caller_role)
 
     try:
         provider = get_provider(provider_name, api_key, model)

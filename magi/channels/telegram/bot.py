@@ -154,6 +154,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             emp_name,
             display_name,
             emp_separated,
+            emp_role,
             emp_provider,
             emp_key,
         )
@@ -265,6 +266,7 @@ async def _handle_employee_message(
     employee_name: str,
     display_name: str | None,
     employee_separated: bool,
+    employee_role: str,
     employee_provider: str | None,
     employee_api_key: str | None,
 ) -> None:
@@ -462,6 +464,15 @@ async def _handle_employee_message(
             employee_id=employee_id,
             employee_provider=employee_provider,
             employee_api_key=employee_api_key,
+            # The bound operator's role — required by the
+            # agent loop to filter admin-only tools
+            # (``schedule_task`` + action-item trio) out
+            # of the TG-callable menu. Telegram only
+            # serves ``admin`` and ``assigned`` today (the
+            # earlier branch in this function already
+            # refused everyone else with a polite reply),
+            # so this is always one of those two roles.
+            caller_role=employee_role,
             tg_send_callback=_tg_send_callback,
         )
     finally:

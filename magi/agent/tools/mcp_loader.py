@@ -169,6 +169,18 @@ class MCPTool:
             "input_schema": self.input_schema,
         }
 
+    def is_allowed_for_role(self, role: str | None) -> bool:
+        """MCP tools are intentionally unrestricted by role.
+
+        The MCP server is configured by the operator and they
+        decide which tools to expose — a server like
+        ``github__create_issue`` carrying admin-only side
+        effects is the operator's call, not ours. v0
+        surfaces every MCP tool to every operator; tightening
+        this comes later (likely via per-tool ``allowed_roles``
+        frontmatter on the server config side)."""
+        return True
+
     async def run(self, ctx: Any, **kwargs: Any) -> Any:
         """Forward the call to the MCP server.
 

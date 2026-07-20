@@ -327,6 +327,16 @@ function CompactSection() {
       {!loadError && data && (
         <div className="mt-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/*
+              Each input is the source of truth — pre-filled
+              from the server's current value on load, and re-
+              set from ``body.context_window`` after a Save.
+              A separate "current effective value" indicator
+              was originally rendered below the grid but was
+              removed because the boxes already mirror the
+              effective value 1:1 (so the line was duplicating
+              what the operator was already looking at).
+            */}
             <div>
               <label className="form-label">Context window</label>
               <input
@@ -373,13 +383,6 @@ function CompactSection() {
               </p>
             </div>
           </div>
-          {(data.context_window !== data.default_context_window ||
-            data.threshold_pct !== data.default_threshold_pct ||
-            data.keep_recent !== data.default_keep_recent) && (
-            <p className="text-xs text-ink-soft">
-              当前生效值 {data.context_window.toLocaleString()} / {data.threshold_pct}% / keep {data.keep_recent}
-            </p>
-          )}
         </div>
       )}
 

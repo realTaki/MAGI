@@ -50,6 +50,11 @@ def _build_tools() -> list["Tool"]:
         BashOutputTool,
         BashRunTool,
     )
+    from magi.agent.tools.action_item import (
+        AddTodoTool,
+        CompleteTodoTool,
+        ListTodoTool,
+    )
     from magi.agent.tools.edit_file import EditFileTool
     from magi.agent.tools.list_files import ListFilesTool
     from magi.agent.tools.read_file import ReadFileTool
@@ -101,10 +106,18 @@ def _build_tools() -> list["Tool"]:
         UpdateContactTool(),
         DeleteContactTool(),
         SearchContactsTool(),
+        # Todo / action-item — per-employee, scoped
+        # to the caller. ALLOWED_ROLES = {admin,
+        # assigned} keeps these out of the menu for
+        # other roles; the in-run ``_gate`` on each
+        # tool is the second-layer defence.
+        AddTodoTool(),
+        CompleteTodoTool(),
+        ListTodoTool(),
     ]
 
 
-def get_tools() -> list["Tool"]:
+def get_tools(caller_role: str | None = None) -> list["Tool"]:
     """Return all registered tools (cached after first call).
 
     Built-in tools are appended first; MCP tools (loaded at
@@ -112,24 +125,38 @@ def get_tools() -> list["Tool"]:
     loop passes ``schemas`` in order; some models put more
     weight on the first few tools), so MCP belongs at the
     end of the menu.
+
+    ``caller_role`` filters out tools whose
+    :attr:`Tool.ALLOWED_ROLES` exclude the caller. ``None``
+    (caller didn't supply a role — tests, boot-time probes)
+    returns tools with no role restriction; role-restricted
+    tools are stripped (better than silently exposing
+    admin-only tools to unidentified callers).
     """
     global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
-    return _tools_cache + (_mcp_tools_cache or [])
+    all_tools = _tools_cache + (_mcp_tools_cache or [])
+    return [t for t in all_tools if t.is_allowed_for_role(caller_role)]
 
 
-def get_tool(name: str) -> "Tool | None":
+def get_tool(name: str, caller_role: str | None = None) -> "Tool | None":
     """Look up a single tool by name. ``None`` if no such
     tool is registered — the agent loop turns that into
-    an ``is_error=true`` ``tool_result`` for the LLM."""
-    for t in get_tools():
+    an ``is_error=true`` ``tool_result`` for the LLM.
+
+    Role-gated lookup honors ``caller_role``: an
+    admin-only tool is invisible to a caller who passes
+    a different role (matches the menu-filter behaviour
+    of :func:`get_tools`).
+    """
+    for t in get_tools(caller_role=caller_role):
         if t.name == name:
             return t
     return None
 
 
-def get_tool_schemas() -> list[dict]:
+def get_tool_schemas(caller_role: str | None = None) -> list[dict]:
     """Schemas (Anthropic-shaped) for every registered
     tool — passed straight to ``provider.chat(tools=...)``.
 
@@ -137,7 +164,7 @@ def get_tool_schemas() -> list[dict]:
     :func:`_build_tools` constructs), so the LLM sees the
     same menu every turn.
     """
-    return [t.to_anthropic_schema() for t in get_tools()]
+    return [t.to_anthropic_schema() for t in get_tools(caller_role=caller_role)]
 
 
 def reset_cache() -> None:

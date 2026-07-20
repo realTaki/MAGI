@@ -62,6 +62,17 @@ _ROLE_MAY_CREATE = {"admin", "assigned"}
 
 class ScheduleTaskTool(Tool):
     name = "schedule_task"
+
+    # Visible only to ``admin`` and ``assigned`` operators.
+    # Registry: ``get_tools(caller_role=...)`` strips this
+    # tool out of the menu for everyone else, so the model
+    # never learns it exists when it can't be invoked. The
+    # in-run re-check below (``_ROLE_MAY_CREATE``) is a
+    # defense-in-depth safeguard for the (currently
+    # dormant) path that bypasses ``get_tools`` — better to
+    # fail closed twice than to leak the tool's existence to
+    # a caller who's not signed in to this MAGI node.
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create or update a recurring scheduled task. Requires "
         "admin or assigned-employee scope (i.e. the calling "
