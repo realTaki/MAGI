@@ -1,20 +1,22 @@
 /**
- * KnowledgeTab — Skills / Connectors / Contacts / Tools.
+ * KnowledgeTab — Skills / Connectors / Contacts / Memory / Tools.
  *
- * Four-section left sidebar. Skills / Connectors / Contacts
- * are placeholders pointing at the checkpoint that will
- * populate each:
- *   - Skills      — C4 (SkillRunner + 4 MVP skills)
- *   - Connectors  — Phase 2 (Email / Calendar); Telegram is
- *                   "live" via the wizard but the channel
- *                   abstraction lands in C3
- *   - Contacts    — C1.1 (employee directory; today the only
- *                   "contacts" are the super admins in
- *                   Settings)
- *   - Tools       — live today; renders the tool registry
- *                   (``GET /api/tools``) so the operator can
- *                   verify which built-ins + MCP-loaded tools
- *                   the agent can actually call.
+ * Five-section left sidebar.
+ *   - Skills      — live (``GET /api/skills``); bundled +
+ *                   operator-edited SKILL.md files.
+ *   - Connectors  — placeholder; Telegram is live via the
+ *                   wizard, Email / Calendar are Phase 2.
+ *   - Contacts    — live (``GET /api/contacts``); people
+ *                   MAGI knows about, with JOIN to
+ *                   Employee + Department for display fields.
+ *   - Memory      — live (``GET /api/memory``); MAGI's own
+ *                   facts + ongoing work, ordered by
+ *                   importance then recency (same as the
+ *                   system-prompt formatter).
+ *   - Tools       — live (``GET /api/tools``); the tool
+ *                   registry so the operator can verify
+ *                   which built-ins + MCP-loaded tools the
+ *                   agent can actually call.
  *
  * SidebarItem.label convention in this file: dotted i18n keys
  * for Tools (``settings.toolsHeading``); raw Chinese strings
@@ -29,12 +31,18 @@ import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconConnectors,
   IconContacts,
+  IconReminders,
   IconSkills,
   IconTools,
 } from "../components/icons";
 import { useI18n, useT } from "../i18n/index";
 
-type KnowledgeSection = "skills" | "connectors" | "contacts" | "tools";
+type KnowledgeSection =
+  | "skills"
+  | "connectors"
+  | "contacts"
+  | "memory"
+  | "tools";
 
 /** Section metadata: id (drives selection) + i18n key for
  *  the sidebar label. The default export resolves the keys
@@ -48,6 +56,7 @@ const KNOWLEDGE_SECTIONS: Array<{
   { id: "skills", labelKey: "sidebar.knowledgeSkills", icon: <IconSkills /> },
   { id: "connectors", labelKey: "sidebar.knowledgeConnectors", icon: <IconConnectors /> },
   { id: "contacts", labelKey: "sidebar.knowledgeContacts", icon: <IconContacts /> },
+  { id: "memory", labelKey: "sidebar.knowledgeMemory", icon: <IconReminders /> },
   { id: "tools", labelKey: "settings.toolsHeading", icon: <IconTools /> },
 ];
 
@@ -74,6 +83,7 @@ export default function KnowledgeTab() {
       {section === "skills" && <KnowledgeSkillsPane />}
       {section === "connectors" && <KnowledgeConnectorsPane />}
       {section === "contacts" && <KnowledgeContactsPane />}
+      {section === "memory" && <KnowledgeMemoryPane />}
       {section === "tools" && <KnowledgeToolsPane />}
     </SidebarShell>
   );
@@ -466,11 +476,216 @@ export function KnowledgeContactsPane() {
 // would invite unrelated callers to depend on the file's internal
 // organisation.
 //
-// `KnowledgeConnectorRow`, `KnowledgeContactsPane`, and
-// `KnowledgeToolsPane` are exported for testability (a future
-// test can mount them in isolation without rendering the whole
+// `KnowledgeConnectorRow`, `KnowledgeContactsPane`,
+// `KnowledgeMemoryPane`, and `KnowledgeToolsPane` are
+// exported for testability (a future test can mount them
+// in isolation without rendering the whole
 // `<SidebarShell>`).
 //
+// -- pane: memory -----------------------------------------------------------
+//
+// Live today. Reads ``GET /api/memory`` (admin-gated,
+// served by ``magi.channels.webui.api.memory``) and
+// renders the admin's memory rows — long-lived facts
+// (``kind=important``) and in-flight tasks
+// (``kind=ongoing``) — in a 5-column table. The same
+// ordering as the system-prompt formatter
+// (``importance DESC, updated_at DESC``) so what the LLM
+// sees in its working block lines up with what the
+// operator sees here.
+//
+// Completed ongoing rows stay in the table per
+// ``MemoryEntry.completed_at`` semantics (audit trail);
+// the operator view doesn't pre-filter them the way the
+// formatter does. A small "已完成" badge replaces the
+// kind badge on those rows so the operator can scan
+// recent-completion history at a glance.
+//
+// Body preview is clipped to 200 chars (the store caps
+// body at 8 KB so most rows render verbatim; the cap
+// only kicks in on the largest ones). Full body lives
+// in ``title=`` for hover.
+//
+// v0 deliberately omits edit / delete affordances. The
+// LLM already has ``add_memory`` / ``update_memory`` /
+// ``complete_memory`` / ``delete_memory`` tools; a
+// future "operator-curated memory" surface would land
+// here alongside a "confirm" affordance.
+const MEMORY_BODY_PREVIEW_CHARS = 200;
+
+function truncateMemoryBody(s: string): string {
+  if (s.length <= MEMORY_BODY_PREVIEW_CHARS) return s;
+  return s.slice(0, MEMORY_BODY_PREVIEW_CHARS).trimEnd() + "…";
+}
+
+function formatDateOnly(iso: string): string {
+  // "2026-07-03T04:19:45Z" → "2026-07-03" (the time isn't
+  // useful in a memory-table "updated" column; the date
+  // alone is enough for "how recent is this fact?").
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : iso;
+}
+
+export function KnowledgeMemoryPane() {
+  type MemoryRow = {
+    id: number;
+    kind: string;
+    subject: string;
+    body: string;
+    importance: number;
+    source: string;
+    completed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  type MemoryListResponse = {
+    items: MemoryRow[];
+    total: number;
+  };
+
+  const t = useT();
+  const [memory, setMemory] = useState<MemoryRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/memory", { credentials: "include" });
+        if (!r.ok) {
+          if (!cancelled) {
+            setLoadError(
+              `${t("settings.knowledgeMemoryLoadFailed")} (${r.status})`,
+            );
+          }
+          return;
+        }
+        const body = (await r.json()) as MemoryListResponse;
+        if (!cancelled) setMemory(body.items);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error ? err.message : "Network error",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-ink">
+          {t("settings.knowledgeMemoryHeading")}
+        </h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          {t("settings.knowledgeMemoryIntro")}
+        </p>
+      </div>
+      <ConsoleCard title={t("settings.knowledgeMemoryHeading")}>
+        {loadError && <p className="form-error">✗ {loadError}</p>}
+        {memory === null && !loadError && (
+          <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
+        )}
+        {memory !== null && memory.length === 0 && !loadError && (
+          <p className="text-sm text-ink-soft">
+            {t("settings.knowledgeMemoryEmpty")}
+          </p>
+        )}
+        {memory !== null && memory.length > 0 && (
+          <table className="data-table w-full">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-4 font-medium">
+                  {t("settings.knowledgeMemoryColumnSubject")}
+                </th>
+                <th className="py-2 pr-4 font-medium">
+                  {t("settings.knowledgeMemoryColumnKind")}
+                </th>
+                <th className="py-2 pr-4 font-medium w-20">
+                  {t("settings.knowledgeMemoryColumnImportance")}
+                </th>
+                <th className="py-2 pr-4 font-medium whitespace-nowrap">
+                  {t("settings.knowledgeMemoryColumnUpdated")}
+                </th>
+                <th className="py-2 pr-4 font-medium">
+                  {t("settings.knowledgeMemoryColumnBody")}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {memory.map((m) => (
+                <tr
+                  key={m.id}
+                  className="border-b border-sky-light/30 last:border-0 align-top"
+                >
+                  <td className="py-2 pr-4 text-ink text-xs">
+                    <div className="font-medium">{m.subject}</div>
+                    <div className="mt-0.5 text-[10px] text-ink-soft font-mono">
+                      #{m.id} · {m.source}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-4 text-xs">
+                    {m.completed_at ? (
+                      // Completed ongoing row — show the
+                      // localized "completed" badge so the
+                      // operator can scan the recent-completion
+                      // history at a glance.
+                      <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
+                        {t("settings.knowledgeMemoryCompleted")} ·{" "}
+                        {formatDateOnly(m.completed_at)}
+                      </span>
+                    ) : (
+                      <span
+                        className={
+                          "inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 " +
+                          (m.kind === "important"
+                            ? "bg-sky-pale/40 text-ink-soft border-sky-light/40"
+                            : "bg-amber-50 text-amber-700 border-amber-200")
+                        }
+                      >
+                        {m.kind === "important"
+                          ? t("settings.knowledgeMemoryKindImportant")
+                          : t("settings.knowledgeMemoryKindOngoing")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-xs text-ink-soft whitespace-nowrap">
+                    {/* Importance 1-5; render as filled dots so
+                        the column reads at a glance without
+                        explaining "what is 3?". 5 dots total,
+                        first N filled. */}
+                    <span aria-label={`${m.importance}/5`}>
+                      {"●".repeat(m.importance)}
+                      <span className="text-ink-soft/40">
+                        {"○".repeat(5 - m.importance)}
+                      </span>
+                    </span>
+                  </td>
+                  <td className="py-2 pr-4 text-ink-soft text-xs whitespace-nowrap">
+                    {formatDateOnly(m.updated_at)}
+                  </td>
+                  <td
+                    className="py-2 pr-4 text-ink-soft text-xs max-w-md"
+                    title={m.body}
+                  >
+                    {truncateMemoryBody(m.body)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ConsoleCard>
+    </div>
+  );
+}
+
 // -- pane: tools -----------------------------------------------------------
 //
 // Live today. Reads the tool registry from
