@@ -107,10 +107,10 @@ def client(token_env):
 def test_record_token_usage_happy_path(token_env):
     """Full Anthropic-shape ``usage`` dict → row with all
     four fields populated."""
-    from magi.agent.loop import _record_token_usage
+    from magi.agent.token_usage import record_token_usage
     from magi.agent.db import TokenUsage, open_session
 
-    _record_token_usage(
+    record_token_usage(
         str(token_env[0]),
         employee_id=1,
         channel="webui",
@@ -145,10 +145,10 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     a successful LLM call, but defensive zero-row keeps
     the call-count aggregate accurate if the helper is
     called with ``usage={}`` (e.g. a future failure path)."""
-    from magi.agent.loop import _record_token_usage
+    from magi.agent.token_usage import record_token_usage
     from magi.agent.db import TokenUsage, open_session
 
-    _record_token_usage(
+    record_token_usage(
         str(token_env[0]),
         employee_id=2,
         channel="tg",
@@ -171,10 +171,10 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
 def test_record_token_usage_partial_dict(token_env):
     """Missing cache keys default to 0; the helper doesn't
     raise on a minimal Anthropic shape."""
-    from magi.agent.loop import _record_token_usage
+    from magi.agent.token_usage import record_token_usage
     from magi.agent.db import TokenUsage, open_session
 
-    _record_token_usage(
+    record_token_usage(
         str(token_env[0]),
         employee_id=1,
         channel="webui",

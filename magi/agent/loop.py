@@ -61,21 +61,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from magi.agent.llm import ChatMessage, LLMError, get_provider
-# Imported here only so ``_build_system_prompt`` can use them
-# without a circular import — the function lives at module
-# scope so its docstring is grep-able from the agent loop
-# entry point.
-from magi.agent.tools.skill_loader import format_skills_block, get_skill_loader
+# Note: prompt-block helpers (memory / contacts / skills)
+# live in :mod:`magi.agent.system_prompt` — not imported
+# here so this module stays focused on the chat loop.
 from magi.agent.tools.base import ToolContext
+from magi.agent.compaction import call_llm_for_summary, maybe_compact
+from magi.agent.system_prompt import build_system_prompt, read_soul
+from magi.agent.token_usage import record_token_usage
 from magi.agent.tools.registry import get_tool, get_tool_schemas
 from magi.agent.llm.tokens import estimate_messages_tokens
-from magi.agent.memory.session import (
-    SessionStore,
-    SessionMessage,
-    new_session_id,
-    utcnow_iso as _sessions_utcnow_iso,
-)
-from magi.agent.prompts import load_compaction_prompt
+from magi.agent.memory.session import SessionStore
 
 logger = logging.getLogger("magi.agent.agent")
 
@@ -98,269 +93,30 @@ from magi.agent.prompts import load_bot_replies  # noqa: E402
 _FALLBACK_REPLY_CACHE: dict[str, str] = {}
 
 
-def _fallback_reply(key: str = "agent_fallback") -> str:
-    """Resolve a friendly fallback string from the
-    bot_replies prompt table. Cached so a single YAML read
-    serves every fallback for the rest of the process.
+def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
+    """Truncate ``messages`` so the last entry is a plain
+    text message (no ``content_blocks``).
 
-    ``key`` selects which template: ``agent_fallback`` for
-    LLM-call failures (the legacy single-purpose template),
-    ``agent_no_credentials`` for the strict-mode rejection
-    that tells the user where to fix the missing config.
+    Anthropic's Messages API rejects request payloads where
+    a plain ``user`` text message is interleaved with the
+    tool_use → tool_result chain from a prior assistant
+    turn — the API expects tool_use blocks to be answered
+    by an immediately-following tool_result block. When an
+    interrupt splices a new user message in, the tail of
+    ``messages`` may look like:
+
+        [..., assistant(tool_use), user(tool_result, ...), user("hi")]
+
+    and the last ``user("hi")`` breaks the chain. We drop
+    any trailing message that carries ``content_blocks`` so
+    the next LLM call sees a clean boundary.
+
+    The truncation only touches the in-memory list; the
+    session store's history is left intact (it's the audit
+    trail, not the LLM-facing view).
     """
-    cached = _FALLBACK_REPLY_CACHE.get(key)
-    if cached is None:
-        cached = load_bot_replies()[key]
-        _FALLBACK_REPLY_CACHE[key] = cached
-    return cached
-
-# Where SOUL.md lives. C4 will move this to a per-employee
-# path (each EVE can have its own persona); for v0 we read
-# the single workspace file at startup.
-_SOUL_FILENAME = "SOUL.md"
-
-def _read_soul(state_dir: str) -> str:
-    """Load the persona text from the workspace's ``SOUL.md``.
-
-    Path resolution goes through :func:`magi.agent.workspace.workspace_root`
-    so a deployer that sets ``MAGI_WORKSPACE_DIR`` (state lives
-    outside the workspace tree) still gets the right file.
-
-    This is a **read** function — it does not bootstrap or write
-    to disk. :func:`magi.agent.workspace.bootstrap_workspace`
-    runs once at boot from ``magi.node`` and is responsible
-    for keeping ``SOUL.md`` in place. If the file is still
-    missing (e.g. operator wiped the workspace mid-run, or the
-    bundled prompt is absent from the install), we fall back to
-    the bundled ``prompts/fallback_persona.md`` rather than
-    write anything — the agent loop should never silently
-    mutate on-disk state.
-    """
-    from magi.agent.prompts import load_fallback_persona
-    from magi.agent.workspace import workspace_root
-
-    soul_path = workspace_root(state_dir) / _SOUL_FILENAME
-    try:
-        text = soul_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return load_fallback_persona()
-    text = text.strip()
-    return text or load_fallback_persona()
-
-
-def _build_system_prompt(
-    state_dir: str,
-    *,
-    employee_id: int,
-    chat_id: str,
-    soul: str,
-) -> str:
-    """Assemble the full system prompt for one LLM turn.
-
-    Four blocks, concatenated in this fixed order:
-
-      1. **SOUL** — the persona file (workspace-global).
-      2. **Long-term memory** — :func:`format_memory_block`
-         renders the calling admin's ``important`` +
-         ``ongoing in-flight`` rows. ``completed`` ongoing
-         rows are filtered out (per the store's
-         ``include_completed=False`` default) so the prompt
-         reflects the LLM's working set, not the audit
-         trail.
-      3. **Current chatter** — :func:`format_contact_block`
-         renders the single contact record for the person
-         the MAGI is currently talking to. Per-chat
-         (not "all contacts") so the prompt stays
-         constant-size regardless of directory size;
-         other contacts are loaded on demand via the
-         LLM's ``search_contacts`` tool.
-
-         The lookup is keyed by ``chat_id`` (the
-         per-channel delivery address — the TG chat id
-         on the TG channel, ``""`` on WebUI). The
-         contact row's ``person_id`` FK points at the
-         Employee row, so the block carries the
-         display name + role snapshot, NOT a raw
-         integer id.
-      4. **Available skills** — :func:`format_skills_block`
-         lists the frontmatter ``name`` + ``description``
-         of every registered SKILL.md. Bodies load on
-         demand via ``load_skill``.
-
-    Each block is independently short-circuit-safe:
-    empty blocks render as ``""`` so a fresh deploy
-    (no memory, no contact, no skills) still produces a
-    sensible prompt. The result is just the SOUL when
-    nothing else is registered yet.
-
-    Side effects: this calls ``ContactStore.find_by_person``
-    (one SELECT) and ``MemoryStore.list_for_owner`` (one
-    SELECT, capped at the store default of 50 rows). Both
-    are cheap and bounded; no N+1 risk.
-    """
-    from magi.agent.memory.contacts.prompt import format_contact_block
-    from magi.agent.memory.contacts.store import ContactStore
-    from magi.agent.memory.magi.prompt import format_memory_block
-    from magi.agent.memory.magi.store import MemoryStore
-
-    # Lazy import: chat_id → Employee lookup. Brought in
-    # here (rather than at module top) to keep the import
-    # graph small for the cases where the helper is never
-    # called (e.g. a future "agent loop headless mode"
-    # that skips the prompt assembly).
-    from magi.agent.db import Employee, open_session
-
-    # SOUL first — establishes the persona for the rest
-    # of the system prompt.
-    parts: list[str] = [soul]
-
-    # Memory block — operator-wide facts + in-flight work.
-    # ``list_for_owner`` defaults: include_completed=False,
-    # limit=50. Both are deliberate (see
-    # :func:`magi.agent.memory.magi.store.list_for_owner`).
-    try:
-        memory_rows = MemoryStore(state_dir).list_for_owner(employee_id)
-        memory_block = format_memory_block(memory_rows)
-    except Exception:
-        # The memory block is best-effort. A transient ORM
-        # error here would otherwise crash the inbound
-        # path — the LLM just sees a slightly thinner
-        # prompt.
-        logger.exception(
-            "agent: memory block load failed for employee=%s; "
-            "continuing without memory block",
-            employee_id,
-        )
-        memory_block = ""
-    if memory_block:
-        parts.append(memory_block)
-
-    # Contact block — per-chat (current chatter only).
-    # The lookup goes ``chat_id → Employee.telegram_id``
-    # → ``Employee.id`` → ``ContactEntry(person_id)``.
-    # ``chat_id`` is the per-channel delivery address (the
-    # TG chat id on the TG channel, ``""`` on WebUI) — not
-    # the Employee row's primary key. The contact table's
-    # unique key is ``(owner_id, person_id)`` where
-    # ``person_id`` is the FK to ``employees.id``, so we
-    # have to translate the chat address to the Employee id
-    # first.
-    #
-    # An empty ``chat_id`` (WebUI fallback) skips the
-    # lookup — the WebUI is admin-on-his-own-machine,
-    # there's no "other person" to render.
-    if chat_id:
-        try:
-            telegram_id = int(chat_id)
-            from sqlalchemy import select as _sa_select
-            with open_session() as db:
-                person_row = db.execute(
-                    _sa_select(Employee).where(
-                        Employee.telegram_id == telegram_id
-                    )
-                ).scalar_one_or_none()
-                # Resolve the display name INSIDE the
-                # session — ``display_name or name`` is
-                # the standard Employee-row resolution.
-                # We pass it to ``format_contact_block``
-                # so the rendered header reads "**Bob
-                # Chen**" instead of "**2**" (the latter
-                # would force the LLM to look the person
-                # up via a tool call on every turn).
-                if person_row is not None:
-                    display_name = (
-                        person_row.display_name
-                        or person_row.name
-                    )
-                    person_id = person_row.id
-                else:
-                    display_name = None
-                    person_id = None
-            if person_id is not None:
-                contact = ContactStore(state_dir).find_by_person(
-                    employee_id, person_id,
-                )
-            else:
-                contact = None
-            contact_block = format_contact_block(
-                contact, display_name=display_name,
-            )
-        except (ValueError, Exception):
-            # ``int(chat_id)`` raises ValueError for a
-            # non-numeric id; broader Exception catches
-            # transient ORM failures. Both are non-fatal.
-            logger.exception(
-                "agent: contact block load failed for "
-                "employee=%s chat_id=%s; continuing without "
-                "contact block",
-                employee_id, chat_id,
-            )
-            contact_block = ""
-        if contact_block:
-            parts.append(contact_block)
-
-    # Skills block — last so it caps the prompt; the LLM
-    # sees persona → memory → chatter → "here's what
-    # else you can read" in that order.
-    skills_block = format_skills_block(get_skill_loader().list())
-    if skills_block:
-        parts.append(skills_block)
-
-    rendered = "\n\n".join(parts).strip()
-    # If every block was empty (highly unlikely — at
-    # minimum the bundled persona returns a non-empty
-    # fallback), fall back to the soul alone rather
-    # than the empty string the LLM SDK would reject.
-    return rendered or soul
-
-
-def _record_token_usage(
-    state_dir: str,
-    *,
-    employee_id: int,
-    channel: str,
-    provider: str,
-    model: str | None,
-    usage: dict,
-) -> None:
-    """Insert one ``token_usage`` row for a successful LLM call.
-
-    Synchronous because we're already past the async boundary
-    (the LLM returned). The SQL insert is one row in a
-    dedicated table; latency is bounded by SQLite WAL commit
-    (~ms). Pushing it onto the asyncio event loop would add
-    bookkeeping for no measurable gain.
-
-    ``usage`` keys follow the Anthropic SDK's ``Usage`` shape
-    (see :class:`magi.agent.llm.provider.ChatResult.usage`).
-    Unknown keys are ignored; missing keys default to 0 so
-    a provider that returned no usage metadata still gets a
-    row (call count stays honest).
-
-    Raises whatever the ORM raises — caller is responsible
-    for swallowing (we don't want a transient DB hiccup to
-    break a chat that already succeeded).
-    """
-    from magi.agent.db import TokenUsage, open_session
-
-    in_t = int(usage.get("input_tokens") or 0)
-    out_t = int(usage.get("output_tokens") or 0)
-    cc_t = int(usage.get("cache_creation_input_tokens") or 0)
-    cr_t = int(usage.get("cache_read_input_tokens") or 0)
-
-    with open_session() as session:
-        session.add(TokenUsage(
-            employee_id=employee_id,
-            channel=channel,
-            provider=provider,
-            model=model,
-            input_tokens=in_t,
-            output_tokens=out_t,
-            cache_creation_tokens=cc_t,
-            cache_read_tokens=cr_t,
-        ))
-        session.commit()
-
+    while messages and messages[-1].content_blocks:
+        messages.pop()
 
 
 def _build_messages_from_session(
@@ -391,7 +147,7 @@ def _build_messages_from_session(
     sess = SessionStore(state_dir).get(employee_id, session_id)
     if sess is None:
         return [ChatMessage(role="user", content=new_user_text)], set()
-    out: list[ChatMessage] = []
+    out: list["ChatMessage"] = []
     seen: set[str] = set()
     for m in sess.messages:
         llm_role = "user" if m.role in ("user", "system") else "assistant"
@@ -403,32 +159,6 @@ def _build_messages_from_session(
     # doesn't re-drain it on the first poll.
     out.append(ChatMessage(role="user", content=new_user_text))
     return out, seen
-
-
-def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
-    """Truncate ``messages`` so the last entry is a plain
-    text message (no ``content_blocks``).
-
-    Anthropic's Messages API rejects request payloads where
-    a plain ``user`` text message is interleaved with the
-    tool_use → tool_result chain from a prior assistant
-    turn — the API expects tool_use blocks to be answered
-    by an immediately-following tool_result block. When an
-    interrupt splices a new user message in, the tail of
-    ``messages`` may look like:
-
-        [..., assistant(tool_use), user(tool_result, ...), user("hi")]
-
-    and the last ``user("hi")`` breaks the chain. We drop
-    any trailing message that carries ``content_blocks`` so
-    the next LLM call sees a clean boundary.
-
-    The truncation only touches the in-memory list; the
-    session store's history is left intact (it's the audit
-    trail, not the LLM-facing view).
-    """
-    while messages and messages[-1].content_blocks:
-        messages.pop()
 
 
 def _drain_pending_user_messages(
@@ -515,193 +245,26 @@ def _drain_pending_user_messages(
     return True
 
 
-async def _call_llm_for_summary(
-    *,
-    state_dir: str,
-    employee_provider: str,
-    employee_api_key: str,
-    employee_model: str | None,
-    to_compress: list["ChatMessage"],
-) -> str | None:
-    """One LLM call to compress ``to_compress`` into a
-    structured summary. Uses the same provider + creds
-    as the main chat (the employee is paying for it).
-    Returns the summary text, or ``None`` on any failure
-    so the caller can fall back to "no compaction
-    happened".
+def _fallback_reply(key: str = "agent_fallback") -> str:
+    """Resolve a friendly fallback string from the
+    bot_replies prompt table. Cached so a single YAML read
+    serves every fallback for the rest of the process.
+
+    ``key`` selects which template: ``agent_fallback`` for
+    LLM-call failures (the legacy single-purpose template),
+    ``agent_no_credentials`` for the strict-mode rejection
+    that tells the user where to fix the missing config.
     """
-    from magi.agent.prompts import load_compaction_prompt
+    cached = _FALLBACK_REPLY_CACHE.get(key)
+    if cached is None:
+        cached = load_bot_replies()[key]
+        _FALLBACK_REPLY_CACHE[key] = cached
+    return cached
 
-    system = load_compaction_prompt()
-    # Serialise the messages as plain text. Format mirrors
-    # the standard Anthropic Messages API ``role: text``
-    # lines so the LLM sees familiar structure.
-    user_lines: list[str] = []
-    for m in to_compress:
-        who = m.role.upper()
-        user_lines.append(f"[{who}]\n{m.content}")
-    user_content = "\n\n".join(user_lines)
-    if len(user_content) > 6000:
-        # Hard cap: if the input to the compaction call
-        # itself exceeds ~24 K tokens (the heuristic gives
-        # 24 K at 4 chars/token), the call is too expensive
-        # to make sense for v0. Skip and log.
-        return None
-    try:
-        provider = get_provider(employee_provider, employee_api_key, employee_model)
-        result = await provider.chat(
-            system=system,
-            messages=[ChatMessage(role="user", content=user_content)],
-            max_tokens=1024,
-        )
-        text = (result.text or "").strip()
-        return text or None
-    except Exception as e:
-        logger.exception(
-            "compact: LLM call failed (employee=%s); skipping",
-            _employee_id_for_log(state_dir),
-        )
-        return None
-
-
-def _chat_to_session_message(m: "ChatMessage") -> SessionMessage:
-    """Translate a runtime ChatMessage to the storage
-    SessionMessage shape. v0 archive doesn't carry tool
-    blocks (those are in-loop only); ``text`` is enough.
-    The timestamp is "now" (we're rewriting history, the
-    original timestamps would be misleading).
-    """
-    role = m.role if m.role in ("user", "assistant", "system") else "user"
-    return SessionMessage(
-        role=role,
-        text=m.content,
-        ts=_sessions_utcnow_iso(),
-        message_id=new_session_id(),
-    )
-
-
-def _employee_id_for_log(state_dir: str) -> int | None:
-    """Best-effort employee_id for log lines from the
-    compact helper. Reads the cookie-side admin gate is
-    not available here (we're inside the agent loop, not
-    the API layer), so this just returns None; the
-    caller has access to employee_id directly and prefers
-    passing it. We keep the symbol so the failure-path
-    log line in ``_call_llm_for_summary`` doesn't
-    NameError.
-    """
-    return None
-
-
-async def _maybe_compact(
-    state_dir: str,
-    employee_id: int,
-    session_id: str | None,
-    messages: list["ChatMessage"],
-    *,
-    employee_provider: str,
-    employee_api_key: str,
-    employee_model: str | None,
-) -> None:
-    """Estimate token cost of ``messages``. If over the
-    configured threshold, run one compaction pass: move
-    the older entries into ``sess.archive``, prepend a
-    summary at ``messages[0]``, and shrink ``messages``
-    in-place so the next LLM call sees
-    ``[summary, ...recent K]``.
-
-    No-op when there's no session yet (first turn of a
-    brand-new conversation; nothing to compact).
-    """
-    if not session_id:
-        return
-
-    # Lazy import to avoid pulling settings.py at agent
-    # module load (the SQLAlchemy dependency inside
-    # settings.py would otherwise leak into tests that
-    # only want handle_message).
-    from magi.channels.webui.api.system_settings import (
-        get_compact_context_window,
-        get_compact_threshold_pct,
-        get_compact_keep_recent,
-    )
-
-    keep = get_compact_keep_recent(state_dir)
-    # Already short enough: nothing to compact.
-    if len(messages) <= keep:
-        return
-
-    total = estimate_messages_tokens(messages)
-    threshold = (
-        get_compact_context_window(state_dir)
-        * get_compact_threshold_pct(state_dir)
-        // 100
-    )
-    if total <= threshold:
-        return
-
-    # Slice: oldest entries (everything before the last K)
-    # are about to be archived; the last K stays verbatim.
-    to_archive = messages[:-keep]
-
-    # Call LLM for summary. Failure → no compaction this
-    # turn; the next turn will try again (the in-memory
-    # ``messages`` list is unchanged so the operator sees
-    # the full context this turn at least).
-    summary_text = await _call_llm_for_summary(
-        state_dir=state_dir,
-        employee_provider=employee_provider,
-        employee_api_key=employee_api_key,
-        employee_model=employee_model,
-        to_compress=to_archive,
-    )
-    if not summary_text:
-        logger.warning(
-            "compact: no summary produced; session will retry "
-            "next turn (messages=%d, total_tokens~%d)",
-            len(messages), total,
-        )
-        return
-
-    # Build summary system message. Lives at messages[0]
-    # going forward.
-    summary_msg = ChatMessage(
-        role="user",  # later mapped to "user" via _build_messages_from_session
-        content=f"[Prior conversation summary]\n{summary_text}",
-    )
-
-    # Persist: append old messages to archive, prepend
-    # summary to active, update active_tail_count and
-    # last_compaction_at. Atomic write via _write().
-    store = SessionStore(state_dir)
-    sess = store.get(employee_id, session_id)
-    if sess is None:
-        return  # session disappeared mid-call; skip
-    sess.archive.extend(_chat_to_session_message(m) for m in to_archive)
-    sess.last_compaction_at = _sessions_utcnow_iso()
-    sess.active_tail_count = keep
-    sess.messages = [_chat_to_session_message(summary_msg)] + [
-        _chat_to_session_message(m) for m in messages[-keep:]
-    ]
-    try:
-        store._write(sess, bump_updated=False)
-    except Exception:
-        logger.exception(
-            "compact: persist failed (session=%s); in-memory "
-            "messages already shrunk, on-disk archive NOT "
-            "written. Next chat will re-compact.", session_id,
-        )
-
-    # Shrink in-memory list. The caller (agent loop)
-    # passes its own ``messages`` list in; we mutate it
-    # in-place so the next LLM call sees the compacted
-    # view.
-    summary_msg_for_llm = ChatMessage(
-        role="user",  # ChatMessage Literal doesn't allow "system" here
-        content=f"[Prior conversation summary]\n{summary_text}",
-    )
-    messages[:] = [summary_msg_for_llm] + messages[-keep:]
-
+# Where SOUL.md lives. C4 will move this to a per-employee
+# path (each EVE can have its own persona); for v0 we read
+# the single workspace file at startup.
+_SOUL_FILENAME = "SOUL.md"
 
 async def handle_message(
     state_dir: str,
@@ -826,7 +389,7 @@ async def handle_message(
     api_key = employee_api_key
     model = employee_model
 
-    soul = _read_soul(state_dir)
+    soul = read_soul(state_dir)
 
     # D.16: agent tool-use loop. The runtime now sends every
     # registered tool's schema to the LLM, runs the loop
@@ -925,7 +488,7 @@ async def handle_message(
             # produced, persistence error) the list is left
             # unchanged and the next call sees the full
             # history.
-            await _maybe_compact(
+            await maybe_compact(
                 state_dir,
                 employee_id,
                 session_id,
@@ -946,7 +509,7 @@ async def handle_message(
                 # operator can drop a SKILL.md or add a
                 # memory row and the next inbound sees it
                 # without a restart.
-                system=_build_system_prompt(
+                system=build_system_prompt(
                     state_dir,
                     employee_id=employee_id,
                     chat_id=chat_id,
@@ -1063,7 +626,7 @@ async def handle_message(
     # proxy. Aggregating across iterations is a future
     # improvement once the provider layer supports it.
     try:
-        _record_token_usage(
+        record_token_usage(
             state_dir,
             employee_id=employee_id,
             channel=channel,

@@ -2,7 +2,7 @@
 
 The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
-:meth:`magi.agent.loop._read_soul`. There is one
+:meth:`magi.agent.system_prompt.read_soul`. There is one
 ``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
 not one per employee. Per-employee personas are C4+ and out
 of scope here.
@@ -185,7 +185,7 @@ def update_soul(
     """Persist the new persona text to ``SOUL.md``.
 
     The file is rewritten atomically; the agent picks up the
-    new content on the next chat turn (``_read_soul`` is called
+    new content on the next chat turn (``read_soul`` is called
     per turn, no cache). Audit row records the SHA-256 of the
     new content so the audit trail reflects *what* changed
     without storing the whole persona twice.
