@@ -37,31 +37,28 @@ from sqlalchemy import select
 from magi.agent.db import Employee, open_session
 from magi.agent.memory.contacts.models import ContactEntry
 from magi.agent.memory.contacts.store import ContactStore
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.agent.tools.base import (
+    Tool,
+    ToolContext,
+    ToolResult,
+    caller_role_denied_reason,
+)
 
 
 logger = logging.getLogger("magi.agent.memory.contacts.tools")
 
-_WRITE_ROLES = {"admin", "assigned"}
+_WRITE_ROLES = frozenset({"admin", "assigned"})
 
 
 def _gate(ctx: ToolContext) -> str | None:
-    """Return an error message if the caller's role
-    can't write contacts, else ``None``."""
-    try:
-        emp_id = int(ctx.employee_id)
-    except (TypeError, ValueError):
-        return f"employee_id {ctx.employee_id!r} is not a valid id"
-    with open_session() as db:
-        emp = db.get(Employee, emp_id)
-    if emp is None:
-        return f"employee {emp_id!r} not found"
-    if emp.role not in _WRITE_ROLES:
-        return (
-            f"role {emp.role!r} cannot write to contacts; "
-            "only admin and assigned may."
-        )
-    return None
+    """Thin wrapper around
+    :func:`magi.agent.tools.base.caller_role_denied_reason`
+    — the canonical in-run gate lives there so contacts,
+    memory, and action-item tools share one check. The
+    per-tool wrapper exists only so the call sites read
+    ``denied = _gate(ctx)`` without referring to
+    ``self.ALLOWED_ROLES``."""
+    return caller_role_denied_reason(ctx, _WRITE_ROLES)
 
 
 def _err(msg: str) -> ToolResult:

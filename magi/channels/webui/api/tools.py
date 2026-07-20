@@ -1,15 +1,17 @@
 """Tools — list every tool the LLM can invoke.
 
 End-user-facing read-only view of
-:meth:`magi.agent.tools.registry.get_tool_schemas`. Useful for
+:meth:`magi.agent.tools.registry.get_tools`. Useful for
 the operator to verify what their MAGI install can actually
 do — ``mcp.json`` loaded the right servers, no LLM tool wedge
-broke, etc.
+broke, etc. Also surfaces each tool's
+:attr:`magi.agent.tools.base.Tool.ALLOWED_ROLES` so the
+operator can audit "who can call what" without reading
+code (D.universal-role-gate).
 
-The endpoint returns the JSON-Schema (Anthropic-shaped) for
-every registered tool — built-ins + MCP-loaded. ``description``
-is the first 200 chars of the schema description so the
-dashboard can render a one-line glance without re-fetching.
+We pull the rich :class:`Tool` instances (not just the
+flat schemas) because ``allowed_roles`` lives on the
+class, not the wire-format schema.
 
 Auth: admin-gated like every other Adam endpoints (read-only
 data; non-sensitive — same gate as ``/api/employees``).
@@ -23,7 +25,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from magi.channels.webui.api.departments import AdminGate
-from magi.agent.tools.registry import get_tool_schemas
+from magi.agent.tools.base import Tool
+from magi.agent.tools.registry import get_tools
 
 router = APIRouter(tags=["tools"])
 
@@ -41,11 +44,21 @@ class ToolOut(BaseModel):
     Schema's ``properties`` dict (for v0 most tools are zero or
     a handful). Non-zero tells the operator "this tool takes
     structured input".
+
+    ``allowed_roles`` is the per-tool
+    :attr:`magi.agent.tools.base.Tool.ALLOWED_ROLES`, sorted
+    alphabetically so the dashboard renders a stable order.
+    Empty list means the tool has no role restriction
+    (``is_allowed_for_role(None) is True`` and the LLM sees it
+    regardless of caller). Today every built-in declares a
+    non-empty set; MCP tools come back unrestricted because
+    ``MCPTool.is_allowed_for_role`` always returns True.
     """
 
     name: str
     description: str
     prop_count: int
+    allowed_roles: list[str] = []    # sorted; [] = no role gate
 
 
 class ToolListOut(BaseModel):
@@ -89,22 +102,41 @@ def list_tools(_admin: AdminGate) -> ToolListOut:
 
     No filtering, no pagination — v0 ships a handful of tools
     total (5 built-ins + a small MCP fan-out, if configured).
-    The flat list mirrors ``registry.get_tool_schemas()`` byte
-    for byte; if that ever grows past ~50 entries, surface
+    The flat list mirrors ``registry.get_tools()``; if that
+    ever grows past ~50 entries, surface
     ``?source=builtin|mcp`` and a paginated view here.
+
+    ``caller_role=None`` is intentional — we want every
+    tool visible to the dashboard (read-only audit view),
+    regardless of who's currently logged in. The dashboard
+    shows the registry truth; the agent loop still passes
+    the operator's ``employee.role`` to
+    ``get_tool_schemas(caller_role=...)`` for the LLM's
+    menu at chat time.
     """
-    schemas = get_tool_schemas()
-    items = [
-        ToolOut(
-            name=raw.get("name", ""),
-            description=_summarize(raw.get("description", "") or ""),
-            prop_count=_summarize_schema(raw.get("input_schema") or {}),
-        )
-        for raw in schemas
-    ]
+    items: list[ToolOut] = []
+    for tool in get_tools(caller_role=None):
+        items.append(_serialize_tool(tool))
     # Stable ordering by name keeps the dashboard layout
     # deterministic across refreshes; ``registry`` returns the
     # built-in-first + MCP-appended order which is also stable
     # but harder to reason about in a diff.
     items.sort(key=lambda t: t.name)
     return ToolListOut(items=items, total=len(items))
+
+
+def _serialize_tool(tool: Tool) -> ToolOut:
+    """Render one :class:`Tool` instance to a
+    :class:`ToolOut` row. Pulled out of the route body
+    so tests can poke a single tool without going through
+    the registry."""
+    schema = tool.to_anthropic_schema()
+    return ToolOut(
+        name=schema.get("name", ""),
+        description=_summarize(schema.get("description", "") or ""),
+        prop_count=_summarize_schema(schema.get("input_schema") or {}),
+        # Sorted so the dashboard renders a stable,
+        # human-readable order across reloads (frozensets
+        # aren't stable-across-Python-versions by default).
+        allowed_roles=sorted(tool.ALLOWED_ROLES),
+    )
