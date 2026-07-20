@@ -146,9 +146,9 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         # assigned only). Registry filters them out of
         # the menu for other roles; tests see the full
         # list when ``caller_role`` defaults to ``None``.
-        "add_todo",
-        "complete_todo",
-        "list_todo",
+        "add_action_item",
+        "complete_action_item",
+        "list_action_item",
     ]
 
 

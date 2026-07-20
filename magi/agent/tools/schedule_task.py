@@ -301,20 +301,50 @@ class ScheduleTaskTool(Tool):
 
 
 def _resolve_system_tz() -> str:
-    """Read the configured timezone; default UTC.
+    """Read the configured timezone; fall back to the
+    server's local timezone (matches the canonical
+    ``system_settings._system_default_timezone`` helper
+    that ``GET /api/system-settings/timezone`` returns).
 
-    Tool path can run before the FastAPI endpoint so we
-    don't import ``system_settings`` here — the KV table
-    is the same one ``system.timezone`` writes.
+    Lazy import of ``system_settings`` to keep the tool
+    module import graph small — the agent loop loads this
+    file at chat-turn time, and the WebUI router pulls in
+    SQLAlchemy / FastAPI / Pydantic that we don't need for
+    pure cron handling. The helper function is reused
+    verbatim; both the API endpoint and this tool now
+    agree that "no configured timezone" means "use the
+    server's local timezone", not hard-coded UTC.
+
+    The ``os`` import is lazy for the same reason (don't
+    force ``os.environ`` to be read at module load) — and
+    for the state_dir path, prefer ``MAGI_STATE_DIR``
+    with a fallback only for boot-time probes that
+    pre-date the env var being set.
     """
-    raw = state_get(__import__("os").environ.get("MAGI_STATE_DIR", "/workspace/memories"), "system.timezone")
-    if not raw:
-        return "UTC"
-    try:
-        ZoneInfo(raw)
-    except ZoneInfoNotFoundError:
-        return "UTC"
-    return raw
+    import os
+
+    from magi.channels.webui.api.system_settings import (
+        _system_default_timezone,
+    )
+
+    raw = state_get(
+        os.environ.get("MAGI_STATE_DIR", "/workspace/memories"),
+        "system.timezone",
+    )
+    if raw:
+        try:
+            ZoneInfo(raw)
+            return raw
+        except ZoneInfoNotFoundError:
+            # Stored value isn't an IANA tz — fall through
+            # to the server-local default. Same recovery
+            # path the API uses.
+            logger.warning(
+                "schedule_task: stored system.timezone %r is "
+                "not a valid IANA tz; falling back to %s",
+                raw, _system_default_timezone(),
+            )
+    return _system_default_timezone()
 
 
 def _now_iso() -> str:

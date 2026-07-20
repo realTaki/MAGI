@@ -263,6 +263,16 @@ class BashRunTool(Tool):
 
     name = "bash"
 
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+
     def _build_description(self) -> str:
         """OS-specific description block.
 
@@ -559,6 +569,16 @@ class BashOutputTool(Tool):
 
     name = "bash_output"
 
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+
     description = (
         "Retrieve new output from a background bash shell. "
         "Returns only stdout accumulated since the last "
@@ -653,6 +673,16 @@ class BashKillTool(Tool):
     """
 
     name = "bash_kill"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     description = (
         "Terminate a background bash shell by id. "

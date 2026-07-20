@@ -1,30 +1,31 @@
-"""LLM-callable action-item (todo) tools.
+"""LLM-callable action-item tools.
 
 Three surfaces pinned:
 
-  - :class:`AddTodoTool` — record a new todo for the
-    calling operator (``kind='llm_todo'``,
+  - :class:`AddActionItemTool` — record a new action item for
+    the calling operator (umbrella term: "todo", "task",
+    "记一下", "待办" — all map here) (``kind='llm_action_item_<id>'``,
     ``source='llm'``, ``employee_id=ctx.employee_id``).
-    Idempotent only in the sense that re-calling with
-    the same title creates a *new* row — the operator
-    may want two parallel todos with similar titles;
-    we don't guess duplicates from a free-text title.
-  - :class:`CompleteTodoTool` — close an existing open
-    todo by id. Idempotent; re-calling on an
+    Re-calling with the same title creates a *new*
+    row — the operator may want two parallel action
+    items with similar titles; we don't guess
+    duplicates from a free-text title.
+  - :class:`CompleteActionItemTool` — close an existing open
+    action item by id. Idempotent; re-calling on an
     already-completed row returns the existing row
     (same convention as ``/api/action_items/{id}/complete``).
-  - :class:`ListTodoTool` — return this operator's
-    *own* open (or all) todos. Strict per-employee
-    privacy: a tool call from operator A never sees
-    operator B's rows, even if the LLM asks for an
-    id it doesn't own — the row is missing rather
-    than shared.
+  - :class:`ListActionItemTool` — return this operator's
+    *own* open (or all) action items. Strict per-
+    employee privacy: a tool call from operator A
+    never sees operator B's rows, even if the LLM asks
+    for an id it doesn't own — the row is missing
+    rather than shared.
 
 Scope (per-employee, role-gated):
 
   - Admin (``'admin'``) and assigned (``'assigned'``)
-    operators can use these tools for their own todos
-    only. Other roles (``'employee'``, ``'guest'``)
+    operators can use these tools for their own action
+    items only. Other roles (``'employee'``, ``'guest'``)
     don't even see the tools in their menu: the
     registry's :func:`get_tools(caller_role=...)`
     filter (see ``magi/agent/tools/registry.py``)
@@ -35,12 +36,13 @@ Scope (per-employee, role-gated):
     directly in a test without role context) still
     fails closed with ``is_error=True``.
 
-Why these three and not ``update_todo``: the LLM mostly
-either *records* (Add) or *closes* (Complete) — edits
-to a non-completed todo are usually "I got the title
-wrong, mark it done and re-add" rather than "fix this
-specific field". If the LLM starts needing
-field-by-field edit, add ``update_todo`` later.
+Why these three and not ``update_action_item``: the LLM
+mostly either *records* (Add) or *closes* (Complete) —
+edits to a non-completed action item are usually "I
+got the title wrong, mark it done and re-add" rather
+than "fix this specific field". If the LLM starts
+needing field-by-field edit, add ``update_action_item``
+later.
 """
 
 from __future__ import annotations
@@ -65,18 +67,19 @@ logger = logging.getLogger("magi.agent.tools.action_item")
 # via the dashboard.
 _ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
-# Stable kind prefix for LLM-driven todos. Each row gets
-# a unique per-row suffix (``_todo_<8-hex>``) so multiple
-# open todos per operator don't collide with the partial
-# unique index ``ux_action_items_open_per_kind`` (which
-# enforces one OPEN row per ``(employee_id, kind)`` for
-# stable system kinds like ``llm_credentials_missing``).
-# ``list_todo`` filters by ``kind LIKE 'llm_todo%'``.
-_LLM_TODO_KIND_PREFIX = "llm_todo"
+# Stable kind prefix for LLM-driven action items. Each row
+# gets a unique per-row suffix (``_<8-hex>``) so multiple
+# open action items per operator don't collide with the
+# partial unique index ``ux_action_items_open_per_kind``
+# (which enforces one OPEN row per ``(employee_id, kind)``
+# for stable system kinds like ``llm_credentials_missing``).
+# ``list_action_item`` filters by
+# ``kind LIKE 'llm_action_item_%'``.
+_LLM_ACTION_ITEM_KIND_PREFIX = "llm_action_item"
 
 
-def _new_llm_todo_kind() -> str:
-    return f"{_LLM_TODO_KIND_PREFIX}_{uuid.uuid4().hex[:8]}"
+def _new_llm_action_item_kind() -> str:
+    return f"{_LLM_ACTION_ITEM_KIND_PREFIX}_{uuid.uuid4().hex[:8]}"
 
 
 def _gate(ctx: ToolContext) -> str | None:
@@ -117,8 +120,8 @@ def _ok(payload: Any) -> ToolResult:
     body = json.dumps(payload, indent=2, ensure_ascii=False)
     # 8 KB matches the LLM-side truncation budget in
     # ``ToolResult`` (``base.ToolResult`` docstring) —
-    # a chat turn shouldn't return a multi-KB todo list
-    # when the operator can just look at the dashboard.
+    # a chat turn shouldn't return a multi-KB action-item
+    # list when the operator can just look at the dashboard.
     if len(body) > 8 * 1024:
         body = body[: 8 * 1024] + "\n…(truncated)"
     return ToolResult(content=body, is_error=False)
@@ -160,15 +163,15 @@ def _serialize(item: ActionItem) -> dict[str, Any]:
     }
 
 
-# -- AddTodoTool ------------------------------------------------------------
+# -- AddActionItemTool ------------------------------------------------------------
 
 
-class AddTodoTool(Tool):
-    """Record a new todo for the calling operator."""
+class AddActionItemTool(Tool):
+    """Record a new action item for the calling operator."""
 
-    name = "add_todo"
+    name = "add_action_item"
     description = (
-        "Add a todo for the operator (visible in the "
+        "Add an action item for the operator (visible in the "
         "dashboard's Action Items pane). Use when the "
         "operator says '帮我记一下 X' / 'todo ...' / "
         "'记得下周要 Y'. Returns the created row's id. "
@@ -176,7 +179,7 @@ class AddTodoTool(Tool):
         "description (optional, ≤1000 chars), priority "
         "('normal' default / 'high'), target_url "
         "(optional in-app link). Each call creates one "
-        "row; close with complete_todo."
+        "row; close with complete_action_item."
     )
     input_schema = {
         "type": "object",
@@ -257,11 +260,12 @@ class AddTodoTool(Tool):
             item = ActionItem(
                 employee_id=int(ctx.employee_id),
                 # Per-row unique kind so multiple open
-                # todos per operator don't collide with
-                # the partial unique index
+                # action items per operator don't
+                # collide with the partial unique index
                 # ``ux_action_items_open_per_kind``. See
-                # ``_new_llm_todo_kind`` for the format.
-                kind=_new_llm_todo_kind(),
+                # ``_new_llm_action_item_kind`` for the
+                # format.
+                kind=_new_llm_action_item_kind(),
                 title=title,
                 description=description,
                 target_url=target_url,
@@ -272,27 +276,27 @@ class AddTodoTool(Tool):
             db.commit()
             db.refresh(item)
         logger.info(
-            "add_todo: item %s created for employee=%s title=%r",
+            "add_action_item: item %s created for employee=%s title=%r",
             item.id, ctx.employee_id, title,
         )
         return _ok({"created": _serialize(item)})
 
 
-# -- CompleteTodoTool -------------------------------------------------------
+# -- CompleteActionItemTool -------------------------------------------------------
 
 
-class CompleteTodoTool(Tool):
-    """Close an existing open todo by id."""
+class CompleteActionItemTool(Tool):
+    """Close an existing open action item by id."""
 
-    name = "complete_todo"
+    name = "complete_action_item"
     description = (
-        "Mark one of the calling operator's todos "
+        "Mark one of the calling operator's action items "
         "complete. Idempotent: re-calling on an "
         "already-completed row returns the same "
         "state. Use when the operator says '做完 "
         "X 了' / 'close todo id=N' / '那条可以收 "
         "起来了'. Inputs: item_id (the action "
-        "item's id; obtain it via list_todo), "
+        "item's id; obtain it via list_action_item), "
         "note (optional ≤500 chars)."
     )
     input_schema = {
@@ -350,20 +354,20 @@ class CompleteTodoTool(Tool):
                 # all — a 404 vs. an "owned by someone
                 # else" 403 distinction is enough info
                 # for an LLM to enumerate other
-                # operators' todos.
+                # operators' action items.
                 return _err(
-                    f"todo {item_id} not found or not "
+                    f"action item {item_id} not found or not "
                     f"owned by the calling operator"
                 )
             if row.employee_id != emp_id:
                 logger.warning(
-                    "complete_todo denied: emp=%s tried to "
+                    "complete_action_item denied: emp=%s tried to "
                     "complete item %s owned by %s",
                     emp_id, item_id, row.employee_id,
                 )
                 return _err(
-                    f"todo {item_id} not found or not "
-                    f"owned by the calling operator"
+                    f"action item {item_id} not found or "
+                    f"not owned by the calling operator"
                 )
             if row.completed_at is None:
                 row.completed_at = datetime.now(timezone.utc).replace(
@@ -375,7 +379,7 @@ class CompleteTodoTool(Tool):
                 db.commit()
                 db.refresh(row)
                 logger.info(
-                    "complete_todo: item %s completed by %s",
+                    "complete_action_item: item %s completed by %s",
                     item_id, emp_id,
                 )
             # else: idempotent — return the existing
@@ -383,19 +387,19 @@ class CompleteTodoTool(Tool):
             return _ok({"item": _serialize(row)})
 
 
-# -- ListTodoTool -----------------------------------------------------------
+# -- ListActionItemTool -----------------------------------------------------------
 
 
-class ListTodoTool(Tool):
-    """Return the calling operator's own todos."""
+class ListActionItemTool(Tool):
+    """Return the calling operator's own action items."""
 
-    name = "list_todo"
+    name = "list_action_item"
     description = (
         "List the calling operator's action items. "
         "Use when the operator says '我还有哪些 "
         "todo' / '列出待办' / 'what's still open?' "
         "Inputs: include_completed (bool, default "
-        "false — open todos only). Strict "
+        "false — open action items only). Strict "
         "per-employee: only rows owned by the caller "
         "are returned. The operator's "
         "``llm_credentials_missing`` system row also "
@@ -434,15 +438,16 @@ class ListTodoTool(Tool):
 
         with open_session() as db:
             # ``kind`` filter restricts to LLM-driven
-            # todos — operators can have system-seeded
-            # ``llm_credentials_missing`` rows too, and
-            # those surface on the dashboard but not via
-            # this tool (they're managed by the onboarding
-            # flow, not the LLM). Per-row unique suffix
-            # matches the prefix (see ``AddTodoTool``).
+            # action items — operators can have system-
+            # seeded ``llm_credentials_missing`` rows
+            # too, and those surface on the dashboard
+            # but not via this tool (they're managed by
+            # the onboarding flow, not the LLM). Per-row
+            # unique suffix matches the prefix (see
+            # ``AddActionItemTool``).
             stmt = select(ActionItem).where(
                 ActionItem.employee_id == emp_id,
-                ActionItem.kind.like(f"{_LLM_TODO_KIND_PREFIX}_%"),
+                ActionItem.kind.like(f"{_LLM_ACTION_ITEM_KIND_PREFIX}_%"),
             )
             if not include_completed:
                 stmt = stmt.where(
@@ -462,7 +467,7 @@ class ListTodoTool(Tool):
 
 
 __all__ = [
-    "AddTodoTool",
-    "CompleteTodoTool",
-    "ListTodoTool",
+    "AddActionItemTool",
+    "CompleteActionItemTool",
+    "ListActionItemTool",
 ]

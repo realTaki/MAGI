@@ -87,6 +87,16 @@ class AddContactTool(Tool):
     """
 
     name = "add_contact"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Record what the MAGI knows about a person. "
         "Idempotent: re-call with the same person_id "
@@ -149,6 +159,16 @@ class UpdateContactTool(Tool):
     """Patch an existing contact record by id."""
 
     name = "update_contact"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Patch an existing contact record by id. Use when "
         "the operator says '对了 Lily 现在不负责这块了' / "
@@ -203,6 +223,16 @@ class DeleteContactTool(Tool):
     """
 
     name = "delete_contact"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a contact record by id. Idempotent — "
         "deleting a non-existent id returns success. "
@@ -252,6 +282,16 @@ class SearchContactsTool(Tool):
     """
 
     name = "search_contacts"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Search the contact directory. Returns all of the "
         "operator's contacts whose notes contain the query "

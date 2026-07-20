@@ -3,15 +3,16 @@
 Three surfaces pinned:
 
   - The role gate: only ``admin`` and ``assigned`` may run
-    ``add_todo`` / ``complete_todo`` / ``list_todo``.
+    ``add_action_item`` / ``complete_action_item`` /
+    ``list_action_item``.
     ``employee`` and ``guest`` get ``is_error=True``.
-  - Per-employee privacy: ``list_todo`` and
-    ``complete_todo`` only see rows whose ``employee_id``
+  - Per-employee privacy: ``list_action_item`` and
+    ``complete_action_item`` only see rows whose ``employee_id``
     matches the calling operator's. Operator A querying
     by id = N where N belongs to operator B gets a
     "not found / not owned" error rather than any data
     leak.
-  - Idempotency on completion: a second ``complete_todo``
+  - Idempotency on completion: a second ``complete_action_item``
     call for the same id returns the existing row without
     bumping ``completed_at`` again.
 
@@ -28,9 +29,9 @@ import pytest
 
 from magi.agent.db import ActionItem, Employee, init_orm, open_session
 from magi.agent.tools.action_item import (
-    AddTodoTool,
-    CompleteTodoTool,
-    ListTodoTool,
+    AddActionItemTool,
+    CompleteActionItemTool,
+    ListActionItemTool,
 )
 from magi.agent.tools.base import ToolContext
 
@@ -96,12 +97,12 @@ def _parse(content: str) -> dict:
     return json.loads(content)
 
 
-# -- AddTodoTool ------------------------------------------------------------
+# -- AddActionItemTool ------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_add_todo_creates_row_for_admin(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_creates_row_for_admin(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     alice = seed_employees["alice"]
     res = await tool.run(_ctx(fresh_db, alice), title="follow up with Lily")
     assert res.is_error is False
@@ -109,9 +110,9 @@ async def test_add_todo_creates_row_for_admin(fresh_db, seed_employees):
     row = body["created"]
     assert row["employee_id"] == alice.id
     assert row["title"] == "follow up with Lily"
-    # Per-row unique kind suffix (see AddTodoTool for the
+    # Per-row unique kind suffix (see AddActionItemTool for the
     # rationale around the partial unique index).
-    assert row["kind"].startswith("llm_todo_")
+    assert row["kind"].startswith("llm_action_item_")
     assert row["source"] == "llm"
     assert row["priority"] == "normal"
 
@@ -123,8 +124,8 @@ async def test_add_todo_creates_row_for_admin(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_add_todo_creates_row_for_assigned(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_creates_row_for_assigned(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     bob = seed_employees["bob"]
     res = await tool.run(_ctx(fresh_db, bob), title="bob's reminder")
     assert res.is_error is False
@@ -133,10 +134,10 @@ async def test_add_todo_creates_row_for_assigned(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_add_todo_returns_error_for_employee_role(
+async def test_add_action_item_returns_error_for_employee_role(
     fresh_db, seed_employees,
 ):
-    tool = AddTodoTool()
+    tool = AddActionItemTool()
     charlie = seed_employees["charlie"]
     res = await tool.run(_ctx(fresh_db, charlie), title="should fail")
     assert res.is_error is True
@@ -144,8 +145,8 @@ async def test_add_todo_returns_error_for_employee_role(
 
 
 @pytest.mark.asyncio
-async def test_add_todo_missing_title_is_error(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_missing_title_is_error(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     alice = seed_employees["alice"]
     res = await tool.run(_ctx(fresh_db, alice))
     assert res.is_error is True
@@ -153,8 +154,8 @@ async def test_add_todo_missing_title_is_error(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_add_todo_rejects_oversized_title(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_rejects_oversized_title(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     alice = seed_employees["alice"]
     res = await tool.run(_ctx(fresh_db, alice), title="x" * 201)
     assert res.is_error is True
@@ -162,8 +163,8 @@ async def test_add_todo_rejects_oversized_title(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_add_todo_high_priority(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_high_priority(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     alice = seed_employees["alice"]
     res = await tool.run(
         _ctx(fresh_db, alice), title="urgent", priority="high",
@@ -173,8 +174,8 @@ async def test_add_todo_high_priority(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_add_todo_rejects_bad_priority(fresh_db, seed_employees):
-    tool = AddTodoTool()
+async def test_add_action_item_rejects_bad_priority(fresh_db, seed_employees):
+    tool = AddActionItemTool()
     alice = seed_employees["alice"]
     res = await tool.run(
         _ctx(fresh_db, alice), title="x", priority="URGENT",
@@ -183,13 +184,13 @@ async def test_add_todo_rejects_bad_priority(fresh_db, seed_employees):
     assert "priority" in res.content
 
 
-# -- CompleteTodoTool -------------------------------------------------------
+# -- CompleteActionItemTool -------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_marks_own_row(fresh_db, seed_employees):
-    add_tool = AddTodoTool()
-    complete_tool = CompleteTodoTool()
+async def test_complete_action_item_marks_own_row(fresh_db, seed_employees):
+    add_tool = AddActionItemTool()
+    complete_tool = CompleteActionItemTool()
     alice = seed_employees["alice"]
     add_res = await add_tool.run(_ctx(fresh_db, alice), title="ship it")
     item_id = _parse(add_res.content)["created"]["id"]
@@ -202,9 +203,9 @@ async def test_complete_todo_marks_own_row(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_is_idempotent(fresh_db, seed_employees):
-    add_tool = AddTodoTool()
-    complete_tool = CompleteTodoTool()
+async def test_complete_action_item_is_idempotent(fresh_db, seed_employees):
+    add_tool = AddActionItemTool()
+    complete_tool = CompleteActionItemTool()
     alice = seed_employees["alice"]
     item_id = _parse(
         (await add_tool.run(_ctx(fresh_db, alice), title="x")).content
@@ -219,11 +220,11 @@ async def test_complete_todo_is_idempotent(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_cannot_close_other_employees_row(
+async def test_complete_action_item_cannot_close_other_employees_row(
     fresh_db, seed_employees,
 ):
-    add_tool = AddTodoTool()
-    complete_tool = CompleteTodoTool()
+    add_tool = AddActionItemTool()
+    complete_tool = CompleteActionItemTool()
     alice = seed_employees["alice"]
     bob = seed_employees["bob"]
     item_id = _parse(
@@ -239,8 +240,8 @@ async def test_complete_todo_cannot_close_other_employees_row(
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_rejects_missing_id(fresh_db, seed_employees):
-    complete_tool = CompleteTodoTool()
+async def test_complete_action_item_rejects_missing_id(fresh_db, seed_employees):
+    complete_tool = CompleteActionItemTool()
     alice = seed_employees["alice"]
     res = await complete_tool.run(_ctx(fresh_db, alice), item_id=99999)
     assert res.is_error is True
@@ -248,32 +249,34 @@ async def test_complete_todo_rejects_missing_id(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_rejects_non_int_id(fresh_db, seed_employees):
-    complete_tool = CompleteTodoTool()
+async def test_complete_action_item_rejects_non_int_id(fresh_db, seed_employees):
+    complete_tool = CompleteActionItemTool()
     alice = seed_employees["alice"]
-    res = await complete_tool.run(_ctx(fresh_db, charlie := seed_employees["charlie"]), item_id="notanint") if False else await complete_tool.run(_ctx(fresh_db, alice), item_id="notanint")
+    res = await complete_tool.run(
+        _ctx(fresh_db, alice), item_id="notanint",
+    )
     assert res.is_error is True
     assert "must be an integer" in res.content
 
 
 @pytest.mark.asyncio
-async def test_complete_todo_rejects_for_employee_role(
+async def test_complete_action_item_rejects_for_employee_role(
     fresh_db, seed_employees,
 ):
-    complete_tool = CompleteTodoTool()
+    complete_tool = CompleteActionItemTool()
     charlie = seed_employees["charlie"]
     res = await complete_tool.run(_ctx(fresh_db, charlie), item_id=1)
     assert res.is_error is True
     assert "role 'employee'" in res.content
 
 
-# -- ListTodoTool -----------------------------------------------------------
+# -- ListActionItemTool -----------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_list_todo_returns_only_own_open_rows(fresh_db, seed_employees):
-    add_tool = AddTodoTool()
-    list_tool = ListTodoTool()
+async def test_list_action_item_returns_only_own_open_rows(fresh_db, seed_employees):
+    add_tool = AddActionItemTool()
+    list_tool = ListActionItemTool()
     alice = seed_employees["alice"]
     bob = seed_employees["bob"]
     ctx_a = _ctx(fresh_db, alice)
@@ -292,10 +295,10 @@ async def test_list_todo_returns_only_own_open_rows(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_list_todo_omits_completed_by_default(fresh_db, seed_employees):
-    add_tool = AddTodoTool()
-    complete_tool = CompleteTodoTool()
-    list_tool = ListTodoTool()
+async def test_list_action_item_omits_completed_by_default(fresh_db, seed_employees):
+    add_tool = AddActionItemTool()
+    complete_tool = CompleteActionItemTool()
+    list_tool = ListActionItemTool()
     alice = seed_employees["alice"]
     ctx = _ctx(fresh_db, alice)
 
@@ -317,12 +320,12 @@ async def test_list_todo_omits_completed_by_default(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_list_todo_include_completed_returns_both(
+async def test_list_action_item_include_completed_returns_both(
     fresh_db, seed_employees,
 ):
-    add_tool = AddTodoTool()
-    complete_tool = CompleteTodoTool()
-    list_tool = ListTodoTool()
+    add_tool = AddActionItemTool()
+    complete_tool = CompleteActionItemTool()
+    list_tool = ListActionItemTool()
     alice = seed_employees["alice"]
     ctx = _ctx(fresh_db, alice)
 
@@ -340,8 +343,8 @@ async def test_list_todo_include_completed_returns_both(
 
 
 @pytest.mark.asyncio
-async def test_list_todo_empty_when_no_rows(fresh_db, seed_employees):
-    list_tool = ListTodoTool()
+async def test_list_action_item_empty_when_no_rows(fresh_db, seed_employees):
+    list_tool = ListActionItemTool()
     alice = seed_employees["alice"]
     res = await list_tool.run(_ctx(fresh_db, alice))
     assert res.is_error is False
@@ -349,8 +352,8 @@ async def test_list_todo_empty_when_no_rows(fresh_db, seed_employees):
 
 
 @pytest.mark.asyncio
-async def test_list_todo_rejects_for_employee_role(fresh_db, seed_employees):
-    list_tool = ListTodoTool()
+async def test_list_action_item_rejects_for_employee_role(fresh_db, seed_employees):
+    list_tool = ListActionItemTool()
     charlie = seed_employees["charlie"]
     res = await list_tool.run(_ctx(fresh_db, charlie))
     assert res.is_error is True
@@ -368,38 +371,52 @@ def test_admin_role_sees_all_tools(seed_employees):
     from magi.agent.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="admin"))
     assert "schedule_task" in names
-    assert "add_todo" in names
-    assert "complete_todo" in names
-    assert "list_todo" in names
+    assert "add_action_item" in names
+    assert "complete_action_item" in names
+    assert "list_action_item" in names
+    # Universal gate: built-in tools are visible to
+    # admin/assigned, not to other roles.
+    assert "bash" in names
+    assert "add_memory" in names
+    assert "read_file" in names
 
 
-def test_assigned_role_sees_all_tools():
+def test_assigned_role_sees_all_tools(seed_employees):
     from magi.agent.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="assigned"))
     assert "schedule_task" in names
-    assert "add_todo" in names
+    assert "add_action_item" in names
+    assert "bash" in names
+    assert "read_file" in names
 
 
-def test_employee_role_omits_restricted_tools():
+def test_employee_role_omits_all_built_in_tools(seed_employees):
+    """Universal role gate — every built-in tool is
+    ``admin``/``assigned`` only. ``employee`` sees an
+    EMPTY tool menu (the chat path blocks them at the
+    auth gate anyway; the registry filter is the
+    belt-and-suspenders)."""
     from magi.agent.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="employee"))
+    # All built-ins are gone.
+    assert "bash" not in names
+    assert "read_file" not in names
+    assert "add_memory" not in names
     assert "schedule_task" not in names
-    assert "add_todo" not in names
-    assert "complete_todo" not in names
-    assert "list_todo" not in names
-    # Unrestricted tools are still visible.
-    assert "bash" in names
-    assert "add_memory" in names
+    assert "add_action_item" not in names
+    # (MCP tools are intentionally permissive.)
 
 
-def test_guest_role_omits_restricted_tools():
+def test_guest_role_omits_all_built_in_tools(seed_employees):
     from magi.agent.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="guest"))
+    assert "bash" not in names
+    assert "read_file" not in names
     assert "schedule_task" not in names
-    assert "add_todo" not in names
+    assert "add_action_item" not in names
 
 
-def test_none_role_is_permissive_by_default():
+def test_none_role_is_permissive_by_default(seed_employees):
     """``caller_role=None`` (tests, boot-time probes)
     shows all tools — production paths always pass an
     explicit role so this branch only kicks in when
@@ -407,14 +424,16 @@ def test_none_role_is_permissive_by_default():
     from magi.agent.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas())
     assert "schedule_task" in names
-    assert "add_todo" in names
+    assert "add_action_item" in names
+    assert "bash" in names
 
 
-def test_get_tool_single_lookup_respects_role():
+def test_get_tool_single_lookup_respects_role(seed_employees):
     from magi.agent.tools.registry import get_tool
-    # Employee can't see schedule_task.
+    # Employee can't see anything built-in (universal gate).
     assert get_tool("schedule_task", caller_role="employee") is None
+    assert get_tool("bash", caller_role="employee") is None
+    assert get_tool("read_file", caller_role="guest") is None
     # Admin can.
     assert get_tool("schedule_task", caller_role="admin") is not None
-    # Unrestricted tool is visible to anyone.
-    assert get_tool("bash", caller_role="guest") is not None
+    assert get_tool("bash", caller_role="admin") is not None
