@@ -280,6 +280,12 @@ async def send_chat(
     # wouldn't round-trip safely.
     store = SessionStore(_state_dir())
     session_id = payload.session_id
+    # The per-channel delivery address stamped on the row's
+    # ``tgid`` column. ``""`` if the operator never bound TG.
+    # We always need this — either from the existing row
+    # (when the caller passed a session_id) or by reading
+    # the Employee row (when we mint a fresh session below).
+    tgid = ""
     if session_id:
         try:
             # D.23: session key is now ``employee_id`` (the
@@ -300,6 +306,14 @@ async def send_chat(
         # re-open a tab after a manual delete.
         if existing is None:
             session_id = None
+        else:
+            # Carry the row's tgid forward to the
+            # auto-title job below (which runs on every
+            # fresh session). Reading the column here
+            # keeps the tgid-from-Employee path scoped to
+            # the auto-create branch — when the row
+            # already exists, we trust its own column.
+            tgid = existing.chat_id or ""
     if not session_id:
         # ``chat_id=`` here is the per-channel delivery
         # address stamped on the row's ``tgid`` column. D.24:
@@ -307,13 +321,6 @@ async def send_chat(
         # still carries the operator's bound TG chat_id (or
         # ``""`` if they never bound one) so a future
         # cross-channel query tool can address their bot.
-        #
-        # Only fetched on the auto-create path — when the
-        # caller already has a session_id, the existing row
-        # already carries its own tgid; we don't need to
-        # re-read it here. Avoids one ORM round-trip per
-        # ``/api/chat/send`` (the existing-session branch
-        # is the common path).
         tgid = _telegram_id_str_for_employee(employee_id)
         sess = store.create(
             employee_id, channel="webui", chat_id=tgid,
