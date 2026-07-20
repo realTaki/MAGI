@@ -44,6 +44,8 @@ mapper config time.
 from __future__ import annotations
 
 from datetime import datetime
+
+from magi.agent.db.base import utcnow_naive
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -88,7 +90,7 @@ class TokenUsage(Base):
         Integer, default=0, nullable=False
     )
     ts: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, nullable=False
     )
 
     # Composite index — supports the aggregation

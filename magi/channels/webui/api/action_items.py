@@ -58,6 +58,7 @@ from sqlalchemy.orm import Session
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.db import ActionItem, Employee, get_session
+from magi.agent.db.base import utcnow_naive
 
 logger = logging.getLogger("magi.api.action_items")
 
@@ -76,7 +77,8 @@ def _iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     # Treat naive datetimes as UTC — they were created via
-    # ``datetime.utcnow()`` which is the project convention.
+    # ``utcnow_naive()`` (see ``magi.agent.memory.session.ids``),
+    # which replaces the deprecated ``datetime.utcnow()``.
     if dt.tzinfo is None:
         return dt.isoformat() + "Z"
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -273,7 +275,7 @@ def list_action_items(
     # open before completed (cast completed_at IS NOT NULL as
     # 0), priority DESC ("high" > "normal" via alpha compare
     # which is enough for v0), then most-recent first.
-    cutoff = datetime.utcnow() - timedelta(days=_COMPLETED_VISIBLE_DAYS)
+    cutoff = utcnow_naive() - timedelta(days=_COMPLETED_VISIBLE_DAYS)
     stmt = select(ActionItem).where(ActionItem.employee_id == admin_id)
     if kind is not None:
         stmt = stmt.where(ActionItem.kind == kind)
@@ -356,7 +358,7 @@ def complete_action_item(
     if row.completed_at is not None:
         return _serialize(row)
 
-    row.completed_at = datetime.utcnow()
+    row.completed_at = utcnow_naive()
     row.completed_by_employee_id = admin_id
     # Only overwrite the note if the caller actually sent
     # one. ``model_fields_set`` tells us "the field was

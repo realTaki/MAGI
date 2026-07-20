@@ -126,6 +126,41 @@ def load_compaction_prompt() -> str:
     return _load("compaction")
 
 
+def load_memory_block_template() -> str:
+    """The "Long-term memory (MAGI)" block the agent loop
+    appends to the system prompt.
+
+    Reads the bundled ``memory_block.md``. The block is
+    the static header + intro + the two ``### 重要的事``
+    / ``### 正在进行`` sub-section headings; the rows
+    themselves are appended by :func:`format_memory_block`
+    in :mod:`magi.agent.memory.magi.prompt` (which then
+    string-splits the template at the ``### 重要的事``
+    marker to drop the empty placeholders when no rows
+    land under a kind).
+    """
+    return _load("memory_block")
+
+
+def load_contact_block_template() -> str:
+    """The "Current chatter" block the agent loop appends
+    to the system prompt when a contact row exists for the
+    current chat's chatter. See
+    :func:`magi.agent.memory.contacts.prompt.format_contact_block`
+    for how the template is combined with the contact row.
+    """
+    return _load("contact_block")
+
+
+def load_skills_block_template() -> str:
+    """The "Available skills" block the agent loop appends
+    to the system prompt when any SKILL.md is registered.
+    See :func:`magi.agent.tools.skill_loader.format_skills_block`
+    for the per-skill bullet rendering that follows.
+    """
+    return _load("skills_block")
+
+
 def load_bot_replies() -> dict[str, str]:
     """Return the Telegram bot reply templates as
     ``{template_id: text}``.
