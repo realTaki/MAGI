@@ -203,6 +203,7 @@ class SessionStore:
         cheap to transport, but a full ORM row carries
         relationships that the typing loop doesn't need.
         """
+        from sqlalchemy import select
         with open_session() as db:
             row = db.execute(
                 select(ChatSession)
