@@ -156,6 +156,35 @@ def get_tool(name: str, caller_role: str | None = None) -> "Tool | None":
     return None
 
 
+def get_tools_grouped(
+    caller_role: str | None = None,
+) -> tuple[list["Tool"], list["Tool"]]:
+    """Return ``(built_in, mcp)`` lists, both filtered
+    through :meth:`Tool.is_allowed_for_role` with
+    ``caller_role``.
+
+    Surfaces that want to render the two registries
+    distinctly (audit dashboards, status pages,
+    :mod:`magi.channels.webui.api.tools`) reach for this
+    helper instead of touching :data:`_tools_cache` /
+    :data:`_mcp_tools_cache` directly. The MCP cache is
+    :data:`None` before :func:`bootstrap_mcp_tools` has
+    run; we treat that as "no MCP tools yet" and return
+    ``([], [])`` semantics for that side.
+    """
+    global _tools_cache, _mcp_tools_cache
+    if _tools_cache is None:
+        _tools_cache = _build_tools()
+    built_in = [
+        t for t in _tools_cache if t.is_allowed_for_role(caller_role)
+    ]
+    mcp = [
+        t for t in (_mcp_tools_cache or [])
+        if t.is_allowed_for_role(caller_role)
+    ]
+    return built_in, mcp
+
+
 def get_tool_schemas(caller_role: str | None = None) -> list[dict]:
     """Schemas (Anthropic-shaped) for every registered
     tool — passed straight to ``provider.chat(tools=...)``.
