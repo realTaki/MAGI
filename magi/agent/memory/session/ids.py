@@ -75,6 +75,19 @@ def utcnow_iso() -> str:
     )
 
 
+# ``utcnow_naive`` (the canonical "replacement for the
+# deprecated ``datetime.utcnow()``") now lives in
+# :mod:`magi.agent.db.base` so the ORM model files can
+# import it without going through ``magi.agent.memory.__init__``
+# (which transitively imports the contact tools, which
+# import from ``magi.agent.db`` — the resulting cycle would
+# deadlock module init). The companion ``utcnow_iso`` here
+# stays put because it's a session-package helper that only
+# touches the standard library + a path.
+__all__ = ["new_session_id", "utcnow_iso", "_validate_session_id",
+           "_validate_chat_id", "_validate_employee_id", "session_lock"]
+
+
 def _validate_session_id(session_id: str) -> None:
     """Reject anything outside the ULID shape.
 

@@ -32,6 +32,8 @@ config time.
 from __future__ import annotations
 
 from datetime import datetime
+
+from magi.agent.db.base import utcnow_naive
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -98,7 +100,7 @@ class ActionItem(Base):
         String(16), nullable=False, default="system"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, nullable=False
     )
     # Null = open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(

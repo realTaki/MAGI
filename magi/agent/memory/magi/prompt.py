@@ -35,6 +35,62 @@ from magi.agent.memory.magi.models import (
     MemoryEntry,
 )
 from magi.agent.memory.magi.store import MemoryView
+from magi.agent.prompts import load_memory_block_template
+
+
+# Sub-section labels rendered between the rows in the
+# memory block. Loaded from the bundled markdown template
+# (the template's ``### 重要的事`` and ``### 正在进行``
+# markers) so an operator can reword both the intro and
+# the per-kind headings from one file. The full template
+# is split on these markers at render time; see
+# :func:`format_memory_block` below.
+_TEMPLATE_KIND_HEADERS: dict[str, str] = {}
+
+
+def _ensure_kind_headers_loaded() -> None:
+    """Lazy-load the per-kind sub-section headings.
+
+    The template looks like::
+
+        ## Long-term memory (MAGI)
+
+        <intro paragraph>
+
+        ### 重要的事
+
+        ### 正在进行
+
+    We split on the third-line marker ``### `` and keep
+    the heading text after the prefix. Done once per
+    process — the cache survives across requests so the
+    per-turn cost is one dict lookup.
+    """
+    if _TEMPLATE_KIND_HEADERS:
+        return
+    template = load_memory_block_template()
+    # Drop everything before the first ``###`` (header + intro).
+    # What remains is two ``### X`` lines separated by a blank.
+    sections: dict[str, str] = {}
+    for line in template.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            heading = stripped[4:].strip()
+            # Match against the Chinese labels the template ships
+            # with. Unknown headings (operator-customised the
+            # template) fall back to the kind enum name so the
+            # output is still readable, just not localised.
+            if heading == "重要的事":
+                sections[KIND_IMPORTANT] = heading
+            elif heading == "正在进行":
+                sections[KIND_ONGOING] = heading
+    # Defensive: if the template dropped a marker, surface the
+    # missing kind so a CI grep catches it instead of the LLM
+    # seeing an empty sub-section.
+    for kind in (KIND_IMPORTANT, KIND_ONGOING):
+        if kind not in sections:
+            sections[kind] = kind  # fall back to the enum string
+    _TEMPLATE_KIND_HEADERS.update(sections)
 
 
 logger = logging.getLogger("magi.agent.memory.magi.prompt")
@@ -69,13 +125,17 @@ def _row_to_bullet(row: MemoryView) -> str:
 def format_memory_block(rows: Iterable[MemoryView]) -> str:
     """Render a Markdown block of MAGI's mid-term memory.
 
-    Sections, in fixed order:
+    The block's static parts (header, intro paragraph,
+    per-kind sub-section labels) come from the bundled
+    ``magi/agent/prompts/memory_block.md`` template — see
+    :func:`magi.agent.prompts.load_memory_block_template`.
+    The per-row bullets are formatted by this function
+    from the runtime rows.
 
-      1. **Important** — long-arc facts.
-      2. **Ongoing** — work in flight.
-
-    Returns "" when there are no rows so the agent
-    loop can skip the block entirely.
+    Returns "" when there are no rows so the agent loop
+    can skip the block entirely (the agent loop's prompt
+    builder also short-circuits on empty blocks, so a
+    fresh deploy still gets a sensible prompt).
     """
     rows = list(rows)
     if not rows:
@@ -88,24 +148,24 @@ def format_memory_block(rows: Iterable[MemoryView]) -> str:
     for r in rows:
         by_kind.setdefault(r.kind, []).append(r)
 
-    lines: list[str] = ["", "## Long-term memory (MAGI)", ""]
-    lines.append(
-        "下面是本 MAGI 节点的中期记忆 — 你最近在做的事情、"
-        "被吩咐要记的 fact、重要的事件。Operator 让"
-        "你「记住 X」时调 ``add_memory`` tool；"
-        "完成时调 ``complete_memory``。更新 / 删除 "
-        "对应 ``update_memory`` / ``delete_memory``。"
-    )
-    lines.append("")
+    _ensure_kind_headers_loaded()
 
-    for kind, header in [
-        (KIND_IMPORTANT, "重要的事"),
-        (KIND_ONGOING, "正在进行"),
-    ]:
+    # The template includes ``### 重要的事`` and
+    # ``### 正在进行`` markers as separators. Strip
+    # those lines so the function below can re-emit them
+    # only for the kinds that actually have rows.
+    template_lines = [
+        line
+        for line in load_memory_block_template().splitlines()
+        if not line.strip().startswith("### ")
+    ]
+
+    lines: list[str] = ["", *template_lines, ""]
+    for kind in (KIND_IMPORTANT, KIND_ONGOING):
         items = by_kind.get(kind, [])
         if not items:
             continue
-        lines.append(f"### {header}")
+        lines.append(f"### {_TEMPLATE_KIND_HEADERS[kind]}")
         lines.append("")
         for row in items:
             lines.append(_row_to_bullet(row))

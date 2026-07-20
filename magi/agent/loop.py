@@ -259,14 +259,32 @@ def _build_system_prompt(
                         Employee.telegram_id == telegram_id
                     )
                 ).scalar_one_or_none()
-                person_id = person_row.id if person_row is not None else None
+                # Resolve the display name INSIDE the
+                # session — ``display_name or name`` is
+                # the standard Employee-row resolution.
+                # We pass it to ``format_contact_block``
+                # so the rendered header reads "**Bob
+                # Chen**" instead of "**2**" (the latter
+                # would force the LLM to look the person
+                # up via a tool call on every turn).
+                if person_row is not None:
+                    display_name = (
+                        person_row.display_name
+                        or person_row.name
+                    )
+                    person_id = person_row.id
+                else:
+                    display_name = None
+                    person_id = None
             if person_id is not None:
                 contact = ContactStore(state_dir).find_by_person(
                     employee_id, person_id,
                 )
             else:
                 contact = None
-            contact_block = format_contact_block(contact)
+            contact_block = format_contact_block(
+                contact, display_name=display_name,
+            )
         except (ValueError, Exception):
             # ``int(chat_id)`` raises ValueError for a
             # non-numeric id; broader Exception catches

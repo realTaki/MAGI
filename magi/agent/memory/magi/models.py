@@ -29,6 +29,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from magi.agent.db.base import utcnow_naive
+
 from sqlalchemy import (
     DateTime,
     ForeignKey,
@@ -117,10 +119,10 @@ class MemoryEntry(Base):
         DateTime, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
     __table_args__ = (

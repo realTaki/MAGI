@@ -29,6 +29,7 @@ import logging
 from typing import Optional
 
 from magi.agent.memory.contacts.store import ContactView
+from magi.agent.prompts import load_contact_block_template
 
 
 logger = logging.getLogger("magi.agent.memory.contacts.prompt")
@@ -38,7 +39,11 @@ logger = logging.getLogger("magi.agent.memory.contacts.prompt")
 _MAX_RENDER_BYTES = 2 * 1024
 
 
-def format_contact_block(contact: Optional[ContactView]) -> str:
+def format_contact_block(
+    contact: Optional[ContactView],
+    *,
+    display_name: Optional[str] = None,
+) -> str:
     """Render a Markdown block for the current chatter.
 
     Returns "" when the MAGI has no contact record
@@ -49,18 +54,28 @@ def format_contact_block(contact: Optional[ContactView]) -> str:
     so the cap is rarely hit; it exists only as a
     safety net for a misbehaving tool that wrote a
     100 KB ``notes`` blob.
+
+    ``display_name`` overrides the header's literal
+    ``{person_id}`` rendering. The LLM should see the
+    chatter's real name (or display_name) in the
+    prompt, not the database row's integer FK —
+    passing the raw id would force the model to look
+    up the name via a tool call on every turn. The
+    caller (the agent loop) is responsible for
+    resolving the name from the Employee table; the
+    formatter stays free of ORM coupling so the
+    ``ContactView`` dataclass + prompt formatter
+    remain testable without a database.
     """
     if contact is None:
         return ""
 
-    lines: list[str] = ["", "## Current chatter", ""]
-    lines.append(
-        "你正在与以下人员对话。这是 MAGI 知道的关于他/她的"
-        "信息（来源：contacts 表）。如果信息过时或需要补充，"
-        "用 ``update_contact`` 或 ``search_contacts`` tool。"
-    )
-    lines.append("")
-    header = f"**{contact.person_id}**"  # 实际渲染时 caller 会用真名
+    lines: list[str] = ["", *load_contact_block_template().splitlines(), ""]
+    # ``display_name ?? person_id`` — the caller passes
+    # the resolved Employee display name when they have
+    # it; fall back to the raw int FK only if not.
+    header_label = display_name or str(contact.person_id)
+    header = f"**{header_label}**"
     if contact.role:
         lines.append(f"- {header} — role: {contact.role}")
     else:

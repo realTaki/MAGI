@@ -21,6 +21,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Request, Response
 
 from magi.channels.webui.api.errors import MagiHTTPException
+from magi.agent.db.base import utcnow_naive
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -801,7 +802,7 @@ def update_employee(
     # ``model_fields_set`` rather than the value.
     if "separated" in payload.model_fields_set:
         if payload.separated:
-            emp.separated_at = datetime.utcnow()
+            emp.separated_at = utcnow_naive()
         else:
             emp.separated_at = None
 

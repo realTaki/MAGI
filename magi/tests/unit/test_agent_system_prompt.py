@@ -321,6 +321,52 @@ def test_prompt_includes_contact_block_for_current_chatter(
     assert "Slack over email" in rendered
 
 
+def test_prompt_contact_block_uses_display_name_not_raw_id(
+    state_dir, seed_employees,
+):
+    """The header must render the chatter's display_name
+    (or name), NOT the raw ``person_id`` integer.
+
+    Pre-fix this comment said "实际渲染时 caller 会用真名替换"
+    but the loop just called ``format_contact_block(contact)``
+    with no name resolution — the rendered header read
+    ``**2**`` (a raw Employee FK). This test pins the
+    fix so a future "let me simplify and drop the
+    display_name kwarg" revert is caught immediately.
+    """
+    from magi.agent.db import open_session
+    from magi.agent.memory.contacts.models import (
+        SOURCE_EVE,
+        ContactEntry,
+    )
+    from magi.agent.loop import _build_system_prompt
+
+    with open_session() as db:
+        db.add(ContactEntry(
+            owner_id=1, person_id=2,
+            role="Eng",
+            notes="x",
+            source=SOURCE_EVE,
+        ))
+        db.commit()
+
+    rendered = _build_system_prompt(
+        str(state_dir),
+        employee_id=1,
+        chat_id="9002",  # Bob's telegram_id; resolves to Bob
+        soul="SOUL",
+    )
+
+    # The header must use Bob's display_name (none set in
+    # the seed → falls back to name="Bob").
+    assert "**Bob**" in rendered
+    # The raw integer FK must NOT appear as the header.
+    # We check for the surrounding markdown so a future
+    # change like "2" appearing in a notes body wouldn't
+    # false-positive.
+    assert "**2**" not in rendered
+
+
 def test_prompt_skips_contact_block_when_no_record(
     state_dir, seed_employees,
 ):

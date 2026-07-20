@@ -641,14 +641,13 @@ def format_skills_block(skills: list[SkillMeta]) -> str:
     """
     if not skills:
         return ""
-    lines = ["", "## Available skills", ""]
-    lines.append(
-        "下面是本 MAGI 节点上注册的 skill 列表。每个 skill 的 "
-        "**完整正文**仅在你需要细节时通过 `load_skill(name)` "
-        "tool 拉取 — 这里只展示摘要。挑出最相关那个 skill 之后，"
-        "用 `load_skill(\"<name>\")` 取正文参考。"
-    )
-    lines.append("")
+    # Static header + intro come from the bundled
+    # ``skills_block.md`` template so an operator can reword
+    # the wording in one file without touching Python. The
+    # per-skill bullets below are formatted from the
+    # runtime catalog.
+    from magi.agent.prompts import load_skills_block_template
+    lines = ["", *load_skills_block_template().splitlines(), ""]
     for s in skills:
         # One bullet per skill. Version is appended in
         # parentheses when present so a draft/bump cycle
