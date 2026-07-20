@@ -61,6 +61,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from magi.agent.llm import ChatMessage, LLMError, get_provider
+# Imported here only so ``_build_system_prompt`` can use them
+# without a circular import — the function lives at module
+# scope so its docstring is grep-able from the agent loop
+# entry point.
 from magi.agent.tools.skill_loader import format_skills_block, get_skill_loader
 from magi.agent.tools.base import ToolContext
 from magi.agent.tools.registry import get_tool, get_tool_schemas
@@ -142,6 +146,154 @@ def _read_soul(state_dir: str) -> str:
         return load_fallback_persona()
     text = text.strip()
     return text or load_fallback_persona()
+
+
+def _build_system_prompt(
+    state_dir: str,
+    *,
+    employee_id: int,
+    chat_id: str,
+    soul: str,
+) -> str:
+    """Assemble the full system prompt for one LLM turn.
+
+    Four blocks, concatenated in this fixed order:
+
+      1. **SOUL** — the persona file (workspace-global).
+      2. **Long-term memory** — :func:`format_memory_block`
+         renders the calling admin's ``important`` +
+         ``ongoing in-flight`` rows. ``completed`` ongoing
+         rows are filtered out (per the store's
+         ``include_completed=False`` default) so the prompt
+         reflects the LLM's working set, not the audit
+         trail.
+      3. **Current chatter** — :func:`format_contact_block`
+         renders the single contact record for the person
+         the MAGI is currently talking to. Per-chat
+         (not "all contacts") so the prompt stays
+         constant-size regardless of directory size;
+         other contacts are loaded on demand via the
+         LLM's ``search_contacts`` tool.
+
+         The lookup is keyed by ``chat_id`` (the
+         per-channel delivery address — the TG chat id
+         on the TG channel, ``""`` on WebUI). The
+         contact row's ``person_id`` FK points at the
+         Employee row, so the block carries the
+         display name + role snapshot, NOT a raw
+         integer id.
+      4. **Available skills** — :func:`format_skills_block`
+         lists the frontmatter ``name`` + ``description``
+         of every registered SKILL.md. Bodies load on
+         demand via ``load_skill``.
+
+    Each block is independently short-circuit-safe:
+    empty blocks render as ``""`` so a fresh deploy
+    (no memory, no contact, no skills) still produces a
+    sensible prompt. The result is just the SOUL when
+    nothing else is registered yet.
+
+    Side effects: this calls ``ContactStore.find_by_person``
+    (one SELECT) and ``MemoryStore.list_for_owner`` (one
+    SELECT, capped at the store default of 50 rows). Both
+    are cheap and bounded; no N+1 risk.
+    """
+    from magi.agent.memory.contacts.prompt import format_contact_block
+    from magi.agent.memory.contacts.store import ContactStore
+    from magi.agent.memory.magi.prompt import format_memory_block
+    from magi.agent.memory.magi.store import MemoryStore
+
+    # Lazy import: chat_id → Employee lookup. Brought in
+    # here (rather than at module top) to keep the import
+    # graph small for the cases where the helper is never
+    # called (e.g. a future "agent loop headless mode"
+    # that skips the prompt assembly).
+    from magi.agent.db import Employee, open_session
+
+    # SOUL first — establishes the persona for the rest
+    # of the system prompt.
+    parts: list[str] = [soul]
+
+    # Memory block — operator-wide facts + in-flight work.
+    # ``list_for_owner`` defaults: include_completed=False,
+    # limit=50. Both are deliberate (see
+    # :func:`magi.agent.memory.magi.store.list_for_owner`).
+    try:
+        memory_rows = MemoryStore(state_dir).list_for_owner(employee_id)
+        memory_block = format_memory_block(memory_rows)
+    except Exception:
+        # The memory block is best-effort. A transient ORM
+        # error here would otherwise crash the inbound
+        # path — the LLM just sees a slightly thinner
+        # prompt.
+        logger.exception(
+            "agent: memory block load failed for employee=%s; "
+            "continuing without memory block",
+            employee_id,
+        )
+        memory_block = ""
+    if memory_block:
+        parts.append(memory_block)
+
+    # Contact block — per-chat (current chatter only).
+    # The lookup goes ``chat_id → Employee.telegram_id``
+    # → ``Employee.id`` → ``ContactEntry(person_id)``.
+    # ``chat_id`` is the per-channel delivery address (the
+    # TG chat id on the TG channel, ``""`` on WebUI) — not
+    # the Employee row's primary key. The contact table's
+    # unique key is ``(owner_id, person_id)`` where
+    # ``person_id`` is the FK to ``employees.id``, so we
+    # have to translate the chat address to the Employee id
+    # first.
+    #
+    # An empty ``chat_id`` (WebUI fallback) skips the
+    # lookup — the WebUI is admin-on-his-own-machine,
+    # there's no "other person" to render.
+    if chat_id:
+        try:
+            telegram_id = int(chat_id)
+            from sqlalchemy import select as _sa_select
+            with open_session() as db:
+                person_row = db.execute(
+                    _sa_select(Employee).where(
+                        Employee.telegram_id == telegram_id
+                    )
+                ).scalar_one_or_none()
+                person_id = person_row.id if person_row is not None else None
+            if person_id is not None:
+                contact = ContactStore(state_dir).find_by_person(
+                    employee_id, person_id,
+                )
+            else:
+                contact = None
+            contact_block = format_contact_block(contact)
+        except (ValueError, Exception):
+            # ``int(chat_id)`` raises ValueError for a
+            # non-numeric id; broader Exception catches
+            # transient ORM failures. Both are non-fatal.
+            logger.exception(
+                "agent: contact block load failed for "
+                "employee=%s chat_id=%s; continuing without "
+                "contact block",
+                employee_id, chat_id,
+            )
+            contact_block = ""
+        if contact_block:
+            parts.append(contact_block)
+
+    # Skills block — last so it caps the prompt; the LLM
+    # sees persona → memory → chatter → "here's what
+    # else you can read" in that order.
+    skills_block = format_skills_block(get_skill_loader().list())
+    if skills_block:
+        parts.append(skills_block)
+
+    rendered = "\n\n".join(parts).strip()
+    # If every block was empty (highly unlikely — at
+    # minimum the bundled persona returns a non-empty
+    # fallback), fall back to the soul alone rather
+    # than the empty string the LLM SDK would reject.
+    return rendered or soul
 
 
 def _record_token_usage(
@@ -755,16 +907,22 @@ async def handle_message(
             )
 
             result = await provider.chat(
-                # Skills: frontmatter list appended to the
-                # SOUL system prompt. ``format_skills_block``
-                # returns ``""`` when no skills are registered,
-                # so we short-circuit to ``soul`` verbatim and
-                # save the per-turn tokens. Read every turn
-                # rather than caching: an operator may drop a
-                # SKILL.md into the workspace and the next
-                # restart picks it up; the per-turn cost is
-                # negligible (a couple dozen lines of text).
-                system=(soul + format_skills_block(get_skill_loader().list())).strip() or soul,
+                # System prompt = SOUL + MAGI's long-term
+                # memory + current chatter contact +
+                # available skills. Each block short-circuits
+                # when empty (no memory rows / no contact
+                # for this chat / no SKILL.md), so a fresh
+                # deploy still gets a sensible prompt.
+                # Built once per turn (not cached) so the
+                # operator can drop a SKILL.md or add a
+                # memory row and the next inbound sees it
+                # without a restart.
+                system=_build_system_prompt(
+                    state_dir,
+                    employee_id=employee_id,
+                    chat_id=chat_id,
+                    soul=soul,
+                ),
                 messages=messages,
                 max_tokens=max_tokens,
                 tools=tool_schemas,
