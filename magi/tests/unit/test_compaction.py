@@ -414,7 +414,7 @@ async def test_maybe_compact_noop_when_under_threshold(
     """A short message list is well under the threshold
     → ``_maybe_compact`` returns immediately without
     touching the list or calling any LLM."""
-    from magi.agent.loop import _maybe_compact
+    from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.memory.session import (
         SessionStore,
@@ -467,7 +467,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     """Even with a tiny threshold, if the message count
     is below ``keep_recent`` there's nothing to compress
     (no old messages to archive)."""
-    from magi.agent.loop import _maybe_compact
+    from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.memory.session import (
         SessionStore,
@@ -512,7 +512,7 @@ async def test_maybe_compact_noop_when_no_session_id(
     yet. ``_maybe_compact`` is a no-op even when the
     message list (single user msg) is well under the
     threshold."""
-    from magi.agent.loop import _maybe_compact
+    from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
 
     state_dir = str(tmp_path / "state")

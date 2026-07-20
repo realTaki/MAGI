@@ -97,11 +97,11 @@ def test_prompt_always_starts_with_soul(state_dir, seed_employees):
     even with no memory / contacts / skills, SOUL must be
     present. We assert ``soul_text`` appears verbatim at
     the top of the rendered block."""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     soul_text = "You are EVE. Speak in haiku when convenient."
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -119,9 +119,9 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_employees):
     bundled skill loader ships 3 example skills in the
     image, so a "soul alone" block isn't reachable in a
     default boot — the invariant we pin is "soul first".)"""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",  # Bob's chat_id (no contact row yet)
@@ -152,7 +152,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
         SOURCE_MANUAL,
         MemoryEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
         db.add(MemoryEntry(
@@ -165,7 +165,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -193,7 +193,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
         SOURCE_MANUAL,
         MemoryEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
         db.add(MemoryEntry(
@@ -207,7 +207,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
         db.commit()
 
     # Alice's view sees her fact.
-    alice_prompt = _build_system_prompt(
+    alice_prompt = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -216,7 +216,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
     assert "Alice's private fact" in alice_prompt
 
     # Bob's view sees nothing from Alice.
-    bob_prompt = _build_system_prompt(
+    bob_prompt = build_system_prompt(
         str(state_dir),
         employee_id=2,
         chat_id="9002",
@@ -245,7 +245,7 @@ def test_prompt_excludes_completed_ongoing_rows(
         SOURCE_MANUAL,
         MemoryEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with open_session() as db:
@@ -269,7 +269,7 @@ def test_prompt_excludes_completed_ongoing_rows(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -297,7 +297,7 @@ def test_prompt_includes_contact_block_for_current_chatter(
         SOURCE_EVE,
         ContactEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
         db.add(ContactEntry(
@@ -309,7 +309,7 @@ def test_prompt_includes_contact_block_for_current_chatter(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9002",
@@ -339,7 +339,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
         SOURCE_EVE,
         ContactEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
         db.add(ContactEntry(
@@ -350,7 +350,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9002",  # Bob's telegram_id; resolves to Bob
@@ -373,9 +373,9 @@ def test_prompt_skips_contact_block_when_no_record(
     """An empty contacts table → no contact block. The
     LLM just sees the soul + skills (memory is also
     empty here)."""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -399,7 +399,7 @@ def test_prompt_contact_block_only_for_current_chatter(
         SOURCE_MANUAL,
         ContactEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     # Seed a third employee Charlie.
     with open_session() as db:
@@ -426,7 +426,7 @@ def test_prompt_contact_block_only_for_current_chatter(
         db.commit()
 
     # Current chatter is Bob — only his row renders.
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9002",
@@ -448,7 +448,7 @@ def test_prompt_skips_contact_block_when_chat_id_empty(
         SOURCE_EVE,
         ContactEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     # Even with a contact row seeded, ``chat_id=""`` skips
     # the lookup — the WebUI is admin-on-his-own-machine,
@@ -462,7 +462,7 @@ def test_prompt_skips_contact_block_when_chat_id_empty(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="",
@@ -484,13 +484,13 @@ def test_prompt_includes_skills_block_when_registered(
     when the skill loader has any SKILL.md registered.
     The bundled 3 example skills ship with the image, so
     a default boot always has at least the skills block."""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     # The skill loader is a module singleton — the bundled
     # 3 examples (codebase_search / reminder_template /
     # web_lookup) ship in the image, so the default block
     # is non-empty without us seeding anything.
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -527,7 +527,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
         SOURCE_MANUAL,
         MemoryEntry,
     )
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
 
     # Seed one of each block-eligible kind.
     with open_session() as db:
@@ -543,7 +543,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
         ))
         db.commit()
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9002",
@@ -568,7 +568,7 @@ def test_prompt_continues_when_memory_load_fails(
     """A transient ORM error in the memory-store call must
     not crash the inbound path — the prompt falls back to
     the soul alone rather than 500-ing the request."""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
     from magi.agent.memory.magi import store as store_mod
 
     def _boom(_state_dir):
@@ -576,7 +576,7 @@ def test_prompt_continues_when_memory_load_fails(
 
     monkeypatch.setattr(store_mod.MemoryStore, "list_for_owner", _boom)
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
@@ -592,7 +592,7 @@ def test_prompt_continues_when_contact_load_fails(
     state_dir, seed_employees, monkeypatch,
 ):
     """Same resilience contract for the contact lookup."""
-    from magi.agent.loop import _build_system_prompt
+    from magi.agent.system_prompt import build_system_prompt
     from magi.agent.memory.contacts import store as cstore_mod
 
     def _boom(_self, _owner_id, _person_id):
@@ -600,7 +600,7 @@ def test_prompt_continues_when_contact_load_fails(
 
     monkeypatch.setattr(cstore_mod.ContactStore, "find_by_person", _boom)
 
-    rendered = _build_system_prompt(
+    rendered = build_system_prompt(
         str(state_dir),
         employee_id=1,
         chat_id="9001",
