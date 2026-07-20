@@ -1,29 +1,38 @@
 """System-level config: timezone.
 
-This is a per-MAGI-node setting (Adam has its own, every
-EVE has its own). Stored in the same ``settings`` meta-key
-table that already holds ``tg.read_reaction_emoji`` and the
-bot token, so it inherits the existing
-``state_get`` / ``state_set`` / WAL concurrency story.
+Per-MAGI-node setting (Adam has its own, every EVE has
+its own). Stored in the same ``settings`` meta-key
+table that already holds ``tg.read_reaction_emoji`` and
+the bot token, so it inherits the existing ``state_get``
+/ ``state_set`` / WAL concurrency story.
 
 Today the only consumer is the token-bill aggregation
 endpoint, which needs the tz to compute "this week" /
 "this month" boundaries. A future C4+ setting
-("default LLM model", "max token cap", etc.) lands here
-under the same shape.
+("default LLM model", "max token cap", etc.) lands
+here under the same shape.
 
 Why ``zoneinfo`` and not pytz:
 
 - Py 3.9+ stdlib — no dep, no deprecation warnings.
-- ``zoneinfo.ZoneInfo(tz)`` raises ``ZoneInfoNotFoundError``
-  on an unknown name, which is the exact validation the
-  API endpoint needs; no extra logic.
-- pytz's localise() footgun (where naive datetimes silently
-  get the wrong UTC offset) doesn't apply to zoneinfo.
+- ``zoneinfo.ZoneInfo(tz)`` raises
+  ``ZoneInfoNotFoundError`` on an unknown name, which
+  is the exact validation the API endpoint needs; no
+  extra logic.
+- pytz's localise() footgun (where naive datetimes
+  silently get the wrong UTC offset) doesn't apply to
+  zoneinfo.
 
-Default is UTC — a sensible choice for a containerized
-deploy that hasn't told us where it lives. Operators in
-other timezones set this once during setup.
+Default timezone: used to be a hard-coded
+``"UTC"``, forcing every deployer to override
+``system.timezone`` before weekly/monthly
+aggregations lined up with their wall-clock. Now
+resolves lazily to the **server's** local timezone
+via :func:`_system_default_timezone` (uses
+:mod:`tzlocal`); UTC when the server has no timezone
+configured (CI runners). Operators in other
+timezones can still set this once during setup via
+``PUT /api/system-settings/timezone``.
 """
 
 from __future__ import annotations
@@ -32,6 +41,8 @@ import logging
 import os
 import zoneinfo
 from typing import Annotated
+
+from tzlocal import get_localzone
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
@@ -48,7 +59,37 @@ router = APIRouter(tags=["system-settings"])
 # one timezone); future "default LLM model" or similar
 # settings get their own key in this same module.
 SYSTEM_TZ_KEY = "system.timezone"
-DEFAULT_TIMEZONE = "UTC"
+
+
+def _system_default_timezone() -> str:
+    """Resolve the timezone used when ``system.timezone``
+    hasn't been set explicitly.
+
+    We default to the **server's** local timezone — a
+    container in Shanghai comes up as ``"Asia/Shanghai"``
+    so weekly/monthly aggregations line up with the
+    operator's wall-clock without a setup step. CI runners
+    with no timezone config fall back to ``"UTC"`` (the
+    prior behaviour, preserved).
+
+    The resolution is wrapped in a function (not a
+    module-level constant) so the test suite can
+    ``monkeypatch.setattr`` it without importing a stale
+    value; ``zoneinfo.ZoneInfo`` validates the result
+    so a misconfigured system clock still produces an
+    IANA name the rest of the stack can parse.
+    """
+    try:
+        return get_localzone().key
+    except Exception:
+        # Last-resort fallback: ``get_localzone`` can
+        # raise on a stripped-down container with no
+        # ``/etc/localtime``. UTC is the prior default,
+        # so we keep it as the safety net.
+        logger.warning(
+            "could not resolve server timezone; falling back to UTC"
+        )
+        return "UTC"
 
 
 def _state_dir() -> str:
@@ -59,23 +100,24 @@ def get_system_timezone(state_dir: str) -> str:
     """Return the configured timezone name (e.g. ``"UTC"``,
     ``"Asia/Shanghai"``).
 
-    Falls back to :data:`DEFAULT_TIMEZONE` (UTC) when the
+    Falls back to :func:`_system_default_timezone` (server's
+    local timezone; UTC when unset) when the
     stored value is empty / invalid. Validation runs
     through :class:`zoneinfo.ZoneInfo` so a hand-edited
     garbage value can't crash the aggregation endpoint.
     """
     raw = state_get(state_dir, SYSTEM_TZ_KEY)
     if not raw:
-        return DEFAULT_TIMEZONE
+        return _system_default_timezone()
     try:
         zoneinfo.ZoneInfo(raw)
     except Exception:
         logger.warning(
             "system.timezone stored value %r is not a valid IANA tz; "
             "falling back to %s",
-            raw, DEFAULT_TIMEZONE,
+            raw, _system_default_timezone(),
         )
-        return DEFAULT_TIMEZONE
+        return _system_default_timezone()
     return raw
 
 
@@ -116,7 +158,7 @@ class TimezoneUpdateRequest(BaseModel):
 def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
     return TimezoneOut(
         current=get_system_timezone(_state_dir()),
-        default=DEFAULT_TIMEZONE,
+        default=_system_default_timezone(),
         # Sort so the UI dropdown has a stable, alphabetical
         # order — no preference for "common first", v0 keeps
         # the surface uniform.
@@ -150,7 +192,7 @@ def put_system_timezone(
     logger.info("system.timezone set to %r", tz)
     return TimezoneOut(
         current=tz,
-        default=DEFAULT_TIMEZONE,
+        default=_system_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 

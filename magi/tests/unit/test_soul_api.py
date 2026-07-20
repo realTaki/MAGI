@@ -86,7 +86,10 @@ def client(soul_env):
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", "8001")
+    # D.24: cookie carries ``Employee.id`` (the admin's
+    # primary key), not the telegram_id. The seeded
+    # admin is the only row, so its id is 1.
+    c.cookies.set("magi_session", "1")
     return c
 
 
@@ -254,7 +257,14 @@ def test_put_soul_without_cookie_is_403(soul_env):
 
 def _client_with_role(soul_env, *, role: str, chat_id: int):
     """Build a TestClient whose cookie resolves to an
-    employee with the requested ``role``."""
+    employee with the requested ``role``.
+
+    D.24: cookie is the employee.id (a primary-key int),
+    not the legacy telegram_id. We seed one employee
+    and then look up its freshly-minted PK so the test
+    always tracks the row even if earlier tests seeded
+    multiple rows.
+    """
     state_dir, _workspace = soul_env
     from magi.agent.db import (
         Employee,
@@ -265,23 +275,24 @@ def _client_with_role(soul_env, *, role: str, chat_id: int):
     init_orm(str(state_dir))
     with open_session() as s:
         s.query(Employee).delete()
-        s.add(
-            Employee(
-                name=f"TA-{role}",
-                telegram_id=chat_id,
-                role=role,
-                provider="minimax",
-                api_key="fake",
-            )
+        emp = Employee(
+            name=f"TA-{role}",
+            telegram_id=chat_id,
+            role=role,
+            provider="minimax",
+            api_key="fake",
         )
+        s.add(emp)
         s.commit()
+        s.refresh(emp)
+        employee_id = emp.id
 
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", str(chat_id))
+    c.cookies.set("magi_session", str(employee_id))
     return c
 
 
@@ -319,3 +330,61 @@ def test_guest_role_cannot_write_soul(soul_env):
     c = _client_with_role(soul_env, role="guest", chat_id=8004)
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
+
+
+def test_gate_uses_employee_id_not_telegram_id(soul_env):
+    """D.24 regression: cookie carries ``Employee.id`` (a
+    primary-key int), not the legacy telegram_id. The
+    gate must look up by primary key.
+
+    Pre-fix, the gate ran ``int(cookie)`` and queried
+    ``Employee.telegram_id == cookie`` — which matched
+    only by sheer coincidence when an employee's PK
+    equalled their telegram_id. This test seeds an
+    employee with ``id=7, telegram_id=6240201712`` so the
+    two values are deliberately unequal; a cookie of
+    ``"7"`` must succeed, and a cookie of
+    ``"6240201712"`` must 403.
+    """
+    state_dir, _ = soul_env
+    from magi.agent.db import Employee, open_session
+
+    # Reset + seed a deliberately mismatched pair.
+    with open_session() as s:
+        s.query(Employee).delete()
+        emp = Employee(
+            id=7,                          # explicit PK
+            name="TA-mismatch",
+            telegram_id=6240201712,        # ≠ PK
+            role="admin",
+            provider="minimax",
+            api_key="fake",
+        )
+        s.add(emp)
+        s.commit()
+
+    from magi.channels.webui.app import create_app
+    from fastapi.testclient import TestClient
+
+    app = create_app()
+    c = TestClient(app)
+
+    # Cookie == employee.id → gate passes.
+    c.cookies.set("magi_session", "7")
+    r = c.get("/api/soul")
+    assert r.status_code == 200, (
+        "D.24 fix: cookie=Employee.id must succeed; "
+        f"got {r.status_code} {r.text[:120]}"
+    )
+
+    # Cookie == telegram_id (pre-D.24 shape) → gate must
+    # reject. The lookup goes by primary key, so this
+    # employee (id=7) is not found and the request is
+    # denied.
+    c.cookies.set("magi_session", "6240201712")
+    r = c.get("/api/soul")
+    assert r.status_code == 403, (
+        "D.24 regression: cookie=Employee.telegram_id must "
+        "NOT be accepted (it was the pre-D.24 shape that "
+        f"broke /api/soul); got {r.status_code}"
+    )

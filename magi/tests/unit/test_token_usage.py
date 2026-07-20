@@ -208,12 +208,23 @@ def test_record_token_usage_partial_dict(token_env):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_timezone_get_defaults_to_utc(token_env, client):
+def test_timezone_get_defaults_to_server_local(token_env, client):
+    """When ``system.timezone`` is unset, the default
+    resolves to the server's local timezone (via
+    :mod:`tzlocal`). UTC was the prior hard-coded default
+    — kept only for the "no timezone set" edge case
+    (CI runners).
+    """
+    from tzlocal import get_localzone
+
     r = client.get("/api/system-settings/timezone")
     assert r.status_code == 200
     data = r.json()
-    assert data["current"] == "UTC"
-    assert data["default"] == "UTC"
+    # ``current`` and ``default`` both surface the resolved
+    # local tz. They're the same value here because the
+    # test env didn't write to ``system.timezone``.
+    assert data["current"] == data["default"]
+    assert data["current"] == get_localzone().key
     # choices is the full IANA tz database — pin a couple
     # of common ones to make sure the projection works.
     assert "UTC" in data["choices"]
@@ -294,6 +305,8 @@ def _insert_usage(state_dir, *, employee_id, when_utc, in_t, out_t, channel="web
 def test_token_usage_returns_three_periods(token_env, client):
     """A fresh employee (no rows) returns 0/0/0 across all
     three periods, with the right shape."""
+    from tzlocal import get_localzone
+
     r = client.get("/api/employees/2/token-usage")
     assert r.status_code == 200
     data = r.json()
@@ -306,7 +319,10 @@ def test_token_usage_returns_three_periods(token_env, client):
         assert data[p]["input_tokens"] == 0
         assert data[p]["output_tokens"] == 0
         assert data[p]["call_count"] == 0
-    assert data["timezone"] == "UTC"
+    # ``timezone`` echoes whatever ``get_system_timezone``
+    # resolved (the server's local tz when ``system.timezone``
+    # is unset — see :data:`_system_default_timezone`).
+    assert data["timezone"] == get_localzone().key
 
 
 def test_token_usage_aggregates_three_rows(token_env, client):
@@ -428,12 +444,16 @@ def test_token_usage_requires_admin(token_env):
 
 
 def test_token_usage_handles_no_tz_storage(token_env, client):
-    """Fresh env, no tz set → defaults to UTC, response
-    echoes it. Pinned to make sure the fallback path
-    doesn't crash."""
+    """Fresh env, no tz set → falls back to the server's
+    local timezone. The token-usage endpoint echoes
+    whatever ``get_system_timezone`` resolved, so the
+    response matches the tz detail. Pinned to make sure
+    the fallback path doesn't crash."""
+    from tzlocal import get_localzone
+
     r = client.get("/api/employees/2/token-usage")
     data = r.json()
-    assert data["timezone"] == "UTC"
+    assert data["timezone"] == get_localzone().key
 
 
 def test_timezone_get_with_stored_value(token_env, client):
@@ -446,15 +466,17 @@ def test_timezone_get_with_stored_value(token_env, client):
 
 
 def test_timezone_falls_back_when_stored_value_invalid(token_env, client):
-    """A hand-edited / corrupted value falls back to UTC
-    rather than crashing the endpoint. The aggregation
-    endpoint reads the same fallback so the dashboard
-    stays usable even with a bad meta key."""
+    """A hand-edited / corrupted value falls back to the
+    server's local timezone rather than crashing the
+    endpoint. The aggregation endpoint reads the same
+    fallback so the dashboard stays usable even with a
+    bad meta key."""
+    from tzlocal import get_localzone
     from magi.agent.db.settings import state_set
 
     state_set(str(token_env[0]), "system.timezone", "garbage")
     r = client.get("/api/system-settings/timezone")
     # GET reports what the helper *returned*, not the raw
     # stored value (so the operator can see the active
-    # value is UTC, not garbage).
-    assert r.json()["current"] == "UTC"
+    # value is the local tz, not garbage).
+    assert r.json()["current"] == get_localzone().key
