@@ -180,3 +180,56 @@ class Tool(ABC):
             "description": self.description,
             "input_schema": self.input_schema,
         }
+
+
+def caller_role_denied_reason(
+    ctx: "ToolContext",
+    allowed_roles: "frozenset[str] | set[str]",
+) -> str | None:
+    """Return an error message if ``ctx``'s caller isn't in
+    ``allowed_roles``; ``None`` if the caller is permitted.
+
+    Used inside a tool's :meth:`Tool.run` as the second-
+    layer defence — the registry's role filter at
+    :func:`magi.agent.tools.registry.get_tools` is the
+    first gate and strips this tool out of the LLM's
+    menu for any caller whose role isn't in
+    ``allowed_roles``. The check here ensures a caller
+    that bypasses the registry (test code, a future
+    entry point that forgets the filter) still fails
+    closed with a friendly ``is_error=True``.
+
+    Resolves the caller's role via a fresh Employee
+    lookup each call so role flips (``assigned`` →
+    ``employee`` mid-conversation) take effect on the
+    very next tool call without a process restart.
+
+    The SQLAlchemy / Employee imports are local — the
+    agent loop imports this module without paying for
+    the DB stack at module load.
+    """
+    try:
+        emp_id = int(ctx.employee_id)
+    except (TypeError, ValueError):
+        return f"employee_id {ctx.employee_id!r} is not a valid id"
+    if emp_id == 0:
+        # The chat / TG handlers always set a real id;
+        # ``0`` is the loop's placeholder for "no caller
+        # resolved yet". Refuse rather than silently
+        # letting an unset-context caller through.
+        return (
+            "tool requires a known employee_id (got 0); "
+            "caller did not authenticate through a "
+            "cookie / TG binding."
+        )
+    from magi.agent.db import Employee, open_session
+    with open_session() as db:
+        emp = db.get(Employee, emp_id)
+    if emp is None:
+        return f"employee {emp_id!r} not found"
+    if emp.role not in allowed_roles:
+        return (
+            f"role {emp.role!r} is not permitted for this "
+            f"tool (allowed: {', '.join(sorted(allowed_roles))})"
+        )
+    return None

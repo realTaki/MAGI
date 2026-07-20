@@ -714,6 +714,11 @@ export function KnowledgeToolsPane() {
     name: string;
     description: string;
     prop_count: number;
+    // Sorted list of role names this tool is gated to.
+    // Empty array = no role gate (the LLM sees the tool
+    // regardless of caller). Today every built-in declares
+    // a non-empty set; MCP tools come back unrestricted.
+    allowed_roles: string[];
   };
   type ToolListResponse = {
     items: ToolRow[];
@@ -782,6 +787,9 @@ export function KnowledgeToolsPane() {
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
                 <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
+                <th className="py-2 pr-4 font-medium">
+                  {t("settings.toolsAllowedRoles")}
+                </th>
                 <th className="py-2 font-medium w-28 text-right">
                   {t("settings.toolsInputs")}
                 </th>
@@ -798,6 +806,34 @@ export function KnowledgeToolsPane() {
                   </td>
                   <td className="py-2 pr-4 text-ink-soft text-xs">
                     {tool.description}
+                  </td>
+                  <td className="py-2 pr-4 text-xs">
+                    {tool.allowed_roles.length === 0 ? (
+                      <span className="italic text-ink-soft">
+                        {t("settings.toolsAllowedRolesAll")}
+                      </span>
+                    ) : (
+                      <span className="flex flex-wrap gap-1">
+                        {tool.allowed_roles.map((role) => (
+                          <span
+                            key={role}
+                            className="inline-block rounded border border-sky-light/60
+                                       bg-sky-pale/40 px-1.5 py-0.5
+                                       font-mono text-[10px] text-ink"
+                            // title="..." lives on the chip itself
+                            // so the column stays compact — the
+                            // tool's full description is already
+                            // in the cell next door. Interpolation
+                            // via the chained ``.replace()`` pattern
+                            // (see :func:`useT` in ``i18n/index.tsx``).
+                            title={t("settings.toolsAllowedRolesChipTitle")
+                              .replace("{role}", role)}
+                          >
+                            {role}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-right text-xs text-ink-soft">
                     {tool.prop_count > 0

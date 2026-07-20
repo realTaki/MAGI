@@ -103,6 +103,17 @@ const zh: Catalog = {
     toolsIntro: "当前 MAGI 节点上 agent 能调用的所有 tool — 内置的 file / chat / search 类，加上通过 mcp.json 加载的 MCP 工具。",
     toolsName: "名称",
     toolsDescription: "描述",
+    toolsAllowedRoles: "可见角色",
+    // Shown in the role-cell when the tool has no role gate
+    // (every role can call it — e.g. operator-configured MCP
+    // tools). Distinct from "empty list" = "registry bug";
+    // this string is informational only.
+    toolsAllowedRolesAll: "所有角色",
+    // Tooltip on each per-role chip. ``{role}`` is replaced
+    // with the role name (admin / assigned / ...). Keeps the
+    // cell compact while letting the operator learn what
+    // the role means if they want to.
+    toolsAllowedRolesChipTitle: "角色 {role} 可以调用此工具",
     toolsInputs: "输入参数",
     toolsInputsNone: "无",
     toolsEmpty: "暂无工具注册。检查一下 mcp.json。",
@@ -327,6 +338,9 @@ const en: Catalog = {
     toolsIntro: "Every tool the agent can call on this MAGI node — built-in file / chat / search tools, plus anything loaded via mcp.json.",
     toolsName: "Name",
     toolsDescription: "Description",
+    toolsAllowedRoles: "Allowed roles",
+    toolsAllowedRolesAll: "all roles",
+    toolsAllowedRolesChipTitle: "Operators with role {role} can call this tool",
     toolsInputs: "Inputs",
     toolsInputsNone: "none",
     toolsEmpty: "No tools registered. Check mcp.json.",
@@ -546,6 +560,9 @@ const ja: Catalog = {
     toolsIntro: "この MAGI ノードで agent が呼び出せるツール一覧 — 内蔵の file / chat / search ツールと、mcp.json で読み込まれた MCP ツール。",
     toolsName: "名前",
     toolsDescription: "説明",
+    toolsAllowedRoles: "呼び出し可能なロール",
+    toolsAllowedRolesAll: "すべてのロール",
+    toolsAllowedRolesChipTitle: "ロール {role} のオペレーターはこのツールを呼び出せます",
     toolsInputs: "入力",
     toolsInputsNone: "なし",
     toolsEmpty: "ツールが登録されていません。mcp.json を確認してください。",

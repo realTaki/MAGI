@@ -196,3 +196,105 @@ def test_tools_response_is_sorted_by_name(client: TestClient) -> None:
     body = r.json()
     names = [it["name"] for it in body["items"]]
     assert names == sorted(names) == ["fake__aardvark", "fake__zebra"]
+
+
+
+class _GatedTool(Tool):
+    """Tool with a non-empty :attr:`ALLOWED_ROLES` for the
+    read-only audit surface. Declared as a class
+    attribute (rather than reusing e.g. AddActionItemTool)
+    so this test isn't coupled to a specific implementation
+    choice — the endpoint contract is what we want to lock.
+    """
+
+    name = "fake__gated"
+    description = "Tool with a declared ALLOWED_ROLES set."
+    input_schema: dict = {}
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+
+    async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
+        return ToolResult(content="")
+
+
+def test_tools_response_includes_allowed_roles(client: TestClient) -> None:
+    """``GET /api/tools`` surfaces each tool's
+    :attr:`ALLOWED_ROLES` as a sorted list — the
+    dashboard's "allowed roles" column renders directly
+    from this field."""
+    registry_mod._tools_cache = [_GatedTool()]
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"][0]["name"] == "fake__gated"
+    # Sorted: roles render in a stable order regardless of
+    # frozenset ordering.
+    assert body["items"][0]["allowed_roles"] == ["admin", "assigned"]
+
+
+def test_tools_response_returns_empty_list_for_unrestricted(
+    client: TestClient,
+) -> None:
+    """Tools that declare no role restriction (the default
+    ``ALLOWED_ROLES = frozenset()``) come back with an
+    empty list — the dashboard renders "all roles" for
+    those, distinct from a non-empty allowed set."""
+    # ``_FakeTool`` doesn't declare ALLOWED_ROLES, so it
+    # inherits the empty frozenset from :class:`Tool`.
+    registry_mod._tools_cache = [_FakeTool()]
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"][0]["name"] == "fake__demo"
+    assert body["items"][0]["allowed_roles"] == []
+
+
+def test_tools_response_keeps_role_order_alphabetical(
+    client: TestClient,
+) -> None:
+    """``ALLOWED_ROLES`` is a set — without an explicit
+    sort, two servers could render the same set in
+    different orders. The endpoint sorts so the dashboard
+    table layout is byte-stable."""
+
+    class _ReversedGatedTool(Tool):
+        name = "fake__rev"
+        description = "x"
+        input_schema: dict = {}
+        # Declared in reverse alphabetical so the test
+        # would FAIL if the sort step were skipped.
+        ALLOWED_ROLES = frozenset({"zzz", "admin", "middle"})
+
+        async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
+            return ToolResult(content="")
+
+    registry_mod._tools_cache = [_ReversedGatedTool()]
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["items"][0]["allowed_roles"] == ["admin", "middle", "zzz"]
+
+
+def test_tools_response_calls_get_tools_with_no_role_filter(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dashboard view is informational, not gated. The
+    endpoint explicitly passes ``caller_role=None`` so the
+    full registry surfaces — even tools whose
+    :attr:`ALLOWED_ROLES` would otherwise strip them from
+    a role-filtered view."""
+    from magi.channels.webui.api import tools as tools_api
+    seen: list = []
+    real = tools_api.get_tools
+
+    def spy(caller_role=None):  # type: ignore[no-untyped-def]
+        seen.append(caller_role)
+        return real(caller_role=caller_role)
+
+    monkeypatch.setattr(tools_api, "get_tools", spy)
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    assert seen == [None], (
+        "audit endpoint must call get_tools(caller_role=None) "
+        "so the full registry surfaces; gating here would "
+        "strip admin-only tools from the operator's view"
+    )

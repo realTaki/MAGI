@@ -55,8 +55,13 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.db import ActionItem, Employee, open_session
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.agent.db import ActionItem, open_session
+from magi.agent.tools.base import (
+    Tool,
+    ToolContext,
+    ToolResult,
+    caller_role_denied_reason,
+)
 
 logger = logging.getLogger("magi.agent.tools.action_item")
 
@@ -83,33 +88,18 @@ def _new_llm_action_item_kind() -> str:
 
 
 def _gate(ctx: ToolContext) -> str | None:
-    """Return an error string if the caller isn't admin /
-    ``assigned``, else ``None``.
+    """Thin wrapper around
+    :func:`magi.agent.tools.base.caller_role_denied_reason`
+    — kept as a free function so the call sites in
+    each tool class read the same (``denied = _gate(ctx)``)
+    without needing ``self.ALLOWED_ROLES`` everywhere.
 
-    Mirrors :func:`magi.agent.memory.contacts.tools._gate`
-    — single point of contact for "is this tool's caller
-    allowed?" so all three tools stay aligned.
+    Single source of truth for the in-run gate lives in
+    :func:`caller_role_denied_reason` so a future change
+    to the check (e.g. adding a rate-limit) lives in one
+    place.
     """
-    try:
-        emp_id = int(ctx.employee_id)
-    except (TypeError, ValueError):
-        return f"employee_id {ctx.employee_id!r} is not a valid id"
-    if emp_id == 0:
-        return (
-            "tool requires a known employee_id (got 0); "
-            "caller did not authenticate through a "
-            "cookie / TG binding."
-        )
-    with open_session() as db:
-        emp = db.get(Employee, emp_id)
-    if emp is None:
-        return f"employee {emp_id!r} not found"
-    if emp.role not in _ALLOWED_ROLES:
-        return (
-            f"role {emp.role!r} cannot operate on action "
-            f"items; only admin and assigned may."
-        )
-    return None
+    return caller_role_denied_reason(ctx, _ALLOWED_ROLES)
 
 
 def _err(msg: str) -> ToolResult:
