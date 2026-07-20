@@ -43,7 +43,8 @@ type KnowledgeSection =
   | "connectors"
   | "contacts"
   | "memory"
-  | "tools";
+  | "tools"
+  | "mcp";
 
 /** Section metadata: id (drives selection) + i18n key for
  *  the sidebar label. The default export resolves the keys
@@ -58,7 +59,8 @@ const KNOWLEDGE_SECTIONS: Array<{
   { id: "connectors", labelKey: "sidebar.knowledgeConnectors", icon: <IconConnectors /> },
   { id: "contacts", labelKey: "sidebar.knowledgeContacts", icon: <IconContacts /> },
   { id: "memory", labelKey: "sidebar.knowledgeMemory", icon: <IconReminders /> },
-  { id: "tools", labelKey: "settings.toolsHeading", icon: <IconTools /> },
+  { id: "tools", labelKey: "sidebar.knowledgeTools", icon: <IconTools /> },
+  { id: "mcp", labelKey: "sidebar.knowledgeMcp", icon: <IconConnectors /> },
 ];
 
 export default function KnowledgeTab() {
@@ -85,7 +87,8 @@ export default function KnowledgeTab() {
       {section === "connectors" && <KnowledgeConnectorsPane />}
       {section === "contacts" && <KnowledgeContactsPane />}
       {section === "memory" && <KnowledgeMemoryPane />}
-      {section === "tools" && <KnowledgeToolsPane />}
+      {section === "tools" && <KnowledgeToolsPane source="builtin" />}
+      {section === "mcp" && <KnowledgeToolsPane source="mcp" />}
     </SidebarShell>
   );
 }
@@ -693,54 +696,63 @@ export function KnowledgeMemoryPane() {
   );
 }
 
-// -- pane: tools -----------------------------------------------------------
+// -- pane: tools (built-in / MCP) -------------------------------------------
 //
-// Live today. Reads the tool registry from ``GET /api/tools``.
-// The pane renders two cards — one for built-in tools
-// (those shipped by the registry's hard-coded list in
-// :mod:`magi.agent.tools.registry`) and one for MCP tools
-// (those loaded via ``mcp.json``). The split is informational:
-// when an operator can't find a tool, knowing whether they
-// should be looking at the card that ships with MAGI or at
-// the one driven by their config cuts the debugging surface
-// in half.
+// One component, two sidebar entries. The sidebar in
+// :func:`KnowledgeTab` routes ``"tools"`` here with
+// ``source="builtin"`` and ``"mcp"`` with ``source="mcp"``
+// — the same GET /api/tools response is filtered on the
+// wire tagging (``source`` field) and rendered with
+// source-specific copy for the heading, empty state, and
+// InfoTip.
 //
-// The pane itself has no ``<h2>`` heading — the sidebar
-// already labels this section, and each card titles itself.
-// A single InfoTip at the top carries the long description
-// so the page body stays compact.
-export function KnowledgeToolsPane() {
+// Both panes share the same fetch + table markup. The
+// per-source copy lives in i18n so the empty state can
+// explain the missing-tools cause ("no MCP servers yet"
+// vs "no built-ins registered for this node") without
+// the operator having to read code.
+export function KnowledgeToolsPane(
+  props: { source: "builtin" | "mcp" },
+) {
   type ToolRow = {
     name: string;
     description: string;
     prop_count: number;
-    // Where the tool came from. ``"builtin"`` is the
-    // hard-coded list in :mod:`magi.agent.tools.registry`;
-    // ``"mcp"`` is anything surfaced by an MCP server the
-    // operator configured in ``mcp.json``. Driving the
-    // two-card split client-side keeps the API stable if
-    // we add a third source later (skills as tools,
-    // C.4+).
     source: "builtin" | "mcp";
-    // Sorted list of role names this tool is gated to.
-    // Empty array = no role gate (the LLM sees the tool
-    // regardless of caller). Today every built-in declares
-    // a non-empty set; MCP tools come back unrestricted.
     allowed_roles: string[];
   };
   type ToolListResponse = {
     items: ToolRow[];
     total: number;
   };
+
   const t = useT();
+  // Per-source copy resolved up-front so the JSX stays
+  // focused on markup. ``source`` is the only thing that
+  // varies between sidebar entries.
+  const title = t(
+    props.source === "builtin"
+      ? "settings.toolsBuiltInHeading"
+      : "settings.toolsMcpHeading",
+  );
+  const tipText = t(
+    props.source === "builtin"
+      ? "settings.toolsBuiltInTip"
+      : "settings.toolsMcpTip",
+  );
+  const emptyCopy = t(
+    props.source === "builtin"
+      ? "settings.toolsBuiltInEmpty"
+      : "settings.toolsMcpEmpty",
+  );
+
   const [tools, setTools] = useState<ToolRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // One-shot load on mount. The tool registry is server-side
-  // cached (it's the same registry the agent loop uses), and
-  // a real-time refresh would only matter when an operator
-  // edits ``mcp.json`` and triggers a reload — that's a C4+
-  // feature, not v0.
+  // One-shot load on mount. Same registry the agent loop
+  // uses (server-side cached), so a real-time refresh
+  // would only matter when an operator edits ``mcp.json``
+  // and triggers a reload — that's a C4+ feature.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -771,147 +783,86 @@ export function KnowledgeToolsPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Group the registry by source so the dashboard renders
-  // two cards (built-in, MCP). MCP is empty on a fresh
-  // install; the empty-state copy in each card explains
-  // where the missing tools would appear.
-  const builtIn = tools?.filter((tool) => tool.source === "builtin") ?? [];
-  const mcp = tools?.filter((tool) => tool.source === "mcp") ?? [];
+  // Filter to the source this pane renders. The dashboard
+  // always loads the full registry once per visit, so
+  // switching between the two sidebar entries doesn't
+  // re-trigger a fetch — the items are already in memory.
+  const filtered = tools?.filter((tool) => tool.source === props.source) ?? [];
 
   return (
     <div className="space-y-4">
       {/*
-        Top-of-pane InfoTip carries the long prose. We
-        intentionally skip a top-of-pane ``<h2>``: the
-        sidebar already labels this section, and each card
-        titles itself. Single ``?`` instead of one per card
-        to avoid asking the same question twice.
+        Top-of-pane InfoTip carries the source-specific
+        prose. No ``<h2>`` — the sidebar already labels
+        this section, and the card's title reinforces it.
       */}
       <div className="flex justify-end">
-        <InfoTip text={t("settings.toolsIntro")} />
+        <InfoTip text={tipText} />
       </div>
 
-      {/* Shared table renderer — the two cards below only
-          differ in their title / empty copy. */}
-      {_renderToolsCard(t, builtIn, t("settings.toolsBuiltInHeading"),
-        t("settings.toolsBuiltInEmpty"))}
-      {_renderToolsCard(t, mcp, t("settings.toolsMcpHeading"),
-        t("settings.toolsMcpEmpty"))}
-
-      {/*
-        Top-of-pane load / error surfaced AFTER both cards
-        so a failed request doesn't leave the user staring
-        at empty boxes. Reuses the existing load-error /
-        loading copy; the per-card empty copy above handles
-        the "registry loaded but this side is empty" case.
-      */}
-      {loadError && (
-        <p className="form-error">✗ {loadError}</p>
-      )}
-      {tools === null && !loadError && (
-        <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
-      )}
-    </div>
-  );
-}
-
-/** Render a single ConsoleCard for one source (builtin or
- *  MCP). Pulled out as a top-level helper so the two cards
- *  in :func:`KnowledgeToolsPane` share markup — only the
- *  title and the empty-state copy differ.
- *
- *  ``tools.length === 0`` triggers the empty copy; on a
- *  fresh install this is the expected state for the MCP
- *  side, less common for the built-in side. We don't try
- *  to distinguish "loaded empty" from "never loaded" —
- *  the operator-visible behaviour is identical (nothing
- *  to show), and the underlying truth is recovered by
- *  reloading ``GET /api/tools``.
- */
-function _renderToolsCard(
-  t: (key: string) => string,
-  tools: ReadonlyArray<{
-    name: string;
-    description: string;
-    prop_count: number;
-    allowed_roles: string[];
-  }>,
-  title: string,
-  emptyCopy: string,
-) {
-  return (
-    <ConsoleCard title={title}>
-      {tools.length === 0 ? (
-        <p className="text-sm text-ink-soft">{emptyCopy}</p>
-      ) : (
-        <table className="data-table w-full">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
-              <th className="py-2 pr-4 font-medium">
-                {t("settings.toolsName")}
-              </th>
-              <th className="py-2 pr-4 font-medium">
-                {t("settings.toolsDescription")}
-              </th>
-              <th className="py-2 pr-4 font-medium">
-                {t("settings.toolsAllowedRoles")}
-              </th>
-              <th className="py-2 font-medium w-28 text-right">
-                {t("settings.toolsInputs")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {tools.map((tool) => (
-              <tr
-                key={tool.name}
-                className="border-b border-sky-light/30 last:border-0"
-              >
-                <td className="py-2 pr-4 text-ink font-mono text-xs">
-                  {tool.name}
-                </td>
-                <td className="py-2 pr-4 text-ink-soft text-xs">
-                  {tool.description}
-                </td>
-                <td className="py-2 pr-4 text-xs">
-                  {tool.allowed_roles.length === 0 ? (
-                    <span className="italic text-ink-soft">
-                      {t("settings.toolsAllowedRolesAll")}
-                    </span>
-                  ) : (
-                    <span className="flex flex-wrap gap-1">
-                      {tool.allowed_roles.map((role) => (
-                        <span
-                          key={role}
-                          className="inline-block rounded border border-sky-light/60
-                                     bg-sky-pale/40 px-1.5 py-0.5
-                                     font-mono text-[10px] text-ink"
-                          // ``title=`` lives on the chip itself
-                          // so the column stays compact — the
-                          // tool's full description is already
-                          // in the cell next door. Interpolation
-                          // via the chained ``.replace()``
-                          // pattern (see :func:`useT` in
-                          // ``i18n/index.tsx``).
-                          title={t("settings.toolsAllowedRolesChipTitle")
-                            .replace("{role}", role)}
-                        >
-                          {role}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 text-right text-xs text-ink-soft">
-                  {tool.prop_count > 0
-                    ? `${tool.prop_count}`
-                    : t("settings.toolsInputsNone")}
-                </td>
+      <ConsoleCard title={title}>
+        {loadError && <p className="form-error">✗ {loadError}</p>}
+        {!loadError && tools === null && (
+          <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
+        )}
+        {!loadError && tools !== null && filtered.length === 0 && (
+          <p className="text-sm text-ink-soft">{emptyCopy}</p>
+        )}
+        {!loadError && tools !== null && filtered.length > 0 && (
+          <table className="data-table w-full">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
+                <th className="py-2 pr-4 font-medium">{t("settings.toolsAllowedRoles")}</th>
+                <th className="py-2 font-medium w-28 text-right">{t("settings.toolsInputs")}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </ConsoleCard>
+            </thead>
+            <tbody>
+              {filtered.map((tool) => (
+                <tr
+                  key={tool.name}
+                  className="border-b border-sky-light/30 last:border-0"
+                >
+                  <td className="py-2 pr-4 text-ink font-mono text-xs">
+                    {tool.name}
+                  </td>
+                  <td className="py-2 pr-4 text-ink-soft text-xs">
+                    {tool.description}
+                  </td>
+                  <td className="py-2 pr-4 text-xs">
+                    {tool.allowed_roles.length === 0 ? (
+                      <span className="italic text-ink-soft">
+                        {t("settings.toolsAllowedRolesAll")}
+                      </span>
+                    ) : (
+                      <span className="flex flex-wrap gap-1">
+                        {tool.allowed_roles.map((role) => (
+                          <span
+                            key={role}
+                            className="inline-block rounded border border-sky-light/60
+                                       bg-sky-pale/40 px-1.5 py-0.5
+                                       font-mono text-[10px] text-ink"
+                            title={t("settings.toolsAllowedRolesChipTitle")
+                              .replace("{role}", role)}
+                          >
+                            {role}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right text-xs text-ink-soft">
+                    {tool.prop_count > 0
+                      ? `${tool.prop_count}`
+                      : t("settings.toolsInputsNone")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ConsoleCard>
+    </div>
   );
 }

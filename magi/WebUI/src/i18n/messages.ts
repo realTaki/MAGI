@@ -100,13 +100,14 @@ const zh: Catalog = {
     tgDoneEmoji: "完成",
     toolLoop: "Agent 循环上限",
     toolsHeading: "工具列表",
-    // Long description — surfaces in a single ``?`` icon at
-    // the top of the pane, NOT as a page heading. Each card
-    // titles itself ("内置工具" / "MCP 工具") so the operator
-    // doesn't see the same word "工具列表" three times.
-    toolsIntro: "当前 MAGI 节点上 agent 能调用的所有 tool — 内置的 file / chat / search 类，加上通过 mcp.json 加载的 MCP 工具。",
+    // Per-source popover text. Each pane's InfoTip carries
+    // its own copy so the operator knows which side they're
+    // reading without seeing the word "工具列表" three times
+    // in a row.
     toolsBuiltInHeading: "内置工具",
     toolsMcpHeading: "MCP 工具",
+    toolsBuiltInTip: "MAGI 自带的固定工具列表 — file / chat / search / memory / contacts / 定时任务 / 待办。更新要重新构建 MAGI。",
+    toolsMcpTip: "通过 mcp.json 配置的 MCP 服务器，每个服务器暴露的工具自动出现在这里。修改后重启节点生效。",
     toolsName: "名称",
     toolsDescription: "描述",
     toolsAllowedRoles: "可见角色",
@@ -242,6 +243,8 @@ const zh: Catalog = {
     knowledgeConnectors: "连接器",
     knowledgeContacts: "通讯录",
     knowledgeMemory: "记忆",
+    knowledgeTools: "工具列表",
+    knowledgeMcp: "MCP 列表",
     knowledgeNavAria: "知识分组导航",
     orgNavAria: "组织分组导航",
     orgScopeNavAria: "员工范围导航",
@@ -347,12 +350,10 @@ const en: Catalog = {
     tgReadEmoji: "Read",
     tgDoneEmoji: "Done",
     toolsHeading: "Tools",
-    // Surfaces in the top-of-pane ``?`` icon — kept short
-    // because the operator already knows what "Tools" means
-    // from the sidebar.
-    toolsIntro: "Every tool the agent can call on this MAGI node — built-in file / chat / search tools, plus anything loaded via mcp.json.",
     toolsBuiltInHeading: "Built-in tools",
     toolsMcpHeading: "MCP tools",
+    toolsBuiltInTip: "Built-in tool registry — file / chat / search / memory / contacts / scheduling / action items. Updating requires rebuilding MAGI.",
+    toolsMcpTip: "Tools loaded from MCP servers configured in mcp.json. Edits take effect on the next node restart.",
     toolsName: "Name",
     toolsDescription: "Description",
     toolsAllowedRoles: "Allowed roles",
@@ -470,6 +471,8 @@ const en: Catalog = {
     knowledgeConnectors: "Connectors",
     knowledgeContacts: "Contacts",
     knowledgeMemory: "Memory",
+    knowledgeTools: "Tools",
+    knowledgeMcp: "MCP",
     knowledgeNavAria: "Knowledge sections",
     orgNavAria: "Organization sections",
     orgScopeNavAria: "Employee scope",
@@ -575,9 +578,10 @@ const ja: Catalog = {
     tgReadEmoji: "既読",
     tgDoneEmoji: "完了",
     toolsHeading: "ツール一覧",
-    toolsIntro: "この MAGI ノードで agent が呼び出せるツール一覧 — 内蔵の file / chat / search ツールと、mcp.json で読み込まれた MCP ツール。",
     toolsBuiltInHeading: "内蔵ツール",
     toolsMcpHeading: "MCP ツール",
+    toolsBuiltInTip: "内蔵ツール一覧 — file / chat / search / memory / contacts / スケジュール / アクションアイテム。更新には MAGI の再ビルドが必要です。",
+    toolsMcpTip: "mcp.json で設定した MCP サーバーから読み込まれたツール。編集はノード再起動後に反映されます。",
     toolsName: "名前",
     toolsDescription: "説明",
     toolsAllowedRoles: "呼び出し可能なロール",
@@ -695,6 +699,8 @@ const ja: Catalog = {
     knowledgeConnectors: "コネクタ",
     knowledgeContacts: "連絡先",
     knowledgeMemory: "記憶",
+    knowledgeTools: "ツール一覧",
+    knowledgeMcp: "MCP",
     knowledgeNavAria: "ナレッジグループ",
     orgNavAria: "組織セクション",
     orgScopeNavAria: "従業員の範囲",
