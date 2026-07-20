@@ -103,6 +103,16 @@ class AddMemoryTool(Tool):
     """
 
     name = "add_memory"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Persist a new fact into MAGI's mid-term memory. "
         "Use when the operator says '记住 X' / '记下 Y' / "
@@ -187,6 +197,16 @@ class UpdateMemoryTool(Tool):
     """
 
     name = "update_memory"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Patch an existing memory row by id. Use when the operator "
         "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
@@ -244,6 +264,16 @@ class CompleteMemoryTool(Tool):
     """
 
     name = "complete_memory"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Mark an ongoing memory row as done. The row stays in the "
         "table for the audit trail but is no longer rendered in "
@@ -290,6 +320,16 @@ class DeleteMemoryTool(Tool):
     """
 
     name = "delete_memory"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a memory row by id. Idempotent — deleting a "
         "non-existent id returns success. Use when the operator "

@@ -43,6 +43,16 @@ class SendMessageTool(Tool):
     """Send a side-channel message to the current user."""
 
     name = "send_message"
+
+    # Visible only to ``admin`` and ``assigned``
+    # operators — same gate as the WebUI dashboard and
+    # as ``ScheduleTaskTool`` / the action-item trio.
+    # The chat path always passes the operator's role
+    # through to ``handle_message(caller_role=...)`` so
+    # non-eligible callers never see these tools in the
+    # LLM's menu. ``MCPTool`` is intentionally permissive
+    # (operator-configured at the MCP server level).
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Deliver a message to the current user without "
         "ending the tool loop. Use sparingly — most "

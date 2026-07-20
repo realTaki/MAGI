@@ -51,9 +51,9 @@ def _build_tools() -> list["Tool"]:
         BashRunTool,
     )
     from magi.agent.tools.action_item import (
-        AddTodoTool,
-        CompleteTodoTool,
-        ListTodoTool,
+        AddActionItemTool,
+        CompleteActionItemTool,
+        ListActionItemTool,
     )
     from magi.agent.tools.edit_file import EditFileTool
     from magi.agent.tools.list_files import ListFilesTool
@@ -106,14 +106,14 @@ def _build_tools() -> list["Tool"]:
         UpdateContactTool(),
         DeleteContactTool(),
         SearchContactsTool(),
-        # Todo / action-item — per-employee, scoped
-        # to the caller. ALLOWED_ROLES = {admin,
-        # assigned} keeps these out of the menu for
-        # other roles; the in-run ``_gate`` on each
-        # tool is the second-layer defence.
-        AddTodoTool(),
-        CompleteTodoTool(),
-        ListTodoTool(),
+        # Action item — per-employee, scoped to the
+        # caller. ALLOWED_ROLES = {admin, assigned}
+        # keeps these out of the menu for other roles;
+        # the in-run ``_gate`` on each tool is the
+        # second-layer defence.
+        AddActionItemTool(),
+        CompleteActionItemTool(),
+        ListActionItemTool(),
     ]
 
 
