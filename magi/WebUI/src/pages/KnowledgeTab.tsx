@@ -27,6 +27,7 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../components/ConsoleCard";
+import { InfoTip } from "../components/InfoTip";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconConnectors,
@@ -208,16 +209,22 @@ function KnowledgeSkillsPane() {
 // are Phase 2. "Connectors" is the umbrella term — a connector
 // is the inbound/outbound adapter for one platform, and a node
 // can mount any subset.
+//
+// The "why does this exist / what's planned" prose lives
+// behind the ``?`` icon next to the heading so the card
+// body stays scannable. The icon also serves a discovery
+// function: an operator glancing at the Knowledge tab
+// might not otherwise realise the upcoming Email / Calendar
+// rows are placeholders rather than a broken config.
 function KnowledgeConnectorsPane() {
+  const t = useT();
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Connectors</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          Channels EVEs talk through. Each connector is one
-          platform; nodes mount the subset they need.
-        </p>
-        <p className="mt-2 text-xs text-ink-soft">Phase 2 — Email / Calendar</p>
+        <h2 className="text-lg font-semibold text-ink inline-flex items-center gap-2">
+          <span>{t("settings.knowledgeConnectorsHeading")}</span>
+          <InfoTip text={t("settings.knowledgeConnectorsHint")} />
+        </h2>
       </div>
       <div className="space-y-2">
         <KnowledgeConnectorRow

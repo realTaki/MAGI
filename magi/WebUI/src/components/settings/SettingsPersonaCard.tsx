@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 
 export function SettingsPersonaCard() {
@@ -183,9 +184,10 @@ export function SettingsPersonaCard() {
   }
 
   return (
-    <ConsoleCard title={t("persona.title")}>
-      <p className="text-sm text-ink-soft">{t("persona.description")}</p>
-
+    <ConsoleCard
+      title={t("persona.title")}
+      headerRight={<InfoTip text={t("persona.description")} />}
+    >
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 
       {isFallback && !loadError && (
