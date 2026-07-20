@@ -99,39 +99,14 @@ AdminGate = Annotated[str, Depends(admin_gate)]
 
 
 def _is_admin_or_assigned_chat_id(chat_id: str) -> bool:
-    """True if ``chat_id`` resolves to an employee with role
-    in ``{'admin', 'assigned'}``.
-
-    Used by routes that aren't admin-only but also aren't
-    public — currently the soul editor (``/api/soul``) which
-    the spec lets both admins and assigned employees (the
-    "served employee" of this MAGI node) touch. Employee /
-    guest roles stay locked out.
-
-    Mirrors :func:`_is_admin_chat_id` so a swap of role names
-    in the future touches one place per gate.
+    """DEPRECATED: pre-D.24 lookup that read ``chat_id`` as a
+    telegram_id and matched ``Employee.telegram_id``. Cookie
+    is now ``Employee.id``, so this helper returned False
+    for every real caller. Replaced by the direct PK lookup
+    in :func:`admin_or_assigned_gate`. Kept as a stub for one
+    release in case a legacy caller still references it; safe
+    to delete in C1.x cleanup.
     """
-    from sqlalchemy import select
-
-    from magi.agent.db import Employee, open_session
-
-    if not chat_id:
-        return False
-    try:
-        cid_int = int(chat_id)
-    except (TypeError, ValueError):
-        return False
-    try:
-        with open_session() as session:
-            emp = session.scalar(
-                select(Employee).where(Employee.telegram_id == cid_int)
-            )
-            if emp is not None and emp.role in ("admin", "assigned"):
-                return True
-    except Exception:
-        logger.exception(
-            "admin_or_assigned_gate: ORM read failed; denying access"
-        )
     return False
 
 
@@ -144,9 +119,24 @@ def admin_or_assigned_gate(request: Request) -> str:
     write surface, but they don't get full admin powers
     (department CRUD, employee CRUD, settings etc. stay
     admin-only).
+
+    D.24: cookie carries ``Employee.id`` (an int), not the
+    legacy telegram_id. The earlier implementation
+    (``_is_admin_or_assigned_chat_id``) ran
+    ``int(cookie)`` and looked up by
+    ``Employee.telegram_id == cookie`` — which matched
+    by sheer coincidence only when an employee happened
+    to have the same integer id as their telegram_id
+    (e.g. ``employee_id=2, telegram_id=6240201712`` never
+    matched). The lookup below goes by primary key, which
+    is correct post-D.24.
     """
-    chat_id = request.cookies.get("magi_session")
-    if not chat_id or not _is_admin_or_assigned_chat_id(chat_id):
+    from magi.agent.db import Employee, open_session
+
+    raw = request.cookies.get("magi_session") or ""
+    try:
+        employee_id = int(raw)
+    except (TypeError, ValueError):
         raise MagiHTTPException(
             status_code=403,
             code="auth.soul_edit_forbidden",
@@ -155,7 +145,28 @@ def admin_or_assigned_gate(request: Request) -> str:
                 "your account is neither"
             ),
         )
-    return chat_id
+    try:
+        with open_session() as session:
+            emp = session.get(Employee, employee_id)
+    except Exception:
+        logger.exception(
+            "admin_or_assigned_gate: ORM read failed; denying access"
+        )
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.soul_edit_forbidden",
+            detail="internal error verifying role",
+        )
+    if emp is None or emp.role not in ("admin", "assigned"):
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.soul_edit_forbidden",
+            detail=(
+                "SOUL.md editing requires admin or assigned role; "
+                "your account is neither"
+            ),
+        )
+    return raw
 
 
 AdminOrAssignedGate = Annotated[str, Depends(admin_or_assigned_gate)]
