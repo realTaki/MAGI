@@ -216,13 +216,21 @@ def _telegram_id_str_for_employee_id(employee_id: int) -> str:
 
     Cheap one-shot ORM read — the row is already in the
     session cache by the time we get here from the
-    AdminGate / cookie checks above.
+    AdminGate / cookie checks above. The previous shape
+    accessed ``emp.telegram_id`` outside the ``with``
+    block — works today because the column is eager, but
+    it's a detached-instance trap: a future change to
+    lazy-load (or an ORM-engine reset between requests)
+    would turn this into a ``DetachedInstanceError``.
+    Reading the scalar inside the block and returning a
+    plain ``str`` kills the trap at the source.
     """
     with open_session() as session:
         emp = session.get(Employee, employee_id)
-    if emp is None or emp.telegram_id is None:
+        telegram_id = emp.telegram_id if emp is not None else None
+    if telegram_id is None:
         return ""
-    return str(emp.telegram_id)
+    return str(telegram_id)
 
 
 def _resolve_employee_id(request: Request) -> int:
@@ -259,17 +267,23 @@ def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
     proved the cookie is a live admin session; this
     helper re-verifies the role to keep the router
     self-contained if a future caller skips the gate.
+
+    Reads ``role`` and ``id`` inside the ``with`` block
+    so we never touch the ORM row outside its session —
+    a future lazy-load or engine reset would otherwise
+    turn the trailing ``return emp.id`` into a
+    ``DetachedInstanceError``.
     """
     employee_id = _resolve_employee_id(request)
     with open_session() as session:
         emp = session.get(Employee, employee_id)
-    if emp is None or emp.role != "admin":
-        raise MagiHTTPException(
-            status_code=401,
-            code="chat.unknown_sender",
-            detail="no admin employee row bound to this session",
-        )
-    return emp.id
+        if emp is None or emp.role != "admin":
+            raise MagiHTTPException(
+                status_code=401,
+                code="chat.unknown_sender",
+                detail="no admin employee row bound to this session",
+            )
+        return emp.id
 
 
 @router.post(

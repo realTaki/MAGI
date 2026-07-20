@@ -545,7 +545,7 @@ async def _handle_employee_message(
 
 
 def _resolve_or_create_tg_session(
-    store: "SessionStore",  # type: ignore[name-defined]  # noqa: F821
+    store: "SessionStore",
     chat_id: str,
     employee_id: int,
 ) -> str:
@@ -553,56 +553,54 @@ def _resolve_or_create_tg_session(
 
     Policy (D.10): **one TG session per TG chat_id forever.**
 
-    We look up the most recent session for ``chat_id`` and
-    reuse it **if it belongs to the TG channel**. The
-    cookie on WebUI is the same ``chat_id`` (the
-    employee's telegram_id), so the most-recent-session
-    could be a webui-created one — D.22's
-    :class:`ChannelMismatchError` would then reject the
-    inbound append, leaving the operator staring at a
-    "read" emoji with no reply. Skipping non-TG rows and
-    minting a fresh TG session closes that loop.
+    Look up the most recent session for ``chat_id`` WHERE
+    ``channel == 'tg'`` (not just any-channel) and reuse
+    it. The earlier implementation used ``list_summaries``
+    with no channel filter and re-checked the candidate's
+    channel in Python — but when the latest session was a
+    WebUI one (the same employee id owns sessions across
+    channels since D.23), the helper would mint a fresh
+    TG session every time. Result: alternating
+    TG ↔ WebUI usage fragmented the TG history into N
+    sessions, contradicting the D.10 promise.
+
+    Filtering at the SQL level (via ``SessionStore.find_latest_for_channel``)
+    means:
+      - Latest is a TG session → reuse it (the common path).
+      - Latest is a WebUI session → ignored; we look at the
+        most recent *TG* session instead. Only if none
+        exists do we mint a fresh row.
+      - No TG session at all (employee never chatted on TG,
+        or the operator wiped the row) → mint fresh.
 
     A corrupt session file (truncated JSON) is skipped and
     triggers creation of a new one — we lose the corrupt
     thread's history but don't crash the inbound handler.
     """
     try:
-        summaries, _total = store.list_summaries(employee_id, limit=1, offset=0)
+        candidate_id = store.find_latest_tg_session(employee_id)
     except Exception:
         logger.exception(
             "telegram: session lookup failed for employee %s; minting fresh",
             employee_id,
         )
-        summaries = []
-    if summaries:
-        candidate_id = summaries[0].session_id
+        candidate_id = None
+    if candidate_id is not None:
         try:
             sess = store.get(employee_id, candidate_id)
         except Exception:
             logger.exception(
-                "telegram: latest session %s for employee %s failed re-read; "
+                "telegram: latest TG session %s for employee %s failed re-read; "
                 "creating fresh",
                 candidate_id, employee_id,
             )
             sess = None
-        if sess is not None:
-            # D.22 channel-ownership guard. The most-recent
-            # session for this employee may belong to WebUI
-            # in which case the inbound append would
-            # :class:`ChannelMismatchError` and the user
-            # would see a "read" emoji with no reply.
-            # Minting a fresh TG session is the recovery
-            # path: the operator gets a new TG-side
-            # thread; the old webui session is left
-            # untouched for the WebUI session list.
-            if sess.channel == "tg":
-                return candidate_id
-            logger.info(
-                "telegram: latest session %s for employee %s is owned "
-                "by %r; minting a fresh TG session",
-                candidate_id, employee_id, sess.channel,
-            )
+        if sess is not None and sess.channel == "tg":
+            return candidate_id
+        # ``find_latest_tg_session`` already filters, but
+        # the double-check defends against a future bug
+        # where someone changes the filter without updating
+        # the helper. Cheap; worth the safety rail.
     # No prior TG session (or none existed) — mint a new one.
     # D.23: first arg is now employee_id; ``chat_id=`` is the
     # per-channel delivery address stamped on the row's
@@ -640,9 +638,9 @@ async def _typing_indicator_loop(
     shutdown also exits cleanly — we don't ``raise`` it, we
     just return.
     """
-    deadline = asyncio.get_event_loop().time() + 30.0
+    deadline = asyncio.get_running_loop().time() + 30.0
     while not stop_event.is_set():
-        remaining = deadline - asyncio.get_event_loop().time()
+        remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
             return
         try:

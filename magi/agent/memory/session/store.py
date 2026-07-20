@@ -180,6 +180,41 @@ class SessionStore:
             last_compaction_at=None,
         )
 
+    def find_latest_tg_session(
+        self, employee_id: int,
+    ) -> str | None:
+        """Return the session_id of the most-recently-touched
+        TG-owned session for ``employee_id``, or ``None``.
+
+        Used by the TG channel handler to honour the
+        "one TG session per chat_id forever" policy (D.10):
+        when the operator alternates between TG and WebUI,
+        the WebUI row is the most recently updated session,
+        but the TG handler must still find the most recent
+        *TG-owned* row rather than mint a fresh one. The
+        earlier implementation fetched the latest any-
+        channel row and re-checked its ``channel`` in
+        Python; that worked for one-shot tests but
+        fragmented the TG history in real usage.
+
+        Returns only the ``session_id`` (not the full
+        ``Session``) so the caller can decide whether to
+        follow up with :meth:`get` — a single integer is
+        cheap to transport, but a full ORM row carries
+        relationships that the typing loop doesn't need.
+        """
+        with open_session() as db:
+            row = db.execute(
+                select(ChatSession)
+                .where(
+                    ChatSession.employee_id == employee_id,
+                    ChatSession.channel == "tg",
+                )
+                .order_by(ChatSession.updated_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        return row.session_id if row is not None else None
+
     def get(
         self, employee_id: int, session_id: str,
     ) -> Session | None:
@@ -328,8 +363,18 @@ class SessionStore:
             if bump_updated:
                 sess_row.updated_at = utcnow_iso()
             db.commit()
-        # Re-read so the returned Session matches what\'s on disk.
-        return self.get(employee_id, session_id)  # type: ignore[return-value]
+        # Re-read so the returned Session matches what\'s on
+        # disk. A concurrent ``DELETE`` between our commit and
+        # this re-read can produce ``None`` — surface that as
+        # ``SessionNotFoundError`` so callers don't silently
+        # dereference ``.messages`` on a missing row.
+        fresh = self.get(employee_id, session_id)
+        if fresh is None:
+            raise SessionNotFoundError(
+                f"session {session_id!r} for employee {employee_id} "
+                "vanished between append and re-read"
+            )
+        return fresh
 
     def rename(
         self,
@@ -376,7 +421,13 @@ class SessionStore:
                 "title_set": new_title is not None,
             },
         )
-        return self.get(employee_id, session_id)  # type: ignore[return-value]
+        fresh = self.get(employee_id, session_id)
+        if fresh is None:
+            raise SessionNotFoundError(
+                f"session {session_id!r} for employee {employee_id} "
+                "vanished between rename and re-read"
+            )
+        return fresh
 
     def set_title_if_null(
         self,
@@ -424,7 +475,13 @@ class SessionStore:
                 # already set by someone else — caller treats
                 # both as "lost the race".
                 return None
-            return self.get(employee_id, session_id)
+            fresh = self.get(employee_id, session_id)
+            if fresh is None:
+                raise SessionNotFoundError(
+                    f"session {session_id!r} for employee {employee_id} "
+                    "vanished between conditional UPDATE and re-read"
+                )
+            return fresh
 
     def _write(self, session: Session, *, bump_updated: bool = True) -> Session:
         """Persist a (possibly-mutated) ``Session`` back to
@@ -506,8 +563,18 @@ class SessionStore:
 
         # Return a fresh read so the caller sees what\'s
         # actually on disk (and so the in-memory Session
-        # they\'re holding matches the persisted state).
-        return self.get(session.employee_id, session.session_id)  # type: ignore[return-value]
+        # they\'re holding matches the persisted state). A
+        # concurrent ``DELETE`` between our commit and this
+        # re-read can produce ``None`` — surface that as
+        # ``SessionNotFoundError`` so callers don't
+        # dereference ``.messages`` on a missing row.
+        fresh = self.get(session.employee_id, session.session_id)
+        if fresh is None:
+            raise SessionNotFoundError(
+                f"session {session.session_id!r} for employee "
+                f"{session.employee_id} vanished between write and re-read"
+            )
+        return fresh
 
     def delete(self, employee_id: int, session_id: str) -> bool:
         """Remove a session. ``True`` if it existed.
