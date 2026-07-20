@@ -84,10 +84,17 @@ def _state_dir() -> str:
 
 def _resolve_caller_credentials(
     state_dir: str, employee_id: int
-) -> tuple[int, str, str]:
+) -> tuple[int, str, str, str]:
     """Look up the operator's employee row by their
     ``employee_id`` (the cookie value post-D.24) and
-    return ``(employee_id, provider, api_key)``.
+    return ``(employee_id, provider, api_key, role)``.
+
+    The ``role`` field is included so the chat handler
+    can pass it down to :func:`magi.agent.loop.handle_message`
+    as ``caller_role`` — ``schedule_task`` and the
+    action-item trio are gated to ``admin`` and ``assigned``
+    only, and the agent loop needs to strip them out of
+    other roles' tool menus.
 
     Raises ``MagiHTTPException`` rather than returning a
     sentinel:
@@ -140,7 +147,7 @@ def _resolve_caller_credentials(
                 "profile before chatting"
             ),
         )
-    return emp.id, emp.provider, emp.api_key
+    return emp.id, emp.provider, emp.api_key, emp.role
 
 
 def _telegram_id_str_for_employee(employee_id: int) -> str:
@@ -262,7 +269,7 @@ async def send_chat(
             code="chat.unknown_sender",
             detail="no signed-in employee",
         )
-    employee_id, employee_provider, employee_api_key = (
+    employee_id, employee_provider, employee_api_key, employee_role = (
         _resolve_caller_credentials(_state_dir(), cookie_employee_id)
     )
     # D.24: per-channel delivery address for the row's
@@ -408,6 +415,7 @@ async def send_chat(
         employee_id=employee_id,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
+        caller_role=employee_role,
     )
 
     # Defensive truncation — the agent loop should already

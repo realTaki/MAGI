@@ -134,6 +134,13 @@ async def test_tg_handler_injects_tg_send_callback(
         employee_name="Taki",
         display_name=None,
         employee_separated=False,
+        # Required since the call-site enum that runs
+        # the handler adopted ``employee_role`` to thread
+        # the TG user's role through to
+        # ``handle_message(caller_role=...)``. The fake
+        # bind in this test is always admin (the seeded
+        # Employee in the chat handler's earlier branch).
+        employee_role="admin",
         employee_provider="minimax",
         employee_api_key="fake-key-for-tests",
     )

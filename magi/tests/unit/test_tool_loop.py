@@ -142,6 +142,13 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "update_contact",
         "delete_contact",
         "search_contacts",
+        # Todo / action-item — per-employee (admin /
+        # assigned only). Registry filters them out of
+        # the menu for other roles; tests see the full
+        # list when ``caller_role`` defaults to ``None``.
+        "add_todo",
+        "complete_todo",
+        "list_todo",
     ]
 
 

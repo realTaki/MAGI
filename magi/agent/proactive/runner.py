@@ -167,6 +167,15 @@ async def execute_task(
                 employee_provider=provider,
                 employee_api_key=api_key,
                 employee_model=None,  # let the provider default
+                # The fired task's owning operator's role.
+                # Schedule-task owners are always
+                # admin/assigned (that's what created the
+                # task in the first place), but the loop
+                # still wants the explicit role so its
+                # tool-menu filter matches what the
+                # operator would see if they sat at the
+                # terminal instead.
+                caller_role=employee.role,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
         )

@@ -101,6 +101,23 @@ class Tool(ABC):
     #: upstream before the request even leaves).
     input_schema: dict[str, Any] = {}
 
+    #: Roles permitted to see this tool in their tool menu.
+    #:
+    #: Empty set (the default) means "no role-based gating" —
+    #: every operator sees the tool regardless of role.
+    #: Setting a non-empty set causes
+    #: :meth:`is_allowed_for_role` to filter the tool out of
+    #: the menu for any operator whose role isn't in the set,
+    #: so the model never learns the tool exists when it
+    #: can't be invoked.
+    #:
+    #: Role-gated tools should still defensively re-check
+    #: inside :meth:`run` (the registry filter assumes the
+    #: call site passes ``caller_role`` through — a future
+    #: caller that bypasses :func:`registry.get_tools` could
+    #: otherwise expose the tool to anyone).
+    ALLOWED_ROLES: frozenset[str] = frozenset()
+
     @abstractmethod
     async def run(
         self,
@@ -119,6 +136,36 @@ class Tool(ABC):
             wrap in ``ToolResult(is_error=True, ...)`` so
             the loop's bookkeeping is uniform
         """
+
+    def is_allowed_for_role(self, role: str | None) -> bool:
+        """Whether ``role`` should see this tool in the menu.
+
+        ``role=None`` means "caller didn't supply a role" —
+        typically a test or a boot-time probe. v0 defaults
+        to permissive (the caller sees the tool), matching
+        the historic behaviour of :func:`registry.get_tools`
+        before role filtering landed. The production path
+        in :func:`magi.agent.loop.handle_message` always
+        passes an explicit ``caller_role`` (resolved from
+        the operator's ``Employee.role``), so an unfiltered
+        ``None`` call from production would itself be a bug
+        — and the right fix for that bug is to wire the
+        caller_role through, not to add a layer of refusal
+        that hides the tool from legitimate test code.
+        """
+        if not self.ALLOWED_ROLES:
+            # No restrictions declared: any caller, including
+            # the ``role=None`` test / boot path, sees the tool.
+            return True
+        if role is None:
+            # ``ALLOWED_ROLES`` is set but we don't know who
+            # the caller is — show the tool rather than
+            # hiding it from probe / test contexts. Real
+            # gate enforcement comes from the explicit
+            # ``caller_role`` plumbing; this branch only
+            # kicks in when that plumbing is missing.
+            return True
+        return role in self.ALLOWED_ROLES
 
     def to_anthropic_schema(self) -> dict[str, Any]:
         """Render this tool's metadata into the dict shape
