@@ -8,12 +8,17 @@ timezone, no per-task credentials):
 
   - ``name``        operator label, ≤120 chars
   - ``prompt``      natural-language instruction
-  - ``frequency``   ``hourly`` / ``daily`` / ``weekly`` / ``monthly``
-  - ``hour``        0..23 (ignored for hourly)
+  - ``frequency``   ``hourly`` / ``daily`` / ``weekly`` /
+                     ``monthly`` / ``once``
+  - ``hour``        0..23 (ignored for hourly, ignored for once)
   - ``minute``      0..59 (for hourly: fires every minute the
-                     hour rolls)
-  - ``day_of_week`` 0..6, Mon=0 (weekly only)
-  - ``day_of_month`` 1..31 (monthly only)
+                     hour rolls; ignored for once)
+  - ``day_of_week`` 0..6, Mon=0 (weekly only; ignored for once)
+  - ``day_of_month`` 1..31 (monthly only; ignored for once)
+  - ``run_at``      ISO 8601 timestamp; REQUIRED when
+                     ``frequency="once"``. Naive timestamps
+                     are interpreted as UTC. apscheduler
+                     treats this as a single fire.
   - ``channel``     ``webui`` / ``tg`` (default ``webui``)
 
 Timezone + credentials come from the calling admin /
@@ -40,7 +45,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.proactive.cron_utils import preset_to_cron
+from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
@@ -111,11 +116,14 @@ class ScheduleTaskTool(Tool):
             },
             "frequency": {
                 "type": "string",
-                "enum": ["hourly", "daily", "weekly", "monthly"],
+                "enum": ["hourly", "daily", "weekly", "monthly", "once"],
                 "description": (
-                    "Preset cadence. The server translates this "
-                    "+ the matching moment fields into a canonical "
-                    "5-field cron string; we don't accept raw cron."
+                    "Preset cadence. The first four values "
+                    "translate into a 5-field cron string "
+                    "via the matching moment fields. ``\"once\"`` "
+                    "is a one-shot task that fires at the "
+                    "``run_at`` timestamp and never again; "
+                    "moment fields are ignored."
                 ),
             },
             "hour": {
@@ -157,6 +165,19 @@ class ScheduleTaskTool(Tool):
                     "Only used when frequency='monthly'. 1..31."
                 ),
             },
+            "run_at": {
+                "type": "string",
+                "description": (
+                    "ISO 8601 timestamp (``YYYY-MM-DDTHH:MM:SS``, "
+                    "optionally with offset like ``+08:00``). "
+                    "REQUIRED when ``frequency='once'``; ignored "
+                    "for recurring rows. Naive timestamps are "
+                    "interpreted as UTC. apscheduler fires once "
+                    "at this instant, then the task never "
+                    "re-fires (no further cron). Example: "
+                    "``\"2026-08-01T15:30:00+08:00\"``."
+                ),
+            },
             "channel": {
                 "type": "string",
                 "enum": ["webui", "tg"],
@@ -191,26 +212,49 @@ class ScheduleTaskTool(Tool):
                 content=f"prompt must be non-empty and ≤{_PROMPT_MAX} chars",
                 is_error=True,
             )
-        if frequency not in ("hourly", "daily", "weekly", "monthly"):
+        if frequency not in ("hourly", "daily", "weekly", "monthly", "once"):
             return ToolResult(
-                content=f"frequency must be one of hourly/daily/weekly/monthly, got {frequency!r}",
+                content=(
+                    f"frequency must be one of "
+                    f"hourly/daily/weekly/monthly/once, got {frequency!r}"
+                ),
                 is_error=True,
             )
 
-        # Translate the preset into canonical cron at the
-        # tool's boundary so the tool API matches the WebUI
-        # API exactly (and a malformed preset surfaces as
-        # ``is_error=True`` rather than silently landing).
-        try:
-            cron = preset_to_cron(
-                frequency,
-                hour=int(kwargs.get("hour") or 0),
-                minute=int(kwargs.get("minute") or 0),
-                day_of_week=kwargs.get("day_of_week"),
-                day_of_month=kwargs.get("day_of_month"),
-            )
-        except ValueError as exc:
-            return ToolResult(content=f"invalid preset: {exc}", is_error=True)
+        # Branch on ``once`` vs the cron-driven presets.
+        # ``cron`` and ``run_at`` are mutually exclusive on a
+        # single Task row; the validator picks the active
+        # shape at tool-call time. We translate at this
+        # boundary so the WebUI API + LLM tool + raw SQL all
+        # see the same row shape.
+        run_at_iso: str | None = None
+        if frequency == "once":
+            try:
+                run_at_iso = validate_run_at(
+                    kwargs.get("run_at") or ""
+                )
+            except ValueError as exc:
+                return ToolResult(
+                    content=f"invalid run_at: {exc}",
+                    is_error=True,
+                )
+            cron = ""  # sentinel: cron-driven cols blank
+            # Moment fields (hour/minute/day_of_*) are
+            # silently ignored for ``once`` — surfacing a
+            # hard error would force the LLM to scrub the
+            # same fields it just sent; soft ignore keeps
+            # the contract tolerant.
+        else:
+            try:
+                cron = preset_to_cron(
+                    frequency,
+                    hour=int(kwargs.get("hour") or 0),
+                    minute=int(kwargs.get("minute") or 0),
+                    day_of_week=kwargs.get("day_of_week"),
+                    day_of_month=kwargs.get("day_of_month"),
+                )
+            except ValueError as exc:
+                return ToolResult(content=f"invalid preset: {exc}", is_error=True)
 
         channel = kwargs.get("channel") or "webui"
         if channel not in ("webui", "tg"):
@@ -249,6 +293,7 @@ class ScheduleTaskTool(Tool):
             if existing is not None:
                 existing.prompt = prompt
                 existing.cron = cron
+                existing.run_at = run_at_iso
                 existing.channel = channel
                 existing.enabled = 1
                 existing.consecutive_failures = 0
@@ -261,6 +306,7 @@ class ScheduleTaskTool(Tool):
                     name=name,
                     prompt=prompt,
                     cron=cron,
+                    run_at=run_at_iso,
                     tz=_resolve_system_tz(),
                     channel=channel,
                     employee_id=operator_id,
