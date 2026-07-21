@@ -47,6 +47,14 @@ from magi.agent.memory.session import new_session_id, utcnow_iso
 from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 
+# Local import for the TG bot registry — keeps the
+# cron-runner thread from pulling all of ``bot.py``
+# at module load (bot.py imports telegram.ext + the
+# daemon-thread bringup machinery). Lazy import inside
+# :func:`execute_task` would be premature too: the
+# registry accessor is cheap.
+from magi.channels.telegram.bot import get_telegram_bot
+
 logger = logging.getLogger("magi.agent.proactive.runner")
 
 # Default failure-threshold before the runner auto-disables a
@@ -125,39 +133,83 @@ async def execute_task(
         #     there. This is the mid-chat semantic — the
         #     operator's ongoing conversation accumulates
         #     cron replies without spawning a side thread.
-        #   - TG / email / other shapes: v0 doesn't
-        #     implement the runner branch yet. We log a
-        #     warning and fall back to the new-session
-        #     shape so the row doesn't silently disappear;
-        #     the dedicated channel-push logic lands in
-        #     the runner alongside the email channel
-        #     itself (C2+).
+        #   - ``task.channel == "tg"`` + ``delivery_to`` is a
+        #     TG chat_id (digits): reuse the operator's
+        #     existing TG ``ChatSession`` row by
+        #     ``(tgid, employee_id)``, attach the cron
+        #     prompt as a new ``ChatMessage``, and wire
+        #     ``_tg_send_callback`` into the agent call so
+        #     the agent's reply is pushed to the operator's
+        #     TG chat. Sessions are keyed on tgid for TG
+        #     (the chat itself is the address) so the
+        #     reuse preserves the chat history.
+        #   - ``task.channel == "email"``: not implemented in
+        #     v0 (no runner branch) — falls back to the
+        #     fresh-session shape and the reply lives in
+        #     chat history.
         delivery_target = task.delivery_to
         session_id = new_session_id()
+        # Default chat_id reflects the operator's TG
+        # binding (mirrors today's behaviour for default
+        # rows). The TG branch below overrides this when
+        # an explicit chat_id is requested.
         chat_id = str(employee.telegram_id or employee.id)
         explicit_session = None
         if delivery_target and delivery_target != "new":
-            target_session = db.get(ChatSession, delivery_target)
-            if (
-                target_session is not None
-                and target_session.employee_id == employee.id
-            ):
-                # Reuse the existing chat — the cron
-                # reply joins the operator's ongoing
-                # conversation. We do NOT create a new
-                # ``ChatSession`` row, and we skip the
-                # title prefix (the existing title stays).
-                session_id = delivery_target
-                explicit_session = target_session
+            # Resolve the target. Two shapes:
+            #   - 26-char ULID (webui session_id) → look up
+            #     by primary key.
+            #   - Digits (TG chat_id) → look up by
+            #     ``(tgid, employee_id)``; the chat_id
+            #     gets stamped into the new chat session
+            #     so the agent loop can route the reply
+            #     back to the operator's TG chat.
+            tg_match = (
+                task.channel == "tg" and delivery_target.isdigit()
+            )
+            if tg_match:
+                tg_session = db.query(ChatSession).filter_by(
+                    tgid=delivery_target,
+                    employee_id=employee.id,
+                ).first()
+                if tg_session is not None:
+                    session_id = tg_session.session_id
+                    chat_id = delivery_target
+                    explicit_session = tg_session
+                else:
+                    logger.warning(
+                        "execute_task: TG delivery_to=%s for task %s "
+                        "did not match an existing ChatSession "
+                        "(employee=%s); creating new session with "
+                        "tgid stamped for the wire push",
+                        delivery_target, task_id, employee.id,
+                    )
+                    # Fall through to fresh-session with
+                    # the target TG chat_id stamped on the
+                    # new row.
+                    chat_id = delivery_target
             else:
-                # Unresolved / cross-employee / non-ULID
-                # value: warn and fall through to new.
-                logger.warning(
-                    "execute_task: task %s delivery_to=%r did not "
-                    "resolve to a ChatSession owned by employee %s; "
-                    "falling back to fresh session",
-                    task_id, delivery_target, employee.id,
-                )
+                target_session = db.get(ChatSession, delivery_target)
+                if (
+                    target_session is not None
+                    and target_session.employee_id == employee.id
+                ):
+                    # Reuse the existing chat — the cron
+                    # reply joins the operator's ongoing
+                    # conversation. We do NOT create a new
+                    # ``ChatSession`` row, and we skip the
+                    # title prefix (the existing title stays).
+                    session_id = delivery_target
+                    explicit_session = target_session
+                else:
+                    # Unresolved / cross-employee / non-ULID
+                    # value: warn and fall through to new.
+                    logger.warning(
+                        "execute_task: task %s delivery_to=%r did "
+                        "not resolve to a ChatSession owned by "
+                        "employee %s; falling back to fresh session",
+                        task_id, delivery_target, employee.id,
+                    )
         if explicit_session is None:
             sess = ChatSession(
                 session_id=session_id,
@@ -208,6 +260,30 @@ async def execute_task(
         db.commit()
 
     # ── 2. Run the agent loop ──
+    # When channel is ``"tg"`` and the operator's bot is
+    # running, wire a ``_tg_send_callback`` so the agent's
+    # ``send_message`` tool actually pushes the reply to TG
+    # (not just logs it in chat history). Without a live bot
+    # (test environments, ``MAGI_STATE_DIR`` boots without TG
+    # credentials), the loop runs but the TG reply stays in
+    # chat history only.
+    tg_send_callback = None
+    if task.channel == "tg" and chat_id.isdigit():
+        bot = get_telegram_bot()
+        if bot is not None:
+            target_chat_id = int(chat_id)
+
+            async def _tg_send_callback(
+                to_chat_id: int,
+                text_to_send: str,
+            ) -> None:
+                await bot.send_message(
+                    chat_id=to_chat_id,
+                    text=text_to_send,
+                )
+
+            tg_send_callback = _tg_send_callback
+
     try:
         reply = await asyncio.wait_for(
             handle_message(
@@ -229,6 +305,7 @@ async def execute_task(
                 # operator would see if they sat at the
                 # terminal instead.
                 caller_role=employee.role,
+                tg_send_callback=tg_send_callback,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
         )
