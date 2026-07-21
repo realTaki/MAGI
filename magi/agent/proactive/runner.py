@@ -111,24 +111,77 @@ async def execute_task(
             db.commit()
             return run_id
 
-        # Each fire is its own session. New ULID, title
-        # prefix "[定时]" so the operator can scan the
-        # chat history and tell cron-driven runs from
-        # human-driven ones at a glance.
+        # Each fire is its own session BY DEFAULT. The
+        # operator can override this via ``task.delivery_to``:
+        #
+        #   - ``None`` (legacy pre-DeliveryTarget rows) or
+        #     the literal ``"new"``: create a fresh chat
+        #     session per fire, the surface the operator
+        #     sees via the WebUI table as "[定时] <name>".
+        #   - A 26-char ULID that resolves to an existing
+        #     ``ChatSession``: reuse that session, append
+        #     the cron prompt as a new ``ChatMessage`` row,
+        #     and let ``handle_message`` continue from
+        #     there. This is the mid-chat semantic — the
+        #     operator's ongoing conversation accumulates
+        #     cron replies without spawning a side thread.
+        #   - TG / email / other shapes: v0 doesn't
+        #     implement the runner branch yet. We log a
+        #     warning and fall back to the new-session
+        #     shape so the row doesn't silently disappear;
+        #     the dedicated channel-push logic lands in
+        #     the runner alongside the email channel
+        #     itself (C2+).
+        delivery_target = task.delivery_to
         session_id = new_session_id()
         chat_id = str(employee.telegram_id or employee.id)
-        sess = ChatSession(
-            session_id=session_id,
-            tgid=chat_id,
-            employee_id=employee.id,
-            channel="scheduled",
-            title=f"[定时] {task.name}",
-            created_at=utcnow_iso(),
-            updated_at=utcnow_iso(),
-        )
-        db.add(sess)
+        explicit_session = None
+        if delivery_target and delivery_target != "new":
+            target_session = db.get(ChatSession, delivery_target)
+            if (
+                target_session is not None
+                and target_session.employee_id == employee.id
+            ):
+                # Reuse the existing chat — the cron
+                # reply joins the operator's ongoing
+                # conversation. We do NOT create a new
+                # ``ChatSession`` row, and we skip the
+                # title prefix (the existing title stays).
+                session_id = delivery_target
+                explicit_session = target_session
+            else:
+                # Unresolved / cross-employee / non-ULID
+                # value: warn and fall through to new.
+                logger.warning(
+                    "execute_task: task %s delivery_to=%r did not "
+                    "resolve to a ChatSession owned by employee %s; "
+                    "falling back to fresh session",
+                    task_id, delivery_target, employee.id,
+                )
+        if explicit_session is None:
+            sess = ChatSession(
+                session_id=session_id,
+                tgid=chat_id,
+                employee_id=employee.id,
+                channel="scheduled",
+                title=f"[定时] {task.name}",
+                created_at=utcnow_iso(),
+                updated_at=utcnow_iso(),
+            )
+            db.add(sess)
+        # Force-flush the ChatSession INSERT before the
+        # ChatMessage INSERT — SQLAlchemy 2.x's dependency
+        # sort misses ChatSession→ChatMessage within the
+        # same transaction in some cases, leaving the FK
+        # dangling on commit. Cost: one extra round-trip
+        # per fire; payoff: the chat_messages FK never
+        # violates on a clean ChatSession row.
+        db.flush()
         # Seed the user message so the agent loop sees the
-        # prompt as the conversation's first turn.
+        # prompt as the conversation's first turn when the
+        # session is fresh, and as a new turn when the
+        # session is reused (existing rows stay intact —
+        # we only add, never delete/replace).
         db.add(ChatMessage(
             session_id=session_id,
             message_id=new_session_id(),

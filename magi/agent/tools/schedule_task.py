@@ -41,6 +41,7 @@ configurable task, not duplicates.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -58,6 +59,14 @@ logger = logging.getLogger("magi.agent.tools.schedule_task")
 
 _NAME_MAX = 120
 _PROMPT_MAX = 8000
+
+# Crockford ULID: 26 chars, base32 alphabet — same shape as
+# ``chat_sessions.session_id`` and the rest of the codebase's
+# id vocabulary (see ``magi.agent.memory.session.ids``).
+# We anchor ``delivery_to`` shape to a known alphabet rather
+# than a free string so a malformed session_id doesn't slip
+# past the tool boundary into the runner.
+_SESSION_ID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
 # Same gate as the API: only ``admin`` and ``assigned``
 # may create a task. ``employee`` and ``guest`` get
@@ -190,6 +199,27 @@ class ScheduleTaskTool(Tool):
                     "reply to the operator's TG chat."
                 ),
             },
+            "delivery_to": {
+                "type": "string",
+                "description": (
+                    "Optional concrete delivery destination, "
+                    "depending on ``channel``:\n"
+                    "  - channel='webui': the literal string "
+                    "``\"new\"`` opens a fresh chat session "
+                    "for each fire; a chat session_id sends "
+                    "the fire into that session.\n"
+                    "  - channel='tg': a TG chat_id "
+                    "(digits).\n"
+                    "  - channel='email' (future): an address.\n"
+                    "If omitted, the tool defaults from the "
+                    "creation context: when called mid-chat it "
+                    "uses the current session; for one-shot "
+                    "and admin tool calls it leaves the row "
+                    "with ``delivery_to=NULL`` (the runner "
+                    "then falls back to the operator's bound "
+                    "destination at fire time)."
+                ),
+            },
         },
         "required": ["name", "prompt", "frequency"],
     }
@@ -202,6 +232,10 @@ class ScheduleTaskTool(Tool):
         name = (kwargs.get("name") or "").strip()
         prompt = (kwargs.get("prompt") or "").strip()
         frequency = (kwargs.get("frequency") or "").strip()
+        # ``channel`` is referenced up-front by the delivery_to
+        # resolution block below (webui vs tg drives both the
+        # default-rule branch and the format validator).
+        channel = kwargs.get("channel") or "webui"
         if not name or len(name) > _NAME_MAX:
             return ToolResult(
                 content=f"name must be non-empty and ≤{_NAME_MAX} chars",
@@ -220,6 +254,69 @@ class ScheduleTaskTool(Tool):
                 ),
                 is_error=True,
             )
+
+        # ``delivery_to`` resolution: caller can pass
+        # ``"new"`` (webui-only), a session_id (webui-only),
+        # a TG chat_id (tg-only), or omit. When omitted:
+        #   - mid-chat (ctx.session_id populated): default
+        #     to ``ctx.session_id`` so cron fires land in
+        #     the same chat the LLM just wrote from.
+        #   - anywhere else: leave ``NULL``; the runner
+        #     falls back to operator-bound destination.
+        # We validate the *target* format here (TG vs
+        # webui) so a malformed string doesn't slip past
+        # the tool boundary.
+        raw_delivery = (kwargs.get("delivery_to") or "").strip()
+        delivery_to: str | None = None
+        if raw_delivery:
+            # Channel-format validation. ``"new"`` is the
+            # only webui-targeted magic token. TG accepts
+            # digits only. Email is reserved for the future
+            # runner branch; the form-side guard rejects it
+            # here too so the surface doesn't lie.
+            if channel == "webui":
+                if (
+                    raw_delivery != "new"
+                    and not _SESSION_ID_RE.match(raw_delivery)
+                ):
+                    return ToolResult(
+                        content=(
+                            "delivery_to must be the literal "
+                            "'new' or a chat session_id; got "
+                            f"{raw_delivery!r}"
+                        ),
+                        is_error=True,
+                    )
+                delivery_to = raw_delivery
+            elif channel == "tg":
+                if not raw_delivery.isdigit():
+                    return ToolResult(
+                        content=(
+                            f"delivery_to must be a TG chat_id "
+                            f"(digits); got {raw_delivery!r}"
+                        ),
+                        is_error=True,
+                    )
+                delivery_to = raw_delivery
+            else:
+                # Unknown channel — should not happen because
+                # ``channel`` is enum-bounded above, but
+                # fail closed for unknown shapes.
+                return ToolResult(
+                    content=(
+                        f"unsupported channel {channel!r}; "
+                        f"delivery_to cannot be validated"
+                    ),
+                    is_error=True,
+                )
+        elif channel == "webui" and ctx.session_id:
+            # LLM-in-chat default: when the operator hasn't
+            # been explicit about where this fires, anchor
+            # to the chat the LLM is in. The WebUI form
+            # sends ``"new"`` explicitly for the create-
+            # new-session semantic, so this branch only
+            # fires from the chat-driven path.
+            delivery_to = ctx.session_id
 
         # Branch on ``once`` vs the cron-driven presets.
         # ``cron`` and ``run_at`` are mutually exclusive on a
@@ -256,7 +353,6 @@ class ScheduleTaskTool(Tool):
             except ValueError as exc:
                 return ToolResult(content=f"invalid preset: {exc}", is_error=True)
 
-        channel = kwargs.get("channel") or "webui"
         if channel not in ("webui", "tg"):
             return ToolResult(
                 content=f"channel must be one of webui/tg, got {channel!r}",
@@ -294,6 +390,7 @@ class ScheduleTaskTool(Tool):
                 existing.prompt = prompt
                 existing.cron = cron
                 existing.run_at = run_at_iso
+                existing.delivery_to = delivery_to
                 existing.channel = channel
                 existing.enabled = 1
                 existing.consecutive_failures = 0
@@ -307,6 +404,7 @@ class ScheduleTaskTool(Tool):
                     prompt=prompt,
                     cron=cron,
                     run_at=run_at_iso,
+                    delivery_to=delivery_to,
                     tz=_resolve_system_tz(),
                     channel=channel,
                     employee_id=operator_id,

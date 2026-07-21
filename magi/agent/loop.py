@@ -420,6 +420,13 @@ async def handle_message(
         chat_id=chat_id,
         employee_id=employee_id if employee_id is not None else 0,
         channel=channel,
+        # Populate ``session_id`` so tools (notably
+        # ``schedule_task``) can default ``delivery_to`` to
+        # the current chat when called mid-conversation.
+        # ``""`` means there's no chat session to anchor to
+        # — fine for cron-driven rows or admin tool calls
+        # that don't have a chat thread.
+        session_id=session_id or "",
     )
     tool_schemas = get_tool_schemas(caller_role=caller_role)
 
