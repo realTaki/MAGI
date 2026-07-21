@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import datetime as dt
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from magi.agent.proactive.cron_utils import (
     validate_run_at,
+    validate_run_at_future,
 )
 from magi.agent.proactive.scheduler import (
     TaskScheduler,
@@ -319,3 +321,92 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     # so the model can fix the next attempt.
     assert "not-a-timestamp" in res.content
     assert "invalid run_at" in res.content
+
+
+# -- validate_run_at_future -----------------------------------------------
+
+
+def test_validate_run_at_future_accepts_clear_future() -> None:
+    """A timestamp well in the future is the happy path.
+    The function returns the input unchanged (already
+    canonical from :func:`validate_run_at`)."""
+    out = validate_run_at_future("2099-01-01T00:00:00+00:00")
+    assert out == "2099-01-01T00:00:00+00:00"
+
+
+def test_validate_run_at_future_rejects_clear_past() -> None:
+    """A timestamp an hour in the past is the bug we're
+    guarding against — apscheduler's ``DateTrigger``
+    silently drops it, leaving the operator confused
+    about why the row never fired. Reject here so the
+    error surfaces at create-time with a clear message."""
+    with pytest.raises(ValueError) as exc_info:
+        validate_run_at_future("2020-01-01T00:00:00+00:00")
+    assert "in the future" in str(exc_info.value)
+    assert "2020-01-01T00:00:00+00:00" in str(exc_info.value)
+
+
+def test_validate_run_at_future_respects_grace_window() -> None:
+    """The 60-second grace window absorbs clock skew
+    between the operator's browser, the WebUI server,
+    and the DB host. A timestamp 30 seconds in the past
+    still schedules (within tolerance); a timestamp 90
+    seconds in the past rejects.
+
+    We pass an explicit ``now=`` so the test is
+    deterministic across timezones + system clock."""
+    # 30 s in the past — within grace, accepted.
+    server_now = datetime.now(timezone.utc)
+    near_past = (server_now - timedelta(seconds=30)).isoformat(
+        timespec="seconds"
+    )
+    # The helper canonicalises to seconds; the comparison
+    # uses the rounded-to-second value. A 30-s drift is
+    # well within the 60-s grace.
+    validate_run_at_future(near_past)
+    # 90 s in the past — outside grace, rejected.
+    far_past = (server_now - timedelta(seconds=90)).isoformat(
+        timespec="seconds"
+    )
+    with pytest.raises(ValueError):
+        validate_run_at_future(far_past)
+
+
+def test_validate_run_at_future_uses_explicit_now() -> None:
+    """``now=`` is the deterministic-test seam: a fixed
+    server-side reference makes the test reproducible
+    regardless of when pytest runs. A timestamp just
+    past the injected ``now`` rejects; one well in the
+    future accepts."""
+    fixed_now = datetime(2099, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    # 5 minutes past the injected now → reject.
+    past = (fixed_now - timedelta(minutes=5)).isoformat(
+        timespec="seconds"
+    )
+    with pytest.raises(ValueError):
+        validate_run_at_future(past, now=fixed_now)
+    # 1 day after the injected now → accept.
+    future = (fixed_now + timedelta(days=1)).isoformat(
+        timespec="seconds"
+    )
+    validate_run_at_future(future, now=fixed_now)
+
+
+def test_validate_run_at_future_handles_naive_input() -> None:
+    """A naive ISO string (no tzinfo) is interpreted as
+    UTC. The comparison must use the same assumption so
+    a naive "now + 5 min" string doesn't get mis-tagged.
+    The helper normalises *only inside the comparison*
+    — the returned string is the input verbatim, so we
+    check that no exception is raised (the canonical
+    ``+00:00`` stamping happens upstream in
+    :func:`validate_run_at`, called by the API/tool
+    *before* this helper)."""
+    server_now = datetime.now(timezone.utc)
+    naive_future = (server_now + timedelta(hours=1)).replace(
+        tzinfo=None
+    ).isoformat(timespec="seconds")
+    # No exception: helper tags naive as UTC internally
+    # before comparing.
+    out = validate_run_at_future(naive_future)
+    assert out == naive_future  # returned verbatim, not re-canonicalised

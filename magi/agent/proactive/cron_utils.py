@@ -31,7 +31,7 @@ scheduler.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -252,6 +252,13 @@ def validate_run_at(raw: str) -> str:
     missing offset, impossible date, etc.). The ``schedule_task``
     tool / API path surfaces this as ``is_error=True`` /
     ``400`` respectively.
+
+    Note: this helper does NOT enforce "must be in the
+    future" — ``apscheduler.DateTrigger`` silently drops
+    past-time jobs at fire-time, which was a source of
+    confused operators ("I created a task and it never
+    fired"). The future check is a separate step at the
+    API / tool boundary; see :func:`validate_run_at_future`.
     """
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("run_at must be a non-empty ISO 8601 string")
@@ -267,4 +274,44 @@ def validate_run_at(raw: str) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.isoformat(timespec="seconds")
+
+
+def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> str:
+    """Reject past-time ``run_at`` so a silently-dropped
+    apscheduler job never reaches the DB.
+
+    apscheduler's ``DateTrigger`` returns ``None`` from
+    ``get_next_fire_time`` when ``run_date`` is in the
+    past at registration time — the job sits in the
+    jobstore forever, the operator clicks "立刻跑" to
+    check, gets no response, and concludes "the cron
+    doesn't work". Rejecting here surfaces the same fact
+    at create-time with a 400 / ``is_error=True``.
+
+    A small grace window (60 s) absorbs clock skew
+    between the operator's browser, the WebUI server,
+    and the DB host — a request that arrives 30 s
+    "late" still schedules, but a request that's an
+    hour late doesn't silently succeed.
+
+    Returns the input unchanged on success (already
+    canonical from :func:`validate_run_at`). Raises
+    :class:`ValueError` with a clear message including
+    the parsed value + the server-side "now".
+    """
+    parsed = datetime.fromisoformat(run_at_iso)
+    server_now = now or datetime.now(timezone.utc)
+    # ``validate_run_at`` always stamps tzinfo; if a
+    # caller passed a raw ``datetime`` here without one,
+    # assume UTC for the comparison.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    grace_seconds = 60
+    if parsed <= server_now - timedelta(seconds=grace_seconds):
+        raise ValueError(
+            f"run_at must be in the future (got {run_at_iso!r}; "
+            f"server now is {server_now.isoformat(timespec='seconds')}; "
+            f"past-time jobs are silently dropped by apscheduler)"
+        )
+    return run_at_iso
 

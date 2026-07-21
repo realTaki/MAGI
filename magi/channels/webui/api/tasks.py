@@ -43,12 +43,11 @@ from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at
+from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
@@ -346,6 +345,36 @@ def create_task(
                 f"got {payload.frequency!r}."
             ),
         )
+    # Past-time ``run_at`` would silently no-op: apscheduler's
+    # ``DateTrigger`` returns ``None`` from
+    # ``get_next_fire_time`` when ``run_date`` is in the
+    # past at registration. The task lives in the DB but
+    # never fires — operator sees a row that does nothing.
+    # Reject at the route boundary so the drawer's error
+    # message tells them to pick a future time. The grace
+    # window inside :func:`validate_run_at_future`
+    # absorbs small clock skew.
+    if payload.frequency == "once" and payload.run_at:
+        # Canonicalise first (naive → +00:00, round to
+        # seconds) so the "now vs run_at" comparison uses
+        # the same shape the DB row will store.
+        try:
+            canonical = validate_run_at(payload.run_at)
+        except ValueError:
+            # _render_cron_from_payload below re-validates;
+            # let that path emit the canonical
+            # ``validation.run_at`` error code so the
+            # frontend only has to handle one error shape.
+            canonical = None
+        if canonical is not None:
+            try:
+                validate_run_at_future(canonical)
+            except ValueError as exc:
+                raise MagiHTTPException(
+                    status_code=400,
+                    code="validation.run_at_in_past",
+                    detail=str(exc),
+                ) from exc
 
     operator_id = _resolve_creator_id(request, payload, session)
     existing = (
@@ -590,7 +619,11 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
       1. ``X-Employee-Id`` header (explicit, may be used
          by future operator consoles; v0 WebUI doesn't
          expose it).
-      2. Fall back to the cookie's signed-in employee.
+      2. Fall back to the cookie's signed-in employee
+         (``magi_session`` carries the employee_id after
+         the D.24 migration — not the telegram_id). We
+         use :func:`_resolve_employee_id` so the cookie
+         format matches every other admin-gated route.
          Allowed roles are ``admin`` (signed in via the
          super-admin form) and ``assigned`` (the person
          this MAGI serves). ``employee`` and ``guest``
@@ -618,20 +651,24 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
             )
         _enforce_creator_role(emp.role)
         return emp.id
-    # Fall back to the cookie: same path as chat_sessions,
-    # but the role gate is looser — ``assigned`` is also
-    # welcome. ``_admin_employee_id`` enforces ``role ==
-    # "admin"``; we duplicate it inline with the broader
-    # gate.
-    from magi.channels.webui.api.chat_sessions import _resolve_chat_id
-    chat_id = _resolve_chat_id(request)
-    emp = session.scalar(
-        select(Employee).where(Employee.telegram_id == chat_id)
-    )
+    # Fall back to the cookie: D.24 made ``magi_session``
+    # carry the employee_id directly, so the lookup is
+    # ``session.get(Employee, eid)`` — no telegram_id
+    # detour. The role gate is duplicated inline (instead
+    # of reusing :func:`_admin_employee_id`) because
+    # ``assigned`` is also welcome here, and
+    # ``_admin_employee_id` enforces ``role == "admin"``
+    # only.
+    from magi.channels.webui.api.chat_sessions import _resolve_employee_id
+    eid = _resolve_employee_id(request)
+    emp = session.get(Employee, eid)
     if emp is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
-            detail="no employee row bound to this chat_id; sign in first",
+            detail=(
+                f"no employee row bound to this session "
+                f"(employee_id={eid}); sign in first"
+            ),
         )
     _enforce_creator_role(emp.role)
     return emp.id
