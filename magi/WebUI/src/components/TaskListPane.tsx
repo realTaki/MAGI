@@ -75,6 +75,24 @@ type TaskRow = {
   updated_at: string;
 };
 
+// One row of the ``/api/tasks/{id}/runs`` response — used
+// by the run-now polling loop to detect when a fire settles
+// into ``success`` / ``failed``. The runner writes
+// ``status="running"`` first, then transitions to a terminal
+// state; the loop bails when our ``run_id`` is terminal.
+type TaskRunRow = {
+  id: string;
+  task_id: string;
+  session_id: string | null;
+  trigger: string;
+  started_at: string;
+  finished_at: string | null;
+  latency_ms: number | null;
+  status: string;
+  error: string | null;
+  reply_excerpt: string | null;
+};
+
 type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
 type Filter = "all" | "enabled" | "disabled";
 
@@ -103,7 +121,26 @@ export default function TaskListPane() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // ``runsForId`` is the task currently showing the runs-
+  // history drawer. Clicking a row's name opens the
+  // drawer for that task; clicking the close button or
+  // pressing Escape clears it. The drawer's data comes
+  // from ``GET /api/tasks/{id}/runs`` (already pinned
+  // by the backend) and shows every fire's terminal
+  // status, error summary, and reply excerpt.
+  const [runsForId, setRunsForId] = useState<string | null>(null);
   const [systemTz, setSystemTz] = useState<string | null>(null);
+  // ``runningTaskIds`` carries the task_id → run_id mapping
+  // for in-flight manual fires. The row's status cell
+  // renders a spinner while the id is here; a polling
+  // effect watches /api/tasks/{id}/runs and evicts the
+  // entry once the run settles into success / failed.
+  // Map (not Set) so the polling loop can match the exact
+  // ``run_id`` the API returned — keeps a stale run from
+  // a previous click from satisfying the new one.
+  const [runningTasks, setRunningTasks] = useState<
+    Map<string, string>
+  >(() => new Map());
 
   async function refresh() {
     setLoadError(null);
@@ -149,6 +186,80 @@ export default function TaskListPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
+  // Polling loop for in-flight manual fires. While at
+  // least one task id is in ``runningTasks``, hit
+  // /api/tasks/{id}/runs every 1.5 s and evict any id
+  // whose run has reached a terminal status. The loop
+  // dies on its own when the map goes empty (no manual
+  // runs in flight → no interval needed).
+  //
+  // We poll per-id rather than /api/tasks so the response
+  // payload stays small (a few TaskRun rows vs the full
+  // task list). Polling also gives us a free "did it
+  // succeed or fail?" signal — we don't have to refetch
+  // the entire task list to learn the answer.
+  //
+  // No auto-open on terminal: the operator pulls the
+  // drawer via the row's 「查看日志」 button when they
+  // want it. Auto-opening on every fire would steal
+  // focus from whatever the operator is currently
+  // doing (browsing other tasks, editing form, etc).
+  useEffect(() => {
+    if (runningTasks.size === 0) return;
+    let cancelled = false;
+    const tick = async () => {
+      for (const [taskId, runId] of runningTasks) {
+        try {
+          const runs = await api<TaskRunRow[]>(`/${taskId}/runs`);
+          const mine = runs.find((r) => r.id === runId);
+          // Terminal = success or failed. ``running``
+          // (the only other shape the runner writes) means
+          // "still in flight; check next tick".
+          if (
+            mine &&
+            (mine.status === "success" || mine.status === "failed")
+          ) {
+            // Evict this id from the polling set. Use a
+            // functional update so a parallel click that
+            // re-added the same id with a fresh run_id
+            // isn't clobbered.
+            setRunningTasks((prev) => {
+              if (!prev.has(taskId)) return prev;
+              if (prev.get(taskId) !== runId) return prev;
+              const next = new Map(prev);
+              next.delete(taskId);
+              return next;
+            });
+            // Refresh the task list so the row's
+            // ``last_status`` / ``last_run_at`` flip to the
+            // fresh values. We only refresh on terminal —
+            // mid-run polling doesn't need it.
+            await refresh();
+          }
+        } catch {
+          // Polling failures are non-fatal; the next
+          // tick will retry. The button itself already
+          // surfaced its own error path on click.
+        }
+      }
+    };
+    const interval = setInterval(() => {
+      if (!cancelled) void tick();
+    }, 1500);
+    // Fire one immediate tick so a quick success doesn't
+    // wait 1.5 s for the first interval.
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+    // ``refresh`` is intentionally excluded — it captures
+    // the latest closure on every render via the
+    // component scope, and including it would re-arm the
+    // interval on every state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningTasks]);
+
   async function deleteTask(t: TaskRow) {
     if (!confirm(`确定删除任务「${t.name}」？此操作不可撤销。`)) return;
     try {
@@ -160,12 +271,27 @@ export default function TaskListPane() {
   }
 
   async function runNow(t: TaskRow) {
+    let run_id: string;
     try {
-      await api<{ run_id: string }>(`/${t.id}/run`, { method: "POST" });
-      await refresh();
+      const out = await api<{ run_id: string }>(
+        `/${t.id}/run`, { method: "POST" },
+      );
+      run_id = out.run_id;
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "run now failed");
+      return;
     }
+    // Optimistic local state: mark this row as in-flight
+    // before the runner's first DB write, so the status
+    // cell flips to the spinner on the same frame as the
+    // click. The polling effect (below) evicts the entry
+    // when the runner writes a terminal status.
+    setRunningTasks((prev) => {
+      const next = new Map(prev);
+      next.set(t.id, run_id);
+      return next;
+    });
+    await refresh();
   }
 
   async function toggleEnabled(t: TaskRow) {
@@ -255,7 +381,26 @@ export default function TaskListPane() {
                 >
                   <td className="py-2 pr-4 text-ink font-medium">
                     <div className="flex items-center gap-2">
-                      <span>{t.name}</span>
+                      {/* Click name → runs-history drawer.
+                          The drawer shows every fire's
+                          status / error / reply excerpt so
+                          the operator can see *why* a
+                          "成功" row in the table actually
+                          didn't push to TG (e.g. bot not
+                          registered → reply lives in chat
+                          history but ``_tg_send_callback``
+                          was never wired). */}
+                      <button
+                        type="button"
+                        onClick={() => setRunsForId(t.id)}
+                        title="点击查看运行历史"
+                        className="text-left font-medium text-ink hover:text-sky-deep underline-offset-2 hover:underline cursor-pointer"
+                      >
+                        {t.name}
+                        <span className="ml-1 text-[10px] text-ink-soft/70 font-normal">
+                          ↗ 日志
+                        </span>
+                      </button>
                       {t.consecutive_failures > 0 && (
                         <span className="text-[10px] text-amber-700">
                           ⚠ 已失败 {t.consecutive_failures} 次
@@ -320,7 +465,19 @@ export default function TaskListPane() {
                     </div>
                   </td>
                   <td className="py-2 pr-4 text-xs">
-                    {t.last_status ? (
+                    {runningTasks.has(t.id) ? (
+                      // Spinner: the polling loop above
+                      // owns the eviction, so we only
+                      // render this branch while the
+                      // task is in our optimistic set.
+                      // The row stays put during the
+                      // fire; status flips on the
+                      // terminal tick.
+                      <span className="inline-flex items-center gap-1.5 text-sky-700">
+                        <span className="inline-block h-3 w-3 rounded-full border-2 border-sky-300 border-t-sky-700 animate-spin" />
+                        执行中…
+                      </span>
+                    ) : t.last_status ? (
                       <span
                         className={
                           t.last_status === "success"
@@ -372,6 +529,23 @@ export default function TaskListPane() {
                       >
                         编辑
                       </button>
+                      {/* Runs-history entry. The operator
+                          can also click the row's task
+                          name, but a dedicated button is
+                          more discoverable — it makes the
+                          affordance obvious without
+                          requiring a hover experiment.
+                          Opens the same drawer as the
+                          terminal-tick auto-pop, just
+                          without the spinner-then-flip
+                          context. */}
+                      <button
+                        type="button"
+                        onClick={() => setRunsForId(t.id)}
+                        className="text-sky-700 hover:text-sky-deep transition"
+                      >
+                        查看日志
+                      </button>
                       <button
                         type="button"
                         onClick={() => deleteTask(t)}
@@ -396,6 +570,13 @@ export default function TaskListPane() {
             setDrawerOpen(false);
             await refresh();
           }}
+        />
+      )}
+
+      {runsForId && (
+        <RunsHistoryDrawer
+          taskId={runsForId}
+          onClose={() => setRunsForId(null)}
         />
       )}
     </div>
@@ -887,6 +1068,147 @@ function TaskFormDrawer(props: {
           >
             {saving ? "保存中…" : props.taskId ? "保存改动" : "创建任务"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────────────────── #
+// Runs history drawer
+// ──────────────────────────────────────────────────────────────────────── #
+
+function RunsHistoryDrawer(props: {
+  taskId: string;
+  onClose: () => void;
+}) {
+  // Pulls ``GET /api/tasks/{id}/runs`` once on open and
+  // shows the last 20 fires newest-first. Each row
+  // surfaces:
+  //
+  //   - status (success / failed / running) — colour-coded
+  //   - trigger (manual / cron) — the agent runs the same
+  //     loop either way, but the operator usually wants
+  //     to know which path they tripped
+  //   - finished_at + latency_ms — the bill for the fire
+  //   - reply_excerpt — the agent's last assistant turn
+  //     truncated to 500 chars. This is where the
+  //     "did the TG push actually fire?" question is
+  //     answered: if ``channel=tg`` and the agent's
+  //     reply is here but the operator's TG is silent,
+  //     the bot wasn't registered at fire-time.
+  //   - error — for ``failed`` rows, the truncated
+  //     error summary (last_error on the task gets the
+  //     same string; the per-run copy here survives
+  //     later successful fires).
+  //
+  // No edit / re-run affordance — the row in the main
+  // table already has those. v0 ships read-only history.
+  const [runs, setRuns] = useState<TaskRunRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(
+          `/api/tasks/${props.taskId}/runs`,
+          { credentials: "include" },
+        );
+        if (!r.ok) {
+          setLoadError(`加载失败 (${r.status})`);
+          return;
+        }
+        const data = (await r.json()) as TaskRunRow[];
+        if (!cancelled) setRuns(data);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error ? err.message : "Network error",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.taskId]);
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-ink">
+            运行历史 · {props.taskId.slice(0, 8)}…
+          </h3>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="text-ink-soft hover:text-ink text-sm"
+          >
+            ✕ 关闭
+          </button>
+        </div>
+        <div className="p-6 space-y-3">
+          {loadError && <p className="form-error">✗ {loadError}</p>}
+          {runs === null && !loadError ? (
+            <p className="text-sm text-ink-soft">加载中…</p>
+          ) : runs && runs.length === 0 ? (
+            <p className="text-sm text-ink-soft">
+              这条任务还没有任何 fire 记录。点表格里的「立刻跑」或等下一次 cron 触发。
+            </p>
+          ) : runs ? (
+            runs.map((r) => (
+              <div
+                key={r.id}
+                className="border border-sky-light/30 rounded-lg p-3 text-xs space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={
+                        r.status === "success"
+                          ? "text-emerald-700 font-medium"
+                          : r.status === "failed"
+                            ? "text-rose-700 font-medium"
+                            : "text-sky-700 font-medium"
+                      }
+                    >
+                      {r.status === "success"
+                        ? "✓ 成功"
+                        : r.status === "failed"
+                          ? "✗ 失败"
+                          : r.status === "running"
+                            ? "⟳ 执行中"
+                            : r.status}
+                    </span>
+                    <span className="text-ink-soft">
+                      · {r.trigger === "manual" ? "手动" : "定时"}
+                    </span>
+                    {r.latency_ms != null && (
+                      <span className="text-ink-soft">
+                        · {r.latency_ms} ms
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-ink-soft/80 font-mono text-[10px]">
+                    {r.finished_at ?? r.started_at}
+                  </span>
+                </div>
+                {r.reply_excerpt && (
+                  <div className="bg-sky-light/10 rounded p-2 font-mono text-[11px] whitespace-pre-wrap break-words">
+                    {r.reply_excerpt}
+                  </div>
+                )}
+                {r.error && (
+                  <div className="bg-rose-50 text-rose-900 rounded p-2 font-mono text-[11px] whitespace-pre-wrap break-words">
+                    {r.error}
+                  </div>
+                )}
+              </div>
+            ))
+          ) : null}
         </div>
       </div>
     </div>

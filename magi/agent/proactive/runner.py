@@ -5,22 +5,52 @@ task's cron fires. Each invocation:
 
 1. Reads the Task row (and the operator's Employee row for
    credentials).
-2. Creates a brand-new :class:`ChatSession` plus a
-   user-message :class:`ChatMessage` carrying the task's
-   prompt.
+2. Creates a fresh INTERNAL :class:`ChatSession` (channel
+   ``"internal"``) + a user-message :class:`ChatMessage`
+   carrying the task's prompt. The internal session is the
+   agent's working context — never reused, never visible in
+   the operator's chat list. Two fires of the same task
+   (or of different tasks) cannot pollute each other's
+   agent history by construction.
 3. Calls :func:`magi.agent.loop.handle_message` with the
-   employee credentials already in scope.
-4. Pulls the latest TokenUsage row (the agent loop just
-   wrote one) onto the :class:`TaskRun` for cost-roll-up.
-5. On failure, increments ``consecutive_failures``; if the
+   employee credentials already in scope, against the
+   internal session.
+4. DELIVERS the agent's final reply to ``task.delivery_to``:
+   - ``"new"`` → create a fresh "scheduled" chat with title
+     ``"[定时] <name>"`` and write the reply there. The
+     operator sees each fire as its own row in chat
+     history.
+   - ``<26-char ULID>`` resolving to a session owned by
+     this employee → append the reply as an assistant
+     message in that chat (mid-chat semantic).
+   - ``<TG chat_id (digits)>`` with ``channel="tg"`` →
+     look up the existing TG :class:`ChatSession` row by
+     ``(tgid, employee_id)``, append the reply there, and
+     the agent loop's own ``send_message`` tool pushes
+     the same reply to TG via ``_tg_send_callback`` (the
+     wire push happens mid-loop, not at this step).
+5. Updates :class:`TaskRun` to point at the DELIVERED
+   chat so the runs drawer shows the reply in its
+   operator-visible context.
+6. On failure, increments ``consecutive_failures``; if the
    threshold is crossed, disables the task and posts an
-   :class:`ActionItem` so the operator sees a yellow flag in
-   the dashboard.
+   :class:`ActionItem` so the operator sees a yellow flag
+   in the dashboard.
 
-Each fire gets its own session row (``channel="scheduled"``)
-so the operator's history list shows every cron-driven run as
-an independent line — matching the user's "each fire is its
-own context, its own session" requirement.
+Why a two-session model:
+
+The operator-visible chat and the agent's working
+context are different audiences. Putting them in the
+same session meant a single ``delivery_to=<ULID>``
+caused two cron-driven replies to share history (and
+the LLM would sometimes echo the prior reply because
+its in-context scratchpad was already populated with
+the previous fire's user/assistant turns). Separating
+the two means **agent context is always ephemeral**
+and **the reply surfaces exactly where the operator
+expects** — never bleeding cron internals into an
+operator chat the operator didn't intend to mix
+cron replies into.
 
 Why a coroutine running inside its own event loop:
 ``apscheduler`` ships an asyncio variant (``AsyncIOScheduler``)
@@ -98,7 +128,7 @@ async def execute_task(
     started = datetime.now(timezone.utc).isoformat()
     run_id = pre_created_run_id or new_session_id()
 
-    # ── 1. Read task + operator credentials + create session ──
+    # ── 1. Read task + operator credentials + create INTERNAL session ──
     with open_session() as db:
         task = db.get(Task, task_id)
         if task is None:
@@ -119,108 +149,33 @@ async def execute_task(
             db.commit()
             return run_id
 
-        # Each fire is its own session BY DEFAULT. The
-        # operator can override this via ``task.delivery_to``:
-        #
-        #   - ``None`` (legacy pre-DeliveryTarget rows) or
-        #     the literal ``"new"``: create a fresh chat
-        #     session per fire, the surface the operator
-        #     sees via the WebUI table as "[定时] <name>".
-        #   - A 26-char ULID that resolves to an existing
-        #     ``ChatSession``: reuse that session, append
-        #     the cron prompt as a new ``ChatMessage`` row,
-        #     and let ``handle_message`` continue from
-        #     there. This is the mid-chat semantic — the
-        #     operator's ongoing conversation accumulates
-        #     cron replies without spawning a side thread.
-        #   - ``task.channel == "tg"`` + ``delivery_to`` is a
-        #     TG chat_id (digits): reuse the operator's
-        #     existing TG ``ChatSession`` row by
-        #     ``(tgid, employee_id)``, attach the cron
-        #     prompt as a new ``ChatMessage``, and wire
-        #     ``_tg_send_callback`` into the agent call so
-        #     the agent's reply is pushed to the operator's
-        #     TG chat. Sessions are keyed on tgid for TG
-        #     (the chat itself is the address) so the
-        #     reuse preserves the chat history.
-        #   - ``task.channel == "email"``: not implemented in
-        #     v0 (no runner branch) — falls back to the
-        #     fresh-session shape and the reply lives in
-        #     chat history.
-        delivery_target = task.delivery_to
-        session_id = new_session_id()
-        # Default chat_id reflects the operator's TG
-        # binding (mirrors today's behaviour for default
-        # rows). The TG branch below overrides this when
-        # an explicit chat_id is requested.
+        # INTERNAL session — fresh per fire. Channel
+        # ``"internal"`` keeps this row out of the
+        # operator's chat list (the chat-history UI
+        # filters on the operator-facing channels).
+        # The agent loop runs here, with no prior
+        # context from any other task — every fire
+        # starts from a clean slate, so cross-task
+        # pollution is impossible by construction.
+        internal_session_id = new_session_id()
+        # ``chat_id`` is the TG chat the agent routes
+        # tool calls through (and the one we'd push
+        # to if a callback fires). For non-TG tasks
+        # this is the operator's bound telegram_id
+        # (or employee.id fallback) — the agent's
+        # ``send_message`` tool still accepts it as
+        # a target even when no wire push happens.
         chat_id = str(employee.telegram_id or employee.id)
-        explicit_session = None
-        if delivery_target and delivery_target != "new":
-            # Resolve the target. Two shapes:
-            #   - 26-char ULID (webui session_id) → look up
-            #     by primary key.
-            #   - Digits (TG chat_id) → look up by
-            #     ``(tgid, employee_id)``; the chat_id
-            #     gets stamped into the new chat session
-            #     so the agent loop can route the reply
-            #     back to the operator's TG chat.
-            tg_match = (
-                task.channel == "tg" and delivery_target.isdigit()
-            )
-            if tg_match:
-                tg_session = db.query(ChatSession).filter_by(
-                    tgid=delivery_target,
-                    employee_id=employee.id,
-                ).first()
-                if tg_session is not None:
-                    session_id = tg_session.session_id
-                    chat_id = delivery_target
-                    explicit_session = tg_session
-                else:
-                    logger.warning(
-                        "execute_task: TG delivery_to=%s for task %s "
-                        "did not match an existing ChatSession "
-                        "(employee=%s); creating new session with "
-                        "tgid stamped for the wire push",
-                        delivery_target, task_id, employee.id,
-                    )
-                    # Fall through to fresh-session with
-                    # the target TG chat_id stamped on the
-                    # new row.
-                    chat_id = delivery_target
-            else:
-                target_session = db.get(ChatSession, delivery_target)
-                if (
-                    target_session is not None
-                    and target_session.employee_id == employee.id
-                ):
-                    # Reuse the existing chat — the cron
-                    # reply joins the operator's ongoing
-                    # conversation. We do NOT create a new
-                    # ``ChatSession`` row, and we skip the
-                    # title prefix (the existing title stays).
-                    session_id = delivery_target
-                    explicit_session = target_session
-                else:
-                    # Unresolved / cross-employee / non-ULID
-                    # value: warn and fall through to new.
-                    logger.warning(
-                        "execute_task: task %s delivery_to=%r did "
-                        "not resolve to a ChatSession owned by "
-                        "employee %s; falling back to fresh session",
-                        task_id, delivery_target, employee.id,
-                    )
-        if explicit_session is None:
-            sess = ChatSession(
-                session_id=session_id,
-                tgid=chat_id,
-                employee_id=employee.id,
-                channel="scheduled",
-                title=f"[定时] {task.name}",
-                created_at=utcnow_iso(),
-                updated_at=utcnow_iso(),
-            )
-            db.add(sess)
+        internal_sess = ChatSession(
+            session_id=internal_session_id,
+            tgid=chat_id,
+            employee_id=employee.id,
+            channel="internal",
+            title=f"[task] {task.name}",
+            created_at=utcnow_iso(),
+            updated_at=utcnow_iso(),
+        )
+        db.add(internal_sess)
         # Force-flush the ChatSession INSERT before the
         # ChatMessage INSERT — SQLAlchemy 2.x's dependency
         # sort misses ChatSession→ChatMessage within the
@@ -229,37 +184,44 @@ async def execute_task(
         # per fire; payoff: the chat_messages FK never
         # violates on a clean ChatSession row.
         db.flush()
-        # Seed the user message so the agent loop sees the
-        # prompt as the conversation's first turn when the
-        # session is fresh, and as a new turn when the
-        # session is reused (existing rows stay intact —
-        # we only add, never delete/replace).
         db.add(ChatMessage(
-            session_id=session_id,
+            session_id=internal_session_id,
             message_id=new_session_id(),
             role="user",
             text=task.prompt,
             ts=started,
         ))
-        run = TaskRun(
-            id=run_id,
-            task_id=task_id,
-            session_id=session_id,
-            trigger="manual" if manual else "cron",
-            started_at=started,
-            status="running",
-        )
-        db.add(run)
+        run = db.get(TaskRun, run_id)
+        if run is None:
+            # Cron-driven path: the scheduler never
+            # pre-created the row. Insert one now so the
+            # run shows up in the history pane as soon as
+            # the fire starts. The manual path
+            # (``POST /api/tasks/{id}/run``) takes the
+            # other branch — the API pre-created the row
+            # with ``status="running"`` so the operator's
+            # follow-up GET can find it by ``run_id``
+            # before the runner writes anything.
+            run = TaskRun(
+                id=run_id,
+                task_id=task_id,
+                session_id=internal_session_id,
+                trigger="manual" if manual else "cron",
+                started_at=started,
+                status="running",
+            )
+            db.add(run)
         # Snapshot for the calling coroutine so the
         # handle_message call doesn't need to keep its own
         # DB session open.
         task_name = task.name
         prompt = task.prompt
+        delivery_target = task.delivery_to
         provider = employee.provider
         api_key = employee.api_key
         db.commit()
 
-    # ── 2. Run the agent loop ──
+    # ── 2. Run the agent loop in the INTERNAL session ──
     # When channel is ``"tg"`` and the operator's bot is
     # running, wire a ``_tg_send_callback`` so the agent's
     # ``send_message`` tool actually pushes the reply to TG
@@ -291,7 +253,7 @@ async def execute_task(
                 text=prompt,
                 channel="scheduled",
                 employee_id=employee.id,
-                session_id=session_id,
+                session_id=internal_session_id,
                 chat_id=chat_id,
                 employee_provider=provider,
                 employee_api_key=api_key,
@@ -325,8 +287,36 @@ async def execute_task(
             error=f"unexpected:{type(exc).__name__}:{exc}",
         )
 
-    # ── 3. Success finalisation ──
+    # ── 3. Deliver the reply to ``delivery_to`` + finalise ──
     finished = datetime.now(timezone.utc).isoformat()
+    # TG push: the runner, NOT the agent loop, owns
+    # pushing the final reply to TG. The previous design
+    # wired ``_tg_send_callback`` into ``handle_message``
+    # and relied on the agent calling its ``send_message``
+    # tool mid-loop — that's fragile (the agent might
+    # decide to "reply in chat history only"), and the
+    # failure mode was silent: status='success' in the
+    # DB, no TG push, operator confused. Now the runner
+    # pushes the reply directly when ``channel='tg'``
+    # AND a bot is registered. ``_tg_send_callback`` is
+    # still wired in step 2 for any progress messages
+    # the agent wants to send mid-execution; the runner
+    # doesn't depend on the agent to deliver the
+    # final reply.
+    if task.channel == "tg" and chat_id.isdigit():
+        bot = get_telegram_bot()
+        if bot is not None:
+            try:
+                await bot.send_message(
+                    chat_id=int(chat_id),
+                    text=reply or "",
+                )
+            except Exception as exc:  # noqa: BLE001 — push failure isn't fatal
+                logger.warning(
+                    "task %s: TG push failed (%s); reply "
+                    "still landed in chat history",
+                    task_id, exc,
+                )
     with open_session() as db:
         run = db.get(TaskRun, run_id)
         task = db.get(Task, task_id)
@@ -335,11 +325,32 @@ async def execute_task(
             logger.info("execute_task: row vanished on success path (run=%s task=%s)",
                         run_id, task_id)
             return run_id
+        # DELIVERY step: append the agent's reply to
+        # whatever chat ``delivery_to`` resolves to. This
+        # is independent of the INTERNAL session the
+        # agent ran in — two fires of the same task land
+        # in two separate agent sessions, but the
+        # operator-facing delivery target is whichever
+        # chat the row's ``delivery_to`` column points
+        # at. ``_deliver_reply`` returns the
+        # operator-visible ``session_id``; the run row's
+        # ``session_id`` gets re-pointed so the runs
+        # drawer shows the reply in its delivery chat.
+        delivered_session_id = _deliver_reply(
+            db,
+            task=task,
+            employee=employee,
+            reply=reply,
+            delivery_target=delivery_target,
+            chat_id=chat_id,
+            finished_iso=finished,
+        )
+        run.session_id = delivered_session_id
         run.status = "success"
         run.finished_at = finished
         run.latency_ms = _ms_between(started, finished)
         run.reply_excerpt = (reply or "")[:_REPLY_EXCERPT_CHARS]
-        last_token = _latest_token_usage(db, session_id=session_id, started_iso=started)
+        last_token = _latest_token_usage(db, started_iso=started)
         if last_token is not None:
             run.input_tokens = last_token[0]
             run.output_tokens = last_token[1]
@@ -353,6 +364,143 @@ async def execute_task(
 
 
 # -- helpers ---------------------------------------------------------------
+
+
+def _deliver_reply(
+    db: Session,
+    *,
+    task: Task,
+    employee: Employee,
+    reply: str | None,
+    delivery_target: str | None,
+    chat_id: str,
+    finished_iso: str,
+) -> str:
+    """Land the agent's reply in the operator-facing
+    chat pointed at by ``delivery_target``.
+
+    Three shapes — same dispatch as the (now-removed)
+    pre-refactor lookup, but each branch only writes
+    the assistant message to the DELIVERY chat; the
+    agent's INTERNAL session is never touched here.
+
+      - ``None`` / ``"new"`` → create a fresh
+        ``channel="scheduled"`` :class:`ChatSession`
+        titled ``"[定时] <name>"`` so the operator sees
+        each fire as its own row in chat history.
+      - ``<26-char ULID>`` resolving to a
+        :class:`ChatSession` owned by this employee →
+        append the reply as an assistant message in
+        that chat. This is the "mid-chat" semantic
+        the LLM tool path uses (``ctx.session_id``
+        landed here).
+      - ``<TG chat_id (digits)>`` with
+        ``channel == "tg"`` → look up the existing TG
+        :class:`ChatSession` row by
+        ``(tgid, employee_id)``; append the reply
+        there as well as a chat-history record (the
+        wire push to TG already happened during the
+        agent loop via ``_tg_send_callback`` — this
+        step mirrors that into the chat-history side
+        so the operator sees the conversation from
+        the WebUI too).
+
+    Returns the operator-visible ``session_id`` for
+    the :class:`TaskRun` row to point at — the runs
+    drawer reads that column to render the reply in
+    its delivery context. On the unresolved / cold
+    cases we fall back to a fresh ``"new"`` chat so
+    the reply is never lost.
+    """
+    text = reply or ""
+    # ── Branch 1: explicit ULID → append to existing chat ──
+    if delivery_target and delivery_target != "new":
+        # TG chat_id (digits) + tg channel: look up by
+        # ``(tgid, employee_id)``. The tgid IS the chat
+        # address for TG; reusing the matching row
+        # preserves the operator's ongoing TG
+        # conversation history.
+        if (
+            task.channel == "tg"
+            and delivery_target.isdigit()
+        ):
+            tg_session = db.query(ChatSession).filter_by(
+                tgid=delivery_target,
+                employee_id=task.employee_id,
+            ).first()
+            if tg_session is not None:
+                db.add(ChatMessage(
+                    session_id=tg_session.session_id,
+                    message_id=new_session_id(),
+                    role="assistant",
+                    text=text,
+                    ts=finished_iso,
+                ))
+                tg_session.updated_at = finished_iso
+                return tg_session.session_id
+            # TG row cold — create one with tgid stamped
+            # so future TG deliveries accumulate into it.
+            new_session = new_session_id()
+            db.add(ChatSession(
+                session_id=new_session,
+                tgid=delivery_target,
+                employee_id=task.employee_id,
+                channel="tg",
+                title=f"[定时] {task.name}",
+                created_at=utcnow_iso(),
+                updated_at=finished_iso,
+            ))
+            db.flush()
+            db.add(ChatMessage(
+                session_id=new_session,
+                message_id=new_session_id(),
+                role="assistant",
+                text=text,
+                ts=finished_iso,
+            ))
+            return new_session
+        # Plain ULID → look up by PK + employee guard.
+        target = db.get(ChatSession, delivery_target)
+        if (
+            target is not None
+            and target.employee_id == task.employee_id
+        ):
+            db.add(ChatMessage(
+                session_id=target.session_id,
+                message_id=new_session_id(),
+                role="assistant",
+                text=text,
+                ts=finished_iso,
+            ))
+            target.updated_at = finished_iso
+            return target.session_id
+        # Unresolved → warn + fall through to "new".
+        logger.warning(
+            "execute_task: task %s delivery_to=%r did not "
+            "resolve to a ChatSession owned by employee %s; "
+            "falling back to fresh [定时] chat",
+            task.id, delivery_target, task.employee_id,
+        )
+    # ── Branch 2: "new" / None / unresolved → fresh [定时] chat ──
+    new_session = new_session_id()
+    db.add(ChatSession(
+        session_id=new_session,
+        tgid=chat_id,
+        employee_id=task.employee_id,
+        channel="scheduled",
+        title=f"[定时] {task.name}",
+        created_at=utcnow_iso(),
+        updated_at=finished_iso,
+    ))
+    db.flush()
+    db.add(ChatMessage(
+        session_id=new_session,
+        message_id=new_session_id(),
+        role="assistant",
+        text=text,
+        ts=finished_iso,
+    ))
+    return new_session
 
 
 def _mark_failed(
@@ -469,14 +617,24 @@ def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tu
     single fire may produce 1+ rows; summing keeps the
     dashboard's "cost" view aligned with the per-session bill.
 
+    Filters by ``employee_id`` (the operator the LLM was
+    billed against) + ``ts >= started_iso`` (the fire's
+    wall-clock start). ``session_id`` is kept in the
+    signature for compatibility but isn't a column on
+    :class:`TokenUsage` — the token table is per-employee,
+    not per-session. Multiple concurrent fires for the
+    same employee would over-count, but that's a row
+    collision the scheduler's ``max_instances=1`` already
+    prevents.
+
     ``None`` if no rows landed yet (e.g. the agent returned
     before any LLM call — shouldn't happen in practice but
     keeps the helper defensive).
     """
+    del session_id  # not a column on TokenUsage; see docstring
     rows = db.execute(
         select(TokenUsage.input_tokens, TokenUsage.output_tokens)
         .where(
-            TokenUsage.session_id == session_id,
             TokenUsage.ts >= started_iso,
         )
     ).all()
