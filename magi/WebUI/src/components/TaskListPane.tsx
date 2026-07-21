@@ -422,14 +422,12 @@ function TaskFormDrawer(props: {
   // lenient about Z-marker presence.
   const [runAt, setRunAt] = useState("");
   const [channel, setChannel] = useState<"webui" | "tg">("webui");
-  // ``delivery_to`` is rendered as a per-channel input:
-  //   channel === "webui" → dropdown with "新会话 (new)" +
-  //                          "当前会话 (<session_id>)". WebUI form
-  //                          default is "new".
-  //   channel === "tg"    → free-text chat_id input.
-  // The state holds the literal string the API sees;
-  // ``"new"`` is the webui magic token.
-  const [deliveryTarget, setDeliveryTarget] = useState<string>("new");
+  // ``delivery_to`` is server-derived per the unified rule:
+  //   channel=webui → "new" (every fire spawns a fresh session)
+  //   channel=tg    → operator.telegram_id (server-side; the
+  //                   form doesn't pick — and 400s if not bound)
+  // The form no longer asks. The table's "→ <target>" snippet
+  // is rendered from the row's resolved value.
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -445,7 +443,6 @@ function TaskFormDrawer(props: {
       setDayOfMonth(1);
       setRunAt("");
       setChannel("webui");
-      setDeliveryTarget("new");
       setEnabled(true);
       setError(null);
       return;
@@ -463,19 +460,10 @@ function TaskFormDrawer(props: {
         setName(t.name);
         setPrompt(t.prompt);
         setChannel(t.channel);
-        // Pre-fill ``delivery_to``: a stored null means
-        // operator-bound fallback at fire time — show as
-        // ``"(未指定)"`` in the form. ``"new"`` stays as-is
-        // (the magic webui token). Anything else is rendered
-        // verbatim so the operator can read the TG chat_id /
-        // session_id verbatim.
-        if (t.delivery_to === null) {
-          setDeliveryTarget("");
-        } else if (t.delivery_to === "new") {
-          setDeliveryTarget("new");
-        } else {
-          setDeliveryTarget(t.delivery_to);
-        }
+        // ``delivery_to`` is server-derived; the drawer
+        // doesn't pre-fill or surface it. The cell snippet
+        // (rendered elsewhere in this component) shows the
+        // resolved value from the row.
         setEnabled(t.enabled);
         // If the row is a once-shot, pre-fill the form
         // with ``once`` + the ISO trimmed to ``YYYY-MM-DDTHH:MM``
@@ -547,10 +535,8 @@ function TaskFormDrawer(props: {
     };
     if (frequency === "weekly") body["day_of_week"] = dayOfWeek;
     if (frequency === "monthly") body["day_of_month"] = dayOfMonth;
-    // ``delivery_to``: empty string = "未指定" → omit the
-    // field so the API stores NULL (fall-back at fire time).
-    // Otherwise send the literal value the operator picked.
-    if (deliveryTarget) body["delivery_to"] = deliveryTarget;
+    // ``delivery_to`` is server-derived from channel +
+    // operator.telegram_id; the form does not send it.
     // ``<input type="datetime-local">`` returns a
     // timezone-less string. The operator's browser TZ is
     // usually the same as their admin machine's clock;
@@ -849,41 +835,14 @@ function TaskFormDrawer(props: {
                 <option value="webui">webui（写到 chat 历史）</option>
                 <option value="tg">tg（同时推到 TG）</option>
               </select>
+              {/* ``delivery_to`` is no longer a form control:
+                  server-derived from channel + operator.
+                  channel=webui → "new"; channel=tg → operator's
+                  bound telegram_id (400 if unbound). The cell
+                  snippet further down renders the resolved value. */}
             </div>
-            <div>
-              {/* ``delivery_to`` — concrete destination per
-                  channel. WebUI form's default is ``"new"``
-                  (create-new-session-per-fire). Switching
-                  channel to "tg" switches the control to
-                  a free-text TG chat_id input. The empty
-                  option (未指定) maps to API null and
-                  means "use the operator's binding at
-                  fire time". */}
-              <label htmlFor="task-delivery-target" className="form-label">
-                投递到
-              </label>
-              {channel === "webui" ? (
-                <select
-                  id="task-delivery-target"
-                  value={deliveryTarget}
-                  onChange={(e) => setDeliveryTarget(e.target.value)}
-                  className="form-input text-sm py-2 px-3"
-                >
-                  <option value="new">新会话 (每次触发新建)</option>
-                  <option value="">未指定 (用 operator 绑定)</option>
-                </select>
-              ) : (
-                <input
-                  id="task-delivery-target"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  placeholder="TG chat_id（数字）"
-                  value={deliveryTarget}
-                  onChange={(e) => setDeliveryTarget(e.target.value)}
-                  className="form-input text-sm py-2 px-3"
-                />
-              )}
+            <div className="text-xs text-ink-soft self-end pb-2">
+              投递目标自动决定：webui 每次新建会话，tg 推到 operator 绑定的 TG chat
             </div>
           </div>
 

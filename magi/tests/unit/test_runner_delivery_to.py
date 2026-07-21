@@ -380,8 +380,11 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
 
 async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> None:
     """The TG equivalent of the webui explicit-session path:
-    ``delivery_to`` is set to a TG chat_id (digits). The
-    runner looks up the existing ``ChatSession`` row by
+    ``delivery_to`` carries the operator's bound TG chat_id
+    (server-derived from ``employee.telegram_id`` for the
+    WebUI path, or from ``ctx.chat_id`` for the LLM tool
+    path — both land on the same value). The runner looks
+    up the existing ``ChatSession`` row by
     ``(tgid, employee_id)``, reuses it, and the cron prompt
     joins the operator's ongoing TG conversation. The agent
     loop's reply is pushed to TG via ``_tg_send_callback``
@@ -389,10 +392,13 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
     with open_session() as db:
         emp = db.query(Employee).filter_by(telegram_id=9101).one()
         # Seed: an existing TG chat session as if the
-        # operator had been chatting with the bot.
+        # operator had been chatting with the bot. The
+        # fixture bound telegram_id=9101 to this admin,
+        # so the WebUI server-derived delivery_to is
+        # also ``9101``.
         existing = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
-            tgid="12345678",  # the TG chat id
+            tgid="9101",  # the operator's bound TG chat_id
             employee_id=emp.id,
             channel="tg",
             title="operator's TG chat",
@@ -414,7 +420,7 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
     # should still attach to the existing session. The
     # bot-callback wiring is tested separately.
     task_id = _seed_task(
-        state_dir, "tg-joined", delivery_to="12345678",
+        state_dir, "tg-joined", delivery_to="9101",
     )
     # Override the task's channel to "tg" — the seed helper
     # hardcodes webui; we want the TG dispatch path here.
@@ -433,7 +439,7 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
         sessions = db.query(ChatSession).all()
         assert len(sessions) == 1
         assert sessions[0].session_id == existing.session_id
-        assert sessions[0].tgid == "12345678"
+        assert sessions[0].tgid == "9101"
         assert sessions[0].title == "operator's TG chat"
         # Both the prior TG turn AND the new cron prompt
         # co-exist on this session.
@@ -450,12 +456,12 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
 async def test_tg_delivery_to_chat_id_with_no_existing_session_creates_one(
     state_dir: Path,
 ) -> None:
-    """The TG row points at a chat_id that the operator
-    has never messaged (no pre-existing ``ChatSession``
-    row). Runner falls back to fresh session with the
-    target chat_id stamped on the new row, so the agent
+    """The TG row points at the operator's bound chat_id
+    but they haven't yet messaged the bot (no pre-existing
+    ``ChatSession`` row). Runner falls back to fresh session
+    with the chat_id stamped on the new row, so the agent
     loop can push replies back to that chat."""
-    task_id = _seed_task(state_dir, "tg-cold", delivery_to="99999999")
+    task_id = _seed_task(state_dir, "tg-cold", delivery_to="9101")
     with open_session() as db:
         t = db.get(Task, task_id)
         t.channel = "tg"
@@ -466,9 +472,9 @@ async def test_tg_delivery_to_chat_id_with_no_existing_session_creates_one(
     with open_session() as db:
         sessions = db.query(ChatSession).all()
         assert len(sessions) == 1
-        # Fresh row, but the tgid is the requested target
-        # so the agent loop can route the reply to TG.
-        assert sessions[0].tgid == "99999999"
+        # Fresh row, but the tgid is the operator's bound
+        # chat_id so the agent loop can route the reply to TG.
+        assert sessions[0].tgid == "9101"
         # WebUI history would show this as "[定时] tg-cold"
         # — the operator sees the cron reply in chat
         # history; if the bot is running, the same reply
@@ -508,7 +514,7 @@ async def test_tg_bot_callback_fires_when_bot_registered(
             # a new one).
             existing = ChatSession(
                 session_id="01HABCDEFGHJKMNPQRSTVWXY",
-                tgid="77777777",
+                tgid="9101",
                 employee_id=emp.id,
                 channel="tg",
                 title="tg",
@@ -527,7 +533,7 @@ async def test_tg_bot_callback_fires_when_bot_registered(
             db.commit()
 
         task_id = _seed_task(
-            state_dir, "tg-push", delivery_to="77777777",
+            state_dir, "tg-push", delivery_to="9101",
         )
         with open_session() as db:
             t = db.get(Task, task_id)
@@ -554,6 +560,6 @@ async def test_tg_bot_callback_fires_when_bot_registered(
         with open_session() as db:
             sessions = db.query(ChatSession).all()
             assert len(sessions) == 1
-            assert sessions[0].tgid == "77777777"
+            assert sessions[0].tgid == "9101"
     finally:
         _tg.bot.clear_telegram_bot()
