@@ -41,7 +41,6 @@ configurable task, not duplicates.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from sqlalchemy import select
@@ -59,14 +58,6 @@ logger = logging.getLogger("magi.agent.tools.schedule_task")
 
 _NAME_MAX = 120
 _PROMPT_MAX = 8000
-
-# Crockford ULID: 26 chars, base32 alphabet — same shape as
-# ``chat_sessions.session_id`` and the rest of the codebase's
-# id vocabulary (see ``magi.agent.memory.session.ids``).
-# We anchor ``delivery_to`` shape to a known alphabet rather
-# than a free string so a malformed session_id doesn't slip
-# past the tool boundary into the runner.
-_SESSION_ID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
 # Same gate as the API: only ``admin`` and ``assigned``
 # may create a task. ``employee`` and ``guest`` get
@@ -194,32 +185,27 @@ class ScheduleTaskTool(Tool):
                 "description": (
                     "Where the fired reply surfaces. 'webui' "
                     "creates a chat session visible in the "
-                    "operator's history list. 'tg' additionally "
-                    "lets the agent's send_message tool push a "
-                    "reply to the operator's TG chat."
+                    "operator's history list (each fire spawns "
+                    "a fresh session unless the LLM called this "
+                    "from inside an existing chat — then the "
+                    "cron reply joins that chat). 'tg' "
+                    "additionally lets the agent's send_message "
+                    "tool push a reply to the operator's TG "
+                    "chat (the runner looks up the existing TG "
+                    "session by (chat_id, employee_id) and "
+                    "reuses it; or uses the operator's bound "
+                    "telegram_id when called from a non-TG "
+                    "chat)."
                 ),
             },
-            "delivery_to": {
-                "type": "string",
-                "description": (
-                    "Optional concrete delivery destination, "
-                    "depending on ``channel``:\n"
-                    "  - channel='webui': the literal string "
-                    "``\"new\"`` opens a fresh chat session "
-                    "for each fire; a chat session_id sends "
-                    "the fire into that session.\n"
-                    "  - channel='tg': a TG chat_id "
-                    "(digits).\n"
-                    "  - channel='email' (future): an address.\n"
-                    "If omitted, the tool defaults from the "
-                    "creation context: when called mid-chat it "
-                    "uses the current session; for one-shot "
-                    "and admin tool calls it leaves the row "
-                    "with ``delivery_to=NULL`` (the runner "
-                    "then falls back to the operator's bound "
-                    "destination at fire time)."
-                ),
-            },
+            # ``delivery_to`` was removed from the LLM-
+            # facing schema: the tool no longer accepts a
+            # caller-supplied destination. The server
+            # derives it from channel + the caller's
+            # ToolContext (session_id for webui, chat_id
+            # for tg). The column stays on Task for
+            # backward compat with rows created before
+            # this unification.
         },
         "required": ["name", "prompt", "frequency"],
     }
@@ -255,68 +241,28 @@ class ScheduleTaskTool(Tool):
                 is_error=True,
             )
 
-        # ``delivery_to`` resolution: caller can pass
-        # ``"new"`` (webui-only), a session_id (webui-only),
-        # a TG chat_id (tg-only), or omit. When omitted:
-        #   - mid-chat (ctx.session_id populated): default
-        #     to ``ctx.session_id`` so cron fires land in
-        #     the same chat the LLM just wrote from.
-        #   - anywhere else: leave ``NULL``; the runner
-        #     falls back to operator-bound destination.
-        # We validate the *target* format here (TG vs
-        # webui) so a malformed string doesn't slip past
-        # the tool boundary.
-        raw_delivery = (kwargs.get("delivery_to") or "").strip()
-        delivery_to: str | None = None
-        if raw_delivery:
-            # Channel-format validation. ``"new"`` is the
-            # only webui-targeted magic token. TG accepts
-            # digits only. Email is reserved for the future
-            # runner branch; the form-side guard rejects it
-            # here too so the surface doesn't lie.
-            if channel == "webui":
-                if (
-                    raw_delivery != "new"
-                    and not _SESSION_ID_RE.match(raw_delivery)
-                ):
-                    return ToolResult(
-                        content=(
-                            "delivery_to must be the literal "
-                            "'new' or a chat session_id; got "
-                            f"{raw_delivery!r}"
-                        ),
-                        is_error=True,
-                    )
-                delivery_to = raw_delivery
-            elif channel == "tg":
-                if not raw_delivery.isdigit():
-                    return ToolResult(
-                        content=(
-                            f"delivery_to must be a TG chat_id "
-                            f"(digits); got {raw_delivery!r}"
-                        ),
-                        is_error=True,
-                    )
-                delivery_to = raw_delivery
-            else:
-                # Unknown channel — should not happen because
-                # ``channel`` is enum-bounded above, but
-                # fail closed for unknown shapes.
-                return ToolResult(
-                    content=(
-                        f"unsupported channel {channel!r}; "
-                        f"delivery_to cannot be validated"
-                    ),
-                    is_error=True,
-                )
-        elif channel == "webui" and ctx.session_id:
-            # LLM-in-chat default: when the operator hasn't
-            # been explicit about where this fires, anchor
-            # to the chat the LLM is in. The WebUI form
-            # sends ``"new"`` explicitly for the create-
-            # new-session semantic, so this branch only
-            # fires from the chat-driven path.
-            delivery_to = ctx.session_id
+        # ``delivery_to`` is server-derived per the unified
+        # rule: only ``channel`` + ``ctx`` drive the value.
+        #   channel='webui' + LLM-in-chat → ctx.session_id
+        #     (append to the chat the LLM just wrote from)
+        #   channel='webui' + cold call   → None (runner
+        #     falls back; legacy / WebUI-default path stays
+        #     as "fresh session per fire")
+        #   channel='tg'    + LLM-in-TG  → ctx.chat_id (the
+        #     TG chat the LLM is responding to)
+        #   channel='tg'    + cold call  → None (runner
+        #     falls back to operator.telegram_id at fire time)
+        # The LLM does NOT choose; any caller-supplied
+        # ``delivery_to`` is intentionally discarded (the
+        # form is no longer a user-facing control, and a
+        # stale LLM prompt that still passes one must not
+        # override ctx).
+        if channel == "webui":
+            delivery_to = ctx.session_id or None
+        elif channel == "tg":
+            delivery_to = ctx.chat_id or None
+        else:
+            delivery_to = None
 
         # Branch on ``once`` vs the cron-driven presets.
         # ``cron`` and ``run_at`` are mutually exclusive on a

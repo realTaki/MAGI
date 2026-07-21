@@ -358,6 +358,21 @@ def create_task(
             detail=f"a task with name {payload.name!r} already exists",
         )
     cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
+    # Server-side derive ``delivery_to`` per the unified
+    # rule: the operator does not choose a delivery target
+    # from the WebUI form. ``channel=tg`` requires the
+    # operator to have a ``telegram_id`` bound — a missing
+    # binding is a config mistake, surfaced as 400 so the
+    # drawer doesn't silently store a NULL that the runner
+    # then can't dispatch. ``channel=webui`` honours an
+    # explicit ``delivery_to`` from the LLM-in-chat path
+    # (caller passes ``ctx.session_id``); absent that, the
+    # WebUI default is ``"new"`` (fresh session per fire).
+    delivery_to = _resolve_delivery_to(
+        session, channel=payload.channel,
+        employee_id=operator_id,
+        explicit=payload.delivery_to,
+    )
     task_id = new_session_id()
     now = _now_iso()
     # ``tz`` is reserved on the model for backend
@@ -373,7 +388,7 @@ def create_task(
         prompt=payload.prompt,
         cron=cron,
         run_at=run_at_iso,
-        delivery_to=payload.delivery_to,
+        delivery_to=delivery_to,
         tz=system_tz,
         channel=payload.channel,
         employee_id=operator_id,
@@ -420,6 +435,23 @@ def update_task(
     for f in preset_fields:
         data.pop(f, None)
     data.pop("frequency", None)
+    # ``channel`` and ``delivery_to`` are derived server-side;
+    # the patch may explicitly change channel but
+    # ``delivery_to`` is always re-derived so the row
+    # reflects the operator's *current* TG binding (which
+    # may have been updated since the row was created).
+    patch_channel = data.pop("channel", None)
+    data.pop("delivery_to", None)
+    if patch_channel is not None:
+        t.channel = patch_channel
+    # Always re-derive. The helper reads the row's current
+    # channel + the operator's current telegram_id; an
+    # unchanged channel still wants the row to track any
+    # later TG-binding edit.
+    t.delivery_to = _resolve_delivery_to(
+        session, channel=t.channel,
+        employee_id=t.employee_id, explicit=None,
+    )
     for k, v in data.items():
         setattr(t, k, v)
     if "enabled" in data:
@@ -670,6 +702,51 @@ def _resolve_system_tz() -> str:
     if not raw:
         return "UTC"
     return raw  # the WebUI validates the IANA name on save
+
+
+def _resolve_delivery_to(
+    session: Session,
+    *,
+    channel: str,
+    employee_id: int,
+    explicit: str | None,
+) -> str:
+    """Server-derived ``delivery_to`` per the unified rule.
+
+    The operator does not pick a delivery destination from
+    the WebUI form; the channel alone drives it:
+
+      - ``channel='tg'``: must use the operator's bound
+        ``telegram_id``. Missing binding is a config
+        mistake — surface as 400 so the drawer doesn't
+        silently store a NULL the runner then can't
+        dispatch.
+      - ``channel='webui'``: ``explicit`` (caller-supplied
+        session_id from the LLM-in-chat path) is honoured
+        when present; otherwise the WebUI default is
+        ``"new"`` (a fresh session per fire).
+
+    Re-deriving on every PATCH keeps the row coherent with
+    any later TG-binding edit the operator made.
+    """
+    if channel == "tg":
+        emp = session.get(Employee, employee_id)
+        if emp is None or not emp.telegram_id:
+            raise MagiHTTPException(
+                status_code=400,
+                code="tasks.telegram_not_bound",
+                detail=(
+                    f"channel='tg' requires the operator "
+                    f"(employee {employee_id}) to have a "
+                    f"telegram_id bound; bind a TG chat first "
+                    f"(Settings → 员工)."
+                ),
+            )
+        return str(emp.telegram_id)
+    # webui: honour an explicit caller-supplied value (the
+    # LLM-in-chat path passes ``ctx.session_id``); else
+    # default to "new" for fresh-session-per-fire.
+    return explicit if explicit else "new"
 
 
 def _render_cron_from_payload(
