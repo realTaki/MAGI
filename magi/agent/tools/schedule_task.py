@@ -45,7 +45,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at
+from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at, validate_run_at_future
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
@@ -276,6 +276,11 @@ class ScheduleTaskTool(Tool):
                 run_at_iso = validate_run_at(
                     kwargs.get("run_at") or ""
                 )
+                # Past-time run_at silently no-ops in
+                # apscheduler — reject here so the LLM
+                # can retry with a future timestamp
+                # rather than ship a dead task.
+                validate_run_at_future(run_at_iso)
             except ValueError as exc:
                 return ToolResult(
                     content=f"invalid run_at: {exc}",

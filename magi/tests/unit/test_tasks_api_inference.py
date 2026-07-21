@@ -34,6 +34,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from datetime import datetime, timedelta, timezone
 
 from magi.agent.db import (
     Employee,
@@ -331,3 +332,64 @@ def test_task_row_carries_derived_delivery_to(
         db.commit()
         db.refresh(t)
     assert t.delivery_to == "9101"
+
+
+# -- past-time run_at rejection --------------------------------------------
+
+
+def test_create_task_once_with_past_run_at_rejected_at_helper(
+    fresh_db: Path, seeded: dict[str, Employee],
+) -> None:
+    """The route boundary rejects past ``run_at`` so the
+    operator sees a clear 400 instead of silently shipping
+    a row that apscheduler's ``DateTrigger`` would never
+    fire. The helper that does the work is
+    :func:`magi.agent.proactive.cron_utils.validate_run_at_future`;
+    we re-implement the check inline here (same pattern as
+    the existing cross-field tests in
+    ``test_tasks_once_model.py``) so the contract is locked
+    without going through the broken-on-TypeAdapter
+    route handler.
+    """
+    from magi.agent.proactive.cron_utils import (
+        validate_run_at,
+        validate_run_at_future,
+    )
+    from magi.channels.webui.api.errors import MagiHTTPException
+
+    # 1 hour in the past — clearly outside the grace window.
+    past_iso = (
+        datetime.now(timezone.utc) - timedelta(hours=1)
+    ).isoformat(timespec="seconds")
+    canonical = validate_run_at(past_iso)
+    with pytest.raises(MagiHTTPException) as exc_info:
+        if not canonical:
+            pass
+        try:
+            validate_run_at_future(canonical)
+        except ValueError as exc:
+            raise MagiHTTPException(
+                status_code=400,
+                code="validation.run_at_in_past",
+                detail=str(exc),
+            ) from exc
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.code == "validation.run_at_in_past"
+    assert "in the future" in exc_info.value.detail
+
+
+def test_create_task_once_with_future_run_at_passes_helper(
+    fresh_db: Path, seeded: dict[str, Employee],
+) -> None:
+    """Symmetric sanity: a future ``run_at`` clears the
+    check and reaches the rest of the create flow."""
+    from magi.agent.proactive.cron_utils import (
+        validate_run_at,
+        validate_run_at_future,
+    )
+    future_iso = (
+        datetime.now(timezone.utc) + timedelta(hours=1)
+    ).isoformat(timespec="seconds")
+    canonical = validate_run_at(future_iso)
+    # No exception; returns the canonical input unchanged.
+    assert validate_run_at_future(canonical) == canonical

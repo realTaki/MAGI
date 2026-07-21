@@ -238,7 +238,7 @@ export default function TaskListPane() {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">名称</th>
-                <th className="py-2 pr-4 font-medium">Cron（自动生成）</th>
+                <th className="py-2 pr-4 font-medium">周期</th>
                 <th className="py-2 pr-4 font-medium">Channel</th>
                 <th className="py-2 pr-4 font-medium">最近状态</th>
                 <th className="py-2 font-medium w-44 text-right">操作</th>
@@ -272,6 +272,10 @@ export default function TaskListPane() {
                       than the cron field alone, so an
                       old row with both populated still
                       renders sensibly (run_at wins).
+                      The delivery destination lives in
+                      the next column (Channel) — the
+                      two are independent concepts and
+                      pairing them read better there.
                     */}
                     {t.run_at ? (
                       <span title={t.run_at}>
@@ -280,34 +284,40 @@ export default function TaskListPane() {
                     ) : (
                       <span title={t.cron}>{humanizeCron(t.cron)}</span>
                     )}
+                  </td>
+                  <td className="py-2 pr-4 text-ink-soft text-xs">
                     {/*
-                      Delivery destination — a separate
-                      line under the schedule so the cell
-                      reads as "every day 09:00 → 新会话".
-                      ``"new"`` is the magic token; explicit
-                      session_id / TG chat_id are rendered
-                      verbatim (the cell's tooltip already
-                      shows the raw cron, so duplicating the
-                      verbatim string here is intentional).
+                      Channel cell — single line. The
+                      channel name is implicit in the
+                      delivery phrasing (``Telegram →``
+                      vs ``新会话``), so no separate
+                      label row. ``"new"`` is the magic
+                      webui token; explicit session_id /
+                      TG chat_id are rendered verbatim.
+                      ``null`` means the runner falls back
+                      to operator-binding at fire time —
+                      we surface that as "(未指定)" rather
+                      than a misleading empty cell.
                     */}
                     <div
-                      className="mt-0.5 text-[10px] text-ink-soft/80 font-mono"
                       title={
                         t.delivery_to === null
                           ? "未指定 — operator 绑定"
                           : t.delivery_to
                       }
                     >
-                      →{" "}
-                      {t.delivery_to === null
-                        ? "未指定"
-                        : t.delivery_to === "new"
-                          ? "新会话"
-                          : t.delivery_to}
+                      {t.channel === "tg"
+                        ? `Telegram → ${
+                            t.delivery_to === null
+                              ? "(未指定)"
+                              : t.delivery_to
+                          }`
+                        : t.delivery_to === null
+                          ? "webui (未指定)"
+                          : t.delivery_to === "new"
+                            ? "新会话"
+                            : t.delivery_to}
                     </div>
-                  </td>
-                  <td className="py-2 pr-4 text-ink-soft text-xs">
-                    {t.channel}
                   </td>
                   <td className="py-2 pr-4 text-xs">
                     {t.last_status ? (
