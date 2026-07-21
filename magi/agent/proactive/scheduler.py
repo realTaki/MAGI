@@ -60,9 +60,15 @@ import contextlib
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
+# ``apscheduler.executors.pool.ThreadPoolExecutor`` —
+# NOT ``concurrent.futures.ThreadPoolExecutor``. apscheduler
+# 3.x rejects stdlib executors with ``TypeError: Expected
+# an executor instance or a string, got ThreadPoolExecutor
+# instead``. Using stdlib here is one of those name-clash
+# footguns the scheduler originally sidestepped.
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -93,17 +99,11 @@ class TaskScheduler:
         misfire_grace_seconds: int = 300,
     ) -> None:
         self._state_dir = state_dir
-
-    @property
-    def state_dir(self) -> str:
-        """Public read-only view of the bound state dir.
-
-        Tools and tests occasionally need the path
-        (e.g. to seed a profile fixture without going
-        through the API). Returning a property keeps
-        the field write-once invariant.
-        """
-        return self._state_dir
+        # Stash these on self — :class:`apscheduler.executors.pool.
+        # ThreadPoolExecutor` doesn't expose ``max_workers``
+        # back out, so anything that wants to log or assert
+        # the worker count reads it from here.
+        self._executor_max_workers = executor_max_workers
         self._coalesce = coalesce
         self._misfire_grace_seconds = misfire_grace_seconds
 
@@ -121,10 +121,12 @@ class TaskScheduler:
         # The sync executor that bridges apscheduler
         # callback (sync) to the async runner. We
         # size it > 1 so several concurrent fires don't
-        # stall the cron-trigger thread.
+        # stall the cron-trigger thread. apscheduler's
+        # ``ThreadPoolExecutor`` accepts only ``max_workers``
+        # — stdlib's executor also has ``thread_name_prefix``
+        # which used to live here.
         self._executor = ThreadPoolExecutor(
             max_workers=executor_max_workers,
-            thread_name_prefix="magi-task-fire",
         )
 
         self._sched = BackgroundScheduler(
@@ -144,6 +146,17 @@ class TaskScheduler:
         # channels (email etc.). v0: failure.py binds this
         # to a log-only handler.
         self.on_task_failure: Optional[Callable[[str, str], None]] = None
+
+    @property
+    def state_dir(self) -> str:
+        """Public read-only view of the bound state dir.
+
+        Tools and tests occasionally need the path
+        (e.g. to seed a profile fixture without going
+        through the API). Returning a property keeps
+        the field write-once invariant.
+        """
+        return self._state_dir
 
     # -- lifecycle --------------------------------------------------------
 
@@ -173,7 +186,7 @@ class TaskScheduler:
         self._rehydrate_from_db()
         logger.info(
             "TaskScheduler started (state_dir=%s, executor_workers=%d)",
-            self._state_dir, self._executor._max_workers,
+            self._state_dir, self._executor_max_workers,
         )
 
     def shutdown(self, *, wait: bool = True, cancel_running: bool = True) -> None:
