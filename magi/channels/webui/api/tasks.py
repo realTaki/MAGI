@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -48,7 +48,7 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.departments import AdminGate, get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron
+from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
@@ -80,20 +80,40 @@ class TaskIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     prompt: str = Field(min_length=1, max_length=8000)
     # Preset payload — see :class:`preset_to_cron` for the
-    # mapping per frequency.
-    frequency: Literal["hourly", "daily", "weekly", "monthly"]
+    # mapping per cron-driven frequency. ``"once"`` is the
+    # one-shot case: ``run_at`` becomes mandatory, the
+    # moment fields are ignored, and the row stores cron=""
+    # + run_at=<ISO>.
+    frequency: Literal["hourly", "daily", "weekly", "monthly", "once"]
     hour: int = 0
     minute: int = 0
     day_of_week: Optional[int] = None   # 0..6, Mon=0
     day_of_month: Optional[int] = None  # 1..31
+    # Required when ``frequency="once"``; ignored otherwise.
+    # The validator below enforces the one-way conditional.
+    run_at: Optional[str] = None
     channel: str = Field(default="webui", pattern=r"^(webui|tg)$")
 
     @field_validator("frequency")
     @classmethod
     def _v_freq(cls, v: str) -> str:
-        if v not in ("hourly", "daily", "weekly", "monthly"):
+        if v not in ("hourly", "daily", "weekly", "monthly", "once"):
             raise ValueError(f"unsupported frequency: {v!r}")
         return v
+
+    # ``run_at`` ↔ ``frequency`` cross-field rule is enforced
+    # in :func:`_validate_run_at_against_frequency` below
+    # rather than here. Pydantic 2 + FastAPI's TypeAdapter
+    # tripped on a field-level validator with an
+    # ``info.data`` reference when the model is referenced
+    # through ``Annotated[TaskIn, Field(payload)]`` at route-
+    # mount time (the "not fully defined" error pulls
+    # :class:`TaskIn` and its ``model_rebuild`` helper up at
+    # every other endpoint that reuses the route factory).
+    # The cross-field check at the route boundary is
+    # equivalent — Pydantic stops short of letting invalid
+    # combinations through because we 422 (or 400) the bad
+    # payload before the row hits the DB.
 
 
 class TaskPatch(BaseModel):
@@ -109,13 +129,30 @@ class TaskPatch(BaseModel):
 
     name: Optional[str] = None
     prompt: Optional[str] = None
-    frequency: Optional[Literal["hourly", "daily", "weekly", "monthly"]] = None
+    frequency: Optional[Literal[
+        "hourly", "daily", "weekly", "monthly", "once",
+    ]] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
     day_of_week: Optional[int] = None
     day_of_month: Optional[int] = None
+    # Optional on PATCH (the patch needs to be permissive
+    # about partial updates — the model-level run_at ↔
+    # frequency invariant runs on the POST path only).
+    run_at: Optional[str] = None
     channel: Optional[str] = None
     enabled: Optional[bool] = None
+
+    @field_validator("frequency")
+    @classmethod
+    def _v_freq(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in (
+            "hourly", "daily", "weekly", "monthly", "once",
+        ):
+            raise ValueError(f"unsupported frequency: {v!r}")
+        return v
 
     @field_validator("channel")
     @classmethod
@@ -131,7 +168,12 @@ class TaskOut(BaseModel):
     id: str
     name: str
     prompt: str
+    # ``cron`` for recurring rows; ``run_at`` for one-shot
+    # rows (mutually exclusive in the row — see the
+    # ORM-level docs at ``Task.run_at``). The dashboard
+    # picks which to render in the humanised cell.
     cron: str
+    run_at: Optional[str] = None
     tz: str
     channel: str
     employee_id: int
@@ -174,6 +216,7 @@ def _task_to_out(t: Task) -> TaskOut:
         name=t.name,
         prompt=t.prompt,
         cron=t.cron,
+        run_at=t.run_at,
         tz=_resolve_system_tz(),
         channel=t.channel,
         employee_id=t.employee_id,
@@ -262,6 +305,34 @@ def create_task(
     reads the operator's system-wide setting
     (``system.timezone``).
     """
+    # Cross-field invariant for ``once``. Pydantic 2 + FastAPI's
+    # TypeAdapter keep tripping on field-validators that read
+    # ``info.data`` when the model is parameterised via
+    # ``Annotated[TaskIn, Field(payload)]`` at route-mount time,
+    # so the cross-field rule lives at the route boundary
+    # instead. ``TaskIn`` carries ``Literal["...", "once"]`` so
+    # an unknown frequency short-circuits at 422 in Pydantic
+    # before we get here.
+    if payload.frequency == "once" and not payload.run_at:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.run_at_required_for_once",
+            detail=(
+                "run_at is required when frequency='once'; "
+                "pass an ISO 8601 timestamp (e.g. "
+                "'2026-08-01T15:30:00+08:00')."
+            ),
+        )
+    if payload.frequency != "once" and payload.run_at:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.run_at_only_for_once",
+            detail=(
+                f"run_at is set; frequency must be 'once', "
+                f"got {payload.frequency!r}."
+            ),
+        )
+
     operator_id = _resolve_creator_id(request, payload, session)
     existing = (
         session.query(Task).filter(Task.name == payload.name).one_or_none()
@@ -272,7 +343,7 @@ def create_task(
             code="task.name_conflict",
             detail=f"a task with name {payload.name!r} already exists",
         )
-    cron, _preset_used = _render_cron_from_payload(payload)
+    cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
     task_id = new_session_id()
     now = _now_iso()
     # ``tz`` is reserved on the model for backend
@@ -287,6 +358,7 @@ def create_task(
         name=payload.name,
         prompt=payload.prompt,
         cron=cron,
+        run_at=run_at_iso,
         tz=system_tz,
         channel=payload.channel,
         employee_id=operator_id,
@@ -317,15 +389,19 @@ def update_task(
             detail=f"task {task_id} not found",
         )
     # Convert the preset payload (if any) into a single
-    # ``cron`` field, atomically replacing what the model
-    # stored.
+    # ``cron`` / ``run_at`` field, atomically replacing
+    # what the model stored.
     preset_fields = ("frequency", "hour", "minute", "day_of_week", "day_of_month")
     if any(getattr(payload, f, None) is not None for f in preset_fields):
-        cron, _ = _render_cron_from_payload(_PatchProxy(payload))
+        cron, run_at_iso, _ = _render_cron_from_payload(_PatchProxy(payload))
         t.cron = cron
+        t.run_at = run_at_iso
     data = payload.model_dump(exclude_unset=True)
     # Drop the preset bits — they were translated into
-    # ``cron`` above; persisting both would leak noise.
+    # ``cron``/``run_at`` above; persisting both would
+    # leak noise. ``run_at`` itself is the once-shape
+    # payload, so it stays in the model_dump (the setter
+    # below writes it through).
     for f in preset_fields:
         data.pop(f, None)
     data.pop("frequency", None)
@@ -584,19 +660,33 @@ def _resolve_system_tz() -> str:
 def _render_cron_from_payload(
     payload,
     preset_only: bool = False,
-) -> tuple[str, dict]:
-    """Render preset payload → (cron, fields_used) tuple.
+) -> tuple[str, str | None, dict]:
+    """Render preset payload → (cron, run_at, fields_used).
 
-    If ``preset_only`` is true, returns the already-rendered
-    cron from the model. Otherwise it stitches the preset +
-    moment fields into the 5-field string via
-    :func:`preset_to_cron`.
+    For the four cron-driven presets (``hourly`` /
+    ``daily`` / ``weekly`` / ``monthly``) this returns
+    ``(cron_string, None, {})``. For ``once`` it returns
+    ``("", run_at_iso, {})`` so the caller knows to write
+    to the ``run_at`` column instead of ``cron``.
 
     The returned ``fields_used`` dict (an empty dict today)
     is reserved for future surfaces — e.g. the WebUI may
     ask for the rendered cron + a backwards-compatibility
     descriptor of the underlying preset.
     """
+    if payload.frequency == "once":
+        # ``TaskIn``'s model_validator already enforced
+        # that run_at is present + non-empty; we canonicalise
+        # it here so a naive ISO round-trips as UTC + a
+        # normalised offset, matching :func:`validate_run_at`.
+        try:
+            run_at_iso = validate_run_at(payload.run_at or "")
+        except ValueError as exc:
+            raise MagiHTTPException(
+                status_code=400, code="validation.run_at",
+                detail=str(exc),
+            ) from exc
+        return "", run_at_iso, {}
     try:
         cron = preset_to_cron(
             payload.frequency,
@@ -610,4 +700,4 @@ def _render_cron_from_payload(
             status_code=400, code="validation.cron_preset",
             detail=str(exc),
         ) from exc
-    return cron, {}
+    return cron, None, {}
