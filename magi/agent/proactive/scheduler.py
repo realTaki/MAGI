@@ -226,14 +226,31 @@ class TaskScheduler:
         # can change ``system.timezone`` from the Settings
         # tab and expect running tasks to follow.
         tz = self._resolve_tz()
-        try:
-            trigger = CronTrigger.from_crontab(task.cron, timezone=tz)
-        except (ValueError, Exception) as exc:  # noqa: BLE001 — see plan
-            logger.warning(
-                "register: bad cron on task %s (%r): %s; skipping",
-                task.id, task.cron, exc,
-            )
-            return
+        # Pick the trigger shape from which of ``cron`` /
+        # ``run_at`` is populated. A task with both is a
+        # caller-side invariant violation (the API + tool
+        # both validate); picking ``run_at`` keeps the more
+        # recent intent visible. Two cron-only / run_at-only
+        # fields is intentional — we don't add a CHECK
+        # constraint because SQLite can't ALTER TABLE to
+        # ADD CHECK constraints in-place.
+        if task.run_at:
+            trigger = self._build_run_at_trigger(task.run_at, tz)
+            if trigger is None:
+                logger.warning(
+                    "register: bad run_at on task %s (%r); skipping",
+                    task.id, task.run_at,
+                )
+                return
+        else:
+            try:
+                trigger = CronTrigger.from_crontab(task.cron, timezone=tz)
+            except (ValueError, Exception) as exc:  # noqa: BLE001 — see plan
+                logger.warning(
+                    "register: bad cron on task %s (%r): %s; skipping",
+                    task.id, task.cron, exc,
+                )
+                return
         self._sched.add_job(
             func=self._fire,
             trigger=trigger,
@@ -241,6 +258,30 @@ class TaskScheduler:
             args=[task.id, False],
             replace_existing=True,
         )
+
+    @staticmethod
+    def _build_run_at_trigger(run_at: str, tz: str):
+        """Construct an apscheduler ``DateTrigger`` from an
+        ISO 8601 timestamp + the system timezone. Returns
+        ``None`` on a bad timestamp so the caller can log
+        + skip instead of crashing the loop.
+
+        ``DateTrigger`` accepts the ISO string verbatim and
+        handles naive / offset-aware stamps uniformly; we
+        still pass an explicit ``timezone=`` so a naive UTC
+        stamp and an offset-aware stamp behave identically
+        at apscheduler's "next fire time" calculation.
+        """
+        from apscheduler.triggers.date import DateTrigger
+
+        try:
+            return DateTrigger(run_date=run_at, timezone=tz)
+        except (ValueError, Exception) as exc:  # noqa: BLE001
+            logger.warning(
+                "register: bad run_at %r (tz=%s): %s",
+                run_at, tz, exc,
+            )
+            return None
 
     def _resolve_tz(self) -> str:
         """Read the operator-configured system timezone.

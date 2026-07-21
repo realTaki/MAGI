@@ -171,7 +171,7 @@ def _format_hhmm(hour: str, minute: str) -> str:
 
 from typing import Literal, Optional
 
-CronFrequency = Literal["hourly", "daily", "weekly", "monthly"]
+CronFrequency = Literal["hourly", "daily", "weekly", "monthly", "once"]
 
 
 def preset_to_cron(
@@ -231,4 +231,40 @@ def preset_to_cron(
             raise ValueError(f"day_of_month must be 1..31, got {day_of_month!r}")
         return f"{m} {h} {int(day_of_month)} * *"
     raise ValueError(f"unknown frequency: {frequency!r}")
+
+
+def validate_run_at(raw: str) -> str:
+    """Validate the ``run_at`` field for a one-shot task.
+
+    Accepts any ISO 8601 timestamp that ``datetime.fromisoformat``
+    can parse — the same set Python's ``datetime`` accepts
+    (offset-aware or naive UTC). Naive timestamps are
+    interpreted as UTC, matching the project's "UTC in
+    DB" convention from :mod:`magi.agent.db.base`.
+
+    Returns the **canonical** ISO string (rounded-to-second)
+    so two operators who write ``"2026-08-01T07:30:00+00:00"``
+    and ``"2026-08-01T15:30:00+08:00"`` both end up storing
+    the same row. ``apscheduler.DateTrigger`` accepts the
+    returned string verbatim.
+
+    Raises ``ValueError`` on any parse failure (empty,
+    missing offset, impossible date, etc.). The ``schedule_task``
+    tool / API path surfaces this as ``is_error=True`` /
+    ``400`` respectively.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("run_at must be a non-empty ISO 8601 string")
+    candidate = raw.strip()
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError as e:
+        raise ValueError(
+            f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}"
+        ) from None
+    # Naive datetimes get tagged UTC so downstream tooling
+    # doesn't lose the timezone when we re-serialise.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat(timespec="seconds")
 

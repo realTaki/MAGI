@@ -95,6 +95,19 @@ class Task(Base):
     # the API/tool boundaries; an invalid value is a 400,
     # not silent fallback.
     cron: Mapped[str] = mapped_column(String(120), nullable=False)
+    # ISO datetime (UTC or with explicit offset) for ONE-SHOT
+    # tasks created with ``frequency="once"``. Nullable:
+    # recurring rows keep ``NULL``. The scheduler picks
+    # ``CronTrigger`` vs ``DateTrigger`` based on which of
+    # ``cron`` / ``run_at`` is populated.
+    #
+    # The two columns are intentionally NOT mutually nulled
+    # at the DB level — we'd rather have a single
+    # ``one-of-cron-or-run_at`` invariant in app code than
+    # a CHECK constraint SQLite has to live with forever.
+    # ``schedule_task`` tool + API path both validate that
+    # the caller picks one and only one before INSERT/UPDATE.
+    run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # IANA name recorded at write-time as a forensic
     # breadcrumb (audit-trail style — "what system tz
     # was in force when this row was created?"). The

@@ -47,6 +47,12 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # UNIQUE).
     ("employees", "role", "VARCHAR(16) NOT NULL DEFAULT 'assigned'"),
     ("employees", "telegram_id", "BIGINT"),
+    # Tasks: ``run_at`` carries an ISO datetime string for
+    # one-shot ("once") tasks. Nullable — cron-driven rows
+    # keep it NULL. The ISO round-trip check runs at the
+    # API boundary, not as a SQLite CHECK (can't ADD
+    # COLUMN ... CHECK).
+    ("tasks", "run_at", "VARCHAR(32)"),
 ]
 
 # Column renames. ``(table, old_name, new_name)``. The
