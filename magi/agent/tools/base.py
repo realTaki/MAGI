@@ -55,6 +55,14 @@ class ToolContext:
     chat_id: str
     employee_id: int
     channel: str
+    # The chat session's persisted id (``chat_sessions.session_id``).
+    # Empty string when there's no session-bound chat — e.g.
+    # scheduled-task fires that were never part of a chat, or
+    # a tool call from a one-off admin action that has no chat
+    # attached. ``ScheduleTaskTool`` consults this to default
+    # ``delivery_to`` to the current chat when called from inside
+    # a session (vs. ``"new"`` from a manual WebUI create).
+    session_id: str = ""
 
 
 @dataclass

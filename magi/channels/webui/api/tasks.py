@@ -93,6 +93,12 @@ class TaskIn(BaseModel):
     # The validator below enforces the one-way conditional.
     run_at: Optional[str] = None
     channel: str = Field(default="webui", pattern=r"^(webui|tg)$")
+    # Concrete delivery destination — semantic depends on
+    # ``channel`` (see ``Task.delivery_to`` doc). The
+    # ``ScheduleTaskTool`` tool path applies the same
+    # format-validating logic; the WebUI form sends
+    # ``"new"`` for the create-new-session default.
+    delivery_to: Optional[str] = None
 
     @field_validator("frequency")
     @classmethod
@@ -140,6 +146,7 @@ class TaskPatch(BaseModel):
     # about partial updates — the model-level run_at ↔
     # frequency invariant runs on the POST path only).
     run_at: Optional[str] = None
+    delivery_to: Optional[str] = None
     channel: Optional[str] = None
     enabled: Optional[bool] = None
 
@@ -174,6 +181,12 @@ class TaskOut(BaseModel):
     # picks which to render in the humanised cell.
     cron: str
     run_at: Optional[str] = None
+    # Concrete delivery destination — semantic per
+    # ``channel`` (see ``Task.delivery_to`` doc). The cell
+    # renders it as a "→ <target>" snippet below the
+    # schedule row so the operator knows where each fire
+    # will land.
+    delivery_to: Optional[str] = None
     tz: str
     channel: str
     employee_id: int
@@ -217,6 +230,7 @@ def _task_to_out(t: Task) -> TaskOut:
         prompt=t.prompt,
         cron=t.cron,
         run_at=t.run_at,
+        delivery_to=t.delivery_to,
         tz=_resolve_system_tz(),
         channel=t.channel,
         employee_id=t.employee_id,
@@ -359,6 +373,7 @@ def create_task(
         prompt=payload.prompt,
         cron=cron,
         run_at=run_at_iso,
+        delivery_to=payload.delivery_to,
         tz=system_tz,
         channel=payload.channel,
         employee_id=operator_id,

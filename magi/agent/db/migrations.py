@@ -53,6 +53,12 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # API boundary, not as a SQLite CHECK (can't ADD
     # COLUMN ... CHECK).
     ("tasks", "run_at", "VARCHAR(32)"),
+    # Tasks: ``delivery_to`` carries the destination per
+    # ``channel`` — TG chat_id, "new" for fresh-session
+    # webui fires, a chat session_id, or an email address.
+    # Nullable: existing rows (pre-DeliveryTarget) fall
+    # back to operator-bound destinations at fire time.
+    ("tasks", "delivery_to", "VARCHAR(128)"),
 ]
 
 # Column renames. ``(table, old_name, new_name)``. The

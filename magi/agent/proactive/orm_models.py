@@ -123,6 +123,32 @@ class Task(Base):
     # pinned to one of two strings to keep the channel wiring
     # in the runner simple.
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Delivery destination — semantic depends on ``channel``:
+    #
+    #   channel="telegram" → TG chat_id (string of digits);
+    #                        ``None`` ⇒ use the operator's
+    #                        bound ``Employee.telegram_id``.
+    #   channel="webui"    → Either the literal string
+    #                        ``"new"`` (fire into a fresh chat
+    #                        session per fire) or a persisted
+    #                        chat session_id (fire into
+    #                        *that* specific chat).
+    #                        ``None`` for cron-driven rows
+    #                        created before delivery_to
+    #                        landed — runner falls back to
+    #                        the operator's most-recent
+    #                        chat session.
+    #   channel="email"    → email address (forward-compat;
+    #                        runner doesn't ship yet).
+    #
+    # Why both ``channel`` AND ``delivery_to`` rather than
+    # a single ``target`` enum: the WebUI and LLM surfaces
+    # think in terms of "where does this fire go"; the
+    # runner branches on ``channel``. Splitting them keeps
+    # "transport" (channel) and "address" (delivery_to)
+    # orthogonal — adding new transports doesn't require
+    # touching the address vocabulary.
+    delivery_to: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Owner — whose credentials to charge at run time. FK
     # is RESTRICT because deleting an admin should require
     # first removing their tasks (mirrors the action_items
