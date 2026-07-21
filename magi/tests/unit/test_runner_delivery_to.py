@@ -128,28 +128,59 @@ def _seed_task(state_dir: Path, name: str, delivery_to) -> str:
     return t.id
 
 
-# -- delivery_to = "new": fresh session per fire ----------------------------
+# -- delivery_to = "new": fresh delivery chat per fire -------------------
 
 
 async def test_delivery_to_new_creates_fresh_chat_session(state_dir: Path) -> None:
-    """WebUI form's "new" default — every fire opens a
-    fresh chat session so operator can scan cron replies
-    in chat history."""
+    """WebUI form's "new" default. After the refactor, every
+    fire produces TWO sessions:
+
+      - INTERNAL: channel='internal', title='[task] <name>',
+        where the agent ran (ephemeral, never visible in
+        the operator's chat list).
+      - DELIVERY: channel='scheduled', title='[定时] <name>',
+        where the assistant's reply lands for operator
+        visibility.
+
+    Both are fresh because delivery_to='new' resolves to
+    "no target → make a new one"."""
     task_id = _seed_task(state_dir, "fresh-every-fire", delivery_to="new")
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         sessions = db.query(ChatSession).all()
-        # The seeded state has no pre-existing ChatSession
-        # for this test → one fresh row produced by the
-        # runner.
-        assert len(sessions) == 1
-        assert sessions[0].title.startswith("[定时]")
-        # The cron reply lands as a user message (the agent
-        # loop renders the assistant side on top; this test
-        # only pins the inbound ChatMessage).
-        msgs = db.query(ChatMessage).filter_by(session_id=sessions[0].session_id).all()
-        assert any(m.role == "user" and "fresh-every-fire" in m.text for m in msgs)
+        # Two sessions per fire (internal + delivery).
+        assert len(sessions) == 2
+        channels = sorted([s.channel for s in sessions])
+        assert channels == ["internal", "scheduled"]
+        internal = next(s for s in sessions if s.channel == "internal")
+        delivery = next(s for s in sessions if s.channel == "scheduled")
+        # Internal carries the task prompt as the
+        # user-message; the agent's reply also lives
+        # there but we don't pin it (the no-op noop
+        # returns "fake reply" without writing).
+        internal_msgs = (
+            db.query(ChatMessage)
+            .filter_by(session_id=internal.session_id)
+            .all()
+        )
+        assert any(
+            m.role == "user" and "fresh-every-fire" in m.text
+            for m in internal_msgs
+        )
+        # Delivery carries the agent's final reply as
+        # an assistant message — this is the row the
+        # operator sees in their chat history.
+        delivery_msgs = (
+            db.query(ChatMessage)
+            .filter_by(session_id=delivery.session_id)
+            .all()
+        )
+        assert delivery.title.startswith("[定时]")
+        assert any(
+            m.role == "assistant" and "fake reply" in m.text
+            for m in delivery_msgs
+        )
 
 
 # -- delivery_to = None: same path as "new" (legacy / unset) ----------------
@@ -158,25 +189,34 @@ async def test_delivery_to_new_creates_fresh_chat_session(state_dir: Path) -> No
 async def test_delivery_to_null_also_creates_fresh_session(state_dir: Path) -> None:
     """Legacy rows (pre-DeliveryTarget) ship ``None`` in
     the column. The runner treats them identically to
-    ``"new"`` — every fire spawns a fresh session."""
+    ``"new"`` — every fire produces the same internal +
+    delivery pair as the explicit ``"new"`` case."""
     task_id = _seed_task(state_dir, "legacy-row", delivery_to=None)
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         sessions = db.query(ChatSession).all()
-        assert len(sessions) == 1
-        assert sessions[0].title.startswith("[定时]")
+        # Two sessions per fire (internal + delivery) —
+        # same shape as ``delivery_to="new"``.
+        assert len(sessions) == 2
+        channels = sorted([s.channel for s in sessions])
+        assert channels == ["internal", "scheduled"]
 
 
-# -- delivery_to = <existing ULID>: reuse session -----------------------------
+# -- delivery_to = <existing ULID>: agent stays isolated, reply joins chat ----
 
 
 async def test_delivery_to_existing_session_reuses_it(state_dir: Path) -> None:
     """The LLM-in-chat path: ``delivery_to`` is set to
-    the current session_id. The runner should NOT
-    create a new ChatSession — it appends to the existing
-    one and the cron reply joins the operator's ongoing
-    conversation."""
+    the operator's current session_id. After the refactor:
+
+      - Agent runs in a FRESH internal session (no
+        pollution from prior cron replies or operator
+        chat history).
+      - DELIVERY appends the assistant reply to the
+        operator's existing chat. The existing chat's
+        prior turns are preserved.
+    """
     # Seed an existing session as if the operator had a
     # chat going.
     with open_session() as db:
@@ -191,15 +231,7 @@ async def test_delivery_to_existing_session_reuses_it(state_dir: Path) -> None:
             updated_at="2026-07-20T11:00:00Z",
         )
         db.add(existing)
-        # Force-flush: SQLAlchemy 2.x needs the parent row
-        # actually inserted before the child FK satisfies
-        # (the dependency sort misses ChatSession→ChatMessage
-        # within a single transaction in some cases). Without
-        # flush, the FK violates even though the ChatSession
-        # is queued.
         db.flush()
-        # Also seed an existing message so we can confirm
-        # the runner doesn't blow away earlier turns.
         db.add(ChatMessage(
             session_id=existing.session_id,
             message_id="m_prior_turn",
@@ -216,15 +248,21 @@ async def test_delivery_to_existing_session_reuses_it(state_dir: Path) -> None:
 
     with open_session() as db:
         sessions = db.query(ChatSession).all()
-        # Still exactly one session — the same one. No new
-        # row was created.
-        assert len(sessions) == 1
-        assert sessions[0].session_id == existing.session_id
-        # Original title preserved (the runner doesn't
-        # overwrite when reusing).
-        assert sessions[0].title == "operator's ongoing chat"
-        # Both the prior turn AND the new cron prompt
-        # co-exist on this session.
+        # Two sessions now: the operator's existing chat
+        # + the runner's INTERNAL session where the agent
+        # ran. The existing chat was NOT rewritten /
+        # deleted.
+        assert len(sessions) == 2
+        chat_sessions = [s for s in sessions if s.session_id == existing.session_id]
+        assert len(chat_sessions) == 1
+        chat = chat_sessions[0]
+        # Original title preserved.
+        assert chat.title == "operator's ongoing chat"
+        # The operator's prior turn is still there,
+        # AND the agent's reply landed as an assistant
+        # message. The agent's INTERNAL session is NOT
+        # this one — only the delivery target gets the
+        # reply.
         msgs = (
             db.query(ChatMessage)
             .filter_by(session_id=existing.session_id)
@@ -232,7 +270,22 @@ async def test_delivery_to_existing_session_reuses_it(state_dir: Path) -> None:
         )
         texts = [m.text for m in msgs]
         assert "earlier question" in texts
-        assert any("joined-chat" in t for t in texts)
+        assert any("fake reply" in t for t in texts)
+        # The "joined-chat" prompt lives in the INTERNAL
+        # session, NOT in the operator's chat — that
+        # was the bug the refactor fixes (prior design
+        # appended the cron prompt to the operator's
+        # chat as a user-message, polluting the chat
+        # history with cron internals).
+        assert not any("joined-chat" in t for t in texts)
+        internal = [s for s in sessions if s.channel == "internal"]
+        assert len(internal) == 1
+        internal_msgs = (
+            db.query(ChatMessage)
+            .filter_by(session_id=internal[0].session_id)
+            .all()
+        )
+        assert any("joined-chat" in m.text for m in internal_msgs)
 
 
 # -- delivery_to = <unknown ULID>: fall back to fresh + log -----------------
@@ -242,9 +295,9 @@ async def test_delivery_to_unknown_ulid_falls_back(state_dir: Path, caplog) -> N
     """A row whose delivery_to is a ULID that doesn't
     resolve to any ChatSession (e.g. the row was created,
     the operator deleted the session, the cron fires
-    anyway). The runner falls back to a fresh session so
-    the fire doesn't vanish silently — and a warning log
-    tells the operator what happened."""
+    anyway). The runner falls back to a fresh ``[定时]``
+    chat so the fire doesn't vanish silently — and a
+    warning log tells the operator what happened."""
     task_id = _seed_task(
         state_dir, "ghost-session",
         delivery_to="01HXXXXXXXXXXXXXXXXXXXXXX",  # well-formed ULID
@@ -256,14 +309,16 @@ async def test_delivery_to_unknown_ulid_falls_back(state_dir: Path, caplog) -> N
 
     with open_session() as db:
         sessions = db.query(ChatSession).all()
-        # One fresh row produced — not zero (silent drop),
-        # not zero-from-found (the ghost session never
-        # existed).
-        assert len(sessions) == 1
-        # Operator sees it as a fresh "[定时] ghost-session"
-        # — distinct from the missing target they thought
-        # they were firing into.
-        assert sessions[0].title.startswith("[定时]")
+        # Two sessions: internal (where the agent ran)
+        # + a fresh delivery "[定时] ghost-session" chat
+        # (the ghost session never existed, so we fell
+        # back to a new one).
+        assert len(sessions) == 2
+        channels = sorted([s.channel for s in sessions])
+        assert channels == ["internal", "scheduled"]
+        delivery = next(s for s in sessions if s.channel == "scheduled")
+        assert delivery.title.startswith("[定时]")
+        assert "ghost-session" in delivery.title
 
     # Warning log line surfacing the lost target.
     matches = [
@@ -283,11 +338,8 @@ async def test_delivery_to_other_employees_session_is_rejected(state_dir: Path) 
     """Cross-employee guard: a row saying "fire into session
     X" where X belongs to a DIFFERENT employee must
     NOT inject messages into that other session. The
-    runner can't trust a row's delivery_to alone — the
-    row's ``employee_id`` has to match the session's
-    ``employee_id``. We verify the runner re-falls-back
-    to fresh session + the cross-employee session is
-    untouched."""
+    runner falls back to a fresh ``[定时]`` chat for the
+    rightful operator instead."""
     # Seed: a session owned by employee B (not the task's
     # operator, who is the employee-with-telegram-id=9101).
     with open_session() as db:
@@ -336,15 +388,17 @@ async def test_delivery_to_other_employees_session_is_rejected(state_dir: Path) 
         assert len(msgs_for_other) == 1
         assert msgs_for_other[0].message_id == "m_other_prior"
 
-        # Total ChatSession count: 1 (just the target, owned by
-        # emp_b — emp_a's fresh session is the cross-employee
-        # runner fallback that got created for emp_a's task).
+        # Total ChatSession count: 3 = emp_b's seeded target
+        # + emp_a's internal session + emp_a's fresh
+        # [定时] delivery chat.
         all_sessions = db.query(ChatSession).all()
-        # 1 from the seeded-target + 1 from the fresh fallback.
-        assert len(all_sessions) == 2
-        # The fresh fallback session is owned by emp_a (the
-        # task's rightful operator), not emp_b.
-        fresh = [s for s in all_sessions if s.employee_id == emp_a.id]
+        assert len(all_sessions) == 3
+        # The fresh delivery chat is owned by emp_a, not
+        # emp_b.
+        fresh = [
+            s for s in all_sessions
+            if s.employee_id == emp_a.id and s.channel == "scheduled"
+        ]
         assert len(fresh) == 1
         assert fresh[0].title.startswith("[定时]")
 
@@ -360,12 +414,15 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
     We swap the agent-loop entry point on the runner's
     module (the runner does ``from magi.agent.loop import
     handle_message``, so the symbol resolves through
-    runner.handle_message)."""
+    runner.handle_message). The no-op accepts every
+    positional + keyword shape (``state_dir`` is
+    positional in the real signature; everything else
+    is kw-only)."""
     import magi.agent.proactive.runner as runner_mod
 
     real = runner_mod.handle_message
 
-    async def _noop(**_):
+    async def _noop(*_args, **_kwargs):
         return "fake reply"
 
     runner_mod.handle_message = _noop  # type: ignore[assignment]
@@ -379,26 +436,22 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
 
 
 async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> None:
-    """The TG equivalent of the webui explicit-session path:
-    ``delivery_to`` carries the operator's bound TG chat_id
-    (server-derived from ``employee.telegram_id`` for the
-    WebUI path, or from ``ctx.chat_id`` for the LLM tool
-    path — both land on the same value). The runner looks
-    up the existing ``ChatSession`` row by
-    ``(tgid, employee_id)``, reuses it, and the cron prompt
-    joins the operator's ongoing TG conversation. The agent
-    loop's reply is pushed to TG via ``_tg_send_callback``
-    when the bot is registered (we test that path below)."""
+    """The TG path: ``delivery_to`` is the operator's bound
+    chat_id (``9101``). After the refactor:
+
+      - Agent runs in a FRESH INTERNAL session
+        (channel='internal', tgid=9101). The TG chat
+        session is NOT touched during the agent loop.
+      - DELIVERY appends the agent's reply to the existing
+        TG ChatSession (looked up by (tgid, employee_id)).
+      - The runner ALSO pushes the reply to TG via the
+        bot directly (channel='tg' + bot registered).
+    """
     with open_session() as db:
         emp = db.query(Employee).filter_by(telegram_id=9101).one()
-        # Seed: an existing TG chat session as if the
-        # operator had been chatting with the bot. The
-        # fixture bound telegram_id=9101 to this admin,
-        # so the WebUI server-derived delivery_to is
-        # also ``9101``.
         existing = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
-            tgid="9101",  # the operator's bound TG chat_id
+            tgid="9101",
             employee_id=emp.id,
             channel="tg",
             title="operator's TG chat",
@@ -416,14 +469,9 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
         ))
         db.commit()
 
-    # The TG bot is NOT running in tests — but the runner
-    # should still attach to the existing session. The
-    # bot-callback wiring is tested separately.
     task_id = _seed_task(
         state_dir, "tg-joined", delivery_to="9101",
     )
-    # Override the task's channel to "tg" — the seed helper
-    # hardcodes webui; we want the TG dispatch path here.
     with open_session() as db:
         t = db.get(Task, task_id)
         t.channel = "tg"
@@ -432,17 +480,22 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
-        # Still exactly one TG session — the same one. No
-        # new row was created (the TG branch inherits the
-        # explicit-session reuse logic from the webui
-        # branch).
         sessions = db.query(ChatSession).all()
-        assert len(sessions) == 1
-        assert sessions[0].session_id == existing.session_id
-        assert sessions[0].tgid == "9101"
-        assert sessions[0].title == "operator's TG chat"
-        # Both the prior TG turn AND the new cron prompt
-        # co-exist on this session.
+        # Two sessions now: the existing TG chat + the
+        # runner's INTERNAL session. The TG chat was
+        # not deleted / replaced.
+        assert len(sessions) == 2
+        channels = sorted([s.channel for s in sessions])
+        assert channels == ["internal", "tg"]
+        tg_chat = next(s for s in sessions if s.channel == "tg")
+        assert tg_chat.session_id == existing.session_id
+        assert tg_chat.tgid == "9101"
+        assert tg_chat.title == "operator's TG chat"
+        # The TG chat now has: prior turn + the agent's
+        # reply (NOT the cron prompt — that's in the
+        # INTERNAL session). Refactor: the cron prompt
+        # no longer leaks into the operator's TG chat
+        # history as a user message.
         msgs = (
             db.query(ChatMessage)
             .filter_by(session_id=existing.session_id)
@@ -450,17 +503,27 @@ async def test_tg_delivery_to_reuses_operator_tg_session(state_dir: Path) -> Non
         )
         texts = [m.text for m in msgs]
         assert "earlier TG question" in texts
-        assert any("tg-joined" in t for t in texts)
+        assert any("fake reply" in t for t in texts)
+        assert not any("tg-joined" in t for t in texts)
+        # INTERNAL session has the cron prompt as the
+        # user-message (where the agent sees it).
+        internal = next(s for s in sessions if s.channel == "internal")
+        internal_msgs = (
+            db.query(ChatMessage)
+            .filter_by(session_id=internal.session_id)
+            .all()
+        )
+        assert any("tg-joined" in m.text for m in internal_msgs)
 
 
 async def test_tg_delivery_to_chat_id_with_no_existing_session_creates_one(
     state_dir: Path,
 ) -> None:
-    """The TG row points at the operator's bound chat_id
-    but they haven't yet messaged the bot (no pre-existing
-    ``ChatSession`` row). Runner falls back to fresh session
-    with the chat_id stamped on the new row, so the agent
-    loop can push replies back to that chat."""
+    """The TG row points at a chat_id that has no
+    pre-existing ChatSession row. Runner creates a fresh
+    TG chat session with the chat_id stamped (so future
+    TG fires accumulate into it). The reply lands in that
+    fresh chat as an assistant message."""
     task_id = _seed_task(state_dir, "tg-cold", delivery_to="9101")
     with open_session() as db:
         t = db.get(Task, task_id)
@@ -471,15 +534,14 @@ async def test_tg_delivery_to_chat_id_with_no_existing_session_creates_one(
 
     with open_session() as db:
         sessions = db.query(ChatSession).all()
-        assert len(sessions) == 1
-        # Fresh row, but the tgid is the operator's bound
-        # chat_id so the agent loop can route the reply to TG.
-        assert sessions[0].tgid == "9101"
-        # WebUI history would show this as "[定时] tg-cold"
-        # — the operator sees the cron reply in chat
-        # history; if the bot is running, the same reply
-        # is also pushed to their TG.
-        assert sessions[0].title.startswith("[定时]")
+        # Two sessions: INTERNAL + a fresh TG delivery
+        # chat stamped with the operator's chat_id.
+        assert len(sessions) == 2
+        channels = sorted([s.channel for s in sessions])
+        assert channels == ["internal", "tg"]
+        tg_chat = next(s for s in sessions if s.channel == "tg")
+        assert tg_chat.tgid == "9101"
+        assert tg_chat.title.startswith("[定时]")
 
 
 async def test_tg_bot_callback_fires_when_bot_registered(

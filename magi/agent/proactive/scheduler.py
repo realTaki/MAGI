@@ -60,6 +60,7 @@ import contextlib
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor as _StdlibThreadPoolExecutor
 from typing import Callable, Optional
 
 # ``apscheduler.executors.pool.ThreadPoolExecutor`` —
@@ -126,6 +127,19 @@ class TaskScheduler:
         # — stdlib's executor also has ``thread_name_prefix``
         # which used to live here.
         self._executor = ThreadPoolExecutor(
+            max_workers=executor_max_workers,
+        )
+        # Manual ``submit_now`` fires don't go through
+        # apscheduler's executor — its ``submit_job`` takes
+        # a ``Job`` object, not an arbitrary callable, so
+        # there's no way to enqueue ``_fire`` directly.
+        # We keep a separate stdlib pool sized the same
+        # way so a flood of "立即跑" clicks doesn't starve
+        # the cron-driven executor of workers. The two
+        # pools share the same ``_fire`` → asyncio-loop
+        # bridge, so capacity is bounded by the loop, not
+        # by either executor.
+        self._manual_executor = _StdlibThreadPoolExecutor(
             max_workers=executor_max_workers,
         )
 
@@ -211,6 +225,7 @@ class TaskScheduler:
         if self._loop_thread is not None and self._loop_thread.is_alive():
             self._loop_thread.join(timeout=5.0)
         self._executor.shutdown(wait=wait)
+        self._manual_executor.shutdown(wait=wait)
         self._loop = None
         self._loop_thread = None
 
@@ -316,8 +331,16 @@ class TaskScheduler:
         the ``TaskRun`` row and gives us its id so the
         scheduler thread doesn't race the API thread on
         inserts.
+
+        Uses the stdlib ``ThreadPoolExecutor`` rather than
+        the apscheduler executor — apscheduler's executor
+        exposes ``submit_job(Job, run_times)``, not
+        ``submit(callable, ...)``, so it can't enqueue
+        ``_fire`` directly. Routing through apscheduler's
+        ``add_job`` would also work but adds a per-fire
+        row to the jobstore; the stdlib pool is lighter.
         """
-        self._executor.submit(self._fire, task_id, True, run_id)
+        self._manual_executor.submit(self._fire, task_id, True, run_id)
 
     # -- internal ---------------------------------------------------------
 
