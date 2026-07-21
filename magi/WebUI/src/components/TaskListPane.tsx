@@ -4,7 +4,7 @@
  * v2 layout (preset + moment, no raw cron, no per-task
  * timezone picker, no per-task credential picker):
  *
- *   - Header row + "+ 新建" → opens the TaskFormDrawer.
+ *   - Header row + “+ 新建” → opens the TaskFormDrawer.
  *   - Filter chips: all / enabled / disabled.
  *   - Table columns: name / channel / last status /
  *     last_run_at / actions.
@@ -13,11 +13,14 @@
  * The drawer asks for FOUR form fields:
  *
  *   - 名称 (label)            — short, 120 chars max
- *   - 触发方式 (frequency)    — Hourly / Daily / Weekly / Monthly
- *                                dropdown; backend does NOT
- *                                support one-time (the API
- *                                path is the “立刻跑” button,
- *                                anyway).
+ *   - 触发方式 (frequency)    — Hourly / Daily / Weekly /
+ *                                Monthly dropdown. (Once
+ *                                is supported by the
+ *                                backend via the LLM tool
+ *                                path; the WebUI drawer
+ *                                stays 4-preset for v0 —
+ *                                use “立刻跑” for one-off
+ *                                firing.)
  *   - 时间 (moment)            — depends on frequency:
  *                                  Hourly  → 分钟 (0-59)
  *                                  Daily   → HH:MM
@@ -25,6 +28,14 @@
  *                                            + HH:MM
  *                                  Monthly → 几日 (1-31) + HH:MM
  *   - Channel                 — webui / tg
+ *
+ * The schedule cell renders a humanised phrase
+ * (see :func:`cronHumanize.humanizeCron` / :func:`humanizeRunAt`)
+ * instead of the raw cron; the raw value still ships in
+ * the API response and is the cell's ``title=`` for
+ * inspection. ``title`` style is the operator's
+ * escape hatch — hover any cell to see the underlying
+ * cron / ISO datetime verbatim.
  *
  * Credentials and timezone are NOT asked. Credentials
  * are bound implicitly to whoever is signed in (admin
@@ -34,11 +45,17 @@
  */
 import { useEffect, useState } from "react";
 
+import { humanizeCron, humanizeRunAt } from "./cronHumanize";
+
 type TaskRow = {
   id: string;
   name: string;
   prompt: string;
   cron: string;
+  // ``run_at`` carries the ISO timestamp for ``frequency="once"``
+  // tasks. Mutually exclusive with ``cron`` in the row — see
+  // the cell render below.
+  run_at: string | null;
   tz: string;
   channel: "webui" | "tg";
   employee_id: number;
@@ -51,7 +68,7 @@ type TaskRow = {
   updated_at: string;
 };
 
-type Frequency = "hourly" | "daily" | "weekly" | "monthly";
+type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
 type Filter = "all" | "enabled" | "disabled";
 
 async function api<T>(
@@ -239,8 +256,23 @@ export default function TaskListPane() {
                       )}
                     </div>
                   </td>
-                  <td className="py-2 pr-4 text-ink-soft font-mono text-xs">
-                    {t.cron}
+                  <td className="py-2 pr-4 text-ink-soft text-xs">
+                    {/*
+                      Schedule cell — show the humanised
+                      rendering, not the raw cron. The
+                      cell picks the branch off the row
+                      shape (run_at set → once) rather
+                      than the cron field alone, so an
+                      old row with both populated still
+                      renders sensibly (run_at wins).
+                    */}
+                    {t.run_at ? (
+                      <span title={t.run_at}>
+                        一次性 · {humanizeRunAt(t.run_at)}
+                      </span>
+                    ) : (
+                      <span title={t.cron}>{humanizeCron(t.cron)}</span>
+                    )}
                   </td>
                   <td className="py-2 pr-4 text-ink-soft text-xs">
                     {t.channel}
@@ -350,6 +382,13 @@ function TaskFormDrawer(props: {
   const [minute, setMinute] = useState(0);
   const [dayOfWeek, setDayOfWeek] = useState(0); // Mon = 0
   const [dayOfMonth, setDayOfMonth] = useState(1);
+  // `once`-shape: ISO datetime-local string ("YYYY-MM-DDTHH:MM")
+  // — the Web form's canonical picker format, accepted by
+  // ``<input type="datetime-local">``. The client converts
+  // to a full ISO datetime (with local-tz offset, no Z) on
+  // submit; the server's ``validate_run_at`` parser is
+  // lenient about Z-marker presence.
+  const [runAt, setRunAt] = useState("");
   const [channel, setChannel] = useState<"webui" | "tg">("webui");
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -364,6 +403,7 @@ function TaskFormDrawer(props: {
       setMinute(0);
       setDayOfWeek(0);
       setDayOfMonth(1);
+      setRunAt("");
       setChannel("webui");
       setEnabled(true);
       setError(null);
@@ -383,15 +423,32 @@ function TaskFormDrawer(props: {
         setPrompt(t.prompt);
         setChannel(t.channel);
         setEnabled(t.enabled);
-        // Preset-into-cron is ambiguous, so we don't
-        // try to derive the preset from cron. We just
-        // default the moment fields to safe values; the
-        // operator will see the cron via the table row.
-        setFrequency("daily");
-        setHour(0);
-        setMinute(0);
-        setDayOfWeek(0);
-        setDayOfMonth(1);
+        // If the row is a once-shot, pre-fill the form
+        // with ``once`` + the ISO trimmed to ``YYYY-MM-DDTHH:MM``
+        // (the format ``<input type="datetime-local">`` expects).
+        // ``datetime-local`` has no timezone picker; we
+        // leave the form in operator-local mode and let
+        // ``toISOFromLocal`` carry the offset at submit.
+        if (t.run_at) {
+          setFrequency("once");
+          const m = t.run_at.match(
+            /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/,
+          );
+          setRunAt(m ? `${m[1]}T${m[2]}` : "");
+        } else {
+          // Preset-into-cron is ambiguous, so we don't
+          // try to derive the preset from cron. The schedule
+          // cell renders a humanised phrase off the row's
+          // ``run_at`` / ``cron`` shape; the edit form
+          // starts from safe defaults and the operator picks
+          // the preset on save.
+          setFrequency("daily");
+          setHour(0);
+          setMinute(0);
+          setDayOfWeek(0);
+          setDayOfMonth(1);
+          setRunAt("");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Network error");
       }
@@ -420,6 +477,10 @@ function TaskFormDrawer(props: {
       setError("分钟必须 0-59");
       return;
     }
+    if (frequency === "once" && !runAt) {
+      setError("请选择触发时间");
+      return;
+    }
 
     const body: Record<string, unknown> = {
       name: name.trim(),
@@ -432,6 +493,20 @@ function TaskFormDrawer(props: {
     };
     if (frequency === "weekly") body["day_of_week"] = dayOfWeek;
     if (frequency === "monthly") body["day_of_month"] = dayOfMonth;
+    // ``<input type="datetime-local">`` returns a
+    // timezone-less string. The operator's browser TZ is
+    // usually the same as their admin machine's clock;
+    // we send the local-time + offset (the negative of
+    // ``Date.getTimezoneOffset()``) so a Shanghai operator
+    // sees the cron fire at the wall-clock they picked.
+    if (frequency === "once" && runAt) {
+      const d = new Date(runAt);
+      const offset = -d.getTimezoneOffset();
+      const sign = offset >= 0 ? "+" : "-";
+      const oh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0");
+      const om = String(Math.abs(offset) % 60).padStart(2, "0");
+      body["run_at"] = `${runAt}:00${sign}${oh}:${om}`;
+    }
 
     setSaving(true);
     try {
@@ -521,8 +596,32 @@ function TaskFormDrawer(props: {
                 <option value="daily">每日</option>
                 <option value="weekly">每周</option>
                 <option value="monthly">每月</option>
+                <option value="once">一次性</option>
               </select>
             </div>
+
+            {/* Once — single ISO datetime picker. Moment
+                fields above (hour / weekday / dom) are
+                ignored on this branch; only ``runAt`` is
+                read. ``datetime-local`` gives us the
+                browser-local wall-clock; we attach the
+                operator's TZ offset at submit so a Shanghai
+                admin picks 15:30 and that 15:30 Shanghai is
+                what the task fires at, not 15:30 UTC. */}
+            {frequency === "once" && (
+              <div className="sm:col-span-2">
+                <label htmlFor="task-run-at" className="form-label">
+                  触发时间（本地时区）
+                </label>
+                <input
+                  id="task-run-at"
+                  type="datetime-local"
+                  value={runAt}
+                  onChange={(e) => setRunAt(e.target.value)}
+                  className="form-input text-sm py-2 px-3"
+                />
+              </div>
+            )}
 
             {/* Hourly — minute (0..59) only. */}
             {frequency === "hourly" && (
