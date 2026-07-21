@@ -48,6 +48,48 @@ from magi.agent.db.engine import require_state_dir  # noqa: E402
 # state.
 _BOT_REPLIES: dict[str, str] | None = None
 
+# Process-wide Telegram ``Bot`` instance registry. The daemon
+# thread that runs ``Application.updater.start_polling`` owns
+# the bot; the registry lets cross-cutting code (cron-fired
+# tasks, post-deletion notifications, etc.) reach the same
+# instance via a single setter/getter pair so we don't have
+# to thread the bot reference through every module's
+# parameter list. ``None`` whenever the bot isn't running
+# (no token saved, fresh deploy, test environments).
+# ``set_telegram_bot`` is called once at the start of
+# :func:`start_bot`; ``clear_telegram_bot`` at the matching
+# shutdown so a re-bind doesn't hold a stale reference.
+_telegram_bot_instance: "telegram.Bot | None" = None
+_telegram_bot_lock = threading.Lock()
+
+
+def set_telegram_bot(bot) -> None:
+    """Register the running ``telegram.Bot`` for cross-
+    thread access (most notably :func:`proactive.runner.
+    execute_task`, which fires cron-driven rows into the
+    operator's TG chat). Idempotent — replacing an existing
+    instance just rebinds."""
+    global _telegram_bot_instance
+    with _telegram_bot_lock:
+        _telegram_bot_instance = bot
+
+
+def clear_telegram_bot() -> None:
+    global _telegram_bot_instance
+    with _telegram_bot_lock:
+        _telegram_bot_instance = None
+
+
+def get_telegram_bot():
+    """Return the live ``telegram.Bot`` (or ``None`` when
+    the bot isn't running). Used by the cron-runner to
+    build a ``_tg_send_callback`` that lets the agent's
+    ``send_message`` tool actually push replies to TG
+    during a scheduled fire.
+    """
+    with _telegram_bot_lock:
+        return _telegram_bot_instance
+
 
 def _replies() -> dict[str, str]:
     """Lazy loader that defers the YAML read to the first
@@ -739,11 +781,20 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
 
     async def _run_forever() -> None:
         await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        # Park on an Event that never gets set. The loop exits when the
-        # process is shutting down (which kills the daemon thread).
-        await asyncio.Event().wait()
+        # ``application.bot`` is the underlying ``telegram.Bot``
+        # — register it once for the cross-thread access path
+        # (``get_telegram_bot()`` consults this from the cron
+        # runner thread). The clear on shutdown ensures a
+        # future re-bind doesn't hold a stale reference.
+        set_telegram_bot(application.bot)
+        try:
+            await application.start()
+            await application.updater.start_polling()
+            # Park on an Event that never gets set. The loop exits when the
+            # process is shutting down (which kills the daemon thread).
+            await asyncio.Event().wait()
+        finally:
+            clear_telegram_bot()
 
     def _thread_target() -> None:
         asyncio.run(_run_forever())
