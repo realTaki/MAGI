@@ -149,6 +149,25 @@ class Task(Base):
     # orthogonal — adding new transports doesn't require
     # touching the address vocabulary.
     delivery_to: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Agent's home session — the cron-driven conversation
+    # that accumulates every fire's prompt + reply.
+    # Allocated at task creation time (see ``create_task``
+    # in the API + ``schedule_task`` tool); the runner
+    # reads this column at fire time instead of resolving
+    # a session per fire. ``channel="task"`` for every
+    # task; ``tgid`` on the row carries the IM target
+    # (TG chat_id digits) for the runner's TG-push
+    # wiring — but the session itself is never a TG chat.
+    #
+    # SET NULL on delete: task deletion is a separate
+    # operator action that intentionally leaves the
+    # session row in place as a record (the session
+    # still belongs to the employee, the task_id is
+    # gone, the conversation is just labelled).
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chat_sessions.session_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Owner — whose credentials to charge at run time. FK
     # is RESTRICT because deleting an admin should require
     # first removing their tasks (mirrors the action_items

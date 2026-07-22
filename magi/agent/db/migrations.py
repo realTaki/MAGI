@@ -54,11 +54,23 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # COLUMN ... CHECK).
     ("tasks", "run_at", "VARCHAR(32)"),
     # Tasks: ``delivery_to`` carries the destination per
-    # ``channel`` — TG chat_id, "new" for fresh-session
-    # webui fires, a chat session_id, or an email address.
-    # Nullable: existing rows (pre-DeliveryTarget) fall
-    # back to operator-bound destinations at fire time.
+    # ``channel`` — TG chat_id (digits), or an email
+    # address once that runner lands. Webui tasks leave
+    # it NULL (the task's session IS the operator-visible
+    # record; no separate IM target). Nullable: legacy
+    # rows fall back to the operator's bound destination
+    # at fire time until the operator edits them.
     ("tasks", "delivery_to", "VARCHAR(128)"),
+    # Tasks: ``session_id`` points at the agent's home
+    # session (channel="task"). Allocated at task creation
+    # time so cron fires accumulate into one
+    # conversation per task; the runner never creates
+    # sessions, only loads + appends. Nullable for legacy
+    # rows; the runner's session-resolution branch falls
+    # back to "allocate on first fire" until the operator
+    # edits them. SET NULL on delete: deleting a task
+    # leaves the session in place as a record.
+    ("tasks", "session_id", "VARCHAR(26)"),
 ]
 
 # Column renames. ``(table, old_name, new_name)``. The
