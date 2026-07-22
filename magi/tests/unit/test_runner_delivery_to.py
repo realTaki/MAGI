@@ -157,14 +157,15 @@ def _seed_task(
 # -- single session per task (channel="task") ----------------------------
 
 
-async def test_fire_appends_prompt_to_task_session(
+async def test_fire_appends_prompt_and_reply_to_task_session(
     state_dir: Path,
 ) -> None:
     """The runner loads ``task.session_id`` (allocated
-    at task creation) and appends the prompt as a new
-    user-message. The agent runs in this session —
-    the same session the operator sees in their chat
-    list as ``[定时] <name>``.
+    at task creation) and persists BOTH the prompt and
+    the agent's reply via ``SessionStore.append_messages``
+    — same shape as the WebUI + TG channel paths so the
+    runs drawer's chat bubbles render a full conversation
+    instead of a one-sided prompt-only thread.
 
     Two tasks with the same name prefix → two separate
     sessions → cross-task pollution impossible by
@@ -187,17 +188,22 @@ async def test_fire_appends_prompt_to_task_session(
         task_sess = task_sessions[0]
         assert task_sess.channel == "task"
         assert task_sess.title.startswith("[定时]")
-        # The prompt landed as a user-message in this
-        # session.
+        # The session has BOTH turns of the conversation:
+        # the user-message (prompt) and the assistant
+        # reply ("fake reply" from _fake_fire). Cross-
+        # channel guard D.22 is satisfied because
+        # runner passes channel="task".
         msgs = (
             db.query(ChatMessage)
             .filter_by(session_id=session_id)
             .all()
         )
-        assert any(
-            m.role == "user" and "fresh-every-fire" in m.text
-            for m in msgs
-        )
+        user_msgs = [m for m in msgs if m.role == "user"]
+        assistant_msgs = [m for m in msgs if m.role == "assistant"]
+        assert len(user_msgs) == 1
+        assert "fresh-every-fire" in user_msgs[0].text
+        assert len(assistant_msgs) == 1
+        assert assistant_msgs[0].text == "fake reply"
 
 
 async def test_two_tasks_have_independent_sessions(
@@ -239,11 +245,16 @@ async def test_two_tasks_have_independent_sessions(
 async def test_multiple_fires_accumulate_in_same_session(
     state_dir: Path,
 ) -> None:
-    """Two fires of the same task → both prompts land
-    in the same session (NOT two new sessions).
-    That's the agent's "this is a continuing
+    """Two fires of the same task → both prompts and
+    both replies land in the same session (NOT two new
+    sessions). The agent's "this is a continuing
     conversation" semantic — same as a normal chat
-    that happens to be triggered by a timer."""
+    that happens to be triggered by a timer.
+
+    Each fire appends ONE user-message + ONE assistant
+    reply, so the session grows by 2 rows per fire and
+    the runs drawer renders 4 bubbles (prompt/reply,
+    prompt/reply)."""
     task_id, session_id = _seed_task(
         state_dir, "recurring", delivery_to=None,
     )
@@ -258,16 +269,20 @@ async def test_multiple_fires_accumulate_in_same_session(
             .all()
         )
         assert len(all_sessions) == 1
-        # Both fires' prompts landed as user-messages in
-        # the same session.
+        # Two fires × (user + assistant) = 4 messages.
         msgs = (
             db.query(ChatMessage)
             .filter_by(session_id=session_id)
             .all()
         )
         user_msgs = [m for m in msgs if m.role == "user"]
+        assistant_msgs = [m for m in msgs if m.role == "assistant"]
         assert len(user_msgs) == 2
+        assert len(assistant_msgs) == 2
         assert all("recurring" in m.text for m in user_msgs)
+        # Replies match the no-op fake ("fake reply" from
+        # _fake_fire).
+        assert all(m.text == "fake reply" for m in assistant_msgs)
 
 
 # -- legacy rows: session_id None at fire time ---------------------------
