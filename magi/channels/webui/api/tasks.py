@@ -196,6 +196,13 @@ class TaskOut(BaseModel):
     last_error: Optional[str] = None
     created_at: str
     updated_at: str
+    # Agent's home session (allocated at task creation,
+    # channel="task"). The WebUI runs drawer fetches
+    # this session's chat history directly via the
+    # chat-sessions endpoint; surfacing it here means
+    # the drawer doesn't have to do a second lookup just
+    # to find which session belongs to which task.
+    session_id: Optional[str] = None
 
 
 class TaskRunOut(BaseModel):
@@ -240,6 +247,7 @@ def _task_to_out(t: Task) -> TaskOut:
         last_error=t.last_error,
         created_at=t.created_at,
         updated_at=t.updated_at,
+        session_id=t.session_id,
     )
 
 
