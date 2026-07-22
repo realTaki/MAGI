@@ -5,21 +5,33 @@ Use case: the LLM is partway through a multi-turn tool
 chain (e.g. "read SOUL, list skills, then reply") and
 wants to give the user a status update ("Reading your
 SOUL...") instead of going silent for the full tool
-chain duration. The Telegram client surfaces this as
-an extra reply text; on the WebUI side the message is
-emitted into a separate "tool message" channel that the
-operator doesn't see directly (it's in the conversation
-scrollback only).
+chain duration.
 
-Channel dispatch:
-  - ``tg``     → ``bot.send_message(chat_id, text)``
-  - ``webui``  → returns ``is_error=True``: WebUI users
-                 already see the LLM's final reply in the
-                 pane; an extra "tool message" would
-                 duplicate the chat scroll. v0 disables
-                 this tool on webui by design. If you
-                 want status updates there, the future
-                 feature is "tool events panel" (D.18).
+IM-target resolution
+---------------------
+
+The push target comes from the **session row**
+(``chat_sessions.tgid``), not ``ctx.chat_id``. The
+session is the single source of truth for "which IM
+endpoint does this conversation push to" — populated
+at session-creation time by the channel adapter
+(WebUI / TG / Task) and never re-derived mid-tool.
+
+  - WebUI session → ``tgid`` is the operator's
+    ``employee.telegram_id`` (1-on-1 web chat with the
+    bot). The tool v0 returns ``is_error=True`` because
+    the WebUI operator already sees the LLM's final
+    reply inline; an extra "tool message" would just
+    duplicate the chat scroll.
+  - TG session → ``tgid`` is the TG chat's ID (private
+    or group). The tool pushes via the bot reference
+    the agent loop injects via ``_tg_send_callback``.
+  - Task session (``channel="task"``) → ``tgid`` is
+    the task's delivery target (TG chat_id for TG
+    tasks, the operator's telegram_id for webui tasks
+    — the latter as a breadcrumb since the runner's
+    "fresh session per fire" semantics means there's
+    no live chat to push to).
 
 The handler is injected via ``ToolContext`` because the
 agent loop owns the TG bot reference (not the tool).
@@ -30,13 +42,53 @@ from __future__ import annotations
 from typing import Any, Callable, Awaitable
 
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.agent.memory.session.tables import (
+    ChatMessage as _DbChatMessage,  # noqa: F401
+    ChatSession as _DbChatSession,
+)
 
-# Type alias for the optional TG callback. The agent loop
-# injects one if the channel is ``"tg"``; for other
-# channels it's ``None``.
+# Type alias for the optional TG callback. The agent
+# loop injects one when the session's IM target is TG
+# and a bot is registered; for sessions whose target
+# isn't TG (or no bot is live), it's ``None``.
 TGCallback = Callable[[int, str], Awaitable[None]] | None
 
 _MAX_TEXT_LEN = 4000  # matches the TG API limit (4096 with buffer)
+
+
+def _resolve_tg_target(session_id: str) -> tuple[str, int | None]:
+    """Look up the IM target for ``session_id``.
+
+    Returns ``(source, tgid_int)`` where ``source`` is a
+    debug-friendly tag (``"session:<id>"``) and ``tgid_int``
+    is the parsed TG chat_id for TG-targeted sessions,
+    or ``None`` for sessions that don't have a TG target
+    (webui chat-history-only conversations).
+
+    The session row carries the IM choice; we don't
+    derive it from ``ctx`` because a single agent
+    invocation may serve multiple sessions over its
+    lifetime and the tool needs an authoritative
+    address per call.
+    """
+    from magi.agent.db import open_session
+    if not session_id:
+        return ("(no session)", None)
+    try:
+        with open_session() as db:
+            sess = db.get(_DbChatSession, session_id)
+        if sess is None:
+            return (f"(missing session:{session_id})", None)
+        if not sess.tgid:
+            return (f"(session {session_id} has no tgid)", None)
+        try:
+            return (f"session:{session_id}", int(sess.tgid))
+        except (TypeError, ValueError):
+            return (f"session:{session_id}(non-numeric tgid)", None)
+    except Exception:
+        # DB hiccup must not block the tool — fall back
+        # to a disabled state.
+        return (f"(session lookup failed for {session_id})", None)
 
 
 class SendMessageTool(Tool):
@@ -95,21 +147,32 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # WebUI: disabled by design (see class docstring).
-        if ctx.channel != "tg":
+        # Resolve the TG target from the session row.
+        # Sessions are the single source of truth for the
+        # IM endpoint — there's no separate ``chat_id``
+        # concept. The agent loop never talks to "another
+        # person" — it's always talking to MAGI itself, so
+        # the session's ``tgid`` is the only address the
+        # tool needs.
+        source, target_id = _resolve_tg_target(ctx.session_id)
+        if target_id is None:
+            # No IM target resolved: either no session
+            # row exists (caller misuse) or the session
+            # has no TG target (a webui conversation —
+            # the operator already sees the LLM's final
+            # text reply inline). Tool-level error so the
+            # LLM can react ("no-op push; reply text lands
+            # in chat history").
             return ToolResult(
                 content=(
-                    f"send_message is not available on the "
-                    f"``{ctx.channel}`` channel in v0; use the "
-                    f"final reply instead."
+                    f"send_message: no TG target on session "
+                    f"{ctx.session_id!r}; the reply will "
+                    "land in chat history instead."
                 ),
                 is_error=True,
             )
 
-        # TG: call the callback the agent loop injected.
-        # We don't store a python-telegram-bot Bot here
-        # because the agent loop owns the reference and we
-        # want tool code to stay SDK-agnostic.
+        # Call the callback the agent loop injected.
         callback = kwargs.get("_tg_send_callback")
         if not callable(callback):
             return ToolResult(
@@ -122,20 +185,7 @@ class SendMessageTool(Tool):
             )
 
         try:
-            # ``ctx.chat_id`` is the string-form chat id we
-            # stored at call site. TG needs int.
-            chat_id_int = int(ctx.chat_id)
-        except (TypeError, ValueError):
-            return ToolResult(
-                content=(
-                    f"send_message: ctx.chat_id {ctx.chat_id!r} is "
-                    f"not a valid TG chat id."
-                ),
-                is_error=True,
-            )
-
-        try:
-            await callback(chat_id_int, text)
+            await callback(target_id, text)
         except Exception as e:
             return ToolResult(
                 content=f"send_message: TG send failed: {e}",
@@ -143,5 +193,8 @@ class SendMessageTool(Tool):
             )
 
         return ToolResult(
-            content=f"send_message: delivered {len(text)} chars to chat {chat_id_int}"
+            content=(
+                f"send_message: delivered {len(text)} chars "
+                f"to chat {target_id} ({source})"
+            )
         )

@@ -63,7 +63,12 @@ from sqlalchemy.orm import Session
 
 from magi.agent.loop import handle_message
 from magi.agent.proactive.orm_models import Task, TaskRun
-from magi.agent.memory.session import new_session_id, utcnow_iso
+from magi.agent.memory.session import (
+    SessionMessage,
+    SessionStore,
+    new_session_id,
+    utcnow_iso,
+)
 from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 
@@ -207,13 +212,7 @@ async def execute_task(
             f"[task prompt]\n"
         )
         contextual_prompt = context_header + task.prompt
-        db.add(ChatMessage(
-            session_id=session_id,
-            message_id=new_session_id(),
-            role="user",
-            text=contextual_prompt,
-            ts=started,
-        ))
+        run = db.get(TaskRun, run_id)
         run = db.get(TaskRun, run_id)
         if run is None:
             # Cron-driven path: the scheduler never
@@ -248,6 +247,22 @@ async def execute_task(
         api_key = employee.api_key
         db.commit()
 
+    # Persist the user-message AFTER the open_session()
+    # block exits — SessionStore opens its own session
+    # internally, and calling it while the outer
+    # transaction is still open would deadlock SQLite
+    # (BEGIN IMMEDIATE inside another BEGIN). WebUI
+    # chat.py follows the same pattern: append_messages
+    # outside the request handler's outer ORM session.
+    SessionStore(state_dir).append_messages(
+        task.employee_id, session_id,
+        [SessionMessage(
+            role="user", text=contextual_prompt, ts=started,
+            message_id=new_session_id(),
+        )],
+        channel="task",
+    )
+
     # ── 2. Wire TG callback + run the agent loop ──
     # TG push is the agent's responsibility via its
     # ``send_message`` tool (system-prompt-mandated). We
@@ -280,7 +295,17 @@ async def execute_task(
             handle_message(
                 state_dir,
                 text=prompt,
-                channel="scheduled",
+                # Task runner is the third channel after
+                # WebUI / TG. The agent loop uses this to
+                # gate send_message tool activation —
+                # the tool returns is_error for non-tg
+                # channels. Passing "scheduled" here (a
+                # leftover from when the runner was a
+                # one-off subsystem) would silently
+                # disable the tool, so the agent's
+                # "deliver via send_message" directive
+                # in the user-message wouldn't reach TG.
+                channel=task.channel,
                 employee_id=employee.id,
                 session_id=session_id,
                 # ``chat_id`` is the IM target the agent's
@@ -315,8 +340,38 @@ async def execute_task(
             error=f"unexpected:{type(exc).__name__}:{exc}",
         )
 
+    # Persist the assistant reply via the same store API
+    # the WebUI + TG channels use — mirrors the channel
+    # pattern exactly. This is what the runs drawer's chat
+    # bubbles render: the operator sees both the prompt
+    # we appended above AND this reply in one scrollable
+    # thread, identical to the main chat pane. Without
+    # this append the assistant turn lived only in
+    # SessionStore's in-memory model and the runs drawer
+    # saw a one-sided conversation.
+    finished_msg = datetime.now(timezone.utc).isoformat()
+    try:
+        SessionStore(state_dir).append_messages(
+            employee.id, session_id,
+            [SessionMessage(
+                role="assistant", text=reply or "",
+                ts=finished_msg,
+                message_id=new_session_id(),
+            )],
+            channel="task",
+        )
+    except Exception:  # noqa: BLE001 — never fail the run for a missing history row
+        logger.exception(
+            "task %s: failed to append assistant reply to session %s",
+            task_id, session_id,
+        )
+
     # ── 3. Finalise ──
-    finished = datetime.now(timezone.utc).isoformat()
+    # Reuse ``finished_msg`` so the assistant ChatMessage
+    # row and the TaskRun row share the exact same
+    # timestamp — keeps the chat-history bubble aligned
+    # with the run row's "✓ 成功 · <time>" pill.
+    finished = finished_msg
     with open_session() as db:
         run = db.get(TaskRun, run_id)
         task = db.get(Task, task_id)

@@ -1336,7 +1336,16 @@ function RunsHistoryDrawer(props: {
 
   return (
     <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full flex flex-col max-h-[calc(100vh-2rem)]">
+      {/* ``h-[calc(100vh-2rem)]`` (fixed) instead of
+          ``max-h-…`` so the parent has an explicit
+          height context for ``flex-1`` to expand into.
+          With ``max-h-``, ``flex-1`` would shrink-to-fit
+          the content and ``overflow-y-auto`` on the
+          body would never trigger — the drawer would
+          just grow past the viewport. ``min-h-0`` on
+          the body ensures the child can shrink
+          regardless of bubble content height. */}
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full flex flex-col h-[calc(100vh-2rem)]">
         <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
           <div className="flex flex-col min-w-0">
             <h3 className="text-base font-semibold text-ink truncate">
@@ -1390,6 +1399,7 @@ function RunsHistoryDrawer(props: {
               >
                 <div className="max-w-[80%] min-w-0 space-y-1">
                   <div
+                    title={m.role === "user" ? m.text : undefined}
                     className={
                       "rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words " +
                       (m.role === "user"
@@ -1397,7 +1407,23 @@ function RunsHistoryDrawer(props: {
                         : "bg-sky-pale/60 text-ink border border-sky-light/40")
                     }
                   >
-                    {m.text}
+                    {/* The runner prepends a [task context]
+                        header (name, schedule, channel,
+                        delivery_directive, …) to user
+                        messages so the agent has full
+                        context when it runs. The operator
+                        already sees all of that in the
+                        task table though, so we strip the
+                        scaffolding here and render only
+                        the actual prompt — otherwise each
+                        fire's user-bubble takes ~15 lines
+                        and the chat scrollback becomes
+                        unreadable. Hover the bubble to
+                        see the full context if you need
+                        it. */}
+                    {m.role === "user"
+                      ? (m.text.split("[task prompt]\n").pop() ?? m.text)
+                      : m.text}
                   </div>
                   {/* Per-fire meta under the user bubble —
                       tells the operator which cron/manual

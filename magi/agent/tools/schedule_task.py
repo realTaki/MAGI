@@ -255,12 +255,19 @@ class ScheduleTaskTool(Tool):
         # The LLM does NOT choose; any caller-supplied
         # ``delivery_to`` is intentionally discarded (the
         # form is no longer a user-facing control, and a
-        # stale LLM prompt that still passes one must not
-        # override ctx).
+        # ``delivery_to`` resolution: the IM endpoint
+        # for the new task. Webui tasks don't push to
+        # anywhere external (the session is the visible
+        # record; ``None`` is correct). TG tasks push
+        # to wherever the calling session's IM target
+        # lives — read it from the session row rather
+        # than carrying ``chat_id`` through ctx (the
+        # session is the source of truth for IM
+        # addressing).
         if channel == "webui":
-            delivery_to = ctx.session_id or None
+            delivery_to = None
         elif channel == "tg":
-            delivery_to = ctx.chat_id or None
+            delivery_to = _session_tgid_str(ctx.session_id)
         else:
             delivery_to = None
 
@@ -507,3 +514,39 @@ def _allocate_task_session(db, *, employee_id: int, name: str) -> str:
 
 
 __all__ = ["ScheduleTaskTool"]
+
+
+def _session_tgid_str(session_id):
+    """Read ``chat_sessions.tgid`` for ``session_id`` and
+    return it as a string (digits), or ``None`` if the
+    session is missing / has no tgid / has a malformed
+    value.
+
+    Used by :meth:`ScheduleTaskTool.run` to populate the
+    new task's ``delivery_to`` for ``channel='tg'`` —
+    sessions are the source of truth for IM addressing,
+    not anything the LLM carries in its tool context.
+
+    Tolerates DB errors by returning ``None`` rather
+    than raising — the calling code already gates on
+    ``None`` and surfaces a friendly "delivery_to
+    required for channel='tg'" error to the LLM.
+    """
+    if not session_id:
+        return None
+    try:
+        from magi.agent.db import open_session as _open
+        from magi.agent.memory.session.tables import (
+            ChatSession as _ChatSession,
+        )
+        with _open() as db:
+            sess = db.get(_ChatSession, session_id)
+        if sess is None or not sess.tgid:
+            return None
+        return str(sess.tgid)
+    except Exception:
+        logger.exception(
+            "schedule_task: session lookup failed for %s",
+            session_id,
+        )
+        return None
