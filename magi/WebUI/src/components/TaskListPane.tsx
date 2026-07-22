@@ -322,6 +322,23 @@ export default function TaskListPane() {
   }
 
   async function runNow(t: TaskRow) {
+    // Set the spinner IMMEDIATELY — on the same frame as
+    // the click — so the operator sees feedback before
+    // the POST round-trips. The API hasn't returned the
+    // ``run_id`` yet, so we use a sentinel
+    // ``"__pending__"`` and update the map once the
+    // response lands.
+    //
+    // The polling loop handles the sentinel correctly:
+    // it tries to look up the run by id, fails to find
+    // one (the runner hasn't written a row yet), and
+    // does nothing. Once we swap in the real run_id the
+    // effect re-runs and the next poll finds it.
+    setRunningTasks((prev) => {
+      const next = new Map(prev);
+      next.set(t.id, "__pending__");
+      return next;
+    });
     let run_id: string;
     try {
       const out = await api<{ run_id: string }>(
@@ -330,18 +347,33 @@ export default function TaskListPane() {
       run_id = out.run_id;
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "run now failed");
+      // Roll the optimistic entry back so the spinner
+      // doesn't stick if the POST fails.
+      setRunningTasks((prev) => {
+        if (!prev.has(t.id) || prev.get(t.id) !== "__pending__") {
+          return prev;
+        }
+        const next = new Map(prev);
+        next.delete(t.id);
+        return next;
+      });
       return;
     }
-    // Optimistic local state: mark this row as in-flight
-    // before the runner's first DB write, so the status
-    // cell flips to the spinner on the same frame as the
-    // click. The polling effect (below) evicts the entry
-    // when the runner writes a terminal status.
+    // Replace the sentinel with the real run_id. The
+    // polling effect's dependency on this Map means the
+    // effect re-runs and the next poll picks up the real
+    // id.
     setRunningTasks((prev) => {
+      if (!prev.has(t.id)) return prev;
       const next = new Map(prev);
       next.set(t.id, run_id);
       return next;
     });
+    // Refresh the row's columns (last_status,
+    // last_run_at, session_id from the runner's
+    // backfill) so the table cell values match reality.
+    // This is independent of the polling-driven refresh
+    // — both run, second one is a no-op for cell values.
     await refresh();
   }
 
@@ -358,8 +390,16 @@ export default function TaskListPane() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+    // Same layout pattern as the chat pane: outer flex
+    // column with ``h-full min-h-0`` so the page fills
+    // its parent column, header pinned at top, table
+    // container scrolls. ``min-h-0`` is the critical bit
+    // — without it, ``flex-1 overflow-y-auto`` on the
+    // table container expands to fit all rows instead of
+    // scrolling, and the page out-grows the viewport on
+    // long lists.
+    <div className="flex flex-col h-full min-h-0 space-y-4">
+      <div className="shrink-0 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-ink">定时任务</h2>
           <p className="mt-1 text-sm text-ink-soft">
@@ -405,12 +445,13 @@ export default function TaskListPane() {
 
       {loadError && <p className="form-error">✗ {loadError}</p>}
 
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-hidden flex-1 min-h-0 flex flex-col">
         {rows === null && !loadError ? (
           <p className="p-6 text-sm text-ink-soft">加载中…</p>
         ) : rows && rows.length === 0 ? (
           <p className="p-6 text-sm text-ink-soft">还没有定时任务。点 + 新建任务 创建第一条。</p>
         ) : rows && rows.length > 0 ? (
+          <div className="flex-1 min-h-0 overflow-y-auto">
           <table className="data-table w-full">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
@@ -649,6 +690,7 @@ export default function TaskListPane() {
               ))}
             </tbody>
           </table>
+          </div>
         ) : null}
       </div>
 
@@ -877,9 +919,9 @@ function TaskFormDrawer(props: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between">
+    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[calc(100vh-2rem)] flex flex-col">
+        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
           <h3 className="text-base font-semibold text-ink">
             {props.taskId ? "编辑任务" : "新建任务"}
           </h3>
@@ -1293,11 +1335,11 @@ function RunsHistoryDrawer(props: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full flex flex-col max-h-[calc(100vh-2rem)]">
         <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
-          <div className="flex flex-col">
-            <h3 className="text-base font-semibold text-ink">
+          <div className="flex flex-col min-w-0">
+            <h3 className="text-base font-semibold text-ink truncate">
               {props.taskName}
             </h3>
             <p className="text-xs text-ink-soft mt-0.5">
@@ -1323,7 +1365,7 @@ function RunsHistoryDrawer(props: {
             ←
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-3">
           {loadError && <p className="form-error">✗ {loadError}</p>}
           {props.sessionId === null ? (
             <p className="text-sm text-ink-soft">
