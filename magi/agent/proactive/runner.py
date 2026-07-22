@@ -155,14 +155,63 @@ async def execute_task(
             ))
             db.flush()
         session_id = task.session_id
-        # Append the prompt as a new user-message —
-        # the agent sees the full prior history of
-        # this task's fires when it runs.
+        # Build a contextual user-message that includes
+        # the task's schedule metadata. The agent loop
+        # otherwise only sees ``task.prompt`` — a vague
+        # string like "提醒我查钱包" gives it no hint
+        # about *why* it's running (cron vs one-shot,
+        # monthly vs daily) or *who* it's running for.
+        # Without context the LLM ends up either asking
+        # clarification questions ("你希望怎么提醒？" —
+        # see the claim_20号钱包提醒 bug) or assuming
+        # this is a fresh setup request and calling
+        # ``schedule_task`` again to "configure the
+        # reminder", which creates a duplicate task.
+        #
+        # We keep the original prompt verbatim as the
+        # last block so the agent loop's downstream
+        # reply-excerpt extraction still picks up the
+        # operator's actual instruction. The header is
+        # scaffolding the agent should NOT ignore — the
+        # first sentence explicitly says "execute, don't
+        # re-create".
+        schedule_desc = (
+            task.cron if task.cron
+            else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
+        )
+        channel_directive = (
+            f"If channel='tg', call the ``send_message`` tool with "
+            f"the reply text and target chat_id "
+            f"{task.delivery_to or '(unset)'} to push the response. "
+            f"If channel='webui', the reply lands inline in the "
+            f"operator's chat history automatically."
+            if task.channel == "tg"
+            else "Channel='webui': the reply lands inline in the "
+                 "operator's chat history automatically."
+        )
+        context_header = (
+            f"[task context]\n"
+            f"You are EXECUTING a scheduled task that just fired. "
+            f"Do NOT call ``schedule_task`` (or any tool that "
+            f"creates a new task) — the schedule below is already "
+            f"set up; you're running because it just fired. "
+            f"Carry out the prompt at the bottom as your goal for "
+            f"this fire.\n"
+            f"name: {task.name}\n"
+            f"schedule: {schedule_desc}\n"
+            f"channel: {task.channel}\n"
+            f"timezone: {task.tz}\n"
+            f"delivery_to: {task.delivery_to or '(none — webui only)'}\n"
+            f"delivery_directive: {channel_directive}\n"
+            f"\n"
+            f"[task prompt]\n"
+        )
+        contextual_prompt = context_header + task.prompt
         db.add(ChatMessage(
             session_id=session_id,
             message_id=new_session_id(),
             role="user",
-            text=task.prompt,
+            text=contextual_prompt,
             ts=started,
         ))
         run = db.get(TaskRun, run_id)
@@ -189,7 +238,11 @@ async def execute_task(
         # handle_message call doesn't need to keep its own
         # DB session open.
         task_name = task.name
-        prompt = task.prompt
+        # ``prompt`` sent to the agent is the contextual
+        # version (header + original prompt). The original
+        # ``task.prompt`` is still on the row for audit;
+        # the agent sees the wrapped text.
+        prompt = contextual_prompt
         delivery_target = task.delivery_to
         provider = employee.provider
         api_key = employee.api_key
