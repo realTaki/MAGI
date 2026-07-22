@@ -49,7 +49,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at, val
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import Employee, open_session
+from magi.agent.db import ChatSession, Employee, open_session
 from magi.agent.db.settings import state_get
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -346,9 +346,29 @@ class ScheduleTaskTool(Tool):
                 existing.enabled = 1
                 existing.consecutive_failures = 0
                 existing.employee_id = operator_id
+                # ``session_id`` is preserved across upserts —
+                # the cron conversation is a single thread
+                # across updates; we don't recreate it on
+                # every prompt edit (the operator wants
+                # continuity). Allocating it lazily only
+                # happens for legacy rows (those created
+                # before this column existed); a future
+                # cleanup migration can backfill them.
+                if existing.session_id is None:
+                    existing.session_id = _allocate_task_session(
+                        db, employee_id=operator_id, name=name,
+                    )
                 task_id = existing.id
                 is_update = True
             else:
+                # Allocate the task's home session at
+                # creation time so cron fires accumulate
+                # into one conversation per task. Same
+                # shape as the API: channel="task",
+                # title="[定时] <name>".
+                new_session_id_str = _allocate_task_session(
+                    db, employee_id=operator_id, name=name,
+                )
                 db.add(Task(
                     id=task_id,
                     name=name,
@@ -356,6 +376,7 @@ class ScheduleTaskTool(Tool):
                     cron=cron,
                     run_at=run_at_iso,
                     delivery_to=delivery_to,
+                    session_id=new_session_id_str,
                     tz=_resolve_system_tz(),
                     channel=channel,
                     employee_id=operator_id,
@@ -445,6 +466,44 @@ def _resolve_system_tz() -> str:
 def _now_iso() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _allocate_task_session(db, *, employee_id: int, name: str) -> str:
+    """Create a fresh ``channel="task"`` ChatSession
+    for a brand-new task. ``tgid`` carries the
+    operator's telegram_id as a breadcrumb (no routing
+    depends on it — channel="webui" disables the TG
+    send_message tool, and TG tasks carry their target
+    in ``Task.delivery_to``).
+
+    The session_id is the FK target the runner uses at
+    fire time; it's the conversation thread every cron
+    reply accumulates into. Keeping the allocation
+    here (rather than at fire time) ensures the
+    operator sees the [定时] chat in their WebUI
+    history immediately on task creation — and
+    prevents the cross-task pollution that the
+    per-fire allocation produced when two tasks
+    shared a delivery target.
+    """
+    from magi.agent.memory.session import utcnow_iso as _utcnow_iso
+    session_id = new_session_id()
+    # Look up the operator's telegram_id for the
+    # breadcrumb stamp; tolerate None (operator has
+    # no TG binding) by storing an empty string.
+    operator = db.get(Employee, employee_id)
+    tgid = str(operator.telegram_id) if operator and operator.telegram_id else ""
+    db.add(ChatSession(
+        session_id=session_id,
+        tgid=tgid,
+        employee_id=employee_id,
+        channel="task",
+        title=f"[定时] {name}",
+        created_at=_utcnow_iso(),
+        updated_at=_utcnow_iso(),
+    ))
+    db.flush()
+    return session_id
 
 
 __all__ = ["ScheduleTaskTool"]

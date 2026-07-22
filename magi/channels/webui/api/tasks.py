@@ -51,7 +51,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, valid
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import Employee, require_state_dir
+from magi.agent.db import ChatSession, Employee, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -388,22 +388,52 @@ def create_task(
         )
     cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
     # Server-side derive ``delivery_to`` per the unified
-    # rule: the operator does not choose a delivery target
-    # from the WebUI form. ``channel=tg`` requires the
-    # operator to have a ``telegram_id`` bound — a missing
-    # binding is a config mistake, surfaced as 400 so the
-    # drawer doesn't silently store a NULL that the runner
-    # then can't dispatch. ``channel=webui`` honours an
-    # explicit ``delivery_to`` from the LLM-in-chat path
-    # (caller passes ``ctx.session_id``); absent that, the
-    # WebUI default is ``"new"`` (fresh session per fire).
+    # rule. ``channel=tg`` requires the operator to have a
+    # ``telegram_id`` bound — a missing binding is a config
+    # mistake, surfaced as 400 so the drawer doesn't
+    # silently store a NULL that the runner then can't
+    # dispatch. ``channel=webui`` leaves ``delivery_to``
+    # NULL: the task's own session IS the operator-visible
+    # record (no separate IM target needed).
     delivery_to = _resolve_delivery_to(
         session, channel=payload.channel,
         employee_id=operator_id,
         explicit=payload.delivery_to,
     )
-    task_id = new_session_id()
+    # Allocate the task's home session NOW. Every cron
+    # fire of this task accumulates into this single
+    # session — same channel="task", same ``tgid`` stamp
+    # (carries the IM target for the runner's TG-push
+    # wiring, but the session itself is never channel="tg"
+    # — see ``chat_sessions.channel`` semantics). The
+    # operator sees this session in their chat list along
+    # with their webui + tg chats (the chat-sessions
+    # router filters only by employee_id).
+    operator = session.get(Employee, operator_id)
+    task_session_id = new_session_id()
     now = _now_iso()
+    task_session = ChatSession(
+        session_id=task_session_id,
+        # ``tgid`` here records the IM target so the
+        # runner's ``_resolve_session_for_task`` lookup
+        # (when called for legacy rows that pre-date
+        # this column) can recover. For webui tasks the
+        # value is the operator's telegram_id as a
+        # harmless breadcrumb — no routing depends on
+        # it because channel="webui" disables the
+        # send_message tool.
+        tgid=str(operator.telegram_id or ""),
+        employee_id=operator_id,
+        channel="task",
+        title=f"[定时] {payload.name}",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(task_session)
+    # Flush so the chat_sessions row's PK is in the DB
+    # before the FK reference from Task.session_id below.
+    session.flush()
+    task_id = new_session_id()
     # ``tz`` is reserved on the model for backend
     # bookkeeping (DEBUGABILITY — we want to know which
     # system TZ was in force when the row was created).
@@ -418,6 +448,10 @@ def create_task(
         cron=cron,
         run_at=run_at_iso,
         delivery_to=delivery_to,
+        # Wire the freshly-allocated session as the
+        # task's home; the runner reads this column at
+        # fire time and appends to it.
+        session_id=task_session_id,
         tz=system_tz,
         channel=payload.channel,
         employee_id=operator_id,
