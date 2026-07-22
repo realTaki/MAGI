@@ -47,6 +47,50 @@ import { useEffect, useState } from "react";
 
 import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 
+
+// Human-readable timestamp formatter for the runs-history
+// drawer + any other operator-facing cell. ISO strings
+// from the backend ("2026-07-22T00:14:32.923580+00:00")
+// are unreadable for the operator; we render the local
+// wall-clock (the browser's timezone, which matches the
+// operator's machine) plus a "X minutes ago" relative
+// hint when the run is recent.
+//
+// Implementation notes:
+// - We parse the ISO via Date(); the string carries a
+//   +00:00 offset so the result is the absolute instant.
+// - ``Intl.DateTimeFormat`` formats in the browser's
+//   local timezone, which is what the operator expects.
+// - The relative clause falls back to the absolute time
+//   when the run is older than a week (avoids the
+//   "47 days ago" clutter that doesn't help anyone).
+function formatRunTimestamp(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;  // unparseable — fall back to the raw string
+  const now = Date.now();
+  const diff = now - ms;
+  // Absolute: e.g. "2026-07-22 00:14:32" (no UTC suffix;
+  // the browser's local TZ is implicit).
+  const abs = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(ms));
+  // Relative for fresh runs; skip for old ones.
+  if (diff < 0) return abs;  // future (clock skew) — show absolute only
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${abs} · ${sec} 秒前`;
+  if (sec < 3600) return `${abs} · ${Math.floor(sec / 60)} 分钟前`;
+  if (sec < 86400) return `${abs} · ${Math.floor(sec / 3600)} 小时前`;
+  if (sec < 7 * 86400) return `${abs} · ${Math.floor(sec / 86400)} 天前`;
+  return abs;
+}
+
 type TaskRow = {
   id: string;
   name: string;
@@ -73,6 +117,13 @@ type TaskRow = {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+  // ``session_id`` points at the agent's home session
+  // (allocated at task creation, channel="task"). The
+  // runs drawer fetches the session's chat history
+  // directly via this id. Nullable for legacy rows
+  // created before the column landed; the runner
+  // backfills on first fire.
+  session_id: string | null;
 };
 
 // One row of the ``/api/tasks/{id}/runs`` response — used
@@ -397,9 +448,50 @@ export default function TaskListPane() {
                         className="text-left font-medium text-ink hover:text-sky-deep underline-offset-2 hover:underline cursor-pointer"
                       >
                         {t.name}
-                        <span className="ml-1 text-[10px] text-ink-soft/70 font-normal">
-                          ↗ 日志
-                        </span>
+                      </button>
+                      {/* Pencil icon — points to the LEFT
+                          so it visually "edits the name
+                          to its left" (the convention most
+                          editor toolbars use; U+270E ✎ and
+                          most emoji pencils point right/down,
+                          which reads as "the next thing over
+                          there is what gets edited" — wrong
+                          direction here). Inline SVG so the
+                          orientation is consistent across
+                          font fallbacks — emoji-rendering
+                          platforms vary and a flipped glyph
+                          via CSS scaleX isn't reliable on
+                          every browser either. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(t.id);
+                          setDrawerOpen(true);
+                        }}
+                        title="编辑任务"
+                        aria-label="编辑任务"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-sky-deep hover:bg-sky-pale/40 transition"
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          {/* pencil body angled top-right →
+                              bottom-left, tip touching the
+                              name bubble on the left */}
+                          <path d="M11 3 L13 5 L5.5 12.5 L3 13 L3.5 10.5 Z" />
+                          {/* eraser end (top-right) */}
+                          <path d="M11 3 L13 5 L14 4 L12 2 Z" />
+                          {/* tip emphasis */}
+                          <path d="M3.5 10.5 L5.5 12.5" />
+                        </svg>
                       </button>
                       {t.consecutive_failures > 0 && (
                         <span className="text-[10px] text-amber-700">
@@ -503,55 +595,53 @@ export default function TaskListPane() {
                     )}
                   </td>
                   <td className="py-2 text-right">
-                    <div className="flex items-center justify-end gap-2 text-xs">
+                    <div className="flex items-center justify-end gap-1 text-sm">
+                      {/* All action buttons share the same
+                          28×28 hit target so the row reads
+                          as a uniform toolbar rather than a
+                          pile of differently-sized icons. */}
                       <button
                         type="button"
                         onClick={() => runNow(t)}
                         disabled={!t.enabled}
-                        className="text-sky-700 hover:text-sky-deep transition disabled:text-sky-light/50 disabled:cursor-not-allowed"
+                        title="立刻跑"
+                        aria-label="立刻跑"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition disabled:text-sky-light/50 disabled:cursor-not-allowed"
                       >
-                        立刻跑
+                        ▶
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleEnabled(t)}
-                        className="text-sky-700 hover:text-sky-deep transition"
+                        title={t.enabled ? "停用" : "启用"}
+                        aria-label={t.enabled ? "停用" : "启用"}
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition"
                       >
-                        {t.enabled ? "停用" : "启用"}
+                        {t.enabled ? "⏸" : "▶▶"}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingId(t.id);
-                          setDrawerOpen(true);
-                        }}
-                        className="text-sky-700 hover:text-sky-deep transition"
-                      >
-                        编辑
-                      </button>
-                      {/* Runs-history entry. The operator
-                          can also click the row's task
-                          name, but a dedicated button is
-                          more discoverable — it makes the
-                          affordance obvious without
-                          requiring a hover experiment.
-                          Opens the same drawer as the
-                          terminal-tick auto-pop, just
-                          without the spinner-then-flip
-                          context. */}
                       <button
                         type="button"
                         onClick={() => setRunsForId(t.id)}
-                        className="text-sky-700 hover:text-sky-deep transition"
+                        title="查看日志"
+                        aria-label="查看日志"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition"
                       >
-                        查看日志
+                        💬
                       </button>
                       <button
                         type="button"
                         onClick={() => deleteTask(t)}
-                        className="text-rose-700 hover:text-rose-900 transition"
+                        title="删除"
+                        aria-label="删除"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-rose-700 hover:text-rose-900 hover:bg-rose-50 transition"
                       >
-                        删除
+                        {/* Trash icon — U+1F5D1 falls
+                            back to a font glyph on most
+                            systems; we pair it with the
+                            rose tint so the destructive
+                            intent reads even before the
+                            user hovers the tooltip. */}
+                        🗑
                       </button>
                     </div>
                   </td>
@@ -573,12 +663,25 @@ export default function TaskListPane() {
         />
       )}
 
-      {runsForId && (
-        <RunsHistoryDrawer
-          taskId={runsForId}
-          onClose={() => setRunsForId(null)}
-        />
-      )}
+      {runsForId && (() => {
+        // Resolve the task's session_id (allocated at
+        // task creation) — the drawer's chat-style view
+        // fetches the session messages directly. Tasks
+        // created by legacy flows may still have null
+        // session_id (the runner backfills on first
+        // fire); we fall back to the task-id mode for
+        // those until the first fire happens.
+        const t = rows?.find((row) => row.id === runsForId);
+        if (!t) return null;
+        return (
+          <RunsHistoryDrawer
+            taskName={t.name}
+            taskId={t.id}
+            sessionId={t.session_id ?? null}
+            onClose={() => setRunsForId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -1081,47 +1184,87 @@ function TaskFormDrawer(props: {
 
 function RunsHistoryDrawer(props: {
   taskId: string;
+  taskName: string;
+  sessionId: string | null;
   onClose: () => void;
 }) {
-  // Pulls ``GET /api/tasks/{id}/runs`` once on open and
-  // shows the last 20 fires newest-first. Each row
-  // surfaces:
+  // Chat-style log view for a task's session. Mirrors the
+  // main conversation page's bubble layout (see
+  // ``ChatTab.tsx`` — user bubbles right-aligned, assistant
+  // bubbles left-aligned) so the operator's mental model
+  // of "this is just a chat, the timer started it" holds
+  // across both surfaces.
   //
-  //   - status (success / failed / running) — colour-coded
-  //   - trigger (manual / cron) — the agent runs the same
-  //     loop either way, but the operator usually wants
-  //     to know which path they tripped
-  //   - finished_at + latency_ms — the bill for the fire
-  //   - reply_excerpt — the agent's last assistant turn
-  //     truncated to 500 chars. This is where the
-  //     "did the TG push actually fire?" question is
-  //     answered: if ``channel=tg`` and the agent's
-  //     reply is here but the operator's TG is silent,
-  //     the bot wasn't registered at fire-time.
-  //   - error — for ``failed`` rows, the truncated
-  //     error summary (last_error on the task gets the
-  //     same string; the per-run copy here survives
-  //     later successful fires).
+  // Source: ``GET /api/chat/sessions/{id}`` returns the full
+  // message list for the task's session. The runner's
+  // task-creation flow allocates that session (channel =
+  // "task"); each cron fire appends one user-message (the
+  // contextual prompt) + the agent's reply, possibly with
+  // intermediate tool calls.
   //
-  // No edit / re-run affordance — the row in the main
-  // table already has those. v0 ships read-only history.
+  // We also fetch ``GET /api/tasks/{id}/runs`` and overlay
+  // each fire's status / latency next to the user-message
+  // that started it — that's how the operator spots a
+  // "成功" reply that didn't actually push to TG (the
+  // status pill shows success, the chat shows the agent's
+  // reply text, but a quick look at the channel cell on
+  // the table tells the operator whether the runner wired
+  // ``_tg_send_callback`` for that fire).
+  const [messages, setMessages] = useState<
+    | {
+        message_id: string;
+        role: string;
+        ts: string;
+        text: string;
+      }[]
+    | null
+  >(null);
   const [runs, setRuns] = useState<TaskRunRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
 
   useEffect(() => {
+    if (props.sessionId === null) {
+      setMessages([]);
+      setRuns([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(
-          `/api/tasks/${props.taskId}/runs`,
-          { credentials: "include" },
-        );
-        if (!r.ok) {
-          setLoadError(`加载失败 (${r.status})`);
+        // Fetch session messages and run metadata in
+        // parallel — they're independent reads.
+        const [sessResp, runsResp] = await Promise.all([
+          fetch(`/api/chat/sessions/${props.sessionId}`, {
+            credentials: "include",
+          }),
+          fetch(`/api/tasks/${props.taskId}/runs`, {
+            credentials: "include",
+          }),
+        ]);
+        if (!sessResp.ok) {
+          setLoadError(`加载 session 失败 (${sessResp.status})`);
           return;
         }
-        const data = (await r.json()) as TaskRunRow[];
-        if (!cancelled) setRuns(data);
+        if (!runsResp.ok) {
+          setLoadError(`加载 runs 失败 (${runsResp.status})`);
+          return;
+        }
+        const sess = (await sessResp.json()) as {
+          session_id: string;
+          title: string | null;
+          messages: {
+            message_id: string;
+            role: string;
+            ts: string;
+            text: string;
+          }[];
+        };
+        const runsData = (await runsResp.json()) as TaskRunRow[];
+        if (cancelled) return;
+        setMessages(sess.messages ?? []);
+        setSessionTitle(sess.title ?? null);
+        setRuns(runsData);
       } catch (err) {
         if (!cancelled) {
           setLoadError(
@@ -1133,79 +1276,134 @@ function RunsHistoryDrawer(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.taskId]);
+  }, [props.sessionId, props.taskId]);
+
+  // Build a quick lookup: user-message ts → matching run
+  // (the runner stamps the ChatMessage ts at the same
+  // instant as ``TaskRun.started_at`` — see runner.py).
+  // Lets the bubble row show "✓ 成功 · 235ms" inline.
+  const runByUserTs = new Map<string, TaskRunRow>();
+  if (runs && messages) {
+    for (const r of runs) {
+      // started_at is the runner's wall-clock at the fire;
+      // the ChatMessage the runner appended carries the
+      // same value as ``ts``. Match on equality.
+      runByUserTs.set(r.started_at, r);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-ink">
-            运行历史 · {props.taskId.slice(0, 8)}…
-          </h3>
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
+          <div className="flex flex-col">
+            <h3 className="text-base font-semibold text-ink">
+              {props.taskName}
+            </h3>
+            <p className="text-xs text-ink-soft mt-0.5">
+              {sessionTitle ?? "[定时] session"}
+              {props.sessionId
+                ? ` · ${props.sessionId.slice(0, 8)}…`
+                : ""}
+            </p>
+          </div>
           <button
             type="button"
             onClick={props.onClose}
-            className="text-ink-soft hover:text-ink text-sm"
+            title="关闭"
+            aria-label="关闭"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-ink hover:bg-sky-pale/40 transition"
           >
-            ✕ 关闭
+            {/* Left-pointing arrow (←) reads as
+                "go back to the table" — matches the
+                cancel/back affordance the operator
+                expects from a side drawer. ✕ reads
+                as "dismiss / delete" which is the
+                wrong action. */}
+            ←
           </button>
         </div>
-        <div className="p-6 space-y-3">
+        <div className="flex-1 overflow-y-auto p-6 space-y-3">
           {loadError && <p className="form-error">✗ {loadError}</p>}
-          {runs === null && !loadError ? (
-            <p className="text-sm text-ink-soft">加载中…</p>
-          ) : runs && runs.length === 0 ? (
+          {props.sessionId === null ? (
             <p className="text-sm text-ink-soft">
-              这条任务还没有任何 fire 记录。点表格里的「立刻跑」或等下一次 cron 触发。
+              这条任务还没有被 fire 过（session 在第一次 cron
+              时由 runner 自动回填）。请先等一次 cron 触发，
+              或者用「▶」立刻跑一下让 runner 初始化 session。
             </p>
-          ) : runs ? (
-            runs.map((r) => (
+          ) : messages === null && !loadError ? (
+            <p className="text-sm text-ink-soft">加载中…</p>
+          ) : messages && messages.length === 0 ? (
+            <p className="text-sm text-ink-soft">
+              Session 已创建但还没有对话记录。
+            </p>
+          ) : messages ? (
+            messages.map((m) => (
               <div
-                key={r.id}
-                className="border border-sky-light/30 rounded-lg p-3 text-xs space-y-2"
+                key={m.message_id}
+                className={
+                  "flex " +
+                  (m.role === "user" ? "justify-end" : "justify-start")
+                }
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={
-                        r.status === "success"
-                          ? "text-emerald-700 font-medium"
-                          : r.status === "failed"
-                            ? "text-rose-700 font-medium"
-                            : "text-sky-700 font-medium"
-                      }
-                    >
-                      {r.status === "success"
-                        ? "✓ 成功"
-                        : r.status === "failed"
-                          ? "✗ 失败"
-                          : r.status === "running"
-                            ? "⟳ 执行中"
-                            : r.status}
-                    </span>
-                    <span className="text-ink-soft">
-                      · {r.trigger === "manual" ? "手动" : "定时"}
-                    </span>
-                    {r.latency_ms != null && (
-                      <span className="text-ink-soft">
-                        · {r.latency_ms} ms
-                      </span>
-                    )}
+                <div className="max-w-[80%] min-w-0 space-y-1">
+                  <div
+                    className={
+                      "rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words " +
+                      (m.role === "user"
+                        ? "bg-sky-deep text-white"
+                        : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                    }
+                  >
+                    {m.text}
                   </div>
-                  <span className="text-ink-soft/80 font-mono text-[10px]">
-                    {r.finished_at ?? r.started_at}
-                  </span>
+                  {/* Per-fire meta under the user bubble —
+                      tells the operator which cron/manual
+                      trigger this is and whether it
+                      succeeded. */}
+                  {m.role === "user" && runByUserTs.has(m.ts) && (
+                    <div className="text-[10px] text-ink-soft/80 text-right pr-1">
+                      {(() => {
+                        const r = runByUserTs.get(m.ts)!;
+                        const statusLabel =
+                          r.status === "success"
+                            ? "✓ 成功"
+                            : r.status === "failed"
+                              ? "✗ 失败"
+                              : r.status === "running"
+                                ? "⟳ 执行中"
+                                : r.status;
+                        const statusColor =
+                          r.status === "success"
+                            ? "text-emerald-700"
+                            : r.status === "failed"
+                              ? "text-rose-700"
+                              : "text-sky-700";
+                        return (
+                          <>
+                            <span className={statusColor + " font-medium"}>
+                              {statusLabel}
+                            </span>
+                            <span className="ml-1">
+                              · {r.trigger === "manual" ? "手动" : "定时"}
+                            </span>
+                            {r.latency_ms != null && (
+                              <span className="ml-1">
+                                · {r.latency_ms} ms
+                              </span>
+                            )}
+                            <span
+                              className="ml-1"
+                              title={r.started_at}
+                            >
+                              · {formatRunTimestamp(r.started_at)}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
-                {r.reply_excerpt && (
-                  <div className="bg-sky-light/10 rounded p-2 font-mono text-[11px] whitespace-pre-wrap break-words">
-                    {r.reply_excerpt}
-                  </div>
-                )}
-                {r.error && (
-                  <div className="bg-rose-50 text-rose-900 rounded p-2 font-mono text-[11px] whitespace-pre-wrap break-words">
-                    {r.error}
-                  </div>
-                )}
               </div>
             ))
           ) : null}
