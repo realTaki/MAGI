@@ -22,7 +22,7 @@ exist:
     ``Employee.telegram_id`` (a FK), or where we want to
     operate on the row rather than the chat identifier.
 
-The D.18 search endpoint scopes by ``chat_sessions.tgid``
+The D.18 search endpoint scopes by ``chat_sessions.delivery_address``
 which **is** the telegram_id (just stored as a string).
 Semantically the data still belongs to one employee, but
 the column key is ``tgid`` not ``uid``. The
@@ -103,12 +103,13 @@ class SearchHit(BaseModel):
     # debugging; the frontend doesn't sort on it (FTS
     # already returns ranked).
     score: float
-    # D.18+1: the row's ``tgid`` (Telegram chat identifier).
-    # Surfaced so cross-platform callers can see which
-    # channel/identity the hit landed in; the agent tool
-    # also uses it to fetch the surrounding messages with
-    # the right scope guard.
-    tgid: str
+    # D.28: the row's ``delivery_address`` (per-channel
+    # delivery address — TG chat id today, opaque to
+    # non-channel-adapter callers). Surfaced so cross-
+    # platform callers can see which channel/identity the
+    # hit landed in; the agent tool also uses it to fetch
+    # the surrounding messages with the right scope guard.
+    delivery_address: str
     channel: str
 
 
@@ -229,7 +230,7 @@ def search_chat_history(
     count_sql = "SELECT COUNT(*) " + base_sql
     page_sql = (
         "SELECT m.session_id, m.message_id, m.role, m.ts, "
-        "       s.title, s.channel, s.tgid, "
+        "       s.title, s.channel, s.delivery_address, "
         "       snippet(chat_messages_fts, 0, '<mark>', '</mark>', '…', 16) AS snippet, "
         "       bm25(chat_messages_fts) AS score "
         + base_sql +
@@ -264,7 +265,7 @@ def search_chat_history(
                 snippet=r.snippet,
                 title=r.title,
                 score=float(r.score),
-                tgid=r.tgid,
+                delivery_address=r.delivery_address,
                 channel=r.channel,
             )
             for r in rows

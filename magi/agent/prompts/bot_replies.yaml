@@ -12,13 +12,13 @@
 #      or agent.py.
 #   3. Re-run the smoke test (Telegram bot → reply text).
 
-# Sent when a tgid is bound to an employee with role
-# ``employee`` or ``guest`` — i.e. someone this MAGI does
-# NOT serve. We tell them the tgid so they can pass it
-# to their company's admin.
+# Sent when a delivery_address is bound to an employee
+# with role ``employee`` or ``guest`` — i.e. someone this
+# MAGI does NOT serve. We tell them the ID so they can
+# pass it to their company's admin.
 cross_company_refusal: |
   你的账号（{emp_name}）不属于本 MAGI 服务范围。
-  请联系你公司的管理员，或把你的 tgid ({tgid}）告诉他们以加入。
+  请联系你公司的管理员，或把你的 ID ({delivery_address}）告诉他们以加入。
 
 # Sent when a bound employee is marked separated (离职).
 # Admin can restore via the dashboard; the EVE itself stays
@@ -32,14 +32,14 @@ separated_employee: |
 non_text_message: |
   我暂时只支持文字消息，等 C4 加上多模态再试。
 
-# Sent when a tgid has no employee bound. Includes the
-# tgid in the reply so the user can pass it to the
-# admin. The HTML <code> tag keeps the digits copy-paste-
-# clean in TG's monospace rendering.
+# Sent when an inbound has no employee bound. Includes
+# the delivery_address in the reply so the user can pass
+# it to the admin. The HTML <code> tag keeps the digits
+# copy-paste-clean in TG's monospace rendering.
 unknown_sender: |
   👋 Hi — you're not in MAGI's super-admin list yet.
 
-  Your Telegram tgid is: <code>{tgid}</code>
+  Your ID is: <code>{delivery_address}</code>
 
   Please contact the MAGI admin and share this ID so they can add your permissions. Once that's done, message me anything and I'll route you to the right person.
 

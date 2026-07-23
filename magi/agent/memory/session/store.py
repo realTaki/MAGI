@@ -9,13 +9,14 @@ the ORM engine singleton — see :mod:`magi.agent.db.orm`.
 Session identity (D.23)
 ------------------------
 Every public method takes ``uid: int`` as the
-identity of the session owner — NOT a ``tgid``. Sessions
-are pinned to the *person* (the Employee row), not the
-channel that happened to create them:
+identity of the session owner — NOT a per-channel
+identifier. Sessions are pinned to the *person*
+(the Employee row), not the channel that happened to
+create them:
 
   - WebUI caller:  ``Employee.id`` from the admin cookie.
   - TG caller:     ``Employee.id`` resolved from
-    ``Employee.telegram_id == effective_chat.id``.
+    the dispatcher's ``lookup_im_id(uid, "telegram")``.
   - scheduled:     the employee the task was created for.
 
 The same employee can therefore own sessions across many
@@ -25,25 +26,24 @@ ownership for **writes** is still gated by
 :class:`ChannelMismatchError` (D.22) — only the channel
 that created a row can append to it.
 
-The legacy ``tgid`` column on ``chat_sessions`` is kept
-for two reasons:
+Per-channel delivery address (D.28)
+------------------------------------
+Each session row carries ``delivery_address`` — the per-channel
+delivery address on this session. Today: a TG chat id (the
+``tgid`` column was renamed to ``delivery_address`` in D.28).
+Domain code treats the value as opaque; only the channel
+adapter (:mod:`magi.channels.dispatcher`) interprets it.
 
-  1. **TG outbound delivery** — the ``send_message`` tool
-     (and any future IM channel) needs the per-channel
-     delivery address on a session row. TG uses the row's
-     ``tgid`` (the original TG chat id); other channels
-     stamp a placeholder (e.g. ``"webui"`` for WebUI
-     rows) because they don't have a TG-shaped address.
-  2. **D.18 JSON migration** — the old
-     ``<workspace>/memories/sessions/<tgid>/<sid>.json``
-     layout was keyed by tgid; the importer reads that
-     path verbatim, so the column preserves the value
-     it would have written under D.18.
+For backward compat with the pre-D.18 JSON-on-disk layout, the
+importer still reads ``<workspace>/memories/sessions/
+<delivery_address>/<sid>.json`` paths — the on-disk dir
+name uses whatever string was written, which for the legacy
+JSON data happens to be the TG chat id.
 
-The :class:`Session` dataclass still carries ``tgid``
-for that legacy column, but **callers must not use it
-as a session key** — pass ``session.uid`` to the
-store, not ``session.tgid``.
+Callers must NOT use ``session.delivery_address`` as a
+session key — pass ``session.uid`` to the store. The
+delivery address is the **destination** for outbound
+messages; the uid is the **owner**.
 """
 
 from __future__ import annotations
@@ -92,13 +92,13 @@ class SessionStore:
     """SQLite-backed session storage (D.18+).
 
     Pre-D.18 this was JSON files under ``<workspace>/memories/
-    sessions/<tgid>/<sid>.json``. The class kept the same
-    public method signatures so the ~30 callers (chat.py /
+    sessions/<delivery_address>/<sid>.json``. The class kept the
+    same public method signatures so the ~30 callers (chat.py /
     bot.py / agent.py / auto_title.py / chat_sessions.py) didn't
     need to change; only the bodies switched to ORM queries.
 
-    D.23 changed the public key from tgid to uid —
-    see the module docstring for the rationale. The breaking
+    D.23 changed the public key from delivery_address to uid
+    — see the module docstring for the rationale. The breaking
     signature is the same set of methods; only the first
     parameter's name and type changed.
 
@@ -117,15 +117,19 @@ class SessionStore:
         uid: int,
         *,
         channel: str = "webui",
+        # Per-channel delivery address on this session row.
+        # Today: a TG chat id (when ``channel="tg"``); an empty
+        # string for WebUI; ``"<scheduled>"`` convention for
+        # the task runner. Channel adapter
+        # (:mod:`magi.channels.dispatcher`) interprets this
+        # value; domain code treats it as opaque.
+        #
         # Default ``"12345"`` preserved for caller-compat with
-        # the pre-D.26 legacy default. New callers should pass
-        # the actual per-channel delivery address (the
-        # operator's bound telegram_id for TG sessions, or an
-        # explicit empty string for WebUI sessions). The
-        # sentinel exists only so that tests + bootstrap
-        # paths that didn't yet thread an explicit value
-        # still produce non-empty rows.
-        tgid: str | None = "12345",
+        # the pre-D.28 legacy default. Tests + bootstrap paths
+        # that didn't yet thread an explicit value still
+        # produce non-empty rows. New callers should pass the
+        # actual per-channel value.
+        delivery_address: str | None = "12345",
     ) -> Session:
         """Create a new empty session owned by ``uid``.
 
@@ -135,9 +139,11 @@ class SessionStore:
         a different channel will be rejected by D.22's
         :class:`ChannelMismatchError`.
 
-        ``tgid`` is the per-channel delivery address stored
-        on the row's ``tgid`` column. It's optional because
-        not every channel has a TG-shaped id:
+        ``delivery_address`` is the per-channel delivery
+        address stored on the row's ``delivery_address``
+        column (D.28 — renamed from the legacy ``tgid``
+        column). It's optional because not every channel
+        has a TG-shaped id:
 
           - TG caller:    pass ``str(effective_chat.id)`` so
             the row carries the TG chat id for outbound
@@ -152,11 +158,11 @@ class SessionStore:
         _validate_uid(uid)
         session_id = new_session_id()
         now = utcnow_iso()
-        tgid_value = tgid if tgid is not None else ""
+        delivery_value = delivery_address if delivery_address is not None else ""
         with open_session() as db:
             db.add(ChatSession(
                 session_id=session_id,
-                tgid=tgid_value,
+                delivery_address=delivery_value,
                 uid=uid,
                 channel=channel,
                 title=None,
@@ -172,12 +178,12 @@ class SessionStore:
                 "session_id": session_id,
                 "uid": uid,
                 "channel": channel,
-                "tgid": tgid_value,
+                "delivery_address": delivery_value,
             },
         )
         return Session(
             session_id=session_id,
-            tgid=tgid_value,
+            delivery_address=delivery_value,
             uid=uid,
             channel=channel,
             created_at=now,
@@ -195,7 +201,7 @@ class SessionStore:
         TG-owned session for ``uid``, or ``None``.
 
         Used by the TG channel handler to honour the
-        "one TG session per tgid forever" policy (D.10):
+        "one TG session per delivery-address forever" policy (D.10):
         when the operator alternates between TG and WebUI,
         the WebUI row is the most recently updated session,
         but the TG handler must still find the most recent
@@ -258,7 +264,7 @@ class SessionStore:
             ]
             return Session(
                 session_id=sess_row.session_id,
-                tgid=sess_row.tgid,
+                delivery_address=sess_row.delivery_address,
                 uid=sess_row.uid,
                 channel=sess_row.channel,
                 created_at=sess_row.created_at,

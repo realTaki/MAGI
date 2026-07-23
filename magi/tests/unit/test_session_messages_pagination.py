@@ -9,7 +9,7 @@ Three surfaces pinned:
      *from the newest end* so ``offset=limit`` gives the
      next older page.
   2. **GET /api/chat/sessions/{id}/messages** — the HTTP
-     route. Wraps the storage call in tgid scope +
+     route. Wraps the storage call in delivery_address scope +
      404 handling. Pins the response shape so the WebUI
      consumer doesn't break on a future schema bump.
   3. **Edge cases** — empty sessions, unknown session_id
@@ -63,15 +63,15 @@ def admin_env(monkeypatch, tmp_path):
     return state
 
 
-def _seed_messages(store, tgid: str, count: int) -> str:
+def _seed_messages(store, delivery_address: str, count: int) -> str:
     """Append ``count`` synthetic user messages to a fresh
-    session for ``tgid`` and return the session_id.
+    session for ``delivery_address`` and return the session_id.
     The synthetic text is just ``"msg-{idx}"`` — enough
     to be distinct without being noisy.
     """
     from magi.agent.memory.session import SessionMessage, new_session_id
 
-    # D.23: store key is uid (int); tgid is the
+    # D.23: store key is uid (int); delivery_address is the
     # per-channel delivery address stamped on the row.
     sess = store.create(1, )
     msgs = [
@@ -246,8 +246,8 @@ def test_get_messages_page_respects_uid_scope(admin_env):
     as the rest of the API.
 
     D.23: the store key is now ``uid``; the
-    pre-D.23 tgid scope test is rewritten here in
-    terms of the new key, since the tgid column no
+    pre-D.23 delivery_address scope test is rewritten here in
+    terms of the new key, since the delivery_address column no
     longer drives the WHERE clause.
     """
     from magi.agent.memory.session import SessionStore
@@ -275,7 +275,7 @@ def test_get_messages_page_respects_uid_scope(admin_env):
 
 @pytest.fixture
 def client(admin_env):
-    """TestClient with admin-A's cookie (tgid 9001)."""
+    """TestClient with admin-A's cookie (delivery_address 9001)."""
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
 
@@ -364,7 +364,7 @@ def test_messages_route_cross_employee_isolation(client, admin_env):
 
     store = SessionStore(str(admin_env))
     # Bob's session: uid=2,  (the
-    # tgid is the per-channel delivery address —
+    # delivery_address is the per-channel delivery address —
     # historical / metadata only now).
     sess = store.create(2, channel="webui")
     sid = sess.session_id

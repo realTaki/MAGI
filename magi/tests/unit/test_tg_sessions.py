@@ -2,7 +2,7 @@
 
 D.18 moved sessions from per-file JSON to SQLite (``chat_sessions`` +
 ``chat_messages``). The TG handler logic — "one session per
-TG tgid forever, mint a fresh one if the prior was
+TG delivery_address forever, mint a fresh one if the prior was
 deleted" — stays the same; only the assertions move from
 ``glob("*.json")`` to ORM queries.
 
@@ -48,10 +48,10 @@ def tg_session_env(monkeypatch, tmp_path):
     return state, tmp_path
 
 
-def _row_for(tgid: str):
-    """Fetch the session row for ``tgid`` (helper for assertions)."""
+def _row_for(delivery_address: str):
+    """Fetch the session row for ``delivery_address`` (helper for assertions)."""
     with open_session() as db:
-        return db.query(ChatSession).filter_by(tgid=tgid).first()
+        return db.query(ChatSession).filter_by(delivery_address=delivery_address).first()
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -79,7 +79,7 @@ def test_first_call_creates_session(tg_session_env):
     assert row is not None
     assert row.session_id == sid
     assert row.channel == "tg"
-    assert row.tgid == "6240201712"
+    assert row.delivery_address == "6240201712"
     assert row.uid == 42
 
 
@@ -87,7 +87,7 @@ def test_second_call_reuses_same_session(tg_session_env):
     """Subsequent messages in the same TG chat append to
     the existing row rather than spawning a new thread.
 
-    This is the core "one session per tgid forever" policy.
+    This is the core "one session per delivery_address forever" policy.
     """
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
@@ -98,11 +98,11 @@ def test_second_call_reuses_same_session(tg_session_env):
     sid2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     sid3 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
 
-    assert sid1 == sid2 == sid3, "TG must reuse one session per tgid"
+    assert sid1 == sid2 == sid3, "TG must reuse one session per delivery_address"
 
     # Still only one row.
     with open_session() as db:
-        count = db.query(ChatSession).filter_by(tgid="6240201712").count()
+        count = db.query(ChatSession).filter_by(delivery_address="6240201712").count()
     assert count == 1
 
 
@@ -130,7 +130,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
     # Operator wipes the session.
     store.delete(42, sid1)
     with open_session() as db:
-        assert db.query(ChatSession).filter_by(tgid="6240201712").count() == 0
+        assert db.query(ChatSession).filter_by(delivery_address="6240201712").count() == 0
 
     sid2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     assert sid1 != sid2, "after wipe, helper should mint a fresh id"
@@ -138,7 +138,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
 
 def test_different_tgids_get_different_sessions(tg_session_env):
     """Two employees chatting this EVE get two distinct rows
-    — DB-level ``tgid`` scoping mirrors the WebUI guarantee
+    — DB-level ``delivery_address`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.
     """
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
@@ -151,7 +151,7 @@ def test_different_tgids_get_different_sessions(tg_session_env):
 
     assert sid_a != sid_b
 
-    # And each tgid's row carries its own tgid and
+    # And each delivery_address's row carries its own delivery_address and
     # uid (the operator identity, not the chat's).
     row_a = _row_for("6240201712")
     row_b = _row_for("9876543210")
@@ -195,7 +195,7 @@ def test_messages_persist_to_session(tg_session_env):
     assert "assistant" in roles
     # Channel flag round-trips.
     assert fetched.channel == "tg"
-    assert fetched.tgid == "6240201712"
+    assert fetched.delivery_address == "6240201712"
     assert fetched.uid == 42
 
 
@@ -210,7 +210,7 @@ def test_messages_persist_to_session(tg_session_env):
 # the helper would mint a fresh TG session every time. In
 # real usage the operator alternating TG ↔ WebUI fragmented
 # the TG history into N rows, contradicting the "one TG
-# session per tgid forever" promise in the helper
+# session per delivery_address forever" promise in the helper
 # docstring.
 #
 # The fix is ``find_latest_tg_session`` (a SQL-side

@@ -54,6 +54,7 @@ from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_department import Department
 from magi.agent.db.models_employee import Employee
 from magi.agent.db.models_token_usage import TokenUsage
+from magi.agent.db.models_user_im_binding import UserImBinding
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
@@ -76,6 +77,8 @@ __all__ = [
     # dashboard
     "ActionItem",
     "TokenUsage",
+    # IM bindings (D.29 dispatcher contract)
+    "UserImBinding",
     # sessions (re-exported from sessions/tables.py)
     "ChatSession",
     "ChatMessage",

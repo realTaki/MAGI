@@ -346,7 +346,7 @@ async def test_list_files_rejects_file_path(workspace_ctx):
 async def test_send_message_webui_returns_error(workspace_ctx):
     """``send_message`` is TG-only in v0. On webui the
     LLM gets a clear error so it stops trying. D.26: the
-    tool reads ``chat_sessions.tgid`` directly; an empty
+    tool reads ``chat_sessions.delivery_address`` directly; an empty
     session_id means there's no row to read from, so the
     error mentions session rather than channel."""
     result = await SendMessageTool().run(workspace_ctx, text="hi")
@@ -361,22 +361,22 @@ async def test_send_message_webui_returns_error(workspace_ctx):
 @pytest.mark.asyncio
 async def test_send_message_tg_calls_callback(workspace_ctx):
     """When the channel is ``tg`` and a callback is
-    provided, the tool invokes it with (tgid, text).
+    provided, the tool invokes it with (delivery_address, text).
 
-    D.26: the tgid now comes from ``chat_sessions.tgid``
+    D.26: the delivery_address now comes from ``chat_sessions.delivery_address``
     (the single source of truth). The test seeds a session
-    row with ``tgid='9001'`` and passes its id to the tool
+    row with ``delivery_address='9001'`` and passes its id to the tool
     via ``ctx.session_id``.
     """
     from magi.agent.db import ChatSession, open_session
     callback = AsyncMock()
 
-    # Seed the session row whose ``tgid`` column carries
+    # Seed the session row whose ``delivery_address`` column carries
     # the IM target the tool will read.
     with open_session() as db:
         sess = ChatSession(
             session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
-            tgid="9001",
+            delivery_address="9001",
             uid=42,
             channel="tg",
             title=None,

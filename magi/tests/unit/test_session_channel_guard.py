@@ -76,7 +76,7 @@ def state(tmp_path: Path, monkeypatch) -> Path:
 
 @pytest.fixture
 def admin(state) -> Employee:
-    """Seed an admin whose telegram_id is the WebUI tgid."""
+    """Seed an admin whose telegram_id is the WebUI delivery_address."""
     with open_session() as s:
         emp = Employee(
             name="Test Admin",
@@ -92,14 +92,14 @@ def admin(state) -> Employee:
 
 
 def _make_session(
-    state: Path, channel: str, tgid: str = "9001",
+    state: Path, channel: str, delivery_address: str = "9001",
     uid: int = 1,
 ) -> str:
     """Create a session with the given owner channel.
 
     D.23: store key is the operator's uid; the
-    tgid argument here is the per-channel delivery
-    address stamped on the row's ``tgid`` column.
+    delivery_address argument here is the per-channel delivery
+    address stamped on the row's ``delivery_address`` column.
     """
     store = SessionStore(str(state))
     sess = store.create(
@@ -303,7 +303,7 @@ def test_webui_send_to_tg_owned_session_is_403(
 
     # The session's history is unchanged.
     # D.23: store key is uid (int), not the
-    # channel's tgid string.
+    # channel's delivery_address string.
     sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     user_texts = [m.text for m in sess.messages if m.role == "user"]

@@ -3,7 +3,7 @@
 Three surfaces pinned:
 
   1. **Hit + scoping** — a trigram-substring query that
-     matches a message returns a hit, with tgid scope
+     matches a message returns a hit, with delivery_address scope
      enforced at the SQL join (a second admin's rows are
      invisible).
   2. **CJK friendly** — a 3-char Chinese substring query
@@ -13,7 +13,7 @@ Three surfaces pinned:
      returns 200 instead of 500.
 
 Plus the auth gate (401 without the admin cookie) and the
-tgid cookie binding (the same cookie can't see another
+delivery_address cookie binding (the same cookie can't see another
 chat's rows).
 """
 
@@ -62,7 +62,7 @@ def search_env(monkeypatch, tmp_path):
     return state
 
 
-def _seed_chat_message(tgid: str, text: str) -> str:
+def _seed_chat_message(delivery_address: str, text: str) -> str:
     """Unused; tests use the ``seed_messages`` fixture below.
     Kept as a placeholder so a future caller can hit it
     without a fixture (would need to be plumbed via the
@@ -79,14 +79,14 @@ def seed_messages(search_env):
 
     counter = {"n": 0}
 
-    def _seed(tgid: str, text: str, *, uid: int = 1) -> str:
+    def _seed(delivery_address: str, text: str, *, uid: int = 1) -> str:
         # Each seeded message gets a fresh message_id so the
         # (session_id, message_id) UNIQUE constraint doesn't
         # reject the second seed in the same session.
         counter["n"] += 1
-        msg_id = f"m{tgid}-{counter['n']:04d}"
+        msg_id = f"m{delivery_address}-{counter['n']:04d}"
         store = SessionStore(str(search_env))
-        # D.23: first arg is uid, tgid is the
+        # D.23: first arg is uid, delivery_address is the
         # per-channel delivery address stamped on the row.
         sess = store.create(uid, )
         with open_session() as db:
@@ -201,7 +201,7 @@ def test_search_too_short_chinese_returns_zero(client, seed_messages):
 
 
 # ────────────────────────────────────────────────────────────────── #
-# tgid scoping
+# delivery_address scoping
 # ────────────────────────────────────────────────────────────────── #
 
 
@@ -212,7 +212,7 @@ def test_search_scoped_to_caller_employee(client, search_env, seed_messages):
     Scope is the calling Employee row (D.18+1 cross-platform
     scope: ``WHERE chat_sessions.uid = :emp``). We
     seed for admin A (uid=1) and admin B
-    (uid=2) using the same ``tgid`` so the scope
+    (uid=2) using the same ``delivery_address`` so the scope
     is what discriminates — not the chat identifier.
     """
     seed_messages("9001", "alpha unique-token-xyz alpha", uid=1)
@@ -294,7 +294,7 @@ def test_search_response_shape(client, seed_messages):
     item = body["items"][0]
     assert {"session_id", "message_id", "role", "ts",
             "snippet", "title", "score",
-            "tgid", "channel"}.issubset(item)
+            "delivery_address", "channel"}.issubset(item)
     # The snippet wraps the matched substring in <mark>.
     assert "<mark>" in item["snippet"]
 

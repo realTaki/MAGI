@@ -78,40 +78,61 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
 # (SQLite 3.25+; CPython 3.12 ships 3.45+) executed the
 # first time a database is opened with the new column name
 # present and the old one absent. Re-runs on the same DB
-# are no-ops. D.18+1 renamed ``chat_sessions.tgid`` →
-# ``chat_sessions.tgid`` so the column's purpose
-# (Telegram chat identifier only, NOT a generic chat id)
-# is reflected in its name; the WebUI/TG future-IM
-# cross-platform scope now lives on ``uid``.
+# are no-ops.
+#
+# Historical renames (newer D.x dropped the old names from
+# the schema; fresh installs already use the new names so
+# these entries are only meaningful when migrating from
+# pre-rename state):
+#   - D.18+1: ``chat_sessions.chat_id`` → ``chat_sessions.delivery_address``
+#   - D.23:   ``chat_sessions.employee_id`` → ``chat_sessions.uid``
+#   - D.27:   ``tasks.employee_id``, ``action_items.employee_id``,
+#             ``token_usage.employee_id``, ``memories.employee_id``
+#             all renamed to ``uid``.
+#
+# D.28 — drop the TG-specific identity from the column name.
+# ``chat_sessions.delivery_address`` → ``chat_sessions.delivery_address``.
+# The column's role is "the per-channel delivery address on
+# this session row"; today that's a TG chat id, but the
+# name no longer leaks that the wire format is TG-specific.
+# Domain code treats the value as an opaque string; only the
+# channel adapter (:mod:`magi.channels.dispatcher`) interprets it.
 _RENAME_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     (
         "chat_sessions",
-        "tgid",
+        "chat_id",
         "tgid",
     ),
     (
         "chat_sessions",
+        "employee_id",
         "uid",
-        "uid",
+    ),
+    # D.28: per-channel delivery address (TG chat id today;
+    # opaque string from domain code's perspective).
+    (
+        "chat_sessions",
+        "tgid",
+        "delivery_address",
     ),
     (
         "tasks",
-        "uid",
+        "employee_id",
         "uid",
     ),
     (
         "action_items",
-        "uid",
+        "employee_id",
         "uid",
     ),
     (
         "token_usage",
-        "uid",
+        "employee_id",
         "uid",
     ),
     (
         "memories",
-        "uid",
+        "employee_id",
         "uid",
     ),
 ]

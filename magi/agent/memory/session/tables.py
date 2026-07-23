@@ -53,6 +53,13 @@ from magi.agent.db.base import Base
 # The session row is keyed by the 26-char ULID ``session_id`` so
 # callers that already hold an id (chat.py / bot.py / agent.py) can
 # stay on their existing keys without translation.
+#
+# D.28: ``delivery_address`` replaces the legacy ``tgid`` column.
+# The value is the per-channel delivery address on this session
+# row — a TG chat id today, an opaque string from domain code's
+# perspective. The channel adapter
+# (:mod:`magi.channels.dispatcher`) is the only place that
+# interprets it. See ``docs/D.28-channel-dispatcher.md``.
 # ────────────────────────────────────────────────────────────────── #
 
 
@@ -67,30 +74,23 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     session_id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    # ``tgid`` is the Telegram chat identifier. For WebUI
-    # sessions the value is the admin's telegram_id (the
-    # cookie); for TG inbound sessions it's the TG user's
-    # tgid. The column is specifically the **Telegram**
-    # chat id — not a generic "tgid" — because future IM
-    # platforms (Slack, WeChat, etc.) will each have their
-    # own identifier scheme and we don't want to overload one
-    # column with three different semantics. When a non-TG
-    # channel lands, the schema will gain a sibling column
-    # (e.g. ``slack_im_id``) or a generic
-    # ``(platform, external_id)`` pair; the search scope
-    # stays on ``uid`` either way.
+    # ``delivery_address`` is the per-channel delivery address
+    # on this session row. Today: the bound TG chat id. After
+    # D.28 the column is channel-agnostic; only the dispatcher
+    # (:mod:`magi.channels.dispatcher`) interprets the value.
+    # Domain code reads it as an opaque string.
     #
-    # Indexed so the per-channel "list my conversations"
-    # endpoint (``GET /api/chat/sessions``) is a single
-    # range scan per ``tgid``.
-    tgid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    # The employee operator whose history this row belongs
-    # to. This is the search-scope key (D.18+1): an admin
-    # searching with the ``search_sessions`` tool sees
-    # every session whose ``uid`` matches their
-    # own — webui, TG, and (in future) any other channel,
-    # unified. ``tgid`` is a per-channel row identifier;
-    # ``uid`` is the cross-channel identity.
+    # Why no per-channel index here: the dispatcher uses
+    # (uid, channel) to route, and the existing
+    # ``ix_chat_sessions_uid`` covers the per-user listing
+    # pattern (which is what ``list_summaries`` issues).
+    delivery_address: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True,
+    )
+    # The User whose history this row belongs to. Cross-
+    # channel identity (D.23): an admin searching via
+    # ``search_sessions`` sees every session whose ``uid``
+    # matches their own — webui, TG, task fires, unified.
     uid: Mapped[int] = mapped_column(
         Integer, nullable=False, index=True,
     )
@@ -104,8 +104,8 @@ class ChatSession(Base):
     active_tail_count: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Indexed so ``list_summaries`` ``ORDER BY updated_at DESC`` is
-    # a backward index walk per ``tgid``.
+    # Indexed so ``list_summaries`` ``ORDER BY updated_at DESC``
+    # is a backward index walk per ``uid``.
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
 
     # Read-only back-reference; routes never mutate via this
@@ -121,7 +121,7 @@ class ChatSession(Base):
     def __repr__(self) -> str:
         return (
             f"ChatSession(session_id={self.session_id}, "
-            f"tgid={self.tgid}, title={self.title!r})"
+            f"delivery_address={self.delivery_address}, title={self.title!r})"
         )
 
 

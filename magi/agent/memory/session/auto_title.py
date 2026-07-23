@@ -66,12 +66,12 @@ logger = logging.getLogger("magi.agent.auto_title")
 # 401 silently swallowed.
 @dataclass(frozen=True)
 class TitleJob:
-    # The session row's ``tgid`` (per-channel delivery
-    # address). Diagnostic only — the worker logs it but
-    # never reads the column itself. Stored on the job so
-    # the worker doesn't have to open a DB session just
-    # to surface "where this session lives" in logs.
-    tgid: str
+    # The session row's ``delivery_address`` (per-channel
+    # delivery address). Diagnostic only — the worker logs
+    # it but never reads the column itself. Stored on the
+    # job so the worker doesn't have to open a DB session
+    # just to surface "where this session lives" in logs.
+    delivery_address: str
     session_id: str
     uid: int
     employee_provider: str
@@ -96,7 +96,7 @@ _worker_task: Optional[asyncio.Task[None]] = None
 
 
 async def enqueue_title_job(
-    tgid: str,
+    delivery_address: str,
     session_id: str,
     uid: int,
     employee_provider: str,
@@ -110,12 +110,13 @@ async def enqueue_title_job(
     ``Queue.put_nowait`` under the hood) means we don't tie
     the request handler to the worker's pace.
 
-    ``tgid`` is the session row's ``tgid`` column
-    (per-channel delivery address); kept on the job for
-    log diagnostics only — see ``TitleJob`` docstring.
+    ``delivery_address`` is the session row's
+    ``delivery_address`` column (per-channel delivery
+    address); kept on the job for log diagnostics only —
+    see ``TitleJob`` docstring.
     """
     job = TitleJob(
-        tgid=tgid,
+        delivery_address=delivery_address,
         session_id=session_id,
         uid=uid,
         employee_provider=employee_provider,
@@ -125,7 +126,7 @@ async def enqueue_title_job(
     await _title_jobs.put(job)
     logger.info(
         "title job enqueued",
-        extra={"session_id": session_id, "tgid": tgid},
+        extra={"session_id": session_id, "delivery_address": delivery_address},
     )
 
 

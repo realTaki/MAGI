@@ -124,7 +124,7 @@ def _seed_task(
             session_id = new_session_id()
             db.add(ChatSession(
                 session_id=session_id,
-                tgid=str(emp.telegram_id or ""),
+                delivery_address=str(emp.telegram_id or ""),
                 uid=emp.id,
                 channel="task",
                 title=f"[定时] {name}",
@@ -339,7 +339,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
         emp = db.query(Employee).filter_by(telegram_id=9101).one()
         legacy = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
-            tgid=str(emp.telegram_id),
+            delivery_address=str(emp.telegram_id),
             uid=emp.id,
             channel="webui",
             title="operator's ongoing chat",
@@ -437,7 +437,7 @@ async def test_tg_delivery_to_wires_callback(
     state_dir: Path,
 ) -> None:
     """When ``task.channel='tg'`` and
-    ``task.delivery_to`` is a TG tgid (digits) and
+    ``task.delivery_to`` is a TG delivery_address (digits) and
     a bot is registered, the runner wires
     ``_tg_send_callback`` into the agent loop. The
     callback is the agent's responsibility to invoke
@@ -451,8 +451,8 @@ async def test_tg_delivery_to_wires_callback(
     captured: dict = {}
 
     class _StubBot:
-        async def send_message(self, *, tgid, text, **_kwargs):
-            captured["tgid"] = tgid
+        async def send_message(self, *, delivery_address, text, **_kwargs):
+            captured["delivery_address"] = delivery_address
             captured["text"] = text
 
     _tg.bot.set_telegram_bot(_StubBot())
@@ -468,7 +468,7 @@ async def test_tg_delivery_to_wires_callback(
 
         async def _capture(*_args, **kwargs):
             captured["tg_send_callback"] = kwargs.get("tg_send_callback")
-            captured["tgid"] = kwargs.get("tgid")
+            captured["delivery_address"] = kwargs.get("delivery_address")
             return "fake reply"
 
         runner_mod.handle_message = _capture  # type: ignore[assignment]
@@ -478,15 +478,15 @@ async def test_tg_delivery_to_wires_callback(
             runner_mod.handle_message = real
 
         # The callback was wired (not None). D.26 dropped
-        # ``tgid`` from ``handle_message`` — the LLM tools
+        # ``delivery_address`` from ``handle_message`` — the LLM tools
         # (send_message in particular) read the per-channel
         # delivery address directly from
-        # ``chat_sessions.tgid`` instead. The callback closure
-        # captures the target tgid at fire time and uses it
-        # as the ``tgid=`` kwarg on the underlying bot call.
+        # ``chat_sessions.delivery_address`` instead. The callback closure
+        # captures the target delivery_address at fire time and uses it
+        # as the ``delivery_address=`` kwarg on the underlying bot call.
         cb = captured.get("tg_send_callback")
         assert callable(cb)
-        assert captured.get("tgid") is None
+        assert captured.get("delivery_address") is None
     finally:
         _tg.bot.clear_telegram_bot()
 
@@ -503,7 +503,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
         emp = db.query(Employee).filter_by(telegram_id=9101).one()
         tg_chat = ChatSession(
             session_id="01HTGCHATSESSIONXXXXXXXXX",
-            tgid="9101",
+            delivery_address="9101",
             uid=emp.id,
             channel="tg",
             title="operator's TG chat",

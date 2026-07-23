@@ -106,7 +106,7 @@ class SessionMessagesPage(BaseModel):
 
 class SessionOut(BaseModel):
     session_id: str
-    tgid: str
+    delivery_address: str
     uid: int
     channel: str
     created_at: str
@@ -159,7 +159,7 @@ class UpdateSessionRequest(BaseModel):
 def _session_to_out(s: Session) -> SessionOut:
     return SessionOut(
         session_id=s.session_id,
-        tgid=s.tgid,
+        delivery_address=s.delivery_address,
         uid=s.uid,
         channel=s.channel,
         created_at=s.created_at,
@@ -207,7 +207,7 @@ def _telegram_id_str_for_uid(uid: int) -> str:
     """Look up the operator's bound TG tgid as a string.
 
     D.24: the cookie identity is the uid, but
-    ``SessionStore.create`` still takes a ``tgid=``
+    ``SessionStore.create`` still takes a ``delivery_address=``
     keyword that stamps the per-channel delivery address
     on the row's ``tgid`` column. WebUI rows that
     originated here get the operator's bound TG chat id
@@ -315,7 +315,7 @@ def create_session(
     # :meth:`SessionStore.create`.
     tgid = _telegram_id_str_for_uid(uid)
     sess = store.create(
-        uid, channel="webui", tgid=tgid,
+        uid, channel="webui", delivery_address=tgid,
     )
     return CreateSessionResponse(session_id=sess.session_id)
 

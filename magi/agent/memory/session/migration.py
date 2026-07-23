@@ -86,7 +86,12 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
                         ChatSession.__table__.insert().prefix_with("OR IGNORE"),
                         {
                             "session_id": sess.session_id,
-                            "tgid": sess.tgid,  # column rename D.18+1
+                            # D.28: column was tgid; renamed to
+                            # delivery_address. Pre-D.28 inserts
+                            # (this importer, reading old JSON
+                            # files) still pass the value under
+                            # the new name.
+                            "delivery_address": sess.delivery_address,
                             "uid": sess.uid,
                             "channel": sess.channel,
                             "title": sess.title,

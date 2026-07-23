@@ -151,7 +151,7 @@ async def execute_task(
             task.session_id = new_session_id()
             db.add(ChatSession(
                 session_id=task.session_id,
-                tgid=str(employee.telegram_id or ""),
+                delivery_address=str(employee.telegram_id or ""),
                 uid=task.uid,
                 channel="task",
                 title=f"[定时] {task.name}",
@@ -285,7 +285,7 @@ async def execute_task(
                 text_to_send: str,
             ) -> None:
                 await bot.send_message(
-                    tgid=to_tgid,
+                    chat_id=to_tgid,
                     text=text_to_send,
                 )
             tg_send_callback = _tg_send_callback

@@ -67,14 +67,14 @@ def bind_telegram(
     separated); separating an employee is the operator's
     way of pausing their EVE without losing history.
     """
-    if not payload.tgid.lstrip("-").isdigit():
+    if not payload.delivery_address.lstrip("-").isdigit():
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
             detail="tgid must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(payload.tgid)
+        tgid_int = int(payload.delivery_address)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -121,7 +121,7 @@ def bind_telegram(
         session.commit()
 
     return TGBindResponse(
-        tgid=payload.tgid,
+        delivery_address=payload.delivery_address,
         uid=payload.uid,
     )
 
@@ -209,9 +209,9 @@ def get_telegram_binding(
             select(Employee).where(Employee.telegram_id == tgid_int)
         )
         if emp is None:
-            return TGBindStatus(tgid=tgid, bound_uid=None)
+            return TGBindStatus(delivery_address=tgid, bound_uid=None)
         return TGBindStatus(
-            tgid=tgid,
+            delivery_address=tgid,
             bound_uid=emp.id,
             bound_employee_name=emp.name,
         )

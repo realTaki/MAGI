@@ -320,9 +320,9 @@ async def send_chat(
             # keeps the tgid-from-Employee path scoped to
             # the auto-create branch — when the row
             # already exists, we trust its own column.
-            tgid = existing.tgid or ""
+            tgid = existing.delivery_address or ""
     if not session_id:
-        # ``tgid=`` here is the per-channel delivery
+        # ``delivery_address=`` here is the per-channel delivery
         # address stamped on the row's ``tgid`` column. D.24:
         # the cookie identity is the employee, but each row
         # still carries the operator's bound TG tgid (or
@@ -330,7 +330,7 @@ async def send_chat(
         # cross-channel query tool can address their bot.
         tgid = _telegram_id_str_for_employee(uid)
         sess = store.create(
-            uid, channel="webui", tgid=tgid,
+            uid, channel="webui", delivery_address=tgid,
         )
         session_id = sess.session_id
 
@@ -399,7 +399,7 @@ async def send_chat(
     if len(post.messages) == 1:
         from magi.agent.memory.session.auto_title import enqueue_title_job
         await enqueue_title_job(
-            tgid=tgid,
+            delivery_address=tgid,
             session_id=session_id,
             uid=uid,
             employee_provider=employee_provider,
