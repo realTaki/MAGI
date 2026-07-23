@@ -150,38 +150,6 @@ def _resolve_caller_credentials(
     return emp.id, emp.provider, emp.api_key, emp.role
 
 
-def _telegram_id_str_for_employee(uid: int) -> str:
-    """Look up the bound TG tgid (delivery address) for
-    an employee. Returns ``""`` if the employee never bound
-    a TG chat — the row's ``tgid`` column gets ``""`` and
-    any future cross-channel tooling sees an empty delivery
-    address. Cheap one-shot ORM read.
-    """
-    try:
-        # Read the value INSIDE the ``with`` block and return
-        # a plain ``str``. The previous implementation
-        # returned the live ORM ``Employee`` and accessed
-        # ``.telegram_id`` outside the session — works today
-        # because ``telegram_id`` is an eager-loaded scalar
-        # column, but it's a detached-instance trap: a
-        # future change to lazy-load the column would turn
-        # this into a ``DetachedInstanceError`` on the next
-        # ORM-engine reset. Returning the string kills the
-        # trap at the source.
-        with open_session() as session:
-            emp = session.get(Employee, uid)
-            telegram_id = emp.telegram_id if emp is not None else None
-    except Exception:
-        logger.exception(
-            "chat: telegram_id lookup failed for employee %s",
-            uid,
-        )
-        return ""
-    if telegram_id is None:
-        return ""
-    return str(telegram_id)
-
-
 class ChatSendRequest(BaseModel):
     """Body for ``POST /api/chat/send``.
 
@@ -323,14 +291,17 @@ async def send_chat(
             tgid = existing.delivery_address or ""
     if not session_id:
         # ``delivery_address=`` here is the per-channel delivery
-        # address stamped on the row's ``tgid`` column. D.24:
-        # the cookie identity is the employee, but each row
-        # still carries the operator's bound TG tgid (or
-        # ``""`` if they never bound one) so a future
-        # cross-channel query tool can address their bot.
-        tgid = _telegram_id_str_for_employee(uid)
+        # address stamped on the row's ``tgid`` column. The
+        # value comes from the channel dispatcher — D.28
+        # centralised the uid→IM-id mapping in the adapter
+        # registry, so this file no longer reads
+        # ``Employee.telegram_id`` directly. An empty string
+        # when the operator has no TG binding (still legal —
+        # WebUI rows don't push anywhere).
+        from magi.channels import dispatcher as channel_dispatcher
+        tg_im_id = channel_dispatcher.lookup_im_id(uid, "tg") or ""
         sess = store.create(
-            uid, channel="webui", delivery_address=tgid,
+            uid, channel="webui", delivery_address=tg_im_id,
         )
         session_id = sess.session_id
 

@@ -18,6 +18,7 @@ file.
 | C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-employee LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
 | C4 — per-employee persona + memory UI | **~55%** | `action_items.source="eve"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-employee SOUL.md, memory management UI still pending |
 | C5 — more channels (Email + Calendar) | **0%** | Not started |
+| D.28 + D.29 — channel dispatcher + ``user_im_bindings`` table | **Done** | Per-channel IM ids (currently TG chat id) live in a single ``user_im_bindings(uid, channel, im_id)`` table; domain code (agent tools, runner, webui api auth) talks only to ``magi.channels.dispatcher`` and never reads the per-channel IM id directly. Each channel implements a :class:`ChannelAdapter` Protocol; adding a new channel = writing one adapter + registering it. The legacy ``Employee.telegram_id`` column is kept in sync as a read-cache for the bot's inbound path. See ``docs/D.28-channel-dispatcher.md``. |
 | C6 — cross-MAGI + cross-employee | **~5%** | Role enum in place; `/api/eves/{id}/dispatch`, cross-employee query still pending |
 | C7 — WebSocket stream console | **0%** | Not started |
 | C8 — hardening (encryption, degraded mode, audit outbox) | **0%** | Not started |

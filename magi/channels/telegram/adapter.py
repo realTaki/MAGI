@@ -38,7 +38,7 @@ from magi.channels.dispatcher import (
     ChannelAdapter,
     register_adapter,
 )
-from magi.channels.telegram.bot import get_telegram_bot
+from magi.channels.telegram import bot as tg_bot_module
 
 logger = logging.getLogger("magi.channels.telegram.adapter")
 
@@ -60,10 +60,10 @@ class TelegramAdapter:
     without the dispatcher noticing.
     """
 
-    name: str = "telegram"
+    name: str = "tg"
 
     async def send(self, uid: int, text: str) -> None:
-        bot = get_telegram_bot()
+        bot = tg_bot_module.get_telegram_bot()
         if bot is None:
             raise RuntimeError(
                 "telegram adapter: no bot registered; "
@@ -87,7 +87,7 @@ class TelegramAdapter:
 
     def lookup_im_id(self, uid: int) -> str | None:
         with open_session() as db:
-            row = db.get(UserImBinding, (uid, "telegram"))
+            row = db.get(UserImBinding, (uid, "tg"))
         if row is None:
             return None
         return row.im_id
@@ -95,10 +95,10 @@ class TelegramAdapter:
     def bind_im_id(self, uid: int, im_id: str) -> None:
         with _BIND_LOCK:
             with open_session() as db:
-                existing = db.get(UserImBinding, (uid, "telegram"))
+                existing = db.get(UserImBinding, (uid, "tg"))
                 if existing is None:
                     db.add(UserImBinding(
-                        uid=uid, channel="telegram", im_id=im_id,
+                        uid=uid, channel="tg", im_id=im_id,
                     ))
                 else:
                     existing.im_id = im_id
@@ -126,7 +126,7 @@ class TelegramAdapter:
     def unbind_im_id(self, uid: int) -> None:
         with _BIND_LOCK:
             with open_session() as db:
-                row = db.get(UserImBinding, (uid, "telegram"))
+                row = db.get(UserImBinding, (uid, "tg"))
                 if row is not None:
                     db.delete(row)
                 # Sync the legacy column.

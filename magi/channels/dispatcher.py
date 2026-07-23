@@ -112,6 +112,7 @@ class ChannelAdapter(Protocol):
 
 
 _ADAPTERS: dict[str, ChannelAdapter] = {}
+_AUTO_REGISTER_DONE = False
 
 
 def register_adapter(adapter: ChannelAdapter) -> None:
@@ -124,11 +125,37 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     _ADAPTERS[adapter.name] = adapter
 
 
+def _auto_register_builtin_adapters() -> None:
+    """Idempotent first-time import of built-in channel adapters.
+
+    The dispatcher can't import the channel adapter packages
+    at module load — that would be a circular import (the
+    adapter imports ``ChannelAdapter`` from this module).
+    So adapters register themselves when their *own*
+    modules are first imported, and we trigger that import
+    lazily from inside the public dispatcher API.
+
+    Adding a new built-in channel: import it here. External
+    (non-built-in) adapters register explicitly via
+    :func:`register_adapter` from wherever they're loaded.
+    """
+    global _AUTO_REGISTER_DONE
+    if _AUTO_REGISTER_DONE:
+        return
+    _AUTO_REGISTER_DONE = True
+    # Each import below has a side effect: the channel's
+    # __init__.py calls register_adapter() at module load.
+    from magi.channels.telegram import (  # noqa: F401
+        TelegramAdapter,  # noqa: F401
+    )
+
+
 def get_adapter(name: str) -> ChannelAdapter | None:
     """Return the adapter registered under ``name``,
     or ``None`` if no adapter is registered for that
     channel.
     """
+    _auto_register_builtin_adapters()
     return _ADAPTERS.get(name)
 
 
@@ -140,6 +167,7 @@ def list_channels() -> list[str]:
     dashboard / wizard "what channels does MAGI support?"
     dropdown.
     """
+    _auto_register_builtin_adapters()
     return list(_ADAPTERS.keys())
 
 
@@ -162,6 +190,7 @@ async def send_to_uid(uid: int, channel: str, text: str) -> None:
         drop — domain code that hits this case is usually
         missing a setup step the wizard should have run.
     """
+    _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
     if adapter is None:
         raise KeyError(f"no adapter registered for channel={channel!r}")
@@ -191,6 +220,7 @@ async def send_to_session(session_id: str, text: str) -> None:
         sess = db.get(ChatSession, session_id)
     if sess is None:
         raise KeyError(f"no session {session_id}")
+    _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(sess.channel)
     if adapter is None:
         raise KeyError(

@@ -271,23 +271,6 @@ def _clear_login_code(uid: int) -> None:
     state_delete(_state_dir(), f"{_LOGIN_KEY}.{uid}")
 
 
-def _tgid_for_uid(uid: int) -> int | None:
-    """Look up the TG chat id bound to ``uid``.
-
-    Returns ``None`` if the user has no TG binding. Today this
-    is the only IM channel; tomorrow the dispatcher picks
-    between TG / Slack / WeChat based on which bot is online.
-    Returns an int (TG chat ids are always integer).
-    """
-    try:
-        with open_session() as session:
-            emp = session.get(Employee, uid)
-            return emp.telegram_id if emp is not None else None
-    except Exception:
-        logger.exception("login: uid → telegram_id lookup failed")
-        return None
-
-
 # -- endpoints ---------------------------------------------------------
 
 
@@ -439,12 +422,12 @@ async def send_login_code(
         )
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
-    # Resolve the UID's bound IM channel. Today this is
-    # only TG; the dispatcher falls through to "no IM
-    # configured" if the row has telegram_id=NULL. Future
-    # IMs add a sibling lookup here.
-    telegram_id = _tgid_for_uid(uid)
-    if telegram_id is None:
+    # Resolve the UID's bound IM channel via the channel
+    # dispatcher (D.28). Today: TG. Future: dispatcher picks
+    # the first channel with a live bot. If no IM is
+    # bound, refuse — we have no way to deliver the code.
+    from magi.channels import dispatcher as channel_dispatcher
+    if channel_dispatcher.lookup_im_id(uid, "tg") is None:
         return SendLoginCodeResponse(
             ok=False,
             error="This account has no IM channel configured; "
@@ -471,130 +454,35 @@ async def send_login_code(
 
     from magi.agent.db.settings import state_get
 
-    bot_token = state_get(_state_dir(), "telegram.bot_token")
-    if not bot_token:
-        return SendLoginCodeResponse(
-            ok=False,
-            error="Bot token not configured yet — can't send login code.",
-        )
-
     code = _generate_code()
     issued_at = datetime.now(timezone.utc)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
     _store_login_code(uid, code, issued_at, expires_at)
 
-    # Send through the resolved IM. The TG HTTP API uses a
-    # vendor-fixed wire-format field name that, by historical
-    # accident, still carries the older 1st-party name
-    # (the python-telegram-bot client library also has the
-    # same vendor kwarg on its send_message). It's the ONLY
-    # place the literal legacy token survives — every other
-    # MAGI surface speaks ``tgid`` / ``uid``. The ``telegram_id``
-    # value comes from the resolver above.
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    # Send through the resolved IM. The dispatcher routes
+    # to the right channel adapter; the TG adapter does its
+    # own httpx / bot call against api.telegram.org. We
+    # pass the UID; the adapter looks up the bound chat id
+    # itself. No more bot token + httpx here — that path
+    # is encapsulated behind the adapter boundary (D.28).
+    code_text = (
+        f"Your MAGI sign-in code is: <code>{code}</code>\n\n"
+        f"Enter it in the browser to log in. The code "
+        f"expires in {_CODE_TTL_SECONDS // 60} minutes."
+    )
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                url,
-                json={
-                    # Vendor-fixed wire field name (TG HTTP API).
-                    # See comment above; this is the only place
-                    # the legacy token survives.
-                    "chat_id": telegram_id,
-                    "text": (
-                        f"Your MAGI sign-in code is: <code>{code}</code>\n\n"
-                        f"Enter it in the browser to log in. The code "
-                        f"expires in {_CODE_TTL_SECONDS // 60} minutes."
-                    ),
-                },
-            )
-    except httpx.TimeoutException:
+        await channel_dispatcher.send_to_uid(uid, "tg", code_text)
+    except RuntimeError as e:
+        # The dispatcher raised because the user has no
+        # binding or the channel's bot is offline. The
+        # pre-call ``lookup_im_id`` already guards the
+        # binding case, so any RuntimeError here is the
+        # bot-offline case.
         _clear_login_code(uid)
-        return SendLoginCodeResponse(ok=False, error="Telegram timed out")
-    except httpx.RequestError as exc:
+        return SendLoginCodeResponse(ok=False, error=str(e))
+    except Exception as e:
         _clear_login_code(uid)
-        return SendLoginCodeResponse(ok=False, error=f"Network error: {exc}")
-
-    if resp.status_code != 200:
-        _clear_login_code(uid)
-        return SendLoginCodeResponse(
-            ok=False,
-            error=f"Telegram returned HTTP {resp.status_code}",
-        )
-
-    data = resp.json()
-    if not data.get("ok"):
-        _clear_login_code(uid)
-        return SendLoginCodeResponse(
-            ok=False, error=data.get("description", "Telegram error")
-        )
-
-    return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-
-    # Cooldown — same anti-abuse logic as the admin code.
-    previous = _load_login_code(tgid)
-    if previous:
-        try:
-            prev_sent_at = float(previous.get("last_sent_at", 0))
-        except (TypeError, ValueError):
-            prev_sent_at = 0
-        if prev_sent_at:
-            elapsed = datetime.now(timezone.utc).timestamp() - prev_sent_at
-            if elapsed < _RESEND_COOLDOWN_SECONDS:
-                remaining = int(_RESEND_COOLDOWN_SECONDS - elapsed)
-                return SendLoginCodeResponse(
-                    ok=False,
-                    error=f"Wait {remaining}s before requesting a new code.",
-                )
-
-    from magi.agent.db.settings import state_get
-
-    bot_token = state_get(_state_dir(), "telegram.bot_token")
-    if not bot_token:
-        return SendLoginCodeResponse(
-            ok=False,
-            error="Bot token not configured yet — can't send login code.",
-        )
-
-    code = _generate_code()
-    issued_at = datetime.now(timezone.utc)
-    expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
-    _store_login_code(tgid, code, issued_at, expires_at)
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                url,
-                json={
-                    "tgid": int(tgid),
-                    "text": (
-                        f"Your MAGI sign-in code is: <code>{code}</code>\n\n"
-                        f"Enter it in the browser to log in. The code "
-                        f"expires in {_CODE_TTL_SECONDS // 60} minutes."
-                    ),
-                },
-            )
-    except httpx.TimeoutException:
-        _clear_login_code(tgid)
-        return SendLoginCodeResponse(ok=False, error="Telegram timed out")
-    except httpx.RequestError as exc:
-        _clear_login_code(tgid)
-        return SendLoginCodeResponse(ok=False, error=f"Network error: {exc}")
-
-    if resp.status_code != 200:
-        _clear_login_code(tgid)
-        return SendLoginCodeResponse(
-            ok=False,
-            error=f"Telegram returned HTTP {resp.status_code}",
-        )
-
-    data = resp.json()
-    if not data.get("ok"):
-        _clear_login_code(tgid)
-        return SendLoginCodeResponse(
-            ok=False, error=data.get("description", "Telegram error")
-        )
+        return SendLoginCodeResponse(ok=False, error=f"send failed: {e}")
 
     return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 

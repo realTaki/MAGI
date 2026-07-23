@@ -267,7 +267,7 @@ class ScheduleTaskTool(Tool):
         if channel == "webui":
             delivery_to = None
         elif channel == "tg":
-            delivery_to = _session_tgid_str(ctx.session_id)
+            delivery_to = _session_delivery_address(ctx.session_id)
         else:
             delivery_to = None
 
@@ -516,10 +516,10 @@ def _allocate_task_session(db, *, uid: int, name: str) -> str:
 __all__ = ["ScheduleTaskTool"]
 
 
-def _session_tgid_str(session_id):
+def _session_delivery_address(session_id):
     """Read ``chat_sessions.delivery_address`` for ``session_id`` and
-    return it as a string (digits), or ``None`` if the
-    session is missing / has no tgid / has a malformed
+    return it as a string, or ``None`` if the session is
+    missing / has no delivery address / has a malformed
     value.
 
     Used by :meth:`ScheduleTaskTool.run` to populate the

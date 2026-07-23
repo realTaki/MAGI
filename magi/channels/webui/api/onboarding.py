@@ -753,6 +753,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 display_names[cid] = name
 
     try:
+        new_emp_ids: list[int] = []
         with open_session() as session:
             # 1) Existing admin rows not in the new list → delete
             #    (these are onboarding-created shells; no
@@ -766,10 +767,14 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     session.delete(old)
 
             # 2) Each new tgid → ensure an Employee row
-            #    exists with role=admin, telegram_id=<id>,
-            #    department_id=null. Promote existing regular
-            #    employees in the rare case the tgid was
-            #    already bound.
+            #    exists with role=admin, no department. The
+            #    actual IM binding is the channel adapter's
+            #    job (D.28): we call ``dispatcher.bind_im_id``
+            #    AFTER the with block to write
+            #    ``user_im_bindings`` (canonical) and sync
+            #    ``Employee.telegram_id`` (legacy read-cache).
+            # Promote existing regular employees in the rare
+            # case the tgid was already bound.
             for cid in parsed_ids:
                 emp = session.scalar(
                     select(Employee).where(Employee.telegram_id == cid)
@@ -780,19 +785,43 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                         display_name=display_names[cid],
                         department_id=None,
                         role="admin",
-                        telegram_id=cid,
                     )
                     session.add(emp)
+                    session.flush()
                 else:
                     emp.role = "admin"
                     if display_names[cid]:
                         emp.name = display_names[cid]
                         if not emp.display_name:
                             emp.display_name = display_names[cid]
+                new_emp_ids.append(emp.id)
             session.commit()
     except Exception as exc:
         logger.exception("failed to write admin employees")
         return SaveAdminResponse(ok=False, error=str(exc))
+
+    # D.28: bind each new admin's TG chat id through the
+    # channel dispatcher. The adapter writes
+    # ``user_im_bindings`` (canonical) and syncs the
+    # legacy ``Employee.telegram_id`` column for the bot's
+    # inbound handler. Done outside the with block because
+    # the dispatcher opens its own session (nested BEGIN
+    # IMMEDIATE inside an outer transaction would deadlock
+    # SQLite).
+    from magi.channels import dispatcher as channel_dispatcher
+    for emp_id, cid in zip(new_emp_ids, parsed_ids):
+        try:
+            channel_dispatcher.bind_im_id(emp_id, "tg", str(cid))
+        except Exception:
+            # Best-effort: the Employee row is already
+            # created with role=admin. If the binding
+            # write fails (e.g. FK or DB hiccup), the
+            # admin can re-bind via the API later.
+            logger.exception(
+                "save_admin: dispatcher.bind_im_id failed "
+                "for emp_id=%s cid=%s",
+                emp_id, cid,
+            )
 
     logger.info("admins saved", extra={"count": len(cleaned)})
     return SaveAdminResponse(ok=True, count=len(cleaned))

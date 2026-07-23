@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -359,21 +359,47 @@ async def test_send_message_webui_returns_error(workspace_ctx):
 
 
 @pytest.mark.asyncio
-async def test_send_message_tg_calls_callback(workspace_ctx):
-    """When the channel is ``tg`` and a callback is
-    provided, the tool invokes it with (delivery_address, text).
+async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
+    """When the channel is ``tg`` and the user has a
+    ``user_im_bindings`` row, the tool routes through the
+    dispatcher → TG adapter → registered bot's
+    ``send_message``.
 
-    D.26: the delivery_address now comes from ``chat_sessions.delivery_address``
-    (the single source of truth). The test seeds a session
-    row with ``delivery_address='9001'`` and passes its id to the tool
-    via ``ctx.session_id``.
+    D.28: the tool no longer accepts ``_tg_send_callback``
+    as a kwarg (that hand-rolled injection is gone). The
+    dispatcher is the single dispatch point. This test
+    registers a fake bot, seeds a ``user_im_bindings``
+    row for the test user, and asserts the bot's
+    ``send_message`` was called with the right chat id
+    and text.
     """
-    from magi.agent.db import ChatSession, open_session
-    callback = AsyncMock()
+    from magi.agent.db import (
+        ChatSession,
+        UserImBinding,
+        open_session,
+    )
+    from magi.channels import dispatcher
+    from magi.channels.telegram import bot as tg_bot
 
-    # Seed the session row whose ``delivery_address`` column carries
-    # the IM target the tool will read.
+    fake_bot = MagicMock()
+    fake_bot.send_message = AsyncMock()
+    monkeypatch.setattr(tg_bot, "get_telegram_bot", lambda: fake_bot)
+
+    # Seed (1) the user-im-bindings row that the TG adapter
+    # reads, and (2) the session row the tool's
+    # ``ctx.session_id`` points at. The binding's ``uid``
+    # needs an Employee row to exist (FK constraint).
+    from magi.agent.db import Employee
     with open_session() as db:
+        existing = db.get(Employee, 42)
+        if existing is None:
+            db.add(Employee(
+                id=42, name="Tool-loop test",
+                role="admin", provider="minimax",
+                api_key="fake",
+            ))
+            db.commit()
+        db.merge(UserImBinding(uid=42, channel="tg", im_id="9001"))
         sess = ChatSession(
             session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
             delivery_address="9001",
@@ -394,11 +420,19 @@ async def test_send_message_tg_calls_callback(workspace_ctx):
         channel="tg",
         session_id=sess.session_id,
     )
-    result = await SendMessageTool().run(
-        ctx, text="hi there", _tg_send_callback=callback,
-    )
+    result = await SendMessageTool().run(ctx, text="hi there")
     assert result.is_error is False, result.content
-    callback.assert_awaited_once_with(9001, "hi there")
+    # D.28: bot.send_message uses the python-telegram-bot
+    # vendor kwarg ``chat_id=``. The value resolves to the
+    # bound ``user_im_bindings.im_id``.
+    fake_bot.send_message.assert_awaited_once_with(
+        chat_id=9001, text="hi there",
+    )
+    # Defensive: no module-level state leak (the dispatcher's
+    # adapter registry is process-global; if the test
+    # ordering ever changed, ``_AUTO_REGISTER_DONE`` would
+    # already be True and the adapter already in place).
+    assert dispatcher.get_adapter("tg") is not None
 
 
 @pytest.mark.asyncio

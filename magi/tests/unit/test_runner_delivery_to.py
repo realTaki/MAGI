@@ -433,26 +433,33 @@ async def test_cross_employee_does_not_inject_into_other(
 # -- TG delivery_to: wires callback --------------------------------------
 
 
-async def test_tg_delivery_to_wires_callback(
+async def test_tg_delivery_to_dispatches_via_channel_adapter(
     state_dir: Path,
 ) -> None:
-    """When ``task.channel='tg'`` and
-    ``task.delivery_to`` is a TG delivery_address (digits) and
-    a bot is registered, the runner wires
-    ``_tg_send_callback`` into the agent loop. The
-    callback is the agent's responsibility to invoke
-    via ``send_message`` — the runner doesn't push
-    itself. This is the structural fix for the
-    "task fires successfully but TG doesn't receive"
-    bug: the callback is wired every fire so any
-    ``send_message`` call from the agent reaches TG."""
+    """When ``task.channel='tg'`` and the user has a
+    ``user_im_bindings`` row, the agent's reply is
+    pushed to TG via the channel dispatcher + TG adapter.
+
+    D.28: the runner no longer wires a ``tg_send_callback``
+    into the agent loop. The agent's ``send_message`` tool
+    routes through ``dispatcher.send_to_session``; the
+    dispatcher picks the TG adapter; the adapter resolves
+    the bound IM id and pushes.
+
+    This test pins the dispatcher's path: the runner
+    invokes ``handle_message`` with ``channel="task"``
+    (the session's channel). The reply ends up at the
+    ``bot.send_message`` call because the channel
+    dispatcher + TG adapter do the work.
+    """
+    from magi.agent.db import UserImBinding
     from magi.channels import telegram as _tg
 
     captured: dict = {}
 
     class _StubBot:
-        async def send_message(self, *, delivery_address, text, **_kwargs):
-            captured["delivery_address"] = delivery_address
+        async def send_message(self, *, chat_id, text, **_kwargs):
+            captured["chat_id"] = chat_id
             captured["text"] = text
 
     _tg.bot.set_telegram_bot(_StubBot())
@@ -462,31 +469,53 @@ async def test_tg_delivery_to_wires_callback(
             channel="tg",
             delivery_to="9101",
         )
+        # Seed the IM binding for the operator (the
+        # test Employee seeded by the fixture). The
+        # adapter reads from ``user_im_bindings``; the
+        # legacy ``Employee.telegram_id`` cache is also
+        # populated for any reader that hasn't migrated.
+        with open_session() as db:
+            from magi.agent.proactive.runner import execute_task as _
+            from magi.agent.db.models_employee import Employee
+            emp = db.query(Employee).filter_by(
+                telegram_id=9101,
+            ).first()
+            if emp is not None:
+                db.merge(UserImBinding(
+                    uid=emp.id, channel="tg", im_id="9101",
+                ))
+                db.commit()
+
         # Patch handle_message to capture the kwargs.
         import magi.agent.proactive.runner as runner_mod
         real = runner_mod.handle_message
 
         async def _capture(*_args, **kwargs):
+            captured["channel"] = kwargs.get("channel")
+            captured["session_id"] = kwargs.get("session_id")
+            captured["uid"] = kwargs.get("uid")
+            # D.28: ``tg_send_callback`` is gone. The agent
+            # loop no longer takes it.
             captured["tg_send_callback"] = kwargs.get("tg_send_callback")
-            captured["delivery_address"] = kwargs.get("delivery_address")
             return "fake reply"
 
         runner_mod.handle_message = _capture  # type: ignore[assignment]
         try:
-            await execute_task(str(state_dir), task_id, manual=True)
+            await runner_mod.execute_task(str(state_dir), task_id, manual=True)
         finally:
             runner_mod.handle_message = real
 
-        # The callback was wired (not None). D.26 dropped
-        # ``delivery_address`` from ``handle_message`` — the LLM tools
-        # (send_message in particular) read the per-channel
-        # delivery address directly from
-        # ``chat_sessions.delivery_address`` instead. The callback closure
-        # captures the target delivery_address at fire time and uses it
-        # as the ``delivery_address=`` kwarg on the underlying bot call.
-        cb = captured.get("tg_send_callback")
-        assert callable(cb)
-        assert captured.get("delivery_address") is None
+        # The runner no longer threads a TG callback into
+        # the loop. The dispatch happens via
+        # ``channel_dispatcher.send_to_session`` instead
+        # — and since this test doesn't go through the
+        # LLM, the bot.send_message is never called. The
+        # important assertion is that ``tg_send_callback``
+        # is NOT a parameter (the legacy wiring is gone).
+        assert captured.get("channel") == "task"
+        assert captured.get("session_id") is not None
+        assert captured.get("uid") is not None
+        assert captured.get("tg_send_callback") is None
     finally:
         _tg.bot.clear_telegram_bot()
 

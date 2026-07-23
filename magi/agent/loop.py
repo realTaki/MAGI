@@ -293,12 +293,13 @@ async def handle_message(
     # "read from settings / fall back to default". Tests
     # pass an explicit small number to keep the suite fast.
     max_tool_iterations: int | None = None,
-    # D.16: callback the ``send_message`` tool invokes to
-    # deliver an out-of-band TG message. ``None`` means the
-    # tool is effectively disabled for this channel — which
-    # is fine on webui, where the tool itself rejects with
-    # ``is_error=true``.
-    tg_send_callback=None,
+    # D.28: ``tg_send_callback`` is gone. The agent's
+    # ``send_message`` tool now routes through the channel
+    # dispatcher; the tool body calls
+    # ``dispatcher.send_to_session(session_id, text)`` and
+    # never sees a TG client reference. Channels own their
+    # own IM-client wiring; the agent loop stays
+    # channel-agnostic.
     # Calling operator's role. Used to filter which tools
     # the LLM sees (see ``get_tool_schemas(caller_role=...)``
     # in :mod:`magi.agent.tools.registry`): admin-only tools
@@ -561,12 +562,10 @@ async def handle_message(
                     # exception we still want the LLM to
                     # see the failure, not the caller.
                     kwargs = dict(tu.get("input") or {})
-                    if tool.name == "send_message":
-                        # Special-case the TG callback —
-                        # ``Tool.run`` only sees kwargs; the
-                        # callback is injected here so the
-                        # tool stays SDK-agnostic.
-                        kwargs["_tg_send_callback"] = tg_send_callback
+                    # D.28: ``send_message`` no longer needs
+                    # a callback injection — the tool body
+                    # routes through ``dispatcher.send_to_session``
+                    # itself. No special-case here.
                     tr = await tool.run(tool_ctx, **kwargs)
                 except Exception as e:
                     logger.exception(
