@@ -69,7 +69,7 @@ export type SettingsTabProps = {
   signedInUser: { telegram_id: string; display_name: string | null };
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
-    next: Array<{ chatId: string; displayName: string | null }>,
+    next: Array<{ telegramId: string; displayName: string | null }>,
   ) => void;
   onRestart: () => void;
 };

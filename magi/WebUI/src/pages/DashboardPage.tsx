@@ -44,7 +44,7 @@ export default function DashboardPage(props: {
   signedInUser: { telegram_id: string; display_name: string | null } | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
-    next: Array<{ chatId: string; displayName: string | null }>,
+    next: Array<{ telegramId: string; displayName: string | null }>,
   ) => void;
   onRestart: () => void;
   onSignOut: () => void;
@@ -79,7 +79,7 @@ function PostLoginLayout(props: {
   data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
-    next: Array<{ chatId: string; displayName: string | null }>,
+    next: Array<{ telegramId: string; displayName: string | null }>,
   ) => void;
   onRestart: () => void;
   onSignOut: () => void;
@@ -119,7 +119,7 @@ function PostLoginLayout(props: {
           <div className="flex items-center gap-3 shrink-0">
             <SignedInLabel
               displayName={props.user.display_name}
-              chatId={props.user.telegram_id}
+              telegramId={props.user.telegram_id}
             />
             {/* Language picker — globe icon + dropdown. Sits
                 right of the identity pill and before the
@@ -199,14 +199,14 @@ type TabKey = "chat" | "organization" | "knowledge" | "settings";
  *  stays readable. */
 function SignedInLabel(props: {
   displayName: string | null;
-  chatId: string;
+  telegramId: string;
 }) {
   const t = useT();
   return (
     <span className="text-xs text-ink-soft hidden sm:inline">
       {t("topbar.signedInAs")}{" "}
       <span className="font-mono text-ink">
-        {props.displayName ?? props.chatId}
+        {props.displayName ?? props.telegramId}
       </span>
     </span>
   );
@@ -216,8 +216,8 @@ function SignedInLabel(props: {
 // -- tab: admin -------------------------------------------------------------
 //
 // The "contacts" the deployer can reach here are the super admins
-// (the chat_ids that may sign in to Adam). The list is fetched
-// from /api/auth/allowed-chat-ids because that endpoint already
+// (the tgids that may sign in to Adam). The list is fetched
+// from /api/auth/allowed-tgids because that endpoint already
 // resolves display names via Telegram ``getChat`` — saves us a
 // second round-trip per row. Adding a new admin runs the same
 // code-based flow the wizard used; removing one writes the

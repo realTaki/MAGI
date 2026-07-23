@@ -74,7 +74,7 @@ def bind_telegram(
             detail="tgid must be a numeric Telegram chat id",
         )
     try:
-        chat_id_int = int(payload.tgid)
+        tgid_int = int(payload.tgid)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -111,13 +111,13 @@ def bind_telegram(
         # apply the new UPDATE before the clear, hitting
         # the unique constraint on the old holder.
         existing = session.scalar(
-            select(Employee).where(Employee.telegram_id == chat_id_int)
+            select(Employee).where(Employee.telegram_id == tgid_int)
         )
         if existing is not None and existing.id != emp.id:
             existing.telegram_id = None
             session.flush()
 
-        emp.telegram_id = chat_id_int
+        emp.telegram_id = tgid_int
         session.commit()
 
     return TGBindResponse(
@@ -149,7 +149,7 @@ def unbind_telegram(
             detail="tgid must be a numeric Telegram chat id",
         )
     try:
-        chat_id_int = int(tgid)
+        tgid_int = int(tgid)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -158,7 +158,7 @@ def unbind_telegram(
         )
     with open_session() as session:
         emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == chat_id_int)
+            select(Employee).where(Employee.telegram_id == tgid_int)
         )
         if emp is not None:
             emp.telegram_id = None
@@ -196,7 +196,7 @@ def get_telegram_binding(
             detail="tgid must be a numeric Telegram chat id",
         )
     try:
-        chat_id_int = int(tgid)
+        tgid_int = int(tgid)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -206,7 +206,7 @@ def get_telegram_binding(
 
     with open_session() as session:
         emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == chat_id_int)
+            select(Employee).where(Employee.telegram_id == tgid_int)
         )
         if emp is None:
             return TGBindStatus(tgid=tgid, bound_uid=None)

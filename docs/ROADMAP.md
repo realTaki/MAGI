@@ -162,7 +162,7 @@ end-to-end.
 | TG inbound → session store before `handle_message` | **Done** | D.10/D.11 — channel-mismatch guard + audit trail before LLM call |
 | Interrupt-aware agent loop (D.21) | **Done** | `_drain_pending_user_messages` splices follow-up user messages into the live tool loop and resets `iterations_run` |
 | TG `concurrent_updates=True` (so interrupt poll has new messages to drain) | **Done** | Without this, python-telegram-bot's dispatcher serialises per-chat updates and the interrupt poll never fires |
-| `send_message` tool out-of-band channel | **Done** | TG `_handle_employee_message` injects a `tg_send_callback` into `handle_message`; tool calls `bot.send_message(chat_id=tgid, text=…)` — the python-telegram-bot client kwarg is `chat_id` (TG vendor API), the value comes from `chat_sessions.tgid` |
+| `send_message` tool out-of-band channel | **Done** | TG `_handle_employee_message` injects a `tg_send_callback` into `handle_message`; tool calls `bot.send_message(...)` on the python-telegram-bot client (the client's wire kwarg name is fixed by the TG vendor API); the value comes from `chat_sessions.tgid` |
 | TG inbound reactions: read-emoji + done-emoji | **Done** | Configurable via `/api/tg-settings/read-reaction` + `/done-reaction` (5 emoji each, validated against Telegram's `ReactionEmoji` whitelist); default 👀 / 🏆 |
 
 **Not in C2 (deferred):**

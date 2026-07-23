@@ -31,7 +31,7 @@ export default function OnboardingPage(props: {
   // Pre-existing super admins loaded from /status. Hydrated as pre-verified
   // rows in step 3 so the user can resume after closing the browser.
   const [initialSuperAdmins, setInitialSuperAdmins] = useState<
-    Array<{ chatId: string; displayName: string | null }>
+    Array<{ telegramId: string; displayName: string | null }>
   >([]);
   // Filled by step 3's "Finish setup →" and read by step 4's
   // "OK, got it — sign in →". Kept in OnboardingPage state so we
@@ -51,7 +51,7 @@ export default function OnboardingPage(props: {
           setStep1Mode("view");
           setInitialSuperAdmins(
             (data.super_admins ?? []).map((c: string) => ({
-              chatId: c,
+              telegramId: c,
               displayName: null,
             })),
           );
@@ -152,7 +152,7 @@ function Step4View(props: {
           {props.data.superAdmins.length} tgid
           {props.data.superAdmins.length === 1 ? "" : "s"} (
           {props.data.superAdmins
-            .map((a) => (a.displayName ? `${a.displayName}` : a.chatId))
+            .map((a) => (a.displayName ? `${a.displayName}` : a.telegramId))
             .join(", ")}
           )
         </dd>
@@ -340,7 +340,7 @@ type RowState = "idle" | "sending-code" | "code-sent" | "verifying-code" | "veri
 
 interface AdminRow {
   id: number; // local React key
-  chatId: string;
+  telegramId: string;
   code: string;
   displayName: string | null;
   rowState: RowState;
@@ -349,7 +349,7 @@ interface AdminRow {
 
 function Step3View(props: {
   bot: { token: string; username: string };
-  initialSuperAdmins: Array<{ chatId: string; displayName: string | null }>;
+  initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;
   onBack: () => void;
   onComplete: (data: OnboardingData) => void;
 }) {
@@ -364,7 +364,7 @@ function Step3View(props: {
       return [
         {
           id: 1,
-          chatId: "",
+          telegramId: "",
           code: "",
           displayName: null,
           rowState: "idle",
@@ -374,7 +374,7 @@ function Step3View(props: {
     }
     return initial.map((a, i) => ({
       id: i + 1,
-      chatId: a.chatId,
+      telegramId: a.telegramId,
       code: "",
       displayName: a.displayName,
       rowState: "verified",
@@ -389,7 +389,7 @@ function Step3View(props: {
       ...prev,
       {
         id: prev.length ? Math.max(...prev.map((r) => r.id)) + 1 : 1,
-        chatId: "",
+        telegramId: "",
         code: "",
         displayName: null,
         rowState: "idle",
@@ -410,8 +410,8 @@ function Step3View(props: {
       const wasVerified = prev.find((r) => r.id === id)?.rowState === "verified";
       if (wasVerified) {
         const remainingIds = next
-          .filter((r) => r.rowState === "verified" && r.chatId.trim())
-          .map((r) => r.chatId.trim());
+          .filter((r) => r.rowState === "verified" && r.telegramId.trim())
+          .map((r) => r.telegramId.trim());
         void fetch("/api/onboarding/save-admin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -429,8 +429,8 @@ function Step3View(props: {
   }
 
   async function sendCode(row: AdminRow) {
-    const chatId = row.chatId.trim();
-    if (!chatId) {
+    const telegramId = row.telegramId.trim();
+    if (!telegramId) {
       updateRow(row.id, { rowState: "error", error: "tgid is empty" });
       return;
     }
@@ -439,7 +439,7 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/send-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: chatId }),
+        body: JSON.stringify({ tgid: telegramId }),
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (data.ok) {
@@ -459,7 +459,7 @@ function Step3View(props: {
   }
 
   async function verifyCode(row: AdminRow) {
-    const chatId = row.chatId.trim();
+    const telegramId = row.telegramId.trim();
     const code = row.code.trim();
     if (!code || code.length !== 6) {
       updateRow(row.id, { rowState: "error", error: "Code must be 6 digits" });
@@ -470,7 +470,7 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/verify-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: chatId, code }),
+        body: JSON.stringify({ tgid: telegramId, code }),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -498,7 +498,7 @@ function Step3View(props: {
   }
 
   async function handleFinish() {
-    const verified = rows.filter((r) => r.rowState === "verified" && r.chatId.trim());
+    const verified = rows.filter((r) => r.rowState === "verified" && r.telegramId.trim());
     if (!verified.length) {
       setSaveError("Verify at least one super admin before finishing.");
       return;
@@ -509,14 +509,14 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/save-admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgids: verified.map((r) => r.chatId.trim()) }),
+        body: JSON.stringify({ tgids: verified.map((r) => r.telegramId.trim()) }),
       });
       const data = (await res.json()) as { ok: boolean; count?: number; error?: string };
       if (data.ok) {
         props.onComplete({
           bot: props.bot,
           superAdmins: verified.map((r) => ({
-            chatId: r.chatId.trim(),
+            telegramId: r.telegramId.trim(),
             displayName: r.displayName,
           })),
         });
@@ -550,7 +550,7 @@ function Step3View(props: {
           <AdminRowView
             key={row.id}
             row={row}
-            onChangeChatId={(v) => updateRow(row.id, { chatId: v })}
+            onChangeTelegramId={(v) => updateRow(row.id, { telegramId: v })}
             onChangeCode={(v) => updateRow(row.id, { code: v })}
             onSendCode={() => sendCode(row)}
             onVerifyCode={() => verifyCode(row)}
@@ -598,13 +598,13 @@ function Step3View(props: {
 
 function AdminRowView(props: {
   row: AdminRow;
-  onChangeChatId: (v: string) => void;
+  onChangeTelegramId: (v: string) => void;
   onChangeCode: (v: string) => void;
   onSendCode: () => void;
   onVerifyCode: () => void;
   onRemove: () => void;
 }) {
-  const { row, onChangeChatId, onChangeCode, onSendCode, onVerifyCode, onRemove } = props;
+  const { row, onChangeTelegramId, onChangeCode, onSendCode, onVerifyCode, onRemove } = props;
   // Code input is only shown between sending a code and finishing
   // verification. Once a row hits "verified" the code has been
   // burned server-side, so showing the input again would be
@@ -621,8 +621,8 @@ function AdminRowView(props: {
         <input
           type="text"
           inputMode="numeric"
-          value={row.chatId}
-          onChange={(e) => onChangeChatId(e.target.value)}
+          value={row.telegramId}
+          onChange={(e) => onChangeTelegramId(e.target.value)}
           placeholder="TG chat ID (e.g. 123456789)"
           className="form-input flex-1 text-sm py-2 px-3 font-mono"
         />
@@ -632,7 +632,7 @@ function AdminRowView(props: {
           disabled={
             row.rowState === "sending-code" ||
             row.rowState === "verifying-code" ||
-            !row.chatId.trim()
+            !row.telegramId.trim()
           }
           className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >

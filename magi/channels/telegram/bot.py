@@ -488,11 +488,11 @@ async def _handle_employee_message(
     # callback the tool returns
     # "TG callback not wired into the tool context".
     bot = update.get_bot()
-    chat_id_int = update.effective_chat.id
+    tgid_int = update.effective_chat.id
 
-    async def _tg_send_callback(to_chat_id: int, text_to_send: str) -> None:
+    async def _tg_send_callback(to_tgid: int, text_to_send: str) -> None:
         await bot.send_message(
-            tgid=to_chat_id,
+            tgid=to_tgid,
             text=text_to_send,
         )
 

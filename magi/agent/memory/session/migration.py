@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 
 from magi.agent.memory.session.errors import SessionCorruptError
-from magi.agent.memory.session.ids import _validate_chat_id
+from magi.agent.memory.session.ids import _validate_tgid
 from magi.agent.memory.session.models import session_from_dict
 from magi.agent.db.engine import open_session
 from magi.agent.memory.session.tables import ChatMessage, ChatSession
@@ -54,7 +54,7 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
         # Validate tgid; the dir name is filesystem-supplied
         # so a corrupted workspace could have anything in here.
         try:
-            _validate_chat_id(tgid)
+            _validate_tgid(tgid)
         except ValueError as e:
             logger.warning(
                 "migrate_from_json: skipping chat dir %s (%s)",

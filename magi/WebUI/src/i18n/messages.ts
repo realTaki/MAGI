@@ -157,8 +157,8 @@ const zh: Catalog = {
   },
   login: {
     title: "MAGI 控制台",
-    chatIdLabel: "Telegram chat ID",
-    chatIdPlaceholder: "例如 6240201712",
+    telegramIdLabel: "Telegram chat ID",
+    telegramIdPlaceholder: "例如 6240201712",
     sendCode: "发送验证码",
     sending: "发送中…",
     codeLabel: "验证码",
@@ -168,7 +168,7 @@ const zh: Catalog = {
     resend: "重新发送",
     helpText: "如果还没设置 Telegram ID，请找管理员开通。",
     errors: {
-      invalidChatId: "Telegram chat ID 不合法。",
+      invalidTelegramId: "Telegram chat ID 不合法。",
       codeFailed: "验证码错误或已过期。",
       networkError: "网络错误，请重试。",
     },
@@ -390,8 +390,8 @@ const en: Catalog = {
   },
   login: {
     title: "MAGI Console",
-    chatIdLabel: "Telegram chat ID",
-    chatIdPlaceholder: "e.g. 6240201712",
+    telegramIdLabel: "Telegram chat ID",
+    telegramIdPlaceholder: "e.g. 6240201712",
     sendCode: "Send code",
     sending: "Sending…",
     codeLabel: "Verification code",
@@ -401,7 +401,7 @@ const en: Catalog = {
     resend: "Resend",
     helpText: "If you don't have a Telegram ID yet, ask the admin to set one up.",
     errors: {
-      invalidChatId: "Invalid Telegram chat ID.",
+      invalidTelegramId: "Invalid Telegram chat ID.",
       codeFailed: "Wrong or expired code.",
       networkError: "Network error — please try again.",
     },
@@ -618,8 +618,8 @@ const ja: Catalog = {
   },
   login: {
     title: "MAGI コンソール",
-    chatIdLabel: "Telegram chat ID",
-    chatIdPlaceholder: "例: 6240201712",
+    telegramIdLabel: "Telegram chat ID",
+    telegramIdPlaceholder: "例: 6240201712",
     sendCode: "コードを送信",
     sending: "送信中…",
     codeLabel: "認証コード",
@@ -629,7 +629,7 @@ const ja: Catalog = {
     resend: "再送",
     helpText: "Telegram ID をお持ちでない場合は管理者にお問い合わせください。",
     errors: {
-      invalidChatId: "Telegram chat ID が不正です。",
+      invalidTelegramId: "Telegram chat ID が不正です。",
       codeFailed: "コードが間違っているか、有効期限が切れています。",
       networkError: "ネットワークエラーが発生しました。再試行してください。",
     },

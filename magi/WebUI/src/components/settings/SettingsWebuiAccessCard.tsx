@@ -30,7 +30,7 @@ import type { EmployeeRow } from "../../pages/OrganizationTab";
 export function SettingsWebuiAccessCard(props: {
   signedInUser: { telegram_id: string; display_name: string | null };
   onAdminsChanged: (
-    next: Array<{ chatId: string; displayName: string | null }>,
+    next: Array<{ telegramId: string; displayName: string | null }>,
   ) => void;
 }) {
   const t = useT();
@@ -64,7 +64,7 @@ export function SettingsWebuiAccessCard(props: {
         data.items
           .filter((e) => e.telegram_id !== null)
           .map((e) => ({
-            chatId: String(e.telegram_id),
+            telegramId: String(e.telegram_id),
             displayName: e.display_name ?? e.name,
           })),
       );
@@ -239,10 +239,10 @@ function RoleBadge(props: { role: EmployeeRow["role"] }) {
 }
 
 export function AddAdminForm(props: {
-  onAdded: (chatId: string, displayName: string | null) => void;
+  onAdded: (telegramId: string, displayName: string | null) => void;
   onCancel: () => void;
 }) {
-  const [chatId, setChatId] = useState("");
+  const [telegramId, setTelegramId] = useState("");
   const [code, setCode] = useState("");
   const [state, setState] = useState<
     "idle" | "sending" | "code-sent" | "verifying" | "error"
@@ -250,7 +250,7 @@ export function AddAdminForm(props: {
   const [error, setError] = useState<string | null>(null);
 
   async function sendCode() {
-    const cid = chatId.trim();
+    const cid = telegramId.trim();
     if (!/^-?\d+$/.test(cid)) {
       setState("error");
       setError("tgid must be numeric");
@@ -279,7 +279,7 @@ export function AddAdminForm(props: {
   }
 
   async function verifyCode() {
-    const cid = chatId.trim();
+    const cid = telegramId.trim();
     const c = code.trim();
     if (c.length !== 6) {
       setState("error");
@@ -323,9 +323,9 @@ export function AddAdminForm(props: {
         <input
           type="text"
           inputMode="numeric"
-          value={chatId}
+          value={telegramId}
           onChange={(e) => {
-            setChatId(e.target.value);
+            setTelegramId(e.target.value);
             if (state === "error") setState("idle");
           }}
           placeholder="TG chat ID"
@@ -337,7 +337,7 @@ export function AddAdminForm(props: {
           disabled={
             state === "sending" ||
             state === "verifying" ||
-            !chatId.trim()
+            !telegramId.trim()
           }
           className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >

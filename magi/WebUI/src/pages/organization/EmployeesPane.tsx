@@ -366,7 +366,7 @@ export function EmployeesPane() {
       } else {
         const tgNum = Number(tgRaw);
         if (!Number.isInteger(tgNum)) {
-          setDetailError("Telegram chat_id 必须是整数");
+          setDetailError("Telegram tgid 必须是整数");
           setSavingDetail(false);
           return;
         }
@@ -977,7 +977,7 @@ export function EmployeesPane() {
                   </div>
                   <div>
                     <label className="form-label">
-                      Telegram chat_id
+                      Telegram tgid
                       {detailForm.telegram_id && (
                         <span className="ml-2 text-xs font-normal text-ink-soft">
                           （已绑定 — 留空表示不变，要解绑就清空）

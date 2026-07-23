@@ -5,5 +5,5 @@
  */
 export interface OnboardingData {
   bot: { token: string; username: string };
-  superAdmins: Array<{ chatId: string; displayName: string | null }>;
+  superAdmins: Array<{ telegramId: string; displayName: string | null }>;
 }

@@ -100,7 +100,7 @@ type TaskRow = {
   // tasks. Mutually exclusive with ``cron`` in the row — see
   // the cell render below.
   run_at: string | null;
-  // ``delivery_to`` is the concrete destination: TG chat_id,
+  // ``delivery_to`` is the concrete destination: TG tgid,
   // ``"new"`` for fresh-session webui fires, an explicit
   // chat session_id, or null (operator-bound fallback at
   // fire time). The cell renders a "→ <target>" snippet
@@ -571,7 +571,7 @@ export default function TaskListPane() {
                       vs ``新会话``), so no separate
                       label row. ``"new"`` is the magic
                       webui token; explicit session_id /
-                      TG chat_id are rendered verbatim.
+                      TG tgid are rendered verbatim.
                       ``null`` means the runner falls back
                       to operator-binding at fire time —
                       we surface that as "(未指定)" rather
