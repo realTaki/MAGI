@@ -102,7 +102,7 @@ def client(env):
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie is the uid (int), not a tgid.
+    # D.24: cookie is the uid (int), not a delivery_address.
     c.cookies.set("magi_session", str(env["alice"].id))
     return c
 

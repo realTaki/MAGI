@@ -270,7 +270,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
     and return just the snippet — the LLM gets a clear
     hint instead of misleading neighbours.
 
-    ``hit.tgid`` is the row's Telegram chat identifier
+    ``hit.delivery_address`` is the row's Telegram chat identifier
     (per-channel delivery address; carried on the row
     since D.18). The :meth:`SessionStore.get` lookup is
     scoped by ``ctx.uid`` (the search call
@@ -287,7 +287,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
         return (
             f"[hit] session={hit.session_id}, ts={hit.ts}, "
             f"role={hit.role}, channel={hit.channel}, "
-            f"tgid={hit.tgid} — session no longer exists"
+            f"delivery_address={hit.delivery_address} — session no longer exists"
         )
 
     # Try active first.
@@ -300,7 +300,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
     header = (
         f"[hit] session={session.session_id}, "
         f"title={session.title!r}, ts={hit.ts}, "
-        f"role={hit.role}, channel={hit.channel}, tgid={hit.tgid}"
+        f"role={hit.role}, channel={hit.channel}, delivery_address={hit.delivery_address}"
         + (" (archived)" if is_archived else "")
     )
 

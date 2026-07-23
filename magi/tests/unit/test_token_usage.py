@@ -32,8 +32,8 @@ import pytest
 @pytest.fixture
 def token_env(monkeypatch, tmp_path):
     """Per-test isolated state dir + workspace. Initializes
-    the SQL DB and seeds one admin (tgid 9001) + one
-    target employee (tgid 9002). Also resets the
+    the SQL DB and seeds one admin (delivery_address 9001) + one
+    target employee (delivery_address 9002). Also resets the
     SQLAlchemy engine singleton so each test gets a fresh
     engine pointing at this test's tmp_path — without
     this, the first test's engine is reused and writes

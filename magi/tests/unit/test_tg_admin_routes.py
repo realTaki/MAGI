@@ -33,7 +33,7 @@ def tg_admin_env(monkeypatch, tmp_path):
     return state
 
 
-def _seed_employee(state_dir: str, *, tgid: int, role: str):
+def _seed_employee(state_dir: str, *, delivery_address: int, role: str):
     from magi.agent.db import Employee, open_session
 
     with open_session() as s:
@@ -41,7 +41,7 @@ def _seed_employee(state_dir: str, *, tgid: int, role: str):
         s.add(
             Employee(
                 name=f"TA-{role}",
-                telegram_id=tgid,
+                telegram_id=delivery_address,
                 role=role,
                 provider="minimax",
                 api_key="fake-key",
@@ -50,7 +50,7 @@ def _seed_employee(state_dir: str, *, tgid: int, role: str):
         s.commit()
 
 
-def _make_update(*, tgid: int, message_id: int, text: str):
+def _make_update(*, delivery_address: int, message_id: int, text: str):
     """Build a minimal ``Update``-shaped mock.
 
     We don't use the real ``telegram.Update`` because the
@@ -61,7 +61,7 @@ def _make_update(*, tgid: int, message_id: int, text: str):
     ``get_bot()``) is enough.
     """
     update = MagicMock()
-    update.effective_chat.id = tgid
+    update.effective_chat.id = delivery_address
     update.effective_message.message_id = message_id
     update.effective_message.text = text
     update.effective_message.reply_text = AsyncMock()
@@ -79,10 +79,10 @@ async def test_admin_message_reaches_handler(tg_admin_env):
     success path) and ``set_message_reaction`` is called
     (the read-receipt).
     """
-    _seed_employee(str(tg_admin_env), tgid=9001, role="admin")
+    _seed_employee(str(tg_admin_env), delivery_address=9001, role="admin")
 
     from magi.channels.telegram.bot import _on_message
-    update = _make_update(message_id=42, tgid=9001, text="在吗")
+    update = _make_update(message_id=42, delivery_address=9001, text="在吗")
 
     # Run the dispatcher; it will block on the LLM call.
     # We don't want the real provider — mock the agent loop
@@ -107,10 +107,10 @@ async def test_admin_message_reaches_handler(tg_admin_env):
 async def test_assigned_message_reaches_handler(tg_admin_env):
     """``assigned`` role is the historical happy path;
     pinned here so the admin fix doesn't regress it."""
-    _seed_employee(str(tg_admin_env), tgid=9001, role="assigned")
+    _seed_employee(str(tg_admin_env), delivery_address=9001, role="assigned")
 
     from magi.channels.telegram.bot import _on_message
-    update = _make_update(message_id=43, tgid=9001, text="hello")
+    update = _make_update(message_id=43, delivery_address=9001, text="hello")
 
     import magi.agent.loop as agent_mod
     agent_mod.handle_message = AsyncMock(return_value="hi back")
@@ -126,10 +126,10 @@ async def test_employee_role_is_refused(tg_admin_env):
     """``employee`` / ``guest`` stay refused — they're
     not served by this MAGI. The admin fix must not
     have widened the gate to include them."""
-    _seed_employee(str(tg_admin_env), tgid=9001, role="employee")
+    _seed_employee(str(tg_admin_env), delivery_address=9001, role="employee")
 
     from magi.channels.telegram.bot import _on_message
-    update = _make_update(message_id=44, tgid=9001, text="hi")
+    update = _make_update(message_id=44, delivery_address=9001, text="hi")
 
     await _on_message(update, MagicMock())
 

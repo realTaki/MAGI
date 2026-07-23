@@ -2,7 +2,7 @@
 
 The unified rule: ``delivery_to`` is server-derived per
 ``channel`` + the operator's bound ``telegram_id`` (and the
-LLM-supplied ``ctx.session_id`` / ``ctx.tgid`` for the tool
+LLM-supplied ``ctx.session_id`` / ``ctx.delivery_address`` for the tool
 path). The operator does not pick a delivery destination from
 the WebUI form; the LLM no longer accepts a caller-supplied
 ``delivery_to`` for the tool path either.
@@ -175,7 +175,7 @@ def test_tg_channel_uses_operator_telegram_id(
     """The WebUI form's TG branch: ``channel='tg'`` →
     ``str(employee.telegram_id)``. The caller cannot
     override this — the server returns the operator's
-    bound tgid regardless of what ``delivery_to`` they
+    bound delivery_address regardless of what ``delivery_to`` they
     passed (the value is silently ignored on the TG
     branch)."""
     with open_session() as db:

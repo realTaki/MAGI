@@ -293,9 +293,9 @@ def test_prompt_includes_contact_block_for_self(
     the caller and a seeded self-contact for Alice, the
     block renders Alice's notes.
 
-    Pre-D.26 the chatter was identified by ``tgid``
+    Pre-D.26 the chatter was identified by ``delivery_address``
     (Telegram digits) and the contact block could describe
-    a different person. With tgid removed and the
+    a different person. With delivery_address removed and the
     cookie's ``magi_session`` carrying the UID directly,
     there is only ever one User per chat — "admin 当前
     在跟谁聊 根本不存在". The contact block is therefore

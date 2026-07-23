@@ -79,7 +79,7 @@ def test_session_archive_round_trip_via_orm(fresh_db):
     store = SessionStore(str(fresh_db))
     s = store.create(2, )
     # Active + archived rows.
-    # D.23: store key is uid (int), tgid is the
+    # D.23: store key is uid (int), delivery_address is the
     # per-channel delivery address kept on the row.
     store.append_messages(2, s.session_id, [
         SessionMessage(role="user",      text="new msg",  ts="2026-07-02T00:00:00Z", message_id="m1"),
@@ -131,7 +131,7 @@ def test_session_from_dict_backward_compatible(fresh_db):
     old = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "tgid": "9001",
+        "delivery_address": "9001",
         "uid": 2,
         "channel": "webui",
         "created_at": "t",
@@ -155,7 +155,7 @@ def test_session_active_tail_count_clamped_on_load():
     bad = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "tgid": "9001",
+        "delivery_address": "9001",
         "uid": 2,
         "channel": "webui",
         "created_at": "t",
@@ -178,7 +178,7 @@ def test_session_invalid_archive_role_rejected():
     bad = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "tgid": "9001",
+        "delivery_address": "9001",
         "uid": 2,
         "channel": "webui",
         "created_at": "t",

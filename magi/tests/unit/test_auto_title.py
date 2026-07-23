@@ -218,7 +218,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     await _summarize_to_title(
         TitleJob(
             
-            tgid="9001",
+            delivery_address="9001",
 session_id=sid,
             uid=admin.id,
             employee_provider="minimax",
@@ -262,7 +262,7 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 
     from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
     job = TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake-key",
     )
@@ -295,7 +295,7 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     sess = store.create(admin.id, )
 
     await _summarize_to_title(TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sess.session_id, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake-key",
     ))
@@ -316,7 +316,7 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
     # No session created — file doesn't exist.
     await _summarize_to_title(TitleJob(
 
-        tgid="9001",
+        delivery_address="9001",
         session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=admin.id,
         employee_provider="minimax",
@@ -360,7 +360,7 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
 
     # Should not raise.
     await _summarize_to_title(TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="bad",
     ))
@@ -395,7 +395,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
 
     # Must not raise.
     await _summarize_to_title(TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
@@ -422,7 +422,7 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     )
 
     await _summarize_to_title(TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
@@ -450,7 +450,7 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     )
 
     await _summarize_to_title(TitleJob(
-        tgid="9001",
+        delivery_address="9001",
 session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
@@ -492,7 +492,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
         )
         await enqueue_title_job(
 
-            tgid="9001",
+            delivery_address="9001",
             session_id=sid,
             uid=admin.id,
             employee_provider="minimax",
@@ -507,7 +507,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
         # Both sessions titled?
         with open_session() as db:
             count = db.query(ChatSession).filter_by(
-                tgid="9001",
+                delivery_address="9001",
             ).filter(ChatSession.title.isnot(None)).count()
         if count >= 2:
             break
@@ -552,7 +552,7 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
 
     await enqueue_title_job(
         
-        tgid="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+        delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=1,
         employee_provider="minimax",
         employee_api_key="k",
@@ -571,7 +571,7 @@ async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch
 
     await enqueue_title_job(
         
-        tgid="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+        delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=42,
         employee_provider="minimax-cn",
         employee_api_key="captured-key-xyz",

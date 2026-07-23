@@ -422,7 +422,7 @@ async def verify_admin(payload: VerifyAdminRequest) -> VerifyAdminResponse:
     and ``/verify-admin-code`` instead.
     """
     return await _send_admin_code_inner(
-        SendAdminCodeRequest(tgid=payload.tgid)
+        SendAdminCodeRequest(delivery_address=payload.delivery_address)
     )
 
 
@@ -472,7 +472,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
             error="Bot token not saved yet — finish step 2 first.",
         )
 
-    tgid_raw = payload.tgid.strip()
+    tgid_raw = payload.delivery_address.strip()
     if not tgid_raw.lstrip("-").isdigit():
         return SendAdminCodeResponse(ok=False, error="tgid must be numeric")
     tgid = tgid_raw  # keep as string for settings key consistency
@@ -595,7 +595,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     from datetime import datetime, timezone
     from magi.agent.db.settings import state_get
 
-    tgid = payload.tgid.strip()
+    tgid = payload.delivery_address.strip()
     code = payload.code.strip()
     if not code.isdigit() or len(code) != 6:
         return VerifyAdminCodeResponse(ok=False, error="Code must be 6 digits")
@@ -610,7 +610,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     try:
         payload_data = json.loads(raw)
     except (ValueError, TypeError):
-        logger.warning("stored verify code is not valid JSON for tgid=%s", tgid)
+        logger.warning("stored verify code is not valid JSON for delivery_address=%s", tgid)
         return VerifyAdminCodeResponse(ok=False, error="Stored code is corrupt; request a new one.")
 
     stored = str(payload_data.get("code", ""))

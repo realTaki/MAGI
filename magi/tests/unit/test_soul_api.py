@@ -255,7 +255,7 @@ def test_put_soul_without_cookie_is_403(soul_env):
 # caught.
 
 
-def _client_with_role(soul_env, *, role: str, tgid: int):
+def _client_with_role(soul_env, *, role: str, delivery_address: int):
     """Build a TestClient whose cookie resolves to an
     employee with the requested ``role``.
 
@@ -277,7 +277,7 @@ def _client_with_role(soul_env, *, role: str, tgid: int):
         s.query(Employee).delete()
         emp = Employee(
             name=f"TA-{role}",
-            telegram_id=tgid,
+            telegram_id=delivery_address,
             role=role,
             provider="minimax",
             api_key="fake",
@@ -297,37 +297,37 @@ def _client_with_role(soul_env, *, role: str, tgid: int):
 
 
 def test_assigned_role_can_read_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.get("/api/soul")
     assert r.status_code == 200
 
 
 def test_assigned_role_can_write_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.put("/api/soul", json={"content": "assigned employee persona"})
     assert r.status_code == 200
 
 
 def test_assigned_role_can_reset_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.post("/api/soul/reset")
     assert r.status_code == 200
 
 
 def test_employee_role_cannot_read_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="employee", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="employee", )
     r = c.get("/api/soul")
     assert r.status_code == 403
 
 
 def test_employee_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="employee", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="employee", )
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 
 
 def test_guest_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, tgid=9001, role="guest", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="guest", )
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 

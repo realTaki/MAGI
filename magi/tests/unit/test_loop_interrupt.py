@@ -378,7 +378,7 @@ def test_drain_swallows_store_read_errors(
     seen: set[str] = set()
 
     # Force SessionStore.get to raise.
-    def _boom(self, tgid: str, session_id: str) -> Any:
+    def _boom(self, delivery_address: str, session_id: str) -> Any:
         raise RuntimeError("simulated store failure")
 
     monkeypatch.setattr(
@@ -482,7 +482,7 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # Seed the session store with the user's first message
     # (channels do this synchronously before calling
     # handle_message).
-    tgid = "interrupt-chat"
+    delivery_address = "interrupt-chat"
     store = SessionStore(str(state_dir))
     sess = store.create(1, channel="webui", )
     store.append_messages(
@@ -504,7 +504,7 @@ async def test_handle_message_picks_up_interrupting_user_message(
 
     def _get_with_interrupt(self, uid: int, s: str) -> Any:
         # D.23: the store's first positional arg is now
-        # ``uid`` (int), not a tgid string. The
+        # ``uid`` (int), not a delivery_address string. The
         # patched signature mirrors that.
         inject_after["calls"] += 1
         result = real_get(self, uid, s)
@@ -547,7 +547,7 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # after handle_message returns), so we only check the
     # user rows here.
     # D.23: store key is uid (int), not the
-    # channel's tgid string.
+    # channel's delivery_address string.
     final = SessionStore(str(state_dir)).get(1, sess.session_id)
     assert final is not None
     user_texts = [m.text for m in final.messages if m.role == "user"]
@@ -570,7 +570,7 @@ async def test_handle_message_no_interrupt_works_normally(
     ])
     monkeypatch.setattr(loop_mod, "get_provider", get_provider)
 
-    tgid = "no-interrupt-chat"
+    delivery_address = "no-interrupt-chat"
     store = SessionStore(str(state_dir))
     sess = store.create(1, channel="webui", )
     store.append_messages(

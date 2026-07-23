@@ -12,11 +12,11 @@ helpers, per-session ``asyncio.Lock`` serialisation) were
 dropped: those contracts no longer apply once SQLite handles
 atomicity at the row level.
 
-D.23 — the session key changed from ``tgid`` to
+D.23 — the session key changed from ``delivery_address`` to
 ``uid``. The tests below were rewritten to use
 ``uid`` as the first argument; the legacy
-``tgid`` parameter on ``create`` is preserved (it's the
-per-channel delivery address stored on the row's ``tgid``
+``delivery_address`` parameter on ``create`` is preserved (it's the
+per-channel delivery address stored on the row's ``delivery_address``
 column) but it's no longer the lookup key.
 """
 
@@ -87,7 +87,7 @@ def test_create_persists(store):
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
     assert row is not None
-    assert row.tgid == "12345"
+    assert row.delivery_address == "12345"
     assert row.uid == 7
     assert row.title is None
 
@@ -305,7 +305,7 @@ def test_summary_from_session_truncates():
     """Standalone ``summary_from_session`` preview helper."""
     s = Session(
         session_id="01ABC",
-        tgid="12345",
+        delivery_address="12345",
         uid=1,
         channel="webui",
         created_at="t", updated_at="t",
@@ -443,27 +443,27 @@ def test_session_lock_is_now_a_noop():
 
 
 # --------------------------------------------------------------------------- #
-# 11. ChatSession.__repr__ doesn't blow up on the missing tgid attr
+# 11. ChatSession.__repr__ doesn't blow up on the missing delivery_address attr
 # --------------------------------------------------------------------------- #
 
 
 def test_chatsession_repr_uses_tgid(store):
-    """``ChatSession`` has a ``tgid`` column (D.23 renamed the
-    per-channel delivery address from ``tgid`` to ``tgid``).
+    """``ChatSession`` has a ``delivery_address`` column (D.23 renamed the
+    per-channel delivery address from ``delivery_address`` to ``delivery_address``).
     A previous ``__repr__`` mistakenly referenced
-    ``self.tgid`` and crashed with ``AttributeError`` the
+    ``self.delivery_address`` and crashed with ``AttributeError`` the
     first time anything tried to log or debug-print a
     session row. The fixed repr must round-trip via the
     real column name."""
     from magi.agent.db import ChatSession, open_session
 
-    s = store.create(1, tgid="9001")
+    s = store.create(1, delivery_address="9001")
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
     assert row is not None
     text = repr(row)
-    # The repr must mention the tgid we set, not crash, and
+    # The repr must mention the delivery_address we set, not crash, and
     # not silently drop to a half-formed string.
-    assert "tgid=9001" in text
+    assert "delivery_address=9001" in text
     assert "session_id=" in text
     assert "title=" in text

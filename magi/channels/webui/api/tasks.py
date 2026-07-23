@@ -430,7 +430,7 @@ def create_task(
         # harmless breadcrumb — no routing depends on
         # it because channel="webui" disables the
         # send_message tool.
-        tgid=str(operator.telegram_id or ""),
+        delivery_address=str(operator.telegram_id or ""),
         uid=operator_id,
         channel="task",
         title=f"[定时] {payload.name}",

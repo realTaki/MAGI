@@ -248,7 +248,7 @@ class ScheduleTaskTool(Tool):
         #   channel='webui' + cold call   → None (runner
         #     falls back; legacy / WebUI-default path stays
         #     as "fresh session per fire")
-        #   channel='tg'    + LLM-in-TG  → ctx.tgid (the
+        #   channel='tg'    + LLM-in-TG  → ctx.delivery_address (the
         #     TG chat the LLM is responding to)
         #   channel='tg'    + cold call  → None (runner
         #     falls back to operator.telegram_id at fire time)
@@ -502,7 +502,7 @@ def _allocate_task_session(db, *, uid: int, name: str) -> str:
     tgid = str(operator.telegram_id) if operator and operator.telegram_id else ""
     db.add(ChatSession(
         session_id=session_id,
-        tgid=tgid,
+        delivery_address=tgid,
         uid=uid,
         channel="task",
         title=f"[定时] {name}",
@@ -517,7 +517,7 @@ __all__ = ["ScheduleTaskTool"]
 
 
 def _session_tgid_str(session_id):
-    """Read ``chat_sessions.tgid`` for ``session_id`` and
+    """Read ``chat_sessions.delivery_address`` for ``session_id`` and
     return it as a string (digits), or ``None`` if the
     session is missing / has no tgid / has a malformed
     value.
@@ -541,9 +541,9 @@ def _session_tgid_str(session_id):
         )
         with _open() as db:
             sess = db.get(_ChatSession, session_id)
-        if sess is None or not sess.tgid:
+        if sess is None or not sess.delivery_address:
             return None
-        return str(sess.tgid)
+        return str(sess.delivery_address)
     except Exception:
         logger.exception(
             "schedule_task: session lookup failed for %s",

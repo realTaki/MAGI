@@ -177,7 +177,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             await update.effective_message.reply_text(
                 _replies()["cross_company_refusal"].format(
-                    emp_name=emp_name, tgid=tgid,
+                    emp_name=emp_name, delivery_address=tgid,
                 ),
             )
             return
@@ -217,7 +217,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         extra={"tgid": tgid, "display_name": display_name},
     )
     await update.effective_message.reply_text(
-        _replies()["unknown_sender"].format(tgid=tgid),
+        _replies()["unknown_sender"].format(delivery_address=tgid),
         parse_mode="HTML",
     )
     return
@@ -303,7 +303,7 @@ def _find_employee_by_telegram_id(
 async def _handle_employee_message(
     update: Update,
     state_dir: str,
-    tgid: str,
+    delivery_address: str,
     uid: int,
     employee_name: str,
     display_name: str | None,
@@ -322,10 +322,10 @@ async def _handle_employee_message(
 
     Session lifecycle (D.10): TG now persists chat history
     the same way WebUI does — ``SessionStore`` writes
-    one file per ``(tgid, session_id)`` under
-    ``<workspace>/memories/sessions/<tgid>/<sid>.json``.
+    one file per ``(delivery_address, session_id)`` under
+    ``<workspace>/memories/sessions/<delivery_address>/<sid>.json``.
     Unlike WebUI (which has a sidebar "新对话" affordance),
-    TG keeps **one session per tgid forever** — the
+    TG keeps **one session per delivery_address forever** — the
     employee never asks for a fresh thread from this side.
     The session is auto-created on the first inbound
     message and reused for every subsequent turn in that
@@ -378,7 +378,7 @@ async def _handle_employee_message(
         reaction = get_read_reaction_emoji(state_dir)
         if reaction:
             await update.get_bot().set_message_reaction(
-                tgid=update.effective_chat.id,
+                delivery_address=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=reaction,
             )
@@ -393,7 +393,7 @@ async def _handle_employee_message(
     # -- session lifecycle (D.10) --------------------------------------
     # Same shape as ``magi/channels/webui/api/chat.py``:
     #
-    #   1. Try the *latest* session for this tgid
+    #   1. Try the *latest* session for this delivery_address
     #      (``list_summaries(limit=1)`` returns most recent
     #      first). If one exists and isn't corrupt, reuse it —
     #      that's "one session per TG chat forever".
@@ -406,7 +406,7 @@ async def _handle_employee_message(
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.
     store = SessionStore(state_dir)
-    session_id = _resolve_or_create_tg_session(store, tgid, uid)
+    session_id = _resolve_or_create_tg_session(store, delivery_address, uid)
 
     # Inbound append — SQLite's per-statement atomicity replaces
     # the pre-D.18 per-session ``asyncio.Lock`` that used to
@@ -422,7 +422,7 @@ async def _handle_employee_message(
     # the bot.
     #
     # D.23: the first argument is now ``uid`` (the
-    # session key, cross-channel), not the TG tgid.
+    # session key, cross-channel), not the TG delivery_address.
     ts_in = utcnow_iso()
     try:
         post = store.append_messages(
@@ -447,13 +447,13 @@ async def _handle_employee_message(
 
     # First-user-message of a fresh thread → fire the same
     # auto-title worker the WebUI uses. The worker is keyed
-    # by ``(tgid, session_id)`` and uses its own per-
+    # by ``(delivery_address, session_id)`` and uses its own per-
     # session lock; no TG-specific code needed.
     if post is not None and len(post.messages) == 1:
         try:
             from magi.agent.memory.session.auto_title import enqueue_title_job
             await enqueue_title_job(
-                tgid=tgid,
+                delivery_address=delivery_address,
                 session_id=session_id,
                 uid=uid,
                 employee_provider=employee_provider or "",
@@ -490,9 +490,9 @@ async def _handle_employee_message(
     bot = update.get_bot()
     tgid_int = update.effective_chat.id
 
-    async def _tg_send_callback(to_tgid: int, text_to_send: str) -> None:
+    async def _tg_send_callback(to_delivery_address: int, text_to_send: str) -> None:
         await bot.send_message(
-            tgid=to_tgid,
+                    chat_id=to_delivery_address,
             text=text_to_send,
         )
 
@@ -583,7 +583,7 @@ async def _handle_employee_message(
         done_reaction = get_done_reaction_emoji(state_dir)
         if done_reaction:
             await update.get_bot().set_message_reaction(
-                tgid=update.effective_chat.id,
+                delivery_address=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=done_reaction,
             )
@@ -598,14 +598,14 @@ async def _handle_employee_message(
 
 def _resolve_or_create_tg_session(
     store: "SessionStore",
-    tgid: str,
+    delivery_address: str,
     uid: int,
 ) -> str:
     """Return the session id to use for the next TG message.
 
-    Policy (D.10): **one TG session per TG tgid forever.**
+    Policy (D.10): **one TG session per delivery address forever.**
 
-    Look up the most recent session for ``tgid`` WHERE
+    Look up the most recent session for ``delivery_address`` WHERE
     ``channel == 'tg'`` (not just any-channel) and reuse
     it. The earlier implementation used ``list_summaries``
     with no channel filter and re-checked the candidate's
@@ -654,11 +654,11 @@ def _resolve_or_create_tg_session(
         # where someone changes the filter without updating
         # the helper. Cheap; worth the safety rail.
     # No prior TG session (or none existed) — mint a new one.
-    # D.23: first arg is now uid; ``tgid=`` is the
+    # D.23: first arg is now uid; ``delivery_address=`` is the
     # per-channel delivery address stamped on the row's
-    # ``tgid`` column for outbound ``send_message`` later.
+    # ``delivery_address`` column for outbound ``send_message`` later.
     sess = store.create(
-        uid, channel="tg", tgid=tgid,
+        uid, channel="tg", delivery_address=delivery_address,
     )
     return sess.session_id
 
@@ -673,7 +673,7 @@ _TYPING_REFRESH_SECONDS = 4.0
 
 async def _typing_indicator_loop(
     bot,
-    tgid: int,
+    delivery_address: int,
     stop_event: "asyncio.Event",  # noqa: F821 — forward ref avoids an extra import
 ) -> None:
     """Send ``send_chat_action(typing)`` every 4s until
@@ -697,7 +697,7 @@ async def _typing_indicator_loop(
             return
         try:
             await bot.send_chat_action(
-                tgid=tgid,
+                delivery_address=delivery_address,
                 action="typing",
             )
         except Exception:
@@ -708,7 +708,7 @@ async def _typing_indicator_loop(
             # silently dropping the typing indicator.
             logger.exception(
                 "telegram: typing indicator failed (chat=%s); "
-                "disabling further refreshes", tgid,
+                "disabling further refreshes", delivery_address,
             )
             return
         # Wait up to 4s OR until the reply arrives.

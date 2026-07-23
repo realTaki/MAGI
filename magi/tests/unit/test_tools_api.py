@@ -74,7 +74,7 @@ class _ZebraTool(Tool):
 def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Minimal state_dir + admin Employee for App startup.
 
-    The route's ``AdminGate`` looks up the cookie's tgid
+    The route's ``AdminGate`` looks up the cookie's delivery_address
     in the ``employees`` table; we seed one so the gate
     lets the test through.
     """

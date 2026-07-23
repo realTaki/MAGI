@@ -11,7 +11,7 @@ IM-target resolution
 ---------------------
 
 The push target comes from the **session row**
-(``chat_sessions.tgid``), not ``ctx.tgid``. The
+(``chat_sessions.delivery_address``), not ``ctx.delivery_address``. The
 session is the single source of truth for "which IM
 endpoint does this conversation push to" — populated
 at session-creation time by the channel adapter
@@ -79,10 +79,10 @@ def _resolve_tg_target(session_id: str) -> tuple[str, int | None]:
             sess = db.get(_DbChatSession, session_id)
         if sess is None:
             return (f"(missing session:{session_id})", None)
-        if not sess.tgid:
+        if not sess.delivery_address:
             return (f"(session {session_id} has no tgid)", None)
         try:
-            return (f"session:{session_id}", int(sess.tgid))
+            return (f"session:{session_id}", int(sess.delivery_address))
         except (TypeError, ValueError):
             return (f"session:{session_id}(non-numeric tgid)", None)
     except Exception:

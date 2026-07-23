@@ -31,7 +31,14 @@ class SessionMessage:
 @dataclass
 class Session:
     session_id: str
-    tgid: str
+    delivery_address: str
+    """Per-channel delivery address on this session row.
+
+    Today: the bound TG chat id. Domain code treats this as
+    an opaque string; the channel adapter
+    (:mod:`magi.channels.dispatcher`) is the only piece of
+    code that interprets it. See ``docs/D.28-channel-dispatcher.md``.
+    """
     uid: int
     channel: str
     created_at: str
@@ -204,7 +211,11 @@ def session_from_dict(d: dict) -> Session:
 
         return Session(
             session_id=str(d["session_id"]),
-            tgid=str(d["tgid"]),
+            # D.28: column was ``tgid``; renamed to
+            # ``delivery_address``. Pre-D.28 JSON files
+            # carry the legacy ``tgid`` key — accept both
+            # so the legacy importer path stays alive.
+            delivery_address=str(d.get("delivery_address") or d["tgid"]),
             uid=int(d["uid"]),
             channel=str(d["channel"]),
             created_at=str(d["created_at"]),

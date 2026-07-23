@@ -152,7 +152,7 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     with open_session() as db:
         row = db.get(ChatSession, sid)
     assert row is not None, f"expected session row for {sid}"
-    assert row.tgid == str(admin.telegram_id)
+    assert row.delivery_address == str(admin.telegram_id)
     assert row.uid == admin.id
 
 
@@ -179,7 +179,7 @@ def test_get_returns_full_session(client, admin):
     assert r.status_code == 200
     body = r.json()
     assert body["session_id"] == sid
-    assert body["tgid"] == "9001"
+    assert body["delivery_address"] == "9001"
     assert body["uid"] == admin.id
     assert body["channel"] == "webui"
     assert body["messages"] == []
@@ -252,7 +252,7 @@ def test_send_without_session_id_autocreates(client, admin):
         # Force-recompute via the global env-var path which
         # is the one SessionStore uses.
         # D.23: store key is the operator's uid,
-        # not the tgid string the admin cookie carries.
+        # not the delivery_address string the admin cookie carries.
         s = store.get(admin.id, sid)
         assert s is not None
         # Either one user message (if LLM was hit) or user+assistant
@@ -367,7 +367,7 @@ def test_tgids_isolated(client, state):
     r = client.get(
         f"/api/chat/sessions/{b_sid}", cookies={"magi_session": str(alice_id)}
     )
-    # Either 404 (Alice's tgid dir doesn't have b_sid file)
+    # Either 404 (Alice's delivery_address dir doesn't have b_sid file)
     # OR 200 with b's content (if the path overlaps — but with
     # our layout it should be 404). Pin to 404 for the layout
     # invariant.
