@@ -472,10 +472,10 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
             error="Bot token not saved yet — finish step 2 first.",
         )
 
-    chat_id_raw = payload.tgid.strip()
-    if not chat_id_raw.lstrip("-").isdigit():
+    tgid_raw = payload.tgid.strip()
+    if not tgid_raw.lstrip("-").isdigit():
         return SendAdminCodeResponse(ok=False, error="tgid must be numeric")
-    tgid = chat_id_raw  # keep as string for settings key consistency
+    tgid = tgid_raw  # keep as string for settings key consistency
 
     # Resend cooldown — a stuck-network retry or impatient user must
     # wait before we spam the chat with another code. We check the
@@ -712,7 +712,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
 
     No settings key is written; the Employee table is the
     single source of truth for "who's an admin". The auth
-    gate (``_is_admin_chat_id`` in ``departments.py``) reads
+    gate (``_is_admin_or_assigned_tgid`` in ``departments.py``) reads
     exclusively from this table.
     """
     from magi.agent.db import Employee, open_session

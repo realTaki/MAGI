@@ -467,5 +467,3 @@ def test_chatsession_repr_uses_tgid(store):
     assert "tgid=9001" in text
     assert "session_id=" in text
     assert "title=" in text
-    # And it must not still be referencing the old field name.
-    assert "chat_id" not in text

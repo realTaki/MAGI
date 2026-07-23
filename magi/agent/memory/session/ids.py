@@ -25,19 +25,19 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 # Today the WebUI admin cookie and the TG ``message.chat.id``
 # both arrive as decimal digit strings. The legacy
-# ``_CHAT_ID_RE`` was a path-segment safety check (no
+# ``_TGID_RE`` was a path-segment safety check (no
 # directory traversal); with the move to SQLite the tgid
 # becomes a column value, so the regex now guards against
 # accidental column-arithmetic errors (e.g. a 64-char string
 # being silently truncated by the ``tgid`` column width).
 # The character class is the same as the old path check, so
 # no caller-visible change.
-_CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_TGID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # D.23 — session identity is now ``uid: int`` (an
 # int coerced to its decimal string form on the wire), not
 # the channel-shaped ``tgid``. ``_UID_RE`` is the
-# validation regex for that new key; ``_CHAT_ID_RE`` is kept
+# validation regex for that new key; ``_TGID_RE`` is kept
 # for the D.18 JSON importer (``migration.py``) which still
 # uses the column's ``tgid`` value to build the legacy
 # ``<workspace>/memories/sessions/<tgid>/<sid>.json`` path.
@@ -85,7 +85,7 @@ def utcnow_iso() -> str:
 # stays put because it's a session-package helper that only
 # touches the standard library + a path.
 __all__ = ["new_session_id", "utcnow_iso", "_validate_session_id",
-           "_validate_chat_id", "_validate_uid", "session_lock"]
+           "_validate_tgid", "_validate_uid", "session_lock"]
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -109,8 +109,8 @@ def _validate_session_id(session_id: str) -> None:
         )
 
 
-def _validate_chat_id(tgid: str) -> None:
-    if not isinstance(tgid, str) or not _CHAT_ID_RE.match(tgid):
+def _validate_tgid(tgid: str) -> None:
+    if not isinstance(tgid, str) or not _TGID_RE.match(tgid):
         raise ValueError(
             f"tgid {tgid!r} contains characters that are not "
             "safe as an identifier"

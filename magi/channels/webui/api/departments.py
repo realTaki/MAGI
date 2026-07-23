@@ -98,7 +98,7 @@ def admin_gate(request: Request) -> str:
 AdminGate = Annotated[str, Depends(admin_gate)]
 
 
-def _is_admin_or_assigned_chat_id(tgid: str) -> bool:
+def _is_admin_or_assigned_tgid(tgid: str) -> bool:
     """DEPRECATED: pre-D.24 lookup that read ``tgid`` as a
     telegram_id and matched ``Employee.telegram_id``. Cookie
     is now ``Employee.id``, so this helper returned False
@@ -122,7 +122,7 @@ def admin_or_assigned_gate(request: Request) -> str:
 
     D.24: cookie carries ``Employee.id`` (an int), not the
     legacy telegram_id. The earlier implementation
-    (``_is_admin_or_assigned_chat_id``) ran
+    (``_is_admin_or_assigned_tgid``) ran
     ``int(cookie)`` and looked up by
     ``Employee.telegram_id == cookie`` — which matched
     by sheer coincidence only when an employee happened

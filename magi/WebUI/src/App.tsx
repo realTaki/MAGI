@@ -37,7 +37,7 @@ export default function App() {
   );
   const [isFirstTime, setIsFirstTime] = useState(false);
   // Set after a successful login so the dashboard can greet the
-  // user by chat_id (or display name once we cache one). Null when
+  // user by tgid (or display name once we cache one). Null when
   // we landed on dashboard via the wizard — there the user hasn't
   // authenticated yet, so we don't pretend we know who they are.
   const [signedInUser, setSignedInUser] = useState<{
@@ -85,7 +85,7 @@ export default function App() {
                 setOnboardingData({
                   bot: { token: "", username: st.bot_username },
                   superAdmins: (st.super_admins ?? []).map((c) => ({
-                    chatId: c,
+                    telegramId: c,
                     displayName: null,
                   })),
                 });
@@ -178,7 +178,7 @@ export default function App() {
       <LoginPage
         onLoggedIn={async () => {
           // Pull the now-valid session so the dashboard can greet
-          // the user by chat_id. /me returns 401 (and we still go
+          // the user by tgid. /me returns 401 (and we still go
           // to dashboard) only if the cookie is missing — the
           // LoginPage's verify just set it, so this is rare.
           let me: { telegram_id: string; display_name: string | null } | null = null;

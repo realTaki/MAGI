@@ -17,7 +17,7 @@ Endpoints
 The ``{session_id}`` route uses the URL as the only
 identification: there is no separate ``tgid`` parameter,
 because the cookie already pins the caller. The tgid is
-derived from the cookie via :func:`_current_admin_chat_id`.
+derived from the cookie via :func:`_current_admin_tgid`.
 """
 
 from __future__ import annotations

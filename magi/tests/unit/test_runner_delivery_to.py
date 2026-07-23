@@ -483,7 +483,7 @@ async def test_tg_delivery_to_wires_callback(
         # delivery address directly from
         # ``chat_sessions.tgid`` instead. The callback closure
         # captures the target tgid at fire time and uses it
-        # as ``chat_id=`` on the underlying bot call.
+        # as the ``tgid=`` kwarg on the underlying bot call.
         cb = captured.get("tg_send_callback")
         assert callable(cb)
         assert captured.get("tgid") is None

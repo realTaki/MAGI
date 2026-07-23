@@ -318,7 +318,7 @@ def test_send_with_unknown_session_id_autocreates(client, admin):
     )
 
 
-def test_chat_ids_isolated(client, state):
+def test_tgids_isolated(client, state):
     """Two admins signing in see distinct session lists."""
     with open_session() as s:
         a = Employee(

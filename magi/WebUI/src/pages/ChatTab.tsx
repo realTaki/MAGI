@@ -188,7 +188,7 @@ export default function ChatTab() {
     () => localStorage.getItem(SESSION_STORAGE_KEY)
   );
   // History list — most recent first, scoped to the
-  // current chat_id (server resolves via cookie).
+  // current tgid (server resolves via cookie).
   const [history, setHistory] = useState<SessionSummary[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLimit] = useState(50);

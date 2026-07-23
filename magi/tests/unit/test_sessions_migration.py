@@ -191,7 +191,7 @@ def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
     assert sess.last_compaction_at == "2026-07-02T00:00:01Z"
 
 
-def test_migrate_multiple_chat_ids(fresh_db):
+def test_migrate_multiple_tgids(fresh_db):
     """Multiple tgid subdirs are walked; sessions are
     imported per chat."""
     from magi.agent.memory.session import migrate_from_json
@@ -334,7 +334,7 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
         assert db.get(ChatSession, "01BAD") is None
 
 
-def test_migrate_invalid_chat_id_dir_is_skipped(fresh_db):
+def test_migrate_invalid_tgid_dir_is_skipped(fresh_db):
     """A directory whose name violates the tgid regex is
     skipped with a warning (logged) rather than crashing the
     whole migration."""

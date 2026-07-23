@@ -91,7 +91,7 @@ def _ctx(state_dir: Path, *, tgid: str, uid: int) -> ToolContext:
     """Build a ToolContext that points at ``state_dir`` and
     scopes to the calling ``uid``. ``tgid`` is part of the
     signature for parity with ``_seed`` but is no longer on
-    :class:`ToolContext` (D.26 dropped ``chat_id``; per-channel
+    :class:`ToolContext` (D.26 dropped ``tgid``; per-channel
     delivery now reads ``chat_sessions.tgid`` directly)."""
     return ToolContext(
         state_dir=str(state_dir),

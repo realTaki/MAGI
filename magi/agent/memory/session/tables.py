@@ -76,7 +76,7 @@ class ChatSession(Base):
     # own identifier scheme and we don't want to overload one
     # column with three different semantics. When a non-TG
     # channel lands, the schema will gain a sibling column
-    # (e.g. ``slack_chat_id``) or a generic
+    # (e.g. ``slack_im_id``) or a generic
     # ``(platform, external_id)`` pair; the search scope
     # stays on ``uid`` either way.
     #

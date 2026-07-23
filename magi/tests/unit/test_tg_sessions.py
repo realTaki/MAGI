@@ -136,7 +136,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
     assert sid1 != sid2, "after wipe, helper should mint a fresh id"
 
 
-def test_different_chat_ids_get_different_sessions(tg_session_env):
+def test_different_tgids_get_different_sessions(tg_session_env):
     """Two employees chatting this EVE get two distinct rows
     — DB-level ``tgid`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.

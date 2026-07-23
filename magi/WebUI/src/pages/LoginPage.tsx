@@ -1,16 +1,17 @@
 /**
- * Sign-in flow — tgid dropdown + 6-digit code.
+ * Sign-in flow — UID dropdown + 6-digit code.
  *
- *   1. Page mounts and GETs /api/auth/allowed-chat-ids, which
- *      returns the list of accounts that can sign in (today: the
- *      super admins saved by the wizard; C2+: also employees with
- *      a bound TG tgid + active EVE assignment). The dropdown
- *      shows "Display name (tgid)" or just the tgid when no
- *      display name is cached.
+ *   1. Page mounts and GETs /api/auth/allowed-accounts, which
+ *      returns the list of UIDs that can sign in (today: super
+ *      admins with a bound IM; C2+: also employees with a bound
+ *      IM + active EVE assignment). Each row carries the bound
+ *      ``telegram_id`` for display, but the dropdown's primary
+ *      key is the UID — UID is the cookie identity.
  *
  *   2. User picks an account, clicks "Send code".
- *      Backend: POST /api/auth/send-login-code { tgid }
- *      → 6-digit code to TG (5-min TTL, 60s resend cooldown).
+ *      Backend: POST /api/auth/send-login-code { uid }
+ *      → server resolves uid → bound IM and posts the code.
+ *      (5-min TTL, 60s resend cooldown.)
  *
  *   3. User checks TG, types the 6 digits, clicks "Verify".
  *      Backend: POST /api/auth/verify-login-code { uid, code }
@@ -23,8 +24,8 @@
  * Anti-enumeration: the dropdown is a closed set (server-supplied),
  * so users can only sign in as someone who's been explicitly
  * authorized. The send/verify endpoints still anti-enumerate
- * arbitrary tgids (e.g. a manually-typed one would 404), so an
- * attacker can't probe the wizard by typing a tgid that the
+ * arbitrary uids (e.g. a manually-typed one would 404), so an
+ * attacker can't probe the wizard by typing a uid that the
  * server didn't return.
  */
 
@@ -34,18 +35,19 @@ import { useT } from "../i18n/index";
 type Phase = "send" | "code" | "verifying" | "error";
 
 type AllowedAccount = {
-  tgid: string;
+  uid: number;
+  telegram_id: number | null;
   display_name: string | null;
   role: string;
 };
 
 export default function LoginPage(props: {
-  onLoggedIn: (chatId: string) => void;
+  onLoggedIn: (uid: number) => void;
   onBack: () => void;
 }) {
   const t = useT();
   const [accounts, setAccounts] = useState<AllowedAccount[] | null>(null);
-  const [selectedChatId, setSelectedChatId] = useState<string>("");
+  const [selectedUid, setSelectedUid] = useState<number | null>(null);
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("send");
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function LoginPage(props: {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/auth/allowed-chat-ids")
+    fetch("/api/auth/allowed-accounts")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
@@ -63,7 +65,7 @@ export default function LoginPage(props: {
         // Pre-select the first account so the user only needs to
         // confirm unless they want to log in as someone else.
         if (list.length > 0) {
-          setSelectedChatId(list[0].tgid);
+          setSelectedUid(list[0].uid);
         }
       })
       .catch(() => {
@@ -76,7 +78,7 @@ export default function LoginPage(props: {
   }, []);
 
   async function handleSend() {
-    if (!selectedChatId) {
+    if (selectedUid === null) {
       setError("Pick an account to sign in as.");
       setPhase("error");
       return;
@@ -90,7 +92,7 @@ export default function LoginPage(props: {
       await fetch("/api/auth/send-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: selectedChatId }),
+        body: JSON.stringify({ uid: selectedUid }),
       });
       setPhase("code");
     } catch (err) {
@@ -103,6 +105,11 @@ export default function LoginPage(props: {
 
   async function handleVerify() {
     const c = code.trim();
+    if (selectedUid === null) {
+      setError("Pick an account to sign in as.");
+      setPhase("error");
+      return;
+    }
     if (!c || c.length !== 6) {
       setError("Code must be 6 digits");
       setPhase("error");
@@ -114,12 +121,12 @@ export default function LoginPage(props: {
       const res = await fetch("/api/auth/verify-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: selectedChatId, code: c }),
+        body: JSON.stringify({ uid: selectedUid, code: c }),
         credentials: "include",
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (data.ok) {
-        props.onLoggedIn(selectedChatId);
+        props.onLoggedIn(selectedUid);
         return;
       }
       setError(data.error ?? "Verification failed");
@@ -136,10 +143,10 @@ export default function LoginPage(props: {
     phase === "code" || phase === "verifying" || phase === "error";
   const accountsLoading = accounts === null;
   const accountsEmpty = accounts !== null && accounts.length === 0;
-  const canSend = !accountsLoading && !accountsEmpty && !!selectedChatId && !sending;
+  const canSend = !accountsLoading && !accountsEmpty && selectedUid !== null && !sending;
 
   return (
-    <main className="min-h-screen flex flex-col px-6 py-12">
+    <main className="min-h flex flex-col px-6 py-12">
       <header className="px-2 py-2 max-w-md w-full mx-auto">
         <div className="flex items-center gap-3">
           <img
@@ -177,16 +184,19 @@ export default function LoginPage(props: {
             {!accountsLoading && !accountsEmpty && (
               <>
                 <label
-                  htmlFor="login-chat-id"
+                  htmlFor="login-uid"
                   className="block mt-6 text-sm font-medium text-sky-deep mb-2"
                 >
                   Account
                 </label>
                 <div className="flex gap-2">
                   <select
-                    id="login-chat-id"
-                    value={selectedChatId}
-                    onChange={(e) => setSelectedChatId(e.target.value)}
+                    id="login-uid"
+                    value={selectedUid ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSelectedUid(v === "" ? null : Number(v));
+                    }}
                     className="form-input flex-1 appearance-none text-base py-3 px-4"
                     style={{
                       backgroundImage:
@@ -197,10 +207,14 @@ export default function LoginPage(props: {
                     }}
                   >
                     {accounts!.map((a) => (
-                      <option key={a.tgid} value={a.tgid}>
+                      <option key={a.uid} value={a.uid}>
                         {a.display_name
-                          ? `${a.display_name} (${a.tgid})`
-                          : a.tgid}
+                          ? a.telegram_id
+                            ? `${a.display_name} (TG: ${a.telegram_id})`
+                            : a.display_name
+                          : a.telegram_id
+                            ? `uid ${a.uid} (TG: ${a.telegram_id})`
+                            : `uid ${a.uid}`}
                       </option>
                     ))}
                   </select>
@@ -235,13 +249,9 @@ export default function LoginPage(props: {
                     inputMode="numeric"
                     maxLength={6}
                     value={code}
-                    onChange={(e) =>
-                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    placeholder="123456"
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    className="form-input flex-1 text-base py-3 px-4"
                     autoFocus
-                    className="form-input flex-1 text-base py-3 px-4 font-mono tracking-widest text-center"
-                    disabled={verifying}
                   />
                   <button
                     type="button"
@@ -249,31 +259,21 @@ export default function LoginPage(props: {
                     disabled={verifying || code.length !== 6}
                     className="btn btn-primary px-4 py-3 shrink-0"
                   >
-                    {verifying ? t("login.verifying") : t("login.verify")}
+                    {verifying ? "Verifying…" : "Verify"}
                   </button>
                 </div>
-                <p className="mt-2 text-xs text-ink-soft">
-                  Code expires in 5 minutes. Click Resend to issue a
-                  new one (60s cooldown).
-                </p>
               </div>
             )}
 
-            {phase === "error" && error && (
-              <p className="form-error">✗ {error}</p>
-            )}
-            {phase === "code" && !error && (
-              <p className="mt-3 text-sm text-sky-700">
-                Code sent — check the Telegram chat and type the 6
-                digits above. Click Resend to issue a new code.
-              </p>
+            {error && (
+              <p className="form-error mt-4">✗ {error}</p>
             )}
 
-            <div className="mt-8 flex items-center gap-3">
+            <div className="mt-6">
               <button
                 type="button"
                 onClick={props.onBack}
-                className="btn btn-secondary px-4 py-2.5"
+                className="text-sm text-sky-700 hover:text-sky-deep transition"
               >
                 ← Back
               </button>

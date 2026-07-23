@@ -281,11 +281,11 @@ async def execute_task(
         bot = get_telegram_bot()
         if bot is not None:
             async def _tg_send_callback(
-                to_chat_id: int,
+                to_tgid: int,
                 text_to_send: str,
             ) -> None:
                 await bot.send_message(
-                    tgid=to_chat_id,
+                    tgid=to_tgid,
                     text=text_to_send,
                 )
             tg_send_callback = _tg_send_callback

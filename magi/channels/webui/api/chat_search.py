@@ -14,7 +14,7 @@ per-operator isolation for free; with sessions in SQLite
 the WHERE clause is the new boundary. Two parallel helpers
 exist:
 
-  - ``_resolve_chat_id`` — returns the cookie value as an
+  - ``_resolve_tgid`` — returns the cookie value as an
     ``int``. Used where the data column (``chat_sessions.
     tgid``) is what matters.
   - ``_admin_uid`` — returns the ``Employee.id``
