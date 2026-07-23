@@ -66,7 +66,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
  *  user-context or restart hooks. */
 export type SettingsTabProps = {
   data: OnboardingData | null;
-  signedInUser: { chat_id: string; display_name: string | null };
+  signedInUser: { telegram_id: string; display_name: string | null };
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ chatId: string; displayName: string | null }>,

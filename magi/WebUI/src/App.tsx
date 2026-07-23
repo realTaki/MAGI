@@ -41,7 +41,7 @@ export default function App() {
   // we landed on dashboard via the wizard — there the user hasn't
   // authenticated yet, so we don't pretend we know who they are.
   const [signedInUser, setSignedInUser] = useState<{
-    chat_id: string;
+    telegram_id: string;
     display_name: string | null;
   } | null>(null);
 
@@ -58,7 +58,7 @@ export default function App() {
         });
         if (!cancelled && meRes.ok) {
           const me = (await meRes.json()) as {
-            chat_id: string;
+            telegram_id: string;
             display_name: string | null;
           };
           setSignedInUser(me);
@@ -181,12 +181,12 @@ export default function App() {
           // the user by chat_id. /me returns 401 (and we still go
           // to dashboard) only if the cookie is missing — the
           // LoginPage's verify just set it, so this is rare.
-          let me: { chat_id: string; display_name: string | null } | null = null;
+          let me: { telegram_id: string; display_name: string | null } | null = null;
           try {
             const r = await fetch("/api/auth/me", { credentials: "include" });
             if (r.ok) {
               me = (await r.json()) as {
-                chat_id: string;
+                telegram_id: string;
                 display_name: string | null;
               };
             }

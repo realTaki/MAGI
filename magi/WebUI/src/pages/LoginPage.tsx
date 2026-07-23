@@ -1,15 +1,15 @@
 /**
- * Sign-in flow — chat_id dropdown + 6-digit code.
+ * Sign-in flow — tgid dropdown + 6-digit code.
  *
  *   1. Page mounts and GETs /api/auth/allowed-chat-ids, which
  *      returns the list of accounts that can sign in (today: the
  *      super admins saved by the wizard; C2+: also employees with
- *      a bound TG chat_id + active EVE assignment). The dropdown
- *      shows "Display name (chat_id)" or just the chat_id when no
+ *      a bound TG tgid + active EVE assignment). The dropdown
+ *      shows "Display name (tgid)" or just the tgid when no
  *      display name is cached.
  *
  *   2. User picks an account, clicks "Send code".
- *      Backend: POST /api/auth/send-login-code { chat_id }
+ *      Backend: POST /api/auth/send-login-code { tgid }
  *      → 6-digit code to TG (5-min TTL, 60s resend cooldown).
  *
  *   3. User checks TG, types the 6 digits, clicks "Verify".
@@ -23,8 +23,8 @@
  * Anti-enumeration: the dropdown is a closed set (server-supplied),
  * so users can only sign in as someone who's been explicitly
  * authorized. The send/verify endpoints still anti-enumerate
- * arbitrary chat_ids (e.g. a manually-typed one would 404), so an
- * attacker can't probe the wizard by typing a chat_id that the
+ * arbitrary tgids (e.g. a manually-typed one would 404), so an
+ * attacker can't probe the wizard by typing a tgid that the
  * server didn't return.
  */
 
@@ -34,7 +34,7 @@ import { useT } from "../i18n/index";
 type Phase = "send" | "code" | "verifying" | "error";
 
 type AllowedAccount = {
-  chat_id: string;
+  tgid: string;
   display_name: string | null;
   role: string;
 };
@@ -63,7 +63,7 @@ export default function LoginPage(props: {
         // Pre-select the first account so the user only needs to
         // confirm unless they want to log in as someone else.
         if (list.length > 0) {
-          setSelectedChatId(list[0].chat_id);
+          setSelectedChatId(list[0].tgid);
         }
       })
       .catch(() => {
@@ -90,7 +90,7 @@ export default function LoginPage(props: {
       await fetch("/api/auth/send-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: selectedChatId }),
+        body: JSON.stringify({ tgid: selectedChatId }),
       });
       setPhase("code");
     } catch (err) {
@@ -114,7 +114,7 @@ export default function LoginPage(props: {
       const res = await fetch("/api/auth/verify-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: selectedChatId, code: c }),
+        body: JSON.stringify({ tgid: selectedChatId, code: c }),
         credentials: "include",
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
@@ -197,10 +197,10 @@ export default function LoginPage(props: {
                     }}
                   >
                     {accounts!.map((a) => (
-                      <option key={a.chat_id} value={a.chat_id}>
+                      <option key={a.tgid} value={a.tgid}>
                         {a.display_name
-                          ? `${a.display_name} (${a.chat_id})`
-                          : a.chat_id}
+                          ? `${a.display_name} (${a.tgid})`
+                          : a.tgid}
                       </option>
                     ))}
                   </select>

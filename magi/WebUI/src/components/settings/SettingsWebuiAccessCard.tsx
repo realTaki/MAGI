@@ -28,7 +28,7 @@ import { useT } from "../../i18n/index";
 import type { EmployeeRow } from "../../pages/OrganizationTab";
 
 export function SettingsWebuiAccessCard(props: {
-  signedInUser: { chat_id: string; display_name: string | null };
+  signedInUser: { telegram_id: string; display_name: string | null };
   onAdminsChanged: (
     next: Array<{ chatId: string; displayName: string | null }>,
   ) => void;
@@ -79,7 +79,7 @@ export function SettingsWebuiAccessCard(props: {
   }, []);
 
   async function handleRemoveAdmin(emp: EmployeeRow) {
-    if (String(emp.telegram_id ?? "") === props.signedInUser.chat_id) {
+    if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) {
       return; // belt + suspenders
     }
     if (
@@ -100,7 +100,7 @@ export function SettingsWebuiAccessCard(props: {
     const r = await fetch("/api/onboarding/save-admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_ids: remaining }),
+      body: JSON.stringify({ tgids: remaining }),
       credentials: "include",
     });
     if (r.ok) {
@@ -116,7 +116,7 @@ export function SettingsWebuiAccessCard(props: {
         Sign-in list. Each row is an <code>Employee</code> with
         <span className="font-medium"> role=admin</span> and a
         bound <code>telegram_id</code>. The wizard
-        (step 3) creates these from the verified chat_ids;
+        (step 3) creates these from the verified tgids;
         the table below mirrors that state. Removing a row
         calls the same wizard endpoint with the smaller list
         — the server drops the deleted rows from the
@@ -140,7 +140,7 @@ export function SettingsWebuiAccessCard(props: {
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium w-44">Role</th>
-                <th className="py-2 pr-4 font-medium">TG chat_id</th>
+                <th className="py-2 pr-4 font-medium">TG tgid</th>
                 <th className="py-2 font-medium w-28 text-right">Actions</th>
               </tr>
             </thead>
@@ -148,7 +148,7 @@ export function SettingsWebuiAccessCard(props: {
               {admins.map((emp) => {
                 const isSelf =
                   String(emp.telegram_id ?? "") ===
-                  props.signedInUser.chat_id;
+                  props.signedInUser.telegram_id;
                 return (
                   <tr key={emp.id} className="">
                     <td className="py-2 pr-4 text-ink">
@@ -253,7 +253,7 @@ export function AddAdminForm(props: {
     const cid = chatId.trim();
     if (!/^-?\d+$/.test(cid)) {
       setState("error");
-      setError("chat_id must be numeric");
+      setError("tgid must be numeric");
       return;
     }
     setState("sending");
@@ -262,7 +262,7 @@ export function AddAdminForm(props: {
       const r = await fetch("/api/onboarding/send-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: cid }),
+        body: JSON.stringify({ tgid: cid }),
         credentials: "include",
       });
       const data = (await r.json()) as { ok: boolean; error?: string };
@@ -292,7 +292,7 @@ export function AddAdminForm(props: {
       const r = await fetch("/api/onboarding/verify-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: cid, code: c }),
+        body: JSON.stringify({ tgid: cid, code: c }),
         credentials: "include",
       });
       const data = (await r.json()) as {
@@ -301,7 +301,7 @@ export function AddAdminForm(props: {
         error?: string;
       };
       if (data.ok) {
-        // The endpoint already appended the chat_id to settings; we
+        // The endpoint already appended the tgid to settings; we
         // just need to tell the parent to refresh.
         props.onAdded(cid, data.display_name ?? null);
       } else {
