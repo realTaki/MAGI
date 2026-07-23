@@ -99,7 +99,7 @@ def test_returns_none_for_permitted_role(fresh_db, seed_employees):
     assert caller_role_denied_reason(_ctx(fresh_db, alice.id), allowed) is None
 
 
-def test_rejects_non_int_employee_id(fresh_db):
+def test_rejects_non_int_uid(fresh_db):
     """Non-coercible ``uid`` returns an error
     pointing at the bad input — does not raise.
     """
@@ -112,7 +112,7 @@ def test_rejects_non_int_employee_id(fresh_db):
     assert "'not-a-number'" in msg
 
 
-def test_rejects_zero_employee_id(fresh_db):
+def test_rejects_zero_uid(fresh_db):
     """``uid == 0`` is the loop's placeholder for
     "no caller resolved yet" — refuse rather than letting
     the lookup silently match an unintended row."""

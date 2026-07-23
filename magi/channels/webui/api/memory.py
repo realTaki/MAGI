@@ -2,7 +2,7 @@
 the Knowledge → Memory pane.
 
 Scope: every ``MemoryEntry`` row owned by the calling
-admin (``MemoryEntry.uid == admin_employee_id``).
+admin (``MemoryEntry.uid == admin_uid``).
 The pane renders the operator's view of "what the LLM
 knows" — both kinds, in-flight + completed, ordered by
 importance DESC then updated_at DESC (the same ordering

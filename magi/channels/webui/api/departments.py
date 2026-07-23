@@ -39,7 +39,7 @@ router = APIRouter(tags=["departments"])
 
 # -- auth gate --------------------------------------------------------------
 
-def _is_admin_employee_id(uid: int) -> bool:
+def _is_admin_uid(uid: int) -> bool:
     """True if the ``Employee`` row with the given id has role=admin.
 
     D.24: the ``magi_session`` cookie carries the
@@ -88,7 +88,7 @@ def admin_gate(request: Request) -> str:
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
     uid = int(raw)
-    if not _is_admin_employee_id(uid):
+    if not _is_admin_uid(uid):
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )

@@ -59,7 +59,7 @@ from magi.agent.memory.session.errors import (
     SessionNotFoundError,
 )
 from magi.agent.memory.session.ids import (
-    _validate_employee_id,
+    _validate_uid,
     _validate_session_id,
     new_session_id,
     utcnow_iso,
@@ -149,7 +149,7 @@ class SessionStore:
           - scheduled:    pass any stable identifier
             (``"<scheduled>"`` is the convention).
         """
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         session_id = new_session_id()
         now = utcnow_iso()
         tgid_value = tgid if tgid is not None else ""
@@ -242,7 +242,7 @@ class SessionStore:
         second query.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.uid != uid:
@@ -323,7 +323,7 @@ class SessionStore:
           inbound).
         """
         _validate_session_id(session_id)
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         new_msgs = list(msgs)
         # Validate up-front so a partial append isn\'t possible.
         for i, m in enumerate(new_msgs):
@@ -404,7 +404,7 @@ class SessionStore:
         operator metadata and shouldn\'t reshuffle the sidebar.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         if title is None:
             new_title: str | None = None
         else:
@@ -593,7 +593,7 @@ class SessionStore:
         support undo.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.uid != uid:
@@ -729,7 +729,7 @@ class SessionStore:
         """
         from sqlalchemy import func, select
 
-        _validate_employee_id(uid)
+        _validate_uid(uid)
         _validate_session_id(session_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)

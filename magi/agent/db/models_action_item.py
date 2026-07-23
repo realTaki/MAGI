@@ -106,7 +106,7 @@ class ActionItem(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
-    completed_by_employee_id: Mapped[int | None] = mapped_column(
+    completed_by_uid: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -128,7 +128,7 @@ class ActionItem(Base):
         foreign_keys=[uid], viewonly=True
     )
     completed_by: Mapped["Employee | None"] = relationship(
-        foreign_keys=[completed_by_employee_id], viewonly=True
+        foreign_keys=[completed_by_uid], viewonly=True
     )
 
     def __repr__(self) -> str:

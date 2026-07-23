@@ -69,7 +69,7 @@ type SearchResponse = {
 type SessionSummary = {
   session_id: string;
   created_at: string;
-  created_by_employee_id: number;
+  created_by_uid: number;
   updated_at: string;
   message_count: number;
   preview: string;

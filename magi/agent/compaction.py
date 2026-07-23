@@ -19,7 +19,7 @@ Three surfaces pinned:
     fall through ("no compaction happened this turn")
     rather than blocking the chat.
   - :func:`chat_to_session_message` and
-    :func:`_employee_id_for_log` — small helpers; the
+    :func:`_uid_for_log` — small helpers; the
     first converts the runtime message shape to the
     persisted ``SessionMessage`` shape, the second is a
     no-op kept so the failure-path log line in
@@ -200,7 +200,7 @@ async def call_llm_for_summary(
     except Exception:
         logger.exception(
             "compact: LLM call failed (employee=%s); skipping",
-            _employee_id_for_log(state_dir),
+            _uid_for_log(state_dir),
         )
         return None
 
@@ -221,7 +221,7 @@ def chat_to_session_message(m: "ChatMessage") -> SessionMessage:
     )
 
 
-def _employee_id_for_log(state_dir: str) -> int | None:
+def _uid_for_log(state_dir: str) -> int | None:
     """Best-effort uid for log lines from the
     compact helper. Reads the cookie-side admin gate is
     not available here (we're inside the agent loop, not

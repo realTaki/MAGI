@@ -16,7 +16,7 @@ Auth
 Same ``AdminGate`` every other Adam endpoint uses
 (``magi.channels.webui.api.departments.admin_gate``). The
 operator must be a signed-in admin employee; the
-``_admin_employee_id`` helper from
+``_admin_uid`` helper from
 :meth:`magi.channels.webui.api.chat_sessions` resolves
 the cookie → employee row.
 
@@ -664,7 +664,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
       2. Fall back to the cookie's signed-in employee
          (``magi_session`` carries the uid after
          the D.24 migration — not the telegram_id). We
-         use :func:`_resolve_employee_id` so the cookie
+         use :func:`_resolve_uid` so the cookie
          format matches every other admin-gated route.
          Allowed roles are ``admin`` (signed in via the
          super-admin form) and ``assigned`` (the person
@@ -697,12 +697,12 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     # carry the uid directly, so the lookup is
     # ``session.get(Employee, eid)`` — no telegram_id
     # detour. The role gate is duplicated inline (instead
-    # of reusing :func:`_admin_employee_id`) because
+    # of reusing :func:`_admin_uid`) because
     # ``assigned`` is also welcome here, and
-    # ``_admin_employee_id` enforces ``role == "admin"``
+    # ``_admin_uid` enforces ``role == "admin"``
     # only.
-    from magi.channels.webui.api.chat_sessions import _resolve_employee_id
-    eid = _resolve_employee_id(request)
+    from magi.channels.webui.api.chat_sessions import _resolve_uid
+    uid = _resolve_uid(request)
     emp = session.get(Employee, eid)
     if emp is None:
         raise MagiHTTPException(

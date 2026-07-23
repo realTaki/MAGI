@@ -17,7 +17,7 @@ exist:
   - ``_resolve_chat_id`` — returns the cookie value as an
     ``int``. Used where the data column (``chat_sessions.
     tgid``) is what matters.
-  - ``_admin_employee_id`` — returns the ``Employee.id``
+  - ``_admin_uid`` — returns the ``Employee.id``
     (PK) of the admin. Used where the data column is
     ``Employee.telegram_id`` (a FK), or where we want to
     operate on the row rather than the chat identifier.
@@ -73,7 +73,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from magi.channels.webui.api.chat_sessions import _admin_employee_id, SessionStoreDep
+from magi.channels.webui.api.chat_sessions import _admin_uid, SessionStoreDep
 from magi.channels.webui.api.departments import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.db import open_session
@@ -287,7 +287,7 @@ def search_chat(
     """Full-text search across the operator's sessions.
 
     Scope: cross-platform via the calling employee's row
-    id. AdminGate proves "is an admin"; ``_admin_employee_id``
+    id. AdminGate proves "is an admin"; ``_admin_uid``
     resolves the cookie's tgid to the matching Employee
     row (FK to ``Employee.telegram_id``); the SQL clause
     ``WHERE s.uid = :uid`` then picks up
@@ -295,7 +295,7 @@ def search_chat(
     future channel. Other employees' rows are never
     reachable.
     """
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
 
     try:
         items, total = search_chat_history(
