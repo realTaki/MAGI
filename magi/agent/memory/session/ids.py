@@ -36,12 +36,12 @@ _CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # D.23 — session identity is now ``uid: int`` (an
 # int coerced to its decimal string form on the wire), not
-# the channel-shaped ``tgid``. ``_EMPLOYEE_ID_RE`` is the
+# the channel-shaped ``tgid``. ``_UID_RE`` is the
 # validation regex for that new key; ``_CHAT_ID_RE`` is kept
 # for the D.18 JSON importer (``migration.py``) which still
 # uses the column's ``tgid`` value to build the legacy
 # ``<workspace>/memories/sessions/<tgid>/<sid>.json`` path.
-_EMPLOYEE_ID_RE = _re.compile(r"^[0-9]{1,19}$")
+_UID_RE = _re.compile(r"^[0-9]{1,19}$")
 
 
 def new_session_id(now_ms: int | None = None) -> str:
@@ -85,7 +85,7 @@ def utcnow_iso() -> str:
 # stays put because it's a session-package helper that only
 # touches the standard library + a path.
 __all__ = ["new_session_id", "utcnow_iso", "_validate_session_id",
-           "_validate_chat_id", "_validate_employee_id", "session_lock"]
+           "_validate_chat_id", "_validate_uid", "session_lock"]
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -117,7 +117,7 @@ def _validate_chat_id(tgid: str) -> None:
         )
 
 
-def _validate_employee_id(uid) -> None:
+def _validate_uid(uid) -> None:
     """D.23 — the session key is now ``uid`` (int).
 
     Accepted forms (all coerced to the same ``int``):
@@ -143,7 +143,7 @@ def _validate_employee_id(uid) -> None:
         return
     if (
         not isinstance(uid, str)
-        or not _EMPLOYEE_ID_RE.match(uid)
+        or not _UID_RE.match(uid)
     ):
         raise ValueError(
             f"uid {uid!r} is not a valid integer id"

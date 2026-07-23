@@ -125,7 +125,7 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
     # "open + last-7-days completed" listing ordered by recency.
     (
         "action_items",
-        "ix_action_items_employee_id",
+        "ix_action_items_uid",
         "(uid)",
     ),
     (

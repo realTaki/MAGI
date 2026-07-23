@@ -2,7 +2,7 @@
 the Knowledge → Contacts pane.
 
 Scope: every contact row owned by the calling admin
-(``ContactEntry.owner_id == admin_employee_id``), with the
+(``ContactEntry.owner_id == admin_uid``), with the
 ``person`` FK JOIN'd to ``Employee`` + ``Employee.department``
 so the UI can show "Bob 'Bobby' Chen — Engineering"
 without a second round-trip.

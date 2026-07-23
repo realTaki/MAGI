@@ -155,14 +155,14 @@ end-to-end.
 | `chat_messages` table + FTS5 search (D.18) | **Done** | `memory/session/tables.py` + `migrations.py` FTS5 sync |
 | Auto-compact (D.17) — `archive` table + tail count | **Done** | `_maybe_compact` in `loop.py`; `archive` field on `Session`; `active_tail_count` snapshot |
 | Auto-title worker (D.7) | **Done** | `memory/session/auto_title.py` |
-| Session identity keyed by `Employee.id`, not chat_id (D.23) | **Done** | `SessionStore` first arg is `employee_id`; row carries `chat_id` as the per-channel delivery address; cross-channel read scope is "everything owned by this employee" |
+| Session identity keyed by `Employee.id`, not tgid (D.23) | **Done** | `SessionStore` first arg is `uid`; row carries `tgid` as the per-channel delivery address; cross-channel read scope is "everything owned by this uid" |
 | Cross-channel session write guard (D.22) | **Done** | `SessionStore.append_messages` raises `ChannelMismatchError` when stored `channel != caller channel`; mapped to HTTP 403 `chat.session_channel_mismatch` in `chat.py` |
-| Cookie identity by `Employee.id`, not telegram_id (D.24) | **Done** | `magi_session` cookie = `str(employee.id)`; `_admin_employee_id` / `AdminGate` read by primary key; `/me` returns `{employee_id, telegram_id, display_name}` |
+| Cookie identity by `Employee.id`, not telegram_id (D.24) | **Done** | `magi_session` cookie value = the uid (Employee PK); gate helpers (`_admin_uid` / `AdminGate`) look up by primary key; `/me` returns `{uid, telegram_id, display_name}` — Helpers: `_admin_uid` / `_uid_for_tgid`. (Pre-D.27 the same helpers carried the older `_*` (Employee-row identifier) `-suffixed` names; the rename is cosmetic — the resolution shape is identical.) |
 | TG side: one persistent session per chat, auto-created | **Done** | `_resolve_or_create_tg_session` (D.10) |
 | TG inbound → session store before `handle_message` | **Done** | D.10/D.11 — channel-mismatch guard + audit trail before LLM call |
 | Interrupt-aware agent loop (D.21) | **Done** | `_drain_pending_user_messages` splices follow-up user messages into the live tool loop and resets `iterations_run` |
 | TG `concurrent_updates=True` (so interrupt poll has new messages to drain) | **Done** | Without this, python-telegram-bot's dispatcher serialises per-chat updates and the interrupt poll never fires |
-| `send_message` tool out-of-band channel | **Done** | TG `_handle_employee_message` injects a `tg_send_callback` into `handle_message`; tool calls `bot.send_message(chat_id, text)` |
+| `send_message` tool out-of-band channel | **Done** | TG `_handle_employee_message` injects a `tg_send_callback` into `handle_message`; tool calls `bot.send_message(chat_id=tgid, text=…)` — the python-telegram-bot client kwarg is `chat_id` (TG vendor API), the value comes from `chat_sessions.tgid` |
 | TG inbound reactions: read-emoji + done-emoji | **Done** | Configurable via `/api/tg-settings/read-reaction` + `/done-reaction` (5 emoji each, validated against Telegram's `ReactionEmoji` whitelist); default 👀 / 🏆 |
 
 **Not in C2 (deferred):**
@@ -336,7 +336,7 @@ commit history.
   the trigram tokenizer (CJK-friendly substring
   matches).
 - The session store migrated from JSON files
-  under `<workspace>/memories/sessions/<chat_id>/`
+  under `<workspace>/memories/sessions/<tgid>/`
   to SQLite rows. Migration ran
   `migrate_from_json` once at boot.
 
@@ -361,13 +361,13 @@ commit history.
 
 ### D.23 — Session identity keyed by `Employee.id`
 
-- `SessionStore` first arg is `employee_id: int`,
-  not `chat_id: str`. `chat_id` is now keyword-only
+- `SessionStore` first arg is `uid: int`,
+  not `tgid: str`. `tgid` is now keyword-only
   on `create()` and stamps the per-channel delivery
   address on the row's `tgid` column. This lets the
   same Employee own sessions across channels (TG +
   WebUI) with a single identity.
-- Read scope: anything whose `employee_id` matches
+- Read scope: anything whose `uid` matches
   the caller (cross-channel by design — see Open
   Question 7).
 - Write scope: cross-channel writes raise
@@ -375,15 +375,18 @@ commit history.
 
 ### D.24 — Cookie identity by `Employee.id`
 
-- `magi_session` cookie value is `str(employee.id)`
-  (was `str(telegram_id)`). `AdminGate` reads by
-  primary key. `_employee_id_for_chat_id()` is the
-  helper that translates a TG chat_id → employee_id
-  for the login flow; `verify_login_code` then sets
-  the cookie to the looked-up employee id.
-- `/api/auth/me` returns `{employee_id, telegram_id,
+- `magi_session` cookie value is the uid (Employee PK,
+  was `str(telegram_id)`). `AdminGate` reads by primary
+  key. The login flow's `_resolve_uid_for_tgid()` helper
+  translates a TG tgid → uid before `verify_login_code`
+  sets the cookie. (Pre-D.27 this helper was named
+  `_uid_for_tgid`; the rename from the older helper is cosmetic —
+  the resolution shape is identical.)
+- `/api/auth/me` returns `{uid, telegram_id,
   display_name, is_super_admin}` — the operator's
-  cross-channel identity.
+  cross-channel identity. D.26 also clarified: there is
+  no separate "chatter" identity; the cookie's uid IS
+  the person MAGI is talking to, never a chat id.
 
 ### TG reactions (read-emoji + done-emoji)
 
@@ -430,30 +433,34 @@ commit history.
   composes, in fixed order: **SOUL** →
   **Long-term memory** (MAGI's important +
   ongoing in-flight rows, scoped to
-  `owner_id == employee_id`) → **Current
-  chatter** (per-chat contact record for the
-  current `chat_id`, rendered with the
-  Employee's real `display_name ?? name`,
-  **not** the raw `person_id` FK) →
-  **Available skills** (frontmatter summary).
+  `owner_id == uid`) → **Current
+  chatter** (the User's self-contact record,
+  looked up as `(owner_id=uid, person_id=uid)` —
+  rendered with the Employee's real
+  `display_name ?? name`, **not** the raw
+  `person_id` FK) → **Available skills**
+  (frontmatter summary).
 - Each block short-circuits on empty rows so a
   fresh deploy still gets a sensible prompt.
   ORM failures inside any block degrade
   gracefully (the block is dropped, the rest
   of the prompt still renders).
 - Tests in `test_agent_system_prompt.py` pin:
-  block ordering, per-employee scope,
-  per-chat contact scope, the `display_name`
-  rendering invariant, and the four
-  resilience cases (memory / contact ORM
-  failure, empty blocks, etc.).
-- Pre-C4 work: the per-chat contact header
-  used to render `**{person_id}**` (a raw
-  integer FK); the agent loop now resolves
-  the Employee's name in the same ORM
-  read that already happens for the
-  `chat_id → person_id` translation, so the
-  LLM never sees an integer it has to look
+  block ordering, per-uid scope, the self-
+  contact block (uid == chatter, no second
+  "person on the other end" lookup), the
+  `display_name` rendering invariant, and the
+  four resilience cases (memory / contact
+  ORM failure, empty blocks, etc.).
+- D.26 collapsed the per-chatter lookup:
+  pre-D.26 the resolver ran on `tgid`
+  (Telegram digits) and consulted a
+  different person's contact row. With
+  `chat_sessions.tgid` removed from the agent
+  loop and the cookie carrying the uid
+  directly, there is only ever one User per
+  chat — the contact block is the User's own
+  self-record.
   up via a tool call.
 
 ### Prompt text centralized in `magi/agent/prompts/`

@@ -263,7 +263,7 @@ def _clear_login_code(tgid: str) -> None:
     state_delete(_state_dir(), f"{_LOGIN_KEY}.{tgid}")
 
 
-def _employee_id_for_chat_id(tgid: str) -> int | None:
+def _uid_for_tgid(tgid: str) -> int | None:
     """Resolve a TG tgid (the login input) to its employee id.
 
     Returns ``None`` if the tgid isn't bound to any
@@ -330,12 +330,12 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     # TG binding can't be reached via the bot today; the
     # ``/allowed-chat-ids`` response drops them rather
     # than rendering an un-usable row.
-    admin_employee_ids = _super_admins()
+    admin_uids = _super_admins()
     admin_telegram_ids: dict[int, int] = {}
-    if admin_employee_ids:
+    if admin_uids:
         with open_session() as session:
             for emp in session.scalars(
-                select(Employee).where(Employee.id.in_(admin_employee_ids))
+                select(Employee).where(Employee.id.in_(admin_uids))
             ).all():
                 if emp.telegram_id is not None:
                     admin_telegram_ids[emp.id] = emp.telegram_id
@@ -422,7 +422,7 @@ async def send_login_code(
     # allowlist is keyed by uid; if the tgid
     # doesn't resolve to an admin employee, no code goes
     # out.
-    uid = _employee_id_for_chat_id(tgid)
+    uid = _uid_for_tgid(tgid)
     if uid is None or uid not in _super_admins():
         # Anti-enumeration: respond as if we sent, but no-op
         # behind the scenes. The frontend shows the same
@@ -523,7 +523,7 @@ async def verify_login_code(
     if not code.isdigit() or len(code) != 6:
         return VerifyLoginCodeResponse(ok=False, error="Code must be 6 digits")
 
-    uid = _employee_id_for_chat_id(tgid)
+    uid = _uid_for_tgid(tgid)
     if uid is None or uid not in _super_admins():
         # Anti-enumeration: same response as a wrong code.
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")

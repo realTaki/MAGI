@@ -121,7 +121,7 @@ class SessionOut(BaseModel):
 class SessionSummaryOut(BaseModel):
     session_id: str
     created_at: str
-    created_by_employee_id: int
+    created_by_uid: int
     updated_at: str
     message_count: int
     preview: str
@@ -190,7 +190,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
     return SessionSummaryOut(
         session_id=s.session_id,
         created_at=s.created_at,
-        created_by_employee_id=uid,
+        created_by_uid=uid,
         updated_at=s.updated_at,
         message_count=s.message_count,
         preview=s.preview,
@@ -203,7 +203,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _telegram_id_str_for_employee_id(uid: int) -> str:
+def _telegram_id_str_for_uid(uid: int) -> str:
     """Look up the operator's bound TG tgid as a string.
 
     D.24: the cookie identity is the uid, but
@@ -233,7 +233,7 @@ def _telegram_id_str_for_employee_id(uid: int) -> str:
     return str(telegram_id)
 
 
-def _resolve_employee_id(request: Request) -> int:
+def _resolve_uid(request: Request) -> int:
     """Resolve the cookie's ``magi_session`` value to the
     current employee's id.
 
@@ -258,7 +258,7 @@ def _resolve_employee_id(request: Request) -> int:
     return eid
 
 
-def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
+def _admin_uid(request: Request, store: SessionStoreDep) -> int:
     """Resolve the cookie to its admin employee id and
     gate by role.
 
@@ -274,7 +274,7 @@ def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
     turn the trailing ``return emp.id`` into a
     ``DetachedInstanceError``.
     """
-    uid = _resolve_employee_id(request)
+    uid = _resolve_uid(request)
     with open_session() as session:
         emp = session.get(Employee, uid)
         if emp is None or emp.role != "admin":
@@ -305,7 +305,7 @@ def create_session(
     C7-era tools that want to instantiate a session
     before the first message).
     """
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
     # D.23: ``tgid`` is the per-channel delivery
     # address stamped on the row's ``tgid`` column. We
     # still carry the cookie's telegram_id here so a
@@ -313,7 +313,7 @@ def create_session(
     # tgid to address the operator's TG bot. The store
     # key, however, is ``uid`` — see
     # :meth:`SessionStore.create`.
-    tgid = _telegram_id_str_for_employee_id(uid)
+    tgid = _telegram_id_str_for_uid(uid)
     sess = store.create(
         uid, channel="webui", tgid=tgid,
     )
@@ -347,7 +347,7 @@ def list_sessions(
     if offset < 0:
         offset = 0
 
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
     # D.23: list scope is the operator's uid, not
     # the cookie's tgid. ``store.list_summaries``
     # returns every row whose ``uid`` matches —
@@ -379,7 +379,7 @@ def get_session(
     store: SessionStoreDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
     try:
         sess = store.get(uid, session_id)
     except SessionPathError as e:
@@ -424,7 +424,7 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
     try:
         removed = store.delete(uid, session_id)
     except SessionPathError as e:
@@ -471,7 +471,7 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
@@ -591,7 +591,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    uid = _admin_employee_id(request, store)
+    uid = _admin_uid(request, store)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic

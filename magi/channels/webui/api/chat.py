@@ -254,13 +254,13 @@ async def send_chat(
     # exists and surfaces the LLM credentials. The cookie
     # is the cross-channel identity; the per-channel
     # delivery address (TG tgid) is looked up
-    # separately by ``_telegram_id_for_employee_id``
+    # separately by ``_telegram_id_for_uid``
     # below — WebUI doesn't need it for send / read but
     # we stamp it on the session row for cross-channel
     # tooling.
     cookie_raw = request.cookies.get("magi_session", "")
     try:
-        cookie_employee_id = int(cookie_raw)
+        cookie_uid = int(cookie_raw)
     except (TypeError, ValueError):
         # Should be caught by AdminGate already; defence
         # in depth.
@@ -270,7 +270,7 @@ async def send_chat(
             detail="no signed-in employee",
         )
     uid, employee_provider, employee_api_key, employee_role = (
-        _resolve_caller_credentials(_state_dir(), cookie_employee_id)
+        _resolve_caller_credentials(_state_dir(), cookie_uid)
     )
     # D.24: per-channel delivery address for the row's
     # tgid column. WebUI doesn't need it for send/read, but

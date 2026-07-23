@@ -332,7 +332,7 @@ def test_guest_role_cannot_write_soul(soul_env):
     assert r.status_code == 403
 
 
-def test_gate_uses_employee_id_not_telegram_id(soul_env):
+def test_gate_uses_uid_not_telegram_id(soul_env):
     """D.24 regression: cookie carries ``Employee.id`` (a
     primary-key int), not the legacy telegram_id. The
     gate must look up by primary key.

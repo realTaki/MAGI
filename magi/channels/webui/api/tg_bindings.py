@@ -168,7 +168,7 @@ def unbind_telegram(
 
 class TGBindStatus(BaseModel):
     tgid: str
-    bound_employee_id: int | None
+    bound_uid: int | None
     bound_employee_name: str | None = None
 
 
@@ -185,7 +185,7 @@ def get_telegram_binding(
     The operator-facing UI uses this to pre-fill the
     "unbind" confirmation with the employee name. Even
     if the bound row is gone (deleted via the WebUI), the
-    endpoint reports ``bound_employee_id`` so the operator
+    endpoint reports ``bound_uid`` so the operator
     can see the dangling reference and re-bind or clean
     it up explicitly.
     """
@@ -209,9 +209,9 @@ def get_telegram_binding(
             select(Employee).where(Employee.telegram_id == chat_id_int)
         )
         if emp is None:
-            return TGBindStatus(tgid=tgid, bound_employee_id=None)
+            return TGBindStatus(tgid=tgid, bound_uid=None)
         return TGBindStatus(
             tgid=tgid,
-            bound_employee_id=emp.id,
+            bound_uid=emp.id,
             bound_employee_name=emp.name,
         )

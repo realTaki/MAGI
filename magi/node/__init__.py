@@ -130,7 +130,7 @@ class NodeConfig:
         uid = None
         bot_token_set = False
         if "telegram" in channels:
-            uid = os.environ.get("MAGI_EMPLOYEE_ID")
+            uid = os.environ.get("MAGI_UID")
             bot_token_set = bool(os.environ.get("MAGI_BOT_TOKEN"))
 
         return cls(

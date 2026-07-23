@@ -35,7 +35,7 @@ type ActionItem = {
   source: "system" | "eve" | "user";
   created_at: string;
   completed_at: string | null;
-  completed_by_employee_id: number | null;
+  completed_by_uid: number | null;
   completion_note: string | null;
   dismissed: boolean;
 };

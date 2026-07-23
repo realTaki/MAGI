@@ -363,7 +363,7 @@ class CompleteActionItemTool(Tool):
                 row.completed_at = datetime.now(timezone.utc).replace(
                     tzinfo=None
                 )
-                row.completed_by_employee_id = emp_id
+                row.completed_by_uid = emp_id
                 if note is not None:
                     row.completion_note = note
                 db.commit()

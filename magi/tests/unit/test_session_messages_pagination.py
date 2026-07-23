@@ -240,7 +240,7 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
     assert total_all == 0
 
 
-def test_get_messages_page_respects_employee_id_scope(admin_env):
+def test_get_messages_page_respects_uid_scope(admin_env):
     """A session belonging to employee 2 is invisible when
     queried via employee 1 — same WHERE-clause enforcement
     as the rest of the API.

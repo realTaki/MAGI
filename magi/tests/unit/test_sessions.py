@@ -92,8 +92,8 @@ def test_create_persists(store):
     assert row.title is None
 
 
-def test_create_employee_id_validation(store):
-    """Non-integer employee_ids raise ``ValueError``."""
+def test_create_uid_validation(store):
+    """Non-integer uids raise ``ValueError``."""
     with pytest.raises(ValueError):
         store.create("not-a-number")
     with pytest.raises(ValueError):
@@ -244,7 +244,7 @@ def test_list_summaries_message_count_excludes_archive(store):
 # --------------------------------------------------------------------------- #
 
 
-def test_employee_ids_isolated(store):
+def test_uids_isolated(store):
     """Two employees do not see each other's sessions."""
     from magi.agent.memory.session import SessionNotFoundError
     a = store.create(1, )

@@ -37,7 +37,7 @@ backs that up.
 Indexes used
 ============
 
-- ``ix_action_items_employee_id``  : every GET filters here.
+- ``ix_action_items_uid``  : every GET filters here.
 - ``ix_action_items_employee_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
 - ``ux_action_items_open_per_kind``: idempotency check in
@@ -96,7 +96,7 @@ def _serialize(a: ActionItem) -> "ActionItemOut":
         source=a.source,
         created_at=_iso(a.created_at) or "",
         completed_at=_iso(a.completed_at),
-        completed_by_employee_id=a.completed_by_employee_id,
+        completed_by_uid=a.completed_by_uid,
         completion_note=a.completion_note,
         dismissed=a.dismissed,
     )
@@ -113,7 +113,7 @@ class ActionItemOut(BaseModel):
     source: str = "system"
     created_at: str
     completed_at: str | None = None
-    completed_by_employee_id: int | None = None
+    completed_by_uid: int | None = None
     completion_note: str | None = None
     dismissed: bool = False
 
@@ -359,7 +359,7 @@ def complete_action_item(
         return _serialize(row)
 
     row.completed_at = utcnow_naive()
-    row.completed_by_employee_id = admin_id
+    row.completed_by_uid = admin_id
     # Only overwrite the note if the caller actually sent
     # one. ``model_fields_set`` tells us "the field was
     # present in the request" — ``None`` and absent both
