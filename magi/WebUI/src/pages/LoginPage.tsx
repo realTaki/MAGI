@@ -13,8 +13,8 @@
  *      → 6-digit code to TG (5-min TTL, 60s resend cooldown).
  *
  *   3. User checks TG, types the 6 digits, clicks "Verify".
- *      Backend: POST /api/auth/verify-login-code { chat_id, code }
- *      → sets `magi_session` cookie (HTTPOnly, value = chat_id).
+ *      Backend: POST /api/auth/verify-login-code { uid, code }
+ *      → sets `magi_session` cookie (HTTPOnly, value = uid).
  *
  *   4. On success, onLoggedIn() is invoked and the parent flips
  *      to the dashboard. The cookie is sent automatically on

@@ -21,8 +21,8 @@ its work without each tool having to reach into globals.
 v0 fields:
   - ``state_dir``    — ``MAGI_STATE_DIR`` value
   - ``workspace``    — the resolved workspace root
-  - ``chat_id``      — the current conversation's chat id
-  - ``employee_id``  — who is on the other end (for
+  - ``tgid``      — the current conversation's chat id
+  - ``uid``  — who is on the other end (for
                         audit / future per-employee limits)
   - ``channel``      — ``"webui"`` / ``"tg"`` / ``"scheduled"``
 
@@ -52,8 +52,7 @@ class ToolContext:
 
     state_dir: str
     workspace: Path
-    chat_id: str
-    employee_id: int
+    uid: int
     channel: str
     # The chat session's persisted id (``chat_sessions.session_id``).
     # Empty string when there's no session-bound chat — e.g.
@@ -217,16 +216,16 @@ def caller_role_denied_reason(
     the DB stack at module load.
     """
     try:
-        emp_id = int(ctx.employee_id)
+        emp_id = int(ctx.uid)
     except (TypeError, ValueError):
-        return f"employee_id {ctx.employee_id!r} is not a valid id"
+        return f"uid {ctx.uid!r} is not a valid id"
     if emp_id == 0:
         # The chat / TG handlers always set a real id;
         # ``0`` is the loop's placeholder for "no caller
         # resolved yet". Refuse rather than silently
         # letting an unset-context caller through.
         return (
-            "tool requires a known employee_id (got 0); "
+            "tool requires a known uid (got 0); "
             "caller did not authenticate through a "
             "cookie / TG binding."
         )

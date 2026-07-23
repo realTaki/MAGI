@@ -9,23 +9,23 @@ Scope: per-employee
 
 The scope is the calling employee's own sessions, identified
 by ``Employee.telegram_id`` (the cookie value). Pre-D.18
-the directory layout ``<chat_id>/<sid>.json`` enforced
+the directory layout ``<tgid>/<sid>.json`` enforced
 per-operator isolation for free; with sessions in SQLite
 the WHERE clause is the new boundary. Two parallel helpers
 exist:
 
   - ``_resolve_chat_id`` — returns the cookie value as an
     ``int``. Used where the data column (``chat_sessions.
-    chat_id``) is what matters.
+    tgid``) is what matters.
   - ``_admin_employee_id`` — returns the ``Employee.id``
     (PK) of the admin. Used where the data column is
     ``Employee.telegram_id`` (a FK), or where we want to
     operate on the row rather than the chat identifier.
 
-The D.18 search endpoint scopes by ``chat_sessions.chat_id``
+The D.18 search endpoint scopes by ``chat_sessions.tgid``
 which **is** the telegram_id (just stored as a string).
 Semantically the data still belongs to one employee, but
-the column key is ``chat_id`` not ``employee_id``. The
+the column key is ``tgid`` not ``uid``. The
 ``search_sessions`` tool (D.18+1) takes a slightly different
 approach: it also takes the calling employee as the scope,
 but exposes the **employee identity** rather than the chat
@@ -40,7 +40,7 @@ implementation behind both the HTTP route and the agent
 tool. The tool calls it directly (no HTTP round-trip); the
 HTTP route wraps the result in a Pydantic shape for the
 frontend. Sharing the function keeps query sanitisation +
-FTS5 availability + chat_id scope in one place.
+FTS5 availability + tgid scope in one place.
 
 Query sanitisation
 ------------------
@@ -116,9 +116,9 @@ class SearchResponse(BaseModel):
     q: str
     # The employee's row id whose history was searched
     # (cross-platform scope: matches every session row
-    # whose ``employee_id`` equals this, regardless of
+    # whose ``uid`` equals this, regardless of
     # ``channel`` / ``tgid``).
-    employee_id: int
+    uid: int
     items: list[SearchHit]
     total: int
     limit: int
@@ -182,16 +182,16 @@ class SearchUnavailable(Exception):
 
 def search_chat_history(
     *,
-    employee_id: int,
+    uid: int,
     q: str,
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[SearchHit], int]:
     """Run a single FTS5 query and return ``(hits, total)``.
 
-    ``employee_id`` is the **cross-platform scope key**:
+    ``uid`` is the **cross-platform scope key**:
     results include every session row whose
-    ``chat_sessions.employee_id`` matches, regardless of
+    ``chat_sessions.uid`` matches, regardless of
     ``channel`` (webui / tg / future IMs) or ``tgid``. This
     matches the user's "search all of one employee's
     history" intent — an admin who has both webui
@@ -224,7 +224,7 @@ def search_chat_history(
         JOIN chat_messages m ON m.id = chat_messages_fts.rowid
         JOIN chat_sessions s  ON s.session_id = m.session_id
         WHERE chat_messages_fts MATCH :match_expr
-          AND s.employee_id = :employee_id
+          AND s.uid = :uid
     """
     count_sql = "SELECT COUNT(*) " + base_sql
     page_sql = (
@@ -240,13 +240,13 @@ def search_chat_history(
         try:
             total = db.execute(
                 text(count_sql),
-                {"match_expr": match_expr, "employee_id": employee_id},
+                {"match_expr": match_expr, "uid": uid},
             ).scalar_one()
             rows = db.execute(
                 text(page_sql),
                 {
                     "match_expr": match_expr,
-                    "employee_id": employee_id,
+                    "uid": uid,
                     "limit": limit,
                     "offset": offset,
                 },
@@ -288,18 +288,18 @@ def search_chat(
 
     Scope: cross-platform via the calling employee's row
     id. AdminGate proves "is an admin"; ``_admin_employee_id``
-    resolves the cookie's chat_id to the matching Employee
+    resolves the cookie's tgid to the matching Employee
     row (FK to ``Employee.telegram_id``); the SQL clause
-    ``WHERE s.employee_id = :employee_id`` then picks up
+    ``WHERE s.uid = :uid`` then picks up
     every session this employee owns — webui, TG, or any
     future channel. Other employees' rows are never
     reachable.
     """
-    employee_id = _admin_employee_id(request, store)
+    uid = _admin_employee_id(request, store)
 
     try:
         items, total = search_chat_history(
-            employee_id=employee_id, q=q, limit=limit, offset=offset,
+            uid=uid, q=q, limit=limit, offset=offset,
         )
     except SearchUnavailable as e:
         raise MagiHTTPException(
@@ -309,7 +309,7 @@ def search_chat(
         )
 
     return SearchResponse(
-        q=q, employee_id=employee_id,
+        q=q, uid=uid,
         items=items, total=total,
         limit=limit, offset=offset,
     )

@@ -192,7 +192,7 @@ class ScheduleTaskTool(Tool):
                     "additionally lets the agent's send_message "
                     "tool push a reply to the operator's TG "
                     "chat (the runner looks up the existing TG "
-                    "session by (chat_id, employee_id) and "
+                    "session by (tgid, uid) and "
                     "reuses it; or uses the operator's bound "
                     "telegram_id when called from a non-TG "
                     "chat)."
@@ -202,7 +202,7 @@ class ScheduleTaskTool(Tool):
             # facing schema: the tool no longer accepts a
             # caller-supplied destination. The server
             # derives it from channel + the caller's
-            # ToolContext (session_id for webui, chat_id
+            # ToolContext (session_id for webui, tgid
             # for tg). The column stays on Task for
             # backward compat with rows created before
             # this unification.
@@ -248,7 +248,7 @@ class ScheduleTaskTool(Tool):
         #   channel='webui' + cold call   → None (runner
         #     falls back; legacy / WebUI-default path stays
         #     as "fresh session per fire")
-        #   channel='tg'    + LLM-in-TG  → ctx.chat_id (the
+        #   channel='tg'    + LLM-in-TG  → ctx.tgid (the
         #     TG chat the LLM is responding to)
         #   channel='tg'    + cold call  → None (runner
         #     falls back to operator.telegram_id at fire time)
@@ -261,7 +261,7 @@ class ScheduleTaskTool(Tool):
         # record; ``None`` is correct). TG tasks push
         # to wherever the calling session's IM target
         # lives — read it from the session row rather
-        # than carrying ``chat_id`` through ctx (the
+        # than carrying ``tgid`` through ctx (the
         # session is the source of truth for IM
         # addressing).
         if channel == "webui":
@@ -319,11 +319,11 @@ class ScheduleTaskTool(Tool):
 
         # ── Admin / assigned gate ──────────────────────────────────────
         # Verify the calling operator. We pull role
-        # from the DB (not ``ctx.employee_id``-trust) so
+        # from the DB (not ``ctx.uid``-trust) so
         # a mis-wired caller can't punch above its
         # authority.
         with open_session() as db:
-            emp = db.get(Employee, ctx.employee_id)
+            emp = db.get(Employee, ctx.uid)
             if emp is None:
                 return ToolResult(content="caller not found", is_error=True)
             if emp.role not in _ROLE_MAY_CREATE:
@@ -352,7 +352,7 @@ class ScheduleTaskTool(Tool):
                 existing.channel = channel
                 existing.enabled = 1
                 existing.consecutive_failures = 0
-                existing.employee_id = operator_id
+                existing.uid = operator_id
                 # ``session_id`` is preserved across upserts —
                 # the cron conversation is a single thread
                 # across updates; we don't recreate it on
@@ -363,7 +363,7 @@ class ScheduleTaskTool(Tool):
                 # cleanup migration can backfill them.
                 if existing.session_id is None:
                     existing.session_id = _allocate_task_session(
-                        db, employee_id=operator_id, name=name,
+                        db, uid=operator_id, name=name,
                     )
                 task_id = existing.id
                 is_update = True
@@ -374,7 +374,7 @@ class ScheduleTaskTool(Tool):
                 # shape as the API: channel="task",
                 # title="[定时] <name>".
                 new_session_id_str = _allocate_task_session(
-                    db, employee_id=operator_id, name=name,
+                    db, uid=operator_id, name=name,
                 )
                 db.add(Task(
                     id=task_id,
@@ -386,7 +386,7 @@ class ScheduleTaskTool(Tool):
                     session_id=new_session_id_str,
                     tz=_resolve_system_tz(),
                     channel=channel,
-                    employee_id=operator_id,
+                    uid=operator_id,
                     enabled=1,
                     consecutive_failures=0,
                     created_at=_now_iso(),
@@ -475,7 +475,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _allocate_task_session(db, *, employee_id: int, name: str) -> str:
+def _allocate_task_session(db, *, uid: int, name: str) -> str:
     """Create a fresh ``channel="task"`` ChatSession
     for a brand-new task. ``tgid`` carries the
     operator's telegram_id as a breadcrumb (no routing
@@ -498,12 +498,12 @@ def _allocate_task_session(db, *, employee_id: int, name: str) -> str:
     # Look up the operator's telegram_id for the
     # breadcrumb stamp; tolerate None (operator has
     # no TG binding) by storing an empty string.
-    operator = db.get(Employee, employee_id)
+    operator = db.get(Employee, uid)
     tgid = str(operator.telegram_id) if operator and operator.telegram_id else ""
     db.add(ChatSession(
         session_id=session_id,
         tgid=tgid,
-        employee_id=employee_id,
+        uid=uid,
         channel="task",
         title=f"[定时] {name}",
         created_at=_utcnow_iso(),

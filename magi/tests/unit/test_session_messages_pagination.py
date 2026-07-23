@@ -9,7 +9,7 @@ Three surfaces pinned:
      *from the newest end* so ``offset=limit`` gives the
      next older page.
   2. **GET /api/chat/sessions/{id}/messages** — the HTTP
-     route. Wraps the storage call in chat_id scope +
+     route. Wraps the storage call in tgid scope +
      404 handling. Pins the response shape so the WebUI
      consumer doesn't break on a future schema bump.
   3. **Edge cases** — empty sessions, unknown session_id
@@ -63,17 +63,17 @@ def admin_env(monkeypatch, tmp_path):
     return state
 
 
-def _seed_messages(store, chat_id: str, count: int) -> str:
+def _seed_messages(store, tgid: str, count: int) -> str:
     """Append ``count`` synthetic user messages to a fresh
-    session for ``chat_id`` and return the session_id.
+    session for ``tgid`` and return the session_id.
     The synthetic text is just ``"msg-{idx}"`` — enough
     to be distinct without being noisy.
     """
     from magi.agent.memory.session import SessionMessage, new_session_id
 
-    # D.23: store key is employee_id (int); chat_id is the
+    # D.23: store key is uid (int); tgid is the
     # per-channel delivery address stamped on the row.
-    sess = store.create(1, chat_id=chat_id)
+    sess = store.create(1, )
     msgs = [
         SessionMessage(
             role="user", text=f"msg-{i}",
@@ -245,20 +245,20 @@ def test_get_messages_page_respects_employee_id_scope(admin_env):
     queried via employee 1 — same WHERE-clause enforcement
     as the rest of the API.
 
-    D.23: the store key is now ``employee_id``; the
-    pre-D.23 chat_id scope test is rewritten here in
-    terms of the new key, since the chat_id column no
+    D.23: the store key is now ``uid``; the
+    pre-D.23 tgid scope test is rewritten here in
+    terms of the new key, since the tgid column no
     longer drives the WHERE clause.
     """
     from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
-    # _seed_messages uses employee_id=1 (TA-pagination);
-    # the second admin row (TB-other) gets employee_id=2
+    # _seed_messages uses uid=1 (TA-pagination);
+    # the second admin row (TB-other) gets uid=2
     # — the auto-increment order of the fixture's inserts.
-    # Querying with employee_id=2 (TB-other) for the
-    # session that belongs to employee_id=1 must return
+    # Querying with uid=2 (TB-other) for the
+    # session that belongs to uid=1 must return
     # nothing.
 
     msgs, total_active, _ = store.get_messages_page(
@@ -275,7 +275,7 @@ def test_get_messages_page_respects_employee_id_scope(admin_env):
 
 @pytest.fixture
 def client(admin_env):
-    """TestClient with admin-A's cookie (chat_id 9001)."""
+    """TestClient with admin-A's cookie (tgid 9001)."""
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
 
@@ -357,16 +357,16 @@ def test_messages_route_401_without_cookie(admin_env):
 def test_messages_route_cross_employee_isolation(client, admin_env):
     """Alice (employee 1) cannot read Bob's (employee 2)
     session via pagination. The route scopes the WHERE
-    clause by ``employee_id`` (D.23); an attacker who
+    clause by ``uid`` (D.23); an attacker who
     knows the session_id still gets a 404.
     """
     from magi.agent.memory.session import SessionStore
 
     store = SessionStore(str(admin_env))
-    # Bob's session: employee_id=2, chat_id="9002" (the
-    # chat_id is the per-channel delivery address —
+    # Bob's session: uid=2,  (the
+    # tgid is the per-channel delivery address —
     # historical / metadata only now).
-    sess = store.create(2, chat_id="9002", channel="webui")
+    sess = store.create(2, channel="webui")
     sid = sess.session_id
 
     r = client.get(f"/api/chat/sessions/{sid}/messages")

@@ -129,8 +129,8 @@ async def test_tg_handler_injects_tg_send_callback(
     await bot_mod._handle_employee_message(
         fake_update,
         state_dir=str(tg_state_dir),
-        chat_id="6240201712",
-        employee_id=1,
+        tgid="6240201712",  # same as the seeded Employee's telegram_id
+        uid=1,
         employee_name="Taki",
         display_name=None,
         employee_separated=False,
@@ -157,8 +157,9 @@ async def test_tg_handler_injects_tg_send_callback(
     )
 
     # 7. Invoking the callback routes through bot.send_message
-    #    with the chat_id we passed in.
+    #    with the tgid we passed in.
     await cb(6240201712, "hello from the LLM tool")
     bot.send_message.assert_awaited_once_with(
-        chat_id=6240201712, text="hello from the LLM tool",
+        tgid=6240201712,
+        text="hello from the LLM tool",
     )

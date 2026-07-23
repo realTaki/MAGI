@@ -2,14 +2,14 @@
 
 Five surfaces pinned:
 
-  - ``employee_id`` non-integer → refuse with a
-    ``"employee_id ... is not a valid id"`` message
+  - ``uid`` non-integer → refuse with a
+    ``"uid ... is not a valid id"`` message
     (preserves the original wording so existing tests
     that grep the error string keep working).
-  - ``employee_id == 0`` → refuse with the
+  - ``uid == 0`` → refuse with the
     "got 0; caller did not authenticate" message —
     catches a tooling future-bug where the loop's
-    placeholder ``employee_id=0`` leaks through.
+    placeholder ``uid=0`` leaks through.
   - Employee row missing in DB → refuse with
     ``"employee <id> not found"``.
   - Employee role not in ``allowed_roles`` → refuse
@@ -75,15 +75,15 @@ def seed_employees(fresh_db):
     return {"alice": alice, "charlie": charlie}
 
 
-def _ctx(state: Path, employee_id: object) -> ToolContext:
-    """Build a ToolContext with a *raw* ``employee_id`` so
+def _ctx(state: Path, uid: object) -> ToolContext:
+    """Build a ToolContext with a *raw* ``uid`` so
     tests can drive the int-parsing path with arbitrary
     inputs (strings, ``None``, ``0``)."""
     return ToolContext(
         state_dir=str(state),
         workspace=state.parent,
-        chat_id="0",
-        employee_id=employee_id,  # type: ignore[arg-type]
+        
+        uid=uid,  # type: ignore[arg-type]
         channel="webui",
     )
 
@@ -100,7 +100,7 @@ def test_returns_none_for_permitted_role(fresh_db, seed_employees):
 
 
 def test_rejects_non_int_employee_id(fresh_db):
-    """Non-coercible ``employee_id`` returns an error
+    """Non-coercible ``uid`` returns an error
     pointing at the bad input — does not raise.
     """
     msg = caller_role_denied_reason(
@@ -113,7 +113,7 @@ def test_rejects_non_int_employee_id(fresh_db):
 
 
 def test_rejects_zero_employee_id(fresh_db):
-    """``employee_id == 0`` is the loop's placeholder for
+    """``uid == 0`` is the loop's placeholder for
     "no caller resolved yet" — refuse rather than letting
     the lookup silently match an unintended row."""
     msg = caller_role_denied_reason(

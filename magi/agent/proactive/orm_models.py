@@ -39,7 +39,7 @@ Columns / defaults
 Cross-table FKs
 ---------------
 
-- ``tasks.employee_id`` → ``employees.id`` ``RESTRICT``: a task
+- ``tasks.uid`` → ``employees.id`` ``RESTRICT``: a task
   references its operator's credentials. Cascade delete would
   wipe history when an admin gets removed (and re-added), so
   we block the delete at the DB level — the action_items
@@ -125,7 +125,7 @@ class Task(Base):
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     # Delivery destination — semantic depends on ``channel``:
     #
-    #   channel="telegram" → TG chat_id (string of digits);
+    #   channel="telegram" → TG tgid (string of digits);
     #                        ``None`` ⇒ use the operator's
     #                        bound ``Employee.telegram_id``.
     #   channel="webui"    → Either the literal string
@@ -156,7 +156,7 @@ class Task(Base):
     # reads this column at fire time instead of resolving
     # a session per fire. ``channel="task"`` for every
     # task; ``tgid`` on the row carries the IM target
-    # (TG chat_id digits) for the runner's TG-push
+    # (TG tgid digits) for the runner's TG-push
     # wiring — but the session itself is never a TG chat.
     #
     # SET NULL on delete: task deletion is a separate
@@ -172,7 +172,7 @@ class Task(Base):
     # is RESTRICT because deleting an admin should require
     # first removing their tasks (mirrors the action_items
     # pattern).
-    employee_id: Mapped[int] = mapped_column(
+    uid: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="RESTRICT"),
         nullable=False,
     )
@@ -231,7 +231,7 @@ class Task(Base):
         Index("ix_tasks_enabled_last_run", "enabled", "last_run_at"),
         # Per-operator listings ("which of MY tasks are
         # scheduled?").
-        Index("ix_tasks_employee", "employee_id"),
+        Index("ix_tasks_employee", "uid"),
     )
 
 

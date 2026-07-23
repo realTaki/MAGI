@@ -32,7 +32,7 @@ modes are treated differently on purpose:
     can't tell the difference between a healthy chat and
     one that can't find who they are.
 
-The cookie / chat_id / row-exists checks are NOT done here
+The cookie / tgid / row-exists checks are NOT done here
 because the auth gate (``AdminGate``) has already done them
 and returned 401. If the gate let the request through, the
 admin row exists.
@@ -83,11 +83,11 @@ def _state_dir() -> str:
 
 
 def _resolve_caller_credentials(
-    state_dir: str, employee_id: int
+    state_dir: str, uid: int
 ) -> tuple[int, str, str, str]:
     """Look up the operator's employee row by their
-    ``employee_id`` (the cookie value post-D.24) and
-    return ``(employee_id, provider, api_key, role)``.
+    ``uid`` (the cookie value post-D.24) and
+    return ``(uid, provider, api_key, role)``.
 
     The ``role`` field is included so the chat handler
     can pass it down to :func:`magi.agent.loop.handle_message`
@@ -117,10 +117,10 @@ def _resolve_caller_credentials(
     """
     try:
         with open_session() as session:
-            emp = session.get(Employee, employee_id)
+            emp = session.get(Employee, uid)
     except Exception:
         logger.exception(
-            "chat: ORM lookup failed for employee_id %s", employee_id,
+            "chat: ORM lookup failed for uid %s", uid,
         )
         raise MagiHTTPException(
             status_code=500,
@@ -132,7 +132,7 @@ def _resolve_caller_credentials(
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no employee row bound to this chat_id",
+            detail="no employee row bound to this tgid",
         )
     if not emp.provider or not emp.api_key:
         logger.info(
@@ -150,8 +150,8 @@ def _resolve_caller_credentials(
     return emp.id, emp.provider, emp.api_key, emp.role
 
 
-def _telegram_id_str_for_employee(employee_id: int) -> str:
-    """Look up the bound TG chat_id (delivery address) for
+def _telegram_id_str_for_employee(uid: int) -> str:
+    """Look up the bound TG tgid (delivery address) for
     an employee. Returns ``""`` if the employee never bound
     a TG chat — the row's ``tgid`` column gets ``""`` and
     any future cross-channel tooling sees an empty delivery
@@ -169,12 +169,12 @@ def _telegram_id_str_for_employee(employee_id: int) -> str:
         # ORM-engine reset. Returning the string kills the
         # trap at the source.
         with open_session() as session:
-            emp = session.get(Employee, employee_id)
+            emp = session.get(Employee, uid)
             telegram_id = emp.telegram_id if emp is not None else None
     except Exception:
         logger.exception(
             "chat: telegram_id lookup failed for employee %s",
-            employee_id,
+            uid,
         )
         return ""
     if telegram_id is None:
@@ -187,7 +187,7 @@ class ChatSendRequest(BaseModel):
 
     ``text`` is the only required field. ``session_id``
     (optional) ties the message to a persisted session;
-    the cookie's chat_id pins the session to that operator.
+    the cookie's tgid pins the session to that operator.
     If absent, the backend auto-creates a new session
     and returns its id in the response — so the frontend
     doesn't have to know about session lifecycle.
@@ -225,7 +225,7 @@ async def send_chat(
     are empty the request is rejected with
     ``403 chat.llm_credentials_required`` — no silent
     fall-back to the system default. The audit row records
-    the operator's ``employee_id`` regardless.
+    the operator's ``uid`` regardless.
 
     Session lifecycle (D.6):
       - The user message is appended to the resolved
@@ -248,12 +248,12 @@ async def send_chat(
             detail="text must not be empty",
         )
 
-    # D.24: the cookie's value IS the employee_id. The
+    # D.24: the cookie's value IS the uid. The
     # auth gate already proved it's a live admin session;
     # ``_resolve_caller_credentials`` re-checks the row
     # exists and surfaces the LLM credentials. The cookie
     # is the cross-channel identity; the per-channel
-    # delivery address (TG chat_id) is looked up
+    # delivery address (TG tgid) is looked up
     # separately by ``_telegram_id_for_employee_id``
     # below — WebUI doesn't need it for send / read but
     # we stamp it on the session row for cross-channel
@@ -269,7 +269,7 @@ async def send_chat(
             code="chat.unknown_sender",
             detail="no signed-in employee",
         )
-    employee_id, employee_provider, employee_api_key, employee_role = (
+    uid, employee_provider, employee_api_key, employee_role = (
         _resolve_caller_credentials(_state_dir(), cookie_employee_id)
     )
     # D.24: per-channel delivery address for the row's
@@ -278,8 +278,8 @@ async def send_chat(
     # from this column. ``""`` if the operator never bound TG.
 
     # -- session lifecycle ------------------------------------------
-    # The cookie's chat_id (string of digits) is also the
-    # session's chat_id. ``_resolve_caller_credentials``
+    # The cookie's tgid (string of digits) is also the
+    # session's tgid. ``_resolve_caller_credentials``
     # never raises for an admin who got past the gate, so
     # the cookie must be a valid integer — but we trust
     # the cookie string verbatim for the path key because
@@ -295,13 +295,13 @@ async def send_chat(
     tgid = ""
     if session_id:
         try:
-            # D.23: session key is now ``employee_id`` (the
+            # D.23: session key is now ``uid`` (the
             # cross-channel identity of the operator), not
-            # the cookie's chat_id. The chat_id is still
+            # the cookie's tgid. The tgid is still
             # carried on the row's ``tgid`` column for
             # legacy / outbound-delivery reasons, but it is
             # NOT a session key.
-            existing = store.get(employee_id, session_id)
+            existing = store.get(uid, session_id)
         except SessionPathError as e:
             raise MagiHTTPException(
                 status_code=400,
@@ -320,17 +320,17 @@ async def send_chat(
             # keeps the tgid-from-Employee path scoped to
             # the auto-create branch — when the row
             # already exists, we trust its own column.
-            tgid = existing.chat_id or ""
+            tgid = existing.tgid or ""
     if not session_id:
-        # ``chat_id=`` here is the per-channel delivery
+        # ``tgid=`` here is the per-channel delivery
         # address stamped on the row's ``tgid`` column. D.24:
         # the cookie identity is the employee, but each row
-        # still carries the operator's bound TG chat_id (or
+        # still carries the operator's bound TG tgid (or
         # ``""`` if they never bound one) so a future
         # cross-channel query tool can address their bot.
-        tgid = _telegram_id_str_for_employee(employee_id)
+        tgid = _telegram_id_str_for_employee(uid)
         sess = store.create(
-            employee_id, channel="webui", chat_id=tgid,
+            uid, channel="webui", tgid=tgid,
         )
         session_id = sess.session_id
 
@@ -347,7 +347,7 @@ async def send_chat(
     ts_in = _utcnow_iso()
     try:
         post = store.append_messages(
-            employee_id, session_id,
+            uid, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
@@ -399,9 +399,9 @@ async def send_chat(
     if len(post.messages) == 1:
         from magi.agent.memory.session.auto_title import enqueue_title_job
         await enqueue_title_job(
-            chat_id=tgid,
+            tgid=tgid,
             session_id=session_id,
-            employee_id=employee_id,
+            uid=uid,
             employee_provider=employee_provider,
             employee_api_key=employee_api_key,
         )
@@ -411,8 +411,7 @@ async def send_chat(
         text=text,
         channel="webui",
         session_id=session_id,
-        chat_id=tgid,
-        employee_id=employee_id,
+        uid=uid,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
         caller_role=employee_role,
@@ -437,7 +436,7 @@ async def send_chat(
     ts_out = _utcnow_iso()
     try:
         store.append_messages(
-            employee_id, session_id,
+            uid, session_id,
             [SessionMessage(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),

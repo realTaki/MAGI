@@ -165,7 +165,7 @@ class AddMemoryTool(Tool):
         try:
             store = MemoryStore(ctx.state_dir)
             view = store.add(
-                int(ctx.employee_id),
+                int(ctx.uid),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
@@ -182,7 +182,7 @@ class UpdateMemoryTool(Tool):
 
     The LLM finds the id via the system-prompt block
     ("memory id 17 says …"). Mutable fields only —
-    ``kind`` and ``employee_id`` are intentionally not
+    ``kind`` and ``uid`` are intentionally not
     editable to keep the row's identity stable across
     edits.
     """
@@ -202,7 +202,7 @@ class UpdateMemoryTool(Tool):
         "Patch an existing memory row by id. Use when the operator "
         "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
         "Mutable: subject, body, importance. Immutable: kind, "
-        "employee_id (delete + re-add if you really need to change "
+        "uid (delete + re-add if you really need to change "
         "those)."
     )
     input_schema = {

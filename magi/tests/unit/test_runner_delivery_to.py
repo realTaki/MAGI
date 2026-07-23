@@ -125,7 +125,7 @@ def _seed_task(
             db.add(ChatSession(
                 session_id=session_id,
                 tgid=str(emp.telegram_id or ""),
-                employee_id=emp.id,
+                uid=emp.id,
                 channel="task",
                 title=f"[定时] {name}",
                 created_at="2026-07-20T12:00:00Z",
@@ -142,7 +142,7 @@ def _seed_task(
             session_id=session_id,
             tz="UTC",
             channel=channel,
-            employee_id=emp.id,
+            uid=emp.id,
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",
@@ -340,7 +340,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
         legacy = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
             tgid=str(emp.telegram_id),
-            employee_id=emp.id,
+            uid=emp.id,
             channel="webui",
             title="operator's ongoing chat",
             created_at="2026-07-20T09:00:00Z",
@@ -415,7 +415,7 @@ async def test_cross_employee_does_not_inject_into_other(
     with open_session() as db:
         sess = db.get(ChatSession, session_id)
         assert sess is not None
-        assert sess.employee_id != emp_b.id
+        assert sess.uid != emp_b.id
 
     await _fake_fire(task_id, state_dir)
 
@@ -424,7 +424,7 @@ async def test_cross_employee_does_not_inject_into_other(
         # session exist; no spill into emp_b's rows.
         other_sessions = (
             db.query(ChatSession)
-            .filter_by(employee_id=emp_b.id)
+            .filter_by(uid=emp_b.id)
             .all()
         )
         assert len(other_sessions) == 0
@@ -437,7 +437,7 @@ async def test_tg_delivery_to_wires_callback(
     state_dir: Path,
 ) -> None:
     """When ``task.channel='tg'`` and
-    ``task.delivery_to`` is a TG chat_id (digits) and
+    ``task.delivery_to`` is a TG tgid (digits) and
     a bot is registered, the runner wires
     ``_tg_send_callback`` into the agent loop. The
     callback is the agent's responsibility to invoke
@@ -451,8 +451,8 @@ async def test_tg_delivery_to_wires_callback(
     captured: dict = {}
 
     class _StubBot:
-        async def send_message(self, *, chat_id, text, **_kwargs):
-            captured["chat_id"] = chat_id
+        async def send_message(self, *, tgid, text, **_kwargs):
+            captured["tgid"] = tgid
             captured["text"] = text
 
     _tg.bot.set_telegram_bot(_StubBot())
@@ -468,7 +468,7 @@ async def test_tg_delivery_to_wires_callback(
 
         async def _capture(*_args, **kwargs):
             captured["tg_send_callback"] = kwargs.get("tg_send_callback")
-            captured["chat_id"] = kwargs.get("chat_id")
+            captured["tgid"] = kwargs.get("tgid")
             return "fake reply"
 
         runner_mod.handle_message = _capture  # type: ignore[assignment]
@@ -477,11 +477,16 @@ async def test_tg_delivery_to_wires_callback(
         finally:
             runner_mod.handle_message = real
 
-        # The callback was wired (not None) AND it
-        # targets the operator's TG chat_id.
+        # The callback was wired (not None). D.26 dropped
+        # ``tgid`` from ``handle_message`` — the LLM tools
+        # (send_message in particular) read the per-channel
+        # delivery address directly from
+        # ``chat_sessions.tgid`` instead. The callback closure
+        # captures the target tgid at fire time and uses it
+        # as ``chat_id=`` on the underlying bot call.
         cb = captured.get("tg_send_callback")
         assert callable(cb)
-        assert captured["chat_id"] == "9101"
+        assert captured.get("tgid") is None
     finally:
         _tg.bot.clear_telegram_bot()
 
@@ -499,7 +504,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
         tg_chat = ChatSession(
             session_id="01HTGCHATSESSIONXXXXXXXXX",
             tgid="9101",
-            employee_id=emp.id,
+            uid=emp.id,
             channel="tg",
             title="operator's TG chat",
             created_at="2026-07-20T09:00:00Z",

@@ -2,7 +2,7 @@
 
 The unified rule: ``delivery_to`` is server-derived per
 ``channel`` + the operator's bound ``telegram_id`` (and the
-LLM-supplied ``ctx.session_id`` / ``ctx.chat_id`` for the tool
+LLM-supplied ``ctx.session_id`` / ``ctx.tgid`` for the tool
 path). The operator does not pick a delivery destination from
 the WebUI form; the LLM no longer accepts a caller-supplied
 ``delivery_to`` for the tool path either.
@@ -143,7 +143,7 @@ def test_webui_channel_without_explicit_infers_new(
     with open_session() as db:
         result = _resolve_delivery_to(
             db, channel="webui",
-            employee_id=seeded["alice"].id,
+            uid=seeded["alice"].id,
             explicit=None,
         )
     assert result == "new"
@@ -160,7 +160,7 @@ def test_webui_channel_with_explicit_session_id_honours_it(
     with open_session() as db:
         result = _resolve_delivery_to(
             db, channel="webui",
-            employee_id=seeded["alice"].id,
+            uid=seeded["alice"].id,
             explicit="01HABCDEFGHJKMNPQRSTVWXY",
         )
     assert result == "01HABCDEFGHJKMNPQRSTVWXY"
@@ -175,13 +175,13 @@ def test_tg_channel_uses_operator_telegram_id(
     """The WebUI form's TG branch: ``channel='tg'`` →
     ``str(employee.telegram_id)``. The caller cannot
     override this — the server returns the operator's
-    bound chat_id regardless of what ``delivery_to`` they
+    bound tgid regardless of what ``delivery_to`` they
     passed (the value is silently ignored on the TG
     branch)."""
     with open_session() as db:
         result = _resolve_delivery_to(
             db, channel="tg",
-            employee_id=seeded["alice"].id,
+            uid=seeded["alice"].id,
             explicit="bogus-ignored",
         )
     assert result == "9101"
@@ -199,7 +199,7 @@ def test_tg_channel_without_telegram_id_raises_400(
         with pytest.raises(MagiHTTPException) as exc_info:
             _resolve_delivery_to(
                 db, channel="tg",
-                employee_id=seeded["bob"].id,
+                uid=seeded["bob"].id,
                 explicit=None,
             )
     assert exc_info.value.status_code == 400
@@ -230,7 +230,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     with open_session() as db:
         re_derived = _resolve_delivery_to(
             db, channel="tg",
-            employee_id=alice_id,
+            uid=alice_id,
             explicit=None,
         )
     assert re_derived == "9101"
@@ -241,7 +241,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     with open_session() as db:
         re_derived_webui = _resolve_delivery_to(
             db, channel="webui",
-            employee_id=alice_id,
+            uid=alice_id,
             explicit=None,
         )
     assert re_derived_webui == "new"
@@ -310,7 +310,7 @@ def test_task_row_carries_derived_delivery_to(
     with open_session() as db:
         derived = _resolve_delivery_to(
             db, channel="tg",
-            employee_id=alice_id,
+            uid=alice_id,
             explicit=None,
         )
         t = Task(
@@ -322,7 +322,7 @@ def test_task_row_carries_derived_delivery_to(
             delivery_to=derived,
             tz="UTC",
             channel="tg",
-            employee_id=alice_id,
+            uid=alice_id,
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",

@@ -7,7 +7,7 @@ Four surfaces pinned:
      The endpoint must refuse to render another admin's
      contacts under any circumstance (no ``?owner_id=`` URL
      knob — the caller is always derived from the cookie).
-  2. **Scope** — the cookie's admin ``employee_id`` is the
+  2. **Scope** — the cookie's admin ``uid`` is the
      ``ContactEntry.owner_id`` filter; admin B never sees
      admin A's rows.
   3. **JOIN shape** — ``response.person.name`` is resolved
@@ -105,7 +105,7 @@ def client(env):
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie is the employee_id (int), not a chat_id.
+    # D.24: cookie is the uid (int), not a tgid.
     c.cookies.set("magi_session", str(env["alice"].id))
     return c
 
@@ -126,7 +126,7 @@ def charlie_client(env):
 @pytest.fixture
 def bob_client(env):
     """TestClient with Bob's cookie (also admin, different
-    employee_id). Used to verify scope isolation."""
+    uid). Used to verify scope isolation."""
     from magi.channels.webui.app import create_app
 
     app = create_app()

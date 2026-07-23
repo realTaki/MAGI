@@ -1,7 +1,7 @@
 """Tests for :func:`magi.agent.memory.session.migrate_from_json` (D.18).
 
 Pins the boot-time importer that walks the legacy
-``<workspace>/memories/sessions/<chat_id>/<sid>.json`` tree
+``<workspace>/memories/sessions/<tgid>/<sid>.json`` tree
 and copies each file into the SQLite ``chat_sessions`` +
 ``chat_messages`` tables.
 
@@ -51,13 +51,13 @@ def fresh_db(monkeypatch, tmp_path):
 
     # ``workspace_root`` defaults to ``state_dir.parent`` — i.e.
     # ``tmp_path`` for this fixture. The legacy JSON tree
-    # lives at ``<workspace>/memories/sessions/<chat_id>/...``.
+    # lives at ``<workspace>/memories/sessions/<tgid>/...``.
     return state, tmp_path
 
 
 def _write_legacy_session(
     workspace: Path,
-    chat_id: str,
+    tgid: str,
     session_id: str,
     *,
     messages: list[dict] | None = None,
@@ -70,14 +70,14 @@ def _write_legacy_session(
     layout. Returns the file path so tests can ``.unlink()``
     or assert on it.
     """
-    sessions_root = workspace / "memories" / "sessions" / chat_id
+    sessions_root = workspace / "memories" / "sessions" / tgid
     sessions_root.mkdir(parents=True, exist_ok=True)
     path = sessions_root / f"{session_id}.json"
     payload = {
         "schema_version": 1,
         "session_id": session_id,
-        "chat_id": chat_id,
-        "employee_id": 42,
+        "tgid": tgid,
+        "uid": 42,
         "channel": "webui",
         "created_at": "2026-07-01T00:00:00Z",
         "updated_at": "2026-07-02T00:00:00Z",
@@ -192,7 +192,7 @@ def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
 
 
 def test_migrate_multiple_chat_ids(fresh_db):
-    """Multiple chat_id subdirs are walked; sessions are
+    """Multiple tgid subdirs are walked; sessions are
     imported per chat."""
     from magi.agent.memory.session import migrate_from_json
     from magi.agent.db import ChatSession, open_session
@@ -335,7 +335,7 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
 
 
 def test_migrate_invalid_chat_id_dir_is_skipped(fresh_db):
-    """A directory whose name violates the chat_id regex is
+    """A directory whose name violates the tgid regex is
     skipped with a warning (logged) rather than crashing the
     whole migration."""
     from magi.agent.memory.session import migrate_from_json
@@ -352,7 +352,7 @@ def test_migrate_invalid_chat_id_dir_is_skipped(fresh_db):
     # the operator sees something happened.
     assert stats["corrupt"] == 1
     # The bad dir is not deleted (we don't touch a path
-    # outside the chat_id regex).
+    # outside the tgid regex).
     assert bad_dir.exists()
 
 

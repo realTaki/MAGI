@@ -11,7 +11,7 @@ IM-target resolution
 ---------------------
 
 The push target comes from the **session row**
-(``chat_sessions.tgid``), not ``ctx.chat_id``. The
+(``chat_sessions.tgid``), not ``ctx.tgid``. The
 session is the single source of truth for "which IM
 endpoint does this conversation push to" — populated
 at session-creation time by the channel adapter
@@ -27,7 +27,7 @@ at session-creation time by the channel adapter
     or group). The tool pushes via the bot reference
     the agent loop injects via ``_tg_send_callback``.
   - Task session (``channel="task"``) → ``tgid`` is
-    the task's delivery target (TG chat_id for TG
+    the task's delivery target (TG tgid for TG
     tasks, the operator's telegram_id for webui tasks
     — the latter as a breadcrumb since the runner's
     "fresh session per fire" semantics means there's
@@ -61,7 +61,7 @@ def _resolve_tg_target(session_id: str) -> tuple[str, int | None]:
 
     Returns ``(source, tgid_int)`` where ``source`` is a
     debug-friendly tag (``"session:<id>"``) and ``tgid_int``
-    is the parsed TG chat_id for TG-targeted sessions,
+    is the parsed TG tgid for TG-targeted sessions,
     or ``None`` for sessions that don't have a TG target
     (webui chat-history-only conversations).
 
@@ -149,7 +149,7 @@ class SendMessageTool(Tool):
 
         # Resolve the TG target from the session row.
         # Sessions are the single source of truth for the
-        # IM endpoint — there's no separate ``chat_id``
+        # IM endpoint — there's no separate ``tgid``
         # concept. The agent loop never talks to "another
         # person" — it's always talking to MAGI itself, so
         # the session's ``tgid`` is the only address the

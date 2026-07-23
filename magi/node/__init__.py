@@ -88,7 +88,7 @@ class NodeConfig:
     reload: bool = False
 
     # — Telegram channel (when "telegram" in channels) —
-    employee_id: str | None = None
+    uid: str | None = None
     bot_token_set: bool = False
     state_dir: str | None = None
 
@@ -127,10 +127,10 @@ class NodeConfig:
         # working directory (matches Agent convention).
         state_dir = require_state_dir()
 
-        employee_id = None
+        uid = None
         bot_token_set = False
         if "telegram" in channels:
-            employee_id = os.environ.get("MAGI_EMPLOYEE_ID")
+            uid = os.environ.get("MAGI_EMPLOYEE_ID")
             bot_token_set = bool(os.environ.get("MAGI_BOT_TOKEN"))
 
         return cls(
@@ -143,7 +143,7 @@ class NodeConfig:
             host=host,
             port=port,
             reload=os.environ.get("MAGI_RELOAD", "0") == "1",
-            employee_id=employee_id,
+            uid=uid,
             bot_token_set=bot_token_set,
             state_dir=state_dir,
         )
@@ -364,7 +364,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     C0 behaviour is the "first-touch" handler from
     ``magi.channels.telegram.bot``: anyone not in the admin
     list (an ``Employee`` row with ``role='admin'``) gets a
-    reply with their own chat_id and a "contact admin" nudge.
+    reply with their own tgid and a "contact admin" nudge.
     C3 will replace this with the real agent-loop dispatcher.
 
     No-op when no bot token has been saved (e.g. onboarding step 1 not
@@ -384,7 +384,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     logger.info(
         "telegram channel running",
         extra={
-            "employee_id": cfg.employee_id,
+            "uid": cfg.uid,
             "adam_url": cfg.adam_url,
             "state_dir": state_dir,
             "bot_thread": thread.name,

@@ -2,8 +2,8 @@
 operator's chat history, with N-turn context around each hit.
 
 Companion to ``/api/chat/search`` (D.18): same FTS5 index,
-same chat_id scope, but instead of a JSON shape the tool
-returns a text block the LLM can read directly.
+same per-employee scope, but instead of a JSON shape the
+tool returns a text block the LLM can read directly.
 
 Use case
 --------
@@ -20,11 +20,10 @@ Scope
 -----
 
 Same per-employee scope as the WebUI's ``/api/chat/search``:
-the calling admin's ``Employee.telegram_id`` (= the
-``magi_session`` cookie). Implemented at the SQL layer via
-``s.chat_id = :chat_id``; the tool resolves the chat_id
-from ``ctx.chat_id`` (the agent loop populates this from
-the cookie on every call).
+the calling admin's ``Employee.id`` (resolved by the
+agent loop from the ``magi_session`` cookie on every call).
+The SQL filter scopes by ``chat_sessions.uid``;
+channel and ``tgid`` are not part of the search predicate.
 
 Output format
 -------------
@@ -180,24 +179,17 @@ class SearchSessionsTool(Tool):
             )
         limit = max(1, min(limit, _MAX_HITS))
 
-        # Scope: the calling admin's chat_id. The agent
-        # loop populates ``ctx.chat_id`` from the
-        # ``magi_session`` cookie on every call (see
-        # ``magi.agent.loop.handle_message``), so the
-        # SQL ``s.chat_id = :chat_id`` clause keeps the
-        # result inside one employee's history.
-        # Cross-platform scope: every session row whose
-        # ``employee_id`` matches the calling operator's
-        # employee id (resolved from the cookie by the
-        # agent loop and stuffed into ToolContext). An
-        # admin's webui conversations AND any TG / future
+        # Scope: the calling admin's uid. Cross-
+        # platform: every session row whose ``uid``
+        # matches — webui conversations AND any TG / future
         # IM conversations handled by that admin employee
-        # all match.
-        employee_id = ctx.employee_id
+        # all match. Channel and ``tgid`` are not part of the
+        # search predicate.
+        uid = ctx.uid
 
         try:
             hits, total = search_chat_history(
-                employee_id=employee_id, q=q, limit=limit, offset=0,
+                uid=uid, q=q, limit=limit, offset=0,
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_sessions: {e}", is_error=True)
@@ -236,7 +228,7 @@ class SearchSessionsTool(Tool):
         for i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
                 hit, ctx.state_dir, context_n,
-                ctx.employee_id,
+                ctx.uid,
             )
             block_bytes = len(block.encode("utf-8"))
             if bytes_used + block_bytes > _MAX_OUTPUT_BYTES:
@@ -251,7 +243,7 @@ class SearchSessionsTool(Tool):
 
         header = (
             f"search_sessions: q={q!r}, {total} match(es) "
-            f"scoped to employee_id={employee_id}; "
+            f"scoped to uid={uid}; "
             f"returning {len(blocks)} of {len(hits)} hit(s) "
             f"with ±{context_n} message context each\n"
         )
@@ -266,7 +258,7 @@ class SearchSessionsTool(Tool):
         return ToolResult(content=header + body + footer)
 
 
-def _format_hit_block(hit, state_dir: str, context_n: int, employee_id: int) -> str:
+def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
@@ -281,14 +273,14 @@ def _format_hit_block(hit, state_dir: str, context_n: int, employee_id: int) -> 
     ``hit.tgid`` is the row's Telegram chat identifier
     (per-channel delivery address; carried on the row
     since D.18). The :meth:`SessionStore.get` lookup is
-    scoped by ``ctx.employee_id`` (the search call
+    scoped by ``ctx.uid`` (the search call
     already resolved every hit to this employee) — the
-    store's defence-in-depth check on ``employee_id``
+    store's defence-in-depth check on ``uid``
     covers the cross-employee case.
     """
     # Locate the hit in either the active or archive list.
     session = SessionStore(state_dir).get(
-        employee_id, hit.session_id,
+        uid, hit.session_id,
     )
     if session is None:
         # Race: hit was deleted between FTS5 hit and read.

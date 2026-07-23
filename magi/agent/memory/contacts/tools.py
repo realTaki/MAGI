@@ -142,7 +142,7 @@ class AddContactTool(Tool):
         try:
             store = ContactStore(ctx.state_dir)
             view = store.upsert(
-                int(ctx.employee_id),
+                int(ctx.uid),
                 person_id,
                 notes=kwargs["notes"],
                 role=kwargs.get("role"),
@@ -331,7 +331,7 @@ class SearchContactsTool(Tool):
             rows = db.execute(
                 select(ContactEntry)
                 .where(
-                    ContactEntry.owner_id == int(ctx.employee_id),
+                    ContactEntry.owner_id == int(ctx.uid),
                     ContactEntry.notes.ilike(pattern),
                 )
                 .order_by(ContactEntry.last_seen_at.desc())

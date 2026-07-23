@@ -1,28 +1,28 @@
 """Login / session API.
 
 Two-step flow (mirror of admin verification):
-    1. ``POST /api/auth/send-login-code { chat_id }``
-       Sends a 6-digit code to the chat_id via the saved bot. Same
+    1. ``POST /api/auth/send-login-code { tgid }``
+       Sends a 6-digit code to the tgid via the saved bot. Same
        5-min TTL and 60-s cooldown as admin code, stored under the
        same key namespace as a precaution.
 
-    2. ``POST /api/auth/verify-login-code { chat_id, code }``
+    2. ``POST /api/auth/verify-login-code { tgid, code }``
        On match, sets the ``magi_session`` cookie to the
-       **employee_id** (stringified int) and returns 200. The cookie
+       **uid** (stringified int) and returns 200. The cookie
        is HTTPOnly + SameSite=Lax; for C0 we skip signed-cookie /
        token-store machinery (C8 hardening).
 
 Authorization model (D.24):
   The cookie's value identifies the **employee**, not the
-  channel. The login input (``chat_id``) is a TG delivery
+  channel. The login input (``tgid``) is a TG delivery
   address; the cookie output is an employee id. An employee
   can be bound to multiple channels — the cookie identity
   stays stable across all of them. ``/me`` resolves the
   cookie's employee id to the row and reports both
-  ``employee_id`` and ``telegram_id`` (the latter may be
+  ``uid`` and ``telegram_id`` (the latter may be
   ``None`` for admins who never bound a TG bot).
 
-  Reads (list / get sessions) are scoped by ``employee_id``
+  Reads (list / get sessions) are scoped by ``uid``
   on the server side (see :class:`SessionStore` D.23) —
   an employee sees their own history across every channel,
   regardless of which one was used to create a given row.
@@ -82,12 +82,12 @@ def _state_dir() -> str:
 def _super_admins() -> set[int]:
     """Read the super-admin allowlist as a set of employee ids.
 
-    The identity is now the **employee**, not the chat_id — an
-    employee with a bound TG chat_id is the same identity as
+    The identity is now the **employee**, not the tgid — an
+    employee with a bound TG tgid is the same identity as
     that same employee signing in via WebUI. The legacy
     ``telegram.super_admins`` meta key (pre-D.24) stores
     chat_ids; the fallback path resolves each legacy
-    chat_id to its current ``Employee.id`` so old state
+    tgid to its current ``Employee.id`` so old state
     files keep working.
 
     Source of truth is the ``employees`` table (rows with
@@ -153,16 +153,16 @@ class AllowedLoginAccount(BaseModel):
     the value today — it just uses it to disambiguate rows that
     happen to share a display name.
 
-    D.24: ``employee_id`` is the cross-channel identity that
+    D.24: ``uid`` is the cross-channel identity that
     will become the cookie value after the code verifies.
-    The frontend keeps sending ``chat_id`` on the verify
+    The frontend keeps sending ``tgid`` on the verify
     call (the wire format is unchanged) but the cookie
     identity is the employee, so we surface the
-    employee_id alongside for future UI work.
+    uid alongside for future UI work.
     """
 
-    chat_id: str
-    employee_id: int
+    tgid: str
+    uid: int
     display_name: str | None = None
     role: str
 
@@ -172,7 +172,7 @@ class AllowedLoginAccountsResponse(BaseModel):
 
 
 class SendLoginCodeRequest(BaseModel):
-    chat_id: str = Field(min_length=1, max_length=64)
+    tgid: str = Field(min_length=1, max_length=64)
 
 
 class SendLoginCodeResponse(BaseModel):
@@ -182,7 +182,7 @@ class SendLoginCodeResponse(BaseModel):
 
 
 class VerifyLoginCodeRequest(BaseModel):
-    chat_id: str = Field(min_length=1, max_length=64)
+    tgid: str = Field(min_length=1, max_length=64)
     code: str = Field(min_length=6, max_length=6)
 
 
@@ -194,8 +194,8 @@ class VerifyLoginCodeResponse(BaseModel):
 class MeResponse(BaseModel):
     """Response of ``/me``.
 
-    D.24: the cookie is keyed by ``employee_id``, not
-    chat_id. The response surfaces the employee identity
+    D.24: the cookie is keyed by ``uid``, not
+    tgid. The response surfaces the employee identity
     so the frontend can display it directly; the
     ``telegram_id`` is the per-channel delivery address
     bound to this employee (may be ``None`` for admins
@@ -203,7 +203,7 @@ class MeResponse(BaseModel):
     future "send to my TG" affordance.
     """
 
-    employee_id: int
+    uid: int
     telegram_id: int | None = None
     display_name: str | None = None
     is_super_admin: bool = True  # for C0: the only kind of logged-in user
@@ -219,7 +219,7 @@ def _generate_code() -> str:
 #
 # Keep this here (vs reusing the admin code in onboarding.py) because
 # the auth and admin flows are conceptually different even though the
-# underlying mechanism is the same: a chat_id in
+# underlying mechanism is the same: a tgid in
 # telegram.super_admins is the only allowed login target, but the
 # admin *verification* flow is one-shot during onboarding. If the
 # login flow grows (e.g. 2FA via email later) the duplication
@@ -228,10 +228,10 @@ def _generate_code() -> str:
 _LOGIN_KEY = "telegram.login_code"
 
 
-def _load_login_code(chat_id: str) -> dict | None:
+def _load_login_code(tgid: str) -> dict | None:
     from magi.agent.db.settings import state_get
 
-    raw = state_get(_state_dir(), f"{_LOGIN_KEY}.{chat_id}")
+    raw = state_get(_state_dir(), f"{_LOGIN_KEY}.{tgid}")
     if not raw:
         return None
     try:
@@ -240,12 +240,12 @@ def _load_login_code(chat_id: str) -> dict | None:
         return None
 
 
-def _store_login_code(chat_id: str, code: str, issued_at: datetime, expires_at: float) -> None:
+def _store_login_code(tgid: str, code: str, issued_at: datetime, expires_at: float) -> None:
     from magi.agent.db.settings import state_set
 
     state_set(
         _state_dir(),
-        f"{_LOGIN_KEY}.{chat_id}",
+        f"{_LOGIN_KEY}.{tgid}",
         json.dumps(
             {
                 "code": code,
@@ -257,24 +257,24 @@ def _store_login_code(chat_id: str, code: str, issued_at: datetime, expires_at: 
     )
 
 
-def _clear_login_code(chat_id: str) -> None:
+def _clear_login_code(tgid: str) -> None:
     from magi.agent.db.settings import state_delete
 
-    state_delete(_state_dir(), f"{_LOGIN_KEY}.{chat_id}")
+    state_delete(_state_dir(), f"{_LOGIN_KEY}.{tgid}")
 
 
-def _employee_id_for_chat_id(chat_id: str) -> int | None:
-    """Resolve a TG chat_id (the login input) to its employee id.
+def _employee_id_for_chat_id(tgid: str) -> int | None:
+    """Resolve a TG tgid (the login input) to its employee id.
 
-    Returns ``None`` if the chat_id isn't bound to any
+    Returns ``None`` if the tgid isn't bound to any
     ``Employee`` row. The login flow uses this to translate
     "what the user typed" into the cookie identity; the
-    cookie value is the employee_id (D.24) so a future
+    cookie value is the uid (D.24) so a future
     channel (Slack / WeChat) can resolve its own address
     to the same identity.
     """
     try:
-        cid_int = int(chat_id)
+        cid_int = int(tgid)
     except (TypeError, ValueError):
         return None
     try:
@@ -299,7 +299,7 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
 
     1. ``telegram.super_admins`` — the wizard-configured deployer
        list. role = ``super_admin``.
-    2. Employees with a bound TG chat_id + an active EVE
+    2. Employees with a bound TG tgid + an active EVE
        assignment. role = ``assigned_employee``. C2 wires the TG
        binding (the employee proves ownership of the chat from
        TG by replying to a code); C6 wires the EVE dispatch
@@ -316,7 +316,7 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     Display names are best-effort lookups via Telegram
     ``getChat``; a failure (e.g. the user has blocked the bot,
     or the network is down) just means we fall back to showing
-    the bare chat_id.
+    the bare tgid.
     """
     from magi.agent.db.settings import state_get
 
@@ -325,7 +325,7 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
 
     # 1. Super admins (wizard-configured). The list now
     # resolves employee ids → their bound TG chat_ids so
-    # the dropdown still shows the chat_id the user
+    # the dropdown still shows the tgid the user
     # actually types on the login page. Admins without a
     # TG binding can't be reached via the bot today; the
     # ``/allowed-chat-ids`` response drops them rather
@@ -340,16 +340,16 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
                 if emp.telegram_id is not None:
                     admin_telegram_ids[emp.id] = emp.telegram_id
 
-    for employee_id in sorted(admin_telegram_ids):
-        chat_id_int = admin_telegram_ids[employee_id]
-        chat_id = str(chat_id_int)
+    for uid in sorted(admin_telegram_ids):
+        chat_id_int = admin_telegram_ids[uid]
+        tgid = str(chat_id_int)
         display_name: str | None = None
         if bot_token:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.post(
                         f"https://api.telegram.org/bot{bot_token}/getChat",
-                        json={"chat_id": chat_id_int},
+                        json={"tgid": chat_id_int},
                     )
                 if resp.status_code == 200 and (resp.json().get("ok")):
                     chat = resp.json().get("result") or {}
@@ -360,12 +360,12 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
                     )
             except (httpx.TimeoutException, httpx.RequestError, ValueError):
                 # Network down / user blocked the bot / whatever —
-                # the dropdown will just show the chat_id.
+                # the dropdown will just show the tgid.
                 pass
         accounts.append(
             AllowedLoginAccount(
-                chat_id=chat_id,
-                employee_id=employee_id,
+                tgid=tgid,
+                uid=uid,
                 display_name=display_name,
                 role="super_admin",
             )
@@ -377,12 +377,12 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
     #
     #   SELECT e.telegram_id, e.name
     #   FROM employees e
-    #   JOIN eves v ON v.employee_id = e.id
+    #   JOIN eves v ON v.uid = e.id
     #   WHERE e.telegram_id IS NOT NULL
     #     AND v.status != 'shutting_down'
     #     AND NOT EXISTS (
     #       SELECT 1 FROM telegram.super_admins a
-    #       WHERE a.chat_id = e.telegram_id
+    #       WHERE a.tgid = e.telegram_id
     #     );
     #
     # We skip the join and rely on the frontend to de-dupe
@@ -397,45 +397,45 @@ async def list_allowed_chat_ids() -> AllowedLoginAccountsResponse:
 async def send_login_code(
     payload: SendLoginCodeRequest,
 ) -> SendLoginCodeResponse:
-    """Send a 6-digit code to ``chat_id`` for login.
+    """Send a 6-digit code to ``tgid`` for login.
 
-    No-op if the chat_id isn't bound to a super-admin employee —
+    No-op if the tgid isn't bound to a super-admin employee —
     we don't want random TG users to be able to spam a
     magic-link code into the bot. The user-facing error in
     that case is identical to a successful send
     (anti-enumeration), but the bot never sends a message
     and no code is stored.
 
-    D.24: the input is still a TG chat_id (what the user
-    types), but the allowlist is now the **employee_id**.
-    We resolve the chat_id → employee_id once at the top,
-    then key the cooldown / code store by employee_id so
+    D.24: the input is still a TG tgid (what the user
+    types), but the allowlist is now the **uid**.
+    We resolve the tgid → uid once at the top,
+    then key the cooldown / code store by uid so
     the lookup is independent of which channel the user
     used to log in (a future Slack / IM channel will
-    resolve its own address to the same employee_id).
+    resolve its own address to the same uid).
     """
-    chat_id = payload.chat_id.strip()
-    if not chat_id.lstrip("-").isdigit():
-        return SendLoginCodeResponse(ok=False, error="chat_id must be numeric")
+    tgid = payload.tgid.strip()
+    if not tgid.lstrip("-").isdigit():
+        return SendLoginCodeResponse(ok=False, error="tgid must be numeric")
 
-    # Resolve chat_id → employee_id. The super-admin
-    # allowlist is keyed by employee_id; if the chat_id
+    # Resolve tgid → uid. The super-admin
+    # allowlist is keyed by uid; if the tgid
     # doesn't resolve to an admin employee, no code goes
     # out.
-    employee_id = _employee_id_for_chat_id(chat_id)
-    if employee_id is None or employee_id not in _super_admins():
+    uid = _employee_id_for_chat_id(tgid)
+    if uid is None or uid not in _super_admins():
         # Anti-enumeration: respond as if we sent, but no-op
         # behind the scenes. The frontend shows the same
         # "code sent" UX so an attacker can't probe which
         # chat_ids are admins.
         logger.info(
-            "login-code send: chat_id is not a super_admin; suppressed",
-            extra={"chat_id": chat_id},
+            "login-code send: tgid is not a super_admin; suppressed",
+            extra={"tgid": tgid},
         )
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
     # Cooldown — same anti-abuse logic as the admin code.
-    previous = _load_login_code(chat_id)
+    previous = _load_login_code(tgid)
     if previous:
         try:
             prev_sent_at = float(previous.get("last_sent_at", 0))
@@ -462,7 +462,7 @@ async def send_login_code(
     code = _generate_code()
     issued_at = datetime.now(timezone.utc)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
-    _store_login_code(chat_id, code, issued_at, expires_at)
+    _store_login_code(tgid, code, issued_at, expires_at)
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
@@ -470,7 +470,7 @@ async def send_login_code(
             resp = await client.post(
                 url,
                 json={
-                    "chat_id": int(chat_id),
+                    "tgid": int(tgid),
                     "text": (
                         f"Your MAGI sign-in code is: <code>{code}</code>\n\n"
                         f"Enter it in the browser to log in. The code "
@@ -479,14 +479,14 @@ async def send_login_code(
                 },
             )
     except httpx.TimeoutException:
-        _clear_login_code(chat_id)
+        _clear_login_code(tgid)
         return SendLoginCodeResponse(ok=False, error="Telegram timed out")
     except httpx.RequestError as exc:
-        _clear_login_code(chat_id)
+        _clear_login_code(tgid)
         return SendLoginCodeResponse(ok=False, error=f"Network error: {exc}")
 
     if resp.status_code != 200:
-        _clear_login_code(chat_id)
+        _clear_login_code(tgid)
         return SendLoginCodeResponse(
             ok=False,
             error=f"Telegram returned HTTP {resp.status_code}",
@@ -494,7 +494,7 @@ async def send_login_code(
 
     data = resp.json()
     if not data.get("ok"):
-        _clear_login_code(chat_id)
+        _clear_login_code(tgid)
         return SendLoginCodeResponse(
             ok=False, error=data.get("description", "Telegram error")
         )
@@ -509,8 +509,8 @@ async def verify_login_code(
 ) -> VerifyLoginCodeResponse:
     """Check the code, then set the session cookie on success.
 
-    D.24: the cookie value is the **employee_id**, not the
-    chat_id. The chat_id is still on the wire (it's what
+    D.24: the cookie value is the **uid**, not the
+    tgid. The tgid is still on the wire (it's what
     the user typed and what the bot delivered the code
     to) but the cookie identity is the cross-channel
     employee — so signing in via WebUI works whether the
@@ -518,21 +518,21 @@ async def verify_login_code(
     or no chat channel at all (an admin who manages
     other employees but never bound a TG bot).
     """
-    chat_id = payload.chat_id.strip()
+    tgid = payload.tgid.strip()
     code = payload.code.strip()
     if not code.isdigit() or len(code) != 6:
         return VerifyLoginCodeResponse(ok=False, error="Code must be 6 digits")
 
-    employee_id = _employee_id_for_chat_id(chat_id)
-    if employee_id is None or employee_id not in _super_admins():
+    uid = _employee_id_for_chat_id(tgid)
+    if uid is None or uid not in _super_admins():
         # Anti-enumeration: same response as a wrong code.
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
-    stored = _load_login_code(chat_id)
+    stored = _load_login_code(tgid)
     if not stored:
         return VerifyLoginCodeResponse(
             ok=False,
-            error="No code sent to this chat_id — request a new one.",
+            error="No code sent to this tgid — request a new one.",
         )
 
     try:
@@ -540,28 +540,28 @@ async def verify_login_code(
     except (TypeError, ValueError):
         expires_at = 0
     if not expires_at or datetime.now(timezone.utc).timestamp() >= expires_at:
-        _clear_login_code(chat_id)
+        _clear_login_code(tgid)
         return VerifyLoginCodeResponse(
             ok=False, error="Code expired — request a new one."
         )
 
     # Burn on any path past expiry (mismatch, success, anything) so
     # the code can't be retried.
-    _clear_login_code(chat_id)
+    _clear_login_code(tgid)
 
     if str(stored.get("code", "")) != code:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
     # Sign in: set the session cookie. D.24 — the cookie
-    # value is the employee_id (cross-channel identity),
-    # not the chat_id. The HTTPOnly flag keeps it
+    # value is the uid (cross-channel identity),
+    # not the tgid. The HTTPOnly flag keeps it
     # client-side inaccessible; the ``/me`` endpoint and
     # every AdminGate lookup resolve it back to a live
     # ``Employee`` row to gate access. C8 will replace
     # this with a signed token + a real session table.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=str(employee_id),
+        value=str(uid),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
@@ -570,7 +570,7 @@ async def verify_login_code(
     )
     logger.info(
         "user signed in",
-        extra={"chat_id": chat_id, "employee_id": employee_id},
+        extra={"tgid": tgid, "uid": uid},
     )
     return VerifyLoginCodeResponse(ok=True)
 
@@ -589,10 +589,10 @@ async def me(
 ) -> MeResponse:
     """Return the current user, or 401 if no valid session.
 
-    "Valid" means: the cookie's employee_id resolves to a
+    "Valid" means: the cookie's uid resolves to a
     row in ``employees`` with role='admin'. D.24 — the
-    cookie is the employee_id (cross-channel identity),
-    not the chat_id the user typed on the login page.
+    cookie is the uid (cross-channel identity),
+    not the tgid the user typed on the login page.
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
@@ -602,13 +602,13 @@ async def me(
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
-    employee_id = int(magi_session)
-    if employee_id not in _super_admins():
+    uid = int(magi_session)
+    if uid not in _super_admins():
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
     # We already proved the cookie is a valid admin
-    # employee_id; re-read the row to surface the
+    # uid; re-read the row to surface the
     # telegram_id + display name. If the row has since
     # been deleted (admin removed mid-session), we fall
     # back to None — the cookie is still good for this
@@ -616,18 +616,18 @@ async def me(
     # with.
     try:
         with open_session() as session:
-            emp = session.get(Employee, employee_id)
+            emp = session.get(Employee, uid)
         if emp is None:
             return MeResponse(
-                employee_id=employee_id,
+                uid=uid,
                 telegram_id=None,
                 display_name=None,
             )
         return MeResponse(
-            employee_id=emp.id,
+            uid=emp.id,
             telegram_id=emp.telegram_id,
             display_name=emp.name,
         )
     except Exception:
         logger.exception("me: employee lookup failed for cookie value")
-        return MeResponse(employee_id=employee_id)
+        return MeResponse(uid=uid)

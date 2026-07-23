@@ -191,7 +191,7 @@ def test_drain_returns_false_when_store_unchanged(
     ``seen`` — so the poll returns ``False`` and ``msgs``
     is untouched."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id="c1")
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
@@ -218,7 +218,7 @@ def test_drain_returns_false_when_seen_covers_everything(
     the store — i.e. the loop has already processed all
     user messages."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id="c2")
+    sess = store.create(1, channel="webui", )
     mid = new_session_id()
     store.append_messages(
         1, sess.session_id,
@@ -243,7 +243,7 @@ def test_drain_splices_new_user_messages_in_order(
     """Two new user messages arrive between iterations;
     both land in the in-memory list, in store order."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id="c3")
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
@@ -292,7 +292,7 @@ def test_drain_truncates_trailing_tool_blocks(
     API rejects a plain ``user`` text message interleaved
     with tool blocks."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id="c4")
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
@@ -338,7 +338,7 @@ def test_drain_skips_new_assistant_rows(
     spliced into the in-memory list — that's the loop's
     own job, not the poller's."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id="c5")
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [
@@ -378,7 +378,7 @@ def test_drain_swallows_store_read_errors(
     seen: set[str] = set()
 
     # Force SessionStore.get to raise.
-    def _boom(self, chat_id: str, session_id: str) -> Any:
+    def _boom(self, tgid: str, session_id: str) -> Any:
         raise RuntimeError("simulated store failure")
 
     monkeypatch.setattr(
@@ -482,9 +482,9 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # Seed the session store with the user's first message
     # (channels do this synchronously before calling
     # handle_message).
-    chat_id = "interrupt-chat"
+    tgid = "interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id=chat_id)
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
@@ -502,24 +502,24 @@ async def test_handle_message_picks_up_interrupting_user_message(
 
     inject_after = {"calls": 0}
 
-    def _get_with_interrupt(self, employee_id: int, s: str) -> Any:
+    def _get_with_interrupt(self, uid: int, s: str) -> Any:
         # D.23: the store's first positional arg is now
-        # ``employee_id`` (int), not a chat_id string. The
+        # ``uid`` (int), not a tgid string. The
         # patched signature mirrors that.
         inject_after["calls"] += 1
-        result = real_get(self, employee_id, s)
+        result = real_get(self, uid, s)
         if result is not None and inject_after["calls"] >= 2:
             # Append the interrupting message if not yet.
             existing_ids = {m.message_id for m in result.messages}
             if not any(m.text == "actually search for rust" for m in result.messages):
                 self.append_messages(
-                    employee_id, s,
+                    uid, s,
                     [SessionMessage(
                         role="user", text="actually search for rust",
                         ts=utcnow_iso(), message_id=new_session_id(),
                     )],
                 )
-                result = real_get(self, employee_id, s)
+                result = real_get(self, uid, s)
         return result
 
     monkeypatch.setattr(store.__class__, "get", _get_with_interrupt)
@@ -531,8 +531,8 @@ async def test_handle_message_picks_up_interrupting_user_message(
         str(state_dir),
         text="search for python",
         channel="webui",
-        chat_id=chat_id,
-        employee_id=1,
+        
+        uid=1,
         session_id=sess.session_id,
         employee_provider="minimax",
         employee_api_key="fake",
@@ -546,8 +546,8 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # assistant reply (the channel-side writer does that
     # after handle_message returns), so we only check the
     # user rows here.
-    # D.23: store key is employee_id (int), not the
-    # channel's chat_id string.
+    # D.23: store key is uid (int), not the
+    # channel's tgid string.
     final = SessionStore(str(state_dir)).get(1, sess.session_id)
     assert final is not None
     user_texts = [m.text for m in final.messages if m.role == "user"]
@@ -570,9 +570,9 @@ async def test_handle_message_no_interrupt_works_normally(
     ])
     monkeypatch.setattr(loop_mod, "get_provider", get_provider)
 
-    chat_id = "no-interrupt-chat"
+    tgid = "no-interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", chat_id=chat_id)
+    sess = store.create(1, channel="webui", )
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
@@ -585,8 +585,8 @@ async def test_handle_message_no_interrupt_works_normally(
         str(state_dir),
         text="list stuff",
         channel="webui",
-        chat_id=chat_id,
-        employee_id=1,
+        
+        uid=1,
         session_id=sess.session_id,
         employee_provider="minimax",
         employee_api_key="fake",

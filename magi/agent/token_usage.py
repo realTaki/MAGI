@@ -19,7 +19,7 @@ from magi.agent.db import TokenUsage, open_session
 def record_token_usage(
     state_dir: str,
     *,
-    employee_id: int,
+    uid: int,
     channel: str,
     provider: str,
     model: str | None,
@@ -59,7 +59,7 @@ def record_token_usage(
 
     with open_session() as session:
         session.add(TokenUsage(
-            employee_id=employee_id,
+            uid=uid,
             channel=channel,
             provider=provider,
             model=model,

@@ -84,7 +84,7 @@ class MemoryEntry(Base):
     # future. ON DELETE CASCADE: removing the employee
     # clears their memory (the row is meaningless
     # without the owner).
-    employee_id: Mapped[int] = mapped_column(
+    uid: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -130,7 +130,7 @@ class MemoryEntry(Base):
         # excluding completed, ordered by importance".
         Index(
             "ix_memory_entries_owner_importance",
-            "employee_id", "completed_at", "importance",
+            "uid", "completed_at", "importance",
         ),
     )
 

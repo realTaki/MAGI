@@ -39,11 +39,11 @@ router = APIRouter(tags=["departments"])
 
 # -- auth gate --------------------------------------------------------------
 
-def _is_admin_employee_id(employee_id: int) -> bool:
+def _is_admin_employee_id(uid: int) -> bool:
     """True if the ``Employee`` row with the given id has role=admin.
 
     D.24: the ``magi_session`` cookie carries the
-    ``employee_id`` (cross-channel identity), not the chat_id.
+    ``uid`` (cross-channel identity), not the tgid.
     The admin allowlist is keyed by employee id; a future
     channel will resolve its own delivery address to the same
     employee id and re-use this same check.
@@ -58,7 +58,7 @@ def _is_admin_employee_id(employee_id: int) -> bool:
 
     try:
         with open_session() as session:
-            emp = session.get(Employee, employee_id)
+            emp = session.get(Employee, uid)
             if emp is not None and emp.role == "admin":
                 return True
     except Exception:
@@ -70,7 +70,7 @@ def _is_admin_employee_id(employee_id: int) -> bool:
 def admin_gate(request: Request) -> str:
     """FastAPI dependency — verify the caller is a super admin.
 
-    D.24: reads the ``employee_id`` from the cookie and
+    D.24: reads the ``uid`` from the cookie and
     looks up the row's role directly. The auth router
     validates the same cookie in its ``/me`` handler, so by
     the time a request gets here the cookie is known to be a
@@ -78,7 +78,7 @@ def admin_gate(request: Request) -> str:
     still in the super-admins list (a stale cookie after an
     admin removal shouldn't sneak past).
 
-    Returns the cookie's employee_id as a string for
+    Returns the cookie's uid as a string for
     call-site convenience (the chat_sessions router casts it
     back to ``int``).
     """
@@ -87,8 +87,8 @@ def admin_gate(request: Request) -> str:
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
-    employee_id = int(raw)
-    if not _is_admin_employee_id(employee_id):
+    uid = int(raw)
+    if not _is_admin_employee_id(uid):
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
@@ -98,8 +98,8 @@ def admin_gate(request: Request) -> str:
 AdminGate = Annotated[str, Depends(admin_gate)]
 
 
-def _is_admin_or_assigned_chat_id(chat_id: str) -> bool:
-    """DEPRECATED: pre-D.24 lookup that read ``chat_id`` as a
+def _is_admin_or_assigned_chat_id(tgid: str) -> bool:
+    """DEPRECATED: pre-D.24 lookup that read ``tgid`` as a
     telegram_id and matched ``Employee.telegram_id``. Cookie
     is now ``Employee.id``, so this helper returned False
     for every real caller. Replaced by the direct PK lookup
@@ -127,7 +127,7 @@ def admin_or_assigned_gate(request: Request) -> str:
     ``Employee.telegram_id == cookie`` — which matched
     by sheer coincidence only when an employee happened
     to have the same integer id as their telegram_id
-    (e.g. ``employee_id=2, telegram_id=6240201712`` never
+    (e.g. ``uid=2, telegram_id=6240201712`` never
     matched). The lookup below goes by primary key, which
     is correct post-D.24.
     """
@@ -135,7 +135,7 @@ def admin_or_assigned_gate(request: Request) -> str:
 
     raw = request.cookies.get("magi_session") or ""
     try:
-        employee_id = int(raw)
+        uid = int(raw)
     except (TypeError, ValueError):
         raise MagiHTTPException(
             status_code=403,
@@ -147,7 +147,7 @@ def admin_or_assigned_gate(request: Request) -> str:
         )
     try:
         with open_session() as session:
-            emp = session.get(Employee, employee_id)
+            emp = session.get(Employee, uid)
     except Exception:
         logger.exception(
             "admin_or_assigned_gate: ORM read failed; denying access"
@@ -723,7 +723,7 @@ def create_employee(
                 f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
             ),
         )
-    # Telegram id uniqueness — one chat_id binds to at most
+    # Telegram id uniqueness — one tgid binds to at most
     # one employee. A duplicate id here means the operator
     # is double-binding; surface as a 409.
     if payload.telegram_id is not None and session.scalar(

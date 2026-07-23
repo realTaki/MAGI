@@ -2,7 +2,7 @@
 
 D.18 moved sessions from per-file JSON to SQLite (``chat_sessions`` +
 ``chat_messages``). The TG handler logic — "one session per
-TG chat_id forever, mint a fresh one if the prior was
+TG tgid forever, mint a fresh one if the prior was
 deleted" — stays the same; only the assertions move from
 ``glob("*.json")`` to ORM queries.
 
@@ -48,10 +48,10 @@ def tg_session_env(monkeypatch, tmp_path):
     return state, tmp_path
 
 
-def _row_for(chat_id: str):
-    """Fetch the session row for ``chat_id`` (helper for assertions)."""
+def _row_for(tgid: str):
+    """Fetch the session row for ``tgid`` (helper for assertions)."""
     with open_session() as db:
-        return db.query(ChatSession).filter_by(tgid=chat_id).first()
+        return db.query(ChatSession).filter_by(tgid=tgid).first()
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -66,7 +66,7 @@ def test_first_call_creates_session(tg_session_env):
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)
 
-    sid = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid = _resolve_or_create_tg_session(store, "6240201712", uid=42)
 
     # ULID-shaped: 26 Crockford base32 chars.
     assert isinstance(sid, str)
@@ -80,25 +80,25 @@ def test_first_call_creates_session(tg_session_env):
     assert row.session_id == sid
     assert row.channel == "tg"
     assert row.tgid == "6240201712"
-    assert row.employee_id == 42
+    assert row.uid == 42
 
 
 def test_second_call_reuses_same_session(tg_session_env):
     """Subsequent messages in the same TG chat append to
     the existing row rather than spawning a new thread.
 
-    This is the core "one session per chat_id forever" policy.
+    This is the core "one session per tgid forever" policy.
     """
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)
 
-    sid1 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
-    sid2 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
-    sid3 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid1 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
+    sid2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
+    sid3 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
 
-    assert sid1 == sid2 == sid3, "TG must reuse one session per chat_id"
+    assert sid1 == sid2 == sid3, "TG must reuse one session per tgid"
 
     # Still only one row.
     with open_session() as db:
@@ -126,19 +126,19 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)
 
-    sid1 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid1 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     # Operator wipes the session.
     store.delete(42, sid1)
     with open_session() as db:
         assert db.query(ChatSession).filter_by(tgid="6240201712").count() == 0
 
-    sid2 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     assert sid1 != sid2, "after wipe, helper should mint a fresh id"
 
 
 def test_different_chat_ids_get_different_sessions(tg_session_env):
     """Two employees chatting this EVE get two distinct rows
-    — DB-level ``chat_id`` scoping mirrors the WebUI guarantee
+    — DB-level ``tgid`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.
     """
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
@@ -146,17 +146,17 @@ def test_different_chat_ids_get_different_sessions(tg_session_env):
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)
 
-    sid_a = _resolve_or_create_tg_session(store, "6240201712", employee_id=1)
-    sid_b = _resolve_or_create_tg_session(store, "9876543210", employee_id=2)
+    sid_a = _resolve_or_create_tg_session(store, "6240201712", uid=1)
+    sid_b = _resolve_or_create_tg_session(store, "9876543210", uid=2)
 
     assert sid_a != sid_b
 
-    # And each chat_id's row carries its own chat_id and
-    # employee_id (the operator identity, not the chat's).
+    # And each tgid's row carries its own tgid and
+    # uid (the operator identity, not the chat's).
     row_a = _row_for("6240201712")
     row_b = _row_for("9876543210")
-    assert row_a is not None and row_a.employee_id == 1
-    assert row_b is not None and row_b.employee_id == 2
+    assert row_a is not None and row_a.uid == 1
+    assert row_b is not None and row_b.uid == 2
     assert row_a.session_id == sid_a
     assert row_b.session_id == sid_b
 
@@ -170,8 +170,8 @@ def test_messages_persist_to_session(tg_session_env):
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)
 
-    sid = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
-    # D.23: store key is employee_id (int) — match what
+    sid = _resolve_or_create_tg_session(store, "6240201712", uid=42)
+    # D.23: store key is uid (int) — match what
     # the helper used to mint the row.
     store.append_messages(42, sid, [
         SessionMessage(
@@ -195,8 +195,8 @@ def test_messages_persist_to_session(tg_session_env):
     assert "assistant" in roles
     # Channel flag round-trips.
     assert fetched.channel == "tg"
-    assert fetched.chat_id == "6240201712"
-    assert fetched.employee_id == 42
+    assert fetched.tgid == "6240201712"
+    assert fetched.uid == 42
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -210,7 +210,7 @@ def test_messages_persist_to_session(tg_session_env):
 # the helper would mint a fresh TG session every time. In
 # real usage the operator alternating TG ↔ WebUI fragmented
 # the TG history into N rows, contradicting the "one TG
-# session per chat_id forever" promise in the helper
+# session per tgid forever" promise in the helper
 # docstring.
 #
 # The fix is ``find_latest_tg_session`` (a SQL-side
@@ -230,7 +230,7 @@ def test_tg_session_reused_after_webui_message_in_between(
     Three rounds:
 
       1. ``_resolve_or_create_tg_session`` → mint ``sid_a``.
-      2. Operator opens WebUI on the same employee_id and
+      2. Operator opens WebUI on the same uid and
          creates a fresh webui session ``sid_webui`` with a
          newer ``updated_at`` than ``sid_a``.
       3. ``_resolve_or_create_tg_session`` again — must
@@ -242,7 +242,7 @@ def test_tg_session_reused_after_webui_message_in_between(
     store = SessionStore(state_dir)
 
     # Round 1: first TG inbound.
-    sid_a = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid_a = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     assert isinstance(sid_a, str)
 
     # Round 2: WebUI session for the same employee. Created
@@ -250,11 +250,11 @@ def test_tg_session_reused_after_webui_message_in_between(
     # Without the channel filter, the buggy helper would
     # see this as "latest" and mint a fresh TG session.
     sid_webui = store.create(
-        42, channel="webui", chat_id="6240201712",
+        42, channel="webui",
     ).session_id
 
     # Round 3: another TG inbound — must reuse ``sid_a``.
-    sid_a2 = _resolve_or_create_tg_session(store, "6240201712", employee_id=42)
+    sid_a2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     assert sid_a2 == sid_a, (
         "TG session must be reused even after a newer "
         "WebUI session exists; got a fresh id "
@@ -265,7 +265,7 @@ def test_tg_session_reused_after_webui_message_in_between(
     with open_session() as db:
         tg_count = (
             db.query(ChatSession)
-            .filter_by(employee_id=42, channel="tg")
+            .filter_by(uid=42, channel="tg")
             .count()
         )
     assert tg_count == 1, (

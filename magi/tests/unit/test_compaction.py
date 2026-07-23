@@ -50,7 +50,7 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
     from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
-    s = store.create(2, chat_id="9001")
+    s = store.create(2, )
     # Write the new fields via direct ORM and re-read via the
     # store.
     from magi.agent.db import ChatSession, open_session
@@ -77,9 +77,9 @@ def test_session_archive_round_trip_via_orm(fresh_db):
     from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
-    s = store.create(2, chat_id="9001")
+    s = store.create(2, )
     # Active + archived rows.
-    # D.23: store key is employee_id (int), chat_id is the
+    # D.23: store key is uid (int), tgid is the
     # per-channel delivery address kept on the row.
     store.append_messages(2, s.session_id, [
         SessionMessage(role="user",      text="new msg",  ts="2026-07-02T00:00:00Z", message_id="m1"),
@@ -131,8 +131,8 @@ def test_session_from_dict_backward_compatible(fresh_db):
     old = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "chat_id": "9001",
-        "employee_id": 2,
+        "tgid": "9001",
+        "uid": 2,
         "channel": "webui",
         "created_at": "t",
         "updated_at": "t",
@@ -155,8 +155,8 @@ def test_session_active_tail_count_clamped_on_load():
     bad = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "chat_id": "9001",
-        "employee_id": 2,
+        "tgid": "9001",
+        "uid": 2,
         "channel": "webui",
         "created_at": "t",
         "updated_at": "t",
@@ -178,8 +178,8 @@ def test_session_invalid_archive_role_rejected():
     bad = {
         "schema_version": 1,
         "session_id": "01ABC",
-        "chat_id": "9001",
-        "employee_id": 2,
+        "tgid": "9001",
+        "uid": 2,
         "channel": "webui",
         "created_at": "t",
         "updated_at": "t",
@@ -299,7 +299,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     from magi.agent.db import ChatMessage, open_session
 
     store = SessionStore(str(fresh_db))
-    sess = store.create(2, chat_id="9001")
+    sess = store.create(2, )
 
     # Simulate a post-compaction session by inserting
     # summary + two recent active rows directly via the
@@ -357,7 +357,7 @@ def test_build_messages_from_session_does_not_load_archive(
     (tmp_path / "state").mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", state_dir)
     store = SessionStore(state_dir)
-    sess = store.create(2, chat_id="9001")
+    sess = store.create(2, )
     sess.messages = [
         SessionMessage(role="user", text="only-active",
                        ts="t", message_id="m1"),
@@ -370,7 +370,7 @@ def test_build_messages_from_session_does_not_load_archive(
     ]
     store._write(sess)
 
-    # D.23: store key is employee_id (int).
+    # D.23: store key is uid (int).
     msgs, _seen = _build_messages_from_session(state_dir, 2, sess.session_id, "new")
     # 1 active + 1 new = 2, NOT 4 (archive excluded).
     assert len(msgs) == 2
@@ -390,8 +390,8 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
-    sess = store.create(2, chat_id="9001")
-    # D.23: store key is employee_id (int).
+    sess = store.create(2, )
+    # D.23: store key is uid (int).
     store.append_messages(2, sess.session_id, [
         SessionMessage(role="user", text="legacy msg",
                        ts="t", message_id="m1"),
@@ -435,7 +435,7 @@ async def test_maybe_compact_noop_when_under_threshold(
     # Create a session with 3 short messages — well under
     # the threshold of 80K tokens.
     store = SessionStore(state_dir)
-    sess = store.create(2, chat_id="9001")
+    sess = store.create(2, )
     for i in range(3):
         sess.messages.append(SessionMessage(
             role="user", text=f"msg {i}",
@@ -484,7 +484,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     state_set(state_dir, "system.compact_keep_recent", "20")
 
     store = SessionStore(state_dir)
-    sess = store.create(2, chat_id="9001")
+    sess = store.create(2, )
     sess.messages = [
         SessionMessage(role="user", text="only msg",
                        ts="t", message_id="m1"),

@@ -34,8 +34,8 @@ class FakeBot:
         self.calls: list[dict] = []
         self.fail = fail
 
-    async def send_chat_action(self, *, chat_id, action):
-        self.calls.append({"chat_id": chat_id, "action": action})
+    async def send_chat_action(self, *, tgid, action):
+        self.calls.append({"tgid": tgid, "action": action})
         if self.fail:
             raise RuntimeError("simulated TG Forbidden")
 
@@ -54,7 +54,7 @@ async def test_immediate_typing_then_stop():
     await asyncio.wait_for(task, timeout=2.0)
 
     assert len(bot.calls) == 1
-    assert bot.calls[0] == {"chat_id": 6240201712, "action": "typing"}
+    assert bot.calls[0] == {"tgid": 6240201712, "action": "typing"}
 
 
 @pytest.mark.asyncio

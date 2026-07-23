@@ -2,9 +2,9 @@
 
 C0/C1 behaviour: only the "first-touch" message handler is wired up.
 When **anyone other than a registered admin** sends the bot a
-message (including the first ``/start``), we reply with their chat_id
+message (including the first ``/start``), we reply with their tgid
 and a "contact the admin" message. That way unprivileged users can
-discover their own chat_id to hand to the deployer. Admin status
+discover their own tgid to hand to the deployer. Admin status
 is determined by ``Employee.role='admin'`` (the unified table
 written during onboarding) — there is no separate settings key for
 the admin allowlist, by design: a single source of truth for
@@ -105,20 +105,20 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Handle any inbound message from any chat.
 
     Role resolution (in order):
-      1. ``Employee.telegram_id == chat_id`` and role is
+      1. ``Employee.telegram_id == tgid`` and role is
          ``"admin"`` — log only for v0; C6+ adds real admin
          commands.
-      2. ``Employee.telegram_id == chat_id`` and role is
+      2. ``Employee.telegram_id == tgid`` and role is
          ``"employee"`` / ``"assigned"`` — route through the
          agent loop using that employee's LLM credentials
          (falls back to system default if the employee has
          none).
       3. otherwise (no employee bound) — treat as GUEST and
-         send the chat_id discovery reply. The role gate is
+         send the tgid discovery reply. The role gate is
          decided per-MAGI-instance (the canonical state lives
          on the row, not in a meta key).
 
-    The legacy ``telegram.user.<chat_id>.employee_id`` meta
+    The legacy ``telegram.user.<tgid>.uid`` meta
     binding is **deprecated** — bindings now live on
     ``Employee.telegram_id``. The read path falls back to
     the meta for state files written before the unified
@@ -127,7 +127,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """
     if update.effective_chat is None or update.effective_message is None:
         return
-    chat_id = str(update.effective_chat.id)
+    tgid = str(update.effective_chat.id)
     display_name = (
         update.effective_chat.first_name
         or update.effective_chat.username
@@ -157,27 +157,27 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     #                    them to talk to their own admin.
     #   - ``guest``    : not in this company at all. Same
     #                    refusal as ``employee`` so the
-    #                    chat_id discovery path can be
-    #                    surfaced ("here's your chat_id,
+    #                    tgid discovery path can be
+    #                    surfaced ("here's your tgid,
     #                    ask your admin to invite you").
-    bound = _find_employee_by_telegram_id(state_dir, chat_id)
+    bound = _find_employee_by_telegram_id(state_dir, tgid)
     if bound is not None:
         emp_id, emp_role, emp_name, emp_separated, emp_provider, emp_key = bound
         if emp_role not in ("admin", "assigned"):
             # ``employee`` / ``guest`` — refuse politely
             # without burning the LLM. The hint about
-            # the chat_id is the same one the unknown-
+            # the tgid is the same one the unknown-
             # chat path sends, so the user can pass
             # the id to whoever runs their company's
             # MAGI to get added.
             logger.info(
                 "telegram: %s role not served by this MAGI; refusing",
                 emp_role,
-                extra={"chat_id": chat_id, "employee_id": emp_id},
+                extra={"tgid": tgid, "uid": emp_id},
             )
             await update.effective_message.reply_text(
                 _replies()["cross_company_refusal"].format(
-                    emp_name=emp_name, chat_id=chat_id,
+                    emp_name=emp_name, tgid=tgid,
                 ),
             )
             return
@@ -191,7 +191,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _handle_employee_message(
             update,
             state_dir,
-            chat_id,
+            tgid,
             emp_id,
             emp_name,
             display_name,
@@ -204,40 +204,40 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # 3. No employee bound — treat as GUEST.
     #
-    # The chat_id discovery reply goes out to anyone not
+    # The tgid discovery reply goes out to anyone not
     # bound to an Employee row; the ``Employee.telegram_id``
     # is the only source of truth for who's been "claimed".
     # There's nothing else to track here — historically we
-    # wrote ``telegram.user.<chat_id>.{role,display_name}``
+    # wrote ``telegram.user.<tgid>.{role,display_name}``
     # to settings, but those duplicated columns on the
     # Employee row are deprecated in favour of the unified
     # table and the operator has cleared them from settings.
     logger.info(
-        "telegram: no employee bound, sending chat_id discovery",
-        extra={"chat_id": chat_id, "display_name": display_name},
+        "telegram: no employee bound, sending tgid discovery",
+        extra={"tgid": tgid, "display_name": display_name},
     )
     await update.effective_message.reply_text(
-        _replies()["unknown_sender"].format(chat_id=chat_id),
+        _replies()["unknown_sender"].format(tgid=tgid),
         parse_mode="HTML",
     )
     return
 
 
 def _find_employee_by_telegram_id(
-    state_dir: str, chat_id: str
+    state_dir: str, tgid: str
 ) -> tuple[int, str, str, bool, str | None, str | None] | None:
-    """Resolve a TG chat_id to its bound employee.
+    """Resolve a TG tgid to its bound employee.
 
     Single ORM read on ``Employee.telegram_id``; returns
-    ``(employee_id, role, name, separated, provider, api_key)``
-    on hit, ``None`` when no row has the chat_id bound.
+    ``(uid, role, name, separated, provider, api_key)``
+    on hit, ``None`` when no row has the tgid bound.
     The role is what the dispatcher uses to decide
     between admin / employee / GUEST handling — see
     :func:`_on_message`. ``provider`` / ``api_key`` are
     pre-resolved so :func:`_handle_employee_message` can
     dispatch to the LLM without a second round-trip.
 
-    Falls back to the legacy ``telegram.user.<chat_id>.employee_id``
+    Falls back to the legacy ``telegram.user.<tgid>.uid``
     meta key for state files written before the unified
     table landed (C1.x). The meta key is read-only here;
     bindings are now written through the
@@ -249,7 +249,7 @@ def _find_employee_by_telegram_id(
     from magi.agent.db.settings import state_get
 
     try:
-        cid_int = int(chat_id)
+        cid_int = int(tgid)
     except (TypeError, ValueError):
         return None
 
@@ -272,15 +272,15 @@ def _find_employee_by_telegram_id(
                 return _fields(emp)
     except Exception:
         logger.exception(
-            "telegram: ORM read failed resolving chat %s", chat_id,
+            "telegram: ORM read failed resolving chat %s", tgid,
         )
 
-    # Legacy meta binding — only the employee_id is recorded,
+    # Legacy meta binding — only the uid is recorded,
     # so we re-read the row to get the role / name. The
     # meta key is left in place (the operator might still
     # have stale bindings) but writes go through the new
     # path.
-    raw = state_get(state_dir, f"telegram.user.{chat_id}.employee_id")
+    raw = state_get(state_dir, f"telegram.user.{tgid}.uid")
     if not raw:
         return None
     try:
@@ -303,8 +303,8 @@ def _find_employee_by_telegram_id(
 async def _handle_employee_message(
     update: Update,
     state_dir: str,
-    chat_id: str,
-    employee_id: int,
+    tgid: str,
+    uid: int,
     employee_name: str,
     display_name: str | None,
     employee_separated: bool,
@@ -322,10 +322,10 @@ async def _handle_employee_message(
 
     Session lifecycle (D.10): TG now persists chat history
     the same way WebUI does — ``SessionStore`` writes
-    one file per ``(chat_id, session_id)`` under
-    ``<workspace>/memories/sessions/<chat_id>/<sid>.json``.
+    one file per ``(tgid, session_id)`` under
+    ``<workspace>/memories/sessions/<tgid>/<sid>.json``.
     Unlike WebUI (which has a sidebar "新对话" affordance),
-    TG keeps **one session per chat_id forever** — the
+    TG keeps **one session per tgid forever** — the
     employee never asks for a fresh thread from this side.
     The session is auto-created on the first inbound
     message and reused for every subsequent turn in that
@@ -378,7 +378,7 @@ async def _handle_employee_message(
         reaction = get_read_reaction_emoji(state_dir)
         if reaction:
             await update.get_bot().set_message_reaction(
-                chat_id=update.effective_chat.id,
+                tgid=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=reaction,
             )
@@ -393,7 +393,7 @@ async def _handle_employee_message(
     # -- session lifecycle (D.10) --------------------------------------
     # Same shape as ``magi/channels/webui/api/chat.py``:
     #
-    #   1. Try the *latest* session for this chat_id
+    #   1. Try the *latest* session for this tgid
     #      (``list_summaries(limit=1)`` returns most recent
     #      first). If one exists and isn't corrupt, reuse it —
     #      that's "one session per TG chat forever".
@@ -406,7 +406,7 @@ async def _handle_employee_message(
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.
     store = SessionStore(state_dir)
-    session_id = _resolve_or_create_tg_session(store, chat_id, employee_id)
+    session_id = _resolve_or_create_tg_session(store, tgid, uid)
 
     # Inbound append — SQLite's per-statement atomicity replaces
     # the pre-D.18 per-session ``asyncio.Lock`` that used to
@@ -421,12 +421,12 @@ async def _handle_employee_message(
     # a generic reply so a misrouted message doesn't crash
     # the bot.
     #
-    # D.23: the first argument is now ``employee_id`` (the
-    # session key, cross-channel), not the TG chat_id.
+    # D.23: the first argument is now ``uid`` (the
+    # session key, cross-channel), not the TG tgid.
     ts_in = utcnow_iso()
     try:
         post = store.append_messages(
-            employee_id, session_id,
+            uid, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
@@ -447,15 +447,15 @@ async def _handle_employee_message(
 
     # First-user-message of a fresh thread → fire the same
     # auto-title worker the WebUI uses. The worker is keyed
-    # by ``(chat_id, session_id)`` and uses its own per-
+    # by ``(tgid, session_id)`` and uses its own per-
     # session lock; no TG-specific code needed.
     if post is not None and len(post.messages) == 1:
         try:
             from magi.agent.memory.session.auto_title import enqueue_title_job
             await enqueue_title_job(
-                chat_id=chat_id,
+                tgid=tgid,
                 session_id=session_id,
-                employee_id=employee_id,
+                uid=uid,
                 employee_provider=employee_provider or "",
                 employee_api_key=employee_api_key or "",
             )
@@ -492,7 +492,7 @@ async def _handle_employee_message(
 
     async def _tg_send_callback(to_chat_id: int, text_to_send: str) -> None:
         await bot.send_message(
-            chat_id=to_chat_id,
+            tgid=to_chat_id,
             text=text_to_send,
         )
 
@@ -501,9 +501,8 @@ async def _handle_employee_message(
             state_dir,
             text=text,
             channel="tg",
-            chat_id=chat_id,  # for ``_build_messages_from_session`` / D.21 interrupt poll
             session_id=session_id,
-            employee_id=employee_id,
+            uid=uid,
             employee_provider=employee_provider,
             employee_api_key=employee_api_key,
             # The bound operator's role — required by the
@@ -549,7 +548,7 @@ async def _handle_employee_message(
     ts_out = utcnow_iso()
     try:
         store.append_messages(
-            employee_id, session_id,
+            uid, session_id,
             [SessionMessage(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
@@ -584,7 +583,7 @@ async def _handle_employee_message(
         done_reaction = get_done_reaction_emoji(state_dir)
         if done_reaction:
             await update.get_bot().set_message_reaction(
-                chat_id=update.effective_chat.id,
+                tgid=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=done_reaction,
             )
@@ -599,14 +598,14 @@ async def _handle_employee_message(
 
 def _resolve_or_create_tg_session(
     store: "SessionStore",
-    chat_id: str,
-    employee_id: int,
+    tgid: str,
+    uid: int,
 ) -> str:
     """Return the session id to use for the next TG message.
 
-    Policy (D.10): **one TG session per TG chat_id forever.**
+    Policy (D.10): **one TG session per TG tgid forever.**
 
-    Look up the most recent session for ``chat_id`` WHERE
+    Look up the most recent session for ``tgid`` WHERE
     ``channel == 'tg'`` (not just any-channel) and reuse
     it. The earlier implementation used ``list_summaries``
     with no channel filter and re-checked the candidate's
@@ -631,21 +630,21 @@ def _resolve_or_create_tg_session(
     thread's history but don't crash the inbound handler.
     """
     try:
-        candidate_id = store.find_latest_tg_session(employee_id)
+        candidate_id = store.find_latest_tg_session(uid)
     except Exception:
         logger.exception(
             "telegram: session lookup failed for employee %s; minting fresh",
-            employee_id,
+            uid,
         )
         candidate_id = None
     if candidate_id is not None:
         try:
-            sess = store.get(employee_id, candidate_id)
+            sess = store.get(uid, candidate_id)
         except Exception:
             logger.exception(
                 "telegram: latest TG session %s for employee %s failed re-read; "
                 "creating fresh",
-                candidate_id, employee_id,
+                candidate_id, uid,
             )
             sess = None
         if sess is not None and sess.channel == "tg":
@@ -655,11 +654,11 @@ def _resolve_or_create_tg_session(
         # where someone changes the filter without updating
         # the helper. Cheap; worth the safety rail.
     # No prior TG session (or none existed) — mint a new one.
-    # D.23: first arg is now employee_id; ``chat_id=`` is the
+    # D.23: first arg is now uid; ``tgid=`` is the
     # per-channel delivery address stamped on the row's
     # ``tgid`` column for outbound ``send_message`` later.
     sess = store.create(
-        employee_id, channel="tg", chat_id=chat_id,
+        uid, channel="tg", tgid=tgid,
     )
     return sess.session_id
 
@@ -674,7 +673,7 @@ _TYPING_REFRESH_SECONDS = 4.0
 
 async def _typing_indicator_loop(
     bot,
-    chat_id: int,
+    tgid: int,
     stop_event: "asyncio.Event",  # noqa: F821 — forward ref avoids an extra import
 ) -> None:
     """Send ``send_chat_action(typing)`` every 4s until
@@ -698,7 +697,7 @@ async def _typing_indicator_loop(
             return
         try:
             await bot.send_chat_action(
-                chat_id=chat_id,
+                tgid=tgid,
                 action="typing",
             )
         except Exception:
@@ -709,7 +708,7 @@ async def _typing_indicator_loop(
             # silently dropping the typing indicator.
             logger.exception(
                 "telegram: typing indicator failed (chat=%s); "
-                "disabling further refreshes", chat_id,
+                "disabling further refreshes", tgid,
             )
             return
         # Wait up to 4s OR until the reply arrives.

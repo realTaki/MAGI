@@ -17,7 +17,7 @@ if C4 needs structured per-kind fields).
 FK policy is ``ON DELETE SET NULL`` rather than
 CASCADE: ``save_admin`` deletes old admin rows; cascade
 would wipe their action history silently. SET NULL
-leaves an ``employee_id IS NULL`` orphan that the
+leaves an ``uid IS NULL`` orphan that the
 post-commit sweep in ``save_admin`` re-binds to the
 freshly-recreated admin, so "remove admin and re-add"
 naturally surfaces the prompt again instead of
@@ -70,7 +70,7 @@ class ActionItem(Base):
     # because the FK target can disappear (admin removed),
     # leaving the action item as an orphan until something
     # re-binds it.
-    employee_id: Mapped[int | None] = mapped_column(
+    uid: Mapped[int | None] = mapped_column(
         ForeignKey("employees.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -125,7 +125,7 @@ class ActionItem(Base):
     # Viewonly relationships so route code never mutates
     # Employee via the ActionItem collection.
     employee: Mapped["Employee | None"] = relationship(
-        foreign_keys=[employee_id], viewonly=True
+        foreign_keys=[uid], viewonly=True
     )
     completed_by: Mapped["Employee | None"] = relationship(
         foreign_keys=[completed_by_employee_id], viewonly=True
@@ -134,7 +134,7 @@ class ActionItem(Base):
     def __repr__(self) -> str:
         return (
             f"ActionItem(id={self.id}, kind={self.kind!r}, "
-            f"employee_id={self.employee_id}, "
+            f"uid={self.uid}, "
             f"completed={self.completed_at is not None}, "
             f"dismissed={self.dismissed})"
         )

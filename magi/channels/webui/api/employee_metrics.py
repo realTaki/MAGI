@@ -116,7 +116,7 @@ class PeriodUsage:
 
 def _aggregate_period(
     state_dir: str,
-    employee_id: int,
+    uid: int,
     period: str,
     tz: zoneinfo.ZoneInfo,
 ) -> PeriodUsage:
@@ -144,7 +144,7 @@ def _aggregate_period(
                 func.coalesce(func.sum(TokenUsage.output_tokens), 0),
                 func.count(TokenUsage.id),
             ).where(
-                TokenUsage.employee_id == employee_id,
+                TokenUsage.uid == uid,
                 TokenUsage.ts >= start_utc_naive,
                 TokenUsage.ts <= end_utc_naive,
             )
@@ -180,7 +180,7 @@ class TokenUsageOut(BaseModel):
     detail panel renders three rows; one round-trip.
     """
 
-    employee_id: int
+    uid: int
     week: PeriodUsageOut
     month: PeriodUsageOut
     total: PeriodUsageOut
@@ -188,11 +188,11 @@ class TokenUsageOut(BaseModel):
 
 
 @router.get(
-    "/employees/{employee_id}/token-usage",
+    "/employees/{uid}/token-usage",
     response_model=TokenUsageOut,
 )
 def get_employee_token_usage(
-    employee_id: int,
+    uid: int,
     _admin: AdminGate,
 ) -> TokenUsageOut:
     """Aggregate token usage for one employee across three
@@ -200,7 +200,7 @@ def get_employee_token_usage(
 
     All three queries run against the same connection in
     sequence — each one is bounded by the
-    ``(employee_id, ts)`` composite index, so a busy
+    ``(uid, ts)`` composite index, so a busy
     employee with thousands of calls is still O(rows in
     window), not O(total rows).
     """
@@ -208,12 +208,12 @@ def get_employee_token_usage(
     tz_name = get_system_timezone(state_dir)
     tz = zoneinfo.ZoneInfo(tz_name)
 
-    week = _aggregate_period(state_dir, employee_id, "week", tz)
-    month = _aggregate_period(state_dir, employee_id, "month", tz)
-    total = _aggregate_period(state_dir, employee_id, "total", tz)
+    week = _aggregate_period(state_dir, uid, "week", tz)
+    month = _aggregate_period(state_dir, uid, "month", tz)
+    total = _aggregate_period(state_dir, uid, "total", tz)
 
     return TokenUsageOut(
-        employee_id=employee_id,
+        uid=uid,
         week=PeriodUsageOut(**week.__dict__),
         month=PeriodUsageOut(**month.__dict__),
         total=PeriodUsageOut(**total.__dict__),

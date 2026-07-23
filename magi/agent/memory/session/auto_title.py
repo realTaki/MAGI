@@ -26,9 +26,15 @@ The chat-send endpoint pairs the title-job write with an
 ``asyncio.Lock`` (see
 :func:`magi.agent.memory.session.session_lock`); the worker
 acquires the same lock around its read-then-write so the two
-flows never interleave on the same ``(chat_id, session_id)``.
+flows never interleave on the same ``(session_id,)``.
 The lock is per session, not global — distinct sessions
 remain independent.
+
+D.26: ``tgid`` (the per-channel delivery address stamped on
+the session row) is gone from the API. ``TitleJob`` carries
+the column's renamed name (``tgid``) instead; the field is
+purely diagnostic — the worker logs it but never reads it.
+The session row is the single source of truth for delivery.
 """
 
 from __future__ import annotations
@@ -60,9 +66,14 @@ logger = logging.getLogger("magi.agent.auto_title")
 # 401 silently swallowed.
 @dataclass(frozen=True)
 class TitleJob:
-    chat_id: str
+    # The session row's ``tgid`` (per-channel delivery
+    # address). Diagnostic only — the worker logs it but
+    # never reads the column itself. Stored on the job so
+    # the worker doesn't have to open a DB session just
+    # to surface "where this session lives" in logs.
+    tgid: str
     session_id: str
-    employee_id: int
+    uid: int
     employee_provider: str
     employee_api_key: str
     employee_model: Optional[str] = None
@@ -85,9 +96,9 @@ _worker_task: Optional[asyncio.Task[None]] = None
 
 
 async def enqueue_title_job(
-    chat_id: str,
+    tgid: str,
     session_id: str,
-    employee_id: int,
+    uid: int,
     employee_provider: str,
     employee_api_key: str,
     employee_model: Optional[str] = None,
@@ -98,11 +109,15 @@ async def enqueue_title_job(
     immediately (the queue is unbounded; this is a
     ``Queue.put_nowait`` under the hood) means we don't tie
     the request handler to the worker's pace.
+
+    ``tgid`` is the session row's ``tgid`` column
+    (per-channel delivery address); kept on the job for
+    log diagnostics only — see ``TitleJob`` docstring.
     """
     job = TitleJob(
-        chat_id=chat_id,
+        tgid=tgid,
         session_id=session_id,
-        employee_id=employee_id,
+        uid=uid,
         employee_provider=employee_provider,
         employee_api_key=employee_api_key,
         employee_model=employee_model,
@@ -110,7 +125,7 @@ async def enqueue_title_job(
     await _title_jobs.put(job)
     logger.info(
         "title job enqueued",
-        extra={"session_id": session_id, "chat_id": chat_id},
+        extra={"session_id": session_id, "tgid": tgid},
     )
 
 
@@ -220,11 +235,11 @@ async def _summarize_to_title(job: TitleJob) -> None:
         state_dir = _state_dir_for_job()
         store = SessionStore(state_dir)
 
-        # D.23: store key is the operator's employee_id, not
-        # the channel's chat_id. The latter is still on the
+        # D.23: store key is the operator's uid, not
+        # the channel's tgid. The latter is still on the
         # job for outbound ``send_message`` later, but the
         # store does its lookup by employee.
-        sess = store.get(job.employee_id, job.session_id)
+        sess = store.get(job.uid, job.session_id)
         if sess is None:
             logger.info(
                 "title skipped: session gone",
@@ -308,10 +323,10 @@ async def _summarize_to_title(job: TitleJob) -> None:
         # read-then-write; with SQLite + ``BEGIN IMMEDIATE`` the
         # ``UPDATE … WHERE title IS NULL`` itself is atomic.
         try:
-            # D.23: store key is employee_id (see the
+            # D.23: store key is uid (see the
             # matching get() call above).
             fresh = store.set_title_if_null(
-                job.employee_id, job.session_id, cleaned,
+                job.uid, job.session_id, cleaned,
                 bump_updated=True,
             )
         except Exception:

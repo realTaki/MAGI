@@ -12,10 +12,10 @@ helpers, per-session ``asyncio.Lock`` serialisation) were
 dropped: those contracts no longer apply once SQLite handles
 atomicity at the row level.
 
-D.23 — the session key changed from ``chat_id`` to
-``employee_id``. The tests below were rewritten to use
-``employee_id`` as the first argument; the legacy
-``chat_id`` parameter on ``create`` is preserved (it's the
+D.23 — the session key changed from ``tgid`` to
+``uid``. The tests below were rewritten to use
+``uid`` as the first argument; the legacy
+``tgid`` parameter on ``create`` is preserved (it's the
 per-channel delivery address stored on the row's ``tgid``
 column) but it's no longer the lookup key.
 """
@@ -82,13 +82,13 @@ def test_create_persists(store):
     """``create`` returns a populated Session and ``get`` sees it."""
     from magi.agent.db import ChatSession, open_session
 
-    s = store.create(7, chat_id="12345")
+    s = store.create(7, )
     # Session row landed in the DB.
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
     assert row is not None
     assert row.tgid == "12345"
-    assert row.employee_id == 7
+    assert row.uid == 7
     assert row.title is None
 
 
@@ -109,7 +109,7 @@ def test_session_id_safe_via_path(store):
     exist raises ``SessionNotFoundError`` instead.
     """
     from magi.agent.memory.session import SessionNotFoundError, SessionPathError
-    s = store.create(1, chat_id="124")
+    s = store.create(1, )
     # Bad shape → ``SessionPathError`` (the shape guard).
     with pytest.raises(SessionPathError):
         store.append_messages(1, "../bad", [_msg("user")])
@@ -125,7 +125,7 @@ def test_session_id_safe_via_path(store):
 
 def test_get_round_trip(store):
     """``get`` returns what ``create`` wrote."""
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     fetched = store.get(7, s.session_id)
     assert fetched == s
     assert fetched.messages == []
@@ -133,7 +133,7 @@ def test_get_round_trip(store):
 
 def test_append_and_get(store):
     """``append_messages`` adds and persists, and ``get`` sees the result."""
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     msgs = [_msg("user", "hello"), _msg("assistant", "hi back")]
     out = store.append_messages(7, s.session_id, msgs)
     assert out.messages == msgs
@@ -152,7 +152,7 @@ def test_append_to_missing_raises(store):
 def test_append_validates_role(store):
     """Bad role values are rejected before any DB write."""
     from magi.agent.memory.session import SessionCorruptError
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     bad = SessionMessage(role="admin", text="x", ts="t", message_id=new_session_id())
     with pytest.raises(SessionCorruptError):
         store.append_messages(7, s.session_id, [bad])
@@ -166,7 +166,7 @@ def test_append_validates_role(store):
 def test_delete_idempotent(store):
     """``delete`` returns True the first time, False after."""
     from magi.agent.db import ChatSession, open_session
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     assert store.delete(7, s.session_id) is True
     with open_session() as db:
         assert db.get(ChatSession, s.session_id) is None
@@ -177,7 +177,7 @@ def test_delete_idempotent(store):
 def test_delete_cascades_to_messages(store):
     """Deleting a session also clears its message rows."""
     from magi.agent.db import ChatMessage, open_session
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     store.append_messages(7, s.session_id, [_msg("user"), _msg("assistant")])
     store.delete(7, s.session_id)
     with open_session() as db:
@@ -213,7 +213,7 @@ def test_list_summaries_empty(store):
 def test_list_summaries_preview_truncates(store):
     """Preview is trimmed to ``_PREVIEW_CHARS`` with trailing ellipsis."""
     long_text = "a" * 200
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     store.append_messages(7, s.session_id, [_msg("user", long_text)])
     items, _ = store.list_summaries(7)
     assert items[0].preview.endswith("…")
@@ -223,7 +223,7 @@ def test_list_summaries_preview_truncates(store):
 def test_list_summaries_message_count_excludes_archive(store):
     """``message_count`` is the active-only count; archived rows
     rolled out by compaction are excluded."""
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     msgs = [_msg("user", f"msg {i}") for i in range(4)]
     store.append_messages(7, s.session_id, msgs)
     # Manually flip two rows to archived=1 to simulate a
@@ -240,15 +240,15 @@ def test_list_summaries_message_count_excludes_archive(store):
 
 
 # --------------------------------------------------------------------------- #
-# 5. cross-employee isolation (DB-side WHERE employee_id = ?)
+# 5. cross-employee isolation (DB-side WHERE uid = ?)
 # --------------------------------------------------------------------------- #
 
 
 def test_employee_ids_isolated(store):
     """Two employees do not see each other's sessions."""
     from magi.agent.memory.session import SessionNotFoundError
-    a = store.create(1, chat_id="aaa")
-    b = store.create(2, chat_id="bbb")
+    a = store.create(1, )
+    b = store.create(2, )
     assert store.get(1, a.session_id) is not None
     assert store.get(2, b.session_id) is not None
     # a's session id is unreachable from employee 2.
@@ -257,7 +257,7 @@ def test_employee_ids_isolated(store):
         store.append_messages(2, a.session_id, [_msg("user")])
     # And b's session id is unreachable from employee 1.
     assert store.get(1, b.session_id) is None
-    # Sanity: list_summaries scopes by employee_id.
+    # Sanity: list_summaries scopes by uid.
     assert {s.session_id for s in store.list_summaries(1)[0]} == {a.session_id}
     assert {s.session_id for s in store.list_summaries(2)[0]} == {b.session_id}
 
@@ -292,7 +292,7 @@ def test_ulid_lexicographic_order():
 
 def test_summary_preview_falls_back_when_no_user_message(store):
     """``preview`` is empty when only assistant messages exist."""
-    s = store.create(7, chat_id="124")
+    s = store.create(7, )
     store.append_messages(7, s.session_id, [
         SessionMessage(message_id=new_session_id(), role="assistant",
                       text="hi", ts="2026-07-03T00:00:00Z"),
@@ -305,8 +305,8 @@ def test_summary_from_session_truncates():
     """Standalone ``summary_from_session`` preview helper."""
     s = Session(
         session_id="01ABC",
-        chat_id="124",
-        employee_id=1,
+        tgid="12345",
+        uid=1,
         channel="webui",
         created_at="t", updated_at="t",
         messages=[
@@ -326,7 +326,7 @@ def test_summary_from_session_truncates():
 
 def test_rename_happy_path(store):
     """``rename`` writes the new title and ``get`` sees it on the next read."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     out = store.rename(1, s.session_id, "Acme 会议 明天 3 点")
     assert out.title == "Acme 会议 明天 3 点"
     again = store.get(1, s.session_id)
@@ -335,7 +335,7 @@ def test_rename_happy_path(store):
 
 def test_rename_trims_and_clamps(store):
     """Whitespace stripped; over-length input clamped at 80 chars."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     out = store.rename(1, s.session_id, "   hello world   ")
     assert out.title == "hello world"
     out = store.rename(1, s.session_id, "x" * 200)
@@ -344,7 +344,7 @@ def test_rename_trims_and_clamps(store):
 
 def test_rename_clear(store):
     """``None`` and empty string both clear the title."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     store.rename(1, s.session_id, "temp")
     assert store.get(1, s.session_id).title == "temp"
     store.rename(1, s.session_id, None)
@@ -363,7 +363,7 @@ def test_rename_missing_session_raises_not_found(store):
 def test_rename_does_not_bump_updated_at_when_disabled(store):
     """``bump_updated=False`` keeps ``updated_at`` frozen."""
     import time as _t
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     initial = s.updated_at
     _t.sleep(0.005)
     out = store.rename(1, s.session_id, "x", bump_updated=False)
@@ -372,7 +372,7 @@ def test_rename_does_not_bump_updated_at_when_disabled(store):
 
 def test_rename_bumps_updated_at_by_default(store):
     import time as _t
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     initial = s.updated_at
     _t.sleep(0.005)
     out = store.rename(1, s.session_id, "x")
@@ -380,7 +380,7 @@ def test_rename_bumps_updated_at_by_default(store):
 
 
 def test_summary_includes_title(store):
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     store.append_messages(1, s.session_id, [_msg("user", "first message")])
     store.rename(1, s.session_id, "Renamed")
     items, _ = store.list_summaries(1)
@@ -395,7 +395,7 @@ def test_summary_includes_title(store):
 
 def test_set_title_if_null_succeeds_when_title_unset(store):
     """First writer wins when title is still NULL."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     out = store.set_title_if_null(1, s.session_id, "auto")
     assert out is not None
     assert out.title == "auto"
@@ -403,7 +403,7 @@ def test_set_title_if_null_succeeds_when_title_unset(store):
 
 def test_set_title_if_null_loses_when_title_set(store):
     """Second writer is rejected when title is already set."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     store.rename(1, s.session_id, "manual")
     out = store.set_title_if_null(1, s.session_id, "auto")
     assert out is None
@@ -418,7 +418,7 @@ def test_set_title_if_null_returns_none_for_missing_session(store):
 
 def test_set_title_if_null_clamps_long_titles(store):
     """Title is length-clamped at 80 chars (same as rename)."""
-    s = store.create(1, chat_id="100")
+    s = store.create(1, )
     out = store.set_title_if_null(1, s.session_id, "x" * 200)
     assert out is not None
     assert len(out.title) == 80
@@ -443,21 +443,21 @@ def test_session_lock_is_now_a_noop():
 
 
 # --------------------------------------------------------------------------- #
-# 11. ChatSession.__repr__ doesn't blow up on the missing chat_id attr
+# 11. ChatSession.__repr__ doesn't blow up on the missing tgid attr
 # --------------------------------------------------------------------------- #
 
 
 def test_chatsession_repr_uses_tgid(store):
     """``ChatSession`` has a ``tgid`` column (D.23 renamed the
-    per-channel delivery address from ``chat_id`` to ``tgid``).
+    per-channel delivery address from ``tgid`` to ``tgid``).
     A previous ``__repr__`` mistakenly referenced
-    ``self.chat_id`` and crashed with ``AttributeError`` the
+    ``self.tgid`` and crashed with ``AttributeError`` the
     first time anything tried to log or debug-print a
     session row. The fixed repr must round-trip via the
     real column name."""
     from magi.agent.db import ChatSession, open_session
 
-    s = store.create(1, chat_id="9001")
+    s = store.create(1, tgid="9001")
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
     assert row is not None
@@ -467,5 +467,5 @@ def test_chatsession_repr_uses_tgid(store):
     assert "tgid=9001" in text
     assert "session_id=" in text
     assert "title=" in text
-    # And it must not still be referencing the old field.
-    assert "chat_id=" not in text
+    # And it must not still be referencing the old field name.
+    assert "chat_id" not in text

@@ -126,7 +126,7 @@ export function EmployeesPane() {
     period_end: string;
   };
   type TokenUsageOut = {
-    employee_id: number;
+    uid: number;
     week: TokenUsagePeriod;
     month: TokenUsagePeriod;
     total: TokenUsagePeriod;

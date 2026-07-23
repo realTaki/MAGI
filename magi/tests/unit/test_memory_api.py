@@ -5,11 +5,11 @@ Five surfaces pinned:
 
   1. **Auth gate** — ``AdminGate`` (cookie admin or 401).
      The endpoint must refuse to render another admin's
-     memory under any circumstance (no ``?employee_id=``
+     memory under any circumstance (no ``?uid=``
      URL knob — the caller is always derived from the
      cookie).
-  2. **Scope** — the cookie's admin ``employee_id`` is
-     the ``MemoryEntry.employee_id`` filter; admin B never
+  2. **Scope** — the cookie's admin ``uid`` is
+     the ``MemoryEntry.uid`` filter; admin B never
      sees admin A's rows.
   3. **Both kinds + completion states returned** —
      ``important`` rows (never expire) and ``ongoing``
@@ -102,7 +102,7 @@ def client(env):
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie is the employee_id (int), not a chat_id.
+    # D.24: cookie is the uid (int), not a tgid.
     c.cookies.set("magi_session", str(env["alice"].id))
     return c
 
@@ -110,7 +110,7 @@ def client(env):
 @pytest.fixture
 def bob_client(env):
     """TestClient with Bob's cookie (also admin, different
-    employee_id). Used to verify scope isolation."""
+    uid). Used to verify scope isolation."""
     from magi.channels.webui.app import create_app
 
     app = create_app()
@@ -135,7 +135,7 @@ def charlie_client(env):
 def _seed_memory(
     env,
     *,
-    employee_id: int,
+    uid: int,
     kind: str,
     subject: str,
     body: str,
@@ -161,7 +161,7 @@ def _seed_memory(
     when = updated_at or datetime.now(timezone.utc).replace(tzinfo=None)
     with open_session() as db:
         row = MemoryEntry(
-            employee_id=employee_id,
+            uid=uid,
             kind=kind,
             subject=subject,
             body=body,
@@ -213,10 +213,10 @@ def test_list_memory_scopes_to_caller_employee(
     env, client, bob_client,
 ):
     """Admin A's memory must NOT appear in admin B's list.
-    The endpoint derives the employee_id from the cookie;
+    The endpoint derives the uid from the cookie;
     there's no URL knob that could let B request A's rows."""
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="important", subject="Alice's policy",
         body="Confidential.", importance=5,
     )
@@ -246,19 +246,19 @@ def test_list_memory_returns_both_kinds_and_completed_rows(
     history (per the plan's "Show all" decision)."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="important", subject="Important fact",
         body="Long-lived.", importance=5,
         updated_at=now - timedelta(days=3),
     )
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="In-flight task",
         body="Still working.", importance=3,
         updated_at=now - timedelta(days=2),
     )
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="Done yesterday",
         body="Closed.", importance=4,
         updated_at=now - timedelta(days=1),
@@ -294,24 +294,24 @@ def test_list_memory_orders_by_importance_then_updated(
     # Low importance, recent → must rank below higher
     # importance even if newer.
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="Low recent",
         body="x", importance=1, updated_at=now,
     )
     # High importance, older.
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="important", subject="High older",
         body="x", importance=5, updated_at=now - timedelta(days=10),
     )
     # Two with importance=3; newer should win.
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="Mid older",
         body="x", importance=3, updated_at=now - timedelta(days=5),
     )
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="Mid newer",
         body="x", importance=3, updated_at=now - timedelta(days=1),
     )
@@ -340,7 +340,7 @@ def test_list_memory_returns_full_body_for_tooltip(
         "if there are anomalies over $500."
     )
     _seed_memory(
-        env, employee_id=env["alice"].id,
+        env, uid=env["alice"].id,
         kind="ongoing", subject="Friday reminder",
         body=long_body, importance=4,
     )
@@ -359,7 +359,7 @@ def test_list_memory_caps_at_200(env, client):
     there are more)."""
     for i in range(5):
         _seed_memory(
-            env, employee_id=env["alice"].id,
+            env, uid=env["alice"].id,
             kind="ongoing", subject=f"task {i}",
             body=f"body {i}", importance=3,
         )

@@ -1,7 +1,7 @@
 """CRUD endpoints for chat sessions.
 
 A "session" is a single thread of messages between an
-operator (identified by their TG chat_id / dashboard cookie)
+operator (identified by their TG tgid / dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
 under the operator's workspace (see :mod:`magi.agent.memory.session`)
 and are per-user — admin A's session is invisible to admin B.
@@ -15,8 +15,8 @@ Endpoints
 - ``DELETE /chat/sessions/{session_id}``  remove a session
 
 The ``{session_id}`` route uses the URL as the only
-identification: there is no separate ``chat_id`` parameter,
-because the cookie already pins the caller. The chat_id is
+identification: there is no separate ``tgid`` parameter,
+because the cookie already pins the caller. The tgid is
 derived from the cookie via :func:`_current_admin_chat_id`.
 """
 
@@ -106,8 +106,8 @@ class SessionMessagesPage(BaseModel):
 
 class SessionOut(BaseModel):
     session_id: str
-    chat_id: str
-    employee_id: int
+    tgid: str
+    uid: int
     channel: str
     created_at: str
     updated_at: str
@@ -159,8 +159,8 @@ class UpdateSessionRequest(BaseModel):
 def _session_to_out(s: Session) -> SessionOut:
     return SessionOut(
         session_id=s.session_id,
-        chat_id=s.chat_id,
-        employee_id=s.employee_id,
+        tgid=s.tgid,
+        uid=s.uid,
         channel=s.channel,
         created_at=s.created_at,
         updated_at=s.updated_at,
@@ -179,10 +179,10 @@ def _session_to_out(s: Session) -> SessionOut:
     )
 
 
-def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut:
+def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
     """Convert a SessionSummary into the list-endpoint shape.
 
-    ``employee_id`` is the operator who owns this chat_id
+    ``uid`` is the operator who owns this tgid
     today. We surface it explicitly so a future C7 view can
     label rows; v0 always sees the same value across rows
     for one admin.
@@ -190,7 +190,7 @@ def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut
     return SessionSummaryOut(
         session_id=s.session_id,
         created_at=s.created_at,
-        created_by_employee_id=employee_id,
+        created_by_employee_id=uid,
         updated_at=s.updated_at,
         message_count=s.message_count,
         preview=s.preview,
@@ -203,11 +203,11 @@ def _summary_to_out(s: SessionSummary, *, employee_id: int) -> SessionSummaryOut
 # -- routes -----------------------------------------------------------------
 
 
-def _telegram_id_str_for_employee_id(employee_id: int) -> str:
-    """Look up the operator's bound TG chat_id as a string.
+def _telegram_id_str_for_employee_id(uid: int) -> str:
+    """Look up the operator's bound TG tgid as a string.
 
-    D.24: the cookie identity is the employee_id, but
-    ``SessionStore.create`` still takes a ``chat_id=``
+    D.24: the cookie identity is the uid, but
+    ``SessionStore.create`` still takes a ``tgid=``
     keyword that stamps the per-channel delivery address
     on the row's ``tgid`` column. WebUI rows that
     originated here get the operator's bound TG chat id
@@ -226,7 +226,7 @@ def _telegram_id_str_for_employee_id(employee_id: int) -> str:
     plain ``str`` kills the trap at the source.
     """
     with open_session() as session:
-        emp = session.get(Employee, employee_id)
+        emp = session.get(Employee, uid)
         telegram_id = emp.telegram_id if emp is not None else None
     if telegram_id is None:
         return ""
@@ -237,8 +237,8 @@ def _resolve_employee_id(request: Request) -> int:
     """Resolve the cookie's ``magi_session`` value to the
     current employee's id.
 
-    D.24: the cookie carries the **employee_id** (stringified
-    int) — not the TG chat_id. This helper is the single
+    D.24: the cookie carries the **uid** (stringified
+    int) — not the TG tgid. This helper is the single
     place that translates "what's in the cookie" into
     "who is the caller" for the rest of the chat_sessions
     router. Raises ``chat.unknown_sender`` 401 if the
@@ -262,7 +262,7 @@ def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
     """Resolve the cookie to its admin employee id and
     gate by role.
 
-    D.24: the cookie value IS the employee_id (no
+    D.24: the cookie value IS the uid (no
     telegram_id lookup needed). ``AdminGate`` already
     proved the cookie is a live admin session; this
     helper re-verifies the role to keep the router
@@ -274,9 +274,9 @@ def _admin_employee_id(request: Request, store: SessionStoreDep) -> int:
     turn the trailing ``return emp.id`` into a
     ``DetachedInstanceError``.
     """
-    employee_id = _resolve_employee_id(request)
+    uid = _resolve_employee_id(request)
     with open_session() as session:
-        emp = session.get(Employee, employee_id)
+        emp = session.get(Employee, uid)
         if emp is None or emp.role != "admin":
             raise MagiHTTPException(
                 status_code=401,
@@ -305,17 +305,17 @@ def create_session(
     C7-era tools that want to instantiate a session
     before the first message).
     """
-    employee_id = _admin_employee_id(request, store)
-    # D.23: ``chat_id`` is the per-channel delivery
+    uid = _admin_employee_id(request, store)
+    # D.23: ``tgid`` is the per-channel delivery
     # address stamped on the row's ``tgid`` column. We
     # still carry the cookie's telegram_id here so a
     # future cross-channel query tool can use the row's
     # tgid to address the operator's TG bot. The store
-    # key, however, is ``employee_id`` — see
+    # key, however, is ``uid`` — see
     # :meth:`SessionStore.create`.
-    chat_id = _telegram_id_str_for_employee_id(employee_id)
+    tgid = _telegram_id_str_for_employee_id(uid)
     sess = store.create(
-        employee_id, channel="webui", chat_id=chat_id,
+        uid, channel="webui", tgid=tgid,
     )
     return CreateSessionResponse(session_id=sess.session_id)
 
@@ -347,19 +347,19 @@ def list_sessions(
     if offset < 0:
         offset = 0
 
-    employee_id = _admin_employee_id(request, store)
-    # D.23: list scope is the operator's employee_id, not
-    # the cookie's chat_id. ``store.list_summaries``
-    # returns every row whose ``employee_id`` matches —
+    uid = _admin_employee_id(request, store)
+    # D.23: list scope is the operator's uid, not
+    # the cookie's tgid. ``store.list_summaries``
+    # returns every row whose ``uid`` matches —
     # webui, TG, and (in future) any other channel the
     # operator owns. The frontend renders the channel
     # alongside each row (D.22 added the field).
     items, total = store.list_summaries(
-        employee_id, limit=limit, offset=offset,
+        uid, limit=limit, offset=offset,
     )
     return SessionListOut(
         items=[
-            _summary_to_out(i, employee_id=employee_id)
+            _summary_to_out(i, uid=uid)
             for i in items
         ],
         total=total,
@@ -379,15 +379,15 @@ def get_session(
     store: SessionStoreDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    employee_id = _admin_employee_id(request, store)
+    uid = _admin_employee_id(request, store)
     try:
-        sess = store.get(employee_id, session_id)
+        sess = store.get(uid, session_id)
     except SessionPathError as e:
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
             "session get rejected (bad session_id %r from employee %s): %s",
-            session_id, employee_id, e,
+            session_id, uid, e,
         )
         raise MagiHTTPException(
             status_code=400,
@@ -424,9 +424,9 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    employee_id = _admin_employee_id(request, store)
+    uid = _admin_employee_id(request, store)
     try:
-        removed = store.delete(employee_id, session_id)
+        removed = store.delete(uid, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -471,7 +471,7 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    employee_id = _admin_employee_id(request, store)
+    uid = _admin_employee_id(request, store)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
@@ -485,7 +485,7 @@ def update_session(
 
         try:
             sess = store.rename(
-                employee_id, session_id, new_title, bump_updated=False
+                uid, session_id, new_title, bump_updated=False
             )
         except SessionPathError as e:
             raise MagiHTTPException(
@@ -516,7 +516,7 @@ def update_session(
     # 404 if the session vanished between the GET that
     # showed the row and this PATCH.
     try:
-        sess = store.get(employee_id, session_id)
+        sess = store.get(uid, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -591,7 +591,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    employee_id = _admin_employee_id(request, store)
+    uid = _admin_employee_id(request, store)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic
@@ -606,7 +606,7 @@ def get_session_messages(
         offset = 0
     try:
         msgs, total_active, total_all = store.get_messages_page(
-            employee_id, session_id,
+            uid, session_id,
             limit=limit, offset=offset,
             include_archived=include_archived,
         )
@@ -622,7 +622,7 @@ def get_session_messages(
         # session doesn't exist (vs. an empty session).
         # Distinguishing the two cases: try ``store.get``
         # and 404 if it returns None.
-        sess = store.get(employee_id, session_id)
+        sess = store.get(uid, session_id)
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,

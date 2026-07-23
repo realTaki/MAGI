@@ -27,11 +27,11 @@ the SQL — see ``_period_bounds`` in
 schema decision (which tz?) that the system-level
 setting handles better.
 
-``employee_id`` is NOT NULL: every chat call in v0
+``uid`` is NOT NULL: every chat call in v0
 resolves to a concrete employee before reaching the
 LLM (WebUI cookie admin + TG bound employee), so the
 FK is always satisfied. If a future channel arrives
-without a ``chat_id`` → ``Employee`` mapping, the
+without a ``tgid`` → ``Employee`` mapping, the
 insert will surface that gap at write time rather
 than silently dropping the row.
 
@@ -70,7 +70,7 @@ class TokenUsage(Base):
     __tablename__ = "token_usage"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    employee_id: Mapped[int] = mapped_column(
+    uid: Mapped[int] = mapped_column(
         ForeignKey("employees.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -94,26 +94,26 @@ class TokenUsage(Base):
     )
 
     # Composite index — supports the aggregation
-    # endpoint's ``WHERE employee_id = ? AND ts BETWEEN
+    # endpoint's ``WHERE uid = ? AND ts BETWEEN
     # ? AND ?``. Listed in ``__table_args__`` so it
     # gets created alongside the table by ``create_all``
     # on a fresh DB; for an existing DB,
     # ``_INDEX_MIGRATIONS`` below patches it in via
     # ``CREATE INDEX IF NOT EXISTS``.
     __table_args__ = (
-        Index("ix_token_usage_emp_ts", "employee_id", "ts"),
+        Index("ix_token_usage_emp_ts", "uid", "ts"),
     )
 
     # Read-only relationship for admin / debug views;
     # route code never traverses it to mutate the
     # employee.
     employee: Mapped["Employee"] = relationship(
-        foreign_keys=[employee_id], viewonly=True
+        foreign_keys=[uid], viewonly=True
     )
 
     def __repr__(self) -> str:
         return (
-            f"TokenUsage(id={self.id}, employee_id={self.employee_id}, "
+            f"TokenUsage(id={self.id}, uid={self.uid}, "
             f"in={self.input_tokens}, out={self.output_tokens}, "
             f"ts={self.ts.isoformat()})"
         )

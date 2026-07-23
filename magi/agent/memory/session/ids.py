@@ -26,17 +26,17 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 # Today the WebUI admin cookie and the TG ``message.chat.id``
 # both arrive as decimal digit strings. The legacy
 # ``_CHAT_ID_RE`` was a path-segment safety check (no
-# directory traversal); with the move to SQLite the chat_id
+# directory traversal); with the move to SQLite the tgid
 # becomes a column value, so the regex now guards against
 # accidental column-arithmetic errors (e.g. a 64-char string
-# being silently truncated by the ``chat_id`` column width).
+# being silently truncated by the ``tgid`` column width).
 # The character class is the same as the old path check, so
 # no caller-visible change.
 _CHAT_ID_RE = _re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
-# D.23 — session identity is now ``employee_id: int`` (an
+# D.23 — session identity is now ``uid: int`` (an
 # int coerced to its decimal string form on the wire), not
-# the channel-shaped ``chat_id``. ``_EMPLOYEE_ID_RE`` is the
+# the channel-shaped ``tgid``. ``_EMPLOYEE_ID_RE`` is the
 # validation regex for that new key; ``_CHAT_ID_RE`` is kept
 # for the D.18 JSON importer (``migration.py``) which still
 # uses the column's ``tgid`` value to build the legacy
@@ -109,16 +109,16 @@ def _validate_session_id(session_id: str) -> None:
         )
 
 
-def _validate_chat_id(chat_id: str) -> None:
-    if not isinstance(chat_id, str) or not _CHAT_ID_RE.match(chat_id):
+def _validate_chat_id(tgid: str) -> None:
+    if not isinstance(tgid, str) or not _CHAT_ID_RE.match(tgid):
         raise ValueError(
-            f"chat_id {chat_id!r} contains characters that are not "
+            f"tgid {tgid!r} contains characters that are not "
             "safe as an identifier"
         )
 
 
-def _validate_employee_id(employee_id) -> None:
-    """D.23 — the session key is now ``employee_id`` (int).
+def _validate_employee_id(uid) -> None:
+    """D.23 — the session key is now ``uid`` (int).
 
     Accepted forms (all coerced to the same ``int``):
 
@@ -127,7 +127,7 @@ def _validate_employee_id(employee_id) -> None:
         boundary or a cookie that stores the id as a
         stringified int (the cookie is currently a
         ``telegram_id`` string, but a future "switch to
-        employee_id cookie" path will pass it through
+        uid cookie" path will pass it through
         here as a string).
 
     The ``int`` form is checked first so a hand-crafted
@@ -135,22 +135,22 @@ def _validate_employee_id(employee_id) -> None:
     raises with a clearer error message than a column-
     overflow later.
     """
-    if isinstance(employee_id, int):
-        if employee_id < 0:
+    if isinstance(uid, int):
+        if uid < 0:
             raise ValueError(
-                f"employee_id {employee_id!r} must be non-negative"
+                f"uid {uid!r} must be non-negative"
             )
         return
     if (
-        not isinstance(employee_id, str)
-        or not _EMPLOYEE_ID_RE.match(employee_id)
+        not isinstance(uid, str)
+        or not _EMPLOYEE_ID_RE.match(uid)
     ):
         raise ValueError(
-            f"employee_id {employee_id!r} is not a valid integer id"
+            f"uid {uid!r} is not a valid integer id"
         )
 
 
-def session_lock(chat_id: str, session_id: str) -> None:
+def session_lock(tgid: str, session_id: str) -> None:
     """No-op compat shim.
 
     Pre-D.18 callers (chat.py / bot.py / auto_title.py) wrapped

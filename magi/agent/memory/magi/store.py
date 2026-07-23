@@ -57,7 +57,7 @@ class MemoryView:
     """
 
     id: int
-    employee_id: int
+    uid: int
     kind: str
     subject: str
     body: str
@@ -71,7 +71,7 @@ class MemoryView:
     def from_row(cls, row: MemoryEntry) -> "MemoryView":
         return cls(
             id=row.id,
-            employee_id=row.employee_id,
+            uid=row.uid,
             kind=row.kind,
             subject=row.subject,
             body=row.body,
@@ -89,7 +89,7 @@ class MemoryView:
         """JSON-friendly dict for tool results."""
         return {
             "id": self.id,
-            "employee_id": self.employee_id,
+            "uid": self.uid,
             "kind": self.kind,
             "subject": self.subject,
             "body": self.body,
@@ -116,7 +116,7 @@ class MemoryStore:
 
     def add(
         self,
-        employee_id: int,
+        uid: int,
         *,
         kind: str,
         subject: str,
@@ -148,7 +148,7 @@ class MemoryStore:
 
         with open_session() as db:
             row = MemoryEntry(
-                employee_id=employee_id,
+                uid=uid,
                 kind=kind,
                 subject=subject,
                 body=body,
@@ -163,7 +163,7 @@ class MemoryStore:
             "memory added",
             extra={
                 "memory_id": row.id,
-                "employee_id": employee_id,
+                "uid": uid,
                 "kind": kind,
                 "importance": importance,
             },
@@ -179,13 +179,13 @@ class MemoryStore:
 
     def list_for_owner(
         self,
-        employee_id: int,
+        uid: int,
         *,
         kind: Optional[str] = None,
         include_completed: bool = False,
         limit: int = 50,
     ) -> list[MemoryView]:
-        """Read entries owned by ``employee_id``.
+        """Read entries owned by ``uid``.
 
         Defaults:
 
@@ -206,7 +206,7 @@ class MemoryStore:
         """
         with open_session() as db:
             stmt = select(MemoryEntry).where(
-                MemoryEntry.employee_id == employee_id
+                MemoryEntry.uid == uid
             )
             if kind is not None:
                 stmt = stmt.where(MemoryEntry.kind == kind)
@@ -241,7 +241,7 @@ class MemoryStore:
     ) -> MemoryView:
         """Patch one or more mutable fields.
 
-        ``kind`` and ``employee_id`` are immutable
+        ``kind`` and ``uid`` are immutable
         (changing them would silently mis-categorise
         the row); the LLM-facing tool documents this
         and returns ``is_error=True`` if asked.

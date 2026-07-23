@@ -346,7 +346,7 @@ def test_mcp_tool_runs_call_and_returns_text_content() -> None:
         execute_timeout=2.0,
     )
     ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), chat_id="c", employee_id=1, channel="webui"
+        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
     )
 
     result = _run_async(tool.run(ctx, name="bob"))
@@ -377,7 +377,7 @@ def test_mcp_tool_run_marks_is_error_on_remote_error() -> None:
         execute_timeout=2.0,
     )
     ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), chat_id="c", employee_id=1, channel="webui"
+        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
     )
     result = _run_async(tool.run(ctx))
     assert result.is_error is True
@@ -402,7 +402,7 @@ def test_mcp_tool_run_translates_timeout() -> None:
         execute_timeout=0.05,  # tiny — branch must fire
     )
     ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), chat_id="c", employee_id=1, channel="webui"
+        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
     )
     result = _run_async(tool.run(ctx))
     assert result.is_error is True

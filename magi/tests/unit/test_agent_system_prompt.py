@@ -103,8 +103,8 @@ def test_prompt_always_starts_with_soul(state_dir, seed_employees):
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul=soul_text,
     )
 
@@ -123,8 +123,8 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_employees):
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",  # Bob's chat_id (no contact row yet)
+        uid=1,
+
         soul="SOUL_TEXT",
     )
     # Soul is always at the top.
@@ -156,7 +156,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
 
     with open_session() as db:
         db.add(MemoryEntry(
-            employee_id=1,
+            uid=1,
             kind=KIND_IMPORTANT,
             subject="Q4 budget deadline",
             body="December 15 — every team must submit.",
@@ -167,8 +167,8 @@ def test_prompt_includes_memory_block_when_rows_exist(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL",
     )
 
@@ -185,7 +185,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
     state_dir, seed_employees,
 ):
     """The memory block must NOT bleed across admins. Bob
-    (employee_id=2) gets Alice's (employee_id=1) memory
+    (uid=2) gets Alice's (uid=1) memory
     when Bob's loop is the caller."""
     from magi.agent.db import open_session
     from magi.agent.memory.magi.models import (
@@ -197,7 +197,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
 
     with open_session() as db:
         db.add(MemoryEntry(
-            employee_id=1,  # Alice
+            uid=1,  # Alice
             kind=KIND_IMPORTANT,
             subject="Alice's private fact",
             body="for alice only",
@@ -209,8 +209,8 @@ def test_prompt_memory_block_scoped_to_caller_employee(
     # Alice's view sees her fact.
     alice_prompt = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL",
     )
     assert "Alice's private fact" in alice_prompt
@@ -218,8 +218,8 @@ def test_prompt_memory_block_scoped_to_caller_employee(
     # Bob's view sees nothing from Alice.
     bob_prompt = build_system_prompt(
         str(state_dir),
-        employee_id=2,
-        chat_id="9002",
+        uid=2,
+        
         soul="SOUL",
     )
     assert "Alice's private fact" not in bob_prompt
@@ -250,7 +250,7 @@ def test_prompt_excludes_completed_ongoing_rows(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with open_session() as db:
         db.add(MemoryEntry(
-            employee_id=1,
+            uid=1,
             kind=KIND_ONGOING,
             subject="In-flight task",
             body="still working",
@@ -259,7 +259,7 @@ def test_prompt_excludes_completed_ongoing_rows(
             completed_at=None,
         ))
         db.add(MemoryEntry(
-            employee_id=1,
+            uid=1,
             kind=KIND_ONGOING,
             subject="Already done",
             body="closed last week",
@@ -271,8 +271,8 @@ def test_prompt_excludes_completed_ongoing_rows(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL",
     )
 
@@ -285,13 +285,22 @@ def test_prompt_excludes_completed_ongoing_rows(
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_prompt_includes_contact_block_for_current_chatter(
+def test_prompt_includes_contact_block_for_self(
     state_dir, seed_employees,
 ):
-    """The contact block renders only the contact row for
-    the current chatter. With Alice (employee_id=1)
-    chatting with Bob (telegram_id=9002), Bob's contact
-    facts land in the prompt."""
+    """D.26: the contact block is the User's self-record
+    (owner_id=uid, person_id=uid). With Alice (uid=1) as
+    the caller and a seeded self-contact for Alice, the
+    block renders Alice's notes.
+
+    Pre-D.26 the chatter was identified by ``tgid``
+    (Telegram digits) and the contact block could describe
+    a different person. With tgid removed and the
+    cookie's ``magi_session`` carrying the UID directly,
+    there is only ever one User per chat — "admin 当前
+    在跟谁聊 根本不存在". The contact block is therefore
+    the User's own self-record.
+    """
     from magi.agent.db import open_session
     from magi.agent.memory.contacts.models import (
         SOURCE_EVE,
@@ -302,17 +311,16 @@ def test_prompt_includes_contact_block_for_current_chatter(
     with open_session() as db:
         db.add(ContactEntry(
             owner_id=1,  # Alice
-            person_id=2,  # Bob
+            person_id=1,  # Alice (self-as-contact)
             role="Engineering Manager",
-            notes="Bob runs the dev team. Prefers Slack over email.",
+            notes="Alice runs the dev team. Prefers Slack over email.",
             source=SOURCE_EVE,
         ))
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9002",
+        uid=1,
         soul="SOUL",
     )
 
@@ -330,7 +338,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     Pre-fix this comment said "实际渲染时 caller 会用真名替换"
     but the loop just called ``format_contact_block(contact)``
     with no name resolution — the rendered header read
-    ``**2**`` (a raw Employee FK). This test pins the
+    ``**1**`` (a raw Employee FK). This test pins the
     fix so a future "let me simplify and drop the
     display_name kwarg" revert is caught immediately.
     """
@@ -343,7 +351,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
 
     with open_session() as db:
         db.add(ContactEntry(
-            owner_id=1, person_id=2,
+            owner_id=1, person_id=1,
             role="Eng",
             notes="x",
             source=SOURCE_EVE,
@@ -352,33 +360,31 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9002",  # Bob's telegram_id; resolves to Bob
+        uid=1,
         soul="SOUL",
     )
 
-    # The header must use Bob's display_name (none set in
-    # the seed → falls back to name="Bob").
-    assert "**Bob**" in rendered
+    # The header must use Alice's display_name (her row's
+    # ``name`` falls back when no ``display_name`` is set).
+    assert "**Alice**" in rendered
     # The raw integer FK must NOT appear as the header.
     # We check for the surrounding markdown so a future
-    # change like "2" appearing in a notes body wouldn't
+    # change like "1" appearing in a notes body wouldn't
     # false-positive.
-    assert "**2**" not in rendered
+    assert "**1**" not in rendered
 
 
 def test_prompt_skips_contact_block_when_no_record(
     state_dir, seed_employees,
 ):
-    """An empty contacts table → no contact block. The
-    LLM just sees the soul + skills (memory is also
-    empty here)."""
+    """No ``(uid, uid)`` row → the contact block is
+    silently dropped. The LLM sees the soul + memory
+    only — no empty "Current chatter" header."""
     from magi.agent.system_prompt import build_system_prompt
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
         soul="SOUL",
     )
     assert "Current chatter" not in rendered
@@ -386,14 +392,14 @@ def test_prompt_skips_contact_block_when_no_record(
     assert rendered.startswith("SOUL")
 
 
-def test_prompt_contact_block_only_for_current_chatter(
+def test_prompt_contact_block_only_for_self(
     state_dir, seed_employees,
 ):
-    """Bob (chat_id=9002) is the current chatter — his
-    contact row renders. Other contacts in the table
-    (e.g. Charlie) do NOT — the LLM can load them via
-    ``search_contacts`` if needed, but they don't bloat
-    every prompt."""
+    """Multiple ``ContactEntry`` rows for Alice: her
+    self-row (``person_id=1``) renders. Rows whose
+    ``person_id`` is someone else (``person_id=3``)
+    do NOT — only the self-contact block survives
+    the per-chatter filter."""
     from magi.agent.db import Employee, open_session
     from magi.agent.memory.contacts.models import (
         SOURCE_MANUAL,
@@ -401,7 +407,8 @@ def test_prompt_contact_block_only_for_current_chatter(
     )
     from magi.agent.system_prompt import build_system_prompt
 
-    # Seed a third employee Charlie.
+    # Seed a third employee so a foreign-person contact
+    # is creatable.
     with open_session() as db:
         db.add(Employee(
             id=3, name="Charlie",
@@ -411,13 +418,13 @@ def test_prompt_contact_block_only_for_current_chatter(
         db.commit()
         db.add_all([
             ContactEntry(
-                owner_id=1, person_id=2,
+                owner_id=1, person_id=1,  # Alice's self-contact
                 role="Engineering Manager",
-                notes="bob-current",
+                notes="alice-self",
                 source=SOURCE_MANUAL,
             ),
             ContactEntry(
-                owner_id=1, person_id=3,
+                owner_id=1, person_id=3,  # Alice's notes about Charlie
                 role="SRE",
                 notes="charlie-other",
                 source=SOURCE_MANUAL,
@@ -425,24 +432,23 @@ def test_prompt_contact_block_only_for_current_chatter(
         ])
         db.commit()
 
-    # Current chatter is Bob — only his row renders.
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9002",
+        uid=1,
         soul="SOUL",
     )
-    assert "bob-current" in rendered
+    assert "alice-self" in rendered
     assert "charlie-other" not in rendered
 
 
-def test_prompt_skips_contact_block_when_chat_id_empty(
+def test_prompt_skips_contact_block_for_other_user(
     state_dir, seed_employees,
 ):
-    """WebUI path passes ``chat_id=""`` — no per-channel
-    delivery address, no per-chat contact lookup. The
-    block is skipped rather than rendering against the
-    wrong person."""
+    """A different User's self-contact (``person_id=2``)
+    must NOT bleed into Alice's prompt. The lookup is
+    ``(uid=1, person_id=1)``; Bob's row at
+    ``(1, 2)`` is a different contact — the Alice prompt
+    sees only Alice's own row, not Bob's."""
     from magi.agent.db import open_session
     from magi.agent.memory.contacts.models import (
         SOURCE_EVE,
@@ -450,26 +456,32 @@ def test_prompt_skips_contact_block_when_chat_id_empty(
     )
     from magi.agent.system_prompt import build_system_prompt
 
-    # Even with a contact row seeded, ``chat_id=""`` skips
-    # the lookup — the WebUI is admin-on-his-own-machine,
-    # there's no "other person" to render.
     with open_session() as db:
+        # Seed Alice's self-contact: this should render.
+        db.add(ContactEntry(
+            owner_id=1, person_id=1,
+            role="self-role",
+            notes="alice-own-notes",
+            source=SOURCE_EVE,
+        ))
+        # Also seed Alice's notes about Bob — these should
+        # NOT render (the system prompt only shows
+        # ``person_id=uid``, i.e. self).
         db.add(ContactEntry(
             owner_id=1, person_id=2,
-            role="Eng",
-            notes="should not render",
+            role="bob-role",
+            notes="should-not-render",
             source=SOURCE_EVE,
         ))
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="",
+        uid=1,
         soul="SOUL",
     )
-    assert "should not render" not in rendered
-    assert "Current chatter" not in rendered
+    assert "alice-own-notes" in rendered
+    assert "should-not-render" not in rendered
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -492,8 +504,8 @@ def test_prompt_includes_skills_block_when_registered(
     # is non-empty without us seeding anything.
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL",
     )
     # ``format_skills_block`` renders a section header —
@@ -532,12 +544,12 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     # Seed one of each block-eligible kind.
     with open_session() as db:
         db.add(MemoryEntry(
-            employee_id=1, kind=KIND_IMPORTANT,
+            uid=1, kind=KIND_IMPORTANT,
             subject="memory-marker",
             body="x", importance=3, source=SOURCE_MANUAL,
         ))
         db.add(ContactEntry(
-            owner_id=1, person_id=2,
+            owner_id=1, person_id=1,
             role="contact-marker",
             notes="x", source=SOURCE_EVE,
         ))
@@ -545,8 +557,8 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9002",
+        uid=1,
+        
         soul="SOUL_MARKER",
     )
 
@@ -578,8 +590,8 @@ def test_prompt_continues_when_memory_load_fails(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL_TEXT",
     )
 
@@ -602,8 +614,8 @@ def test_prompt_continues_when_contact_load_fails(
 
     rendered = build_system_prompt(
         str(state_dir),
-        employee_id=1,
-        chat_id="9001",
+        uid=1,
+        
         soul="SOUL_TEXT",
     )
 

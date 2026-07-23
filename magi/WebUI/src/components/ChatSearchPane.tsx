@@ -27,7 +27,7 @@
  *
  * Auth + scope:
  *   The cookie-based admin gate is handled upstream by the
- *   HTTP route. The search route scopes by ``employee_id``
+ *   HTTP route. The search route scopes by ``uid``
  *   (D.18+1); the sessions list route scopes by ``tgid``.
  *   Both end up showing the operator's own history — the
  *   two routes just have different SQL keys because the
@@ -59,7 +59,7 @@ type SearchHit = {
 
 type SearchResponse = {
   q: string;
-  employee_id: number;
+  uid: number;
   items: SearchHit[];
   total: number;
   limit: number;

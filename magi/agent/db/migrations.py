@@ -54,7 +54,7 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # COLUMN ... CHECK).
     ("tasks", "run_at", "VARCHAR(32)"),
     # Tasks: ``delivery_to`` carries the destination per
-    # ``channel`` — TG chat_id (digits), or an email
+    # ``channel`` — TG tgid (digits), or an email
     # address once that runner lands. Webui tasks leave
     # it NULL (the task's session IS the operator-visible
     # record; no separate IM target). Nullable: legacy
@@ -78,16 +78,41 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
 # (SQLite 3.25+; CPython 3.12 ships 3.45+) executed the
 # first time a database is opened with the new column name
 # present and the old one absent. Re-runs on the same DB
-# are no-ops. D.18+1 renamed ``chat_sessions.chat_id`` →
+# are no-ops. D.18+1 renamed ``chat_sessions.tgid`` →
 # ``chat_sessions.tgid`` so the column's purpose
 # (Telegram chat identifier only, NOT a generic chat id)
 # is reflected in its name; the WebUI/TG future-IM
-# cross-platform scope now lives on ``employee_id``.
+# cross-platform scope now lives on ``uid``.
 _RENAME_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     (
         "chat_sessions",
-        "chat_id",
         "tgid",
+        "tgid",
+    ),
+    (
+        "chat_sessions",
+        "uid",
+        "uid",
+    ),
+    (
+        "tasks",
+        "uid",
+        "uid",
+    ),
+    (
+        "action_items",
+        "uid",
+        "uid",
+    ),
+    (
+        "token_usage",
+        "uid",
+        "uid",
+    ),
+    (
+        "memories",
+        "uid",
+        "uid",
     ),
 ]
 
@@ -96,29 +121,29 @@ _RENAME_COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
 # Idempotent (``CREATE INDEX IF NOT EXISTS``).
 _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
     # Speeds up ``GET /api/action_items`` which always filters
-    # by employee_id; the second index supports the
+    # by uid; the second index supports the
     # "open + last-7-days completed" listing ordered by recency.
     (
         "action_items",
         "ix_action_items_employee_id",
-        "(employee_id)",
+        "(uid)",
     ),
     (
         "action_items",
         "ix_action_items_employee_recent",
-        "(employee_id, created_at DESC)",
+        "(uid, created_at DESC)",
     ),
     # D.15 — token-bill aggregation. ``create_all`` builds
     # this alongside the new ``token_usage`` table on fresh
     # installs; the ``CREATE INDEX IF NOT EXISTS`` here
     # covers existing DBs (the inline migration runner is
     # idempotent). The composite covers the
-    # ``WHERE employee_id = ? AND ts BETWEEN ? AND ?`` query
+    # ``WHERE uid = ? AND ts BETWEEN ? AND ?`` query
     # the per-period endpoint issues.
     (
         "token_usage",
         "ix_token_usage_emp_ts",
-        "(employee_id, ts)",
+        "(uid, ts)",
     ),
     # 定时 / 循环任务 (proactive runtime) — indexes
     # backfilled for existing DBs that pre-date the
@@ -139,7 +164,7 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
     (
         "tasks",
         "ix_tasks_employee",
-        "(employee_id)",
+        "(uid)",
     ),
     (
         "task_runs",
@@ -161,14 +186,14 @@ _UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str, str | None]] = [
         None,
     ),
     # Action items: idempotency — one OPEN row per
-    # ``(employee_id, kind)``. ``Partial unique`` so a
+    # ``(uid, kind)``. ``Partial unique`` so a
     # completed/dismissed row doesn't block a future same-kind
     # prompt (e.g. operator removes admin, re-adds them:
     # a future prompt of the same kind must be allow-listed).
     (
         "action_items",
         "ux_action_items_open_per_kind",
-        "employee_id, kind",
+        "uid, kind",
         "completed_at IS NULL AND dismissed = 0",
     ),
 ]

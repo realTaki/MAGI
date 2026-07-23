@@ -25,7 +25,7 @@ task's cron fires. Each invocation:
    timer.
 
 3. Wires ``_tg_send_callback`` into the loop when
-   ``task.delivery_to`` is a TG chat_id (digits) and
+   ``task.delivery_to`` is a TG tgid (digits) and
    a bot is registered. The agent's
    :class:`magi.agent.tools.send_message.SendMessageTool`
    pushes the reply to TG via this callback when the
@@ -129,10 +129,10 @@ async def execute_task(
         if task is None:
             logger.info("execute_task: task %s vanished mid-flight", task_id)
             return None
-        employee = db.get(Employee, task.employee_id)
+        employee = db.get(Employee, task.uid)
         if employee is None or not employee.api_key or not employee.provider:
             _finalise_run_failure(
-                db, run_id=run_id, task_id=task_id, employee_id=task.employee_id,
+                db, run_id=run_id, task_id=task_id, uid=task.uid,
                 task_name=task.name, error="employee_missing_credentials",
                 started_iso=started,
             )
@@ -152,7 +152,7 @@ async def execute_task(
             db.add(ChatSession(
                 session_id=task.session_id,
                 tgid=str(employee.telegram_id or ""),
-                employee_id=task.employee_id,
+                uid=task.uid,
                 channel="task",
                 title=f"[定时] {task.name}",
                 created_at=utcnow_iso(),
@@ -186,7 +186,7 @@ async def execute_task(
         )
         channel_directive = (
             f"If channel='tg', call the ``send_message`` tool with "
-            f"the reply text and target chat_id "
+            f"the reply text and target tgid "
             f"{task.delivery_to or '(unset)'} to push the response. "
             f"If channel='webui', the reply lands inline in the "
             f"operator's chat history automatically."
@@ -255,7 +255,7 @@ async def execute_task(
     # chat.py follows the same pattern: append_messages
     # outside the request handler's outer ORM session.
     SessionStore(state_dir).append_messages(
-        task.employee_id, session_id,
+        task.uid, session_id,
         [SessionMessage(
             role="user", text=contextual_prompt, ts=started,
             message_id=new_session_id(),
@@ -267,7 +267,7 @@ async def execute_task(
     # TG push is the agent's responsibility via its
     # ``send_message`` tool (system-prompt-mandated). We
     # just wire the callback when ``delivery_to`` is a
-    # TG chat_id AND a bot is registered. For webui
+    # TG tgid AND a bot is registered. For webui
     # tasks (no TG target) and tg tasks without a live
     # bot (test environments), the callback stays
     # ``None`` — the agent's tool path returns an error
@@ -285,7 +285,7 @@ async def execute_task(
                 text_to_send: str,
             ) -> None:
                 await bot.send_message(
-                    chat_id=to_chat_id,
+                    tgid=to_chat_id,
                     text=text_to_send,
                 )
             tg_send_callback = _tg_send_callback
@@ -305,17 +305,13 @@ async def execute_task(
                 # disable the tool, so the agent's
                 # "deliver via send_message" directive
                 # in the user-message wouldn't reach TG.
+                # ``delivery_target`` is no longer passed
+                # as ``tgid`` here — the agent loop's
+                # tools read it directly from the session
+                # row's ``tgid`` column.
                 channel=task.channel,
-                employee_id=employee.id,
+                uid=employee.id,
                 session_id=session_id,
-                # ``chat_id`` is the IM target the agent's
-                # ``send_message`` tool needs to know
-                # where to push. For TG tasks that's the
-                # TG chat_id; for webui tasks it's empty
-                # (send_message is disabled on webui
-                # anyway — see
-                # :mod:`magi.agent.tools.send_message`).
-                chat_id=delivery_target or "",
                 employee_provider=provider,
                 employee_api_key=api_key,
                 employee_model=None,
@@ -327,7 +323,7 @@ async def execute_task(
     except asyncio.TimeoutError:
         return _mark_failed(
             state_dir=state_dir, task_id=task_id, run_id=run_id,
-            employee_id=employee.id, task_name=task_name,
+            uid=employee.id, task_name=task_name,
             started_iso=started,
             error=f"timeout_after_{_RUN_TIMEOUT_SECONDS}s",
         )
@@ -335,7 +331,7 @@ async def execute_task(
         logger.exception("task %s crashed in handle_message", task_id)
         return _mark_failed(
             state_dir=state_dir, task_id=task_id, run_id=run_id,
-            employee_id=employee.id, task_name=task_name,
+            uid=employee.id, task_name=task_name,
             started_iso=started,
             error=f"unexpected:{type(exc).__name__}:{exc}",
         )
@@ -410,7 +406,7 @@ def _mark_failed(
     state_dir: str,
     task_id: str,
     run_id: str,
-    employee_id: int,
+    uid: int,
     task_name: str,
     started_iso: str,
     error: str,
@@ -463,7 +459,7 @@ def _maybe_disable_and_alert(db: Session, task: Task, error: str) -> None:
         return
     task.enabled = 0
     db.add(ActionItem(
-        employee_id=task.employee_id,
+        uid=task.uid,
         kind="task_disabled",
         title=f"定时任务已自动停用：{task.name}",
         description=(
@@ -484,7 +480,7 @@ def _finalise_run_failure(
     db: Session, *,
     run_id: str,
     task_id: str,
-    employee_id: int,
+    uid: int,
     task_name: str,
     error: str,
     started_iso: str,
@@ -503,7 +499,7 @@ def _finalise_run_failure(
     # Surface the alert directly because the failure
     # didn't go through the standard path.
     db.add(ActionItem(
-        employee_id=employee_id,
+        uid=uid,
         kind="task_disabled",
         title=f"定时任务无法执行：{task_name}",
         description=f"任务 \"{task_name}\" 配置引用的员工没有设置 provider/api_key。",
@@ -519,7 +515,7 @@ def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tu
     single fire may produce 1+ rows; summing keeps the
     dashboard's "cost" view aligned with the per-session bill.
 
-    Filters by ``employee_id`` (the operator the LLM was
+    Filters by ``uid`` (the operator the LLM was
     billed against) + ``ts >= started_iso`` (the fire's
     wall-clock start). ``session_id`` is kept in the
     signature for compatibility but isn't a column on

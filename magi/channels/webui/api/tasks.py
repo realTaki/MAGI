@@ -127,7 +127,7 @@ class TaskPatch(BaseModel):
     Cron is derived from the preset at write-time and
     replaced atomically on every update (no concept of
     "edit only the cron string"; the operator always
-    picks a new preset). ``employee_id`` is *not*
+    picks a new preset). ``uid`` is *not*
     editable here — moving the credentials bound to a
     task is out of scope for v0.
     """
@@ -188,7 +188,7 @@ class TaskOut(BaseModel):
     delivery_to: Optional[str] = None
     tz: str
     channel: str
-    employee_id: int
+    uid: int
     enabled: bool
     consecutive_failures: int
     last_run_at: Optional[str] = None
@@ -239,7 +239,7 @@ def _task_to_out(t: Task) -> TaskOut:
         delivery_to=t.delivery_to,
         tz=_resolve_system_tz(),
         channel=t.channel,
-        employee_id=t.employee_id,
+        uid=t.uid,
         enabled=bool(t.enabled),
         consecutive_failures=t.consecutive_failures,
         last_run_at=t.last_run_at,
@@ -278,19 +278,19 @@ def list_tasks(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
     enabled: Optional[bool] = None,
-    employee_id: Optional[int] = None,
+    uid: Optional[int] = None,
 ) -> list[TaskOut]:
     """List tasks. v0: all tasks visible to the admin.
 
-    ``enabled`` filters by the column; ``employee_id``
+    ``enabled`` filters by the column; ``uid``
     scopes to one owner (admin can still see every
     employee's tasks — useful for the audit pane).
     """
     q = session.query(Task).order_by(Task.created_at.desc())
     if enabled is not None:
         q = q.filter(Task.enabled == (1 if enabled else 0))
-    if employee_id is not None:
-        q = q.filter(Task.employee_id == employee_id)
+    if uid is not None:
+        q = q.filter(Task.uid == uid)
     return [_task_to_out(t) for t in q.all()]
 
 
@@ -405,7 +405,7 @@ def create_task(
     # record (no separate IM target needed).
     delivery_to = _resolve_delivery_to(
         session, channel=payload.channel,
-        employee_id=operator_id,
+        uid=operator_id,
         explicit=payload.delivery_to,
     )
     # Allocate the task's home session NOW. Every cron
@@ -416,7 +416,7 @@ def create_task(
     # — see ``chat_sessions.channel`` semantics). The
     # operator sees this session in their chat list along
     # with their webui + tg chats (the chat-sessions
-    # router filters only by employee_id).
+    # router filters only by uid).
     operator = session.get(Employee, operator_id)
     task_session_id = new_session_id()
     now = _now_iso()
@@ -431,7 +431,7 @@ def create_task(
         # it because channel="webui" disables the
         # send_message tool.
         tgid=str(operator.telegram_id or ""),
-        employee_id=operator_id,
+        uid=operator_id,
         channel="task",
         title=f"[定时] {payload.name}",
         created_at=now,
@@ -462,7 +462,7 @@ def create_task(
         session_id=task_session_id,
         tz=system_tz,
         channel=payload.channel,
-        employee_id=operator_id,
+        uid=operator_id,
         enabled=1,
         consecutive_failures=0,
         created_at=now,
@@ -521,7 +521,7 @@ def update_task(
     # later TG-binding edit.
     t.delivery_to = _resolve_delivery_to(
         session, channel=t.channel,
-        employee_id=t.employee_id, explicit=None,
+        uid=t.uid, explicit=None,
     )
     for k, v in data.items():
         setattr(t, k, v)
@@ -662,7 +662,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
          by future operator consoles; v0 WebUI doesn't
          expose it).
       2. Fall back to the cookie's signed-in employee
-         (``magi_session`` carries the employee_id after
+         (``magi_session`` carries the uid after
          the D.24 migration — not the telegram_id). We
          use :func:`_resolve_employee_id` so the cookie
          format matches every other admin-gated route.
@@ -671,7 +671,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
          this MAGI serves). ``employee`` and ``guest``
          are barred — they don't sign in.
 
-    Returns the resolved ``employee_id``. The task's
+    Returns the resolved ``uid``. The task's
     credentials are bound to whoever this returns (i.e.
     cron time fires + LLM call charges the creator's
     own provider / API key).
@@ -682,7 +682,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
             cand = int(raw)
         except ValueError as exc:
             raise MagiHTTPException(
-                status_code=400, code="validation.employee_id",
+                status_code=400, code="validation.uid",
                 detail="X-Employee-Id must be an integer",
             ) from exc
         emp = session.get(Employee, cand)
@@ -694,7 +694,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
         _enforce_creator_role(emp.role)
         return emp.id
     # Fall back to the cookie: D.24 made ``magi_session``
-    # carry the employee_id directly, so the lookup is
+    # carry the uid directly, so the lookup is
     # ``session.get(Employee, eid)`` — no telegram_id
     # detour. The role gate is duplicated inline (instead
     # of reusing :func:`_admin_employee_id`) because
@@ -709,7 +709,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
             status_code=401, code="chat.unknown_sender",
             detail=(
                 f"no employee row bound to this session "
-                f"(employee_id={eid}); sign in first"
+                f"(uid={eid}); sign in first"
             ),
         )
     _enforce_creator_role(emp.role)
@@ -787,7 +787,7 @@ def _resolve_delivery_to(
     session: Session,
     *,
     channel: str,
-    employee_id: int,
+    uid: int,
     explicit: str | None,
 ) -> str:
     """Server-derived ``delivery_to`` per the unified rule.
@@ -809,14 +809,14 @@ def _resolve_delivery_to(
     any later TG-binding edit the operator made.
     """
     if channel == "tg":
-        emp = session.get(Employee, employee_id)
+        emp = session.get(Employee, uid)
         if emp is None or not emp.telegram_id:
             raise MagiHTTPException(
                 status_code=400,
                 code="tasks.telegram_not_bound",
                 detail=(
                     f"channel='tg' requires the operator "
-                    f"(employee {employee_id}) to have a "
+                    f"(employee {uid}) to have a "
                     f"telegram_id bound; bind a TG chat first "
                     f"(Settings → 员工)."
                 ),

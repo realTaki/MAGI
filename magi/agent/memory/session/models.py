@@ -31,8 +31,8 @@ class SessionMessage:
 @dataclass
 class Session:
     session_id: str
-    chat_id: str
-    employee_id: int
+    tgid: str
+    uid: int
     channel: str
     created_at: str
     updated_at: str
@@ -204,8 +204,8 @@ def session_from_dict(d: dict) -> Session:
 
         return Session(
             session_id=str(d["session_id"]),
-            chat_id=str(d["chat_id"]),
-            employee_id=int(d["employee_id"]),
+            tgid=str(d["tgid"]),
+            uid=int(d["uid"]),
             channel=str(d["channel"]),
             created_at=str(d["created_at"]),
             updated_at=str(d["updated_at"]),

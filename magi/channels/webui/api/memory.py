@@ -2,7 +2,7 @@
 the Knowledge → Memory pane.
 
 Scope: every ``MemoryEntry`` row owned by the calling
-admin (``MemoryEntry.employee_id == admin_employee_id``).
+admin (``MemoryEntry.uid == admin_employee_id``).
 The pane renders the operator's view of "what the LLM
 knows" — both kinds, in-flight + completed, ordered by
 importance DESC then updated_at DESC (the same ordering
@@ -139,7 +139,7 @@ def list_memory(
 
     Auth is doubled: ``AdminGate`` proves the cookie is a
     live admin session, and ``_current_admin_id`` re-reads
-    the cookie to get the int ``employee_id`` that scopes
+    the cookie to get the int ``uid`` that scopes
     the query. Defends against a future bug where some
     code path mints a row tied to a different employee and
     the operator could read someone else's memory via URL
@@ -157,7 +157,7 @@ def list_memory(
 
     stmt = (
         select(MemoryEntry)
-        .where(MemoryEntry.employee_id == admin_id)
+        .where(MemoryEntry.uid == admin_id)
         .order_by(
             MemoryEntry.importance.desc(),
             MemoryEntry.updated_at.desc(),

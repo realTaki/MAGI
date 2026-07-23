@@ -109,11 +109,11 @@ class Employee(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="assigned")
     # Telegram chat id of the bound user, when known. NULL
     # for employees who haven't completed the /start binding
-    # flow (C2). Unique across the table — one chat_id
+    # flow (C2). Unique across the table — one tgid
     # binds to at most one employee. Stored on the row so
-    # the TG bot can resolve a chat_id to its employee in
+    # the TG bot can resolve a tgid to its employee in
     # a single ORM read; the older ``meta``-key mapping
-    # (telegram.user.<chat_id>.employee_id) is deprecated
+    # (telegram.user.<tgid>.uid) is deprecated
     # but kept in the codebase for back-compat with
     # any state that hasn't been migrated yet.
     # Uniqueness is enforced via the ``ux_employees_telegram_id``
