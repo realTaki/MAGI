@@ -72,13 +72,15 @@ from magi.agent.memory.session import (
 from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 
-# Local import for the TG bot registry — keeps the
-# cron-runner thread from pulling all of ``bot.py``
-# at module load (bot.py imports telegram.ext + the
-# daemon-thread bringup machinery). Lazy import inside
-# :func:`execute_task` would be premature too: the
-# registry accessor is cheap.
-from magi.channels.telegram.bot import get_telegram_bot
+# D.28: the runner no longer touches the TG client API
+# directly. The channel dispatcher is the single dispatch
+# point for "send a message to a user via a channel" — it
+# resolves the session's channel to the right adapter, and
+# the adapter (e.g. ``magi.channels.telegram.adapter``)
+# does whatever IM-client wiring it needs. Importing the
+# dispatcher is enough; we never reach for
+# ``get_telegram_bot`` directly.
+from magi.channels import dispatcher as channel_dispatcher
 
 logger = logging.getLogger("magi.agent.proactive.runner")
 
@@ -149,9 +151,23 @@ async def execute_task(
         # thread.
         if task.session_id is None:
             task.session_id = new_session_id()
+            # Backfill the legacy ``delivery_address`` field
+            # for pre-D.28 rows. We seed with the operator's
+            # TG chat id if they have one (via the dispatcher
+            # so the adapter is the single source of truth);
+            # otherwise an empty string. The runner later
+            # reads ``Task.delivery_to`` directly for routing,
+            # so this column is purely a breadcrumb for the
+            # chat-history view.
+            #
+            # The dispatcher lookup is deferred to AFTER the
+            # ``with open_session()`` block exits — calling it
+            # inside the block would open a second SQLAlchemy
+            # session and deadlock SQLite (BEGIN IMMEDIATE
+            # while the outer transaction is still pending).
             db.add(ChatSession(
                 session_id=task.session_id,
-                delivery_address=str(employee.telegram_id or ""),
+                delivery_address="",  # patched after the with block
                 uid=task.uid,
                 channel="task",
                 title=f"[定时] {task.name}",
@@ -245,7 +261,29 @@ async def execute_task(
         delivery_target = task.delivery_to
         provider = employee.provider
         api_key = employee.api_key
+        # Stash the new session id + uid so the post-with
+        # patch can update delivery_address without
+        # re-opening the outer session.
+        backfill_uid = task.uid
+        backfill_session_id = task.session_id
         db.commit()
+
+    # Patch the new session's delivery_address to the
+    # operator's bound TG chat id (if any). Done outside
+    # the with block because the dispatcher opens its own
+    # SQLAlchemy session — nested BEGIN IMMEDIATE inside an
+    # outer transaction deadlocks SQLite.
+    if backfill_session_id is not None and backfill_uid is not None:
+        from magi.channels import dispatcher
+        fallback_tg_im_id = dispatcher.lookup_im_id(
+            backfill_uid, "tg",
+        ) or ""
+        if fallback_tg_im_id:
+            with open_session() as db:
+                sess = db.get(ChatSession, backfill_session_id)
+                if sess is not None:
+                    sess.delivery_address = fallback_tg_im_id
+                    db.commit()
 
     # Persist the user-message AFTER the open_session()
     # block exits — SessionStore opens its own session
@@ -263,32 +301,19 @@ async def execute_task(
         channel="task",
     )
 
-    # ── 2. Wire TG callback + run the agent loop ──
-    # TG push is the agent's responsibility via its
-    # ``send_message`` tool (system-prompt-mandated). We
-    # just wire the callback when ``delivery_to`` is a
-    # TG tgid AND a bot is registered. For webui
-    # tasks (no TG target) and tg tasks without a live
-    # bot (test environments), the callback stays
-    # ``None`` — the agent's tool path returns an error
-    # but the chat history side still records the reply.
-    tg_send_callback = None
-    if (
-        delivery_target
-        and delivery_target.isdigit()
-        and task.channel == "tg"
-    ):
-        bot = get_telegram_bot()
-        if bot is not None:
-            async def _tg_send_callback(
-                to_tgid: int,
-                text_to_send: str,
-            ) -> None:
-                await bot.send_message(
-                    chat_id=to_tgid,
-                    text=text_to_send,
-                )
-            tg_send_callback = _tg_send_callback
+    # ── 2. Run the agent loop ──
+    # D.28: TG push is now handled by the channel
+    # dispatcher. The agent loop never sees the TG
+    # client API directly — it calls the dispatcher's
+    # ``send_to_session`` (or the agent's own
+    # ``send_message`` tool, which routes through the
+    # dispatcher) and the dispatcher picks the right
+    # adapter based on the session's channel column.
+    # We pass ``channel="task"`` so the agent loop's
+    # own tool-gating still applies (the tool only
+    # activates for ``channel="tg"``), but the
+    # dispatcher picks the actual IM adapter at push
+    # time. No callback injection here.
 
     try:
         reply = await asyncio.wait_for(
@@ -308,15 +333,15 @@ async def execute_task(
                 # ``delivery_target`` is no longer passed
                 # as ``tgid`` here — the agent loop's
                 # tools read it directly from the session
-                # row's ``tgid`` column.
-                channel=task.channel,
+                # row's ``delivery_address`` column (via
+                # the dispatcher).
+                channel="task",
                 uid=employee.id,
                 session_id=session_id,
                 employee_provider=provider,
                 employee_api_key=api_key,
                 employee_model=None,
                 caller_role=employee.role,
-                tg_send_callback=tg_send_callback,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
         )

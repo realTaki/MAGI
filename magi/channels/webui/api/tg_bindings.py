@@ -1,56 +1,48 @@
-"""Admin endpoints to bind / unbind a Telegram tgid to an
-employee.
+"""TG-specific binding admin endpoints (D.28).
 
-C2 lands the proper self-serve flow (employee /start's the
-bot with a 6-digit code; on success the tgid is written
-to ``Employee.telegram_id``). For v0 the operator drives the
-binding manually — pick a tgid and an employee, hit
-``POST /api/telegram/bind``, and the row's ``telegram_id``
-gets set. The same PATCH can also happen directly via
-``PATCH /api/employees/{id}`` with ``{"telegram_id": "..."}``;
-this router is a thin convenience that does the tgid
-lookup in the other direction (tgid → employee).
+Routes:
+  POST   /api/telegram/bind                  — bind a TG chat id to an employee
+  DELETE /api/telegram/bind/{telegram_id}    — unbind a TG chat id
+  GET    /api/telegram/bind/{telegram_id}    — look up the current binding
 
-Storage lives on the employee row (``Employee.telegram_id``,
-unique across the table). The legacy ``telegram.user.<tgid>.uid``
-meta key is still read by the TG bot as a fallback for
-un-migrated state but is no longer written.
+All three operate on the channel dispatcher (D.28). The
+endpoint code here is just HTTP shape + admin gating; the
+actual write logic is in
+:meth:`magi.channels.telegram.adapter.TelegramAdapter.bind_im_id` /
+``unbind_im_id`` / ``lookup_im_id`` — which writes both
+``user_im_bindings`` (the canonical store) and the legacy
+``Employee.telegram_id`` column (read-cache, kept for the
+bot's inbound path).
 """
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Response
-
-from magi.channels.webui.api.errors import MagiHTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from magi.agent.db import Employee, open_session
+from magi.channels import dispatcher as channel_dispatcher
 from magi.channels.webui.api.departments import AdminGate
-from magi.agent.db import Employee, open_session, require_state_dir
+from magi.channels.webui.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["telegram"])
-
-
-def _state_dir() -> str:
-    return require_state_dir()
 
 
 class TGBindRequest(BaseModel):
     """Body for ``POST /api/telegram/bind``.
 
     ``uid`` is the row in ``employees`` to bind to.
-    ``tgid`` is the Telegram chat id (numeric). Both are
+    ``telegram_id`` is the TG chat id (numeric). Both
     required.
     """
 
-    tgid: str = Field(min_length=1, max_length=32)
+    telegram_id: str = Field(min_length=1, max_length=32)
     uid: int = Field(ge=1)
 
 
 class TGBindResponse(BaseModel):
-    tgid: str
+    telegram_id: str
     uid: int
 
 
@@ -59,27 +51,26 @@ def bind_telegram(
     payload: TGBindRequest,
     _admin: AdminGate,
 ) -> TGBindResponse:
-    """Bind ``tgid`` to ``uid``.
+    """Bind ``telegram_id`` to ``uid``.
 
-    Writes ``Employee.telegram_id`` (and un-binds whatever
-    row currently has that tgid, so the binding is
-    one-to-one). Validates the employee is active (not
-    separated); separating an employee is the operator's
-    way of pausing their EVE without losing history.
+    Delegates the actual write to the channel dispatcher
+    (which calls the TG adapter). The API enforces the
+    "employee is active" + "unbind previous holder" rules
+    that are policy concerns, not channel concerns.
     """
-    if not payload.delivery_address.lstrip("-").isdigit():
+    if not payload.telegram_id.lstrip("-").isdigit():
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must be a numeric Telegram chat id",
+            detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(payload.delivery_address)
+        tgid_int = int(payload.telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must fit in an integer",
+            detail="telegram_id must fit in an integer",
         )
 
     with open_session() as session:
@@ -96,20 +87,14 @@ def bind_telegram(
                 code="conflict.employee_separated",
                 detail=(
                     f"employee {emp.name!r} is marked separated; "
-                    "restore them before binding a tgid"
+                    "restore them before binding a TG chat"
                 ),
             )
 
-        # Unbind whatever currently has this tgid (if
-        # any). The unique constraint on telegram_id will
-        # raise on commit if we skip this, but doing it
-        # explicitly gives a cleaner error and a clear
-        # log line. ``session.flush()`` between the clear
-        # and the new bind is needed because the unique
-        # index is checked row-by-row at flush time —
-        # without the explicit flush, SQLAlchemy may
-        # apply the new UPDATE before the clear, hitting
-        # the unique constraint on the old holder.
+        # Unbind whatever currently has this tgid (if any).
+        # The unique constraint on ``telegram_id`` would raise
+        # on commit if we skipped this; doing it explicitly
+        # gives a cleaner error and a clear log line.
         existing = session.scalar(
             select(Employee).where(Employee.telegram_id == tgid_int)
         )
@@ -117,70 +102,77 @@ def bind_telegram(
             existing.telegram_id = None
             session.flush()
 
-        emp.telegram_id = tgid_int
+        # Hand the actual write to the channel dispatcher
+        # (D.28). The adapter writes ``user_im_bindings``
+        # AND syncs ``Employee.telegram_id`` (the read-
+        # cache the bot's inbound handler still uses).
+        channel_dispatcher.bind_im_id(emp.id, "tg", str(tgid_int))
+        session.refresh(emp)  # pick up the legacy column write-back
         session.commit()
 
     return TGBindResponse(
-        delivery_address=payload.delivery_address,
+        telegram_id=payload.telegram_id,
         uid=payload.uid,
     )
 
 
 @router.delete(
-    "/telegram/bind/{tgid}",
+    "/telegram/bind/{telegram_id}",
     status_code=204,
     response_class=Response,
 )
 def unbind_telegram(
-    tgid: str,
+    telegram_id: str,
     _admin: AdminGate,
 ) -> Response:
-    """Clear the binding for ``tgid``.
+    """Clear the binding for ``telegram_id``.
 
-    Idempotent — unbinding an already-unbound tgid
+    Idempotent — unbinding an already-unbound chat id
     returns 204 with no error so the UI can use the same
     call to handle "user clicked unbind on an already-
     unbound row".
     """
-    if not tgid.lstrip("-").isdigit():
+    if not telegram_id.lstrip("-").isdigit():
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must be a numeric Telegram chat id",
+            detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(tgid)
+        tgid_int = int(telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must fit in an integer",
+            detail="telegram_id must fit in an integer",
         )
+
+    # The dispatcher resolves the bound uid and the
+    # adapter drops both the new and legacy rows.
     with open_session() as session:
-        emp = session.scalar(
+        bound_emp = session.scalar(
             select(Employee).where(Employee.telegram_id == tgid_int)
         )
-        if emp is not None:
-            emp.telegram_id = None
-            session.commit()
+    if bound_emp is not None:
+        channel_dispatcher.unbind_im_id(bound_emp.id)
     return Response(status_code=204)
 
 
 class TGBindStatus(BaseModel):
-    tgid: str
+    telegram_id: str
     bound_uid: int | None
     bound_employee_name: str | None = None
 
 
 @router.get(
-    "/telegram/bind/{tgid}",
+    "/telegram/bind/{telegram_id}",
     response_model=TGBindStatus,
 )
 def get_telegram_binding(
-    tgid: str,
+    telegram_id: str,
     _admin: AdminGate,
 ) -> TGBindStatus:
-    """Return the current binding (if any) for ``tgid``.
+    """Return the current binding (if any) for ``telegram_id``.
 
     The operator-facing UI uses this to pre-fill the
     "unbind" confirmation with the employee name. Even
@@ -189,29 +181,32 @@ def get_telegram_binding(
     can see the dangling reference and re-bind or clean
     it up explicitly.
     """
-    if not tgid.lstrip("-").isdigit():
+    if not telegram_id.lstrip("-").isdigit():
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must be a numeric Telegram chat id",
+            detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(tgid)
+        tgid_int = int(telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
             code="validation.telegram_id_invalid",
-            detail="tgid must fit in an integer",
+            detail="telegram_id must fit in an integer",
         )
 
+    bound_uid = None
+    bound_name = None
     with open_session() as session:
         emp = session.scalar(
             select(Employee).where(Employee.telegram_id == tgid_int)
         )
-        if emp is None:
-            return TGBindStatus(delivery_address=tgid, bound_uid=None)
-        return TGBindStatus(
-            delivery_address=tgid,
-            bound_uid=emp.id,
-            bound_employee_name=emp.name,
-        )
+        if emp is not None:
+            bound_uid = emp.id
+            bound_name = emp.name
+    return TGBindStatus(
+        telegram_id=telegram_id,
+        bound_uid=bound_uid,
+        bound_employee_name=bound_name,
+    )
