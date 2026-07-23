@@ -41,7 +41,7 @@ import SettingsTab from "./SettingsTab";
 
 export default function DashboardPage(props: {
   data: OnboardingData | null;
-  signedInUser: { chat_id: string; display_name: string | null } | null;
+  signedInUser: { telegram_id: string; display_name: string | null } | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ chatId: string; displayName: string | null }>,
@@ -75,7 +75,7 @@ export default function DashboardPage(props: {
 // shown in the reference (logo + inline nav + identity pill +
 // utility buttons on the right, all on one row).
 function PostLoginLayout(props: {
-  user: { chat_id: string; display_name: string | null };
+  user: { telegram_id: string; display_name: string | null };
   data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
@@ -119,7 +119,7 @@ function PostLoginLayout(props: {
           <div className="flex items-center gap-3 shrink-0">
             <SignedInLabel
               displayName={props.user.display_name}
-              chatId={props.user.chat_id}
+              chatId={props.user.telegram_id}
             />
             {/* Language picker — globe icon + dropdown. Sits
                 right of the identity pill and before the

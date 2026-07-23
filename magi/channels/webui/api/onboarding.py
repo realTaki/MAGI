@@ -10,12 +10,12 @@
     2. (implicit / no API) The "Saved" page just displays the
        persisted token + username; the user clicks Next to step 3.
 
-    3. Super admin chat_ids (verify + save)
+    3. Super admin tgids (verify + save)
        ``POST /api/onboarding/verify-admin { tgid }``
            Sends a connectivity test message to ``tgid`` via the
            saved bot. Returns ``{ok, display_name}`` or ``{ok: false,
            error}``. **Does not store**.
-       ``POST /api/onboarding/save-admin { chat_ids: list[str] }``
+       ``POST /api/onboarding/save-admin { tgids: list[str] }``
            Upserts an ``Employee`` row per tgid with ``role='admin'``,
            ``telegram_id=<tgid>`` and no department. Display names are
            resolved via Telegram ``getChat``. Idempotent.
@@ -107,7 +107,7 @@ class VerifyAdminCodeResponse(BaseModel):
 
 
 class SaveAdminRequest(BaseModel):
-    chat_ids: list[str] = Field(min_length=1)
+    tgids: list[str] = Field(min_length=1)
 
 
 class SaveAdminResponse(BaseModel):
@@ -324,7 +324,7 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     bot token and super-admin list are intentionally left in place
     so the wizard's resume logic (Step 1 view mode, prefilled admin
     rows) picks them up again — a deployer can re-confirm a setup
-    without re-typing the chat_ids.
+    without re-typing the tgids.
 
     Clears both the canonical key (``onboarding.complete``) and
     the legacy v0 key (``telegram.onboarding_complete``) so a
@@ -718,7 +718,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     from magi.agent.db import Employee, open_session
 
     state_dir = _state_dir()
-    cleaned = sorted({c.strip() for c in payload.chat_ids if c.strip()})
+    cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})
     if not cleaned:
         return SaveAdminResponse(ok=False, error="At least one tgid required")
     # Each tgid must be a TG-compatible integer (possibly

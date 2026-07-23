@@ -9,7 +9,7 @@ import type { OnboardingData } from "./onboardingTypes";
  *      view (no input) with "Next →" enabled; "Re-set token" reveals
  *      the input form so the deployer can override.
  *   2. Show the saved bot, click Next.
- *   3. Add 1+ super-admin TG chat_ids (verify + save).
+ *   3. Add 1+ super-admin TG tgids (verify + save).
  *   4. "MAGI is set up." summary + "OK, got it — sign in →" button
  *      → calls onComplete(savedData); the parent flips the server
  *      flag and routes to landing.
@@ -149,7 +149,7 @@ function Step4View(props: {
 
         <dt className="text-ink-soft">Super admins</dt>
         <dd className="text-sky-deep">
-          {props.data.superAdmins.length} chat_id
+          {props.data.superAdmins.length} tgid
           {props.data.superAdmins.length === 1 ? "" : "s"} (
           {props.data.superAdmins
             .map((a) => (a.displayName ? `${a.displayName}` : a.chatId))
@@ -323,7 +323,7 @@ function Step2View(props: {
 }
 
 // ---------------------------------------------------------------------------
-// step 3 — super admin chat_ids (code-based verify + save)
+// step 3 — super admin tgids (code-based verify + save)
 // ---------------------------------------------------------------------------
 //
 // Row state machine (kept local; no need for XState):
@@ -333,7 +333,7 @@ function Step2View(props: {
 //     │                       └─[Verify code, mismatch]──> error
 //     └─[Send code, fails]──> error
 //
-// Once a row hits "verified" its chat_id is eligible for save.
+// Once a row hits "verified" its tgid is eligible for save.
 // "Finish setup" stays disabled until at least one row is verified.
 
 type RowState = "idle" | "sending-code" | "code-sent" | "verifying-code" | "verified" | "error";
@@ -415,7 +415,7 @@ function Step3View(props: {
         void fetch("/api/onboarding/save-admin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_ids: remainingIds }),
+          body: JSON.stringify({ tgids: remainingIds }),
         }).catch(() => {
           /* network errors are non-fatal; user can press Finish again */
         });
@@ -431,7 +431,7 @@ function Step3View(props: {
   async function sendCode(row: AdminRow) {
     const chatId = row.chatId.trim();
     if (!chatId) {
-      updateRow(row.id, { rowState: "error", error: "chat_id is empty" });
+      updateRow(row.id, { rowState: "error", error: "tgid is empty" });
       return;
     }
     updateRow(row.id, { rowState: "sending-code", error: "" });
@@ -439,7 +439,7 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/send-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId }),
+        body: JSON.stringify({ tgid: chatId }),
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
       if (data.ok) {
@@ -470,7 +470,7 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/verify-admin-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, code }),
+        body: JSON.stringify({ tgid: chatId, code }),
       });
       const data = (await res.json()) as {
         ok: boolean;
@@ -509,7 +509,7 @@ function Step3View(props: {
       const res = await fetch("/api/onboarding/save-admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_ids: verified.map((r) => r.chatId.trim()) }),
+        body: JSON.stringify({ tgids: verified.map((r) => r.chatId.trim()) }),
       });
       const data = (await res.json()) as { ok: boolean; count?: number; error?: string };
       if (data.ok) {
