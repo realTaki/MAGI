@@ -15,7 +15,7 @@ type View = "landing" | "onboarding" | "login" | "dashboard";
  *
  * The boot sequence is:
  *   1. GET /api/auth/me with `credentials: include` — if a valid
- *      magi_session cookie is present (and the chat_id is still in
+ *      magi_session cookie is present (and the uid is still in
  *      telegram.super_admins), we land on the dashboard.
  *   2. Otherwise we GET /api/onboarding/status — the single source
  *      of truth is ``onboarding_complete``: a flag the wizard's

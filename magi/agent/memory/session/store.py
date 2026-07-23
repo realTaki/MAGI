@@ -8,8 +8,8 @@ the ORM engine singleton — see :mod:`magi.agent.db.orm`.
 
 Session identity (D.23)
 ------------------------
-Every public method takes ``employee_id: int`` as the
-identity of the session owner — NOT a ``chat_id``. Sessions
+Every public method takes ``uid: int`` as the
+identity of the session owner — NOT a ``tgid``. Sessions
 are pinned to the *person* (the Employee row), not the
 channel that happened to create them:
 
@@ -35,15 +35,15 @@ for two reasons:
      stamp a placeholder (e.g. ``"webui"`` for WebUI
      rows) because they don't have a TG-shaped address.
   2. **D.18 JSON migration** — the old
-     ``<workspace>/memories/sessions/<chat_id>/<sid>.json``
-     layout was keyed by chat_id; the importer reads that
+     ``<workspace>/memories/sessions/<tgid>/<sid>.json``
+     layout was keyed by tgid; the importer reads that
      path verbatim, so the column preserves the value
      it would have written under D.18.
 
-The :class:`Session` dataclass still carries ``chat_id``
+The :class:`Session` dataclass still carries ``tgid``
 for that legacy column, but **callers must not use it
-as a session key** — pass ``session.employee_id`` to the
-store, not ``session.chat_id``.
+as a session key** — pass ``session.uid`` to the
+store, not ``session.tgid``.
 """
 
 from __future__ import annotations
@@ -92,12 +92,12 @@ class SessionStore:
     """SQLite-backed session storage (D.18+).
 
     Pre-D.18 this was JSON files under ``<workspace>/memories/
-    sessions/<chat_id>/<sid>.json``. The class kept the same
+    sessions/<tgid>/<sid>.json``. The class kept the same
     public method signatures so the ~30 callers (chat.py /
     bot.py / agent.py / auto_title.py / chat_sessions.py) didn't
     need to change; only the bodies switched to ORM queries.
 
-    D.23 changed the public key from chat_id to employee_id —
+    D.23 changed the public key from tgid to uid —
     see the module docstring for the rationale. The breaking
     signature is the same set of methods; only the first
     parameter's name and type changed.
@@ -114,12 +114,20 @@ class SessionStore:
 
     def create(
         self,
-        employee_id: int,
+        uid: int,
         *,
         channel: str = "webui",
-        chat_id: str | None = None,
+        # Default ``"12345"`` preserved for caller-compat with
+        # the pre-D.26 legacy default. New callers should pass
+        # the actual per-channel delivery address (the
+        # operator's bound telegram_id for TG sessions, or an
+        # explicit empty string for WebUI sessions). The
+        # sentinel exists only so that tests + bootstrap
+        # paths that didn't yet thread an explicit value
+        # still produce non-empty rows.
+        tgid: str | None = "12345",
     ) -> Session:
-        """Create a new empty session owned by ``employee_id``.
+        """Create a new empty session owned by ``uid``.
 
         ``channel`` is the caller channel (``"webui"`` / ``"tg"``
         / ``"scheduled"``). The row's ``channel`` column is
@@ -127,7 +135,7 @@ class SessionStore:
         a different channel will be rejected by D.22's
         :class:`ChannelMismatchError`.
 
-        ``chat_id`` is the per-channel delivery address stored
+        ``tgid`` is the per-channel delivery address stored
         on the row's ``tgid`` column. It's optional because
         not every channel has a TG-shaped id:
 
@@ -141,15 +149,15 @@ class SessionStore:
           - scheduled:    pass any stable identifier
             (``"<scheduled>"`` is the convention).
         """
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         session_id = new_session_id()
         now = utcnow_iso()
-        tgid_value = chat_id if chat_id is not None else ""
+        tgid_value = tgid if tgid is not None else ""
         with open_session() as db:
             db.add(ChatSession(
                 session_id=session_id,
                 tgid=tgid_value,
-                employee_id=employee_id,
+                uid=uid,
                 channel=channel,
                 title=None,
                 active_tail_count=20,
@@ -162,15 +170,15 @@ class SessionStore:
             "session created",
             extra={
                 "session_id": session_id,
-                "employee_id": employee_id,
+                "uid": uid,
                 "channel": channel,
                 "tgid": tgid_value,
             },
         )
         return Session(
             session_id=session_id,
-            chat_id=tgid_value,
-            employee_id=employee_id,
+            tgid=tgid_value,
+            uid=uid,
             channel=channel,
             created_at=now,
             updated_at=now,
@@ -181,13 +189,13 @@ class SessionStore:
         )
 
     def find_latest_tg_session(
-        self, employee_id: int,
+        self, uid: int,
     ) -> str | None:
         """Return the session_id of the most-recently-touched
-        TG-owned session for ``employee_id``, or ``None``.
+        TG-owned session for ``uid``, or ``None``.
 
         Used by the TG channel handler to honour the
-        "one TG session per chat_id forever" policy (D.10):
+        "one TG session per tgid forever" policy (D.10):
         when the operator alternates between TG and WebUI,
         the WebUI row is the most recently updated session,
         but the TG handler must still find the most recent
@@ -208,7 +216,7 @@ class SessionStore:
             row = db.execute(
                 select(ChatSession)
                 .where(
-                    ChatSession.employee_id == employee_id,
+                    ChatSession.uid == uid,
                     ChatSession.channel == "tg",
                 )
                 .order_by(ChatSession.updated_at.desc())
@@ -217,15 +225,15 @@ class SessionStore:
         return row.session_id if row is not None else None
 
     def get(
-        self, employee_id: int, session_id: str,
+        self, uid: int, session_id: str,
     ) -> Session | None:
         """Read a session by id. Returns ``None`` if missing.
 
-        The session's ``employee_id`` must match
-        ``employee_id`` — a caller passing the wrong employee
+        The session's ``uid`` must match
+        ``uid`` — a caller passing the wrong employee
         for a known session_id gets ``None`` instead of a
         leak. This is a defense-in-depth check; a row with a
-        different ``employee_id`` is somebody else's history.
+        different ``uid`` is somebody else's history.
 
         The ``messages`` list is the **active** view
         (``archived=0``). Archive rows are loaded into
@@ -234,10 +242,10 @@ class SessionStore:
         second query.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.employee_id != employee_id:
+            if sess_row is None or sess_row.uid != uid:
                 return None
             # Active messages in append-order
             active = [
@@ -250,8 +258,8 @@ class SessionStore:
             ]
             return Session(
                 session_id=sess_row.session_id,
-                chat_id=sess_row.tgid,
-                employee_id=sess_row.employee_id,
+                tgid=sess_row.tgid,
+                uid=sess_row.uid,
                 channel=sess_row.channel,
                 created_at=sess_row.created_at,
                 updated_at=sess_row.updated_at,
@@ -277,7 +285,7 @@ class SessionStore:
 
     def append_messages(
         self,
-        employee_id: int,
+        uid: int,
         session_id: str,
         msgs: Iterable[SessionMessage],
         *,
@@ -291,7 +299,7 @@ class SessionStore:
         ``updated_at`` bump — used by operations that touch
         metadata only.
 
-        ``employee_id`` is the cross-channel session key (D.23);
+        ``uid`` is the cross-channel session key (D.23);
         callers must resolve it from the inbound transport
         (WebUI cookie → admin's ``Employee.id``; TG inbound →
         ``Employee.id`` from ``telegram_id``).
@@ -315,7 +323,7 @@ class SessionStore:
           inbound).
         """
         _validate_session_id(session_id)
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         new_msgs = list(msgs)
         # Validate up-front so a partial append isn\'t possible.
         for i, m in enumerate(new_msgs):
@@ -327,9 +335,9 @@ class SessionStore:
 
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.employee_id != employee_id:
+            if sess_row is None or sess_row.uid != uid:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {employee_id} "
+                    f"session {session_id!r} for employee {uid} "
                     "does not exist"
                 )
             # D.22 channel-ownership guard. Reads
@@ -369,17 +377,17 @@ class SessionStore:
         # this re-read can produce ``None`` — surface that as
         # ``SessionNotFoundError`` so callers don't silently
         # dereference ``.messages`` on a missing row.
-        fresh = self.get(employee_id, session_id)
+        fresh = self.get(uid, session_id)
         if fresh is None:
             raise SessionNotFoundError(
-                f"session {session_id!r} for employee {employee_id} "
+                f"session {session_id!r} for employee {uid} "
                 "vanished between append and re-read"
             )
         return fresh
 
     def rename(
         self,
-        employee_id: int,
+        uid: int,
         session_id: str,
         title: str | None,
         *,
@@ -396,7 +404,7 @@ class SessionStore:
         operator metadata and shouldn\'t reshuffle the sidebar.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         if title is None:
             new_title: str | None = None
         else:
@@ -405,9 +413,9 @@ class SessionStore:
 
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.employee_id != employee_id:
+            if sess_row is None or sess_row.uid != uid:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {employee_id} "
+                    f"session {session_id!r} for employee {uid} "
                     "does not exist"
                 )
             sess_row.title = new_title
@@ -418,21 +426,21 @@ class SessionStore:
             "session renamed",
             extra={
                 "session_id": session_id,
-                "employee_id": employee_id,
+                "uid": uid,
                 "title_set": new_title is not None,
             },
         )
-        fresh = self.get(employee_id, session_id)
+        fresh = self.get(uid, session_id)
         if fresh is None:
             raise SessionNotFoundError(
-                f"session {session_id!r} for employee {employee_id} "
+                f"session {session_id!r} for employee {uid} "
                 "vanished between rename and re-read"
             )
         return fresh
 
     def set_title_if_null(
         self,
-        employee_id: int,
+        uid: int,
         session_id: str,
         title: str,
         *,
@@ -461,7 +469,7 @@ class SessionStore:
                 update(ChatSession)
                 .where(
                     ChatSession.session_id == session_id,
-                    ChatSession.employee_id == employee_id,
+                    ChatSession.uid == uid,
                     ChatSession.title.is_(None),
                 )
                 .values(
@@ -476,10 +484,10 @@ class SessionStore:
                 # already set by someone else — caller treats
                 # both as "lost the race".
                 return None
-            fresh = self.get(employee_id, session_id)
+            fresh = self.get(uid, session_id)
             if fresh is None:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {employee_id} "
+                    f"session {session_id!r} for employee {uid} "
                     "vanished between conditional UPDATE and re-read"
                 )
             return fresh
@@ -569,15 +577,15 @@ class SessionStore:
         # re-read can produce ``None`` — surface that as
         # ``SessionNotFoundError`` so callers don't
         # dereference ``.messages`` on a missing row.
-        fresh = self.get(session.employee_id, session.session_id)
+        fresh = self.get(session.uid, session.session_id)
         if fresh is None:
             raise SessionNotFoundError(
                 f"session {session.session_id!r} for employee "
-                f"{session.employee_id} vanished between write and re-read"
+                f"{session.uid} vanished between write and re-read"
             )
         return fresh
 
-    def delete(self, employee_id: int, session_id: str) -> bool:
+    def delete(self, uid: int, session_id: str) -> bool:
         """Remove a session. ``True`` if it existed.
 
         Idempotent: deleting a non-existent session is a
@@ -585,10 +593,10 @@ class SessionStore:
         support undo.
         """
         _validate_session_id(session_id)
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.employee_id != employee_id:
+            if sess_row is None or sess_row.uid != uid:
                 return False
             # CASCADE on the FK cleans up the message rows
             # automatically. The FTS sync triggers fire per
@@ -597,20 +605,20 @@ class SessionStore:
             db.commit()
         logger.info(
             "session deleted",
-            extra={"session_id": session_id, "employee_id": employee_id},
+            extra={"session_id": session_id, "uid": uid},
         )
         return True
 
     def list_summaries(
         self,
-        employee_id: int,
+        uid: int,
         *,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SessionSummary], int]:
         """Return ``(summaries, total)`` for the employee.
 
-        Scoped by ``employee_id`` (D.23) so the WebUI sidebar
+        Scoped by ``uid`` (D.23) so the WebUI sidebar
         shows every session the operator owns — webui, TG, and
         (in future) any other channel. Channel is surfaced via
         :attr:`SessionSummaryOut.channel` (see
@@ -626,7 +634,7 @@ class SessionStore:
             # Header rows (newest first by updated_at).
             headers = db.execute(
                 select(ChatSession)
-                .where(ChatSession.employee_id == employee_id)
+                .where(ChatSession.uid == uid)
                 .order_by(ChatSession.updated_at.desc())
             ).scalars().all()
             total = len(headers)
@@ -701,7 +709,7 @@ class SessionStore:
 
     def get_messages_page(
         self,
-        employee_id: int,
+        uid: int,
         session_id: str,
         *,
         limit: int = 50,
@@ -721,11 +729,11 @@ class SessionStore:
         """
         from sqlalchemy import func, select
 
-        _validate_employee_id(employee_id)
+        _validate_employee_id(uid)
         _validate_session_id(session_id)
         with open_session() as db:
             sess_row = db.get(ChatSession, session_id)
-            if sess_row is None or sess_row.employee_id != employee_id:
+            if sess_row is None or sess_row.uid != uid:
                 return [], 0, 0
 
             # Totals — separate active / all so the UI can

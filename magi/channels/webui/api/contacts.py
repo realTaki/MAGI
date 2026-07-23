@@ -189,7 +189,7 @@ def list_contacts(
 
     Auth is doubled: ``AdminGate`` proves the cookie is a
     live admin session, and ``_current_admin_id`` re-reads
-    the cookie to get the int ``employee_id`` that scopes
+    the cookie to get the int ``uid`` that scopes
     the query. The defensive re-check mirrors
     :func:`magi.channels.webui.api.action_items.list_action_items`
     — the cookie is the only thing standing between the

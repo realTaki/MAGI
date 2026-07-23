@@ -31,8 +31,8 @@ def _ctx(workspace_root: Path) -> ToolContext:
     return ToolContext(
         state_dir="ignored",
         workspace=workspace_root,
-        chat_id="0",
-        employee_id=0,
+        
+        uid=0,
         channel="webui",
     )
 

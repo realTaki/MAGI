@@ -7,7 +7,7 @@ Three surfaces pinned:
     ``list_action_item``.
     ``employee`` and ``guest`` get ``is_error=True``.
   - Per-employee privacy: ``list_action_item`` and
-    ``complete_action_item`` only see rows whose ``employee_id``
+    ``complete_action_item`` only see rows whose ``uid``
     matches the calling operator's. Operator A querying
     by id = N where N belongs to operator B gets a
     "not found / not owned" error rather than any data
@@ -87,8 +87,7 @@ def _ctx(state: Path, employee: Employee) -> ToolContext:
     return ToolContext(
         state_dir=str(state),
         workspace=state.parent,
-        chat_id=str(employee.telegram_id),
-        employee_id=employee.id,
+        uid=employee.id,
         channel="webui",
     )
 
@@ -108,7 +107,7 @@ async def test_add_action_item_creates_row_for_admin(fresh_db, seed_employees):
     assert res.is_error is False
     body = _parse(res.content)
     row = body["created"]
-    assert row["employee_id"] == alice.id
+    assert row["uid"] == alice.id
     assert row["title"] == "follow up with Lily"
     # Per-row unique kind suffix (see AddActionItemTool for the
     # rationale around the partial unique index).
@@ -130,7 +129,7 @@ async def test_add_action_item_creates_row_for_assigned(fresh_db, seed_employees
     res = await tool.run(_ctx(fresh_db, bob), title="bob's reminder")
     assert res.is_error is False
     body = _parse(res.content)
-    assert body["created"]["employee_id"] == bob.id
+    assert body["created"]["uid"] == bob.id
 
 
 @pytest.mark.asyncio

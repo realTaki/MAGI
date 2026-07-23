@@ -31,7 +31,7 @@ class SessionCorruptError(SessionError):
 
 
 class SessionPathError(SessionError):
-    """The provided identifier (chat_id or session_id) is not safe.
+    """The provided identifier (tgid or session_id) is not safe.
 
     Pre-D.18 this meant "would escape the file path"; with the
     move to SQLite the same regex guards against accidental

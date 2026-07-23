@@ -3,7 +3,7 @@
 Three surfaces pinned:
 
   1. **Hit + scoping** — a trigram-substring query that
-     matches a message returns a hit, with chat_id scope
+     matches a message returns a hit, with tgid scope
      enforced at the SQL join (a second admin's rows are
      invisible).
   2. **CJK friendly** — a 3-char Chinese substring query
@@ -13,7 +13,7 @@ Three surfaces pinned:
      returns 200 instead of 500.
 
 Plus the auth gate (401 without the admin cookie) and the
-chat_id cookie binding (the same cookie can't see another
+tgid cookie binding (the same cookie can't see another
 chat's rows).
 """
 
@@ -62,7 +62,7 @@ def search_env(monkeypatch, tmp_path):
     return state
 
 
-def _seed_chat_message(chat_id: str, text: str) -> str:
+def _seed_chat_message(tgid: str, text: str) -> str:
     """Unused; tests use the ``seed_messages`` fixture below.
     Kept as a placeholder so a future caller can hit it
     without a fixture (would need to be plumbed via the
@@ -79,16 +79,16 @@ def seed_messages(search_env):
 
     counter = {"n": 0}
 
-    def _seed(chat_id: str, text: str, *, employee_id: int = 1) -> str:
+    def _seed(tgid: str, text: str, *, uid: int = 1) -> str:
         # Each seeded message gets a fresh message_id so the
         # (session_id, message_id) UNIQUE constraint doesn't
         # reject the second seed in the same session.
         counter["n"] += 1
-        msg_id = f"m{chat_id}-{counter['n']:04d}"
+        msg_id = f"m{tgid}-{counter['n']:04d}"
         store = SessionStore(str(search_env))
-        # D.23: first arg is employee_id, chat_id is the
+        # D.23: first arg is uid, tgid is the
         # per-channel delivery address stamped on the row.
-        sess = store.create(employee_id, chat_id=chat_id)
+        sess = store.create(uid, )
         with open_session() as db:
             db.add(ChatMessage(
                 session_id=sess.session_id,
@@ -201,7 +201,7 @@ def test_search_too_short_chinese_returns_zero(client, seed_messages):
 
 
 # ────────────────────────────────────────────────────────────────── #
-# chat_id scoping
+# tgid scoping
 # ────────────────────────────────────────────────────────────────── #
 
 
@@ -210,40 +210,40 @@ def test_search_scoped_to_caller_employee(client, search_env, seed_messages):
     even though both are in the same SQLite DB.
 
     Scope is the calling Employee row (D.18+1 cross-platform
-    scope: ``WHERE chat_sessions.employee_id = :emp``). We
-    seed for admin A (employee_id=1) and admin B
-    (employee_id=2) using the same ``tgid`` so the scope
+    scope: ``WHERE chat_sessions.uid = :emp``). We
+    seed for admin A (uid=1) and admin B
+    (uid=2) using the same ``tgid`` so the scope
     is what discriminates — not the chat identifier.
     """
-    seed_messages("9001", "alpha unique-token-xyz alpha", employee_id=1)
-    seed_messages("9001", "beta  unique-token-xyz beta",  employee_id=2)
+    seed_messages("9001", "alpha unique-token-xyz alpha", uid=1)
+    seed_messages("9001", "beta  unique-token-xyz beta",  uid=2)
 
     r = client.get("/api/chat/search?q=unique-token-xyz")
     assert r.status_code == 200
     body = r.json()
     # Only admin A's row appears.
     assert body["total"] == 1
-    assert body["employee_id"] == 1
+    assert body["uid"] == 1
 
 
 def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
-    """The same query, signed in as admin B (employee_id=2),
+    """The same query, signed in as admin B (uid=2),
     returns admin B's row only (not admin A's)."""
-    seed_messages("9001", "alpha shared-key-123 alpha", employee_id=1)
-    seed_messages("9001", "beta  shared-key-123 beta",  employee_id=2)
+    seed_messages("9001", "alpha shared-key-123 alpha", uid=1)
+    seed_messages("9001", "beta  shared-key-123 beta",  uid=2)
 
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
 
     c = TestClient(create_app())
-    # D.24: cookie is the employee_id. Admin B is the
+    # D.24: cookie is the uid. Admin B is the
     # second seeded employee → id=2.
     c.cookies.set("magi_session", "2")
     r = c.get("/api/chat/search?q=shared-key-123")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 1
-    assert body["employee_id"] == 2
+    assert body["uid"] == 2
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -288,7 +288,7 @@ def test_search_response_shape(client, seed_messages):
     r = client.get("/api/chat/search?q=compression")
     body = r.json()
     assert body["q"] == "compression"
-    assert body["employee_id"] == 1
+    assert body["uid"] == 1
     assert body["limit"] == 20
     assert body["offset"] == 0
     item = body["items"][0]

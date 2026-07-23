@@ -18,7 +18,7 @@ gain a ``conversation_id`` arg without breaking callers.
 Persistence side: ``handle_message`` records one row per
 successful LLM call in the ``token_usage`` table (D.15).
 Session history lives in JSON files under
-``<workspace>/memories/sessions/<chat_id>/<sid>.json``
+``<workspace>/memories/sessions/<tgid>/<sid>.json``
 (D.6). No separate audit log — operator-facing
 ``/api/employees/{id}/token-usage`` + ``GET
 /api/chat/sessions/{id}`` cover the same questions
@@ -121,7 +121,7 @@ def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
 
 def _build_messages_from_session(
     state_dir: str,
-    employee_id: int,
+    uid: int,
     session_id: str | None,
     new_user_text: str,
 ) -> tuple[list["ChatMessage"], set[str]]:
@@ -135,8 +135,8 @@ def _build_messages_from_session(
     intentionally NOT read; it's the forensic record and
     the LLM never sees it.
 
-    D.23: ``employee_id`` is the cross-channel session
-    key. The previous ``chat_id`` argument is gone — the
+    D.23: ``uid`` is the cross-channel session
+    key. The previous ``tgid`` argument is gone — the
     session is identified by who owns it, not by which
     channel they happened to be on.
     """
@@ -144,7 +144,7 @@ def _build_messages_from_session(
         # No session: the inbound is its own message; no
         # history to track.
         return [ChatMessage(role="user", content=new_user_text)], set()
-    sess = SessionStore(state_dir).get(employee_id, session_id)
+    sess = SessionStore(state_dir).get(uid, session_id)
     if sess is None:
         return [ChatMessage(role="user", content=new_user_text)], set()
     out: list["ChatMessage"] = []
@@ -163,7 +163,7 @@ def _build_messages_from_session(
 
 def _drain_pending_user_messages(
     state_dir: str,
-    employee_id: int,
+    uid: int,
     session_id: str | None,
     messages: list["ChatMessage"],
     seen_message_ids: set[str],
@@ -206,12 +206,12 @@ def _drain_pending_user_messages(
     if not session_id:
         return False
     try:
-        sess = SessionStore(state_dir).get(employee_id, session_id)
+        sess = SessionStore(state_dir).get(uid, session_id)
     except Exception:
         logger.exception(
             "agent: store read failed during interrupt poll "
             "(employee=%s, session=%s); continuing without drain",
-            employee_id, session_id,
+            uid, session_id,
         )
         return False
     if sess is None:
@@ -240,7 +240,7 @@ def _drain_pending_user_messages(
     logger.info(
         "agent.interrupt: spliced %d new user message(s) into "
         "in-flight loop (employee=%s, session=%s)",
-        len(new_user_texts), employee_id, session_id,
+        len(new_user_texts), uid, session_id,
     )
     return True
 
@@ -271,19 +271,14 @@ async def handle_message(
     *,
     text: str,
     channel: str,
-    employee_id: int | None = None,
+    uid: int | None = None,
     # D.6: optional session id. Persisted alongside the
     # message in the session JSON file
-    # (``<workspace>/memories/sessions/<chat_id>/<id>.json``);
+    # (``<workspace>/memories/sessions/<tgid>/<id>.json``);
     # v0 also echoes it into the ``token_usage`` row so the
     # audit-style question "which session burned these
     # tokens?" can be answered later.
     session_id: str | None = None,
-    # D.16: chat_id is needed by the tool context (the
-    # ``send_message`` tool uses it as the TG target). The
-    # WebUI cookie is a stringified int; TG passes its
-    # ``effective_chat.id`` as a string too.
-    chat_id: str = "",
     # Per-employee credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
     # call can be billed to a specific employee. Both must be
@@ -344,19 +339,19 @@ async def handle_message(
     channel
         Tag for the ``token_usage`` row (``"tg"`` / ``"webui"`` /
         ``"scheduled"``). Free-form string; no enum yet.
-    employee_id
+    uid
         Optional employee id, for the ``token_usage`` row.
         ``None`` is accepted (FK NOT NULL on the SQL column
         will surface any caller that drops the ball), but
         v0 never sends ``None`` — both channel paths
-        resolve ``chat_id`` → ``Employee`` before this
+        resolve ``tgid`` → ``Employee`` before this
         function runs.
     session_id
         D.6: optional chat session id. Echoed into the
         ``token_usage`` row so the question "which session
         burned these tokens?" can be answered later by
         joining against the session JSON files under
-        ``<workspace>/memories/sessions/<chat_id>/<id>.json``.
+        ``<workspace>/memories/sessions/<tgid>/<id>.json``.
     employee_provider / employee_api_key / employee_model
         Per-call LLM credentials. Either all three are set
         (employee chooses model optionally) or the call is
@@ -381,7 +376,7 @@ async def handle_message(
         )
         logger.warning(
             "chat rejected (employee=%s channel=%s): %s",
-            employee_id, channel, reason,
+            uid, channel, reason,
         )
         return _fallback_reply("agent_no_credentials")
 
@@ -417,8 +412,7 @@ async def handle_message(
     tool_ctx = ToolContext(
         state_dir=state_dir,
         workspace=workspace,
-        chat_id=chat_id,
-        employee_id=employee_id if employee_id is not None else 0,
+        uid=uid if uid is not None else 0,
         channel=channel,
         # Populate ``session_id`` so tools (notably
         # ``schedule_task``) can default ``delivery_to`` to
@@ -439,7 +433,7 @@ async def handle_message(
         # return fallback, no exception to the caller.
         logger.warning(
             "agent: get_provider failed (employee=%s provider=%s): %s",
-            employee_id, provider_name, e,
+            uid, provider_name, e,
         )
         return _fallback_reply()
 
@@ -453,7 +447,7 @@ async def handle_message(
     # them. ``archive`` is NOT included — it's the forensic
     # record only.
     messages, seen_message_ids = _build_messages_from_session(
-        state_dir, employee_id, session_id, text,
+        state_dir, uid, session_id, text,
     )
 
     final_text = ""
@@ -481,7 +475,7 @@ async def handle_message(
             # to the new input rather than dying on the budget
             # of the previous turn.
             if _drain_pending_user_messages(
-                state_dir, employee_id, session_id,
+                state_dir, uid, session_id,
                 messages, seen_message_ids,
             ):
                 iterations_run = 0
@@ -497,7 +491,7 @@ async def handle_message(
             # history.
             await maybe_compact(
                 state_dir,
-                employee_id,
+                uid,
                 session_id,
                 messages,
                 employee_provider=employee_provider or "",
@@ -518,8 +512,7 @@ async def handle_message(
                 # without a restart.
                 system=build_system_prompt(
                     state_dir,
-                    employee_id=employee_id,
-                    chat_id=chat_id,
+                    uid=uid,
                     soul=soul,
                 ),
                 messages=messages,
@@ -578,7 +571,7 @@ async def handle_message(
                 except Exception as e:
                     logger.exception(
                         "agent: tool %s crashed (employee=%s, "
-                        "chat=%s)", tu["name"], employee_id, chat_id,
+                        "chat=%s)", tu["name"], uid, tgid,
                     )
                     tr_content = f"tool {tu['name']!r} crashed: {e}"
                     tool_results.append({
@@ -618,12 +611,12 @@ async def handle_message(
             logger.warning(
                 "agent: tool loop hit max_iter=%d for chat=%s "
                 "(employee=%s); model still wanted tools",
-                max_iter, chat_id, employee_id,
+                max_iter, tgid, uid,
             )
     except LLMError as e:
         logger.warning(
             "llm call failed (employee=%s provider=%s): %s",
-            employee_id, provider_name, e,
+            uid, provider_name, e,
         )
         return _fallback_reply()
 
@@ -635,7 +628,7 @@ async def handle_message(
     try:
         record_token_usage(
             state_dir,
-            employee_id=employee_id,
+            uid=uid,
             channel=channel,
             provider=provider.name,
             model=result.model,
@@ -645,12 +638,12 @@ async def handle_message(
         logger.exception(
             "agent: token_usage insert failed (employee=%s, "
             "channel=%s); chat reply already succeeded",
-            employee_id, channel,
+            uid, channel,
         )
     logger.info(
         "llm reply",
         extra={
-            "employee_id": employee_id,
+            "uid": uid,
             "channel": channel,
             "provider": provider.name,
             "model": result.model,

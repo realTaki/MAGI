@@ -119,7 +119,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     row_kwargs.setdefault("updated_at", "2026-07-20T12:00:00Z")
 
     with open_session() as db:
-        if "employee_id" not in row_kwargs:
+        if "uid" not in row_kwargs:
             emp = db.query(Employee).first()
             if emp is None:
                 emp = Employee(
@@ -132,7 +132,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
                 db.add(emp)
                 db.commit()
                 db.refresh(emp)
-            row_kwargs["employee_id"] = emp.id
+            row_kwargs["uid"] = emp.id
         row = Task(
             id=task_id,
             name=name,
@@ -251,8 +251,8 @@ async def test_schedule_task_tool_once_writes_run_at_row(
     ctx = ToolContext(
         state_dir=str(state_db),
         workspace=state_db.parent,
-        chat_id="0",
-        employee_id=1,
+        
+        uid=1,
         channel="webui",
     )
     res = await ScheduleTaskTool().run(
@@ -304,8 +304,8 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     ctx = ToolContext(
         state_dir=str(state_db),
         workspace=state_db.parent,
-        chat_id="0",
-        employee_id=1,
+        
+        uid=1,
         channel="webui",
     )
     res = await ScheduleTaskTool().run(

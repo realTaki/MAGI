@@ -1,6 +1,6 @@
 """One-shot JSON → SQLite migration (D.18).
 
-Walks ``<workspace>/memories/sessions/<chat_id>/<sid>.json``,
+Walks ``<workspace>/memories/sessions/<tgid>/<sid>.json``,
 parses each file, inserts rows into the SQLite tables, and
 deletes the JSON after the row\'s transaction commits.
 Idempotent via ``INSERT OR IGNORE`` on the
@@ -32,7 +32,7 @@ _SESSIONS_SUBDIR = "sessions"
 
 
 def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
-    """Walk the legacy ``sessions/<chat_id>/<sid>.json`` tree
+    """Walk the legacy ``sessions/<tgid>/<sid>.json`` tree
     and import each file into SQLite.
 
     Returns a small stats dict: ``{"imported": N, "skipped":
@@ -50,11 +50,11 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
     for chat_dir in sorted(sessions_root.iterdir()):
         if not chat_dir.is_dir():
             continue
-        chat_id = chat_dir.name
-        # Validate chat_id; the dir name is filesystem-supplied
+        tgid = chat_dir.name
+        # Validate tgid; the dir name is filesystem-supplied
         # so a corrupted workspace could have anything in here.
         try:
-            _validate_chat_id(chat_id)
+            _validate_chat_id(tgid)
         except ValueError as e:
             logger.warning(
                 "migrate_from_json: skipping chat dir %s (%s)",
@@ -86,8 +86,8 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
                         ChatSession.__table__.insert().prefix_with("OR IGNORE"),
                         {
                             "session_id": sess.session_id,
-                            "tgid": sess.chat_id,  # column rename D.18+1
-                            "employee_id": sess.employee_id,
+                            "tgid": sess.tgid,  # column rename D.18+1
+                            "uid": sess.uid,
                             "channel": sess.channel,
                             "title": sess.title,
                             "active_tail_count": sess.active_tail_count,

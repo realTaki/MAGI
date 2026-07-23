@@ -32,8 +32,8 @@ import pytest
 @pytest.fixture
 def token_env(monkeypatch, tmp_path):
     """Per-test isolated state dir + workspace. Initializes
-    the SQL DB and seeds one admin (chat_id 9001) + one
-    target employee (chat_id 9002). Also resets the
+    the SQL DB and seeds one admin (tgid 9001) + one
+    target employee (tgid 9002). Also resets the
     SQLAlchemy engine singleton so each test gets a fresh
     engine pointing at this test's tmp_path — without
     this, the first test's engine is reused and writes
@@ -112,7 +112,7 @@ def test_record_token_usage_happy_path(token_env):
 
     record_token_usage(
         str(token_env[0]),
-        employee_id=1,
+        uid=1,
         channel="webui",
         provider="minimax-cn",
         model="MiniMax-M2.7",
@@ -128,7 +128,7 @@ def test_record_token_usage_happy_path(token_env):
         rows = s.query(TokenUsage).all()
     assert len(rows) == 1
     r = rows[0]
-    assert r.employee_id == 1
+    assert r.uid == 1
     assert r.channel == "webui"
     assert r.provider == "minimax-cn"
     assert r.model == "MiniMax-M2.7"
@@ -150,7 +150,7 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
 
     record_token_usage(
         str(token_env[0]),
-        employee_id=2,
+        uid=2,
         channel="tg",
         provider="minimax-cn",
         model=None,
@@ -176,7 +176,7 @@ def test_record_token_usage_partial_dict(token_env):
 
     record_token_usage(
         str(token_env[0]),
-        employee_id=1,
+        uid=1,
         channel="webui",
         provider="minimax-cn",
         model="MiniMax-M2.7",
@@ -280,7 +280,7 @@ def test_timezone_get_requires_admin(token_env):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def _insert_usage(state_dir, *, employee_id, when_utc, in_t, out_t, channel="webui"):
+def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
     """Helper: directly write a token_usage row at a
     specific UTC timestamp. Bypasses ``agent._record_token_usage``
     so tests can place rows in the past (the helper uses
@@ -289,7 +289,7 @@ def _insert_usage(state_dir, *, employee_id, when_utc, in_t, out_t, channel="web
 
     with open_session() as s:
         s.add(TokenUsage(
-            employee_id=employee_id,
+            uid=uid,
             channel=channel,
             provider="minimax-cn",
             model="MiniMax-M2.7",
@@ -310,7 +310,7 @@ def test_token_usage_returns_three_periods(token_env, client):
     r = client.get("/api/employees/2/token-usage")
     assert r.status_code == 200
     data = r.json()
-    assert data["employee_id"] == 2
+    assert data["uid"] == 2
     assert set(data["week"].keys()) >= {
         "input_tokens", "output_tokens", "call_count",
         "period_start", "period_end",
@@ -349,8 +349,8 @@ def test_token_usage_aggregates_three_rows(token_env, client):
     """
     state_dir = token_env[0]
     now = datetime.utcnow()
-    _insert_usage(state_dir, employee_id=2, when_utc=now, in_t=10, out_t=5)
-    _insert_usage(state_dir, employee_id=2, when_utc=now - timedelta(hours=1), in_t=20, out_t=10)
+    _insert_usage(state_dir, uid=2, when_utc=now, in_t=10, out_t=5)
+    _insert_usage(state_dir, uid=2, when_utc=now - timedelta(hours=1), in_t=20, out_t=10)
     # 9 days back: outside this week (Mon 00:00 UTC),
     # inside this month (any day ≥ 10th of the month).
     # To keep the test independent of the current
@@ -359,7 +359,7 @@ def test_token_usage_aggregates_three_rows(token_env, client):
     # at least >= 3 (rows may fall in the previous month
     # if the test happens to run on the first week of the
     # month — that's fine, total is always 3).
-    _insert_usage(state_dir, employee_id=2, when_utc=now - timedelta(days=8), in_t=30, out_t=15)
+    _insert_usage(state_dir, uid=2, when_utc=now - timedelta(days=8), in_t=30, out_t=15)
 
     r = client.get("/api/employees/2/token-usage")
     data = r.json()
@@ -405,7 +405,7 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     # further).
     state_dir = token_env[0]
     now = datetime.utcnow()
-    _insert_usage(state_dir, employee_id=2, when_utc=now - timedelta(hours=18), in_t=99, out_t=11)
+    _insert_usage(state_dir, uid=2, when_utc=now - timedelta(hours=18), in_t=99, out_t=11)
 
     r = client.get("/api/employees/2/token-usage")
     data = r.json()
@@ -423,8 +423,8 @@ def test_token_usage_separates_per_employee(token_env, client):
     only its own."""
     state_dir = token_env[0]
     now = datetime.utcnow()
-    _insert_usage(state_dir, employee_id=1, when_utc=now, in_t=100, out_t=50)
-    _insert_usage(state_dir, employee_id=2, when_utc=now, in_t=10, out_t=5)
+    _insert_usage(state_dir, uid=1, when_utc=now, in_t=100, out_t=50)
+    _insert_usage(state_dir, uid=2, when_utc=now, in_t=10, out_t=5)
 
     r1 = client.get("/api/employees/1/token-usage").json()
     r2 = client.get("/api/employees/2/token-usage").json()

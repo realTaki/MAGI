@@ -109,7 +109,7 @@ type TaskRow = {
   delivery_to: string | null;
   tz: string;
   channel: "webui" | "tg";
-  employee_id: number;
+  uid: number;
   enabled: boolean;
   consecutive_failures: number;
   last_run_at: string | null;

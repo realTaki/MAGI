@@ -48,7 +48,7 @@ logger = logging.getLogger("magi.agent.compaction")
 
 async def maybe_compact(
     state_dir: str,
-    employee_id: int,
+    uid: int,
     session_id: str | None,
     messages: list["ChatMessage"],
     *,
@@ -127,7 +127,7 @@ async def maybe_compact(
     # summary to active, update active_tail_count and
     # last_compaction_at. Atomic write via _write().
     store = SessionStore(state_dir)
-    sess = store.get(employee_id, session_id)
+    sess = store.get(uid, session_id)
     if sess is None:
         return  # session disappeared mid-call; skip
     sess.archive.extend(chat_to_session_message(m) for m in to_archive)
@@ -222,11 +222,11 @@ def chat_to_session_message(m: "ChatMessage") -> SessionMessage:
 
 
 def _employee_id_for_log(state_dir: str) -> int | None:
-    """Best-effort employee_id for log lines from the
+    """Best-effort uid for log lines from the
     compact helper. Reads the cookie-side admin gate is
     not available here (we're inside the agent loop, not
     the API layer), so this just returns None; the
-    caller has access to employee_id directly and prefers
+    caller has access to uid directly and prefers
     passing it. We keep the symbol so the failure-path
     log line in :func:`call_llm_for_summary` doesn't
     ``NameError``.

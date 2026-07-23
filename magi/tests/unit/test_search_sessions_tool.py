@@ -6,7 +6,7 @@ Pins three surfaces:
      block with header + surrounding context (the
      ``context_n`` parameter).
   2. **Cross-platform scope** — the tool scopes by the
-     calling ``ctx.employee_id``, so an operator with
+     calling ``ctx.uid``, so an operator with
      sessions across multiple channels sees all of them
      (WebUI + TG + future IMs).
   3. **Validation** — bad ``q`` / bad ``context_n`` returns
@@ -55,8 +55,8 @@ def fresh_db(monkeypatch, tmp_path):
 def _seed(
     state_dir: Path,
     *,
-    chat_id: str,
-    employee_id: int,
+    tgid: str,
+    uid: int,
     channel: str,
     messages: list[tuple[str, str]],
 ) -> str:
@@ -70,11 +70,11 @@ def _seed(
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     store = SessionStore(str(state_dir))
-    # D.23: store key is employee_id (int); the chat_id arg
+    # D.23: store key is uid (int); the tgid arg
     # is the per-channel delivery address stamped on the
     # row's tgid column.
     sess = store.create(
-        employee_id, chat_id=chat_id, channel=channel,
+        uid, tgid=tgid, channel=channel,
     )
     msgs = [
         SessionMessage(
@@ -83,18 +83,20 @@ def _seed(
         )
         for role, text in messages
     ]
-    store.append_messages(employee_id, sess.session_id, msgs)
+    store.append_messages(uid, sess.session_id, msgs)
     return sess.session_id
 
 
-def _ctx(state_dir: Path, *, chat_id: str, employee_id: int) -> ToolContext:
+def _ctx(state_dir: Path, *, tgid: str, uid: int) -> ToolContext:
     """Build a ToolContext that points at ``state_dir`` and
-    scopes to ``(chat_id, employee_id)``."""
+    scopes to the calling ``uid``. ``tgid`` is part of the
+    signature for parity with ``_seed`` but is no longer on
+    :class:`ToolContext` (D.26 dropped ``chat_id``; per-channel
+    delivery now reads ``chat_sessions.tgid`` directly)."""
     return ToolContext(
         state_dir=str(state_dir),
         workspace=state_dir,  # not used by the tool
-        chat_id=chat_id,
-        employee_id=employee_id,
+        uid=uid,
         channel="webui",
     )
 
@@ -111,8 +113,8 @@ async def test_search_sessions_returns_hit_with_context(fresh_db):
     state, _workspace = fresh_db
     sid = _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[
             ("user",      "alpha"),
@@ -126,7 +128,7 @@ async def test_search_sessions_returns_hit_with_context(fresh_db):
     )
 
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
     result = await tool.run(ctx, q="xyz-marker")
 
     assert not result.is_error
@@ -151,8 +153,8 @@ async def test_search_sessions_context_n_controls_window(fresh_db):
     state, _workspace = fresh_db
     _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[
             ("user",      "msg A"),
@@ -167,7 +169,7 @@ async def test_search_sessions_context_n_controls_window(fresh_db):
 
     # context_n=1 → at most ±1 surrounding message.
     out_1 = await tool.run(
-        _ctx(state, chat_id="9001", employee_id=1),
+        _ctx(state, tgid="9001", uid=1),
         q="unique-token-xyz", context_n=1,
     )
     assert not out_1.is_error
@@ -188,8 +190,8 @@ async def test_search_sessions_context_n_zero_returns_snippet_only(fresh_db):
     state, _workspace = fresh_db
     _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[
             ("user",      "before the hit"),
@@ -200,7 +202,7 @@ async def test_search_sessions_context_n_zero_returns_snippet_only(fresh_db):
 
     tool = SearchSessionsTool()
     out = await tool.run(
-        _ctx(state, chat_id="9001", employee_id=1),
+        _ctx(state, tgid="9001", uid=1),
         q="unique-token", context_n=0,
     )
     assert not out.is_error
@@ -217,14 +219,14 @@ async def test_search_sessions_no_match_returns_clean_message(fresh_db):
     state, _workspace = fresh_db
     _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[("user", "nothing matches here")],
     )
     tool = SearchSessionsTool()
     out = await tool.run(
-        _ctx(state, chat_id="9001", employee_id=1),
+        _ctx(state, tgid="9001", uid=1),
         q="never-gonna-find-this",
     )
     assert not out.is_error
@@ -238,7 +240,7 @@ async def test_search_sessions_no_match_returns_clean_message(fresh_db):
 
 @pytest.mark.asyncio
 async def test_search_sessions_cross_platform_employee_scope(fresh_db):
-    """Scope is ``employee_id``, not ``chat_id``. An operator
+    """Scope is ``uid``, not ``tgid``. An operator
     who has both a webui and a TG session under the same
     employee row sees hits from BOTH in a single search.
     """
@@ -246,16 +248,16 @@ async def test_search_sessions_cross_platform_employee_scope(fresh_db):
     # WebUI session under employee 1, tgid "9001".
     sid_webui = _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[("user", "webui unique-token-cross alpha")],
     )
     # TG session under employee 1, tgid "9876543210".
     sid_tg = _seed(
         state,
-        chat_id="9876543210",
-        employee_id=1,
+        tgid="9876543210",
+        uid=1,
         channel="tg",
         messages=[("user", "tg unique-token-cross beta")],
     )
@@ -263,14 +265,14 @@ async def test_search_sessions_cross_platform_employee_scope(fresh_db):
     # value should NOT see employee 1's sessions.
     sid_other = _seed(
         state,
-        chat_id="9999",
-        employee_id=2,
+        tgid="9999",
+        uid=2,
         channel="webui",
         messages=[("user", "someone-else's unique-token-cross gamma")],
     )
 
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
     out = await tool.run(ctx, q="unique-token-cross")
 
     assert not out.is_error
@@ -292,21 +294,21 @@ async def test_search_sessions_employee_scope_isolates_other_admins(fresh_db):
     state, _workspace = fresh_db
     sid_alice = _seed(
         state,
-        chat_id="9001",  # alice's telegram_id
-        employee_id=1,   # alice
+        tgid="9001",  # alice's telegram_id
+        uid=1,   # alice
         channel="webui",
         messages=[("user", "alice unique-scope-test alpha")],
     )
     sid_bob = _seed(
         state,
-        chat_id="9001",  # same tgid, different operator
-        employee_id=2,   # bob — same tgid, different employee_id
+        tgid="9001",  # same tgid, different operator
+        uid=2,   # bob — same tgid, different uid
         channel="webui",
         messages=[("user", "bob unique-scope-test beta")],
     )
 
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
     out = await tool.run(ctx, q="unique-scope-test")
 
     assert not out.is_error
@@ -324,7 +326,7 @@ async def test_search_sessions_requires_q(fresh_db):
     """Empty / missing ``q`` → ``is_error=True``."""
     state, _workspace = fresh_db
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
 
     out_empty = await tool.run(ctx, q="")
     assert out_empty.is_error
@@ -340,7 +342,7 @@ async def test_search_sessions_rejects_non_int_context_n(fresh_db):
     non-int upstream, but the tool defends anyway)."""
     state, _workspace = fresh_db
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
     out = await tool.run(ctx, q="anything", context_n="five")
     assert out.is_error
     assert "context_n" in out.content
@@ -353,13 +355,13 @@ async def test_search_sessions_clamps_context_n_to_max(fresh_db):
     state, _workspace = fresh_db
     _seed(
         state,
-        chat_id="9001",
-        employee_id=1,
+        tgid="9001",
+        uid=1,
         channel="webui",
         messages=[("user", "unique-clamp-test")],
     )
     tool = SearchSessionsTool()
-    ctx = _ctx(state, chat_id="9001", employee_id=1)
+    ctx = _ctx(state, tgid="9001", uid=1)
     out = await tool.run(
         ctx, q="unique-clamp-test", context_n=999,
     )
@@ -372,10 +374,13 @@ async def test_search_sessions_clamps_context_n_to_max(fresh_db):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_search_sessions_schema_has_required_fields():
+def test_search_sessions_schema_has_required_fields(tmp_path, monkeypatch):
     """The Anthropic-shaped schema advertises the
     ``q`` + optional ``context_n`` / ``limit`` inputs the
-    LLM is meant to provide."""
+    LLM is meant to provide. ``MAGI_STATE_DIR`` is set so
+    the registry import (which loads the tool loader) does
+    not bounce off the ``_MissingStateDirError`` guard."""
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
     from magi.agent.tools.registry import get_tool_schemas
 
     schemas = {s["name"]: s for s in get_tool_schemas()}
@@ -407,13 +412,13 @@ async def test_search_sessions_no_truncation_omits_footer(fresh_db):
     cap must NOT include the truncation footer."""
     state_dir, _ = fresh_db
     _seed(
-        state_dir, chat_id="9001", employee_id=1, channel="webui",
+        state_dir, tgid="9001", uid=1, channel="webui",
         messages=[
             ("user", "hello world"),
             ("assistant", "hi there"),
         ],
     )
-    ctx = _ctx(state_dir, chat_id="9001", employee_id=1)
+    ctx = _ctx(state_dir, tgid="9001", uid=1)
     result = await SearchSessionsTool().run(
         ctx, q="hello", context_n=2,
     )
@@ -446,7 +451,7 @@ async def test_search_sessions_truncation_footer_counts_correctly(
     n_sessions = 20
     for k in range(n_sessions):
         sess = store.create(
-            1, chat_id="9001", channel="webui",
+            1, tgid="9001", channel="webui",
         )
         marker = f"uniquetoken-{k:04d}"
         # Each session carries 200 padding messages so a
@@ -469,7 +474,7 @@ async def test_search_sessions_truncation_footer_counts_correctly(
         ))
         store.append_messages(1, sess.session_id, padding)
 
-    ctx = _ctx(state_dir, chat_id="9001", employee_id=1)
+    ctx = _ctx(state_dir, tgid="9001", uid=1)
     result = await SearchSessionsTool().run(
         ctx, q="uniquetoken", context_n=200, limit=20,
     )

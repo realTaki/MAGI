@@ -44,7 +44,7 @@ from magi.agent.db.base import Base
 
 # ────────────────────────────────────────────────────────────────── #
 # Chat sessions — D.18: replaces the per-session JSON files under
-# `<workspace>/memories/sessions/<chat_id>/<sid>.json` with two
+# `<workspace>/memories/sessions/<tgid>/<sid>.json` with two
 # rows tables. ``chat_sessions`` is the header; ``chat_messages`` is
 # the active + archived message log, where ``archived=0`` is the
 # LLM-facing "active" view (compressed) and ``archived=1`` is the
@@ -70,15 +70,15 @@ class ChatSession(Base):
     # ``tgid`` is the Telegram chat identifier. For WebUI
     # sessions the value is the admin's telegram_id (the
     # cookie); for TG inbound sessions it's the TG user's
-    # chat_id. The column is specifically the **Telegram**
-    # chat id — not a generic "chat_id" — because future IM
+    # tgid. The column is specifically the **Telegram**
+    # chat id — not a generic "tgid" — because future IM
     # platforms (Slack, WeChat, etc.) will each have their
     # own identifier scheme and we don't want to overload one
     # column with three different semantics. When a non-TG
     # channel lands, the schema will gain a sibling column
     # (e.g. ``slack_chat_id``) or a generic
     # ``(platform, external_id)`` pair; the search scope
-    # stays on ``employee_id`` either way.
+    # stays on ``uid`` either way.
     #
     # Indexed so the per-channel "list my conversations"
     # endpoint (``GET /api/chat/sessions``) is a single
@@ -87,11 +87,11 @@ class ChatSession(Base):
     # The employee operator whose history this row belongs
     # to. This is the search-scope key (D.18+1): an admin
     # searching with the ``search_sessions`` tool sees
-    # every session whose ``employee_id`` matches their
+    # every session whose ``uid`` matches their
     # own — webui, TG, and (in future) any other channel,
     # unified. ``tgid`` is a per-channel row identifier;
-    # ``employee_id`` is the cross-channel identity.
-    employee_id: Mapped[int] = mapped_column(
+    # ``uid`` is the cross-channel identity.
+    uid: Mapped[int] = mapped_column(
         Integer, nullable=False, index=True,
     )
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -105,7 +105,7 @@ class ChatSession(Base):
     last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     # Indexed so ``list_summaries`` ``ORDER BY updated_at DESC`` is
-    # a backward index walk per ``chat_id``.
+    # a backward index walk per ``tgid``.
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
 
     # Read-only back-reference; routes never mutate via this

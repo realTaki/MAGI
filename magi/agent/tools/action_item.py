@@ -5,7 +5,7 @@ Three surfaces pinned:
   - :class:`AddActionItemTool` — record a new action item for
     the calling operator (umbrella term: "todo", "task",
     "记一下", "待办" — all map here) (``kind='llm_action_item_<id>'``,
-    ``source='llm'``, ``employee_id=ctx.employee_id``).
+    ``source='llm'``, ``uid=ctx.uid``).
     Re-calling with the same title creates a *new*
     row — the operator may want two parallel action
     items with similar titles; we don't guess
@@ -76,7 +76,7 @@ _ALLOWED_ROLES = frozenset({"admin", "assigned"})
 # gets a unique per-row suffix (``_<8-hex>``) so multiple
 # open action items per operator don't collide with the
 # partial unique index ``ux_action_items_open_per_kind``
-# (which enforces one OPEN row per ``(employee_id, kind)``
+# (which enforces one OPEN row per ``(uid, kind)``
 # for stable system kinds like ``llm_credentials_missing``).
 # ``list_action_item`` filters by
 # ``kind LIKE 'llm_action_item_%'``.
@@ -140,7 +140,7 @@ def _serialize(item: ActionItem) -> dict[str, Any]:
     the LLM can see."""
     return {
         "id": item.id,
-        "employee_id": item.employee_id,
+        "uid": item.uid,
         "kind": item.kind,
         "title": item.title,
         "description": item.description,
@@ -248,7 +248,7 @@ class AddActionItemTool(Tool):
 
         with open_session() as db:
             item = ActionItem(
-                employee_id=int(ctx.employee_id),
+                uid=int(ctx.uid),
                 # Per-row unique kind so multiple open
                 # action items per operator don't
                 # collide with the partial unique index
@@ -267,7 +267,7 @@ class AddActionItemTool(Tool):
             db.refresh(item)
         logger.info(
             "add_action_item: item %s created for employee=%s title=%r",
-            item.id, ctx.employee_id, title,
+            item.id, ctx.uid, title,
         )
         return _ok({"created": _serialize(item)})
 
@@ -336,7 +336,7 @@ class CompleteActionItemTool(Tool):
         if note is not None and len(note) > 500:
             return _err(f"note is too long ({len(note)} > 500)")
 
-        emp_id = int(ctx.employee_id)
+        emp_id = int(ctx.uid)
         with open_session() as db:
             row = db.get(ActionItem, item_id)
             if row is None:
@@ -349,11 +349,11 @@ class CompleteActionItemTool(Tool):
                     f"action item {item_id} not found or not "
                     f"owned by the calling operator"
                 )
-            if row.employee_id != emp_id:
+            if row.uid != emp_id:
                 logger.warning(
                     "complete_action_item denied: emp=%s tried to "
                     "complete item %s owned by %s",
-                    emp_id, item_id, row.employee_id,
+                    emp_id, item_id, row.uid,
                 )
                 return _err(
                     f"action item {item_id} not found or "
@@ -423,7 +423,7 @@ class ListActionItemTool(Tool):
         if denied is not None:
             return _err(denied)
 
-        emp_id = int(ctx.employee_id)
+        emp_id = int(ctx.uid)
         include_completed = bool(kwargs.get("include_completed"))
 
         with open_session() as db:
@@ -436,7 +436,7 @@ class ListActionItemTool(Tool):
             # unique suffix matches the prefix (see
             # ``AddActionItemTool``).
             stmt = select(ActionItem).where(
-                ActionItem.employee_id == emp_id,
+                ActionItem.uid == emp_id,
                 ActionItem.kind.like(f"{_LLM_ACTION_ITEM_KIND_PREFIX}_%"),
             )
             if not include_completed:

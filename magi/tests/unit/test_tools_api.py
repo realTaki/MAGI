@@ -74,7 +74,7 @@ class _ZebraTool(Tool):
 def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Minimal state_dir + admin Employee for App startup.
 
-    The route's ``AdminGate`` looks up the cookie's chat_id
+    The route's ``AdminGate`` looks up the cookie's tgid
     in the ``employees`` table; we seed one so the gate
     lets the test through.
     """
@@ -351,7 +351,7 @@ def test_tools_response_partitions_by_source(
     # client-side ``source`` groupBy produces two cards.
     assert pairs == [
         ("builtin", "fake__demo"),
-        ("mcp", "github__create_issue"),
+        ("mcp",     "github__create_issue"),
     ]
 
 

@@ -46,8 +46,8 @@ def workspace_ctx(tmp_path, monkeypatch):
     return ToolContext(
         state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
-        chat_id="9001",
-        employee_id=42,
+        
+        uid=42,
         channel="webui",
     )
 

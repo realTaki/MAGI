@@ -107,8 +107,7 @@ def _ctx(state: Path, employee: Employee) -> ToolContext:
     return ToolContext(
         state_dir=str(state),
         workspace=state.parent,
-        chat_id=str(employee.telegram_id),
-        employee_id=employee.id,
+        uid=employee.id,
         channel="webui",
     )
 

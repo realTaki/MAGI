@@ -153,7 +153,7 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
         row = db.get(ChatSession, sid)
     assert row is not None, f"expected session row for {sid}"
     assert row.tgid == str(admin.telegram_id)
-    assert row.employee_id == admin.id
+    assert row.uid == admin.id
 
 
 def test_list_returns_created_session(client, admin):
@@ -179,8 +179,8 @@ def test_get_returns_full_session(client, admin):
     assert r.status_code == 200
     body = r.json()
     assert body["session_id"] == sid
-    assert body["chat_id"] == "9001"
-    assert body["employee_id"] == admin.id
+    assert body["tgid"] == "9001"
+    assert body["uid"] == admin.id
     assert body["channel"] == "webui"
     assert body["messages"] == []
     assert body["schema_version"] == 1
@@ -251,8 +251,8 @@ def test_send_without_session_id_autocreates(client, admin):
         # session_path requires the workspace_root to match.
         # Force-recompute via the global env-var path which
         # is the one SessionStore uses.
-        # D.23: store key is the operator's employee_id,
-        # not the chat_id string the admin cookie carries.
+        # D.23: store key is the operator's uid,
+        # not the tgid string the admin cookie carries.
         s = store.get(admin.id, sid)
         assert s is not None
         # Either one user message (if LLM was hit) or user+assistant
@@ -333,7 +333,7 @@ def test_chat_ids_isolated(client, state):
         s.commit()
 
     # Alice creates two sessions, Bob one.
-    # D.24: cookie is the employee_id. Alice and Bob
+    # D.24: cookie is the uid. Alice and Bob
     # were seeded after the fixture's primary admin
     # (id=1), so they're id=2 and id=3 in
     # auto-increment order.
@@ -367,7 +367,7 @@ def test_chat_ids_isolated(client, state):
     r = client.get(
         f"/api/chat/sessions/{b_sid}", cookies={"magi_session": str(alice_id)}
     )
-    # Either 404 (Alice's chat_id dir doesn't have b_sid file)
+    # Either 404 (Alice's tgid dir doesn't have b_sid file)
     # OR 200 with b's content (if the path overlaps — but with
     # our layout it should be 404). Pin to 404 for the layout
     # invariant.

@@ -76,7 +76,7 @@ def state(tmp_path: Path, monkeypatch) -> Path:
 
 @pytest.fixture
 def admin(state) -> Employee:
-    """Seed an admin whose telegram_id is the WebUI chat_id."""
+    """Seed an admin whose telegram_id is the WebUI tgid."""
     with open_session() as s:
         emp = Employee(
             name="Test Admin",
@@ -92,18 +92,18 @@ def admin(state) -> Employee:
 
 
 def _make_session(
-    state: Path, channel: str, chat_id: str = "9001",
-    employee_id: int = 1,
+    state: Path, channel: str, tgid: str = "9001",
+    uid: int = 1,
 ) -> str:
     """Create a session with the given owner channel.
 
-    D.23: store key is the operator's employee_id; the
-    chat_id argument here is the per-channel delivery
+    D.23: store key is the operator's uid; the
+    tgid argument here is the per-channel delivery
     address stamped on the row's ``tgid`` column.
     """
     store = SessionStore(str(state))
     sess = store.create(
-        employee_id, chat_id=chat_id, channel=channel,
+        uid, channel=channel,
     )
     return sess.session_id
 
@@ -123,7 +123,7 @@ def test_append_with_matching_channel_succeeds(state: Path) -> None:
         role="user", text="hi", ts=utcnow_iso(),
         message_id=new_session_id(),
     )
-    # D.23: store key is employee_id (int).
+    # D.23: store key is uid (int).
     sess = store.append_messages(
         1, sid, [msg], channel="tg",
     )
@@ -289,7 +289,7 @@ def test_webui_send_to_tg_owned_session_is_403(
     was created by TG. The guard short-circuits with
     ``403 chat.session_channel_mismatch`` — the LLM is
     never called."""
-    sid = _make_session(state, "tg", chat_id=str(admin.telegram_id))
+    sid = _make_session(state, "tg", (admin.telegram_id))
 
     r = _post_send(client, admin, "should be rejected", sid)
 
@@ -302,8 +302,8 @@ def test_webui_send_to_tg_owned_session_is_403(
     client._fake_handle.assert_not_called()  # type: ignore[attr-defined]
 
     # The session's history is unchanged.
-    # D.23: store key is employee_id (int), not the
-    # channel's chat_id string.
+    # D.23: store key is uid (int), not the
+    # channel's tgid string.
     sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     user_texts = [m.text for m in sess.messages if m.role == "user"]
@@ -316,7 +316,7 @@ def test_webui_send_to_webui_owned_session_is_200(
     """Positive control: same channel as the session
     owner — the guard doesn't fire, the request
     succeeds."""
-    sid = _make_session(state, "webui", chat_id=str(admin.telegram_id))
+    sid = _make_session(state, "webui", (admin.telegram_id))
 
     r = _post_send(client, admin, "hello", sid)
 
@@ -325,7 +325,7 @@ def test_webui_send_to_webui_owned_session_is_200(
     assert body["reply"] == "never-called"  # from the AsyncMock
 
     # Inbound + outbound both appended.
-    # D.23: store key is employee_id (int).
+    # D.23: store key is uid (int).
     sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     roles = [m.role for m in sess.messages]
@@ -340,7 +340,7 @@ def test_webui_send_to_scheduled_owned_session_is_403(
     """A scheduled-task-owned session is similarly
     protected — only the proactive runner (channel=
     ``"scheduled"``) can append to it."""
-    sid = _make_session(state, "scheduled", chat_id=str(admin.telegram_id))
+    sid = _make_session(state, "scheduled", (admin.telegram_id))
 
     r = _post_send(client, admin, "should be rejected", sid)
 
@@ -357,9 +357,9 @@ def test_webui_list_includes_cross_channel_sessions(
     any channel — the operator can see their TG history
     from the WebUI console even though they can't
     *write* to those sessions there."""
-    tg_sid = _make_session(state, "tg", chat_id=str(admin.telegram_id))
+    tg_sid = _make_session(state, "tg", (admin.telegram_id))
     webui_sid = _make_session(
-        state, "webui", chat_id=str(admin.telegram_id),
+        state, "webui", (admin.telegram_id),
     )
 
     r = client.get(

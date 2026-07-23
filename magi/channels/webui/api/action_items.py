@@ -25,12 +25,12 @@ distinction.
 Helpers
 =======
 
-``_ensure_llm_credentials_item(session, employee_id)`` lives
+``_ensure_llm_credentials_item(session, uid)`` lives
 in this module too so :mod:`onboarding` can call it
 uncommitted (the surrounding ``onboarding/complete`` body
 commits in one shot). The helper is idempotent: ``SELECT 1
 ... WHERE completed_at IS NULL AND dismissed = 0`` is a no-op
-if any open row for the same ``(employee_id, kind)`` already
+if any open row for the same ``(uid, kind)`` already
 exists, and the partial unique index at ``ux_action_items_open_per_kind``
 backs that up.
 
@@ -38,7 +38,7 @@ Indexes used
 ============
 
 - ``ix_action_items_employee_id``  : every GET filters here.
-- ``ix_action_items_employee_recent``: the (employee_id,
+- ``ix_action_items_employee_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
 - ``ux_action_items_open_per_kind``: idempotency check in
   ``_ensure_llm_credentials_item``.
@@ -87,7 +87,7 @@ def _iso(dt: datetime | None) -> str | None:
 def _serialize(a: ActionItem) -> "ActionItemOut":
     return ActionItemOut(
         id=a.id,
-        employee_id=a.employee_id,
+        uid=a.uid,
         kind=a.kind,
         title=a.title,
         description=a.description,
@@ -104,7 +104,7 @@ def _serialize(a: ActionItem) -> "ActionItemOut":
 
 class ActionItemOut(BaseModel):
     id: int
-    employee_id: int | None
+    uid: int | None
     kind: str
     title: str
     description: str | None = None
@@ -139,7 +139,7 @@ class ActionItemCompleteRequest(BaseModel):
 
 
 def _ensure_llm_credentials_item(
-    session: Session, employee_id: int
+    session: Session, uid: int
 ) -> bool:
     """Create an ``llm_credentials_missing`` row for the employee
     if no open one already exists.
@@ -157,16 +157,16 @@ def _ensure_llm_credentials_item(
          dismissed = 0`` short-circuit (cheap).
       2. The partial unique index
          ``ux_action_items_open_per_kind`` on
-         ``(employee_id, kind) WHERE completed_at IS NULL AND
+         ``(uid, kind) WHERE completed_at IS NULL AND
          dismissed = 0`` is the safety net against a race
          between two concurrent ``complete`` calls. The
          session-level short-circuit + partial unique
          together mean an open row is created at most once
-         per ``(employee_id, kind)``.
+         per ``(uid, kind)``.
     """
     existing = session.scalar(
         select(ActionItem).where(
-            ActionItem.employee_id == employee_id,
+            ActionItem.uid == uid,
             ActionItem.kind == "llm_credentials_missing",
             ActionItem.completed_at.is_(None),
             ActionItem.dismissed.is_(False),
@@ -176,7 +176,7 @@ def _ensure_llm_credentials_item(
         return False
     session.add(
         ActionItem(
-            employee_id=employee_id,
+            uid=uid,
             kind="llm_credentials_missing",
             title="设置你的 LLM provider 和 API key",
             description=(
@@ -221,20 +221,20 @@ def _current_admin_id(
     D.24: cookie carries ``employee.id`` (an int). Lookup
     is by primary key, not by ``telegram_id`` — that
     matched the pre-D.24 cookie (which carried a TG
-    chat_id), but with the employee-id cookie the
+    tgid), but with the employee-id cookie the
     ``Employee.telegram_id == cid_int`` query only
     matches by sheer coincidence.
     """
     raw = request.cookies.get("magi_session") or ""
     try:
-        employee_id = int(raw)
+        uid = int(raw)
     except (TypeError, ValueError):
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no admin employee row bound to this session",
         )
-    emp = session.get(Employee, employee_id)
+    emp = session.get(Employee, uid)
     if emp is None or emp.role != "admin":
         raise MagiHTTPException(
             status_code=401,
@@ -261,7 +261,7 @@ def list_action_items(
     - ``kind`` narrows by the stable kind code
       (``llm_credentials_missing``, future ``eve_*``).
 
-    Only items whose ``employee_id`` matches the current
+    Only items whose ``uid`` matches the current
     admin are returned. The endpoint resolves the admin id
     from the session cookie — never from a query parameter —
     so the URL has no "look at someone else's items"
@@ -276,7 +276,7 @@ def list_action_items(
     # 0), priority DESC ("high" > "normal" via alpha compare
     # which is enough for v0), then most-recent first.
     cutoff = utcnow_naive() - timedelta(days=_COMPLETED_VISIBLE_DAYS)
-    stmt = select(ActionItem).where(ActionItem.employee_id == admin_id)
+    stmt = select(ActionItem).where(ActionItem.uid == admin_id)
     if kind is not None:
         stmt = stmt.where(ActionItem.kind == kind)
     if not include_completed:
@@ -330,9 +330,9 @@ def complete_action_item(
 
     Authorization is doubled: the AdminGate proves the cookie
     is admin + alive, and we additionally verify the row's
-    ``employee_id`` belongs to this admin. The second check
+    ``uid`` belongs to this admin. The second check
     defends against a future bug where some code path mints a
-    row tied to a different employee_id and the operator
+    row tied to a different uid and the operator
     could complete someone else's item via URL guessing.
     """
     admin_id = _current_admin_id(request, session)
@@ -343,10 +343,10 @@ def complete_action_item(
             code="not_found.action_item",
             detail=f"action item {item_id} not found",
         )
-    if row.employee_id != admin_id:
+    if row.uid != admin_id:
         logger.warning(
             "complete denied: admin=%s tried to complete item %s owned by %s",
-            admin_id, item_id, row.employee_id,
+            admin_id, item_id, row.uid,
         )
         raise MagiHTTPException(
             status_code=403,

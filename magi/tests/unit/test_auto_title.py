@@ -199,7 +199,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     )
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
     msg_id = _mk_id()
     store.append_messages(
@@ -217,9 +217,10 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
 
     await _summarize_to_title(
         TitleJob(
-            chat_id="9001",
-            session_id=sid,
-            employee_id=admin.id,
+            
+            tgid="9001",
+session_id=sid,
+            uid=admin.id,
             employee_provider="minimax",
             employee_api_key="fake-key",
         )
@@ -248,7 +249,7 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
 
     store.append_messages(
@@ -261,7 +262,8 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 
     from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
     job = TitleJob(
-        chat_id="9001", session_id=sid, employee_id=admin.id,
+        tgid="9001",
+session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake-key",
     )
 
@@ -290,10 +292,11 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     # should see no first-user-message and bail without
     # calling the provider. (Match the real id from
     # ``create``.)
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
 
     await _summarize_to_title(TitleJob(
-        chat_id="9001", session_id=sess.session_id, employee_id=admin.id,
+        tgid="9001",
+session_id=sess.session_id, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake-key",
     ))
     assert store.get(admin.id, sess.session_id).title is None
@@ -312,9 +315,10 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
 
     # No session created — file doesn't exist.
     await _summarize_to_title(TitleJob(
-        chat_id="9001",
+
+        tgid="9001",
         session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
-        employee_id=admin.id,
+        uid=admin.id,
         employee_provider="minimax",
         employee_api_key="fake-key",
     ))
@@ -344,7 +348,7 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     monkeypatch.setattr(at_mod, "get_provider", _raising_factory)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
@@ -356,7 +360,8 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
 
     # Should not raise.
     await _summarize_to_title(TitleJob(
-        chat_id="9001", session_id=sid, employee_id=admin.id,
+        tgid="9001",
+session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="bad",
     ))
     assert store.get(admin.id, sid).title is None  # title wasn't set
@@ -378,7 +383,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     monkeypatch.setattr(at_mod, "get_provider", _boom)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
@@ -390,7 +395,8 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
 
     # Must not raise.
     await _summarize_to_title(TitleJob(
-        chat_id="9001", session_id=sid, employee_id=admin.id,
+        tgid="9001",
+session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
     assert store.get(admin.id, sid).title is None
@@ -405,7 +411,7 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="x" * 200)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
@@ -416,7 +422,8 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     )
 
     await _summarize_to_title(TitleJob(
-        chat_id="9001", session_id=sid, employee_id=admin.id,
+        tgid="9001",
+session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
     assert len(store.get(admin.id, sid).title) == 80
@@ -432,7 +439,7 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="")
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, chat_id="9001")
+    sess = store.create(admin.id, )
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
@@ -443,7 +450,8 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     )
 
     await _summarize_to_title(TitleJob(
-        chat_id="9001", session_id=sid, employee_id=admin.id,
+        tgid="9001",
+session_id=sid, uid=admin.id,
         employee_provider="minimax", employee_api_key="fake",
     ))
     assert store.get(admin.id, sid).title is None
@@ -473,7 +481,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
     for _ in range(2):
-        sess = store.create(admin.id, chat_id="9001")
+        sess = store.create(admin.id, )
         sid = sess.session_id
         store.append_messages(
             admin.id, sid,
@@ -483,9 +491,10 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
             )],
         )
         await enqueue_title_job(
-            chat_id="9001",
+
+            tgid="9001",
             session_id=sid,
-            employee_id=admin.id,
+            uid=admin.id,
             employee_provider="minimax",
             employee_api_key="fake",
         )
@@ -542,9 +551,9 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
         _title_jobs.get_nowait()
 
     await enqueue_title_job(
-        chat_id="9001",
-        session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
-        employee_id=1,
+        
+        tgid="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+        uid=1,
         employee_provider="minimax",
         employee_api_key="k",
     )
@@ -561,13 +570,13 @@ async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch
         _title_jobs.get_nowait()
 
     await enqueue_title_job(
-        chat_id="9001",
-        session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
-        employee_id=42,
+        
+        tgid="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+        uid=42,
         employee_provider="minimax-cn",
         employee_api_key="captured-key-xyz",
     )
     job: TitleJob = _title_jobs.get_nowait()
     assert job.employee_provider == "minimax-cn"
     assert job.employee_api_key == "captured-key-xyz"
-    assert job.employee_id == 42
+    assert job.uid == 42

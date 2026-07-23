@@ -232,8 +232,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     return ToolContext(
         state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
-        chat_id="9001",
-        employee_id=42,
+        uid=42,
         channel="webui",
     )
 
@@ -346,28 +345,59 @@ async def test_list_files_rejects_file_path(workspace_ctx):
 @pytest.mark.asyncio
 async def test_send_message_webui_returns_error(workspace_ctx):
     """``send_message`` is TG-only in v0. On webui the
-    LLM gets a clear error so it stops trying."""
+    LLM gets a clear error so it stops trying. D.26: the
+    tool reads ``chat_sessions.tgid`` directly; an empty
+    session_id means there's no row to read from, so the
+    error mentions session rather than channel."""
     result = await SendMessageTool().run(workspace_ctx, text="hi")
     assert result.is_error is True
-    assert "webui" in result.content or "not available" in result.content
+    assert (
+        "no TG target" in result.content
+        or "session" in result.content
+        or "not available" in result.content
+    )
 
 
 @pytest.mark.asyncio
 async def test_send_message_tg_calls_callback(workspace_ctx):
     """When the channel is ``tg`` and a callback is
-    provided, the tool invokes it with (chat_id, text)."""
+    provided, the tool invokes it with (tgid, text).
+
+    D.26: the tgid now comes from ``chat_sessions.tgid``
+    (the single source of truth). The test seeds a session
+    row with ``tgid='9001'`` and passes its id to the tool
+    via ``ctx.session_id``.
+    """
+    from magi.agent.db import ChatSession, open_session
     callback = AsyncMock()
+
+    # Seed the session row whose ``tgid`` column carries
+    # the IM target the tool will read.
+    with open_session() as db:
+        sess = ChatSession(
+            session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+            tgid="9001",
+            uid=42,
+            channel="tg",
+            title=None,
+            active_tail_count=20,
+            created_at="2026-07-22T00:00:00Z",
+            updated_at="2026-07-22T00:00:00Z",
+        )
+        db.add(sess)
+        db.commit()
+
     ctx = ToolContext(
         state_dir=workspace_ctx.state_dir,
         workspace=workspace_ctx.workspace,
-        chat_id="9001",
-        employee_id=42,
+        uid=42,
         channel="tg",
+        session_id=sess.session_id,
     )
     result = await SendMessageTool().run(
         ctx, text="hi there", _tg_send_callback=callback,
     )
-    assert result.is_error is False
+    assert result.is_error is False, result.content
     callback.assert_awaited_once_with(9001, "hi there")
 
 
@@ -380,7 +410,7 @@ async def test_send_message_tg_no_callback_returns_error():
     failure."""
     ctx = ToolContext(
         state_dir="/tmp/x", workspace=Path("/tmp/x"),
-        chat_id="9001", employee_id=42, channel="tg",
+        uid=42, channel="tg",
     )
     result = await SendMessageTool().run(ctx, text="hi")
     assert result.is_error is True
