@@ -11,7 +11,12 @@ Layout:
   - :mod:`.base`             — :class:`Base` declarative class
   - :mod:`.engine`           — engine singleton + ``init_orm``
                                + ``get_session`` / ``open_session``
-  - :mod:`.models_org`       — :class:`Employee`, :class:`Department`
+  - :mod:`.models_employee`  — :class:`Employee`
+  - :mod:`.models_magic`     — :class:`MAGIC` (a tree of MAGI
+                               teams; replaces the old
+                               ``departments`` table)
+  - :mod:`.models_magi`      — :class:`Magi` (MAGI runtime
+                               agent rows bound to a ``MAGIC``)
   - :mod:`.models_dashboard` — :class:`ActionItem`, :class:`TokenUsage`
   - :mod:`.migrations`       — pre-Alembic ``ALTER TABLE`` pass
                                + FTS5 sync triggers
@@ -51,8 +56,9 @@ from magi.agent.db.engine import (
 )
 from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_action_item import ActionItem
-from magi.agent.db.models_department import Department
 from magi.agent.db.models_employee import Employee
+from magi.agent.db.models_magi import Magi
+from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_token_usage import TokenUsage
 from magi.agent.db.models_user_im_binding import UserImBinding
 
@@ -73,7 +79,8 @@ __all__ = [
     "init_sqlite",
     # org
     "Employee",
-    "Department",
+    "MAGIC",
+    "Magi",
     # dashboard
     "ActionItem",
     "TokenUsage",

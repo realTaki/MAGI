@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.webui.api import auth, departments, onboarding
+from magi.channels.webui.api import auth, employees, magis, onboarding
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -107,11 +107,16 @@ def create_app() -> FastAPI:
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(onboarding.router, prefix="/api/onboarding")
-    # Departments + Employees routers share the same auth gate
-    # (``admin_gate``) but ship as two APIRouters so the prefix
-    # stays clean: /api/departments, /api/employees.
-    app.include_router(departments.router, prefix="/api")
-    app.include_router(departments.employees_router, prefix="/api")
+    # Employees router owns the directory / TG-binding /
+    # role surface and exposes the shared ``admin_gate``
+    # dependency for other routers (``magis``, ``tasks``,
+    # ``soul``, ...) to reuse.
+    app.include_router(employees.router, prefix="/api")
+    # Magis router — the "智能体管理 / magis 管理" surface for
+    # the MAGI agent tree (replaces the old ``/api/departments``
+    # routes, which were dropped when the dept sub-tree concept
+    # went away in the post-refactor reframe).
+    app.include_router(magis.router, prefix="/api")
     # Telegram binding (chat id ↔ uid, v0 admin endpoint;
     # C2 will replace with a /start <code> flow that uses the
     # same underlying meta key).

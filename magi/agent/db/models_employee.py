@@ -1,18 +1,18 @@
-"""ORM table ``employees`` — one row per person in the company.
+"""ORM table ``employees`` — one row per person known to MAGI.
 
-Schema is intentionally minimal — the C1.1 baseline has
-the dept assignment + LLM provider config (each employee
-can route to a different model when their EVE handles
-traffic). C1.2 grows the lifecycle (email, status, quiet
-hours); C2 adds the telegram_id binding.
+Schema is intentionally minimal — the C1.1 baseline carries
+the LLM provider config (each employee can route to a
+different model when their EVE handles traffic). C1.2 grows
+the lifecycle (email, status, quiet hours); C2 adds the
+telegram_id binding.
 
-The cross-table relationships (department, led_department)
-point at :class:`Department` (in
-:mod:`magi.agent.db.models_department`). FK columns use
-string literals so this file has no runtime dependency
-on the Department module; the ``relationship(back_populates=...)``
-strings are resolved when SQLAlchemy configures the
-mapper, after both modules are imported.
+The post-refactor reframe dropped the old per-``MAGIC``
+``department_id`` assignment column (and its ``led_department``
+/ ``department`` relationships): the org structure is now
+``MAGIC`` (council) → ``Magi`` (agent) → ``User`` (person),
+with no dept sub-tree. The ``employees`` table survives as
+the per-row backing store until F1 lands the formal
+``users`` table rename.
 """
 
 from __future__ import annotations
@@ -25,24 +25,15 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     BigInteger,
     DateTime,
-    ForeignKey,
     String,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.agent.db.base import Base
 
 
-if TYPE_CHECKING:
-    # Type-only import for the relationship back-refs.
-    # No runtime dependency — keeps the module loading
-    # order trivial (FK strings resolve at mapper
-    # configuration time, after both modules import).
-    from magi.agent.db.models_department import Department
-
-
 class Employee(Base):
-    """A person in the company.
+    """A person known to MAGI.
 
     ``api_key`` is the employee's LLM-provider key. It is
     treated as a secret — never returned in plain text by
@@ -58,14 +49,6 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
-    # Direct FK to the dept the employee belongs to. Nullable:
-    # an employee can exist without a department assignment
-    # yet (the UI exposes a "未指定部门" pseudo-section that
-    # filters on this being NULL).
-    department_id: Mapped[int | None] = mapped_column(
-        ForeignKey("departments.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     # LLM provider. For C1.1 this is a free-text string; C3
     # adds routing logic (Anthropic / OpenAI / Ollama / etc.).
     provider: Mapped[str | None] = mapped_column(String(32))
@@ -73,11 +56,11 @@ class Employee(Base):
     api_key: Mapped[str | None] = mapped_column(String(512))
     # Soft-delete flag. NULL means active; non-NULL is the
     # timestamp at which the employee was marked separated.
-    # Separated employees are hidden by default in department
+    # Separated employees are hidden by default in directory
     # views (toggleable) and exposed via the dedicated
     # "已离职员工" scope — the dashboard never hard-deletes
     # employees because the org needs the historical record
-    # (manager_of, past assignments, audit references).
+    # (audit references, past assignments).
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Role on the MAGI instance — four-value enum:
     #   - "admin"    : operator / deployer. Can sign in to
@@ -138,24 +121,5 @@ class Employee(Base):
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
-    # The department this employee belongs to (not to be
-    # confused with ``Department.manager`` which is the
-    # "lead" pointer). Single FK column + backref from
-    # Department.employees so the dashboard can ask
-    # "who is in this dept" without a second query.
-    department: Mapped["Department | None"] = relationship(
-        back_populates="employees",
-        foreign_keys=[department_id],
-    )
-
-    # The department this employee leads, if any.
-    # ``remote_side`` disambiguates the two FKs
-    # (Department.manager and Department.manager_id) on
-    # the parent side.
-    led_department: Mapped["Department | None"] = relationship(
-        back_populates="manager",
-        foreign_keys="Department.manager_id",
-    )
-
     def __repr__(self) -> str:
-        return f"Employee(id={self.id}, name={self.name!r}, department_id={self.department_id})"
+        return f"Employee(id={self.id}, name={self.name!r})"

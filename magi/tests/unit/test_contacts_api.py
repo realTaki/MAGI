@@ -37,7 +37,16 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    """MAGI_STATE_DIR + ORM + two admins + one department."""
+    """MAGI_STATE_DIR + ORM + two admins + one regular employee.
+
+    The legacy ``Department`` / ``department_id`` column was
+    dropped in the post-refactor reframe, so this fixture
+    only seeds three ``Employee`` rows. Tests that referenced
+    the dept join (``test_list_contacts_joins_person_name_and_department``
+    and friends) need to be revisited when the contacts
+    schema is re-shaped; this fixture currently keeps the
+    minimal seed they need (the alice/bob/charlie cookies).
+    """
     state = tmp_path / "state"
     state.mkdir()
     ws = tmp_path / "workspace"
@@ -50,7 +59,6 @@ def env(monkeypatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import (
-        Department,
         Employee,
         init_orm,
         init_sqlite,
@@ -60,10 +68,6 @@ def env(monkeypatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as db:
-        dept = Department(name="Engineering")
-        db.add(dept)
-        db.flush()
-
         alice = Employee(
             name="Alice",
             display_name="ali",
@@ -71,7 +75,6 @@ def env(monkeypatch, tmp_path):
             role="admin",
             provider="minimax",
             api_key="fake",
-            department_id=dept.id,
         )
         bob = Employee(
             name="Bob",
@@ -86,14 +89,12 @@ def env(monkeypatch, tmp_path):
             role="employee",
             provider="minimax",
             api_key="fake",
-            department_id=dept.id,
         )
         db.add_all([alice, bob, charlie])
         db.commit()
         db.refresh(alice)
         db.refresh(bob)
         db.refresh(charlie)
-        db.refresh(dept)
 
     return {"state": state, "alice": alice, "bob": bob, "charlie": charlie}
 

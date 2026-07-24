@@ -1,24 +1,30 @@
 /**
- * OrganizationTab — Departments + Employees panes.
+ * OrganizationTab — Magis + Employees panes.
  *
  * 组织 (Organization) is Adam-only — EVE doesn't see this tab.
  *
  * Two sidebar sections:
- *   - 部门管理 (Departments) — list of departments, create
- *     department, assign manager, add/remove employees
- *   - 员工管理 (Employees)   — flat list of every employee, add
- *     to a department on creation
+ *   - 智能体管理 (Magis) — list of MAGI teams (councils) and
+ *     the per-team agent rows. Replaces the old
+ *     "部门管理 (Departments)" section in the post-refactor
+ *     reframe (the dept sub-tree concept is gone; the org
+ *     structure is now ``MAGIC`` → ``Magi`` → ``User``).
+ *   - 员工管理 (Employees) — flat list of every employee.
+ *     The ``department_id`` join was dropped from the wire
+ *     shape when the dept tree was removed; the pane itself
+ *     still imports the legacy ``DepartmentRow`` type because
+ *     the Employees pane hasn't been reshaped yet (pending
+ *     follow-up).
  *
  * The two panes live under :mod:`pages/organization/`; this
  * file is the dispatch shell that picks which pane to render
  * based on the sidebar selection. Each pane owns its own
- * helper types (``EmployeeScope`` / ``PROVIDER_OPTIONS`` /
- * tree helpers) because nothing outside the pane consumes
+ * helper types because nothing outside the pane consumes
  * them — promoting them to a shared module would force a
  * second import line in a downstream file for no gain.
  *
  * SidebarItem.label convention in this file: raw Chinese
- * strings ("部门管理" / "员工管理"). The shell passes the label
+ * strings ("智能体管理" / "员工管理"). The shell passes the label
  * through verbatim.
  *
  * Cross-tab type exports
@@ -33,26 +39,25 @@
 import { useState } from "react";
 
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
-import { IconDepartments, IconEmployees } from "../components/icons";
+import { IconEmployees, IconMagis } from "../components/icons";
 import { useT } from "../i18n/index";
-import { DepartmentsPane } from "./organization/DepartmentsPane";
 import { EmployeesPane } from "./organization/EmployeesPane";
+import { MagisPane } from "./organization/MagisPane";
 
-type OrgSection = "departments" | "employees";
+type OrgSection = "magis" | "employees";
 
 const ORG_SECTIONS: SidebarItem[] = [
-  { id: "departments", label: "部门管理", icon: <IconDepartments /> },
+  { id: "magis", label: "智能体管理", icon: <IconMagis /> },
   { id: "employees", label: "员工管理", icon: <IconEmployees /> },
 ];
 
-/** Backend response shape shared by EmployeesPane and
- *  ``SettingsWebuiAccessCard`` (admin table). Kept here because
- *  both panes import it via ``import type``. */
+/** Backend response shape for ``GET /api/magics``. Kept here
+ *  so other panes (and tests) can import it via ``import type``. */
 export type DepartmentRow = {
   id: number;
   name: string;
   parent_id: number | null;
-  manager: { id: number; name: string; display_name: string | null } | null;
+  adam_id: number | null;
   child_count: number;
   created_at: string;
   updated_at: string;
@@ -64,7 +69,6 @@ export type EmployeeRow = {
   id: number;
   name: string;
   display_name: string | null;
-  department_id: number | null;
   provider: string | null;
   api_key_set: boolean;
   api_key_last4: string | null;
@@ -85,7 +89,7 @@ export type EmployeeRow = {
 
 export default function OrganizationTab() {
   const t = useT();
-  const [section, setSection] = useState<OrgSection>("departments");
+  const [section, setSection] = useState<OrgSection>("magis");
 
   return (
     <SidebarShell
@@ -94,7 +98,7 @@ export default function OrganizationTab() {
       onSelect={(id) => setSection(id as OrgSection)}
       ariaLabel={t("sidebar.orgNavAria")}
     >
-      {section === "departments" && <DepartmentsPane />}
+      {section === "magis" && <MagisPane />}
       {section === "employees" && <EmployeesPane />}
     </SidebarShell>
   );

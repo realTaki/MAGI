@@ -160,44 +160,70 @@ def _register_begin_immediate(engine: Engine) -> None:
 # -- seed defaults (pre-Alembic) -------------------------------------------
 #
 # Hand-seeded "ensure the workspace has a root" bootstrap. The
-# default name is hardcoded to "MAGI.org" — the deployer can
+# default name is hardcoded to "MAGIC.root" — the deployer can
 # rename it via the dashboard PATCH endpoint (it'll get
-# re-created as MAGI.org on a fresh DB if they ever wipe and
+# re-created as MAGIC.root on a fresh DB if they ever wipe and
 # start over, but a renamed root stays renamed). When C8
 # hardening lands this becomes configurable via env var.
-_DEFAULT_ROOT_DEPT_NAME = "MAGI.org"
+_DEFAULT_ROOT_MAGIC_NAME = "MAGIC.root"
 
 
 def _seed_default_root(engine: Engine) -> None:
-    """Ensure the org tree has a root department.
+    """Ensure the workspace has a root MAGIC + a default adam Magi.
 
-    On first boot, if no departments exist at all, seed a
-    single top-level ``MAGI.org`` row so the org tree always
-    has an anchor. If the deployer later deletes it, this
-    will recreate it on the next boot — which is the right
-    trade-off for C0 (we don't have a "root" concept enforced
-    by the schema yet; C3 / C6 will likely require every
-    employee to belong to a non-root department anyway).
+    On first boot, if no ``MAGIC`` rows exist, seed one
+    top-level ``MAGIC.root`` row (the council anchor). If the
+    deployer later deletes it, this will recreate it on the
+    next boot — which is the right trade-off for C0 (we don't
+    have a "root" concept enforced by the schema yet). Also
+    seeds one ``Magi`` row with ``magic_position='adam'`` for
+    the seeded MAGIC so the "智能体管理" page is never empty on
+    first boot.
     """
-    # Local import — Department is defined in models_org which
-    # depends on ``Base`` already being constructed (a forward
-    # import here would break the package init order).
-    from magi.agent.db.models_department import Department
+    # Local imports — the model modules depend on ``Base`` being
+    # already constructed (a forward import here would break the
+    # package init order).
+    from magi.agent.db.models_magi import Magi
+    from magi.agent.db.models_magic import MAGIC
 
     with Session(engine) as session:
-        if session.scalar(select(Department.id).limit(1)) is not None:
-            return
-        session.add(
-            Department(
-                name=_DEFAULT_ROOT_DEPT_NAME,
+        existing_root = session.scalar(
+            select(MAGIC).where(MAGIC.name == _DEFAULT_ROOT_MAGIC_NAME)
+        )
+        if existing_root is None:
+            root = MAGIC(
+                name=_DEFAULT_ROOT_MAGIC_NAME,
                 parent_id=None,
-                manager_id=None,
+                adam_id=None,
             )
+            session.add(root)
+            session.flush()  # populate root.id
+            logger.info(
+                "seeded default root MAGIC: %s (id=%d)",
+                _DEFAULT_ROOT_MAGIC_NAME, root.id,
+            )
+            existing_root = root
+
+        # Seed one adam Magi under the root if none exists yet.
+        has_adam = session.scalar(
+            select(Magi.id).where(Magi.magic_position == "adam").limit(1)
         )
+        if has_adam is None:
+            session.add(
+                Magi(
+                    magic_id=existing_root.id,
+                    magic_position="adam",
+                    provider=None,
+                    api_key=None,
+                )
+            )
+            session.flush()
+            logger.info(
+                "seeded default adam Magi under %s",
+                _DEFAULT_ROOT_MAGIC_NAME,
+            )
+
         session.commit()
-        logger.info(
-            "seeded default root department: %s", _DEFAULT_ROOT_DEPT_NAME
-        )
 
 
 def init_orm(state_dir: str | None = None) -> Engine:
@@ -225,7 +251,8 @@ def init_orm(state_dir: str | None = None) -> Engine:
     # a given module don't pay its import cost until something
     # asks for a row from that table.
     import magi.agent.db.models_employee  # noqa: F401 — registers on Base
-    import magi.agent.db.models_department  # noqa: F401
+    import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
+    import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_token_usage  # noqa: F401
     import magi.agent.db.models_user_im_binding  # noqa: F401 — channel bindings (D.28)
@@ -252,7 +279,7 @@ def get_session() -> Generator[Session, None, None]:
         from magi.agent.db.engine import get_session
 
         @router.get(...)
-        def list_departments(session: Session = Depends(get_session)):
+        def list_magis(session: Session = Depends(get_session)):
             ...
     """
     if _SessionLocal is None:

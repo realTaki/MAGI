@@ -30,8 +30,11 @@ logger = logging.getLogger("magi.agent.db.migrations")
 
 
 _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
-    # C1.1: added department_id, provider, api_key to employees.
-    ("employees", "department_id", "INTEGER REFERENCES departments(id) ON DELETE SET NULL"),
+    # C1.1: added provider, api_key to employees.
+    # ``department_id`` was dropped in the post-refactor reframe
+    # (the ``departments`` table went away; the org structure is
+    # now ``MAGIC`` → ``Magi`` → ``User``). For pre-existing DBs
+    # the column is left in place but ignored by the ORM.
     ("employees", "provider", "VARCHAR(32)"),
     ("employees", "api_key", "VARCHAR(512)"),
     # C1.1 (soft-delete): separated_at lets the dashboard mark
