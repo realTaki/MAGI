@@ -223,20 +223,62 @@ Adam reboots are common, not exceptional.
 
 - **MAGI** — Modular Agentic Group Intelligence. The system; also the
   unit of autonomy. *Each agent is a MAGI.*
-- **Archetype** — the role-shape a MAGI runs as. Today: `manager`
-  (Adam) and `worker` (EVE). Future: `coordinator`, `project`, …
-  Archetype is configured by `MAGI_NODE_ROLE`; new archetypes are added
-  by registering a new role + permission scope, not by forking the
-  runtime.
+- **MAGIC** — Modular Agentic Group Intelligence Council. An
+  organization (table: `magics`). One MAGI belongs to exactly one
+  MAGIC.
+- **Magi** — A MAGI agent (table: `magis`). Each Magi holds exactly
+  one **position** in its MAGIC: `adam` (the leader; exactly one per
+  MAGIC) or `eve` (a member; N per MAGIC). The position is a fact
+  about org structure, **not** about service relationships.
+- **Position** — `adam` / `eve`. Lives on `magis.position`. This is
+  what the runtime reads to decide "what can I do?" (ADAM: manage the
+  MAGIC; EVE: serve its assigned User). It is **independent** of who
+  is logged in.
 - **Workspace** — the operational boundary that contains one Adam +
-  its fleet of EVEs + their assigned Users + shared skills + audit
-  log. Replaces the older "company" / "enterprise" framing.
-- **Assigned User** — the human an EVE serves. Distinct from
-  *operator* (the human running Adam's Web UI). One User, one EVE;
-  one workspace can have many of either.
-- **Operator** — the human who uses Adam's Web UI. Replaces the
-  older "admin" / "HR / IT" framing.
+  its fleet of EVEs + their Users + shared skills + audit log.
+  Replaces the older "company" / "enterprise" framing.
+- **User** — A person the MAGI knows about (table: `users`, renamed
+  from `contact_entries`). Holds one **role**:
+  `admin` / `assigned` / `user` / `guest`. This is a fact about the
+  person's service relationship to a specific MAGI; it is
+  **independent** of the MAGI's `position`.
+- **Role** — `admin` / `assigned` / `user` / `guest`. Lives on
+  `users.role`. `admin` = the operator (can use Adam's Web UI);
+  `assigned` = the person being served (the EVE serves them);
+  `user` = unbound org member; `guest` = external.
 
-The full backlog of doc-level vs code-level follow-ups to this reframing
-lives in [docs/ROADMAP.md](docs/ROADMAP.md) under
+### Schema shape (post-refactor)
+
+The schema collapses to **three tables** + one IM-binding table. The
+"agent-centered" framing stays: **MAGI agents** are first-class rows;
+**people** are leaves attached to agents; **MAGICs** are the orgs
+the agents belong to.
+
+| Table | Holds | Key column | Values |
+|---|---|---|---|
+| `magics` | organizations (the councils) | n/a | — |
+| `magis` | agents (MAGI runtime processes) | `position` | `adam` / `eve` |
+| `users` | people (formerly the `contact_entries` directory) | `role` | `admin` / `assigned` / `user` / `guest` |
+| `magi_im_bindings` | per-MAGI per-channel IM identities | n/a | — |
+
+**Two orthogonal axes** — do not conflate:
+
+- **`magis.position`** is intrinsic to the agent's role in the
+  MAGIC's structure. **Each MAGIC has exactly 1 ADAM + N EVE**,
+  enforced by a partial UNIQUE index. This is a fact about the org
+  chart, **not** derived from which User logs in.
+- **`users.role`** describes the person's service relationship to a
+  specific MAGI. `admin` = the operator; `assigned` = the person
+  being served; `user` / `guest` = unbound org members or external.
+  v0 binds a User to at most one Magi via `users.magi_id`; for
+  multi-MAGI assignments, add a `user_magi_bindings` junction later.
+
+The migration from the current schema (dropping `employees`,
+`agents`, `agent_assignments`, `departments`; renaming
+`contact_entries` → `users` and `user_im_bindings` →
+`magi_im_bindings`) is documented under "Post-refactor follow-ups"
+in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+The full backlog of doc-level vs code-level follow-ups to this
+reframing lives in [docs/ROADMAP.md](docs/ROADMAP.md) under
 "Post-refactor follow-ups".

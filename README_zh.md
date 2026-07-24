@@ -190,18 +190,53 @@ MAGI 将审计视为一等关注点：每条通道消息的收发（无论哪个
 
 - **MAGI** — Modular Agentic Group Intelligence。整套系统；也是自治
   的单元。**每个 agent 都是一个 MAGI**。
-- **Archetype（原型）** — 一个 MAGI 启动时所扮演的角色形态。今天：
-  `manager`（Adam）、`worker`（EVE）。未来：`coordinator`、`project`…
-  archetype 通过 `MAGI_NODE_ROLE` 配置；新增原型只需注册一个新角色
-  + 权限范围，不必 fork runtime。
+- **MAGIC** — Modular Agentic Group Intelligence Council。一个组织
+  （表 `magics`）。一个 Magi 恰好属于一个 MAGIC。
+- **Magi** — 一个 MAGI agent（表 `magis`）。每个 Magi 在它所属的
+  MAGIC 里持有一个 **position**：`adam`（leader，每个 MAGIC 一个）或
+  `eve`（member，N 个）。position 是组织结构的事实，**不是**关于
+  服务关系。
+- **Position（职位）** — `adam` / `eve`。写在 `magis.position`。运行
+  时读这个决定"我能做什么"（ADAM：管理这个 MAGIC；EVE：服务它的
+  assigned User）。**与谁登录无关**。
 - **Workspace** — 包含一个 Adam + 它指挥的若干 EVE + 那些 EVE 的
-  assigned Users + 共享技能 + 审计日志的运营边界。取代旧的"公司 /
-  enterprise"提法。
-- **Assigned User** — 一个 EVE 服务的人类。区别于 **operator**（操作
-  Adam Web UI 的人类）。一位 User 对应一个 EVE；一个 workspace 可以有
-  任意数量的二者。
-- **Operator** — 使用 Adam Web UI 的人类。取代旧的"admin / HR / IT"
+  Users + 共享技能 + 审计日志的运营边界。取代旧的"公司 / enterprise"
   提法。
+- **User** — MAGI 认识的一类人（表 `users`，由 `contact_entries` 改
+  名而来）。持有一种 **role**：`admin` / `assigned` / `user` / `guest`。
+  这是 person 与某个 MAGI 服务关系的事实；**与 MAGI 的 `position` 无关**。
+- **Role** — `admin` / `assigned` / `user` / `guest`。写在 `users.role`。
+  `admin` = 操作员（能进 Adam Web UI）；`assigned` = 被 EVE 服务的人；
+  `user` = 未绑定的 org 成员；`guest` = 外部。
+
+### Schema 形态（reframe 之后）
+
+Schema 收敛成**三张表 + 一张 IM 绑定表**。"agent-centered" 框架
+保留：**MAGI agent** 是一等公民行；**人**是挂在 agent 上的叶子；
+**MAGIC** 是 agent 所属的组织。
+
+| 表 | 持有 | 关键列 | 取值 |
+|---|---|---|---|
+| `magics` | 组织（council） | n/a | — |
+| `magis` | agent（MAGI 运行时实体） | `position` | `adam` / `eve` |
+| `users` | 人（原 `contact_entries` 改名而来） | `role` | `admin` / `assigned` / `user` / `guest` |
+| `magi_im_bindings` | 每个 MAGI 在每个 channel 上的 IM 身份 | n/a | — |
+
+**两条正交的轴**——不要混：
+
+- **`magis.position`** 是 agent 在 MAGIC 组织结构里的固有角色。
+  **每个 MAGIC 恰好 1 个 ADAM + N 个 EVE**，由 partial UNIQUE
+  强制。这是组织结构的事实，**不是**由"哪个 User 登录"决定的。
+- **`users.role`** 描述这个 person 与某个 MAGI 的服务关系。
+  `admin` = 操作员；`assigned` = 被服务的人；`user` / `guest` =
+  未绑定的 org 成员 / 外部。v0 一个 User 最多绑到一个 Magi（通过
+  `users.magi_id` FK）；未来需要 multi-MAGI 绑定，加
+  `user_magi_bindings` junction。
+
+从当前 schema 迁移（砍掉 `employees` / `agents` / `agent_assignments` /
+`departments`；`contact_entries` → `users`、`user_im_bindings` →
+`magi_im_bindings`）写在 [docs/ROADMAP.md](docs/ROADMAP.md) 的
+"Post-refactor follow-ups"里。
 
 文档级 vs 代码级跟进项的完整 backlog 见
 [docs/ROADMAP.md](docs/ROADMAP.md) 中"Post-refactor follow-ups"一节。

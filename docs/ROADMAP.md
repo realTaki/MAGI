@@ -313,134 +313,302 @@ follow-ups below migrate the code, in rough priority order. The
 principle stays minimal-by-default: only migrate when a concrete
 trigger fires.
 
-### F1 — Agent-centered schema (subsumes the original F1 + F2 schema work)
+### F1 — Three-table schema (magics + magis + users)
 
-The schema's center of gravity moves from **people** to **MAGIs**.
-Today every "MAGI" is just an env var (`MAGI_NODE_ROLE`); under the
-new model, Adam and every EVE are first-class rows. People become a
-satellite of agents: a person is either assigned to / admins a
-specific MAGI, or is an unbound org member (`user`), or is external
-(`guest`).
+The schema collapses to **three tables**:
 
-**Trigger**: next schema-touching change (the C1.3 Alembic baseline
-is the natural landing site; if Alembic is deferred, the migration
+| Table | Holds | Position / role lives on |
+|---|---|---|
+| `magics` | organizations (the council) | n/a |
+| `magis` | agents (MAGI runtime processes) | `magis.position` ∈ {`adam`, `eve`} |
+| `users` | people (MAGI's contact directory) | `users.role` ∈ {`admin`, `assigned`, `user`, `guest`} |
+
+`magis.position` and `users.role` are **orthogonal axes**:
+
+- A `Magi`'s `position` is intrinsic to the agent's role in the
+  MAGIC's org structure (1 ADAM + N EVE per MAGIC). It is **not**
+  derived from which User logs in or which User is being served.
+- A `User`'s `role` describes the person's service relationship
+  to a specific MAGI (`admin` = operator; `assigned` = the person
+  being served; `user` = unbound org member; `guest` = external).
+  These are per-(Magi, User) facts; in v0 a User row has a single
+  `magi_id` FK (the MAGI it relates to).
+
+All the previous intermediate tables (`employees`, `agents`,
+`agent_assignments`, `departments`) are dropped. `contact_entries`
+is renamed to `users`.
+
+**Trigger**: next schema-touching change (C1.3 Alembic baseline is
+the natural landing site; if Alembic is deferred, the migration
 sits behind a `_run_inline_migrations` pass).
+
+#### Concept boundary: org position vs service role
+
+Two independent axes that earlier drafts conflated:
+
+| Axis | Question it answers | Stored in | Values |
+|---|---|---|---|
+| **Org position** | "What is this agent's role in the MAGIC's structure?" | `magis.position` | `adam` / `eve` |
+| **Service role** | "How does this person relate to a specific MAGI?" | `users.role` | `admin` / `assigned` / `user` / `guest` |
+| **Service binding** | "Which MAGI does this `users` row belong to?" | `users.magi_id` (FK) | nullable (NULL for `user`/`guest`) |
+| **Channel identity** | "Which TG chat / Slack channel does this MAGI own?" | `magi_im_bindings(magi_id, channel, im_id)` | per-(Magi, channel) row |
+
+These four are independent. Changing `magis.position` does NOT
+change `users.role`; changing `users.role` does NOT change
+`magis.position`. ADAM is a position; `admin` is a role.
 
 #### Target schema
 
 ```python
-class Agent(Base):
-    """One MAGI in the workspace."""
-    __tablename__ = "agents"
+class Magic(Base):
+    """一个组织：Modular Agentic Group Intelligence Council。"""
+    __tablename__ = "magics"
     id            : int            # PK
-    name          : str            # "Adam" / "EVE-alice" / "Project-Apollo"
+    name          : str            # "MAGIC.root" / "MAGIC.acme" / ...
     display_name  : str | None
-    archetype     : str            # "manager" | "worker" | future "coordinator" / "project"
-    department_id : int | None     # the org unit this agent belongs to
-    provider      : str | None     # LLM provider (moved from User)
-    api_key       : str | None     # LLM key (moved from User)
-    status        : str            # "active" | "dormant" | "retired"
+    created_at    : datetime
+    updated_at    : datetime
+
+    members: Mapped[list["Magi"]] = relationship(back_populates="magic")
+
+
+class Magi(Base):
+    """一个 agent（一个 MAGI 运行时实体）。
+
+    每个 Magi 在它所在的 MAGIC 里持有一个 position：
+      - position='adam' → 这个 MAGIC 的 ADAM（leader / operator）。
+                         每个 MAGIC 恰好一个（partial UNIQUE）。
+      - position='eve'  → 这个 MAGIC 的 EVE（普通 member）。N 个。
+    """
+    __tablename__ = "magis"
+    id            : int            # PK
+    name          : str
+    display_name  : str | None
+    magic_id      : int   # FK → magics.id (ON DELETE CASCADE)
+    position      : str   # "adam" | "eve"
+    provider      : str | None    # LLM provider (per-MAGI)
+    api_key       : str | None    # LLM key (per-MAGI)
     separated_at  : datetime | None
     created_at    : datetime
     updated_at    : datetime
 
+    magic: Mapped["Magic"] = relationship(back_populates="members")
+
+
 class User(Base):
-    """A person in the system. Was Employee."""
-    __tablename__ = "users"        # was "employees"
-    id            : int
+    """一个人（MAGI 认识的人）。从 contact_entries 改名而来。
+
+    role 是这个人的服务角色（与 MAGI 无关的"4 角色"整体）：
+      - 'admin'    : 这个 MAGI 的操作员（能登录它的控制台）
+      - 'assigned' : 这个 MAGI 服务的那个人
+      - 'user'     : org 成员但未与任何 MAGI 绑定
+      - 'guest'    : 外部 / 未知
+    """
+    __tablename__ = "users"                 # was: contact_entries
+    id            : int            # PK
     name          : str
     display_name  : str | None
-    org_role      : str            # "user" (org 成员、未分派) | "guest" (外部 / 未知)
-                                   # 'assigned' / 'admin' are on agent_assignments, NOT here
-    department_id : int | None     # 可选的「老家部门」（HR 概念；不参与权限判定）
+    role          : str            # "admin" | "assigned" | "user" | "guest"
+    magi_id       : int | None     # FK → magis.id
+                                   # 非 NULL：role='admin'/'assigned' 时绑到具体 MAGI
+                                   # NULL：   role='user'/'guest' 时无 MAGI 绑定
+    notes         : str            # free-form markdown（原 ContactEntry.notes）
+    source        : str            # "manual" / "eve" / "system"
+    last_seen_at  : datetime
     created_at    : datetime
     updated_at    : datetime
-
-class AgentAssignment(Base):
-    """An Agent ↔ User binding with a role."""
-    __tablename__ = "agent_assignments"
-    id         : int
-    agent_id   : int   # FK → agents.id  (ON DELETE CASCADE)
-    user_id    : int   # FK → users.id   (ON DELETE CASCADE)
-    role       : str   # "assigned" | "admin"
-    bound_at   : datetime
-    bound_via  : str | None    # "tg" / "manual" / ...
-    UniqueConstraint(agent_id, user_id, role)   # M:N both ways; one (agent,user) may have both roles
 ```
 
-#### Role mapping (old → new)
+Plus one partial unique index:
 
-| Old `Employee.role` | New expression |
+```sql
+CREATE UNIQUE INDEX ux_magis_magic_adam
+    ON magis(magic_id)
+    WHERE position = 'adam';
+```
+
+And a `UniqueConstraint` on `users`:
+
+```sql
+-- v0: one binding per (User, Magi) for admin/assigned roles.
+-- For role='user'/'guest' the magi_id is NULL and the constraint
+-- is trivially satisfied.
+CREATE UNIQUE INDEX ux_users_role_binding
+    ON users(magi_id, role)
+    WHERE magi_id IS NOT NULL;
+```
+
+(The exact index shape is up to the migration; the invariant we
+need: a given `(magi_id, role)` pair has at most one User row when
+`magi_id IS NOT NULL`. For M:N in a future v0.x, drop this index
+and replace with a `user_magi_bindings` junction table.)
+
+Channel identity lives in its own table (renamed from
+`user_im_bindings` to reflect that it binds **MAGIs**, not Users,
+to channel identities):
+
+```python
+class MagiImBinding(Base):
+    """Per-MAGI per-channel IM identity binding.
+
+    Tells the dispatcher "MAGI <magi_id> owns IM id <im_id> on
+    channel <channel>". Inbound from that IM id routes to that
+    MAGI's runtime. The binding is on the **MAGI side**, not the
+    User side.
+    """
+    __tablename__ = "magi_im_bindings"      # was: user_im_bindings
+    magi_id   : int   # FK → magis.id  (was: uid; ON DELETE CASCADE)
+    channel   : str   # "tg" / "slack" / "email" / ...
+    im_id     : str   # the per-channel IM identifier
+    UniqueConstraint(magi_id, channel)
+```
+
+#### What disappears
+
+- `employees` table — replaced by `users`.
+- `users` table (the proposed earlier F1 rename of `employees`) — replaced by the new `users` (from `contact_entries`).
+- `agents` table — never shipped; not needed. Runtime processes bind
+  to `magis` rows; process state is runtime-local, not DB.
+- `agent_assignments` table — never shipped; not needed.
+- `departments` table — gone. The org structure is now "one MAGIC
+  + 1 ADAM + N EVE", with no sub-org tree.
+- `agents.department_id` column — gone.
+- `users.department_id` column — gone.
+- `archetype=manager` / `archetype=worker` — gone. Replaced by
+  `magis.position` (`adam` / `eve`).
+
+#### What changes semantically
+
+| Old concept | New concept |
 |---|---|
-| `admin`    | `agent_assignments(agent=Adam, user=u, role=admin)` + `users.org_role=user` |
-| `assigned` | `agent_assignments(agent=EVE-x, user=u, role=assigned)` + `users.org_role=user` |
-| `employee` | `users.org_role=user` (no assignment rows) |
-| `guest`    | `users.org_role=guest` (no assignment rows) |
+| `Employee.role` (admin/assigned/employee/guest) | **`users.role`** (4-value enum, unchanged in values) |
+| "Adam" / "EVE" = MAGI runtime archetypes | **"ADAM" / "EVE" = `magis.position`** |
+| `agents` table (MAGI process rows) | **`magis`** table (now also holds the MAGI agent itself, not the person) |
+| `agents.parent_id` self-FK (org tree) | gone (no org tree; org = MAGIC) |
+| `user_im_bindings` (uid-based) | **`magi_im_bindings`** (magi_id-based; binding on the MAGI side) |
+| `contact_entries` (per-MAGI contact list) | **`users`** (renamed; the 4-role enum takes over) |
+| "Manager ↔ Worker" authority | **ADAM is the leader of this MAGIC** (partial UNIQUE) |
+| Manager ↔ Worker = different runtimes | **All MAGI processes are the same runtime**, parameterised by `magis.position` |
 
 #### Cardinality rules
 
-- **`assigned`**: M:N. One EVE can serve multiple assigned Users; one
-  assigned User can be served by multiple EVEs (e.g. work + personal).
-  Default v0 behaviour is 1:1 per User, but the schema doesn't force it.
-- **`admin`**: M:1. One MAGI can have multiple admin Users.
-- **Multi-identity allowed**: same `(agent_id, user_id)` pair can carry
-  both `role=assigned` and `role=admin` rows — e.g. "陈经理 is admin of
-  the Finance EVE and assigned to the Lin Assistant EVE". The role
-  column is part of the unique key.
-- **Manager ↔ worker authority is implicit via archetype**, not stored
-  in `agent_assignments`. Adam owns its EVEs by virtue of running the
-  manager archetype in the same workspace; no `agent_supervises` row
-  needed. If multi-manager or cross-workspace authority ever lands,
-  add `agent_supervises(agent_id, supervisor_id)` then.
+- **1 MAGIC** → **exactly 1 ADAM** + **N EVE** (N ≥ 0). Enforced by
+  `UNIQUE(magic_id) WHERE position='adam'`.
+- **Many MAGICs** possible (multi-tenant). Each has its own 1 ADAM +
+  N EVE.
+- A **Magi** belongs to exactly one MAGIC (`magic_id` is a single
+  FK).
+- A **MAGI process** binds to exactly one Magi.
+- **Service bindings** (`users`):
+  - v0: a `users` row references at most one Magi via `magi_id`.
+    For M:N (one user bound to multiple MAGIs), add a
+    `user_magi_bindings` junction in a future v0.x.
+  - `users.magi_id` is non-NULL for `role IN {'admin', 'assigned'}`;
+    NULL for `role IN {'user', 'guest'}`.
+- **Channel identities** (`magi_im_bindings`): a Magi can have
+  multiple IM bindings (TG + Slack + Email). One binding per
+  `(magi_id, channel)` pair.
+
+#### What renames (column- and table-level)
+
+| Old | New | Reason |
+|---|---|---|
+| `chat_sessions.uid` | `chat_sessions.magi_id` | FK target renamed; semantics unchanged (still "the person the chat is about") |
+| `action_items.uid` | `action_items.magi_id` | same |
+| `token_usage.uid` | `token_usage.magi_id` | same |
+| `contact_entries` | **`users`** | per-MAGI contact directory becomes the global users table; 4-role enum applies |
+| `contact_entries.owner_id` | dropped | `users` is global (FK via `magi_id`); the owner/observed split is gone |
+| `contact_entries.person_id` | dropped | same; a `users` row IS the person |
+| `user_im_bindings` | **`magi_im_bindings`** | binding is on the MAGI side, not the user side |
+| `user_im_bindings.uid` | `magi_im_bindings.magi_id` | same |
+| `ToolContext.uid` | `ToolContext.magi_id` | runtime cookie identity = `magi_id` |
+| `magi_session` cookie value | unchanged (it's just an int) | value is `magi_id` now; old cookies carrying `employee.id` need re-login |
+| `MAGI_NODE_ROLE=adam/eve` | `MAGI_NODE_ROLE=adam/eve` (kept) | docstring updated to "position selector" — env name stays for back-compat |
 
 #### What changes code-wise
 
 | Surface | Action |
 |---|---|
-| `magi/agent/db/models_employee.py` → split into `models_user.py` + `models_agent.py` + `models_agent_assignment.py` | new files |
-| `Employee` class | rename to `User`; `Employee.role` column dropped; `User.org_role` added |
-| `Employee.provider` / `Employee.api_key` | drop; move to `Agent` |
-| `Employee.department_id` | **kept on User** as optional home-dept (HR concept); **moved to Agent** as the org-unit the MAGI belongs to (the primary one) |
-| `employees` table | rename to `users` (Alembic) |
-| `users.id` referenced from `chat_sessions.uid`, `action_items.uid`, `token_usage.uid`, `user_im_bindings.uid`, etc. | unchanged in meaning (uid = User id) — only the FK target table renames |
-| `loop.py` LLM provider resolution | reads `Agent.provider` / `Agent.api_key` instead of `Employee.provider` (resolved via the agent lookup, not the user lookup) |
-| WebUI "员工列表" / "assigned Users" list | driven by `users JOIN agent_assignments JOIN agents`; permission filter on `agent_assignments.role='assigned'` for the worker view, `role='admin'` for the operator view |
-| `/api/employees/*` | alias under `/api/users/*`; old path 301s |
-| `/api/eves/*` | the "EVE" in the URL is now `agents` filtered by `archetype='worker'` |
-| `dispatcher.lookup_im_id` | reads `user_im_bindings.uid` — same query, only the FK target renamed |
+| `magi/agent/db/models_employee.py` → split into `models_magic.py` + `models_magi.py` + `models_user.py` + `models_magi_im_binding.py` | new files; old `models_employee.py` dropped |
+| `magi/agent/memory/contacts/models.py` → becomes `magi/agent/db/models_user.py` | rename + add `role` + `magi_id` columns; drop `owner_id` / `person_id` |
+| `Employee` class | gone |
+| `ContactEntry` class | renamed to `User`; restructured per above |
+| `Magi` class | new; columns above |
+| `Magic` class | new; columns above |
+| `MagiImBinding` class | new; replaces `UserImBinding` |
+| `departments` table + `Department` model | dropped |
+| `agents` / `agent_assignments` (proposed in earlier F1 drafts) | dropped (never shipped) |
+| `Employee.provider` / `Employee.api_key` | move to `Magi` |
+| `loop.py` LLM provider resolution | reads `Magi.provider` / `Magi.api_key` via the bound Magi row |
+| WebUI sidebar / tree view | a tree of **MAGICs** → expand a MAGIC → list its members (`magis`) with positions; expand a Magi → list its `users` (with `role`) |
+| `/api/departments/*` | drop entirely |
+| `/api/employees/*` | drop entirely (no alias; it never shipped clean) |
+| `/api/magics/*` | new; list / create / archive MAGIC orgs |
+| `/api/magis/*` | new; list / create / update / archive Magi rows; `position` is a required field |
+| `/api/users/*` | new; list / create / update / archive User rows; `role` is a required field; `magi_id` is required iff `role IN {'admin','assigned'}` |
+| `/api/eves/*` | now a view onto `magis` filtered by `position='eve'` |
+| `dispatcher.lookup_im_id` | reads `magi_im_bindings.magi_id`; the lookup's "owner of this IM id" is a Magi, not a User |
+| EVE ↔ Adam dispatch RPC | resolved by reading the bound Magi row's `magic_id` (parent MAGIC) and that MAGIC's ADAM-position Magi |
+| Runtime MAGI process boot | reads `MAGI_NODE_ROLE` env (still the position selector); looks up the corresponding `Magi` row in DB by IM binding; verifies `position` matches the env; loads position-specific policy from there |
 
-#### Migration order (dev, ~2 Alembic revisions; prod, multi-step)
+#### Migration order (dev, 1 Alembic revision; prod, multi-step)
 
-1. Add `agents` + `agent_assignments` tables (empty).
-2. Add `users.org_role` column (default `'user'`).
-3. Backfill:
-   - For each `Employee` row with `role='admin'`: synthesise one
-     **Adam** agent per workspace (workspace = the Adam process's
-     env, single workspace for v0) + one `agent_assignments` row.
-   - For each `Employee` row with `role='assigned'`: synthesise one
-     **EVE-<name>** worker agent + one `agent_assignments` row.
-4. Move `provider` / `api_key` from `users` to `agents` (drop +
-   add column + backfill).
-5. Update `users.role` → `users.org_role`: `admin`/`assigned` → `user`,
-   `employee` → `user`, `guest` → `guest`. Drop `users.role`.
-6. Rename table `employees` → `users` (SQLite: rename is metadata-only).
-7. Re-point every `*uid` FK to the renamed table.
+For dev (zero prod data), this collapses to a single Alembic revision
+that does the whole thing in one transaction:
 
-For dev (zero prod data), 1–7 collapse to two revisions. For a
-populated workspace, the Adam-synthesis step needs operator confirmation
-("synthesise one Adam per workspace? or one per Operator user?") —
-see Open Question 11.
+1. Create `magics` table.
+2. Create `magis` table + partial UNIQUE index `ux_magis_magic_adam`.
+3. Rename `contact_entries` → `users`; restructure columns
+   (drop `owner_id` / `person_id`; add `role` + `magi_id`).
+4. Rename `user_im_bindings` → `magi_im_bindings`; rename `uid` →
+   `magi_id`.
+5. Seed one default MAGIC (`name='MAGIC.root'`).
+6. Backfill `magis`:
+   - From each `Employee.role='admin'` row → create a `Magi` with
+     `position='adam'` under the default MAGIC.
+   - From each `Employee.role='assigned'` row → create a `Magi`
+     with `position='eve'` under the default MAGIC.
+7. Backfill `users`:
+   - From each `Employee.role='admin'` row → create a `User` with
+     `role='admin'`, `magi_id=<the Adam magi row's id>`.
+   - From each `Employee.role='assigned'` row → create a `User` with
+     `role='assigned'`, `magi_id=<the matching EVE magi row's id>`.
+   - From each `Employee.role='employee'` row → create a `User` with
+     `role='user'`, `magi_id=NULL`.
+   - From each `Employee.role='guest'` row → create a `User` with
+     `role='guest'`, `magi_id=NULL`.
+   - Migrate `ContactEntry.notes` → `User.notes` (one row per
+     `ContactEntry`; each `User` row may carry multiple notes
+     — see Open Question 13).
+8. Move `provider` / `api_key` from old `Employee` to new `Magi`.
+9. Rename `chat_sessions.uid` / `action_items.uid` /
+   `token_usage.uid` → `*_magi_id`.
+10. **Drop** `employees` / `departments` tables.
+11. Add `MAGIC`-aware seed helpers (replaces `_seed_default_root`
+    which seeded the old "MAGI.org" department).
+
+For prod, steps 1–11 split across two releases (additive first,
+then the rename + drop). The unique-index guarantees on ADAM and
+on `(magi_id, role)` let the additive phase run without constraint
+violations.
 
 #### What does NOT change
 
-- `user_im_bindings(uid, channel, im_id)` shape (D.28 still good).
-- `chat_sessions.uid` / `action_items.uid` / `token_usage.uid` mean
-  "User id" — same as today, only the FK target table name changes.
-- `MAGI_NODE_ROLE` env var + `NodeConfig.role` field — still the
-  per-process archetype selector.
-- `ToolContext.uid` / cookie `magi_session` — still the **User** id.
-  The runtime's "who I'm talking to" identity stays User-anchored;
-  the agent identity is process-local (set by env), not from the cookie.
+- `MAGI_NODE_ROLE` env var name (`adam` / `eve`) — kept for
+  back-compat. Docstring updated to "MAGI process position
+  selector". The Magi row's `position` column should match (a
+  sanity check on boot).
+- The cookie identity model — still "an int in `magi_session`";
+  the int now refers to a `magis.id`.
+- D.28 channel dispatcher surface — `user_im_bindings` is renamed
+  to `magi_im_bindings` but its query shape is unchanged.
+- Chat session scope — D.22 cross-channel write guard, D.23 session
+  identity keyed by Magi id, D.24 cookie identity by Magi id — all
+  remain semantically identical.
+- Single DB per workspace (default SQLite). The MAGIC's DB holds
+  the canonical `magics` + `magis` rows; each Magi's own DB (if
+  split) holds its chat state. (Postgres shared across MAGIs is
+  the upgrade path; schema is unchanged.)
 
 ### F2 — Archetype + archetype-aware code paths
 
@@ -756,28 +924,40 @@ asking before sinking more time:
    polling is one-off cheap. Trigger: operator
    complains "I edited the skill and it didn't pick
    up".
-9. **Post-refactor table rename (`employees` → `users`)** —
-   bundled with F1 + F2 in the post-refactor follow-ups,
-   or split into separate PRs? Bundle is safer
-   (single Alembic migration); split is reviewable.
+9. **Post-refactor schema migration (F1, three tables)** —
+   bundled into one Alembic revision, or split across
+   additive + rename PRs? Bundle is safer (single
+   transaction; partial-UNIQUE guarantees the ADAM
+   invariant holds mid-migration); split is reviewable.
+   See F1's "Migration order" section for the 11-step
+   ordering.
 10. **Third archetype** — when (if ever) does a
     non-manager / non-worker archetype ship? The
     runtime is ready (`VALID_ROLES` is just a tuple);
     the work is purely in archetype-aware policy +
     dispatch UX. Worth deciding before C6 / C7.
-11. **Adam-synthesis during F1 migration** — when
-    the migration synthesises the `agents` rows from
-    existing `Employee.role='admin'` rows, do we make
-    **one Adam per workspace** (one manager MAGI
-    regardless of how many operator Users exist) or
-    **one Adam per operator User** (each operator
-    becomes its own Adam)? v0 has a single workspace
-    with typically one operator, so the question is
-    mostly moot for current dev — but if the schema
-    is to land cleanly, the answer affects how the
-    backfill synthesises Adam rows and whether
-    `agent_assignments.role='admin'` is allowed to
-    point at one shared Adam or at multiple Adams.
+    *(Note: with the F1 reframe, "archetype" is now
+    `magis.position`. Adding a third position is the
+    same shape of work — extend the enum + the partial
+    UNIQUE rule if needed.)*
+11. **ContactEntry.notes → User.notes migration** —
+    `ContactEntry` rows today have free-form `notes`
+    markdown scoped to a (Magi, person) pair. When
+    `contact_entries` is renamed to `users`, a single
+    User row may have multiple `ContactEntry.notes`
+    rows pointing at it (one per Magi that knew them).
+    Three options:
+    (a) concatenate notes into a single `users.notes`
+        field (lossy; loses the per-Magi provenance);
+    (b) keep `contact_entries` as a separate notes
+        table FK'd to `users.id`, leaving notes
+        per-binding;
+    (c) drop the per-binding structure entirely and
+        just have one `notes` per User (assume most
+        rows have a single Magi anyway).
+    Worth deciding before the C1.3 Alembic baseline,
+    because the answer affects whether
+    `contact_entries` survives as its own table.
 
 ---
 
