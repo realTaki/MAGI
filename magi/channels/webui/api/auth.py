@@ -1,12 +1,12 @@
 """Login / session API.
 
 Two-step flow (mirror of admin verification):
-    1. ``POST /api/auth/send-login-code { tgid }``
-       Sends a 6-digit code to the tgid via the saved bot. Same
-       5-min TTL and 60-s cooldown as admin code, stored under the
-       same key namespace as a precaution.
+    1. ``POST /api/auth/send-login-code { uid }``
+       Sends a 6-digit code to the operator's bound TG chat via
+       the saved bot. Same 5-min TTL and 60-s cooldown as admin
+       code, stored under the same key namespace as a precaution.
 
-    2. ``POST /api/auth/verify-login-code { tgid, code }``
+    2. ``POST /api/auth/verify-login-code { uid, code }``
        On match, sets the ``magi_session`` cookie to the
        **uid** (stringified int) and returns 200. The cookie
        is HTTPOnly + SameSite=Lax; for C0 we skip signed-cookie /
@@ -14,13 +14,16 @@ Two-step flow (mirror of admin verification):
 
 Authorization model (D.24):
   The cookie's value identifies the **employee**, not the
-  channel. The login input (``tgid``) is a TG delivery
-  address; the cookie output is an employee id. An employee
-  can be bound to multiple channels — the cookie identity
-  stays stable across all of them. ``/me`` resolves the
-  cookie's employee id to the row and reports both
-  ``uid`` and ``telegram_id`` (the latter may be
-  ``None`` for admins who never bound a TG bot).
+  channel. The login input (``uid``) is a per-person
+  identity; the cookie output is also the uid. The
+  per-channel delivery address (TG chat id for admins
+  who bound one) is resolved server-side via the channel
+  dispatcher (D.28). An employee can be bound to
+  multiple channels — the cookie identity stays stable
+  across all of them. ``/me`` resolves the cookie's
+  employee id to the row and reports both ``uid`` and
+  ``telegram_id`` (the latter may be ``None`` for admins
+  who never bound a TG bot).
 
   Reads (list / get sessions) are scoped by ``uid``
   on the server side (see :class:`SessionStore` D.23) —
@@ -40,7 +43,7 @@ import os
 from datetime import datetime, timezone
 from typing import Annotated
 
-import httpx
+import asyncio
 from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -82,12 +85,13 @@ def _state_dir() -> str:
 def _super_admins() -> set[int]:
     """Read the super-admin allowlist as a set of employee ids.
 
-    The identity is now the **employee**, not the tgid — an
-    employee with a bound TG tgid is the same identity as
-    that same employee signing in via WebUI. The legacy
+    The identity is now the **employee** (uid), not the
+    per-channel delivery address — an employee with a
+    bound TG chat is the same identity as that same
+    employee signing in via WebUI. The legacy
     ``telegram.super_admins`` meta key (pre-D.24) stores
-    tgids; the fallback path resolves each legacy
-    tgid to its current ``Employee.id`` so old state
+    raw TG chat ids; the fallback path resolves each legacy
+    chat id to its current ``Employee.id`` so old state
     files keep working.
 
     Source of truth is the ``employees`` table (rows with
@@ -118,22 +122,25 @@ def _super_admins() -> set[int]:
         return set()
     if not isinstance(parsed, list):
         return set()
-    # Legacy entries were telegram tgids (decimal digit
+    # Legacy entries were TG chat ids (decimal digit
     # strings). Resolve each to the current Employee.id via
-    # the ``telegram_id`` column so the cookie identity
-    # matches the new schema.
-    legacy_tgids: list[int] = []
+    # the ``telegram_id`` column (the bot's inbound-handler
+    # read-cache) so the cookie identity matches the new
+    # schema.
+    legacy_chat_ids: list[int] = []
     for x in parsed:
         try:
-            legacy_tgids.append(int(x))
+            legacy_chat_ids.append(int(x))
         except (TypeError, ValueError):
             continue
-    if not legacy_tgids:
+    if not legacy_chat_ids:
         return set()
     try:
         with open_session() as session:
             rows = session.scalars(
-                select(Employee).where(Employee.telegram_id.in_(legacy_tgids))
+                select(Employee).where(
+                    Employee.telegram_id.in_(legacy_chat_ids)
+                )
             ).all()
             return {emp.id for emp in rows}
     except Exception:
@@ -199,19 +206,28 @@ class VerifyLoginCodeResponse(BaseModel):
 class MeResponse(BaseModel):
     """Response of ``/me``.
 
-    D.24: the cookie is keyed by ``uid``, not
-    tgid. The response surfaces the employee identity
+    D.24: the cookie is keyed by ``uid`` (the cross-
+    channel identity), not the per-channel delivery
+    address. The response surfaces the employee identity
     so the frontend can display it directly; the
-    ``telegram_id`` is the per-channel delivery address
-    bound to this employee (may be ``None`` for admins
-    who never bound a TG bot) and is exposed for any
-    future "send to my TG" affordance.
+    ``telegram_id`` is the bound TG chat id (may be
+    ``None`` for admins who never bound a TG bot) and
+    is exposed for any future "send to my TG"
+    affordance.
     """
 
     uid: int
     telegram_id: int | None = None
     display_name: str | None = None
     is_super_admin: bool = True  # for C0: the only kind of logged-in user
+
+    # D.24: the cookie is keyed by ``uid``, not
+    # the per-channel delivery address. The response
+    # surfaces the employee identity so the frontend
+    # can display it directly; the ``telegram_id`` is
+    # the bound TG chat id (may be ``None`` for admins
+    # who never bound a TG bot) and is exposed for any
+    # future "send to my TG" affordance.
 
 
 def _generate_code() -> str:
@@ -231,7 +247,9 @@ def _generate_code() -> str:
 #
 # The TG client API uses a vendor-fixed kwarg name on the
 # contract), but that's an internal detail of the
-# ``_send_via_telegram`` helper — callers never see a tgid.
+# TG client API uses a vendor-fixed kwarg name on the
+# contract, but that's an internal detail of the
+# TG channel adapter — callers never see a chat id.
 
 _LOGIN_KEY = "auth.login_code"
 
@@ -283,7 +301,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     ``telegram_id`` in the response so the frontend can show
     "Alice (Telegram: 9999001)" — useful when two employees
     share a display name — but the wire-protocol ask for the
-    verification code takes the UID, not the tgid.
+    verification code takes the UID, not a chat id.
 
     Filter: admin rows that have at least one bound IM
     (today: ``telegram_id IS NOT NULL``). An admin who never
@@ -296,7 +314,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     1. ``role='admin'`` rows in ``employees`` — the
        wizard-configured deployer list. role =
        ``super_admin``.
-    2. Employees with a bound TG tgid + an active EVE
+    2. Employees with a bound TG chat + an active EVE
        assignment. role = ``assigned_employee``. C2 wires
        the TG binding (the employee proves ownership of the
        chat from TG by replying to a code); C6 wires the
@@ -314,7 +332,10 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     Display names are best-effort lookups via Telegram
     ``getChat``; a failure (e.g. the user has blocked the
     bot, or the network is down) just means we fall back to
-    showing the bare uid.
+    showing the bare uid. The TG ``getChat`` call is
+    encapsulated in the channel's
+    :func:`magi.channels.telegram.bot.fetch_chat_display_name`
+    helper (D.28) so this file doesn't directly hit the TG API.
     """
     from magi.agent.db.settings import state_get
 
@@ -322,11 +343,10 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     accounts: list[AllowedLoginAccount] = []
 
     # 1. Super admins (wizard-configured). We resolve
-    # each uid → its bound TG telegram_id so the
-    # frontend can show the chat hint next to the
-    # display name. Admins without a TG binding are
-    # dropped (no IM to deliver the verification code
-    # through).
+    # each uid → its bound TG chat id so the frontend
+    # can show the chat hint next to the display name.
+    # Admins without a TG binding are dropped (no IM to
+    # deliver the verification code through).
     admin_uids = _super_admins()
     admin_rows: list[tuple[int, int, str | None]] = []  # (uid, telegram_id, name)
     if admin_uids:
@@ -339,32 +359,40 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
                         (emp.id, emp.telegram_id, emp.display_name or emp.name)
                     )
 
-    for uid, telegram_id_int, fallback_name in sorted(admin_rows):
-        display_name: str | None = None
-        if bot_token:
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.post(
-                        f"https://api.telegram.org/bot{bot_token}/getChat",
-                        json={"tgid": telegram_id_int},
-                    )
-                if resp.status_code == 200 and (resp.json().get("ok")):
-                    chat = resp.json().get("result") or {}
-                    display_name = (
-                        chat.get("first_name")
-                        or chat.get("title")
-                        or chat.get("username")
-                    )
-            except (httpx.TimeoutException, httpx.RequestError, ValueError):
-                # Network down / user blocked the bot / whatever —
-                # the dropdown falls back to the Employee row's
-                # cached display name.
-                pass
+    # Display name resolution runs in parallel for all
+    # admins — independent TG ``getChat`` calls, no point
+    # serialising. The helper handles the "no bot / network
+    # down / user blocked" fall-back paths.
+    from magi.channels.telegram import bot as tg_bot_module
+
+    candidates: dict[int, tuple[int, str | None]] = {
+        uid: (telegram_id_int, fallback_name)
+        for uid, telegram_id_int, fallback_name in admin_rows
+    }
+    resolved_names: dict[int, str | None] = {}
+    if bot_token and candidates:
+        results = await asyncio.gather(
+            *(tg_bot_module.fetch_chat_display_name(str(telegram_id_int))
+              for telegram_id_int, _ in candidates.values()),
+            return_exceptions=True,
+        )
+        for (uid, (_telegram_id_int, fallback_name)), name in zip(
+            candidates.items(), results,
+        ):
+            if isinstance(name, BaseException):
+                resolved_names[uid] = fallback_name
+            else:
+                resolved_names[uid] = name or fallback_name
+    else:
+        for uid, (_telegram_id_int, fallback_name) in candidates.items():
+            resolved_names[uid] = fallback_name
+
+    for uid, (telegram_id_int, _fallback_name) in sorted(candidates.items()):
         accounts.append(
             AllowedLoginAccount(
                 uid=uid,
                 telegram_id=telegram_id_int,
-                display_name=display_name or fallback_name,
+                display_name=resolved_names[uid],
                 role="super_admin",
             )
         )
@@ -572,7 +600,7 @@ async def me(
     "Valid" means: the cookie's uid resolves to a
     row in ``employees`` with role='admin'. D.24 — the
     cookie is the uid (cross-channel identity),
-    not the tgid the user typed on the login page.
+    not the chat id the user typed on the login page.
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """

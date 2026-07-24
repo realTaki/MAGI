@@ -30,11 +30,12 @@ flows never interleave on the same ``(session_id,)``.
 The lock is per session, not global — distinct sessions
 remain independent.
 
-D.26: ``tgid`` (the per-channel delivery address stamped on
-the session row) is gone from the API. ``TitleJob`` carries
-the column's renamed name (``tgid``) instead; the field is
-purely diagnostic — the worker logs it but never reads it.
-The session row is the single source of truth for delivery.
+D.26: the per-channel delivery address stamped on the
+session row is gone from the API surface. ``TitleJob``
+carries the column's renamed name (``delivery_address``)
+instead; the field is purely diagnostic — the worker
+logs it but never reads it. The session row is the
+single source of truth for delivery.
 """
 
 from __future__ import annotations
@@ -237,9 +238,9 @@ async def _summarize_to_title(job: TitleJob) -> None:
         store = SessionStore(state_dir)
 
         # D.23: store key is the operator's uid, not
-        # the channel's tgid. The latter is still on the
-        # job for outbound ``send_message`` later, but the
-        # store does its lookup by employee.
+        # a per-channel delivery address. The latter is
+        # still on the job for outbound ``send_message``
+        # later, but the store does its lookup by employee.
         sess = store.get(job.uid, job.session_id)
         if sess is None:
             logger.info(

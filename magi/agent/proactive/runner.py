@@ -24,15 +24,16 @@ task's cron fires. Each invocation:
    a normal chat that happens to be triggered by a
    timer.
 
-3. Wires ``_tg_send_callback`` into the loop when
-   ``task.delivery_to`` is a TG tgid (digits) and
-   a bot is registered. The agent's
-   :class:`magi.agent.tools.send_message.SendMessageTool`
-   pushes the reply to TG via this callback when the
-   agent decides to use it. v0 leaves the call site
-   to the agent (system-prompt-mandated): a
-   "report-if-changed, otherwise-stay-silent" task
-   shouldn't push anything.
+3. Lets the agent's :class:`magi.agent.tools.send_message
+   .SendMessageTool` route via the channel dispatcher
+   (D.28). When ``task.delivery_to`` is a per-channel
+   delivery address (a TG chat id today) and a bot is
+   registered, the tool resolves the dispatcher's
+   adapter and pushes the reply there. The runner does
+   not wire a callback — the tool body owns its channel
+   routing. v0 leaves the call site to the agent
+   (system-prompt-mandated): a "report-if-changed,
+   otherwise-stay-silent" task shouldn't push anything.
 
 4. Pulls the latest TokenUsage row (the agent loop just
    wrote one) onto the :class:`TaskRun` for cost-roll-up.
@@ -202,10 +203,12 @@ async def execute_task(
         )
         channel_directive = (
             f"If channel='tg', call the ``send_message`` tool with "
-            f"the reply text and target tgid "
-            f"{task.delivery_to or '(unset)'} to push the response. "
-            f"If channel='webui', the reply lands inline in the "
-            f"operator's chat history automatically."
+            f"the reply text to push the response. The tool routes "
+            f"via the channel dispatcher using the session's "
+            f"delivery address (the TG chat id; resolved from "
+            f"{task.delivery_to or '(unset)'}). If channel='webui', "
+            f"the reply lands inline in the operator's chat history "
+            f"automatically."
             if task.channel == "tg"
             else "Channel='webui': the reply lands inline in the "
                  "operator's chat history automatically."
@@ -330,11 +333,12 @@ async def execute_task(
                 # disable the tool, so the agent's
                 # "deliver via send_message" directive
                 # in the user-message wouldn't reach TG.
-                # ``delivery_target`` is no longer passed
-                # as ``tgid`` here — the agent loop's
-                # tools read it directly from the session
-                # row's ``delivery_address`` column (via
-                # the dispatcher).
+                # ``delivery_target`` is no longer passed as
+                # an extra arg here — the agent loop's tools
+                # read the per-channel delivery address
+                # directly from the session row's
+                # ``delivery_address`` column (via the
+                # channel dispatcher, D.28).
                 channel="task",
                 uid=employee.id,
                 session_id=session_id,

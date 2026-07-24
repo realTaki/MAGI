@@ -30,12 +30,13 @@ Two surfaces pinned:
 The ``uid -> Employee row -> ContactEntry`` resolution
 lives here too (not in the agent loop) so the prompt
 builder is self-contained. Pre-D.26 the resolver ran on
-``tgid`` (Telegram digits) and the contact directory
-was keyed off "the admin who's chatting at this address".
-D.26 collapses that: there's only ever one User per
-chat (the cookie's ``magi_session`` is the User's UID
-directly), so the system prompt looks up the contact
-record via ``uid`` and renders it inline.
+a per-channel chat id (TG digits at the time) and the
+contact directory was keyed off "the admin who's
+chatting at this address". D.26 collapses that:
+there's only ever one User per chat (the cookie's
+``magi_session`` is the User's UID directly), so the
+system prompt looks up the contact record via ``uid``
+and renders it inline.
 """
 
 from __future__ import annotations
@@ -102,12 +103,12 @@ def build_system_prompt(
          ``(uid, uid)``: the User's own self-record, the
          same lookup the user's ``add_contact`` /
          ``search_contacts`` tools maintain. Pre-D.26 the
-         block was keyed off a Telegram ``tgid``; that
-         field is gone now. The User is uniquely identified
-         by ``uid``; the cookie's ``magi_session`` value
-         IS the UID directly. There is no second "person
-         on the other end" in this model — "admin 当前
-         在跟谁聊 根本不存在".
+         block was keyed off a per-channel chat id; that
+         field is gone now. The User is uniquely
+         identified by ``uid``; the cookie's
+         ``magi_session`` value IS the UID directly.
+         There is no second "person on the other end" in
+         this model — "admin 当前 在跟谁聊 根本不存在".
       4. **Available skills** — :func:`format_skills_block`
          lists the frontmatter ``name`` + ``description``
          of every registered SKILL.md. Bodies load on

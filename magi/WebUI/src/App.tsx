@@ -37,9 +37,10 @@ export default function App() {
   );
   const [isFirstTime, setIsFirstTime] = useState(false);
   // Set after a successful login so the dashboard can greet the
-  // user by tgid (or display name once we cache one). Null when
-  // we landed on dashboard via the wizard — there the user hasn't
-  // authenticated yet, so we don't pretend we know who they are.
+  // user by their per-channel delivery address (or display name
+  // once we cache one). Null when we landed on dashboard via
+  // the wizard — there the user hasn't authenticated yet, so
+  // we don't pretend we know who they are.
   const [signedInUser, setSignedInUser] = useState<{
     telegram_id: string;
     display_name: string | null;
@@ -178,8 +179,8 @@ export default function App() {
       <LoginPage
         onLoggedIn={async () => {
           // Pull the now-valid session so the dashboard can greet
-          // the user by tgid. /me returns 401 (and we still go
-          // to dashboard) only if the cookie is missing — the
+          // the user. /me returns 401 (and we still go to
+          // dashboard) only if the cookie is missing — the
           // LoginPage's verify just set it, so this is rare.
           let me: { telegram_id: string; display_name: string | null } | null = null;
           try {

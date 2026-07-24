@@ -228,6 +228,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     import magi.agent.db.models_department  # noqa: F401
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_token_usage  # noqa: F401
+    import magi.agent.db.models_user_im_binding  # noqa: F401 — channel bindings (D.28)
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table

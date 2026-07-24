@@ -364,7 +364,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     C0 behaviour is the "first-touch" handler from
     ``magi.channels.telegram.bot``: anyone not in the admin
     list (an ``Employee`` row with ``role='admin'``) gets a
-    reply with their own tgid and a "contact admin" nudge.
+    reply with their own chat id and a "contact admin" nudge.
     C3 will replace this with the real agent-loop dispatcher.
 
     No-op when no bot token has been saved (e.g. onboarding step 1 not

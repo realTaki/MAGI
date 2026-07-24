@@ -190,22 +190,21 @@ class ScheduleTaskTool(Tool):
                     "from inside an existing chat — then the "
                     "cron reply joins that chat). 'tg' "
                     "additionally lets the agent's send_message "
-                    "tool push a reply to the operator's TG "
-                    "chat (the runner looks up the existing TG "
-                    "session by (tgid, uid) and "
+                    "tool push a reply to the operator's bound "
+                    "TG chat (the runner looks up the existing "
+                    "TG session by delivery address + uid and "
                     "reuses it; or uses the operator's bound "
-                    "telegram_id when called from a non-TG "
-                    "chat)."
+                    "chat id when called from a non-TG chat)."
                 ),
             },
             # ``delivery_to`` was removed from the LLM-
             # facing schema: the tool no longer accepts a
             # caller-supplied destination. The server
             # derives it from channel + the caller's
-            # ToolContext (session_id for webui, tgid
-            # for tg). The column stays on Task for
-            # backward compat with rows created before
-            # this unification.
+            # ToolContext (session_id for webui; the
+            # operator's bound chat id for tg). The column
+            # stays on Task for backward compat with rows
+            # created before this unification.
         },
         "required": ["name", "prompt", "frequency"],
     }
@@ -260,10 +259,12 @@ class ScheduleTaskTool(Tool):
         # anywhere external (the session is the visible
         # record; ``None`` is correct). TG tasks push
         # to wherever the calling session's IM target
-        # lives — read it from the session row rather
-        # than carrying ``tgid`` through ctx (the
-        # session is the source of truth for IM
-        # addressing).
+        # lives — read it from the session row's
+        # ``delivery_address`` column rather than carrying
+        # a per-channel id through ctx (the session is
+        # the source of truth for IM addressing, and
+        # the dispatcher is the only thing that interprets
+        # the value).
         if channel == "webui":
             delivery_to = None
         elif channel == "tg":
@@ -337,6 +338,18 @@ class ScheduleTaskTool(Tool):
                 )
             operator_id = emp.id
 
+        # D.28: stamp the operator's bound IM id on the new
+        # session row as a breadcrumb. Resolved via the
+        # channel dispatcher, OUTSIDE the upcoming
+        # ``open_session()`` block (the dispatcher's adapter
+        # opens its own SQLite session — nested inside an
+        # outer txn would deadlock). Empty string when the
+        # operator has no TG binding.
+        from magi.channels import dispatcher as channel_dispatcher
+        task_session_delivery_address = (
+            channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
+        )
+
         # ── Idempotent upsert by name ──────────────────────────────────
         is_update = False
         task_id = new_session_id()
@@ -363,7 +376,10 @@ class ScheduleTaskTool(Tool):
                 # cleanup migration can backfill them.
                 if existing.session_id is None:
                     existing.session_id = _allocate_task_session(
-                        db, uid=operator_id, name=name,
+                        db,
+                        uid=operator_id,
+                        name=name,
+                        delivery_address=task_session_delivery_address,
                     )
                 task_id = existing.id
                 is_update = True
@@ -374,7 +390,10 @@ class ScheduleTaskTool(Tool):
                 # shape as the API: channel="task",
                 # title="[定时] <name>".
                 new_session_id_str = _allocate_task_session(
-                    db, uid=operator_id, name=name,
+                    db,
+                    uid=operator_id,
+                    name=name,
+                    delivery_address=task_session_delivery_address,
                 )
                 db.add(Task(
                     id=task_id,
@@ -475,13 +494,15 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _allocate_task_session(db, *, uid: int, name: str) -> str:
+def _allocate_task_session(
+    db, *, uid: int, name: str, delivery_address: str = "",
+) -> str:
     """Create a fresh ``channel="task"`` ChatSession
-    for a brand-new task. ``tgid`` carries the
-    operator's telegram_id as a breadcrumb (no routing
-    depends on it — channel="webui" disables the TG
-    send_message tool, and TG tasks carry their target
-    in ``Task.delivery_to``).
+    for a brand-new task. The row's ``delivery_address``
+    stamps the operator's bound IM id as a breadcrumb —
+    no routing depends on it (channel="task" disables the
+    outbound send_message tool, and TG tasks carry their
+    target in ``Task.delivery_to``).
 
     The session_id is the FK target the runner uses at
     fire time; it's the conversation thread every cron
@@ -492,17 +513,23 @@ def _allocate_task_session(db, *, uid: int, name: str) -> str:
     prevents the cross-task pollution that the
     per-fire allocation produced when two tasks
     shared a delivery target.
+
+    D.28: ``delivery_address`` is the caller's
+    pre-resolved per-channel IM id (looked up via
+    ``dispatcher.lookup_im_id`` BEFORE entering this
+    helper's SQLAlchemy session). Looking it up inside
+    the helper would force the dispatcher's adapter to
+    open a nested SQLite session while the caller's
+    ``open_session()`` is still active — nested
+    ``BEGIN IMMEDIATE`` deadlocks the SQLite handle. The
+    caller resolves the address and passes the value;
+    this helper just stamps it on the new row.
     """
     from magi.agent.memory.session import utcnow_iso as _utcnow_iso
     session_id = new_session_id()
-    # Look up the operator's telegram_id for the
-    # breadcrumb stamp; tolerate None (operator has
-    # no TG binding) by storing an empty string.
-    operator = db.get(Employee, uid)
-    tgid = str(operator.telegram_id) if operator and operator.telegram_id else ""
     db.add(ChatSession(
         session_id=session_id,
-        delivery_address=tgid,
+        delivery_address=delivery_address,
         uid=uid,
         channel="task",
         title=f"[定时] {name}",

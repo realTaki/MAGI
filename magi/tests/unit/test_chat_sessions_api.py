@@ -68,7 +68,13 @@ def state(tmp_path, monkeypatch) -> Path:
 @pytest.fixture
 def admin(state) -> Employee:
     """Seed an admin with provider/api_key so /chat/send passes the
-    pre-flight."""
+    pre-flight. Also seeds the ``UserImBinding`` row so the
+    channel dispatcher (D.28) can resolve the admin's bound
+    TG chat id (the canonical store; ``Employee.telegram_id``
+    is the legacy read-cache the bot's inbound handler
+    still reads).
+    """
+    from magi.agent.db.models_user_im_binding import UserImBinding
     with open_session() as s:
         emp = Employee(
             name="Test Admin",
@@ -78,6 +84,8 @@ def admin(state) -> Employee:
             api_key="fake-key-for-tests",
         )
         s.add(emp)
+        s.flush()
+        s.merge(UserImBinding(uid=emp.id, channel="tg", im_id="9001"))
         s.commit()
         s.refresh(emp)
         return emp

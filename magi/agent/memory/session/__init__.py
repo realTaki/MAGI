@@ -1,8 +1,9 @@
 """Chat session management — store, lifecycle, auto-titler.
 
 D.18: sessions moved from per-session JSON files under
-``<workspace>/memories/sessions/<tgid>/<sid>.json`` to two
-SQLAlchemy tables in ``magi.db`` (``chat_sessions`` + ``chat_messages``).
+``<workspace>/memories/sessions/<delivery-address>/<sid>.json``
+to two SQLAlchemy tables in ``magi.db`` (``chat_sessions`` +
+``chat_messages``).
 The ``SessionStore`` class kept the same public method
 signatures so the ~30 callers (chat.py / bot.py / agent.py /
 auto_title.py / chat_sessions.py) didn\'t need to change.
@@ -37,10 +38,11 @@ SQLite + WAL gives us:
     SQLAlchemy ``connect`` event listener in ``orm.py``).
 
 Per-chat isolation that used to come "for free" from the
-directory layout is now an explicit ``WHERE tgid = :caller``
-clause in every read/write path. The chat_sessions routes
-that read by ``tgid`` from the admin cookie enforce this
-consistently.
+directory layout is now an explicit
+``WHERE delivery_address = :caller`` clause in every
+read/write path. The chat_sessions routes that read
+by the operator's uid from the admin cookie enforce
+this consistently.
 
 Migration
 ---------

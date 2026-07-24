@@ -221,7 +221,7 @@ def _current_admin_id(
     D.24: cookie carries ``employee.id`` (an int). Lookup
     is by primary key, not by ``telegram_id`` — that
     matched the pre-D.24 cookie (which carried a TG
-    tgid), but with the employee-id cookie the
+    chat id), but with the employee-id cookie the
     ``Employee.telegram_id == cid_int`` query only
     matches by sheer coincidence.
     """

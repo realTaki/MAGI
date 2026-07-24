@@ -23,7 +23,7 @@ Same per-employee scope as the WebUI's ``/api/chat/search``:
 the calling admin's ``Employee.id`` (resolved by the
 agent loop from the ``magi_session`` cookie on every call).
 The SQL filter scopes by ``chat_sessions.uid``;
-channel and ``tgid`` are not part of the search predicate.
+channel and per-channel delivery address are not part of the search predicate.
 
 Output format
 -------------
@@ -183,7 +183,7 @@ class SearchSessionsTool(Tool):
         # platform: every session row whose ``uid``
         # matches — webui conversations AND any TG / future
         # IM conversations handled by that admin employee
-        # all match. Channel and ``tgid`` are not part of the
+        # all match. Channel and per-channel delivery address are not part of the
         # search predicate.
         uid = ctx.uid
 

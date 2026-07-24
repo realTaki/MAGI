@@ -1,21 +1,25 @@
-"""MAGI — Modular Agentic Governed Intelligence.
+"""MAGI — Modular Agentic Group Intelligence.
 
-Localized enterprise agent system where each employee gets a dedicated
-Telegram-bound **EVE**. The package is split into three submodules:
+A group-intelligence system built from autonomous, independently-deployable
+agents — every one of them is a **MAGI**. Two **archetypes** ship today:
 
-- ``magi.adam``  — control plane (FastAPI app + Web frontend for HR / admin).
-  Owns employee / eve / skill / knowledge / audit state, dispatch / recall
-  orchestration, and the live control console.
-- ``magi.eve``   — execution plane (TG bot, dynamic context, skill runner,
-  proactive engine). One process / container per employee.
-- ``magi.shared``— RPC contracts, event schemas, shared types reused by
-  both sides.
+- **Adam** — *Adaptive Distributed Agent Matrix*, the **manager-archetype**
+  MAGI. Runs the FastAPI control plane + Web frontend for the operator;
+  owns workspace state; can dispatch / create / recall worker MAGIs.
+- **EVE** — *Enhanced Virtual Expert*, the **worker-archetype** MAGI.
+  One per assigned User; default channel Telegram; pulls workspace-wide
+  data from its Adam and caches locally.
 
-Naming: MAGI is the system. Adam (control) and EVE (execution) are the two
-node types. ``admin`` (lowercase) is the user role (HR / IT) using Adam's
-web frontend. There is intentionally **no CLI** — all operator work goes
-through Adam's web UI. EVE instances **do not** talk to each other; all
-coordination is Adam ↔ EVE.
+Worker MAGIs do not call each other by default; coordination goes through
+the manager MAGI. The runtime is the same; the archetype is configured
+per-process via ``MAGI_NODE_ROLE`` (``adam`` / ``eve``). New archetypes
+(e.g. project, coordinator) can be added without forking the runtime.
+
+Naming: ``operator`` (lowercase) is the user role running Adam's web UI —
+it replaces the older "admin / HR / IT" framing. The people EVEs serve
+are **assigned Users** (replaces the older "employee" framing so the
+system can serve both B2B and B2C). There is intentionally **no CLI** —
+all operator work goes through Adam's web UI.
 """
 
 # sqlite3 driver swap (D.18 — FTS5 / trigram).

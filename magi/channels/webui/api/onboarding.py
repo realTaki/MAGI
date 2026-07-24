@@ -10,15 +10,16 @@
     2. (implicit / no API) The "Saved" page just displays the
        persisted token + username; the user clicks Next to step 3.
 
-    3. Super admin tgids (verify + save)
+    3. Super admin delivery addresses (verify + save)
        ``POST /api/onboarding/verify-admin { tgid }``
-           Sends a connectivity test message to ``tgid`` via the
-           saved bot. Returns ``{ok, display_name}`` or ``{ok: false,
-           error}``. **Does not store**.
+           Sends a connectivity test message to the bound TG chat via
+           the saved bot. Returns ``{ok, display_name}`` or
+           ``{ok: false, error}``. **Does not store**.
        ``POST /api/onboarding/save-admin { tgids: list[str] }``
-           Upserts an ``Employee`` row per tgid with ``role='admin'``,
-           ``telegram_id=<tgid>`` and no department. Display names are
-           resolved via Telegram ``getChat``. Idempotent.
+           Upserts an ``Employee`` row per delivery address with
+           ``role='admin'``, a TG binding (via the channel dispatcher),
+           and no department. Display names are resolved via Telegram
+           ``getChat``. Idempotent.
 
 All four endpoints are read-only or write-only against the ``settings``
 table, so they live alongside the webui channel rather than in a future
@@ -203,7 +204,7 @@ async def get_status() -> OnboardingStatus:
     # operator's first-time setup done?" is a system-level
     # state, not a channel-level one. The channel-level keys
     # (``telegram.bot_token``, ``telegram.bot_username``,
-    # ``telegram.verify_code.<tgid>``) legitimately carry
+    # ``telegram.verify_code.<chat-id>``) legitimately carry
     # the ``telegram.`` prefix because the bot identity +
     # chat-id verification ARE Telegram-specific. Onboarding
     # isn't — C5 will onboard Email or Calendar, and that
@@ -324,7 +325,7 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     bot token and super-admin list are intentionally left in place
     so the wizard's resume logic (Step 1 view mode, prefilled admin
     rows) picks them up again — a deployer can re-confirm a setup
-    without re-typing the tgids.
+    without re-typing the chat ids.
 
     Clears both the canonical key (``onboarding.complete``) and
     the legacy v0 key (``telegram.onboarding_complete``) so a
@@ -429,7 +430,7 @@ async def verify_admin(payload: VerifyAdminRequest) -> VerifyAdminResponse:
 @router.post("/send-admin-code", response_model=SendAdminCodeResponse)
 async def send_admin_code(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
     """Generate a one-time 6-digit code, store it in ``settings``, and
-    send it to the tgid via the saved bot. The user reads the
+    send it to the bound TG chat via the saved bot. The user reads the
     code in Telegram, types it back into the wizard, and
     ``/verify-admin-code`` confirms it matches.
 
@@ -461,7 +462,16 @@ def _generate_code() -> str:
 
 
 async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
-    """Shared body for the public endpoints and the back-compat alias."""
+    """Shared body for the public endpoints and the back-compat alias.
+
+    D.28: this path runs BEFORE the wizard has bound an Employee
+    row to a uid, so the channel dispatcher (which resolves
+    ``uid → im_id``) can't be used here. The TG-side send
+    helper lives in :mod:`magi.channels.telegram.bot`
+    (:func:`send_text_to_im_id`) — we call it directly. Once
+    ``/save-admin`` lands, the operator IS bound to a uid and
+    every subsequent outbound goes through the dispatcher.
+    """
     from datetime import datetime, timezone
     from magi.agent.db.settings import state_get, state_set
 
@@ -472,18 +482,20 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
             error="Bot token not saved yet — finish step 2 first.",
         )
 
-    tgid_raw = payload.delivery_address.strip()
-    if not tgid_raw.lstrip("-").isdigit():
+    delivery_address = payload.tgid.strip()
+    if not delivery_address.lstrip("-").isdigit():
         return SendAdminCodeResponse(ok=False, error="tgid must be numeric")
-    tgid = tgid_raw  # keep as string for settings key consistency
+    # ``delivery_address`` is the per-channel IM id (a TG chat
+    # id today; opaque to domain code). The settings key embeds
+    # it as a string — that's the historical schema; we keep it
+    # verbatim so existing state files keep working.
 
     # Resend cooldown — a stuck-network retry or impatient user must
     # wait before we spam the chat with another code. We check the
     # LAST SENT timestamp stored in settings (separate from the code's
     # own expiry so the cooldown applies even if the previous code is
     # already expired).
-    from magi.agent.db.settings import state_get
-    previous = state_get(_state_dir(), f"telegram.verify_code.{tgid}")
+    previous = state_get(_state_dir(), f"telegram.verify_code.{delivery_address}")
     if previous:
         try:
             prev_data = json.loads(previous)
@@ -521,7 +533,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     # with the same code still in settings, no surprise active codes.
     state_set(
         _state_dir(),
-        f"telegram.verify_code.{tgid}",
+        f"telegram.verify_code.{delivery_address}",
         json.dumps(
             {
                 "code": code,
@@ -532,45 +544,45 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
         ),
     )
 
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    # Push the code via the TG channel's send helper. The
+    # helper checks the bot is running and validates the chat
+    # id format; failures here surface as ``RuntimeError`` /
+    # ``ValueError`` (already mapped to wizard-friendly errors
+    # by the helper's contract).
+    from magi.channels.telegram import bot as tg_bot_module
+
     try:
-        async with httpx.AsyncClient(timeout=_TELEGRAM_TIMEOUT_SECONDS) as client:
-            resp = await client.post(
-                url,
-                json={
-                    "tgid": int(tgid),
-                    "text": (
-                        f"Your MAGI setup code is: <code>{code}</code>\n\n"
-                        f"Enter this code in the MAGI admin wizard to "
-                        f"verify your tgid. The code expires in "
-                        f"{_CODE_TTL_SECONDS // 60} minutes."
-                    ),
-                },
-            )
-    except httpx.TimeoutException:
-        return SendAdminCodeResponse(ok=False, error="Telegram timed out")
-    except httpx.RequestError as exc:
-        return SendAdminCodeResponse(ok=False, error=f"Network error: {exc}")
-
-    if resp.status_code != 200:
-        return SendAdminCodeResponse(
-            ok=False,
-            error=f"Telegram returned HTTP {resp.status_code}",
+        await tg_bot_module.send_text_to_im_id(
+            delivery_address,
+            (
+                f"Your MAGI setup code is: <code>{code}</code>\n\n"
+                f"Enter this code in the MAGI admin wizard to "
+                f"verify your chat. The code expires in "
+                f"{_CODE_TTL_SECONDS // 60} minutes."
+            ),
         )
-
-    data = resp.json()
-    if not data.get("ok"):
-        # If the send failed, the code is now stale. Remove it so a
-        # re-send issues a fresh one.
+    except RuntimeError as exc:
+        # Bot not running — clean up the stored code so a retry
+        # can issue a fresh one once the bot comes back.
         from magi.agent.db.settings import state_delete
-
-        state_delete(_state_dir(), f"telegram.verify_code.{tgid}")
-        description = data.get("description", "Unknown error from Telegram")
-        return SendAdminCodeResponse(ok=False, error=description)
+        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+        return SendAdminCodeResponse(ok=False, error=str(exc))
+    except ValueError as exc:
+        from magi.agent.db.settings import state_delete
+        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+        return SendAdminCodeResponse(ok=False, error=str(exc))
+    except Exception as exc:
+        # Telegram-side error (network, chat not started,
+        # bot blocked). Map to a friendly wizard message.
+        from magi.agent.db.settings import state_delete
+        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+        return SendAdminCodeResponse(
+            ok=False, error=f"Telegram send failed: {exc}",
+        )
 
     logger.info(
         "admin verification code sent",
-        extra={"tgid": tgid, "ttl_seconds": _CODE_TTL_SECONDS},
+        extra={"ttl_seconds": _CODE_TTL_SECONDS},
     )
     return SendAdminCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
@@ -578,14 +590,14 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
 @router.post("/verify-admin-code", response_model=VerifyAdminCodeResponse)
 async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeResponse:
     """Check the code the user typed against the one we sent to the
-    tgid. On success:
+    candidate chat. On success:
 
     1. **Expiry check** — code must be within the 5-minute TTL.
     2. **One-shot** — burn the code on any attempt (success, mismatch,
        or expiry) so a wrong-guess attacker can't grind through the
        6^6 space against a still-valid code.
-    3. **Don't persist yet** — the user's tgid is
-       recorded only after they finish the wizard via
+    3. **Don't persist yet** — the operator's per-channel delivery
+       address is recorded only after they finish the wizard via
        ``save_admin`` (the Employee row + ``role='admin'``
        is the single source of truth). Verify just proves
        ownership; the operator still has to confirm the
@@ -595,22 +607,25 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     from datetime import datetime, timezone
     from magi.agent.db.settings import state_get
 
-    tgid = payload.delivery_address.strip()
+    delivery_address = payload.tgid.strip()
     code = payload.code.strip()
     if not code.isdigit() or len(code) != 6:
         return VerifyAdminCodeResponse(ok=False, error="Code must be 6 digits")
 
-    raw = state_get(_state_dir(), f"telegram.verify_code.{tgid}")
+    raw = state_get(_state_dir(), f"telegram.verify_code.{delivery_address}")
     if not raw:
         return VerifyAdminCodeResponse(
             ok=False,
-            error="No code sent to this tgid — request a new one.",
+            error="No code sent to this chat — request a new one.",
         )
 
     try:
         payload_data = json.loads(raw)
     except (ValueError, TypeError):
-        logger.warning("stored verify code is not valid JSON for delivery_address=%s", tgid)
+        logger.warning(
+            "stored verify code is not valid JSON for chat=%s",
+            delivery_address,
+        )
         return VerifyAdminCodeResponse(ok=False, error="Stored code is corrupt; request a new one.")
 
     stored = str(payload_data.get("code", ""))
@@ -627,7 +642,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
 
     from magi.agent.db.settings import state_delete
     if not expires_at or now_ts >= expires_at:
-        state_delete(_state_dir(), f"telegram.verify_code.{tgid}")
+        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
         return VerifyAdminCodeResponse(
             ok=False,
             error="Code expired — request a new one.",
@@ -635,49 +650,47 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
 
     # Burn on any path that gets past expiry (mismatch, success,
     # anything) so the code can't be re-tried by an attacker.
-    state_delete(_state_dir(), f"telegram.verify_code.{tgid}")
+    state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
 
     if stored != code:
         return VerifyAdminCodeResponse(ok=False, error="Code does not match")
 
     # The code match is the proof-of-ownership; we don't persist
-    # the tgid here. The wizard's ``save_admin`` step (the
-    # final "Save" button) is what writes admin rows to the
-    # ``employees`` table — that path is the single source of
-    # truth for "who's an admin". Persisting at this point
-    # would create Employee rows that the operator might
+    # the delivery address here. The wizard's ``save_admin``
+    # step (the final "Save" button) is what writes admin
+    # rows to the ``employees`` table — that path is the single
+    # source of truth for "who's an admin". Persisting at this
+    # point would create Employee rows that the operator might
     # later remove via save_admin's diff step, doubling the
     # work for no gain.
 
-    display_name = await _fetch_display_name(tgid)
+    from magi.channels.telegram import bot as tg_bot_module
+    display_name = await tg_bot_module.fetch_chat_display_name(
+        delivery_address,
+    )
     logger.info(
-        "admin tgid verified via code",
-        extra={"tgid": tgid, "display_name": display_name},
+        "admin chat verified via code",
+        extra={"display_name": display_name},
     )
     return VerifyAdminCodeResponse(ok=True, display_name=display_name)
 
 
-async def _fetch_display_name(tgid: str) -> str | None:
-    """Call Telegram ``getChat`` so the UI can show "Verified — Alice"
-    instead of just a bare tgid. Failures degrade silently to None."""
-    from magi.agent.db.settings import state_get
+async def _fetch_display_name(delivery_address: str) -> str | None:
+    """Back-compat wrapper around the channel's display-name
+    helper.
 
-    bot_token = state_get(_state_dir(), "telegram.bot_token")
-    if not bot_token:
-        return None
-    url = f"https://api.telegram.org/bot{bot_token}/getChat"
-    try:
-        async with httpx.AsyncClient(timeout=_TELEGRAM_TIMEOUT_SECONDS) as client:
-            r = await client.post(url, json={"tgid": int(tgid)})
-    except (httpx.TimeoutException, httpx.RequestError, ValueError):
-        return None
-    if r.status_code != 200:
-        return None
-    data = r.json()
-    if not data.get("ok"):
-        return None
-    chat = data.get("result") or {}
-    return chat.get("first_name") or chat.get("title") or chat.get("username")
+    D.28: the actual TG ``getChat`` call is encapsulated in
+    :func:`magi.channels.telegram.bot.fetch_chat_display_name`
+    so this wizard file doesn't directly touch the TG API.
+    New code should call the helper directly; this thin
+    shim keeps the legacy ``_fetch_display_name(chat_id)``
+    callsite working while callers migrate.
+
+    Failures degrade silently to ``None`` — the wizard falls
+    back to showing the bare chat id.
+    """
+    from magi.channels.telegram import bot as tg_bot_module
+    return await tg_bot_module.fetch_chat_display_name(delivery_address)
 
 
 def _now_iso() -> str:
@@ -693,35 +706,36 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     """Replace the super-admin set with the verified list.
 
     Each entry becomes an :class:`Employee` row with
-    ``role='admin'`` and ``telegram_id=<tgid>``, living
-    under no department (the "未指定部门" scope). Display
-    name is resolved via Telegram ``getChat`` so the
-    dashboard can show "Alice" instead of "12345" without a
-    second round-trip per row.
+    ``role='admin'`` and a bound TG chat (via the channel
+    dispatcher, D.28), living under no department (the
+    "未指定部门" scope). Display name is resolved via Telegram
+    ``getChat`` so the dashboard can show "Alice" instead of
+    "12345" without a second round-trip per row.
 
     Side effects on each call:
       - Any prior ``Employee`` with ``role='admin'`` whose
-        ``telegram_id`` isn't in the new list is **deleted**
+        bound TG chat isn't in the new list is **deleted**
         (these rows were created by onboarding too; they
         have no business data so dropping is safe).
-      - Any prior ``Employee`` with ``telegram_id`` in the
-        new list gets its ``role`` flipped to ``admin`` even
-        if it was previously a regular employee (this
-        handles the rare case where someone was first added
-        to the company, then promoted to admin).
+      - Any prior ``Employee`` whose bound TG chat matches an
+        entry gets its ``role`` flipped to ``admin`` even if
+        it was previously a regular employee (this handles
+        the rare case where someone was first added to the
+        company, then promoted to admin).
 
     No settings key is written; the Employee table is the
     single source of truth for "who's an admin". The auth
-    gate (``_is_admin_or_assigned_tgid`` in ``departments.py``) reads
-    exclusively from this table.
+    gate (``_is_admin_or_assigned_employee`` in
+    ``departments.py``) reads exclusively from this table.
     """
     from magi.agent.db import Employee, open_session
+    from magi.channels import dispatcher as channel_dispatcher
 
     state_dir = _state_dir()
     cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})
     if not cleaned:
         return SaveAdminResponse(ok=False, error="At least one tgid required")
-    # Each tgid must be a TG-compatible integer (possibly
+    # Each entry must be a TG-compatible integer (possibly
     # negative for group chats).
     parsed_ids: list[int] = []
     for c in cleaned:
@@ -734,18 +748,22 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             )
 
     # Display name resolution runs in parallel for all ids —
-    # they're independent HTTPS calls, no point serialising.
+    # they're independent TG ``getChat`` calls, no point
+    # serialising. The TG helper (D.28) lives in
+    # ``magi.channels.telegram.bot``.
+    from magi.channels.telegram import bot as tg_bot_module
+
     display_names: dict[int, str | None] = {}
     if parsed_ids:
         results = await asyncio.gather(
-            *(_fetch_display_name(c) for c in parsed_ids),
+            *(tg_bot_module.fetch_chat_display_name(str(c)) for c in parsed_ids),
             return_exceptions=True,
         )
         for cid, name in zip(parsed_ids, results):
             if isinstance(name, BaseException):
                 # getChat failed (timeout, 4xx, etc.). The admin
                 # row is still created — we just fall back to
-                # the tgid as the display. The row's name
+                # the chat id as the display. The row's name
                 # field holds the human-readable label (see
                 # below).
                 display_names[cid] = None
@@ -757,7 +775,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
         with open_session() as session:
             # 1) Existing admin rows not in the new list → delete
             #    (these are onboarding-created shells; no
-            #    business data so dropping is safe).
+            #    business data so dropping is safe). Match by
+            #    the legacy ``Employee.telegram_id`` column
+            #    (the read-cache the inbound handler still
+            #    uses) — admins without a TG binding can't
+            #    ever have been put here by onboarding, but
+            #    we tolerate them for parity with the API
+            #    surface.
             existing_admins = session.scalars(
                 select(Employee).where(Employee.role == "admin")
             ).all()
@@ -766,7 +790,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 if old.telegram_id is None or old.telegram_id not in new_id_set:
                     session.delete(old)
 
-            # 2) Each new tgid → ensure an Employee row
+            # 2) Each new chat → ensure an Employee row
             #    exists with role=admin, no department. The
             #    actual IM binding is the channel adapter's
             #    job (D.28): we call ``dispatcher.bind_im_id``
@@ -774,7 +798,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             #    ``user_im_bindings`` (canonical) and sync
             #    ``Employee.telegram_id`` (legacy read-cache).
             # Promote existing regular employees in the rare
-            # case the tgid was already bound.
+            # case the chat was already bound.
             for cid in parsed_ids:
                 emp = session.scalar(
                     select(Employee).where(Employee.telegram_id == cid)

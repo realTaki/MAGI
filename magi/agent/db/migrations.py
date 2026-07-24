@@ -54,12 +54,14 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # COLUMN ... CHECK).
     ("tasks", "run_at", "VARCHAR(32)"),
     # Tasks: ``delivery_to`` carries the destination per
-    # ``channel`` — TG tgid (digits), or an email
-    # address once that runner lands. Webui tasks leave
-    # it NULL (the task's session IS the operator-visible
-    # record; no separate IM target). Nullable: legacy
-    # rows fall back to the operator's bound destination
-    # at fire time until the operator edits them.
+    # ``channel`` — a TG chat id (the per-channel
+    # delivery address today; opaque to domain code), or
+    # an email address once that runner lands. Webui
+    # tasks leave it NULL (the task's session IS the
+    # operator-visible record; no separate IM target).
+    # Nullable: legacy rows fall back to the operator's
+    # bound destination at fire time until the operator
+    # edits them.
     ("tasks", "delivery_to", "VARCHAR(128)"),
     # Tasks: ``session_id`` points at the agent's home
     # session (channel="task"). Allocated at task creation

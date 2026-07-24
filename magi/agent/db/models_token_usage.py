@@ -31,7 +31,7 @@ setting handles better.
 resolves to a concrete employee before reaching the
 LLM (WebUI cookie admin + TG bound employee), so the
 FK is always satisfied. If a future channel arrives
-without a ``tgid`` → ``Employee`` mapping, the
+without a ``uid`` → ``Employee`` mapping, the
 insert will surface that gap at write time rather
 than silently dropping the row.
 

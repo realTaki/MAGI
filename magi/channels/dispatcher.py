@@ -238,6 +238,7 @@ def lookup_im_id(uid: int, channel: str) -> str | None:
     callers that only need the value (e.g. the dashboard's
     "your binding" display).
     """
+    _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
     if adapter is None:
         return None

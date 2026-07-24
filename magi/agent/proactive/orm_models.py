@@ -125,7 +125,7 @@ class Task(Base):
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     # Delivery destination — semantic depends on ``channel``:
     #
-    #   channel="telegram" → TG tgid (string of digits);
+    #   channel="telegram" → TG chat id (string of digits);
     #                        ``None`` ⇒ use the operator's
     #                        bound ``Employee.telegram_id``.
     #   channel="webui"    → Either the literal string
@@ -155,8 +155,8 @@ class Task(Base):
     # in the API + ``schedule_task`` tool); the runner
     # reads this column at fire time instead of resolving
     # a session per fire. ``channel="task"`` for every
-    # task; ``tgid`` on the row carries the IM target
-    # (TG tgid digits) for the runner's TG-push
+    # task; the row's chat-id carries the IM target
+    # (TG chat-id digits) for the runner's TG-push
     # wiring — but the session itself is never a TG chat.
     #
     # SET NULL on delete: task deletion is a separate

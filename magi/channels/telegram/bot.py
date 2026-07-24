@@ -91,6 +91,91 @@ def get_telegram_bot():
         return _telegram_bot_instance
 
 
+async def send_text_to_im_id(im_id: str, text: str) -> None:
+    """Push ``text`` to the TG chat ``im_id``.
+
+    The only path that **bypasses** the channel dispatcher's
+    ``uid → im_id`` resolution — used during the onboarding
+    wizard when the operator hasn't yet been bound to an
+    Employee row, so there's no uid to dispatch through.
+
+    Onboarding flow:
+      - wizard step 3 captures a candidate TG chat id
+        (the ``delivery_address`` payload field on
+        ``/api/onboarding/send-admin-code``)
+      - the server stores a one-shot verification code
+        under ``settings["telegram.verify_code.<im_id>"]``
+      - the bot pushes the code via THIS helper
+      - the wizard asks the user to type the code back,
+        proving they own the chat
+      - only then does ``/api/onboarding/save-admin``
+        create an Employee row and route future traffic
+        through the dispatcher
+
+    Raises:
+      - ``RuntimeError`` if the bot isn't running (the
+        operator must finish step 2 first — wizard surfaces
+        a clear "save the bot token first" error)
+      - ``ValueError`` if ``im_id`` isn't a TG chat id
+        (a malformed wizard input — fail fast)
+      - ``telegram.error.TelegramError`` on TG-side errors
+        (network, chat not started, etc.). The wizard's
+        caller maps this to a user-facing retry hint.
+    """
+    bot = get_telegram_bot()
+    if bot is None:
+        raise RuntimeError(
+            "telegram bot is not running; finish onboarding "
+            "step 2 (bot token) first"
+        )
+    try:
+        chat_id_int = int(im_id)
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"im_id {im_id!r} is not a valid TG chat id (digits required)"
+        ) from e
+    await bot.send_message(chat_id=chat_id_int, text=text)
+
+
+async def fetch_chat_display_name(im_id: str) -> str | None:
+    """Resolve the chat's display name via TG's ``getChat``.
+
+    Returns ``None`` on any failure (no bot, network down,
+    user blocked the bot, etc.) so the wizard can fall back
+    to a bare chat-id display without the operator seeing a
+    console-style error. Mirrors the legacy
+    ``_fetch_display_name`` inline helper in
+    ``onboarding.py`` / ``auth.py``; both call sites now
+    route through this single helper so the TG API surface
+    stays inside the channel package.
+
+    Used during onboarding only — post-onboarding the
+    dispatcher writes the bound display name onto the
+    Employee row's ``display_name`` column, so the wizard
+    doesn't need to re-fetch on every refresh.
+    """
+    bot = get_telegram_bot()
+    if bot is None:
+        return None
+    try:
+        chat_id_int = int(im_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        chat = await bot.get_chat(chat_id=chat_id_int)
+    except Exception:
+        # ``bot.get_chat`` raises ``telegram.error.TelegramError``
+        # on every failure path (bot blocked, network blip,
+        # chat not started). Returning ``None`` lets the
+        # caller fall back to the bare chat-id display; we
+        # don't surface this to the operator.
+        return None
+    name = getattr(chat, "first_name", None) or getattr(
+        chat, "title", None
+    ) or getattr(chat, "username", None)
+    return name or None
+
+
 def _replies() -> dict[str, str]:
     """Lazy loader that defers the YAML read to the first
     reply. Keeps the module importable even if the YAML

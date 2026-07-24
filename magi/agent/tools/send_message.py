@@ -14,7 +14,7 @@ The push target is determined by the **session's channel**
 (``chat_sessions.channel``) and the dispatcher's adapter for
 that channel. The tool calls ``dispatcher.send_to_session(
 session_id, text)`` — it never reads the per-channel IM id
-itself (no tgid, no slack mid, etc.); that's the adapter's
+itself (no per-channel IM id, no slack mid, etc.); that's the adapter's
 job.
 
   - WebUI session (``channel="webui"``) — the tool

@@ -32,7 +32,7 @@ modes are treated differently on purpose:
     can't tell the difference between a healthy chat and
     one that can't find who they are.
 
-The cookie / tgid / row-exists checks are NOT done here
+The cookie / uid / row-exists checks are NOT done here
 because the auth gate (``AdminGate``) has already done them
 and returned 401. If the gate let the request through, the
 admin row exists.
@@ -132,7 +132,7 @@ def _resolve_caller_credentials(
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no employee row bound to this tgid",
+            detail="no employee row bound to this cookie",
         )
     if not emp.provider or not emp.api_key:
         logger.info(
@@ -155,7 +155,7 @@ class ChatSendRequest(BaseModel):
 
     ``text`` is the only required field. ``session_id``
     (optional) ties the message to a persisted session;
-    the cookie's tgid pins the session to that operator.
+    the cookie's uid pins the session to that operator.
     If absent, the backend auto-creates a new session
     and returns its id in the response — so the frontend
     doesn't have to know about session lifecycle.
@@ -221,8 +221,8 @@ async def send_chat(
     # ``_resolve_caller_credentials`` re-checks the row
     # exists and surfaces the LLM credentials. The cookie
     # is the cross-channel identity; the per-channel
-    # delivery address (TG tgid) is looked up
-    # separately by ``_telegram_id_for_uid``
+    # delivery address (TG chat id) is looked up
+    # separately by the channel dispatcher (D.28)
     # below — WebUI doesn't need it for send / read but
     # we stamp it on the session row for cross-channel
     # tooling.
@@ -240,35 +240,37 @@ async def send_chat(
     uid, employee_provider, employee_api_key, employee_role = (
         _resolve_caller_credentials(_state_dir(), cookie_uid)
     )
-    # D.24: per-channel delivery address for the row's
-    # tgid column. WebUI doesn't need it for send/read, but
-    # cross-channel tooling may address the operator's bot
-    # from this column. ``""`` if the operator never bound TG.
+    # D.24: per-channel delivery address stamped on the
+    # session row's ``delivery_address`` column (renamed
+    # from the legacy per-channel chat-id column in D.28).
+    # WebUI
+    # doesn't need it for send/read, but cross-channel
+    # tooling may address the operator's bot from this
+    # column. ``""`` if the operator never bound TG.
 
     # -- session lifecycle ------------------------------------------
-    # The cookie's tgid (string of digits) is also the
-    # session's tgid. ``_resolve_caller_credentials``
-    # never raises for an admin who got past the gate, so
-    # the cookie must be a valid integer — but we trust
-    # the cookie string verbatim for the path key because
-    # the SessionStore path layer rejects anything that
-    # wouldn't round-trip safely.
+    # ``uid`` (cross-channel identity) is the session key
+    # — NOT the per-channel delivery address. The store
+    # resolves rows by uid; the channel adapter interprets
+    # the delivery address when it has to push a reply.
     store = SessionStore(_state_dir())
     session_id = payload.session_id
-    # The per-channel delivery address stamped on the row's
-    # ``tgid`` column. ``""`` if the operator never bound TG.
+    # The per-channel delivery address stamped on the
+    # session row. ``""`` if the operator never bound TG.
     # We always need this — either from the existing row
     # (when the caller passed a session_id) or by reading
-    # the Employee row (when we mint a fresh session below).
-    tgid = ""
+    # the Employee row via the channel dispatcher (when we
+    # mint a fresh session below).
+    delivery_address = ""
     if session_id:
         try:
             # D.23: session key is now ``uid`` (the
-            # cross-channel identity of the operator), not
-            # the cookie's tgid. The tgid is still
-            # carried on the row's ``tgid`` column for
-            # legacy / outbound-delivery reasons, but it is
-            # NOT a session key.
+            # cross-channel identity of the operator),
+            # not the cookie's chat id. The chat id is
+            # still carried on the row's
+            # ``delivery_address`` column for
+            # legacy / outbound-delivery reasons, but it
+            # is NOT a session key.
             existing = store.get(uid, session_id)
         except SessionPathError as e:
             raise MagiHTTPException(
@@ -282,22 +284,23 @@ async def send_chat(
         if existing is None:
             session_id = None
         else:
-            # Carry the row's tgid forward to the
-            # auto-title job below (which runs on every
-            # fresh session). Reading the column here
-            # keeps the tgid-from-Employee path scoped to
+            # Carry the row's delivery address forward to
+            # the auto-title job below (which runs on
+            # every fresh session). Reading the column
+            # here keeps the dispatcher lookup scoped to
             # the auto-create branch — when the row
             # already exists, we trust its own column.
-            tgid = existing.delivery_address or ""
+            delivery_address = existing.delivery_address or ""
     if not session_id:
-        # ``delivery_address=`` here is the per-channel delivery
-        # address stamped on the row's ``tgid`` column. The
-        # value comes from the channel dispatcher — D.28
-        # centralised the uid→IM-id mapping in the adapter
-        # registry, so this file no longer reads
-        # ``Employee.telegram_id`` directly. An empty string
-        # when the operator has no TG binding (still legal —
-        # WebUI rows don't push anywhere).
+        # ``delivery_address=`` here is the per-channel
+        # delivery address stamped on the session row.
+        # The value comes from the channel dispatcher
+        # (D.28 centralised the uid → IM-id mapping in
+        # the adapter registry, so this file no longer
+        # reads ``Employee.telegram_id`` directly). An
+        # empty string when the operator has no TG
+        # binding (still legal — WebUI rows don't push
+        # anywhere).
         from magi.channels import dispatcher as channel_dispatcher
         tg_im_id = channel_dispatcher.lookup_im_id(uid, "tg") or ""
         sess = store.create(
@@ -370,7 +373,7 @@ async def send_chat(
     if len(post.messages) == 1:
         from magi.agent.memory.session.auto_title import enqueue_title_job
         await enqueue_title_job(
-            delivery_address=tgid,
+            delivery_address=delivery_address,
             session_id=session_id,
             uid=uid,
             employee_provider=employee_provider,

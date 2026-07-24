@@ -43,7 +43,7 @@ def _is_admin_uid(uid: int) -> bool:
     """True if the ``Employee`` row with the given id has role=admin.
 
     D.24: the ``magi_session`` cookie carries the
-    ``uid`` (cross-channel identity), not the tgid.
+    ``uid`` (cross-channel identity), not a chat id.
     The admin allowlist is keyed by employee id; a future
     channel will resolve its own delivery address to the same
     employee id and re-use this same check.
@@ -98,9 +98,9 @@ def admin_gate(request: Request) -> str:
 AdminGate = Annotated[str, Depends(admin_gate)]
 
 
-def _is_admin_or_assigned_tgid(tgid: str) -> bool:
-    """DEPRECATED: pre-D.24 lookup that read ``tgid`` as a
-    telegram_id and matched ``Employee.telegram_id``. Cookie
+def _is_admin_or_assigned_tgid(tgid: str) -> bool:  # noqa: ARG001
+    """DEPRECATED: pre-D.24 lookup that read the per-channel
+    chat id and matched ``Employee.telegram_id``. Cookie
     is now ``Employee.id``, so this helper returned False
     for every real caller. Replaced by the direct PK lookup
     in :func:`admin_or_assigned_gate`. Kept as a stub for one
@@ -122,8 +122,8 @@ def admin_or_assigned_gate(request: Request) -> str:
 
     D.24: cookie carries ``Employee.id`` (an int), not the
     legacy telegram_id. The earlier implementation
-    (``_is_admin_or_assigned_tgid``) ran
-    ``int(cookie)`` and looked up by
+    (the deprecated ``_is_admin_or_assigned_chat_id`` stub)
+    ran ``int(cookie)`` and looked up by
     ``Employee.telegram_id == cookie`` — which matched
     by sheer coincidence only when an employee happened
     to have the same integer id as their telegram_id
@@ -723,7 +723,7 @@ def create_employee(
                 f"Valid: {', '.join(_EMPLOYEE_ROLES)}"
             ),
         )
-    # Telegram id uniqueness — one tgid binds to at most
+    # Telegram id uniqueness — one chat id binds to at most
     # one employee. A duplicate id here means the operator
     # is double-binding; surface as a 409.
     if payload.telegram_id is not None and session.scalar(

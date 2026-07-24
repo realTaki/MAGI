@@ -106,7 +106,16 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def seeded(fresh_db: Path) -> dict[str, Employee]:
     """Insert two admins: Alice has a bound telegram_id;
     Bob does not. The 400 path uses Bob; the success path
-    uses Alice."""
+    uses Alice.
+
+    Seeds ``UserImBinding`` (D.28 canonical store) for
+    Alice so the channel dispatcher can resolve her bound
+    TG chat id (the adapter's bind path also keeps
+    ``Employee.telegram_id`` in sync as a legacy read-cache
+    for the bot's inbound handler).
+    """
+    from magi.agent.db.models_user_im_binding import UserImBinding
+    from magi.channels import dispatcher as channel_dispatcher
     with open_session() as db:
         alice = Employee(
             name="alice",
@@ -123,6 +132,8 @@ def seeded(fresh_db: Path) -> dict[str, Employee]:
             api_key="fake-key-bob",
         )
         db.add_all([alice, bob])
+        db.flush()
+        db.merge(UserImBinding(uid=alice.id, channel="tg", im_id="9101"))
         db.commit()
         db.refresh(alice)
         db.refresh(bob)
@@ -140,12 +151,11 @@ def test_webui_channel_without_explicit_infers_new(
     spawns a fresh ``ChatSession`` row, matching the
     operator's mental model of "I see this row in chat
     history each time it fires"."""
-    with open_session() as db:
-        result = _resolve_delivery_to(
-            db, channel="webui",
-            uid=seeded["alice"].id,
-            explicit=None,
-        )
+    result = _resolve_delivery_to(
+        channel="webui",
+        uid=seeded["alice"].id,
+        explicit=None,
+    )
     assert result == "new"
 
 
@@ -157,12 +167,11 @@ def test_webui_channel_with_explicit_session_id_honours_it(
     ``channel='webui'`` — the cron reply joins the
     operator's existing chat instead of starting a new
     thread."""
-    with open_session() as db:
-        result = _resolve_delivery_to(
-            db, channel="webui",
-            uid=seeded["alice"].id,
-            explicit="01HABCDEFGHJKMNPQRSTVWXY",
-        )
+    result = _resolve_delivery_to(
+        channel="webui",
+        uid=seeded["alice"].id,
+        explicit="01HABCDEFGHJKMNPQRSTVWXY",
+    )
     assert result == "01HABCDEFGHJKMNPQRSTVWXY"
 
 
@@ -178,12 +187,11 @@ def test_tg_channel_uses_operator_telegram_id(
     bound delivery_address regardless of what ``delivery_to`` they
     passed (the value is silently ignored on the TG
     branch)."""
-    with open_session() as db:
-        result = _resolve_delivery_to(
-            db, channel="tg",
-            uid=seeded["alice"].id,
-            explicit="bogus-ignored",
-        )
+    result = _resolve_delivery_to(
+        channel="tg",
+        uid=seeded["alice"].id,
+        explicit="bogus-ignored",
+    )
     assert result == "9101"
 
 
@@ -195,13 +203,12 @@ def test_tg_channel_without_telegram_id_raises_400(
     mistake. Surface as 400 ``tasks.telegram_not_bound``
     so the drawer doesn't silently store a NULL that the
     runner then can't dispatch."""
-    with open_session() as db:
-        with pytest.raises(MagiHTTPException) as exc_info:
-            _resolve_delivery_to(
-                db, channel="tg",
-                uid=seeded["bob"].id,
-                explicit=None,
-            )
+    with pytest.raises(MagiHTTPException) as exc_info:
+        _resolve_delivery_to(
+            channel="tg",
+            uid=seeded["bob"].id,
+            explicit=None,
+        )
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "tasks.telegram_not_bound"
     assert "9101" not in exc_info.value.detail
@@ -227,23 +234,21 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     alice_id = seeded["alice"].id
     # 1. Helper re-derives with the row's *current* channel
     #    on a no-explicit call (the route's contract).
-    with open_session() as db:
-        re_derived = _resolve_delivery_to(
-            db, channel="tg",
-            uid=alice_id,
-            explicit=None,
-        )
+    re_derived = _resolve_delivery_to(
+        channel="tg",
+        uid=alice_id,
+        explicit=None,
+    )
     assert re_derived == "9101"
     # 2. A TG row that we PATCH to a different channel
     #    re-derives from the new channel. WebUI is the
     #    default — without an explicit session_id, the
     #    helper returns "new".
-    with open_session() as db:
-        re_derived_webui = _resolve_delivery_to(
-            db, channel="webui",
-            uid=alice_id,
-            explicit=None,
-        )
+    re_derived_webui = _resolve_delivery_to(
+        channel="webui",
+        uid=alice_id,
+        explicit=None,
+    )
     assert re_derived_webui == "new"
 
 
@@ -307,12 +312,12 @@ def test_task_row_carries_derived_delivery_to(
     issues — see module docstring) — the API route is
     a thin wrapper around this helper."""
     alice_id = seeded["alice"].id
+    derived = _resolve_delivery_to(
+        channel="tg",
+        uid=alice_id,
+        explicit=None,
+    )
     with open_session() as db:
-        derived = _resolve_delivery_to(
-            db, channel="tg",
-            uid=alice_id,
-            explicit=None,
-        )
         t = Task(
             id="T" + "0" * 25,
             name="tg-derived",

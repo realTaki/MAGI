@@ -17,10 +17,10 @@ gain a ``conversation_id`` arg without breaking callers.
 
 Persistence side: ``handle_message`` records one row per
 successful LLM call in the ``token_usage`` table (D.15).
-Session history lives in JSON files under
-``<workspace>/memories/sessions/<tgid>/<sid>.json``
-(D.6). No separate audit log — operator-facing
-``/api/employees/{id}/token-usage`` + ``GET
+Session history lives in the SQLite ``chat_sessions`` table
+under ``<workspace>/memories/<state-dir>.db`` (D.18, replacing
+the pre-D.18 JSON layout). No separate audit log — operator-
+facing ``/api/employees/{id}/token-usage`` + ``GET
 /api/chat/sessions/{id}`` cover the same questions
 ("what was said", "what was spent") that an audit
 view would.
@@ -136,9 +136,9 @@ def _build_messages_from_session(
     the LLM never sees it.
 
     D.23: ``uid`` is the cross-channel session
-    key. The previous ``tgid`` argument is gone — the
-    session is identified by who owns it, not by which
-    channel they happened to be on.
+    key. The previous per-channel delivery-address argument
+    is gone — the session is identified by who owns it, not
+    by which channel they happened to be on.
     """
     if not session_id:
         # No session: the inbound is its own message; no
@@ -273,11 +273,10 @@ async def handle_message(
     channel: str,
     uid: int | None = None,
     # D.6: optional session id. Persisted alongside the
-    # message in the session JSON file
-    # (``<workspace>/memories/sessions/<tgid>/<id>.json``);
-    # v0 also echoes it into the ``token_usage`` row so the
-    # audit-style question "which session burned these
-    # tokens?" can be answered later.
+    # message in the ``chat_sessions`` row; v0 also echoes
+    # it into the ``token_usage`` row so the audit-style
+    # question "which session burned these tokens?" can be
+    # answered later.
     session_id: str | None = None,
     # Per-employee credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
@@ -345,14 +344,13 @@ async def handle_message(
         ``None`` is accepted (FK NOT NULL on the SQL column
         will surface any caller that drops the ball), but
         v0 never sends ``None`` — both channel paths
-        resolve ``tgid`` → ``Employee`` before this
-        function runs.
+        resolve the caller to a known Employee row before
+        this function runs.
     session_id
         D.6: optional chat session id. Echoed into the
         ``token_usage`` row so the question "which session
         burned these tokens?" can be answered later by
-        joining against the session JSON files under
-        ``<workspace>/memories/sessions/<tgid>/<id>.json``.
+        joining against ``chat_sessions`` on the same id.
     employee_provider / employee_api_key / employee_model
         Per-call LLM credentials. Either all three are set
         (employee chooses model optionally) or the call is
@@ -570,7 +568,7 @@ async def handle_message(
                 except Exception as e:
                     logger.exception(
                         "agent: tool %s crashed (employee=%s, "
-                        "chat=%s)", tu["name"], uid, tgid,
+                        "session=%s)", tu["name"], uid, session_id,
                     )
                     tr_content = f"tool {tu['name']!r} crashed: {e}"
                     tool_results.append({
@@ -608,9 +606,9 @@ async def handle_message(
             # warning and return whatever text was
             # produced on the last iteration (may be empty).
             logger.warning(
-                "agent: tool loop hit max_iter=%d for chat=%s "
+                "agent: tool loop hit max_iter=%d for session=%s "
                 "(employee=%s); model still wanted tools",
-                max_iter, tgid, uid,
+                max_iter, session_id, uid,
             )
     except LLMError as e:
         logger.warning(

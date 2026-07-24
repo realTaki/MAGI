@@ -211,9 +211,9 @@ def session_from_dict(d: dict) -> Session:
 
         return Session(
             session_id=str(d["session_id"]),
-            # D.28: column was ``tgid``; renamed to
+            # D.28: column was the chat-id; renamed to
             # ``delivery_address``. Pre-D.28 JSON files
-            # carry the legacy ``tgid`` key — accept both
+            # carry the legacy chat-id key — accept both
             # so the legacy importer path stays alive.
             delivery_address=str(d.get("delivery_address") or d["tgid"]),
             uid=int(d["uid"]),

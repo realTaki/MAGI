@@ -1,7 +1,7 @@
 """CRUD endpoints for chat sessions.
 
 A "session" is a single thread of messages between an
-operator (identified by their TG tgid / dashboard cookie)
+operator (identified by their uid in the dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
 under the operator's workspace (see :mod:`magi.agent.memory.session`)
 and are per-user — admin A's session is invisible to admin B.
@@ -15,9 +15,11 @@ Endpoints
 - ``DELETE /chat/sessions/{session_id}``  remove a session
 
 The ``{session_id}`` route uses the URL as the only
-identification: there is no separate ``tgid`` parameter,
-because the cookie already pins the caller. The tgid is
-derived from the cookie via :func:`_current_admin_tgid`.
+identification: the cookie's uid already pins the caller.
+The per-channel delivery address stamped on the new row
+is resolved server-side via the channel dispatcher (D.28),
+so the endpoint never reads ``Employee.telegram_id``
+directly.
 """
 
 from __future__ import annotations
@@ -182,7 +184,7 @@ def _session_to_out(s: Session) -> SessionOut:
 def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
     """Convert a SessionSummary into the list-endpoint shape.
 
-    ``uid`` is the operator who owns this tgid
+    ``uid`` is the operator who owns this session
     today. We surface it explicitly so a future C7 view can
     label rows; v0 always sees the same value across rows
     for one admin.
@@ -203,34 +205,24 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _telegram_id_str_for_uid(uid: int) -> str:
-    """Look up the operator's bound TG tgid as a string.
+def _delivery_address_for_uid(uid: int, channel: str = "tg") -> str:
+    """Resolve the operator's bound per-channel delivery
+    address (the TG chat id today; opaque to domain code).
 
-    D.24: the cookie identity is the uid, but
-    ``SessionStore.create`` still takes a ``delivery_address=``
-    keyword that stamps the per-channel delivery address
-    on the row's ``tgid`` column. WebUI rows that
-    originated here get the operator's bound TG chat id
-    (or ``""`` if the operator never bound one) so future
-    cross-channel tooling can still address the bot.
+    D.28: the channel dispatcher owns the
+    ``uid → im_id`` mapping. This endpoint never reads
+    ``Employee.telegram_id`` directly — the dispatcher
+    opens its own session, so we also avoid touching
+    the caller's ORM session here.
 
-    Cheap one-shot ORM read — the row is already in the
-    session cache by the time we get here from the
-    AdminGate / cookie checks above. The previous shape
-    accessed ``emp.telegram_id`` outside the ``with``
-    block — works today because the column is eager, but
-    it's a detached-instance trap: a future change to
-    lazy-load (or an ORM-engine reset between requests)
-    would turn this into a ``DetachedInstanceError``.
-    Reading the scalar inside the block and returning a
-    plain ``str`` kills the trap at the source.
+    Returns ``""`` when the operator has no binding on
+    the channel. ``SessionStore.create`` accepts an
+    empty address as "no outbound push", which is
+    correct for WebUI rows that never need to deliver
+    to a chat (the channel is the WebUI itself, not TG).
     """
-    with open_session() as session:
-        emp = session.get(Employee, uid)
-        telegram_id = emp.telegram_id if emp is not None else None
-    if telegram_id is None:
-        return ""
-    return str(telegram_id)
+    from magi.channels import dispatcher as channel_dispatcher
+    return channel_dispatcher.lookup_im_id(uid, channel) or ""
 
 
 def _resolve_uid(request: Request) -> int:
@@ -238,13 +230,14 @@ def _resolve_uid(request: Request) -> int:
     current employee's id.
 
     D.24: the cookie carries the **uid** (stringified
-    int) — not the TG tgid. This helper is the single
-    place that translates "what's in the cookie" into
-    "who is the caller" for the rest of the chat_sessions
-    router. Raises ``chat.unknown_sender`` 401 if the
-    cookie is missing or unparseable — same code as
-    chat.py so the frontend's friendly message covers
-    both endpoints.
+    int) — not a per-channel delivery address. This
+    helper is the single place that translates "what's
+    in the cookie" into "who is the caller" for the
+    rest of the chat_sessions router. Raises
+    ``chat.unknown_sender`` 401 if the cookie is
+    missing or unparseable — same code as chat.py so
+    the frontend's friendly message covers both
+    endpoints.
     """
     raw = request.cookies.get("magi_session") or ""
     try:
@@ -263,10 +256,11 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
     gate by role.
 
     D.24: the cookie value IS the uid (no
-    telegram_id lookup needed). ``AdminGate`` already
-    proved the cookie is a live admin session; this
-    helper re-verifies the role to keep the router
-    self-contained if a future caller skips the gate.
+    per-channel delivery address lookup needed).
+    ``AdminGate`` already proved the cookie is a
+    live admin session; this helper re-verifies the
+    role to keep the router self-contained if a
+    future caller skips the gate.
 
     Reads ``role`` and ``id`` inside the ``with`` block
     so we never touch the ORM row outside its session —
@@ -306,16 +300,17 @@ def create_session(
     before the first message).
     """
     uid = _admin_uid(request, store)
-    # D.23: ``tgid`` is the per-channel delivery
-    # address stamped on the row's ``tgid`` column. We
-    # still carry the cookie's telegram_id here so a
-    # future cross-channel query tool can use the row's
-    # tgid to address the operator's TG bot. The store
-    # key, however, is ``uid`` — see
+    # D.23 / D.28: ``delivery_address`` is the
+    # per-channel delivery address stamped on the row's
+    # column (renamed from the legacy per-channel chat-id
+    # column in D.28). We resolve it via the channel
+    # dispatcher so this endpoint never reads
+    # ``Employee.telegram_id`` directly. The store key,
+    # however, is ``uid`` — see
     # :meth:`SessionStore.create`.
-    tgid = _telegram_id_str_for_uid(uid)
+    delivery_address = _delivery_address_for_uid(uid)
     sess = store.create(
-        uid, channel="webui", delivery_address=tgid,
+        uid, channel="webui", delivery_address=delivery_address,
     )
     return CreateSessionResponse(session_id=sess.session_id)
 
@@ -349,11 +344,12 @@ def list_sessions(
 
     uid = _admin_uid(request, store)
     # D.23: list scope is the operator's uid, not
-    # the cookie's tgid. ``store.list_summaries``
-    # returns every row whose ``uid`` matches —
-    # webui, TG, and (in future) any other channel the
-    # operator owns. The frontend renders the channel
-    # alongside each row (D.22 added the field).
+    # a per-channel delivery address.
+    # ``store.list_summaries`` returns every row whose
+    # ``uid`` matches — webui, TG, and (in future) any
+    # other channel the operator owns. The frontend
+    # renders the channel alongside each row (D.22
+    # added the field).
     items, total = store.list_summaries(
         uid, limit=limit, offset=offset,
     )

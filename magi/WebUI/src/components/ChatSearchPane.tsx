@@ -28,7 +28,9 @@
  * Auth + scope:
  *   The cookie-based admin gate is handled upstream by the
  *   HTTP route. The search route scopes by ``uid``
- *   (D.18+1); the sessions list route scopes by ``tgid``.
+ *   (D.18+1); the sessions list route scopes by
+ *   ``delivery_address`` (the per-channel delivery address
+ *   column — D.28 renamed the legacy ``tgid`` column).
  *   Both end up showing the operator's own history — the
  *   two routes just have different SQL keys because the
  *   underlying data models are different. We don't
@@ -53,7 +55,10 @@ type SearchHit = {
   snippet: string;
   title: string | null;
   score: number;
-  tgid: string;
+  // D.28: per-channel delivery address — opaque string
+  // (TG chat id today). Renamed from the legacy
+  // ``tgid`` field that the server used to surface.
+  deliveryAddress: string;
   channel: string;
 };
 

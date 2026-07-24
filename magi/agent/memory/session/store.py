@@ -30,7 +30,7 @@ Per-channel delivery address (D.28)
 ------------------------------------
 Each session row carries ``delivery_address`` — the per-channel
 delivery address on this session. Today: a TG chat id (the
-``tgid`` column was renamed to ``delivery_address`` in D.28).
+column was renamed to ``delivery_address`` in D.28).
 Domain code treats the value as opaque; only the channel
 adapter (:mod:`magi.channels.dispatcher`) interprets it.
 
@@ -141,9 +141,9 @@ class SessionStore:
 
         ``delivery_address`` is the per-channel delivery
         address stored on the row's ``delivery_address``
-        column (D.28 — renamed from the legacy ``tgid``
-        column). It's optional because not every channel
-        has a TG-shaped id:
+        column (D.28 — renamed from the legacy per-
+        channel chat-id column). It's optional because
+        not every channel has a TG-shaped id:
 
           - TG caller:    pass ``str(effective_chat.id)`` so
             the row carries the TG chat id for outbound

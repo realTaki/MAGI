@@ -21,10 +21,13 @@ its work without each tool having to reach into globals.
 v0 fields:
   - ``state_dir``    — ``MAGI_STATE_DIR`` value
   - ``workspace``    — the resolved workspace root
-  - ``tgid``      — the current conversation's chat id
-  - ``uid``  — who is on the other end (for
-                        audit / future per-employee limits)
+  - ``uid``          — who is on the other end (for audit
+                        / future per-employee limits)
   - ``channel``      — ``"webui"`` / ``"tg"`` / ``"scheduled"``
+  - ``session_id``   — current chat session id (empty when
+                        the tool runs outside a chat; the
+                        ``send_message`` tool uses this to
+                        route back to the right channel)
 
 Each tool implementation lives in its own module under
 ``magi/agent/tools/`` and exports a single class.

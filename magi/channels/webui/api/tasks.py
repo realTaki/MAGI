@@ -395,42 +395,52 @@ def create_task(
             detail=f"a task with name {payload.name!r} already exists",
         )
     cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
-    # Server-side derive ``delivery_to`` per the unified
-    # rule. ``channel=tg`` requires the operator to have a
-    # ``telegram_id`` bound — a missing binding is a config
-    # mistake, surfaced as 400 so the drawer doesn't
-    # silently store a NULL that the runner then can't
-    # dispatch. ``channel=webui`` leaves ``delivery_to``
-    # NULL: the task's own session IS the operator-visible
-    # record (no separate IM target needed).
+    # D.28: resolve the per-channel delivery address via
+    # the channel dispatcher OUTSIDE this open session
+    # (the dispatcher opens its own SQLite session —
+    # nested BEGIN IMMEDIATE inside the outer txn would
+    # deadlock). For ``channel='tg'`` the dispatcher
+    # raises a friendly 400 when the operator has no TG
+    # binding; for ``channel='webui'`` it returns the
+    # caller's explicit ``ctx.session_id`` or ``"new"``.
+    from magi.channels import dispatcher as channel_dispatcher
+    task_session_delivery_address = (
+        channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
+    )
     delivery_to = _resolve_delivery_to(
-        session, channel=payload.channel,
+        channel=payload.channel,
         uid=operator_id,
         explicit=payload.delivery_to,
     )
     # Allocate the task's home session NOW. Every cron
     # fire of this task accumulates into this single
-    # session — same channel="task", same ``tgid`` stamp
-    # (carries the IM target for the runner's TG-push
-    # wiring, but the session itself is never channel="tg"
-    # — see ``chat_sessions.channel`` semantics). The
-    # operator sees this session in their chat list along
-    # with their webui + tg chats (the chat-sessions
-    # router filters only by uid).
-    operator = session.get(Employee, operator_id)
+    # session — same channel="task", same
+    # ``delivery_address`` stamp (carries the IM target
+    # for the runner's TG-push wiring, but the session
+    # itself is never channel="tg" — see
+    # ``chat_sessions.channel`` semantics). The operator
+    # sees this session in their chat list along with
+    # their webui + tg chats (the chat-sessions router
+    # filters only by uid).
+    #
+    # D.28: the per-channel delivery address is resolved
+    # via the channel dispatcher. Looking it up inside
+    # this ``open_session()`` would deadlock (the
+    # dispatcher's adapter opens its own SQLite session
+    # — nested BEGIN IMMEDIATE in the outer txn), so the
+    # lookup happens OUTSIDE the with block (above) and
+    # is passed in as ``task_session_delivery_address``.
     task_session_id = new_session_id()
     now = _now_iso()
     task_session = ChatSession(
         session_id=task_session_id,
-        # ``tgid`` here records the IM target so the
-        # runner's ``_resolve_session_for_task`` lookup
-        # (when called for legacy rows that pre-date
-        # this column) can recover. For webui tasks the
-        # value is the operator's telegram_id as a
-        # harmless breadcrumb — no routing depends on
-        # it because channel="webui" disables the
-        # send_message tool.
-        delivery_address=str(operator.telegram_id or ""),
+        # The IM target as a breadcrumb so the runner's
+        # ``_resolve_session_for_task`` lookup (for
+        # legacy rows that pre-date this column) can
+        # recover. For webui tasks the value is harmless
+        # — no routing depends on it because channel=
+        # "webui" disables the send_message tool.
+        delivery_address=task_session_delivery_address,
         uid=operator_id,
         channel="task",
         title=f"[定时] {payload.name}",
@@ -516,11 +526,12 @@ def update_task(
     if patch_channel is not None:
         t.channel = patch_channel
     # Always re-derive. The helper reads the row's current
-    # channel + the operator's current telegram_id; an
-    # unchanged channel still wants the row to track any
-    # later TG-binding edit.
+    # channel + the operator's current bound chat id (via
+    # the channel dispatcher, D.28); an unchanged channel
+    # still wants the row to track any later TG-binding
+    # edit.
     t.delivery_to = _resolve_delivery_to(
-        session, channel=t.channel,
+        channel=t.channel,
         uid=t.uid, explicit=None,
     )
     for k, v in data.items():
@@ -784,7 +795,6 @@ def _resolve_system_tz() -> str:
 
 
 def _resolve_delivery_to(
-    session: Session,
     *,
     channel: str,
     uid: int,
@@ -796,10 +806,10 @@ def _resolve_delivery_to(
     the WebUI form; the channel alone drives it:
 
       - ``channel='tg'``: must use the operator's bound
-        ``telegram_id``. Missing binding is a config
-        mistake — surface as 400 so the drawer doesn't
-        silently store a NULL the runner then can't
-        dispatch.
+        TG chat (resolved via the channel dispatcher,
+        D.28). Missing binding is a config mistake —
+        surface as 400 so the drawer doesn't silently
+        store a NULL the runner then can't dispatch.
       - ``channel='webui'``: ``explicit`` (caller-supplied
         session_id from the LLM-in-chat path) is honoured
         when present; otherwise the WebUI default is
@@ -809,8 +819,9 @@ def _resolve_delivery_to(
     any later TG-binding edit the operator made.
     """
     if channel == "tg":
-        emp = session.get(Employee, uid)
-        if emp is None or not emp.telegram_id:
+        from magi.channels import dispatcher as channel_dispatcher
+        chat_id = channel_dispatcher.lookup_im_id(uid, "tg")
+        if not chat_id:
             raise MagiHTTPException(
                 status_code=400,
                 code="tasks.telegram_not_bound",
@@ -821,7 +832,7 @@ def _resolve_delivery_to(
                     f"(Settings → 员工)."
                 ),
             )
-        return str(emp.telegram_id)
+        return chat_id
     # webui: honour an explicit caller-supplied value (the
     # LLM-in-chat path passes ``ctx.session_id``); else
     # default to "new" for fresh-session-per-fire.

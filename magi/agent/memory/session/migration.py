@@ -1,6 +1,6 @@
 """One-shot JSON → SQLite migration (D.18).
 
-Walks ``<workspace>/memories/sessions/<tgid>/<sid>.json``,
+Walks ``<workspace>/memories/sessions/<chat-id>/<sid>.json``,
 parses each file, inserts rows into the SQLite tables, and
 deletes the JSON after the row\'s transaction commits.
 Idempotent via ``INSERT OR IGNORE`` on the
@@ -32,7 +32,7 @@ _SESSIONS_SUBDIR = "sessions"
 
 
 def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
-    """Walk the legacy ``sessions/<tgid>/<sid>.json`` tree
+    """Walk the legacy ``sessions/<chat-id>/<sid>.json`` tree
     and import each file into SQLite.
 
     Returns a small stats dict: ``{"imported": N, "skipped":
@@ -51,7 +51,7 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
         if not chat_dir.is_dir():
             continue
         tgid = chat_dir.name
-        # Validate tgid; the dir name is filesystem-supplied
+        # Validate chat id; the dir name is filesystem-supplied
         # so a corrupted workspace could have anything in here.
         try:
             _validate_tgid(tgid)
@@ -86,7 +86,7 @@ def migrate_from_json(workspace_root_path: Path) -> dict[str, int]:
                         ChatSession.__table__.insert().prefix_with("OR IGNORE"),
                         {
                             "session_id": sess.session_id,
-                            # D.28: column was tgid; renamed to
+                            # D.28: column was chat-id; renamed to
                             # delivery_address. Pre-D.28 inserts
                             # (this importer, reading old JSON
                             # files) still pass the value under

@@ -65,7 +65,7 @@ def bind_telegram(
             detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(payload.telegram_id)
+        telegram_id_int = int(payload.telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -91,12 +91,12 @@ def bind_telegram(
                 ),
             )
 
-        # Unbind whatever currently has this tgid (if any).
+        # Unbind whatever currently has this chat id (if any).
         # The unique constraint on ``telegram_id`` would raise
         # on commit if we skipped this; doing it explicitly
         # gives a cleaner error and a clear log line.
         existing = session.scalar(
-            select(Employee).where(Employee.telegram_id == tgid_int)
+            select(Employee).where(Employee.telegram_id == telegram_id_int)
         )
         if existing is not None and existing.id != emp.id:
             existing.telegram_id = None
@@ -106,7 +106,7 @@ def bind_telegram(
         # (D.28). The adapter writes ``user_im_bindings``
         # AND syncs ``Employee.telegram_id`` (the read-
         # cache the bot's inbound handler still uses).
-        channel_dispatcher.bind_im_id(emp.id, "tg", str(tgid_int))
+        channel_dispatcher.bind_im_id(emp.id, "tg", str(telegram_id_int))
         session.refresh(emp)  # pick up the legacy column write-back
         session.commit()
 
@@ -139,7 +139,7 @@ def unbind_telegram(
             detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(telegram_id)
+        telegram_id_int = int(telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -151,7 +151,7 @@ def unbind_telegram(
     # adapter drops both the new and legacy rows.
     with open_session() as session:
         bound_emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == tgid_int)
+            select(Employee).where(Employee.telegram_id == telegram_id_int)
         )
     if bound_emp is not None:
         channel_dispatcher.unbind_im_id(bound_emp.id)
@@ -188,7 +188,7 @@ def get_telegram_binding(
             detail="telegram_id must be a numeric Telegram chat id",
         )
     try:
-        tgid_int = int(telegram_id)
+        telegram_id_int = int(telegram_id)
     except ValueError:
         raise MagiHTTPException(
             status_code=400,
@@ -200,7 +200,7 @@ def get_telegram_binding(
     bound_name = None
     with open_session() as session:
         emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == tgid_int)
+            select(Employee).where(Employee.telegram_id == telegram_id_int)
         )
         if emp is not None:
             bound_uid = emp.id

@@ -44,7 +44,7 @@ from magi.agent.db.base import Base
 
 # ────────────────────────────────────────────────────────────────── #
 # Chat sessions — D.18: replaces the per-session JSON files under
-# `<workspace>/memories/sessions/<tgid>/<sid>.json` with two
+# `<workspace>/memories/sessions/<delivery-address>/<sid>.json` with two
 # rows tables. ``chat_sessions`` is the header; ``chat_messages`` is
 # the active + archived message log, where ``archived=0`` is the
 # LLM-facing "active" view (compressed) and ``archived=1`` is the
@@ -54,7 +54,7 @@ from magi.agent.db.base import Base
 # callers that already hold an id (chat.py / bot.py / agent.py) can
 # stay on their existing keys without translation.
 #
-# D.28: ``delivery_address`` replaces the legacy ``tgid`` column.
+# D.28: ``delivery_address`` replaces the legacy chat-id column.
 # The value is the per-channel delivery address on this session
 # row — a TG chat id today, an opaque string from domain code's
 # perspective. The channel adapter
