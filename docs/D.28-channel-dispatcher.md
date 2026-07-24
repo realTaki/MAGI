@@ -4,8 +4,10 @@
 
 Identity model after D.27:
 
-  - **UID** = person. Used everywhere outside the channel
-    adapters. Cookie identity. `_super_admins()` returns uid set.
+  - **UID** = a User (the human an EVE serves, or the
+    operator running Adam — same identity model for both).
+    Used everywhere outside the channel adapters. Cookie
+    identity. `_super_operators()` returns uid set.
     `ToolContext.uid`. `SessionStore.create(uid, ...)`. `Task.uid`.
   - **Session ID** = conversation. `chat_sessions.session_id`.
   - **Channel + per-channel IM id** = where to push the next
@@ -31,7 +33,10 @@ The leak has costs:
     fabricate a fake tgid-shaped string).
   - **Wire format bakes into the public API**: the WebUI's
     `/api/auth/allowed-accounts` exposes `telegram_id`; the
-    onboarding wizard inputs `tgids`. None of that is generic.
+    onboarding wizard inputs `tgids`. None of that is
+    generic. (Post-refactor follow-ups F1 / F3 in
+    `docs/ROADMAP.md` plan the route rename; this doc only
+    covers the dispatcher shape.)
 
 ## Architecture
 
@@ -95,12 +100,14 @@ opaquely.
 The `_RENAME_COLUMN_MIGRATIONS` entry is added; existing
 data survives (rename is metadata-only on SQLite).
 
-### `Employee.telegram_id` stays (for now)
+### `users.telegram_id` stays (for now)
 
-This column is the TG channel's binding for the user. Other
-channels will eventually get sibling columns OR a
-`user_im_bindings(uid, channel, im_id)` table. For D.28 we
-keep the column and move all WRITES into
+Today this column lives on the `employees` table (which the
+post-refactor follow-ups rename to `users` — see F1 in
+`docs/ROADMAP.md`). It's the TG channel's binding for the
+User. Other channels will eventually get sibling columns OR
+the `user_im_bindings(uid, channel, im_id)` table. For D.28
+we keep the column and move all WRITES into
 `magi/channels/telegram/binding.py` (the TG adapter's binding
 facade). Reads from outside the TG adapter drop to zero.
 
@@ -115,7 +122,7 @@ class UserImBinding(Base):
     __table_args__ = (UniqueConstraint("uid", "channel"),)
 ```
 
-When this lands, `Employee.telegram_id` becomes a denormalised
+When this lands, `users.telegram_id` becomes a denormalised
 read-cache for the legacy `tg` channel, kept in sync by the
 TG adapter.
 
@@ -178,7 +185,7 @@ TG adapter.
   - `magi/channels/webui/api/tg_bindings.py` — moves to
     `magi/channels/telegram/binding.py` and shrinks to just
     the API surface the wizard uses. Reads/writes
-    `Employee.telegram_id` happen only inside this file.
+    `users.telegram_id` happen only inside this file.
 
   - `magi/channels/webui/api/chat_sessions.py` — the
     `SessionSummary` and `SessionDetail` schemas drop the
@@ -191,6 +198,10 @@ TG adapter.
     Reads outside `channels/telegram/` get the value as an
     opaque string; the only caller that interprets it is the
     dispatcher.
+
+  - `magi/agent/db/models_user_im_binding.py` — already
+    refers to "the User's identity" in its docstring; no
+    change needed for the reframe.
 
   - `magi/agent/memory/session/tables.py` — column rename.
 
@@ -225,7 +236,9 @@ TG adapter.
      interface + a registry. Initially the registry contains
      exactly one adapter: the TG adapter. The dispatcher
      delegates `lookup_im_id` / `send` / `bind_im_id` to the
-     right adapter.
+     right adapter. (Adam / EVE nodes each register the
+     adapters they mount; the dispatcher is per-process,
+     not per-archetype.)
 
   3. **Move TG binding write-path** into
      `magi/channels/telegram/binding.py`. The wizard's
@@ -248,13 +261,13 @@ TG adapter.
      return only TG-adapter + tests.
 
   7. **(D.29, optional)** Introduce the `user_im_bindings`
-     table. Move the data, drop `Employee.telegram_id`. Each
+     table. Move the data, drop `users.telegram_id`. Each
      new channel adapter adds its own rows.
 
 ## What does NOT change
 
-  - **UID stays the cookie identity.** All auth/admin gating
-    remains UID-based.
+  - **UID stays the cookie identity.** All operator / auth
+    gating remains UID-based.
   - **Session row model stays.** `chat_sessions.session_id`,
     `chat_sessions.uid`, `chat_sessions.channel`,
     `chat_sessions.messages`. The change is purely on the
