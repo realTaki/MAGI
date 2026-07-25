@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { useT } from "../../i18n/index";
-import type { DepartmentRow, EmployeeRow } from "../OrganizationTab";
+import type { MAGICRow, EmployeeRow } from "../OrganizationTab";
 
 type EmployeeListResponse = {
   items: EmployeeRow[];
@@ -58,7 +58,7 @@ const PROVIDER_OPTIONS = [
 
 export function EmployeesPane() {
   const t = useT();
-  const [departments, setDepartments] = useState<DepartmentRow[] | null>(null);
+  const [magicTeams, setMagicTeams] = useState<MAGICRow[] | null>(null);
   // ``employeeList`` is the full paginated response; the table
   // renders ``employeeList.items`` while the pager reads the
   // totals off the same object.
@@ -137,10 +137,10 @@ export function EmployeesPane() {
 
   // -- fetches ------------------------------------------------------------
 
-  async function refreshDepartments() {
+  async function refreshMagics() {
     try {
-      const r = await fetch("/api/departments", { credentials: "include" });
-      if (r.ok) setDepartments(await r.json());
+      const r = await fetch("/api/magics", { credentials: "include" });
+      if (r.ok) setMagicTeams(await r.json());
     } catch {
       /* leave the previous value; the row-level error catches it */
     }
@@ -177,7 +177,7 @@ export function EmployeesPane() {
   // changes. ``refreshEmployees`` reads those three from the
   // closure; the effect's dep list keeps them honest.
   useEffect(() => {
-    void refreshDepartments();
+    void refreshMagics();
   }, []);
   useEffect(() => {
     void refreshEmployees();
@@ -387,7 +387,7 @@ export function EmployeesPane() {
       }
       closeDetail();
       await refreshEmployees();
-      await refreshDepartments();
+      await refreshMagics();
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -429,7 +429,7 @@ export function EmployeesPane() {
         return;
       }
       await refreshEmployees();
-      await refreshDepartments();
+      await refreshMagics();
       // Stay on the detail panel so the operator sees the new
       // status + the inverse button label (the row's
       // separated_at flipped, the panel re-reads from
@@ -504,15 +504,15 @@ export function EmployeesPane() {
                 </button>
               </li>
 
-              {departments === null && (
+              {magicTeams === null && (
                 <li className="px-3 py-2 text-xs text-ink-soft">Loading…</li>
               )}
-              {departments?.length === 0 && (
+              {magicTeams?.length === 0 && (
                 <li className="px-3 py-2 text-xs text-ink-soft">
                   （还没有部门）
                 </li>
               )}
-              {departments?.map((d) => {
+              {magicTeams?.map((d) => {
                 const active =
                   scope.kind === "department" && scope.departmentId === d.id;
                 const count = deptHeadcount(d.id);
@@ -634,7 +634,7 @@ export function EmployeesPane() {
                       className="form-input text-sm py-2 px-3"
                     >
                       <option value="">（未指定部门）</option>
-                      {(departments ?? []).map((d) => (
+                      {(magicTeams ?? []).map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name}
                         </option>
@@ -949,7 +949,7 @@ export function EmployeesPane() {
                       className="form-input text-sm py-2 px-3"
                     >
                       <option value="">（未指定部门）</option>
-                      {(departments ?? []).map((d) => (
+                      {(magicTeams ?? []).map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name}
                         </option>

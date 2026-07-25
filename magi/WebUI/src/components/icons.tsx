@@ -109,13 +109,48 @@ export const IconContacts = ({ className }: IconProps) => (
   </Icon>
 );
 
-// -- organization sidebar sections (部门管理 / 员工管理) ---------------------
+// -- organization sidebar sections (智能体管理 / 员工管理) ------------------
 
+// Legacy dept-tree icon, retained for any reference that still
+// points at the old ``IconDepartments`` name (the dept sub-tree
+// concept was dropped in the post-refactor reframe; the active
+// sidebar entry is now ``IconMagis`` below).
 export const IconDepartments = ({ className }: IconProps) => (
   <Icon className={className}>
     <rect x="3" y="4" width="18" height="5" rx="1" />
     <rect x="3" y="15" width="18" height="5" rx="1" />
     <path d="M12 9v6" />
+  </Icon>
+);
+
+// "MAGI team" — a tree/council structure. Three connected
+// nodes in a hierarchy: the top node is the ADAM, the two
+// below are EVEs. Reads as "organization chart" without
+// looking like the generic folder-tree icon.
+export const IconMagic = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <circle cx="12" cy="5" r="2.2" />
+    <path d="M12 7.2v3" />
+    <path d="M12 10.2h-5.5M12 10.2h5.5" />
+    <path d="M6.5 10.2v3h5.5M17.5 10.2v3H12" />
+    <circle cx="6.5" cy="14.5" r="2.2" />
+    <circle cx="17.5" cy="14.5" r="2.2" />
+  </Icon>
+);
+
+// "Smart agent" — a small chip head with antennae. Reads as
+// "MAGI agent" without leaning on the more common robot icon
+// (the chip + antennae pair is intentionally retro so the
+// sidebar entry doesn't compete visually with the bot-shaped
+// TG channel entry elsewhere in the UI).
+export const IconMagis = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <rect x="5" y="7" width="14" height="11" rx="2" />
+    <path d="M12 3v4" />
+    <circle cx="12" cy="5" r="0.8" fill="currentColor" stroke="none" />
+    <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    <path d="M9 16h6" />
   </Icon>
 );
 

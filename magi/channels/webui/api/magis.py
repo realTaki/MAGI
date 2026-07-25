@@ -5,6 +5,10 @@ a :class:`MAGIC` via ``magic_id``). ``magic_position`` is
 one of ``"adam"`` (the manager — exactly one per ``MAGIC``)
 or ``"eve"`` (a worker — N per ``MAGIC``).
 
+The MAGIC tree endpoints live in :mod:`magi.channels.webui.api.magics`
+(GET/POST/PATCH/DELETE ``/api/magics``). This module only
+manages the per-MAGIC ``Magi`` rows.
+
 All routes require the caller to be signed in **and** an
 admin (an ``Employee`` row with ``role='admin'``); both
 checks run via the shared :func:`admin_gate` dependency in
@@ -32,13 +36,16 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from magi.agent.db import (
     MAGIC,
     Magi,
     get_session,
 )
+
+# MAGIC is imported for the POST /magis validation
+# (checking that magic_id references an existing MAGIC).
 from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.magis")
@@ -265,44 +272,3 @@ def delete_magi(
     session.commit()
     return Response(status_code=204)
 
-
-# -- MAGIC tree list (used by the frontend "MAGI 团队" picker) -------------
-
-@router.get("/magics", response_model=list["MAGICOut"])
-def list_magics(
-    _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
-) -> list["MAGICOut"]:
-    """Return every ``MAGIC`` row (the MAGI team tree).
-
-    Sorted by name for stable display order; the frontend
-    groups by ``parent_id`` and indents to show the hierarchy.
-    """
-    magics = session.scalars(
-        select(MAGIC)
-        .options(selectinload(MAGIC.children))
-        .order_by(MAGIC.name.asc())
-    ).all()
-    return [_serialize_magic(m) for m in magics]
-
-
-class MAGICOut(BaseModel):
-    id: int
-    name: str
-    parent_id: int | None
-    adam_id: int | None
-    child_count: int = 0
-    created_at: str
-    updated_at: str
-
-
-def _serialize_magic(m: MAGIC) -> MAGICOut:
-    return MAGICOut(
-        id=m.id,
-        name=m.name,
-        parent_id=m.parent_id,
-        adam_id=m.adam_id,
-        child_count=len(m.children),
-        created_at=m.created_at.isoformat() if m.created_at else "",
-        updated_at=m.updated_at.isoformat() if m.updated_at else "",
-    )
