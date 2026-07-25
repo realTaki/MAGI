@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from magi.channels.telegram.adapter import TelegramAdapter
 from magi.channels.telegram.bot import (
-    _handle_employee_message,
+    _handle_contact_message,
     _on_message,
     clear_telegram_bot,
     get_telegram_bot,
@@ -48,5 +48,5 @@ __all__ = [
     "get_telegram_bot",
     # Inbound handlers (referenced by start_bot's message handler)
     "_on_message",
-    "_handle_employee_message",
+    "_handle_contact_message",
 ]

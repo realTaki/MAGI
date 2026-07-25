@@ -12,7 +12,7 @@ Mounting order (matters for routing precedence):
      the SPA's client-side router can take over.
 
 Subsequent checkpoints layer on:
-- C1.2 — more routers (employees / eves / skills / audit / login).
+- C1.2 — more routers (contacts / eves / skills / audit / login).
 - C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVE → Adam ingest).
 - C6 — ``/api/eves/{id}/dispatch``, ``/api/eves/{id}/recall``.
 - C7 — WebSocket console stream (``/ws/console``).
@@ -166,14 +166,13 @@ def create_app() -> FastAPI:
     # future defaults). The token-bill aggregation endpoint
     # reads the timezone on every call so a Save here is
     # immediately reflected in the next ``GET
-    # /api/employees/{id}/token-usage``.
+    # ``/api/contacts/…/token-usage``.
     from magi.channels.webui.api import system_settings
     app.include_router(system_settings.router, prefix="/api")
-    # Employee metrics — token-usage aggregation. One
-    # endpoint per employee, three periods (week / month /
-    # total) in one response.
-    from magi.channels.webui.api import employee_metrics
-    app.include_router(employee_metrics.router, prefix="/api")
+    # Token metrics — per-contact usage aggregation. One
+    # endpoint, three periods (week / month / total).
+    from magi.channels.webui.api import token_metrics
+    app.include_router(token_metrics.router, prefix="/api")
     # Scheduled tasks — operator-facing CRUD + manual
     # trigger. Routed at /api/tasks/*; the LLM-side
     # ``schedule_task`` tool bypasses this router and

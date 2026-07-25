@@ -61,8 +61,8 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def seed_employees(state_dir: Path):
-    """Insert two employees:
+def seed_contacts(state_dir: Path):
+    """Insert two contacts:
 
       - Alice (admin, telegram_id=9001) — the calling admin
         whose memory / contacts are scoped to.
@@ -70,14 +70,14 @@ def seed_employees(state_dir: Path):
         whose contact row exists for Alice but isn't the
         current chat.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     with open_session() as db:
-        alice = Employee(
+        alice = Contact(
             id=1, name="Alice",
             telegram_id=9001, role="admin",
             provider="minimax", api_key="fake",
         )
-        bob = Employee(
+        bob = Contact(
             id=2, name="Bob",
             telegram_id=9002, role="admin",
             provider="minimax", api_key="fake",
@@ -92,7 +92,7 @@ def seed_employees(state_dir: Path):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_prompt_always_starts_with_soul(state_dir, seed_employees):
+def test_prompt_always_starts_with_soul(state_dir, seed_contacts):
     """The persona file is the foundation of every prompt;
     even with no memory / contacts / skills, SOUL must be
     present. We assert ``soul_text`` appears verbatim at
@@ -113,7 +113,7 @@ def test_prompt_always_starts_with_soul(state_dir, seed_employees):
     assert rendered.startswith(soul_text)
 
 
-def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_employees):
+def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
     """No memory rows, no contact for this chat — the
     SOUL text is still in the rendered prompt. (The
     bundled skill loader ships 3 example skills in the
@@ -140,7 +140,7 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_employees):
 
 
 def test_prompt_includes_memory_block_when_rows_exist(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """A seeded ``important`` row renders into the prompt as
     a markdown bullet under the "Long-term memory" section.
@@ -181,8 +181,8 @@ def test_prompt_includes_memory_block_when_rows_exist(
     assert rendered.startswith("SOUL")
 
 
-def test_prompt_memory_block_scoped_to_caller_employee(
-    state_dir, seed_employees,
+def test_prompt_memory_block_scoped_to_caller_contact(
+    state_dir, seed_contacts,
 ):
     """The memory block must NOT bleed across admins. Bob
     (uid=2) gets Alice's (uid=1) memory
@@ -230,7 +230,7 @@ def test_prompt_memory_block_scoped_to_caller_employee(
 
 
 def test_prompt_excludes_completed_ongoing_rows(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """``completed_at`` ongoing rows are the audit trail,
     not the LLM's working set — the system-prompt block
@@ -286,7 +286,7 @@ def test_prompt_excludes_completed_ongoing_rows(
 
 
 def test_prompt_includes_contact_block_for_self(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """D.26: the contact block is the User's self-record
     (owner_id=uid, person_id=uid). With Alice (uid=1) as
@@ -330,7 +330,7 @@ def test_prompt_includes_contact_block_for_self(
 
 
 def test_prompt_contact_block_uses_display_name_not_raw_id(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """The header must render the chatter's display_name
     (or name), NOT the raw ``person_id`` integer.
@@ -338,7 +338,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     Pre-fix this comment said "实际渲染时 caller 会用真名替换"
     but the loop just called ``format_contact_block(contact)``
     with no name resolution — the rendered header read
-    ``**1**`` (a raw Employee FK). This test pins the
+    ``**1**`` (a raw Contact FK). This test pins the
     fix so a future "let me simplify and drop the
     display_name kwarg" revert is caught immediately.
     """
@@ -375,7 +375,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
 
 
 def test_prompt_skips_contact_block_when_no_record(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """No ``(uid, uid)`` row → the contact block is
     silently dropped. The LLM sees the soul + memory
@@ -393,26 +393,26 @@ def test_prompt_skips_contact_block_when_no_record(
 
 
 def test_prompt_contact_block_only_for_self(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """Multiple ``ContactEntry`` rows for Alice: her
     self-row (``person_id=1``) renders. Rows whose
     ``person_id`` is someone else (``person_id=3``)
     do NOT — only the self-contact block survives
     the per-chatter filter."""
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     from magi.agent.memory.contacts.models import (
         SOURCE_MANUAL,
         ContactEntry,
     )
     from magi.agent.system_prompt import build_system_prompt
 
-    # Seed a third employee so a foreign-person contact
+    # Seed a third contact so a foreign-person contact
     # is creatable.
     with open_session() as db:
-        db.add(Employee(
+        db.add(Contact(
             id=3, name="Charlie",
-            telegram_id=9003, role="employee",
+            telegram_id=9003, role="contact",
             provider="minimax", api_key="fake",
         ))
         db.commit()
@@ -442,7 +442,7 @@ def test_prompt_contact_block_only_for_self(
 
 
 def test_prompt_skips_contact_block_for_other_user(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """A different User's self-contact (``person_id=2``)
     must NOT bleed into Alice's prompt. The lookup is
@@ -490,7 +490,7 @@ def test_prompt_skips_contact_block_for_other_user(
 
 
 def test_prompt_includes_skills_block_when_registered(
-    state_dir, seed_employees, monkeypatch,
+    state_dir, seed_contacts, monkeypatch,
 ):
     """``format_skills_block`` returns a non-empty block
     when the skill loader has any SKILL.md registered.
@@ -522,7 +522,7 @@ def test_prompt_includes_skills_block_when_registered(
 
 
 def test_prompt_block_order_is_soul_memory_contact_skills(
-    state_dir, seed_employees,
+    state_dir, seed_contacts,
 ):
     """The four blocks must render in fixed order: SOUL →
     Long-term memory → Current chatter → Available skills.
@@ -575,7 +575,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
 
 
 def test_prompt_continues_when_memory_load_fails(
-    state_dir, seed_employees, monkeypatch,
+    state_dir, seed_contacts, monkeypatch,
 ):
     """A transient ORM error in the memory-store call must
     not crash the inbound path — the prompt falls back to
@@ -601,7 +601,7 @@ def test_prompt_continues_when_memory_load_fails(
 
 
 def test_prompt_continues_when_contact_load_fails(
-    state_dir, seed_employees, monkeypatch,
+    state_dir, seed_contacts, monkeypatch,
 ):
     """Same resilience contract for the contact lookup."""
     from magi.agent.system_prompt import build_system_prompt

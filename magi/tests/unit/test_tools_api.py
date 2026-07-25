@@ -72,10 +72,10 @@ class _ZebraTool(Tool):
 
 @pytest.fixture
 def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Minimal state_dir + admin Employee for App startup.
+    """Minimal state_dir + admin Contact for App startup.
 
     The route's ``AdminGate`` looks up the cookie's delivery_address
-    in the ``employees`` table; we seed one so the gate
+    in the ``contacts`` table; we seed one so the gate
     lets the test through.
     """
     sd = tmp_path / "state"
@@ -86,7 +86,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
 
     from magi.agent.db import init_sqlite
-    from magi.agent.db import Employee, init_orm, open_session
+    from magi.agent.db import Contact, init_orm, open_session
     import magi.agent.db.engine as _orm_mod
     # Reset the SQLAlchemy engine singleton so each test
     # opens its own fresh sqlite file. Without this, an
@@ -99,7 +99,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     init_orm(str(sd))
     with open_session() as s:
         s.add(
-            Employee(
+            Contact(
                 name="Test Admin (tools)",
                 telegram_id=9001,
                 role="admin",

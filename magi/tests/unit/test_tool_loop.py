@@ -142,7 +142,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "update_contact",
         "delete_contact",
         "search_contacts",
-        # Todo / action-item — per-employee (admin /
+        # Todo / action-item — per-contact (admin /
         # assigned only). Registry filters them out of
         # the menu for other roles; tests see the full
         # list when ``caller_role`` defaults to ``None``.
@@ -388,12 +388,12 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     # Seed (1) the user-im-bindings row that the TG adapter
     # reads, and (2) the session row the tool's
     # ``ctx.session_id`` points at. The binding's ``uid``
-    # needs an Employee row to exist (FK constraint).
-    from magi.agent.db import Employee
+    # needs an Contact row to exist (FK constraint).
+    from magi.agent.db import Contact
     with open_session() as db:
-        existing = db.get(Employee, 42)
+        existing = db.get(Contact, 42)
         if existing is None:
-            db.add(Employee(
+            db.add(Contact(
                 id=42, name="Tool-loop test",
                 role="admin", provider="minimax",
                 api_key="fake",

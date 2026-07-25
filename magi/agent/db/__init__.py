@@ -13,7 +13,7 @@ Layout:
                                   + ``get_session`` / ``open_session``
   - :mod:`.models_contact`      — :class:`Contact` (the unified
                                   person directory; replaces the old
-                                  ``employees``, ``contact_entries``,
+                                  ``contacts``, ``contact_entries``,
                                   and ``user_im_bindings`` tables)
   - :mod:`.models_magic`        — :class:`MAGIC` (a tree of MAGI
                                   teams / councils)

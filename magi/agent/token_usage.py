@@ -3,7 +3,7 @@ loop for size and testability.
 
 Each successful LLM call writes one row to the
 ``token_usage`` table so the
-``/api/employees/{id}/token-usage`` endpoint can render
+``/api/contacts/{uid}/token-usage`` endpoint can render
 weekly / monthly aggregates. The split from
 :mod:`magi.agent.loop` is purely about file size (the
 loop module was ~1100 lines, well over the 1000-line

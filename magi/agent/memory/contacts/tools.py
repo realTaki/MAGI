@@ -22,7 +22,7 @@ Four tools mirror the magi-memory shape:
 
 Admin gate: same as the API and the magi-memory
 tools — only ``admin`` and ``assigned`` may write
-to their own directory. ``employee`` and ``guest``
+to their own directory. ``contact`` and ``guest``
 get ``is_error=True``.
 """
 
@@ -297,7 +297,7 @@ class SearchContactsTool(Tool):
         **kwargs: Any,
     ) -> ToolResult:
         # Read path — no role gate. Any signed-in
-        # employee can search (the WebUI exposes this
+        # contact can search (the WebUI exposes this
         # to admin + assigned anyway).
         query = (kwargs.get("query") or "").strip()
         if not query:

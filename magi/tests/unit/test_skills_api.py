@@ -2,7 +2,7 @@
 
 Pattern matches the rest of the suite
 (``test_soul_api``, ``test_actions_items_api``, etc.):
-seed an admin employee, build the real FastAPI app via
+seed an admin contact, build the real FastAPI app via
 ``create_app``, drive the endpoints. The singleton
 ``SkillLoader`` reads ``MAGI_WORKSPACE_DIR`` per request,
 so we set that env before building the app.
@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from magi.channels.webui.app import create_app
 from magi.agent.tools.skill_loader import _reset_for_tests
 from magi.agent.db import init_sqlite
-from magi.agent.db import Employee, init_orm, open_session
+from magi.agent.db import Contact, init_orm, open_session
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def workspace(tmp_path):
 
 @pytest.fixture
 def env(monkeypatch, tmp_path, workspace):
-    """MAGI_STATE_DIR + workspace + admin employee row."""
+    """MAGI_STATE_DIR + workspace + admin contact row."""
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
@@ -51,7 +51,7 @@ def env(monkeypatch, tmp_path, workspace):
     init_orm(str(state))
     with open_session() as s:
         s.add(
-            Employee(
+            Contact(
                 name="TA-skills",
                 telegram_id=9001,
                 role="admin",

@@ -239,13 +239,13 @@ async def test_search_sessions_no_match_returns_clean_message(fresh_db):
 
 
 @pytest.mark.asyncio
-async def test_search_sessions_cross_platform_employee_scope(fresh_db):
+async def test_search_sessions_cross_platform_contact_scope(fresh_db):
     """Scope is ``uid``, not ``delivery_address``. An operator
     who has both a webui and a TG session under the same
-    employee row sees hits from BOTH in a single search.
+    contact row sees hits from BOTH in a single search.
     """
     state, _workspace = fresh_db
-    # WebUI session under employee 1, delivery_address "9001".
+    # WebUI session under contact 1, delivery_address "9001".
     sid_webui = _seed(
         state,
         delivery_address="9001",
@@ -253,7 +253,7 @@ async def test_search_sessions_cross_platform_employee_scope(fresh_db):
         channel="webui",
         messages=[("user", "webui unique-token-cross alpha")],
     )
-    # TG session under employee 1, delivery_address "9876543210".
+    # TG session under contact 1, delivery_address "9876543210".
     sid_tg = _seed(
         state,
         delivery_address="9876543210",
@@ -261,8 +261,8 @@ async def test_search_sessions_cross_platform_employee_scope(fresh_db):
         channel="tg",
         messages=[("user", "tg unique-token-cross beta")],
     )
-    # A different operator (employee 2) with a different delivery_address
-    # value should NOT see employee 1's sessions.
+    # A different operator (contact 2) with a different delivery_address
+    # value should NOT see contact 1's sessions.
     sid_other = _seed(
         state,
         delivery_address="9999",
@@ -276,19 +276,19 @@ async def test_search_sessions_cross_platform_employee_scope(fresh_db):
     out = await tool.run(ctx, q="unique-token-cross")
 
     assert not out.is_error
-    # Employee 1 sees both their own sessions (webui + tg)...
+    # Contact 1 sees both their own sessions (webui + tg)...
     assert sid_webui in out.content
     assert sid_tg in out.content
     assert "channel=webui" in out.content
     assert "channel=tg" in out.content
-    # ...but NOT employee 2's session.
+    # ...but NOT contact 2's session.
     assert sid_other not in out.content
 
 
 @pytest.mark.asyncio
-async def test_search_sessions_employee_scope_isolates_other_admins(fresh_db):
-    """Employee A's search doesn't return employee B's
-    messages, even when both employees' sessions share the
+async def test_search_sessions_contact_scope_isolates_other_admins(fresh_db):
+    """Contact A's search doesn't return contact B's
+    messages, even when both contacts' sessions share the
     same ``delivery_address``.
     """
     state, _workspace = fresh_db

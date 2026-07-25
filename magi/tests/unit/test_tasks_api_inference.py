@@ -19,7 +19,7 @@ Five cases mirror the unified rule:
 
   1. webui + no explicit   → ``"new"`` (fresh session per fire)
   2. webui + explicit ULID → that ULID (LLM-in-chat path)
-  3. tg + telegram_id bound → ``str(employee.telegram_id)``,
+  3. tg + telegram_id bound → ``str(contact.telegram_id)``,
                               regardless of caller-supplied
   4. tg + no telegram_id   → 400 ``tasks.telegram_not_bound``
   5. PATCH channel → tg   → re-derives delivery_to
@@ -37,7 +37,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from magi.agent.db import (
-    Employee,
+    Contact,
     init_orm,
     init_sqlite,
     open_session,
@@ -62,9 +62,9 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     Teardown wipes the row data on a *yield-style* fixture
     so that ``Task`` + ``ChatSession`` rows seeded by these
     tests don't leak into the next test's fixture (some
-    other fixtures call ``DELETE FROM employees`` and fail
+    other fixtures call ``DELETE FROM contacts`` and fail
     on the FK when Task/ChatSession rows still reference
-    the seeded Employee rows).
+    the seeded Contact rows).
     """
     state = tmp_path / "state"
     state.mkdir()
@@ -81,7 +81,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     init_orm(str(state))
     yield state
     # Drop child rows first so the FK chain (Task, ChatSession
-    # etc.) doesn't trip the ``DELETE FROM employees`` that
+    # etc.) doesn't trip the ``DELETE FROM contacts`` that
     # the tg-admin-routes fixture issues on its own seed.
     # The engine singleton resets across tests; this final
     # open_session forces the FK-respecting order.
@@ -103,7 +103,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def seeded(fresh_db: Path) -> dict[str, Employee]:
+def seeded(fresh_db: Path) -> dict[str, Contact]:
     """Insert two admins: Alice has a bound telegram_id;
     Bob does not. The 400 path uses Bob; the success path
     uses Alice.
@@ -111,20 +111,20 @@ def seeded(fresh_db: Path) -> dict[str, Employee]:
     Seeds ``UserImBinding`` (D.28 canonical store) for
     Alice so the channel dispatcher can resolve her bound
     TG chat id (the adapter's bind path also keeps
-    ``Employee.telegram_id`` in sync as a legacy read-cache
+    ``Contact.telegram_id`` in sync as a legacy read-cache
     for the bot's inbound handler).
     """
     from magi.agent.db.models_user_im_binding import UserImBinding
     from magi.channels import dispatcher as channel_dispatcher
     with open_session() as db:
-        alice = Employee(
+        alice = Contact(
             name="alice",
             telegram_id=9101,
             role="admin",
             provider="minimax",
             api_key="fake-key-alice",
         )
-        bob = Employee(
+        bob = Contact(
             name="bob",
             telegram_id=None,
             role="admin",
@@ -144,7 +144,7 @@ def seeded(fresh_db: Path) -> dict[str, Employee]:
 
 
 def test_webui_channel_without_explicit_infers_new(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """The WebUI form's default: ``channel='webui'`` with no
     explicit ``delivery_to`` → ``"new"``. Every cron fire
@@ -160,7 +160,7 @@ def test_webui_channel_without_explicit_infers_new(
 
 
 def test_webui_channel_with_explicit_session_id_honours_it(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """The LLM-in-chat path passes an explicit ULID through
     ``TaskIn.delivery_to``. The API still honours it for
@@ -179,10 +179,10 @@ def test_webui_channel_with_explicit_session_id_honours_it(
 
 
 def test_tg_channel_uses_operator_telegram_id(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """The WebUI form's TG branch: ``channel='tg'`` →
-    ``str(employee.telegram_id)``. The caller cannot
+    ``str(contact.telegram_id)``. The caller cannot
     override this — the server returns the operator's
     bound delivery_address regardless of what ``delivery_to`` they
     passed (the value is silently ignored on the TG
@@ -196,7 +196,7 @@ def test_tg_channel_uses_operator_telegram_id(
 
 
 def test_tg_channel_without_telegram_id_raises_400(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """``channel='tg'`` requires the operator to have a
     ``telegram_id`` bound — a missing binding is a config
@@ -221,7 +221,7 @@ def test_tg_channel_without_telegram_id_raises_400(
 
 
 def test_update_task_tg_channel_re_derives_delivery_to(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """PATCH semantics: any patch that touches ``channel``
     (or that keeps the same channel) still re-derives
@@ -304,7 +304,7 @@ def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
 
 
 def test_task_row_carries_derived_delivery_to(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """A complete Task row with ``delivery_to`` derived
     by the helper matches what the WebUI API will write.
@@ -343,7 +343,7 @@ def test_task_row_carries_derived_delivery_to(
 
 
 def test_create_task_once_with_past_run_at_rejected_at_helper(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """The route boundary rejects past ``run_at`` so the
     operator sees a clear 400 instead of silently shipping
@@ -384,7 +384,7 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
 
 
 def test_create_task_once_with_future_run_at_passes_helper(
-    fresh_db: Path, seeded: dict[str, Employee],
+    fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
     """Symmetric sanity: a future ``run_at`` clears the
     check and reaches the rest of the create flow."""

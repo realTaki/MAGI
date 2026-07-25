@@ -4,7 +4,7 @@ Without an injected ``tg_send_callback``, the ``send_message``
 tool returns the error "TG callback not wired into the tool
 context". The agent loop injects one based on the value passed
 in by the channel — so the TG channel handler
-(``_handle_employee_message``) MUST pass one. Earlier this was
+(``_handle_contact_message``) MUST pass one. Earlier this was
 missed and the LLM would see "TG callback not wired into the
 tool context" every time it tried to use ``send_message`` from
 a TG inbound.
@@ -14,7 +14,7 @@ The test:
   2. Stubs the typing indicator loop (so we don't kick off a
      real 4-second background task).
   3. Stubs ``enqueue_title_job`` so we don't spawn the worker.
-  4. Calls the real ``_handle_employee_message`` end-to-end
+  4. Calls the real ``_handle_contact_message`` end-to-end
      (so we exercise the actual wiring).
 
 Everything else (real ``SessionStore``, real ORM, real state
@@ -33,7 +33,7 @@ import pytest
 @pytest.fixture
 def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Real state + workspace dirs, real ORM + sqlite, one
-    employee seeded. The fake ``handle_message`` we install
+    contact seeded. The fake ``handle_message`` we install
     below shortcuts the LLM call so the rest of the path
     can run end-to-end without external services."""
     state = tmp_path / "state"
@@ -48,7 +48,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         init_sqlite,
         open_session,
@@ -57,7 +57,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as s:
-        emp = Employee(
+        emp = Contact(
             id=1,
             name="Taki",
             telegram_id=6240201712,
@@ -76,7 +76,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
 async def test_tg_handler_injects_tg_send_callback(
     monkeypatch: pytest.MonkeyPatch, tg_state_dir,
 ) -> None:
-    """``_handle_employee_message`` must pass a callable
+    """``_handle_contact_message`` must pass a callable
     ``tg_send_callback`` to ``handle_message`` — otherwise
     the LLM's ``send_message`` tool returns the
     "TG callback not wired" error.
@@ -126,23 +126,23 @@ async def test_tg_handler_injects_tg_send_callback(
     )
 
     # 5. Call the real handler.
-    await bot_mod._handle_employee_message(
+    await bot_mod._handle_contact_message(
         fake_update,
         state_dir=str(tg_state_dir),
-        delivery_address="6240201712",  # same as the seeded Employee's telegram_id
+        delivery_address="6240201712",  # same as the seeded Contact's telegram_id
         uid=1,
-        employee_name="Taki",
+        contact_name="Taki",
         display_name=None,
-        employee_separated=False,
+        contact_separated=False,
         # Required since the call-site enum that runs
-        # the handler adopted ``employee_role`` to thread
+        # the handler adopted ``contact_role`` to thread
         # the TG user's role through to
         # ``handle_message(caller_role=...)``. The fake
         # bind in this test is always admin (the seeded
-        # Employee in the chat handler's earlier branch).
-        employee_role="admin",
-        employee_provider="minimax",
-        employee_api_key="fake-key-for-tests",
+        # Contact in the chat handler's earlier branch).
+        contact_role="admin",
+        contact_provider="minimax",
+        contact_api_key="fake-key-for-tests",
     )
 
     # 6. The fix: ``handle_message`` must have been called

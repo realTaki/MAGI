@@ -7,23 +7,23 @@ return the reply string. C7 replaces this with a streaming
 endpoint (SSE or WebSocket) so the user sees tokens as they
 arrive; v0 just blocks until the full reply is ready.
 
-Per-employee LLM credentials
-============================
+Per-contact LLM credentials
+==========================
 
 The endpoint reads the session cookie and looks up the
-Employee row whose ``telegram_id`` matches. If that row has
+Contact row whose ``telegram_id`` matches. If that row has
 ``provider`` + ``api_key`` configured, those are forwarded
 to the agent — so an admin who set their own Minimax key
 uses that key instead of the system default. Two failure
 modes are treated differently on purpose:
 
-  - **Operator has no per-employee credentials configured**
+  - **Operator has no per-contact credentials configured**
     → return ``403 chat.llm_credentials_required``. The
     frontend uses this to surface a "set your LLM provider
     first" prompt. We do NOT silently fall back to the
     system default because the operator's intent ("chat as
     *me*, not as the house bot") is the whole point of the
-    per-employee credentials feature.
+    per-contact credentials feature.
 
   - **ORM read fails (DB not initialised, etc.)**
     → return ``500 chat.lookup_failed``. The chat endpoint
@@ -85,7 +85,7 @@ def _state_dir() -> str:
 def _resolve_caller_credentials(
     state_dir: str, uid: int
 ) -> tuple[int, str, str, str]:
-    """Look up the operator's employee row by their
+    """Look up the operator's Contact row by their
     ``uid`` (the cookie value post-D.24) and
     return ``(uid, provider, api_key, role)``.
 
@@ -99,7 +99,7 @@ def _resolve_caller_credentials(
     Raises ``MagiHTTPException`` rather than returning a
     sentinel:
 
-      - ``401 chat.unknown_sender`` if the employee id
+      - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row. The auth gate should
         have caught this first, but we re-check
         defensively so a future code path that skips the
@@ -125,25 +125,25 @@ def _resolve_caller_credentials(
         raise MagiHTTPException(
             status_code=500,
             code="chat.lookup_failed",
-            detail="could not load operator's employee record",
+            detail="could not load operator's Contact record",
         )
 
     if emp is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no employee row bound to this cookie",
+            detail="no Contact row bound to this cookie",
         )
     if not emp.provider or not emp.api_key:
         logger.info(
-            "chat: operator %s has no per-employee LLM credentials; "
+            "chat: operator %s has no per-contact LLM credentials; "
             "asking them to configure first", emp.id,
         )
         raise MagiHTTPException(
             status_code=403,
             code="chat.llm_credentials_required",
             detail=(
-                "set your LLM provider and API key in your employee "
+                "set your LLM provider and API key in your Contact "
                 "profile before chatting"
             ),
         )
@@ -187,9 +187,9 @@ async def send_chat(
 ) -> ChatSendResponse:
     """Send ``text`` to the LLM and return the reply.
 
-    The LLM is selected from the operator's Employee row
+    The LLM is selected from the operator's Contact row
     (``provider`` + ``api_key`` set during onboarding or
-    later via the employee detail panel). If those fields
+    later via the contact detail panel). If those fields
     are empty the request is rejected with
     ``403 chat.llm_credentials_required`` — no silent
     fall-back to the system default. The audit row records
@@ -233,9 +233,9 @@ async def send_chat(
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no signed-in employee",
+            detail="no signed-in contact",
         )
-    uid, employee_provider, employee_api_key, employee_role = (
+    uid, contact_provider, contact_api_key, contact_role = (
         _resolve_caller_credentials(_state_dir(), cookie_uid)
     )
     # D.24: per-channel delivery address stamped on the
@@ -257,7 +257,7 @@ async def send_chat(
     # session row. ``""`` if the operator never bound TG.
     # We always need this — either from the existing row
     # (when the caller passed a session_id) or by reading
-    # the Employee row via the channel dispatcher (when we
+    # the Contact row via the channel dispatcher (when we
     # mint a fresh session below).
     delivery_address = ""
     if session_id:
@@ -364,7 +364,7 @@ async def send_chat(
     # (``len(messages) >= 3`` — user, assistant, user) don't
     # re-enqueue. ``enqueue_title_job`` is fire-and-forget;
     # no slow work happens on the request path here.
-    # ``employee_model`` stays None today (chat-send doesn't
+    # ``contact_model`` stays None today (chat-send doesn't
     # accept a model override); the auto-title worker is
     # already structured to accept one when chat-send grows
     # to thread it through.
@@ -374,8 +374,8 @@ async def send_chat(
             delivery_address=delivery_address,
             session_id=session_id,
             uid=uid,
-            employee_provider=employee_provider,
-            employee_api_key=employee_api_key,
+            contact_provider=contact_provider,
+            contact_api_key=contact_api_key,
         )
 
     reply = await handle_message(
@@ -384,9 +384,9 @@ async def send_chat(
         channel="webui",
         session_id=session_id,
         uid=uid,
-        employee_provider=employee_provider,
-        employee_api_key=employee_api_key,
-        caller_role=employee_role,
+        contact_provider=contact_provider,
+        contact_api_key=contact_api_key,
+        caller_role=contact_role,
     )
 
     # Defensive truncation — the agent loop should already

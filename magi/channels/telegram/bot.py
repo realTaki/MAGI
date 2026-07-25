@@ -260,11 +260,11 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
          ``"admin"`` — log only for v0; C6+ adds real admin
          commands.
       2. ``Contact.telegram_id == tgid`` and role is
-         ``"employee"`` / ``"assigned"`` — route through the
-         agent loop using that employee's LLM credentials
-         (falls back to system default if the employee has
+         ``"contact"`` / ``"assigned"`` — route through the
+         agent loop using that contact's LLM credentials
+         (falls back to system default if the contact has
          none).
-      3. otherwise (no employee bound) — treat as GUEST and
+      3. otherwise (no contact bound) — treat as GUEST and
          send the tgid discovery reply. The role gate is
          decided per-MAGI-instance (the canonical state lives
          on the row, not in a meta key).
@@ -287,11 +287,11 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     state_dir = require_state_dir()
 
-    # 1+2. Look up the bound employee. Single ORM read by
+    # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
     # Dispatch rules (per-MAGI perspective):
     #   - ``admin``    : real chat sender. The agent loop
-    #                    runs; the admin's per-employee LLM
+    #                    runs; the admin's per-contact LLM
     #                    credentials (D.4+) are billed. v0
     #                    used to skip the LLM here ("admin
     #                    chat grows real admin commands in
@@ -301,21 +301,21 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     #                    same handler.
     #   - ``assigned`` : this MAGI serves the person. The
     #                    agent loop runs.
-    #   - ``employee`` : another company employee. NOT
+    #   - ``contact`` : another company contact. NOT
     #                    served by this MAGI. Cross-MAGI
     #                    access is a future concern; for
     #                    v0 we politely refuse and tell
     #                    them to talk to their own admin.
     #   - ``guest``    : not in this company at all. Same
-    #                    refusal as ``employee`` so the
+    #                    refusal as ``contact`` so the
     #                    tgid discovery path can be
     #                    surfaced ("here's your tgid,
     #                    ask your admin to invite you").
-    bound = _find_employee_by_telegram_id(state_dir, tgid)
+    bound = _find_contact_by_telegram_id(state_dir, tgid)
     if bound is not None:
         emp_id, emp_role, emp_name, emp_separated, emp_provider, emp_key = bound
         if emp_role not in ("admin", "assigned"):
-            # ``employee`` / ``guest`` — refuse politely
+            # ``contact`` / ``guest`` — refuse politely
             # without burning the LLM. The hint about
             # the tgid is the same one the unknown-
             # chat path sends, so the user can pass
@@ -335,11 +335,11 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # ``admin`` and ``assigned`` both flow through the
         # same handler. The earlier "admin → no-op" branch
         # was a v0 guard against burning the admin's API key
-        # on TG chitchat; once the admin has set per-employee
+        # on TG chitchat; once the admin has set per-contact
         # credentials (D.4+) they own that decision, and TG
         # chat-with-EVE is a real affordance for mobile
         # operators who don't want to open the WebUI.
-        await _handle_employee_message(
+        await _handle_contact_message(
             update,
             state_dir,
             tgid,
@@ -353,18 +353,18 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
-    # 3. No employee bound — treat as GUEST.
+    # 3. No contact bound — treat as GUEST.
     #
     # The tgid discovery reply goes out to anyone not
-    # bound to an Employee row; the ``Contact.telegram_id``
+    # bound to an Contact row; the ``Contact.telegram_id``
     # is the only source of truth for who's been "claimed".
     # There's nothing else to track here — historically we
     # wrote ``telegram.user.<tgid>.{role,display_name}``
     # to settings, but those duplicated columns on the
-    # Employee row are deprecated in favour of the unified
+    # Contact row are deprecated in favour of the unified
     # table and the operator has cleared them from settings.
     logger.info(
-        "telegram: no employee bound, sending tgid discovery",
+        "telegram: no contact bound, sending tgid discovery",
         extra={"tgid": tgid, "display_name": display_name},
     )
     await update.effective_message.reply_text(
@@ -374,25 +374,25 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     return
 
 
-def _find_employee_by_telegram_id(
+def _find_contact_by_telegram_id(
     state_dir: str, tgid: str
 ) -> tuple[int, str, str, bool, str | None, str | None] | None:
-    """Resolve a TG tgid to its bound employee.
+    """Resolve a TG tgid to its bound contact.
 
     Single ORM read on ``Contact.telegram_id``; returns
     ``(uid, role, name, separated, provider, api_key)``
     on hit, ``None`` when no row has the tgid bound.
     The role is what the dispatcher uses to decide
-    between admin / employee / GUEST handling — see
+    between admin / contact / GUEST handling — see
     :func:`_on_message`. ``provider`` / ``api_key`` are
-    pre-resolved so :func:`_handle_employee_message` can
+    pre-resolved so :func:`_handle_contact_message` can
     dispatch to the LLM without a second round-trip.
 
     Falls back to the legacy ``telegram.user.<tgid>.uid``
     meta key for state files written before the unified
     table landed (C1.x). The meta key is read-only here;
     bindings are now written through the
-    ``PATCH /api/employees/{id}`` endpoint.
+    ``PATCH /api/contacts/{id}`` endpoint.
     """
     from sqlalchemy import select
 
@@ -451,24 +451,24 @@ def _find_employee_by_telegram_id(
         return None
 
 
-async def _handle_employee_message(
+async def _handle_contact_message(
     update: Update,
     state_dir: str,
     delivery_address: str,
     uid: int,
-    employee_name: str,
+    contact_name: str,
     display_name: str | None,
-    employee_separated: bool,
-    employee_role: str,
-    employee_provider: str | None,
-    employee_api_key: str | None,
+    contact_separated: bool,
+    contact_role: str,
+    contact_provider: str | None,
+    contact_api_key: str | None,
 ) -> None:
-    """Route a message from a bound employee through the agent loop.
+    """Route a message from a bound contact through the agent loop.
 
     All the LLM credentials are pre-resolved by
-    :func:`_find_employee_by_telegram_id` so this function
+    :func:`_find_contact_by_telegram_id` so this function
     is pure dispatch: text in, reply out, with the agent
-    loop doing the audit + fallback. A separated employee
+    loop doing the audit + fallback. A separated contact
     gets a polite "you're 离职" reply and no LLM call.
 
     Session lifecycle (D.10): TG now persists chat history
@@ -477,10 +477,10 @@ async def _handle_employee_message(
     ``<workspace>/memories/sessions/<delivery_address>/<sid>.json``.
     Unlike WebUI (which has a sidebar "新对话" affordance),
     TG keeps **one session per delivery_address forever** — the
-    employee never asks for a fresh thread from this side.
+    contact never asks for a fresh thread from this side.
     The session is auto-created on the first inbound
     message and reused for every subsequent turn in that
-    chat, so the file grows into the employee's complete
+    chat, so the file grows into the contact's complete
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
@@ -492,12 +492,12 @@ async def _handle_employee_message(
         utcnow_iso,
     )
 
-    if employee_separated:
-        # Separated employees can't chat with their EVE —
+    if contact_separated:
+        # Separated contacts can't chat with their EVE —
         # the org marked them as 离职, so the agent is
         # paused. Admin can restore via the dashboard.
         await update.effective_message.reply_text(
-            _replies()["separated_employee"].format(employee_name=employee_name),
+            _replies()["separated_contact"].format(contact_name=contact_name),
         )
         return
 
@@ -607,8 +607,8 @@ async def _handle_employee_message(
                 delivery_address=delivery_address,
                 session_id=session_id,
                 uid=uid,
-                employee_provider=employee_provider or "",
-                employee_api_key=employee_api_key or "",
+                contact_provider=contact_provider or "",
+                contact_api_key=contact_api_key or "",
             )
         except Exception:
             logger.exception(
@@ -654,8 +654,8 @@ async def _handle_employee_message(
             channel="tg",
             session_id=session_id,
             uid=uid,
-            employee_provider=employee_provider,
-            employee_api_key=employee_api_key,
+            contact_provider=contact_provider,
+            contact_api_key=contact_api_key,
             # The bound operator's role — required by the
             # agent loop to filter admin-only tools
             # (``schedule_task`` + action-item trio) out
@@ -664,7 +664,7 @@ async def _handle_employee_message(
             # earlier branch in this function already
             # refused everyone else with a polite reply),
             # so this is always one of those two roles.
-            caller_role=employee_role,
+            caller_role=contact_role,
             tg_send_callback=_tg_send_callback,
         )
     finally:
@@ -761,7 +761,7 @@ def _resolve_or_create_tg_session(
     it. The earlier implementation used ``list_summaries``
     with no channel filter and re-checked the candidate's
     channel in Python — but when the latest session was a
-    WebUI one (the same employee id owns sessions across
+    WebUI one (the same contact id owns sessions across
     channels since D.23), the helper would mint a fresh
     TG session every time. Result: alternating
     TG ↔ WebUI usage fragmented the TG history into N
@@ -773,7 +773,7 @@ def _resolve_or_create_tg_session(
       - Latest is a WebUI session → ignored; we look at the
         most recent *TG* session instead. Only if none
         exists do we mint a fresh row.
-      - No TG session at all (employee never chatted on TG,
+      - No TG session at all (contact never chatted on TG,
         or the operator wiped the row) → mint fresh.
 
     A corrupt session file (truncated JSON) is skipped and
@@ -784,7 +784,7 @@ def _resolve_or_create_tg_session(
         candidate_id = store.find_latest_tg_session(uid)
     except Exception:
         logger.exception(
-            "telegram: session lookup failed for employee %s; minting fresh",
+            "telegram: session lookup failed for contact %s; minting fresh",
             uid,
         )
         candidate_id = None
@@ -793,7 +793,7 @@ def _resolve_or_create_tg_session(
             sess = store.get(uid, candidate_id)
         except Exception:
             logger.exception(
-                "telegram: latest TG session %s for employee %s failed re-read; "
+                "telegram: latest TG session %s for contact %s failed re-read; "
                 "creating fresh",
                 candidate_id, uid,
             )
@@ -818,7 +818,7 @@ def _resolve_or_create_tg_session(
 # every 4s while the LLM is thinking. The handler starts
 # this loop in the background just before
 # ``handle_message`` and signals it to stop via the returned
-# ``stop_event`` — see ``_handle_employee_message``.
+# ``stop_event`` — see ``_handle_contact_message``.
 _TYPING_REFRESH_SECONDS = 4.0
 
 
@@ -925,7 +925,7 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     # The natural serialisation point is
     # ``SessionStore.append_messages`` — concurrent appends
     # are safe under SQLite's row-level locking (D.22 channel
-    # guard + D.23 employee scoping are already enforced
+    # guard + D.23 contact scoping are already enforced
     # there). The TG inbound handler remains cheap (one
     # INSERT + the async bot.send_message), and the LLM
     # call / tool chain runs to completion regardless.

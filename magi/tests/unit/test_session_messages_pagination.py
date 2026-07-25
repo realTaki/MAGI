@@ -45,16 +45,16 @@ def admin_env(monkeypatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import init_sqlite
-    from magi.agent.db import Employee, init_orm, open_session
+    from magi.agent.db import Contact, init_orm, open_session
     init_sqlite(str(state))
     init_orm(str(state))
 
     with open_session() as db:
-        db.add(Employee(
+        db.add(Contact(
             name="TA-pagination", telegram_id=9001,
             role="admin", provider="minimax", api_key="fake",
         ))
-        db.add(Employee(
+        db.add(Contact(
             name="TB-other", telegram_id=9002,
             role="admin", provider="minimax", api_key="fake",
         ))
@@ -241,8 +241,8 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
 
 
 def test_get_messages_page_respects_uid_scope(admin_env):
-    """A session belonging to employee 2 is invisible when
-    queried via employee 1 — same WHERE-clause enforcement
+    """A session belonging to contact 2 is invisible when
+    queried via contact 1 — same WHERE-clause enforcement
     as the rest of the API.
 
     D.23: the store key is now ``uid``; the
@@ -354,8 +354,8 @@ def test_messages_route_401_without_cookie(admin_env):
     assert r.status_code == 401
 
 
-def test_messages_route_cross_employee_isolation(client, admin_env):
-    """Alice (employee 1) cannot read Bob's (employee 2)
+def test_messages_route_cross_contact_isolation(client, admin_env):
+    """Alice (contact 1) cannot read Bob's (contact 2)
     session via pagination. The route scopes the WHERE
     clause by ``uid`` (D.23); an attacker who
     knows the session_id still gets a 404.

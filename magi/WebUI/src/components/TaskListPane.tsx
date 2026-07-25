@@ -39,7 +39,7 @@
  *
  * Credentials and timezone are NOT asked. Credentials
  * are bound implicitly to whoever is signed in (admin
- * or assigned employee — the backend's role gate
+ * or assigned contact — the backend's role gate
  * refuses other roles); the timezone is read from the
  * Settings panel's ``system.timezone`` field globally.
  */

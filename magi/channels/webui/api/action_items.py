@@ -38,7 +38,7 @@ Indexes used
 ============
 
 - ``ix_action_items_uid``  : every GET filters here.
-- ``ix_action_items_employee_recent``: the (uid,
+- ``ix_action_items_contact_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
 - ``ux_action_items_open_per_kind``: idempotency check in
   ``_ensure_llm_credentials_item``.
@@ -141,7 +141,7 @@ class ActionItemCompleteRequest(BaseModel):
 def _ensure_llm_credentials_item(
     session: Session, uid: int
 ) -> bool:
-    """Create an ``llm_credentials_missing`` row for the employee
+    """Create an ``llm_credentials_missing`` row for the contact
     if no open one already exists.
 
     Returns ``True`` if a new row was added, ``False`` if one
@@ -180,7 +180,7 @@ def _ensure_llm_credentials_item(
             kind="llm_credentials_missing",
             title="设置你的 LLM provider 和 API key",
             description=(
-                "切到「员工」tab，找到自己的档案，"
+                "切到「Contacts」，找到自己的档案，"
                 "把 Provider 和 API Key 填上。"
             ),
             target_url="/dashboard?tab=organization",
@@ -207,7 +207,7 @@ _COMPLETED_VISIBLE_DAYS = 7
 def _current_admin_id(
     request: Request, session: Session
 ) -> int:
-    """Resolve the cookie's admin Employee id.
+    """Resolve the cookie's admin Contact id.
 
     ``AdminGate`` already validated cookie + admin row
     membership, so under normal flow this always returns an
@@ -218,10 +218,10 @@ def _current_admin_id(
     code as chat.py, so the frontend's friendly
     "登录失效了" message handles both endpoints.
 
-    D.24: cookie carries ``employee.id`` (an int). Lookup
+    D.24: cookie carries ``contact.id`` (an int). Lookup
     is by primary key, not by ``telegram_id`` — that
     matched the pre-D.24 cookie (which carried a TG
-    chat id), but with the employee-id cookie the
+    chat id), but with the contact-id cookie the
     ``Contact.telegram_id == cid_int`` query only
     matches by sheer coincidence.
     """
@@ -232,14 +232,14 @@ def _current_admin_id(
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this session",
+            detail="no admin contact row bound to this session",
         )
     emp = session.get(Contact, uid)
     if emp is None or emp.role != "admin":
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no admin employee row bound to this session",
+            detail="no admin contact row bound to this session",
         )
     return emp.id
 

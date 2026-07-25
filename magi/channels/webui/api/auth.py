@@ -13,24 +13,24 @@ Two-step flow (mirror of admin verification):
        token-store machinery (C8 hardening).
 
 Authorization model (D.24):
-  The cookie's value identifies the **employee**, not the
+  The cookie's value identifies the **contact**, not the
   channel. The login input (``uid``) is a per-person
   identity; the cookie output is also the uid. The
   per-channel delivery address (TG chat id for admins
   who bound one) is resolved server-side via the channel
-  dispatcher (D.28). An employee can be bound to
+  dispatcher (D.28). A contact can be bound to
   multiple channels — the cookie identity stays stable
   across all of them. ``/me`` resolves the cookie's
-  employee id to the row and reports both ``uid`` and
+  contact id to the row and reports both ``uid`` and
   ``telegram_id`` (the latter may be ``None`` for admins
   who never bound a TG bot).
 
   Reads (list / get sessions) are scoped by ``uid``
   on the server side (see :class:`SessionStore` D.23) —
-  an employee sees their own history across every channel,
+  a contact sees their own history across every channel,
   regardless of which one was used to create a given row.
   Writes (continue-send / append) are still channel-owned
-  via D.22's :class:`ChannelMismatchError`: an employee can
+  via D.22's :class:`ChannelMismatchError`: a contact can
   only continue a conversation on the channel that
   originally created it.
 """
@@ -129,18 +129,18 @@ def _state_dir() -> str:
 
 
 def _super_admins() -> set[int]:
-    """Read the super-admin allowlist as a set of employee ids.
+    """Read the super-admin allowlist as a set of contact ids.
 
-    The identity is now the **employee** (uid), not the
-    per-channel delivery address — an employee with a
+    The identity is now the **contact (uid), not the
+    per-channel delivery address — a contact with a
     bound TG chat is the same identity as that same
-    employee signing in via WebUI. The legacy
+    contact signing in via WebUI. The legacy
     ``telegram.super_admins`` meta key (pre-D.24) stores
     raw TG chat ids; the fallback path resolves each legacy
     chat id to its current ``Contact.id`` so old state
     files keep working.
 
-    Source of truth is the ``employees`` table (rows with
+    Source of truth is the ``contacts`` table (rows with
     ``role='admin'``). The fallback path is retired in C8
     once no production state still carries the legacy key.
     """
@@ -243,7 +243,7 @@ class MeResponse(BaseModel):
 
     D.24: the cookie is keyed by ``uid`` (the cross-
     channel identity), not the per-channel delivery
-    address. The response surfaces the employee identity
+    address. The response surfaces the contact identity
     so the frontend can display it directly; the
     ``telegram_id`` is the bound TG chat id (may be
     ``None`` for admins who never bound a TG bot) and
@@ -258,7 +258,7 @@ class MeResponse(BaseModel):
 
     # D.24: the cookie is keyed by ``uid``, not
     # the per-channel delivery address. The response
-    # surfaces the employee identity so the frontend
+    # surfaces the contact identity so the frontend
     # can display it directly; the ``telegram_id`` is
     # the bound TG chat id (may be ``None`` for admins
     # who never bound a TG bot) and is exposed for any
@@ -334,7 +334,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     UID is the row's identity; the dropdown's primary key is
     the UID, not the IM chat id. We still include
     ``telegram_id`` in the response so the frontend can show
-    "Alice (Telegram: 9999001)" — useful when two employees
+    "Alice (Telegram: 9999001)" — useful when two contacts
     share a display name — but the wire-protocol ask for the
     verification code takes the UID, not a chat id.
 
@@ -346,22 +346,22 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
 
     Two sources, unioned:
 
-    1. ``role='admin'`` rows in ``employees`` — the
+    1. ``role='admin'`` rows in ``contacts`` — the
        wizard-configured deployer list. role =
        ``super_admin``.
-    2. Employees with a bound TG chat + an active EVE
-       assignment. role = ``assigned_employee``. C2 wires
-       the TG binding (the employee proves ownership of the
+    2. Contacts with a bound TG chat + an active EVE
+       assignment. role = ``assigned_contact``. C2 wires
+       the TG binding (the contact proves ownership of the
        chat from TG by replying to a code); C6 wires the
        EVE dispatch (Adam spawns a container for the
-       employee). The two together mean "this person has a
+       contact). The two together mean "this person has a
        live EVE they manage" — they should be able to sign
        in to see its logs, change its skills, etc., without
        needing deployer-level access.
 
-    For C0 the employees side is empty (the tables don't
+    For C0 the contacts side is empty (the tables don't
     exist yet — C1.1 lands the ORM). The path is wired so
-    the frontend can show "0 assigned employees" today and
+    the frontend can show "0 assigned contacts" today and
     start populating as soon as C6 dispatches the first EVE.
 
     Display names come from the local ``Contact`` row only.
@@ -400,23 +400,23 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
             )
         )
 
-    # 2. Assigned employees. C0: the employees / eves tables don't
+    # 2. Assigned contacts. C0: the contacts / eves tables don't
     # exist yet, so this list is always empty. The query is
     # sketched in the comment so C1.1 / C6 can drop it in.
     #
     #   SELECT e.uid, e.telegram_id, e.name
-    #   FROM employees e
+    #   FROM contacts e
     #   JOIN eves v ON v.uid = e.id
     #   WHERE e.telegram_id IS NOT NULL
     #     AND v.status != 'shutting_down'
     #     AND NOT EXISTS (
-    #       SELECT 1 FROM employees a
+    #       SELECT 1 FROM contacts a
     #       WHERE a.uid = e.uid AND a.role = 'admin'
     #     );
     #
     # We skip the join and rely on the frontend to de-dupe
     # super_admins from the visible list (super admins should
-    # not also appear under "assigned employees" — they manage
+    # not also appear under "assigned contacts" — they manage
     # the system, not a single EVE).
 
     return AllowedLoginAccountsResponse(accounts=accounts)
@@ -586,7 +586,7 @@ async def verify_login_code(
     # the UID; the HTTPOnly flag keeps it client-side
     # inaccessible; the ``/me`` endpoint and every
     # AdminGate lookup resolve it back to a live
-    # ``Employee`` row to gate access. C8 will replace
+    # ``Contact`` row to gate access. C8 will replace
     # this with a signed token + a real session table.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -619,7 +619,7 @@ async def me(
     """Return the current user, or 401 if no valid session.
 
     "Valid" means: the cookie's uid resolves to a
-    row in ``employees`` with role='admin'. D.24 — the
+    row in ``contacts`` with role='admin'. D.24 — the
     cookie is the uid (cross-channel identity),
     not the chat id the user typed on the login page.
     The ``telegram_id`` field in the response is the
@@ -654,5 +654,5 @@ async def me(
             display_name=emp.name,
         )
     except Exception:
-        logger.exception("me: employee lookup failed for cookie value")
+        logger.exception("me: contact lookup failed for cookie value")
         return MeResponse(uid=uid)

@@ -137,7 +137,7 @@ class TimezoneOut(BaseModel):
 
     ``current`` is what the aggregation endpoint will read
     on the next request — a Save here affects the next
-    ``GET /api/employees/{id}/token-usage`` call. ``choices``
+    ``GET /api/contacts/{uid}/token-usage`` call. ``choices``
     is the dropdown the UI renders; the full IANA tz
     database, sorted, no grouping (v0 doesn't have a
     preferences panel to organise them by region).

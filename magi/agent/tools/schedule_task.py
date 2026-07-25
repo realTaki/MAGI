@@ -22,14 +22,14 @@ timezone, no per-task credentials):
   - ``channel``     ``webui`` / ``tg`` (default ``webui``)
 
 Timezone + credentials come from the calling admin /
-``assigned`` employee; the runner charges the operator's
+``assigned`` contact; the runner charges the operator's
 own provider / API key. This mirrors the WebUI flow so
 the operator's mental model stays consistent: "when this
 fires, it runs as me".
 
-Admin gate: non-admin / non-assigned employees get
+Admin gate: non-admin / non-assigned contacts get
 ``is_error=True``. Same logic as the API (``admin`` and
-``assigned`` only — ``employee`` and ``guest`` are
+``assigned`` only — ``contact`` and ``guest`` are
 barred since they don't sign in to a MAGI node).
 
 Idempotent on ``name``: a second call with the same
@@ -60,7 +60,7 @@ _NAME_MAX = 120
 _PROMPT_MAX = 8000
 
 # Same gate as the API: only ``admin`` and ``assigned``
-# may create a task. ``employee`` and ``guest`` get
+# may create a task. ``contact`` and ``guest`` get
 # ``is_error=True``.
 _ROLE_MAY_CREATE = {"admin", "assigned"}
 
@@ -80,7 +80,7 @@ class ScheduleTaskTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create or update a recurring scheduled task. Requires "
-        "admin or assigned-employee scope (i.e. the calling "
+        "admin or assigned-contact scope (i.e. the calling "
         "operator is signed in to this MAGI). Each fire is an "
         "independent chat session; the conversation history "
         "shows every cron-driven reply as its own session under "
@@ -331,7 +331,7 @@ class ScheduleTaskTool(Tool):
                 return ToolResult(
                     content=(
                         f"schedule_task requires admin or "
-                        f"assigned-employee scope; "
+                        f"assigned-contact scope; "
                         f"role {emp.role!r} is not permitted."
                     ),
                     is_error=True,

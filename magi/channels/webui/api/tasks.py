@@ -15,10 +15,10 @@ Auth
 ----
 Same ``AdminGate`` every other Adam endpoint uses
 (``magi.channels.webui.api.auth_gates.admin_gate``). The
-operator must be a signed-in admin employee; the
+operator must be a signed-in admin contact; the
 ``_admin_uid`` helper from
 :meth:`magi.channels.webui.api.chat_sessions` resolves
-the cookie → employee row.
+the cookie → contact row.
 
 Scheduler integration
 ---------------------
@@ -285,7 +285,7 @@ def list_tasks(
 
     ``enabled`` filters by the column; ``uid``
     scopes to one owner (admin can still see every
-    employee's tasks — useful for the audit pane).
+    contact's tasks — useful for the audit pane).
     """
     q = session.query(Task).order_by(Task.created_at.desc())
     if enabled is not None:
@@ -673,14 +673,14 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
       1. ``X-Contact-Id`` header (explicit, may be used
          by future operator consoles; v0 WebUI doesn't
          expose it).
-      2. Fall back to the cookie's signed-in employee
+      2. Fall back to the cookie's signed-in contact
          (``magi_session`` carries the uid after
          the D.24 migration — not the telegram_id). We
          use :func:`_resolve_uid` so the cookie
          format matches every other admin-gated route.
          Allowed roles are ``admin`` (signed in via the
          super-admin form) and ``assigned`` (the person
-         this MAGI serves). ``employee`` and ``guest``
+         this MAGI serves). ``contact`` and ``guest``
          are barred — they don't sign in.
 
     Returns the resolved ``uid``. The task's
@@ -700,8 +700,8 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
         emp = session.get(Contact, cand)
         if emp is None:
             raise MagiHTTPException(
-                status_code=404, code="not_found.employee",
-                detail=f"employee {cand} not found",
+                status_code=404, code="not_found.contact",
+                detail=f"contact {cand} not found",
             )
         _enforce_creator_role(emp.role)
         return emp.id
@@ -720,7 +720,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
             detail=(
-                f"no employee row bound to this session "
+                f"no contact row bound to this session "
                 f"(uid={eid}); sign in first"
             ),
         )
@@ -771,8 +771,8 @@ def _state_dir() -> str:
 
 
 # Constants for the creator-role gate. ``admin`` and
-# ``assigned`` employees may create tasks (charged to their
-# own credentials); ``employee`` and ``guest`` don't sign
+# ``assigned`` contacts may create tasks (charged to their
+# own credentials); ``contact`` and ``guest`` don't sign
 # in to a MAGI node and so have no use for scheduled
 # tasks. Mirrors the gate in ``schedule_task`` so the
 # API and the LLM tool are consistent.
@@ -828,9 +828,9 @@ def _resolve_delivery_to(
                 code="tasks.telegram_not_bound",
                 detail=(
                     f"channel='tg' requires the operator "
-                    f"(employee {uid}) to have a "
+                    f"(contact {uid}) to have a "
                     f"telegram_id bound; bind a TG chat first "
-                    f"(Settings → 员工)."
+                    f"(Settings → Contacts)."
                 ),
             )
         return chat_id

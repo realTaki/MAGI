@@ -54,7 +54,7 @@ def soul_env(monkeypatch, tmp_path):
 def client(soul_env):
     """An in-process TestClient with the cookie admin gate.
 
-    Seeds a single admin employee + writes the ``magi_session``
+    Seeds a single admin contact + writes the ``magi_session``
     cookie so the AdminGate dependency lets the request
     through.
     """
@@ -63,16 +63,16 @@ def client(soul_env):
     # Lazy import — keeps the test module fast to import and
     # ensures the env var is set before the factory builds.
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         open_session,
     )
 
     init_orm(str(state_dir))
     with open_session() as s:
-        s.query(Employee).delete()
+        s.query(Contact).delete()
         s.add(
-            Employee(
+            Contact(
                 name="TA-soul",
                 telegram_id=8001,
                 role="admin",
@@ -86,7 +86,7 @@ def client(soul_env):
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie carries ``Employee.id`` (the admin's
+    # D.24: cookie carries ``Contact.id`` (the admin's
     # primary key), not the telegram_id. The seeded
     # admin is the only row, so its id is 1.
     c.cookies.set("magi_session", "1")
@@ -249,7 +249,7 @@ def test_put_soul_without_cookie_is_403(soul_env):
 # -- role-based gate ------------------------------------------------------
 #
 # Spec: ``admin`` and ``assigned`` can read/write SOUL.md;
-# ``employee`` / ``guest`` get 403. The fixture's default
+# ``contact`` / ``guest`` get 403. The fixture's default
 # admin covers the happy paths above; these cases pin the
 # role whitelist so a future "let everyone edit" slip is
 # caught.
@@ -257,25 +257,25 @@ def test_put_soul_without_cookie_is_403(soul_env):
 
 def _client_with_role(soul_env, *, role: str, delivery_address: int):
     """Build a TestClient whose cookie resolves to an
-    employee with the requested ``role``.
+    contact with the requested ``role``.
 
-    D.24: cookie is the employee.id (a primary-key int),
-    not the legacy telegram_id. We seed one employee
+    D.24: cookie is the contact.id (a primary-key int),
+    not the legacy telegram_id. We seed one contact
     and then look up its freshly-minted PK so the test
     always tracks the row even if earlier tests seeded
     multiple rows.
     """
     state_dir, _workspace = soul_env
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         open_session,
     )
 
     init_orm(str(state_dir))
     with open_session() as s:
-        s.query(Employee).delete()
-        emp = Employee(
+        s.query(Contact).delete()
+        emp = Contact(
             name=f"TA-{role}",
             telegram_id=delivery_address,
             role=role,
@@ -304,7 +304,7 @@ def test_assigned_role_can_read_soul(soul_env):
 
 def test_assigned_role_can_write_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
-    r = c.put("/api/soul", json={"content": "assigned employee persona"})
+    r = c.put("/api/soul", json={"content": "assigned contact persona"})
     assert r.status_code == 200
 
 
@@ -314,14 +314,14 @@ def test_assigned_role_can_reset_soul(soul_env):
     assert r.status_code == 200
 
 
-def test_employee_role_cannot_read_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="employee", )
+def test_contact_role_cannot_read_soul(soul_env):
+    c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
     r = c.get("/api/soul")
     assert r.status_code == 403
 
 
-def test_employee_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="employee", )
+def test_contact_role_cannot_write_soul(soul_env):
+    c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 
@@ -333,26 +333,26 @@ def test_guest_role_cannot_write_soul(soul_env):
 
 
 def test_gate_uses_uid_not_telegram_id(soul_env):
-    """D.24 regression: cookie carries ``Employee.id`` (a
+    """D.24 regression: cookie carries ``Contact.id`` (a
     primary-key int), not the legacy telegram_id. The
     gate must look up by primary key.
 
     Pre-fix, the gate ran ``int(cookie)`` and queried
-    ``Employee.telegram_id == cookie`` — which matched
-    only by sheer coincidence when an employee's PK
+    ``Contact.telegram_id == cookie`` — which matched
+    only by sheer coincidence when an contact's PK
     equalled their telegram_id. This test seeds an
-    employee with ``id=7, telegram_id=6240201712`` so the
+    contact with ``id=7, telegram_id=6240201712`` so the
     two values are deliberately unequal; a cookie of
     ``"7"`` must succeed, and a cookie of
     ``"6240201712"`` must 403.
     """
     state_dir, _ = soul_env
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
 
     # Reset + seed a deliberately mismatched pair.
     with open_session() as s:
-        s.query(Employee).delete()
-        emp = Employee(
+        s.query(Contact).delete()
+        emp = Contact(
             id=7,                          # explicit PK
             name="TA-mismatch",
             telegram_id=6240201712,        # ≠ PK
@@ -369,22 +369,22 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
     app = create_app()
     c = TestClient(app)
 
-    # Cookie == employee.id → gate passes.
+    # Cookie == contact.id → gate passes.
     c.cookies.set("magi_session", "7")
     r = c.get("/api/soul")
     assert r.status_code == 200, (
-        "D.24 fix: cookie=Employee.id must succeed; "
+        "D.24 fix: cookie=Contact.id must succeed; "
         f"got {r.status_code} {r.text[:120]}"
     )
 
     # Cookie == telegram_id (pre-D.24 shape) → gate must
     # reject. The lookup goes by primary key, so this
-    # employee (id=7) is not found and the request is
+    # contact (id=7) is not found and the request is
     # denied.
     c.cookies.set("magi_session", "6240201712")
     r = c.get("/api/soul")
     assert r.status_code == 403, (
-        "D.24 regression: cookie=Employee.telegram_id must "
+        "D.24 regression: cookie=Contact.telegram_id must "
         "NOT be accepted (it was the pre-D.24 shape that "
         f"broke /api/soul); got {r.status_code}"
     )

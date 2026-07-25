@@ -16,16 +16,16 @@ Three surfaces pinned:
     (same convention as ``/api/action_items/{id}/complete``).
   - :class:`ListActionItemTool` — return this operator's
     *own* open (or all) action items. Strict per-
-    employee privacy: a tool call from operator A
+    contact privacy: a tool call from operator A
     never sees operator B's rows, even if the LLM asks
     for an id it doesn't own — the row is missing
     rather than shared.
 
-Scope (per-employee, role-gated):
+Scope (per-contact, role-gated):
 
   - Admin (``'admin'``) and assigned (``'assigned'``)
     operators can use these tools for their own action
-    items only. Other roles (``'employee'``, ``'guest'``)
+    items only. Other roles (``'contact'``, ``'guest'``)
     don't even see the tools in their menu: the
     registry's :func:`get_tools(caller_role=...)`
     filter (see ``magi/agent/tools/registry.py``)
@@ -67,7 +67,7 @@ logger = logging.getLogger("magi.agent.tools.action_item")
 
 # Same gate as the WebUI API and as ``ScheduleTaskTool``:
 # only ``admin`` and ``assigned`` operators may operate
-# on their own action items. ``employee`` and ``guest``
+# on their own action items. ``contact`` and ``guest``
 # have no MAGI-node session and aren't expected to chat
 # via the dashboard.
 _ALLOWED_ROLES = frozenset({"admin", "assigned"})
@@ -266,7 +266,7 @@ class AddActionItemTool(Tool):
             db.commit()
             db.refresh(item)
         logger.info(
-            "add_action_item: item %s created for employee=%s title=%r",
+            "add_action_item: item %s created for contact=%s title=%r",
             item.id, ctx.uid, title,
         )
         return _ok({"created": _serialize(item)})
@@ -300,7 +300,7 @@ class CompleteActionItemTool(Tool):
                     "are completable — passing another "
                     "operator's id returns "
                     "is_error=True without leaking "
-                    "existence (strict per-employee "
+                    "existence (strict per-contact "
                     "privacy)."
                 ),
             },
@@ -390,7 +390,7 @@ class ListActionItemTool(Tool):
         "todo' / '列出待办' / 'what's still open?' "
         "Inputs: include_completed (bool, default "
         "false — open action items only). Strict "
-        "per-employee: only rows owned by the caller "
+        "per-contact: only rows owned by the caller "
         "are returned. The operator's "
         "``llm_credentials_missing`` system row also "
         "appears here so the operator can see "

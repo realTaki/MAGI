@@ -220,7 +220,7 @@ def test_admin_reload_endpoint_clears_cache(
     from magi.agent import prompts
     from fastapi.testclient import TestClient
     from magi.channels.webui.app import create_app
-    from magi.agent.db import Employee, init_orm, init_sqlite, open_session
+    from magi.agent.db import Contact, init_orm, init_sqlite, open_session
 
     # Need a state dir + admin cookie for the AdminGate
     # to let the endpoint through. Same pattern as the
@@ -238,7 +238,7 @@ def test_admin_reload_endpoint_clears_cache(
     init_sqlite(str(state))
     init_orm(str(state))
     with open_session() as db:
-        db.add(Employee(
+        db.add(Contact(
             id=1, name="alice",
             telegram_id=9001, role="admin",
             provider="minimax", api_key="fake",
@@ -284,7 +284,7 @@ def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     from magi.agent.db import init_sqlite
     init_sqlite(str(state))
 
-    # The gate checks Employee.role via the ORM; without
+    # The gate checks Contact.role via the ORM; without
     # a seeded admin the gate would 401 regardless of
     # the cookie — but a missing cookie is also a 401
     # path. Test that path explicitly.

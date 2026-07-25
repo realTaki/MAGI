@@ -26,7 +26,7 @@ Five surfaces pinned:
      already caps body at 8 KB.
 
 The fixture mirrors ``test_skills_api`` / ``test_memory``:
-fresh state dir, fresh ORM engine, seeded admin employee,
+fresh state dir, fresh ORM engine, seeded admin contact,
 ``TestClient`` with ``magi_session`` cookie set.
 """
 
@@ -56,7 +56,7 @@ def env(monkeypatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         init_sqlite,
         open_session,
@@ -65,24 +65,24 @@ def env(monkeypatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as db:
-        alice = Employee(
+        alice = Contact(
             name="Alice",
             telegram_id=9001,
             role="admin",
             provider="minimax",
             api_key="fake",
         )
-        bob = Employee(
+        bob = Contact(
             name="Bob",
             telegram_id=9002,
             role="admin",
             provider="minimax",
             api_key="fake",
         )
-        charlie = Employee(
+        charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="employee",
+            role="contact",
             provider="minimax",
             api_key="fake",
         )
@@ -121,7 +121,7 @@ def bob_client(env):
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's cookie (role=employee, not
+    """TestClient with Charlie's cookie (role=contact, not
     admin). Used to verify the AdminGate rejects non-admin
     callers."""
     from magi.channels.webui.app import create_app
@@ -202,14 +202,14 @@ def test_list_memory_requires_admin(env):
 
 
 def test_list_memory_403_for_non_admin(charlie_client):
-    """``magi_session=<charlie.id>`` (role=employee) →
-    401. ``AdminGate`` checks ``Employee.role == 'admin'``;
+    """``magi_session=<charlie.id>`` (role=contact) →
+    401. ``AdminGate`` checks ``Contact.role == 'admin'``;
     any other role bounces at the dependency."""
     r = charlie_client.get("/api/memory")
     assert r.status_code == 401
 
 
-def test_list_memory_scopes_to_caller_employee(
+def test_list_memory_scopes_to_caller_contact(
     env, client, bob_client,
 ):
     """Admin A's memory must NOT appear in admin B's list.

@@ -36,8 +36,7 @@ router = APIRouter(tags=["magics"])
 
 # -- admin gate -------------------------------------------------------------
 #
-# Reuse the employees router's gate so the admin check lives
-# in one place.
+# Reuse auth_gates so the admin check lives in one place.
 
 
 def _admin_gate(request: Request) -> str:

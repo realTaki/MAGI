@@ -227,7 +227,7 @@ def _delivery_address_for_uid(uid: int, channel: str = "tg") -> str:
 
 def _resolve_uid(request: Request) -> int:
     """Resolve the cookie's ``magi_session`` value to the
-    current employee's id.
+    current contact's id.
 
     D.24: the cookie carries the **uid** (stringified
     int) — not a per-channel delivery address. This
@@ -246,13 +246,13 @@ def _resolve_uid(request: Request) -> int:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
-            detail="no signed-in employee",
+            detail="no signed-in contact",
         )
     return uid
 
 
 def _admin_uid(request: Request, store: SessionStoreDep) -> int:
-    """Resolve the cookie to its admin employee id and
+    """Resolve the cookie to its admin contact id and
     gate by role.
 
     D.24: the cookie value IS the uid (no
@@ -275,7 +275,7 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
             raise MagiHTTPException(
                 status_code=401,
                 code="chat.unknown_sender",
-                detail="no admin employee row bound to this session",
+                detail="no admin contact row bound to this session",
             )
         return emp.id
 
@@ -382,7 +382,7 @@ def get_session(
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
-            "session get rejected (bad session_id %r from employee %s): %s",
+            "session get rejected (bad session_id %r from contact %s): %s",
             session_id, uid, e,
         )
         raise MagiHTTPException(

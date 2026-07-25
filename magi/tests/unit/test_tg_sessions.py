@@ -137,7 +137,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
 
 
 def test_different_tgids_get_different_sessions(tg_session_env):
-    """Two employees chatting this EVE get two distinct rows
+    """Two contacts chatting this EVE get two distinct rows
     — DB-level ``delivery_address`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.
     """
@@ -206,7 +206,7 @@ def test_messages_persist_to_session(tg_session_env):
 # Pre-fix the helper used ``list_summaries`` with no channel
 # filter, then re-checked ``channel == 'tg'`` in Python. When
 # the most recent any-channel row belonged to WebUI (the
-# same employee owns sessions across channels since D.23),
+# same contact owns sessions across channels since D.23),
 # the helper would mint a fresh TG session every time. In
 # real usage the operator alternating TG ↔ WebUI fragmented
 # the TG history into N rows, contradicting the "one TG
@@ -245,7 +245,7 @@ def test_tg_session_reused_after_webui_message_in_between(
     sid_a = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     assert isinstance(sid_a, str)
 
-    # Round 2: WebUI session for the same employee. Created
+    # Round 2: WebUI session for the same contact. Created
     # AFTER the TG row, so its ``updated_at`` is newer.
     # Without the channel filter, the buggy helper would
     # see this as "latest" and mint a fresh TG session.

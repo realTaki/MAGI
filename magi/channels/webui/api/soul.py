@@ -4,18 +4,18 @@ The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
 :meth:`magi.agent.system_prompt.read_soul`. There is one
 ``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
-not one per employee. Per-employee personas are C4+ and out
+not one per contact. Per-contact personas are C4+ and out
 of scope here.
 
 Who can edit it:
 
   - ``role == 'admin'`` — full access (current admin
     console users).
-  - ``role == 'assigned'`` — the "served employee" of this
+  - ``role == 'assigned'`` — the "served contact" of this
     MAGI node. They're the person whose chat this node
     actually drives; letting them tweak their own persona
     is the whole point of having one.
-  - ``role in {'employee', 'guest'}`` — denied with 403.
+  - ``role in {'contact', 'guest'}`` — denied with 403.
     These are reserved for multi-MAGI / public-visitor
     roles (C6+) and have no business editing this node's
     persona.

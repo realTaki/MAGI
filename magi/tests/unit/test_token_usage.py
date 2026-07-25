@@ -6,7 +6,7 @@ Two layers:
    that writes one row per LLM call. Pinned to the
    Anthropic-SDK-shaped ``usage`` dict + the fallback
    (missing / empty / partial) cases.
-2. ``/api/employees/{id}/token-usage`` — the aggregation
+2. ``/api/contacts/{uid}/token-usage`` — the aggregation
    endpoint. Pinned to: returns three periods; respects
    the configured timezone; requires admin auth;
    aggregates the right numbers.
@@ -25,15 +25,15 @@ import pytest
 
 
 # ────────────────────────────────────────────────────────────────── #
-# Common fixture: seeded admin + a target employee
+# Common fixture: seeded admin + a target contact
 # ────────────────────────────────────────────────────────────────── #
 
 
 @pytest.fixture
 def token_env(monkeypatch, tmp_path):
     """Per-test isolated state dir + workspace. Initializes
-    the SQL DB and seeds one admin (delivery_address 9001) + one
-    target employee (delivery_address 9002). Also resets the
+    the SQL DB and seeds one admin (telegram_id 9001) + one
+    target contact (telegram_id 9002). Also resets the
     SQLAlchemy engine singleton so each test gets a fresh
     engine pointing at this test's tmp_path — without
     this, the first test's engine is reused and writes
@@ -55,7 +55,7 @@ def token_env(monkeypatch, tmp_path):
 
     from magi.agent.db import init_sqlite
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         open_session,
     )
@@ -64,9 +64,9 @@ def token_env(monkeypatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as s:
-        s.query(Employee).delete()
+        s.query(Contact).delete()
         s.add(
-            Employee(
+            Contact(
                 name="TA-admin",
                 telegram_id=9001,
                 role="admin",
@@ -75,7 +75,7 @@ def token_env(monkeypatch, tmp_path):
             )
         )
         s.add(
-            Employee(
+            Contact(
                 name="TA-target",
                 telegram_id=9002,
                 role="assigned",
@@ -276,7 +276,7 @@ def test_timezone_get_requires_admin(token_env):
 
 
 # ────────────────────────────────────────────────────────────────── #
-# /api/employees/{id}/token-usage
+# /api/contacts/{uid}/token-usage
 # ────────────────────────────────────────────────────────────────── #
 
 
@@ -303,11 +303,11 @@ def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
 
 
 def test_token_usage_returns_three_periods(token_env, client):
-    """A fresh employee (no rows) returns 0/0/0 across all
+    """A fresh contact (no rows) returns 0/0/0 across all
     three periods, with the right shape."""
     from tzlocal import get_localzone
 
-    r = client.get("/api/employees/2/token-usage")
+    r = client.get("/api/contacts/2/token-usage")
     assert r.status_code == 200
     data = r.json()
     assert data["uid"] == 2
@@ -361,7 +361,7 @@ def test_token_usage_aggregates_three_rows(token_env, client):
     # month — that's fine, total is always 3).
     _insert_usage(state_dir, uid=2, when_utc=now - timedelta(days=8), in_t=30, out_t=15)
 
-    r = client.get("/api/employees/2/token-usage")
+    r = client.get("/api/contacts/2/token-usage")
     data = r.json()
 
     # Week includes today + 1 hour ago, but NOT 8 days ago.
@@ -407,7 +407,7 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     now = datetime.utcnow()
     _insert_usage(state_dir, uid=2, when_utc=now - timedelta(hours=18), in_t=99, out_t=11)
 
-    r = client.get("/api/employees/2/token-usage")
+    r = client.get("/api/contacts/2/token-usage")
     data = r.json()
     assert data["timezone"] == "Asia/Shanghai"
     # The 18h-ago row is firmly inside this week under
@@ -418,16 +418,16 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     assert data["week"]["input_tokens"] == 99
 
 
-def test_token_usage_separates_per_employee(token_env, client):
-    """Two employees with rows; each endpoint call sees
+def test_token_usage_separates_per_contact(token_env, client):
+    """Two contacts with rows; each endpoint call sees
     only its own."""
     state_dir = token_env[0]
     now = datetime.utcnow()
     _insert_usage(state_dir, uid=1, when_utc=now, in_t=100, out_t=50)
     _insert_usage(state_dir, uid=2, when_utc=now, in_t=10, out_t=5)
 
-    r1 = client.get("/api/employees/1/token-usage").json()
-    r2 = client.get("/api/employees/2/token-usage").json()
+    r1 = client.get("/api/contacts/1/token-usage").json()
+    r2 = client.get("/api/contacts/2/token-usage").json()
 
     assert r1["total"]["input_tokens"] == 100
     assert r2["total"]["input_tokens"] == 10
@@ -439,7 +439,7 @@ def test_token_usage_requires_admin(token_env):
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())
-    r = bare.get("/api/employees/2/token-usage")
+    r = bare.get("/api/contacts/2/token-usage")
     assert r.status_code == 401
 
 
@@ -451,7 +451,7 @@ def test_token_usage_handles_no_tz_storage(token_env, client):
     the fallback path doesn't crash."""
     from tzlocal import get_localzone
 
-    r = client.get("/api/employees/2/token-usage")
+    r = client.get("/api/contacts/2/token-usage")
     data = r.json()
     assert data["timezone"] == get_localzone().key
 

@@ -62,7 +62,7 @@ def format_contact_block(
     passing the raw id would force the model to look
     up the name via a tool call on every turn. The
     caller (the agent loop) is responsible for
-    resolving the name from the Employee table; the
+    resolving the name from the Contact table; the
     formatter stays free of ORM coupling so the
     ``ContactView`` dataclass + prompt formatter
     remain testable without a database.
@@ -72,7 +72,7 @@ def format_contact_block(
 
     lines: list[str] = ["", *load_contact_block_template().splitlines(), ""]
     # ``display_name ?? person_id`` — the caller passes
-    # the resolved Employee display name when they have
+    # the resolved Contact display name when they have
     # it; fall back to the raw int FK only if not.
     header_label = display_name or contact.display_name or contact.name or f"contact #{contact.id}"
     header = f"**{header_label}**"

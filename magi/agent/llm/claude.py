@@ -12,9 +12,9 @@ Provider id: ``"claude"``. Operator-facing label
 
 Default model: ``claude-opus-4-7`` — Anthropic's
 strongest general-purpose model as of the v0 cut.
-Operators can override per-employee by passing
+Operators can override per-contact by passing
 ``model=`` to ``get_provider(...)`` (or the
-``employee_model`` argument on the agent loop).
+``contact_model`` argument on the agent loop).
 """
 
 from __future__ import annotations

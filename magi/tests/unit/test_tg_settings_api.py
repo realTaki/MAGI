@@ -42,16 +42,16 @@ def client(tg_settings_env):
     """TestClient with an admin cookie; mirrors the other
     settings-API fixtures in this suite."""
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         open_session,
     )
 
     init_orm(str(tg_settings_env))
     with open_session() as s:
-        s.query(Employee).delete()
+        s.query(Contact).delete()
         s.add(
-            Employee(
+            Contact(
                 name="TA-tg-settings",
                 telegram_id=9001,
                 role="admin",

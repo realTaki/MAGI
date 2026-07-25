@@ -17,7 +17,7 @@ per-process via ``MAGI_NODE_ROLE`` (``adam`` / ``eve``). New archetypes
 
 Naming: ``operator`` (lowercase) is the user role running Adam's web UI —
 it replaces the older "admin / HR / IT" framing. The people EVEs serve
-are **assigned Users** (replaces the older "employee" framing so the
+are **assigned Users** (replaces the older "contact" framing so the
 system can serve both B2B and B2C). There is intentionally **no CLI** —
 all operator work goes through Adam's web UI.
 """

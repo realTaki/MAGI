@@ -14,14 +14,14 @@ Four surfaces pinned:
   - ``delivery_to="new"`` (and the legacy ``None`` path) →
     fresh :class:`ChatSession` row per fire.
   - ``delivery_to=<26-char ULID>`` matching an existing
-    :class:`ChatSession` owned by the same employee →
+    :class:`ChatSession` owned by the same contact →
     that session is reused, the cron prompt is appended
     as a new :class:`ChatMessage`, and no new
     :class:`ChatSession` row is created.
   - ``delivery_to=<ULID>`` not matching any row → fallback
     to fresh session + warning log.
   - ``delivery_to=<ULID>`` matching a session owned by a
-    DIFFERENT employee → fail-closed (no cross-employee
+    DIFFERENT contact → fail-closed (no cross-contact
     message injection).
 
 Live-fire end-to-end (mocked provider) isn't exercised
@@ -38,7 +38,7 @@ import pytest
 from magi.agent.db import (
     ChatMessage,
     ChatSession,
-    Employee,
+    Contact,
     init_orm,
     init_sqlite,
     open_session,
@@ -76,7 +76,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     init_orm(str(sd))
     with open_session() as s:
         s.add(
-            Employee(
+            Contact(
                 # ``id`` auto, so we look it up later.
                 name="runner-delivery-test",
                 telegram_id=9101,
@@ -118,7 +118,7 @@ def _seed_task(
         "T" + name[:24].ljust(24, "0")
     )
     with open_session() as db:
-        emp = db.query(Employee).filter_by(telegram_id=9101).one()
+        emp = db.query(Contact).filter_by(telegram_id=9101).one()
         session_id: str | None = None
         if with_session:
             session_id = new_session_id()
@@ -333,10 +333,10 @@ async def test_legacy_delivery_to_ulid_is_ignored(
     pre-refactor "join my chat" semantic) are now
     inert — the runner ignores the value and uses
     ``task.session_id`` instead. The legacy ULID
-    chat is untouched (no cross-employee injection).
+    chat is untouched (no cross-contact injection).
     """
     with open_session() as db:
-        emp = db.query(Employee).filter_by(telegram_id=9101).one()
+        emp = db.query(Contact).filter_by(telegram_id=9101).one()
         legacy = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
             delivery_address=str(emp.telegram_id),
@@ -382,21 +382,21 @@ async def test_legacy_delivery_to_ulid_is_ignored(
         assert any("legacy-ulid" in m.text for m in msgs_task)
 
 
-# -- cross-employee: delivery_to=None / task.session_id is task-owned ------
+# -- cross-contact: delivery_to=None / task.session_id is task-owned ------
 
 
-async def test_cross_employee_does_not_inject_into_other(
+async def test_cross_contact_does_not_inject_into_other(
     state_dir: Path,
 ) -> None:
-    """Task A's session is owned by employee A; the
+    """Task A's session is owned by contact A; the
     runner never writes to a session belonging to a
-    different employee. With the new model this is
+    different contact. With the new model this is
     automatic (task.session_id is owned by the task's
-    employee), so we just verify the session
+    contact), so we just verify the session
     ownership holds."""
     with open_session() as db:
-        emp_a = db.query(Employee).filter_by(telegram_id=9101).one()
-        emp_b = Employee(
+        emp_a = db.query(Contact).filter_by(telegram_id=9101).one()
+        emp_b = Contact(
             name="Other Operator",
             telegram_id=9202,
             role="admin",
@@ -470,14 +470,14 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
             delivery_to="9101",
         )
         # Seed the IM binding for the operator (the
-        # test Employee seeded by the fixture). The
+        # test Contact seeded by the fixture). The
         # adapter reads from ``user_im_bindings``; the
-        # legacy ``Employee.telegram_id`` cache is also
+        # legacy ``Contact.telegram_id`` cache is also
         # populated for any reader that hasn't migrated.
         with open_session() as db:
             from magi.agent.proactive.runner import execute_task as _
-            from magi.agent.db.models_employee import Employee
-            emp = db.query(Employee).filter_by(
+            from magi.agent.db.models_contact import Contact
+            emp = db.query(Contact).filter_by(
                 telegram_id=9101,
             ).first()
             if emp is not None:
@@ -529,7 +529,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
     TG session is for the operator's TG chat with
     the bot; task fires are a separate thread."""
     with open_session() as db:
-        emp = db.query(Employee).filter_by(telegram_id=9101).one()
+        emp = db.query(Contact).filter_by(telegram_id=9101).one()
         tg_chat = ChatSession(
             session_id="01HTGCHATSESSIONXXXXXXXXX",
             delivery_address="9101",

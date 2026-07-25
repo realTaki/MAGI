@@ -11,7 +11,7 @@ test the loop in isolation against a fake bot to verify:
   - a bot-side failure (e.g. ``Forbidden``) kills the
     loop instead of looping forever
 
-We don't exercise ``_handle_employee_message`` end-to-end
+We don't exercise ``_handle_contact_message`` end-to-end
 here (that path needs the full python-telegram-bot mock
 plus a real LLM stub) — the integration wiring is covered
 by ``test_tg_admin_routes``.

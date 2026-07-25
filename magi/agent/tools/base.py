@@ -22,7 +22,7 @@ v0 fields:
   - ``state_dir``    — ``MAGI_STATE_DIR`` value
   - ``workspace``    — the resolved workspace root
   - ``uid``          — who is on the other end (for audit
-                        / future per-employee limits)
+                        / future per-contact limits)
   - ``channel``      — ``"webui"`` / ``"tg"`` / ``"scheduled"``
   - ``session_id``   — current chat session id (empty when
                         the tool runs outside a chat; the
@@ -209,12 +209,12 @@ def caller_role_denied_reason(
     entry point that forgets the filter) still fails
     closed with a friendly ``is_error=True``.
 
-    Resolves the caller's role via a fresh Employee
+    Resolves the caller's role via a fresh Contact
     lookup each call so role flips (``assigned`` →
-    ``employee`` mid-conversation) take effect on the
+    ``contact`` mid-conversation) take effect on the
     very next tool call without a process restart.
 
-    The SQLAlchemy / Employee imports are local — the
+    The SQLAlchemy / Contact imports are local — the
     agent loop imports this module without paying for
     the DB stack at module load.
     """
@@ -236,7 +236,7 @@ def caller_role_denied_reason(
     with open_session() as db:
         emp = db.get(Contact, emp_id)
     if emp is None:
-        return f"employee {emp_id!r} not found"
+        return f"contact {emp_id!r} not found"
     if emp.role not in allowed_roles:
         return (
             f"role {emp.role!r} is not permitted for this "

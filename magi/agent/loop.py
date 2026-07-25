@@ -20,7 +20,7 @@ successful LLM call in the ``token_usage`` table (D.15).
 Session history lives in the SQLite ``chat_sessions`` table
 under ``<workspace>/memories/<state-dir>.db`` (D.18, replacing
 the pre-D.18 JSON layout). No separate audit log — operator-
-facing ``/api/employees/{id}/token-usage`` + ``GET
+facing ``/api/contacts/{uid}/token-usage`` + ``GET
 /api/chat/sessions/{id}`` cover the same questions
 ("what was said", "what was spent") that an audit
 view would.
@@ -84,7 +84,7 @@ DEFAULT_MAX_TOKENS = 1024
 # that failed mid-stream (network / rate-limit / context-
 # length), and ``agent_no_credentials`` for the strict-mode
 # rejection when the chat caller never supplied per-
-# employee credentials. Both live in
+# contact credentials. Both live in
 # ``magi/agent/prompts/bot_replies.yaml`` — see that file
 # to tweak. Resolved lazily and cached so a single YAML
 # read serves every fallback for the rest of the process.
@@ -210,7 +210,7 @@ def _drain_pending_user_messages(
     except Exception:
         logger.exception(
             "agent: store read failed during interrupt poll "
-            "(employee=%s, session=%s); continuing without drain",
+            "(contact=%s, session=%s); continuing without drain",
             uid, session_id,
         )
         return False
@@ -239,7 +239,7 @@ def _drain_pending_user_messages(
 
     logger.info(
         "agent.interrupt: spliced %d new user message(s) into "
-        "in-flight loop (employee=%s, session=%s)",
+        "in-flight loop (contact=%s, session=%s)",
         len(new_user_texts), uid, session_id,
     )
     return True
@@ -261,7 +261,7 @@ def _fallback_reply(key: str = "agent_fallback") -> str:
         _FALLBACK_REPLY_CACHE[key] = cached
     return cached
 
-# Where SOUL.md lives. C4 will move this to a per-employee
+# Where SOUL.md lives. C4 will move this to a per-contact
 # path (each EVE can have its own persona); for v0 we read
 # the single workspace file at startup.
 _SOUL_FILENAME = "SOUL.md"
@@ -278,14 +278,14 @@ async def handle_message(
     # question "which session burned these tokens?" can be
     # answered later.
     session_id: str | None = None,
-    # Per-employee credentials — the chat path is strict by
+    # Per-contact credentials — the chat path is strict by
     # default (no fall-back to a system default) so every LLM
-    # call can be billed to a specific employee. Both must be
+    # call can be billed to a specific contact. Both must be
     # set together or the call is rejected with the
     # ``agent_fallback`` friendly reply.
-    employee_provider: str | None = None,
-    employee_api_key: str | None = None,
-    employee_model: str | None = None,
+    contact_provider: str | None = None,
+    contact_api_key: str | None = None,
+    contact_model: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     # D.16: optional override for the agent loop's
     # tool-iteration cap. ``None`` (the default) means
@@ -313,7 +313,7 @@ async def handle_message(
 ) -> str:
     """One chat turn. Returns the LLM's reply text.
 
-    On any LLM failure (including missing per-employee
+    On any LLM failure (including missing per-contact
     credentials), returns the ``agent_fallback`` template
     (see ``magi/agent/prompts/bot_replies.yaml``) and
     audits the real error. The caller (TG bot / WebUI chat)
@@ -323,7 +323,7 @@ async def handle_message(
     the UI.
 
     No default-LLM fallback. Every LLM call must carry the
-    employee credentials that pay for it — the design is
+    contact credentials that pay for it — the design is
     "every message is billed to a person", so silent fall-back
     to a house-LLM (which would mis-route the reply and hide
     the configuration mistake) is deliberately not supported.
@@ -340,48 +340,48 @@ async def handle_message(
         Tag for the ``token_usage`` row (``"tg"`` / ``"webui"`` /
         ``"scheduled"``). Free-form string; no enum yet.
     uid
-        Optional employee id, for the ``token_usage`` row.
+        Optional contact id, for the ``token_usage`` row.
         ``None`` is accepted (FK NOT NULL on the SQL column
         will surface any caller that drops the ball), but
         v0 never sends ``None`` — both channel paths
-        resolve the caller to a known Employee row before
+        resolve the caller to a known Contact row before
         this function runs.
     session_id
         D.6: optional chat session id. Echoed into the
         ``token_usage`` row so the question "which session
         burned these tokens?" can be answered later by
         joining against ``chat_sessions`` on the same id.
-    employee_provider / employee_api_key / employee_model
+    contact_provider / contact_api_key / contact_model
         Per-call LLM credentials. Either all three are set
-        (employee chooses model optionally) or the call is
+        (contact chooses model optionally) or the call is
         rejected. The TG channel fetches these from the
-        employee row; the WebUI chat API does the same via
+        contact row; the WebUI chat API does the same via
         the ``magi_session`` admin cookie.
     """
 
-    # Strict-mode pre-flight: per-employee credentials must
+    # Strict-mode pre-flight: per-contact credentials must
     # be present in full. We treat empty strings as "not set"
     # so a half-cleared row doesn't accidentally route to
     # a broken provider. The user-friendly reply points the
     # user at the panel that fixes the config (TG users will
     # see this; WebUI users hit a 403 one layer up before
     # getting here).
-    if not employee_provider or not employee_api_key:
+    if not contact_provider or not contact_api_key:
         reason = (
-            "no per-employee credentials configured"
-            if employee_provider is None and employee_api_key is None
-            else "per-employee credentials partially configured "
+            "no per-contact credentials configured"
+            if contact_provider is None and contact_api_key is None
+            else "per-contact credentials partially configured "
                  "(provider or key missing)"
         )
         logger.warning(
-            "chat rejected (employee=%s channel=%s): %s",
+            "chat rejected (contact=%s channel=%s): %s",
             uid, channel, reason,
         )
         return _fallback_reply("agent_no_credentials")
 
-    provider_name = employee_provider
-    api_key = employee_api_key
-    model = employee_model
+    provider_name = contact_provider
+    api_key = contact_api_key
+    model = contact_model
 
     soul = read_soul(state_dir)
 
@@ -431,7 +431,7 @@ async def handle_message(
         # LLMError. Treat the same as an LLMError: log +
         # return fallback, no exception to the caller.
         logger.warning(
-            "agent: get_provider failed (employee=%s provider=%s): %s",
+            "agent: get_provider failed (contact=%s provider=%s): %s",
             uid, provider_name, e,
         )
         return _fallback_reply()
@@ -493,9 +493,9 @@ async def handle_message(
                 uid,
                 session_id,
                 messages,
-                employee_provider=employee_provider or "",
-                employee_api_key=employee_api_key or "",
-                employee_model=employee_model,
+                contact_provider=contact_provider or "",
+                contact_api_key=contact_api_key or "",
+                contact_model=contact_model,
             )
 
             result = await provider.chat(
@@ -567,7 +567,7 @@ async def handle_message(
                     tr = await tool.run(tool_ctx, **kwargs)
                 except Exception as e:
                     logger.exception(
-                        "agent: tool %s crashed (employee=%s, "
+                        "agent: tool %s crashed (contact=%s, "
                         "session=%s)", tu["name"], uid, session_id,
                     )
                     tr_content = f"tool {tu['name']!r} crashed: {e}"
@@ -607,17 +607,17 @@ async def handle_message(
             # produced on the last iteration (may be empty).
             logger.warning(
                 "agent: tool loop hit max_iter=%d for session=%s "
-                "(employee=%s); model still wanted tools",
+                "(contact=%s); model still wanted tools",
                 max_iter, session_id, uid,
             )
     except LLMError as e:
         logger.warning(
-            "llm call failed (employee=%s provider=%s): %s",
+            "llm call failed (contact=%s provider=%s): %s",
             uid, provider_name, e,
         )
         return _fallback_reply()
 
-    # D.15 — per-employee token accounting. We don't have
+    # D.15 — per-contact token accounting. We don't have
     # # usage per-iteration in v0 (only the last response
     # is preserved); v0 records the last call's usage as a
     # proxy. Aggregating across iterations is a future
@@ -633,7 +633,7 @@ async def handle_message(
         )
     except Exception:
         logger.exception(
-            "agent: token_usage insert failed (employee=%s, "
+            "agent: token_usage insert failed (contact=%s, "
             "channel=%s); chat reply already succeeded",
             uid, channel,
         )

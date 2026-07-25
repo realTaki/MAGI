@@ -46,7 +46,7 @@ class ChannelMismatchError(SessionError):
 
     Sessions are pinned to a single channel at creation
     time (TG / webui / scheduled). Reads (list, get) are
-    cross-channel by design — the same employee may browse
+    cross-channel by design — the same contact may browse
     their TG history from the WebUI console — but **writes**
     (append_messages, the inbound that triggers
     handle_message) must come from the owner channel. The

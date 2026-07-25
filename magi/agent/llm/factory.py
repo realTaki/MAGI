@@ -60,7 +60,7 @@ def known_providers() -> list[str]:
     intentionally NOT listed here — operators pick a
     region explicitly so there's no ambiguity.
     ``get_provider`` still accepts ``"minimax"`` for
-    backward compat with any pre-v0 employee rows;
+    backward compat with any pre-v0 contact rows;
     we just don't surface it in the picker.
     """
     return ["claude", "minimax-global", "minimax-cn"]
@@ -80,7 +80,7 @@ def get_provider(
         system default). Case-insensitive. ``"minimax"``
         alone is still accepted as a synonym for
         ``"minimax-cn"`` for backward compat — pre-v0
-        employee rows that picked the bare alias keep
+        contact rows that picked the bare alias keep
         working — but it no longer appears in the UI
         picker.
     api_key

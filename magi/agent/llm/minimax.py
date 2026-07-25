@@ -41,9 +41,9 @@ _BASE_URLS: dict[str, str] = {
     "minimax-global": "https://api.minimax.io/anthropic",
 }
 
-# Default model. Operators can override per-employee
-# by extending the Employee model with a model
-# column (the ``employee_model`` argument passed to
+# Default model. Operators can override per-contact
+# by extending the Contact model with a model
+# column (the ``contact_model`` argument passed to
 # ``handle_message`` already accepts this).
 _DEFAULT_MODEL = "MiniMax-M2.7"
 

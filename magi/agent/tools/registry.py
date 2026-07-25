@@ -106,7 +106,7 @@ def _build_tools() -> list["Tool"]:
         UpdateContactTool(),
         DeleteContactTool(),
         SearchContactsTool(),
-        # Action item — per-employee, scoped to the
+        # Action item — per-contact, scoped to the
         # caller. ALLOWED_ROLES = {admin, assigned}
         # keeps these out of the menu for other roles;
         # the in-run ``_gate`` on each tool is the

@@ -13,7 +13,7 @@ runtime code makes "what does this table serve?" obvious in
 a single ``grep``. The Base class is still imported from
 :mod:`magi.agent.db.orm` so the SQLite file is shared
 and ``init_orm`` can ``create_all`` these tables alongside
-``employees`` / ``chat_sessions`` etc.
+``contacts`` / ``chat_sessions`` etc.
 
 Schema versioning follows the existing C1.1 model:
 ``Base.metadata.create_all`` for first-deploy, plus entries
@@ -39,7 +39,7 @@ Columns / defaults
 Cross-table FKs
 ---------------
 
-- ``tasks.uid`` → ``employees.id`` ``RESTRICT``: a task
+- ``tasks.uid`` → ``contacts.id`` ``RESTRICT``: a task
   references its operator's credentials. Cascade delete would
   wipe history when an admin gets removed (and re-added), so
   we block the delete at the DB level — the action_items
@@ -162,7 +162,7 @@ class Task(Base):
     # SET NULL on delete: task deletion is a separate
     # operator action that intentionally leaves the
     # session row in place as a record (the session
-    # still belongs to the employee, the task_id is
+    # still belongs to the contact, the task_id is
     # gone, the conversation is just labelled).
     session_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_sessions.session_id", ondelete="SET NULL"),
@@ -214,7 +214,7 @@ class Task(Base):
         order_by="TaskRun.started_at.desc()",
         cascade="all, delete-orphan",
     )
-    employee: Mapped["Contact"] = relationship(viewonly=True)
+    contact: Mapped["Contact"] = relationship(viewonly=True)
 
     __table_args__ = (
         # Surface name collisions early — if two operators
@@ -231,7 +231,7 @@ class Task(Base):
         Index("ix_tasks_enabled_last_run", "enabled", "last_run_at"),
         # Per-operator listings ("which of MY tasks are
         # scheduled?").
-        Index("ix_tasks_employee", "uid"),
+        Index("ix_tasks_contact", "uid"),
     )
 
 

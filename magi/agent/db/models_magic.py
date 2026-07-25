@@ -13,7 +13,7 @@ its adam MAGI row is provisioned.
 The cross-table relationships (``adam``, ``children``,
 ``parent``) resolve at mapper-config time via the standard
 ``TYPE_CHECKING`` + ``from __future__ import annotations``
-pattern — same as :mod:`.models_employee`.
+pattern — same as :mod:`.models_contact`.
 """
 
 from __future__ import annotations

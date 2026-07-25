@@ -80,7 +80,7 @@ _MAGI_POSITIONS: tuple[str, ...] = ("adam", "eve")
 def _mask_key(raw: str | None) -> tuple[bool, str | None]:
     """Return ``(is_set, last4_or_None)`` from a stored key.
 
-    Mirrors :func:`magi.channels.webui.api.employees._mask_key`
+    Mirrors :func:`magi.channels.webui.api.contacts._mask_key`
     so the policy lives in one place; the implementation is
     duplicated here to avoid a cross-router import cycle.
     """

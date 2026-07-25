@@ -13,14 +13,14 @@ Four surfaces pinned:
   3. **JOIN shape** — ``response.person.name`` is resolved
      server-side as ``display_name ?? name``;
      ``response.person.department_name`` is populated from
-     the chained ``Employee.department`` JOIN; orphans
-     (person FK set NULL by an employee delete) render as
+     the chained ``Contact.department`` JOIN; orphans
+     (person FK set NULL by a contact delete) render as
      ``person=None`` instead of 500.
   4. **Order** — ``last_seen_at DESC`` is the primary
      ordering — most recently touched people first.
 
 The fixture mirrors ``test_skills_api`` / ``test_memory``:
-fresh state dir, fresh ORM engine, seeded admin employee,
+fresh state dir, fresh ORM engine, seeded admin contact,
 ``TestClient`` with ``magi_session`` cookie set.
 """
 
@@ -37,11 +37,11 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    """MAGI_STATE_DIR + ORM + two admins + one regular employee.
+    """MAGI_STATE_DIR + ORM + two admins + one regular contact.
 
     The legacy ``Department`` / ``department_id`` column was
     dropped in the post-refactor reframe, so this fixture
-    only seeds three ``Employee`` rows. Tests that referenced
+    only seeds three ``Contact`` rows. Tests that referenced
     the dept join (``test_list_contacts_joins_person_name_and_department``
     and friends) need to be revisited when the contacts
     schema is re-shaped; this fixture currently keeps the
@@ -59,7 +59,7 @@ def env(monkeypatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import (
-        Employee,
+        Contact,
         init_orm,
         init_sqlite,
         open_session,
@@ -68,7 +68,7 @@ def env(monkeypatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as db:
-        alice = Employee(
+        alice = Contact(
             name="Alice",
             display_name="ali",
             telegram_id=9001,
@@ -76,17 +76,17 @@ def env(monkeypatch, tmp_path):
             provider="minimax",
             api_key="fake",
         )
-        bob = Employee(
+        bob = Contact(
             name="Bob",
             telegram_id=9002,
             role="admin",
             provider="minimax",
             api_key="fake",
         )
-        charlie = Employee(
+        charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="employee",
+            role="contact",
             provider="minimax",
             api_key="fake",
         )
@@ -113,7 +113,7 @@ def client(env):
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's cookie (role=employee, not
+    """TestClient with Charlie's cookie (role=contact, not
     admin). Used to verify the AdminGate rejects non-admin
     callers."""
     from magi.channels.webui.app import create_app
@@ -202,14 +202,14 @@ def test_list_contacts_requires_admin(env):
 
 
 def test_list_contacts_403_for_non_admin(charlie_client):
-    """``magi_session=<charlie.id>`` (role=employee) →
-    401. ``AdminGate`` checks ``Employee.role == 'admin'``;
+    """``magi_session=<charlie.id>`` (role=contact) →
+    401. ``AdminGate`` checks ``Contact.role == 'admin'``;
     any other role bounces at the dependency."""
     r = charlie_client.get("/api/contacts")
     assert r.status_code == 401
 
 
-def test_list_contacts_scopes_to_caller_employee(
+def test_list_contacts_scopes_to_caller_contact(
     env, client, bob_client,
 ):
     """Admin A's contacts must NOT appear in admin B's
@@ -243,7 +243,7 @@ def test_list_contacts_joins_person_name_and_department(
     """The server-side JOIN hydrates ``person.name`` (with
     ``display_name ?? name`` fallback) and
     ``person.department_name`` (via the chained
-    ``Employee.department`` load). The UI never has to
+    ``Contact.department`` load). The UI never has to
     issue a second request per row."""
     # Charlie is in Engineering (seeded in env); use him as
     # the contact's person. Charlie's ``display_name`` is
@@ -265,7 +265,7 @@ def test_list_contacts_joins_person_name_and_department(
     assert row["person"]["department_id"] is not None
     assert row["person"]["department_name"] == "Engineering"
     # Role snapshot returned verbatim (the snapshot, NOT
-    # the live Employee.role — they're decoupled by design).
+    # the live Contact.role — they're decoupled by design).
     assert row["role"] == "SRE"
 
 
@@ -273,7 +273,7 @@ def test_list_contacts_uses_display_name_when_present(
     env, client,
 ):
     """``display_name`` overrides ``name`` when the
-    employee has set one. Pin this so the server-side
+    contact has set one. Pin this so the server-side
     fallback contract is explicit (and the UI never has
     to decide which to show)."""
     _seed_contact(
@@ -316,7 +316,7 @@ def test_list_contacts_orders_by_last_seen_desc(env, client):
 
 
 def test_list_contacts_orphan_rendered_without_person(env, client):
-    """When the underlying Employee row is deleted, the
+    """When the underlying Contact row is deleted, the
     FK is set NULL on the contact row (per
     ``ContactEntry.person_id`` ON DELETE SET NULL). The
     endpoint must NOT 500 — it renders the row with
@@ -341,8 +341,8 @@ def test_list_contacts_orphan_rendered_without_person(env, client):
     with open_session() as db:
         bob = db.get(__import__(
             "magi.agent.db",
-            fromlist=["Employee"],
-        ).Employee, env["bob"].id)
+            fromlist=["Contact"],
+        ).Contact, env["bob"].id)
         db.delete(bob)
         db.commit()
 
@@ -365,14 +365,14 @@ def test_list_contacts_caps_at_200(env, client):
     # Seed 5 contacts (well under 200) — just verify the
     # cap doesn't accidentally truncate a small set.
     # ``UNIQUE(owner_id, person_id)`` means each row needs
-    # a distinct person; mint 5 throwaway employees.
-    from magi.agent.db import Employee, open_session
+    # a distinct person; mint 5 throwaway contacts.
+    from magi.agent.db import Contact, open_session
     with open_session() as db:
         throwaway = [
-            Employee(
+            Contact(
                 name=f"Throwaway-{i}",
                 telegram_id=9100 + i,
-                role="employee",
+                role="contact",
                 provider="minimax",
                 api_key="fake",
             )

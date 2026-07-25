@@ -240,22 +240,22 @@ def test_list_summaries_message_count_excludes_archive(store):
 
 
 # --------------------------------------------------------------------------- #
-# 5. cross-employee isolation (DB-side WHERE uid = ?)
+# 5. cross-contact isolation (DB-side WHERE uid = ?)
 # --------------------------------------------------------------------------- #
 
 
 def test_uids_isolated(store):
-    """Two employees do not see each other's sessions."""
+    """Two contacts do not see each other's sessions."""
     from magi.agent.memory.session import SessionNotFoundError
     a = store.create(1, )
     b = store.create(2, )
     assert store.get(1, a.session_id) is not None
     assert store.get(2, b.session_id) is not None
-    # a's session id is unreachable from employee 2.
+    # a's session id is unreachable from contact 2.
     assert store.get(2, a.session_id) is None
     with pytest.raises(SessionNotFoundError):
         store.append_messages(2, a.session_id, [_msg("user")])
-    # And b's session id is unreachable from employee 1.
+    # And b's session id is unreachable from contact 1.
     assert store.get(1, b.session_id) is None
     # Sanity: list_summaries scopes by uid.
     assert {s.session_id for s in store.list_summaries(1)[0]} == {a.session_id}

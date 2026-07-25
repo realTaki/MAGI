@@ -3,7 +3,7 @@
 The scheduler calls :func:`execute_task` (a coroutine) when a
 task's cron fires. Each invocation:
 
-1. Reads the Task row (and the operator's Employee row for
+1. Reads the Task row (and the operator's Contact row for
    credentials). The task's home :class:`ChatSession`
    (``channel="task"``) was allocated at task creation
    time (see :mod:`magi.channels.webui.api.tasks` and
@@ -18,7 +18,7 @@ task's cron fires. Each invocation:
    without requiring a separate migration.
 
 2. Calls :func:`magi.agent.loop.handle_message` with the
-   employee credentials already in scope, against the
+   contact credentials already in scope, against the
    task's home session. The agent loop sees the full
    history of prior fires' prompts + replies — same as
    a normal chat that happens to be triggered by a
@@ -132,15 +132,15 @@ async def execute_task(
         if task is None:
             logger.info("execute_task: task %s vanished mid-flight", task_id)
             return None
-        employee = db.get(Contact, task.uid)
-        if employee is None or not employee.api_key or not employee.provider:
+        contact = db.get(Contact, task.uid)
+        if contact is None or not contact.api_key or not contact.provider:
             _finalise_run_failure(
                 db, run_id=run_id, task_id=task_id, uid=task.uid,
-                task_name=task.name, error="employee_missing_credentials",
+                task_name=task.name, error="contact_missing_credentials",
                 started_iso=started,
             )
-            _bump_failure(db, task, "employee_missing_credentials")
-            _maybe_disable_and_alert(db, task, "employee_missing_credentials")
+            _bump_failure(db, task, "contact_missing_credentials")
+            _maybe_disable_and_alert(db, task, "contact_missing_credentials")
             db.commit()
             return run_id
 
@@ -262,8 +262,8 @@ async def execute_task(
         # the agent sees the wrapped text.
         prompt = contextual_prompt
         delivery_target = task.delivery_to
-        provider = employee.provider
-        api_key = employee.api_key
+        provider = contact.provider
+        api_key = contact.api_key
         # Stash the new session id + uid so the post-with
         # patch can update delivery_address without
         # re-opening the outer session.
@@ -340,19 +340,19 @@ async def execute_task(
                 # ``delivery_address`` column (via the
                 # channel dispatcher, D.28).
                 channel="task",
-                uid=employee.id,
+                uid=contact.id,
                 session_id=session_id,
-                employee_provider=provider,
-                employee_api_key=api_key,
-                employee_model=None,
-                caller_role=employee.role,
+                contact_provider=provider,
+                contact_api_key=api_key,
+                contact_model=None,
+                caller_role=contact.role,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         return _mark_failed(
             state_dir=state_dir, task_id=task_id, run_id=run_id,
-            uid=employee.id, task_name=task_name,
+            uid=contact.id, task_name=task_name,
             started_iso=started,
             error=f"timeout_after_{_RUN_TIMEOUT_SECONDS}s",
         )
@@ -360,7 +360,7 @@ async def execute_task(
         logger.exception("task %s crashed in handle_message", task_id)
         return _mark_failed(
             state_dir=state_dir, task_id=task_id, run_id=run_id,
-            uid=employee.id, task_name=task_name,
+            uid=contact.id, task_name=task_name,
             started_iso=started,
             error=f"unexpected:{type(exc).__name__}:{exc}",
         )
@@ -377,7 +377,7 @@ async def execute_task(
     finished_msg = datetime.now(timezone.utc).isoformat()
     try:
         SessionStore(state_dir).append_messages(
-            employee.id, session_id,
+            contact.id, session_id,
             [SessionMessage(
                 role="assistant", text=reply or "",
                 ts=finished_msg,
@@ -531,7 +531,7 @@ def _finalise_run_failure(
         uid=uid,
         kind="task_disabled",
         title=f"定时任务无法执行：{task_name}",
-        description=f"任务 \"{task_name}\" 配置引用的员工没有设置 provider/api_key。",
+        description=f"任务 \"{task_name}\" 配置引用的联系人没有设置 provider/api_key。",
         target_url=f"/chat/scheduled-tasks?task={task_id}",
         priority="high",
         source="system",
@@ -548,9 +548,9 @@ def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tu
     billed against) + ``ts >= started_iso`` (the fire's
     wall-clock start). ``session_id`` is kept in the
     signature for compatibility but isn't a column on
-    :class:`TokenUsage` — the token table is per-employee,
+    :class:`TokenUsage` — the token table is per-contact,
     not per-session. Multiple concurrent fires for the
-    same employee would over-count, but that's a row
+    same contact would over-count, but that's a row
     collision the scheduler's ``max_instances=1`` already
     prevents.
 

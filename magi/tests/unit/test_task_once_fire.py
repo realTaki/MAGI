@@ -106,7 +106,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
     from magi.agent.proactive import orm_models as _  # noqa: F401  (registers Task on Base)
-    from magi.agent.db import Employee
+    from magi.agent.db import Contact
 
     task_id = "T" + "0" * 25
     row_kwargs = dict(overrides)
@@ -120,9 +120,9 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
 
     with open_session() as db:
         if "uid" not in row_kwargs:
-            emp = db.query(Employee).first()
+            emp = db.query(Contact).first()
             if emp is None:
-                emp = Employee(
+                emp = Contact(
                     name="tester",
                     telegram_id=90001,
                     role="admin",
@@ -237,9 +237,9 @@ async def test_schedule_task_tool_once_writes_run_at_row(
 
     # Seed a target operator + bind the cookie identity
     # the ``_gate`` consults.
-    from magi.agent.db import Employee
+    from magi.agent.db import Contact
     with open_session() as db:
-        db.add(Employee(
+        db.add(Contact(
             name="tester",
             telegram_id=90002,
             role="admin",
@@ -290,9 +290,9 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
 
     start_scheduler(str(state_db))
 
-    from magi.agent.db import Employee
+    from magi.agent.db import Contact
     with open_session() as db:
-        db.add(Employee(
+        db.add(Contact(
             name="tester",
             telegram_id=90003,
             role="admin",

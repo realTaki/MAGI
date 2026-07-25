@@ -242,7 +242,7 @@ export default function ChatTab() {
   // the renderer can pick a friendlier message than the English
   // ``detail`` for known cases (e.g. ``chat.llm_credentials_required``
   // points the operator at the Organization tab where their
-  // per-employee LLM is configured). Unknown codes fall through
+  // per-contact LLM is configured). Unknown codes fall through
   // to ``detail`` so a missing translation never blanks the UI.
   const [chatError, setChatError] = useState<
     { code: string; detail: string } | null
@@ -1123,9 +1123,9 @@ function ChatConversationPane(props: {
           never blanks the UI. */}
       {props.error && (() => {
         const friendly: Record<string, string> = {
-          // The operator hasn't set their per-employee LLM
+          // The operator hasn't set their per-contact LLM
           // credentials yet — point them at the Organization
-          // tab where the employee detail panel lives. Tells
+          // tab where the contact detail panel lives. Tells
           // them what to fill in (provider + API key) so the
           // next attempt works without a second round-trip.
           chat_llm_credentials_required: t("chat.errorCredentials"),

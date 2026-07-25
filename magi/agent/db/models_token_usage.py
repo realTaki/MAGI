@@ -1,11 +1,11 @@
 """ORM table ``token_usage`` — one row per outbound LLM call.
 
-Powers the per-employee token-bill aggregation endpoint
-(see ``magi.channels.webui.api.employee_metrics``).
+Powers the per-contact token-bill aggregation endpoint
+(see ``magi.channels.webui.api.token_metrics``).
 Permanent: this table is meant to grow indefinitely so
 week/month aggregates stay accurate. The operator-
-facing endpoint ``/api/employees/{id}/token-usage``
-answers the "what did this employee cost?" question;
+facing endpoint ``/api/contacts/{uid}/token-usage`` 
+answers the "what did this contact cost?" question;
 the session JSON files (D.6) answer the "what was
 said?" question. v0 doesn't carry a separate audit
 log — those two surfaces cover the same questions
@@ -23,20 +23,20 @@ timestamp column uses). The aggregation endpoint
 converts the configured timezone's
 ``period_start`` / ``period_end`` to UTC before issuing
 the SQL — see ``_period_bounds`` in
-``employee_metrics.py``. Storing tz-aware would force a
+``contact_metrics.py``. Storing tz-aware would force a
 schema decision (which tz?) that the system-level
 setting handles better.
 
 ``uid`` is NOT NULL: every chat call in v0
-resolves to a concrete employee before reaching the
-LLM (WebUI cookie admin + TG bound employee), so the
+resolves to a concrete contact before reaching the
+LLM (WebUI cookie admin + TG bound contact), so the
 FK is always satisfied. If a future channel arrives
-without a ``uid`` → ``Employee`` mapping, the
+without a ``uid`` → ``Contact`` mapping, the
 insert will surface that gap at write time rather
 than silently dropping the row.
 
-FKs reference :class:`Employee` in
-:mod:`magi.agent.db.models_employee`. Type-only
+FKs reference :class:`Contact` in
+:mod:`magi.agent.db.models_contact`. Type-only
 import under TYPE_CHECKING — FK strings resolve at
 mapper config time.
 """
@@ -106,8 +106,8 @@ class TokenUsage(Base):
 
     # Read-only relationship for admin / debug views;
     # route code never traverses it to mutate the
-    # employee.
-    employee: Mapped["Contact"] = relationship(
+    # contact.
+    contact: Mapped["Contact"] = relationship(
         foreign_keys=[uid], viewonly=True
     )
 

@@ -140,7 +140,7 @@ def _reset_orm_engine() -> None:
 def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Fresh state dir per test + a single bound admin so
     the chat-store helpers don't trip the FK on a missing
-    employee row.
+    contact row.
 
     Each test gets a unique ``telegram_id`` so the suite
     can re-import this fixture without UNIQUE-constraint
@@ -150,7 +150,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    from magi.agent.db import Employee, init_orm, init_sqlite, open_session
+    from magi.agent.db import Contact, init_orm, init_sqlite, open_session
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -159,7 +159,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         # the UNIQUE constraint on the column doesn't
         # trip when the fixture is reused.
         s.add(
-            Employee(
+            Contact(
                 name="TA-loop-interrupt",
                 telegram_id=tmp_path.stat().st_uid ^ 90000,
                 role="admin",
@@ -534,8 +534,8 @@ async def test_handle_message_picks_up_interrupting_user_message(
         
         uid=1,
         session_id=sess.session_id,
-        employee_provider="minimax",
-        employee_api_key="fake",
+        contact_provider="minimax",
+        contact_api_key="fake",
         max_tool_iterations=3,
     )
 
@@ -588,8 +588,8 @@ async def test_handle_message_no_interrupt_works_normally(
         
         uid=1,
         session_id=sess.session_id,
-        employee_provider="minimax",
-        employee_api_key="fake",
+        contact_provider="minimax",
+        contact_api_key="fake",
         max_tool_iterations=3,
     )
 

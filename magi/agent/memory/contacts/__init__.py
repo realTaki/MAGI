@@ -1,7 +1,7 @@
 """Contact directory — what the MAGI knows about people.
 
 The unified ``contacts`` table (see :mod:`magi.agent.db.models_contact`)
-replaces the old ``employees``, ``contact_entries``, and
+replaces the old ``contacts``, ``contact_entries``, and
 ``user_im_bindings`` tables. Each ``Contact`` row carries
 a ``notes`` field (LLM-managed free-form markdown) and a
 ``source`` field (who recorded it).

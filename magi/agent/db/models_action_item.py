@@ -23,8 +23,8 @@ freshly-recreated admin, so "remove admin and re-add"
 naturally surfaces the prompt again instead of
 erasing it.
 
-FKs reference :class:`Employee` in
-:mod:`magi.agent.db.models_employee`. Type-only import
+FKs reference :class:`Contact` in
+:mod:`magi.agent.db.models_contact`. Type-only import
 under TYPE_CHECKING — FK strings resolve at mapper
 config time.
 """
@@ -123,8 +123,8 @@ class ActionItem(Base):
     dismissed: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Viewonly relationships so route code never mutates
-    # Employee via the ActionItem collection.
-    employee: Mapped["Contact | None"] = relationship(
+    # Contact via the ActionItem collection.
+    contact: Mapped["Contact | None"] = relationship(
         foreign_keys=[uid], viewonly=True
     )
     completed_by: Mapped["Contact | None"] = relationship(

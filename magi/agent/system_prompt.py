@@ -27,7 +27,7 @@ Two surfaces pinned:
     LLM-facing prompt is built in one place; the agent
     loop only sees the finished string.
 
-The ``uid -> Employee row -> ContactEntry`` resolution
+The ``uid -> Contact row -> ContactEntry`` resolution
 lives here too (not in the agent loop) so the prompt
 builder is self-contained. Pre-D.26 the resolver ran on
 a per-channel chat id (TG digits at the time) and the
@@ -122,7 +122,7 @@ def build_system_prompt(
 
     Side effects: this calls ``MemoryStore.list_for_owner``
     (one SELECT, capped at 50 rows), ``ContactStore.find_by_person``
-    (single primary-key lookup), a one-row ``Employee``
+    (single primary-key lookup), a one-row ``Contact``
     read for the chatter's display_name, and
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.

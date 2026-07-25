@@ -11,15 +11,15 @@ Session identity (D.23)
 Every public method takes ``uid: int`` as the
 identity of the session owner — NOT a per-channel
 identifier. Sessions are pinned to the *person*
-(the Employee row), not the channel that happened to
+(the Contact row), not the channel that happened to
 create them:
 
   - WebUI caller:  ``Contact.id`` from the admin cookie.
   - TG caller:     ``Contact.id`` resolved from
     the dispatcher's ``lookup_im_id(uid, "telegram")``.
-  - scheduled:     the employee the task was created for.
+  - scheduled:     the contact the task was created for.
 
-The same employee can therefore own sessions across many
+The same contact can therefore own sessions across many
 channels; the ``channel`` column on each row is just
 provenance ("this one was created by TG"). Channel
 ownership for **writes** is still gated by
@@ -236,7 +236,7 @@ class SessionStore:
         """Read a session by id. Returns ``None`` if missing.
 
         The session's ``uid`` must match
-        ``uid`` — a caller passing the wrong employee
+        ``uid`` — a caller passing the wrong contact
         for a known session_id gets ``None`` instead of a
         leak. This is a defense-in-depth check; a row with a
         different ``uid`` is somebody else's history.
@@ -317,7 +317,7 @@ class SessionStore:
           non-empty AND the two don't match, raises
           :class:`ChannelMismatchError` — the cross-channel
           race guard. Reads (list, get) are intentionally
-          NOT gated this way so the same employee can
+          NOT gated this way so the same contact can
           browse their TG history from the WebUI console.
 
           An empty / null stored channel (legacy pre-D.22
@@ -343,12 +343,12 @@ class SessionStore:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.uid != uid:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {uid} "
+                    f"session {session_id!r} for contact {uid} "
                     "does not exist"
                 )
             # D.22 channel-ownership guard. Reads
             # (SessionStore.get) are deliberately NOT gated
-            # so the same employee can browse TG history
+            # so the same contact can browse TG history
             # from WebUI; only writes (append + the inbound
             # that drives handle_message) need the check.
             if (
@@ -386,7 +386,7 @@ class SessionStore:
         fresh = self.get(uid, session_id)
         if fresh is None:
             raise SessionNotFoundError(
-                f"session {session_id!r} for employee {uid} "
+                f"session {session_id!r} for contact {uid} "
                 "vanished between append and re-read"
             )
         return fresh
@@ -421,7 +421,7 @@ class SessionStore:
             sess_row = db.get(ChatSession, session_id)
             if sess_row is None or sess_row.uid != uid:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {uid} "
+                    f"session {session_id!r} for contact {uid} "
                     "does not exist"
                 )
             sess_row.title = new_title
@@ -439,7 +439,7 @@ class SessionStore:
         fresh = self.get(uid, session_id)
         if fresh is None:
             raise SessionNotFoundError(
-                f"session {session_id!r} for employee {uid} "
+                f"session {session_id!r} for contact {uid} "
                 "vanished between rename and re-read"
             )
         return fresh
@@ -493,7 +493,7 @@ class SessionStore:
             fresh = self.get(uid, session_id)
             if fresh is None:
                 raise SessionNotFoundError(
-                    f"session {session_id!r} for employee {uid} "
+                    f"session {session_id!r} for contact {uid} "
                     "vanished between conditional UPDATE and re-read"
                 )
             return fresh
@@ -586,7 +586,7 @@ class SessionStore:
         fresh = self.get(session.uid, session.session_id)
         if fresh is None:
             raise SessionNotFoundError(
-                f"session {session.session_id!r} for employee "
+                f"session {session.session_id!r} for contact "
                 f"{session.uid} vanished between write and re-read"
             )
         return fresh
@@ -622,7 +622,7 @@ class SessionStore:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SessionSummary], int]:
-        """Return ``(summaries, total)`` for the employee.
+        """Return ``(summaries, total)`` for the contact.
 
         Scoped by ``uid`` (D.23) so the WebUI sidebar
         shows every session the operator owns — webui, TG, and
@@ -731,7 +731,7 @@ class SessionStore:
         the count with archive included.
 
         Returns ``([], 0, 0)`` if the session doesn\'t exist
-        OR the session belongs to a different employee.
+        OR the session belongs to a different contact.
         """
         from sqlalchemy import func, select
 

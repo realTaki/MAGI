@@ -2,8 +2,8 @@
  * Admin console — Adam's web UI.
  *
  * Adam is the enterprise control plane: HR / IT / admins sign in
- * here, manage employees / EVEs / skills / settings, watch the
- * audit log. EVE is the per-employee agent node; it has its own
+ * here, manage contacts / EVEs / skills / settings, watch the
+ * audit log. EVE is the per-contact agent node; it has its own
  * runtime and its own (much simpler) dashboard — only Chat and a
  * personal Knowledge view, no Admin tab, no Settings tab.
  *

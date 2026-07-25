@@ -44,16 +44,16 @@ def search_env(monkeypatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.agent.db import init_sqlite
-    from magi.agent.db import Employee, init_orm, open_session
+    from magi.agent.db import Contact, init_orm, open_session
     init_sqlite(str(state))
     init_orm(str(state))
 
     with open_session() as s:
-        s.add(Employee(
+        s.add(Contact(
             name="A", telegram_id=9001, role="admin",
             provider="minimax", api_key="fake",
         ))
-        s.add(Employee(
+        s.add(Contact(
             name="B", telegram_id=9002, role="admin",
             provider="minimax", api_key="fake",
         ))
@@ -205,11 +205,11 @@ def test_search_too_short_chinese_returns_zero(client, seed_messages):
 # ────────────────────────────────────────────────────────────────── #
 
 
-def test_search_scoped_to_caller_employee(client, search_env, seed_messages):
+def test_search_scoped_to_caller_contact(client, search_env, seed_messages):
     """Admin A's search doesn't return admin B's messages,
     even though both are in the same SQLite DB.
 
-    Scope is the calling Employee row (D.18+1 cross-platform
+    Scope is the calling Contact row (D.18+1 cross-platform
     scope: ``WHERE chat_sessions.uid = :emp``). We
     seed for admin A (uid=1) and admin B
     (uid=2) using the same ``delivery_address`` so the scope
@@ -237,7 +237,7 @@ def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
 
     c = TestClient(create_app())
     # D.24: cookie is the uid. Admin B is the
-    # second seeded employee → id=2.
+    # second seeded contact → id=2.
     c.cookies.set("magi_session", "2")
     r = c.get("/api/chat/search?q=shared-key-123")
     assert r.status_code == 200

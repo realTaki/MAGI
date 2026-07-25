@@ -39,21 +39,21 @@ def state_dir(monkeypatch, tmp_path):
 
 
 def _seed_admin():
-    """Insert one admin employee row with valid LLM creds.
+    """Insert one admin contact row with valid LLM creds.
 
-    Wipes the ``employees`` table first so multiple seeded
+    Wipes the ``contacts`` table first so multiple seeded
     tests in the same pytest run don't trip the UNIQUE
     constraint on ``telegram_id``.
     """
     from magi.agent.db import (
-        Employee, init_orm, open_session,
+        Contact, init_orm, open_session,
     )
     init_orm(os.environ["MAGI_STATE_DIR"])
     with open_session() as s:
         # Clean slate (cheap; we never need cross-test
-        # employee state for these tests).
-        s.query(Employee).delete()
-        admin = Employee(
+        # contact state for these tests).
+        s.query(Contact).delete()
+        admin = Contact(
             name="TA-test",
             telegram_id=9001,
             role="admin",
@@ -221,8 +221,8 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
             delivery_address="9001",
 session_id=sid,
             uid=admin.id,
-            employee_provider="minimax",
-            employee_api_key="fake-key",
+            contact_provider="minimax",
+            contact_api_key="fake-key",
         )
     )
 
@@ -264,7 +264,7 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     job = TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        employee_provider="minimax", employee_api_key="fake-key",
+        contact_provider="minimax", contact_api_key="fake-key",
     )
 
     await _summarize_to_title(job)  # first run → title set
@@ -297,7 +297,7 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sess.session_id, uid=admin.id,
-        employee_provider="minimax", employee_api_key="fake-key",
+        contact_provider="minimax", contact_api_key="fake-key",
     ))
     assert store.get(admin.id, sess.session_id).title is None
     assert sum(len(p.calls) for p in providers) == 0
@@ -319,8 +319,8 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
         delivery_address="9001",
         session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=admin.id,
-        employee_provider="minimax",
-        employee_api_key="fake-key",
+        contact_provider="minimax",
+        contact_api_key="fake-key",
     ))
     assert sum(len(p.calls) for p in providers) == 0
 
@@ -362,7 +362,7 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        employee_provider="minimax", employee_api_key="bad",
+        contact_provider="minimax", contact_api_key="bad",
     ))
     assert store.get(admin.id, sid).title is None  # title wasn't set
 
@@ -397,7 +397,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        employee_provider="minimax", employee_api_key="fake",
+        contact_provider="minimax", contact_api_key="fake",
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -424,7 +424,7 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        employee_provider="minimax", employee_api_key="fake",
+        contact_provider="minimax", contact_api_key="fake",
     ))
     assert len(store.get(admin.id, sid).title) == 80
 
@@ -452,7 +452,7 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        employee_provider="minimax", employee_api_key="fake",
+        contact_provider="minimax", contact_api_key="fake",
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -495,8 +495,8 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
             delivery_address="9001",
             session_id=sid,
             uid=admin.id,
-            employee_provider="minimax",
-            employee_api_key="fake",
+            contact_provider="minimax",
+            contact_api_key="fake",
         )
 
     # Wait for the two jobs to land — each takes essentially
@@ -554,8 +554,8 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
         
         delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=1,
-        employee_provider="minimax",
-        employee_api_key="k",
+        contact_provider="minimax",
+        contact_api_key="k",
     )
     assert _title_jobs.qsize() == 1
 
@@ -573,10 +573,10 @@ async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch
         
         delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=42,
-        employee_provider="minimax-cn",
-        employee_api_key="captured-key-xyz",
+        contact_provider="minimax-cn",
+        contact_api_key="captured-key-xyz",
     )
     job: TitleJob = _title_jobs.get_nowait()
-    assert job.employee_provider == "minimax-cn"
-    assert job.employee_api_key == "captured-key-xyz"
+    assert job.contact_provider == "minimax-cn"
+    assert job.contact_api_key == "captured-key-xyz"
     assert job.uid == 42

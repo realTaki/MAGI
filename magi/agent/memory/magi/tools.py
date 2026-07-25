@@ -21,8 +21,8 @@ have their own tool set (the LLM-managed directory of
 people the MAGI knows about).
 
 Admin gate: same as the API — only ``admin`` and
-``assigned`` employees can write to their own memory.
-``employee`` and ``guest`` get ``is_error=True`` on every
+``assigned`` contacts can write to their own memory.
+``contact`` and ``guest`` get ``is_error=True`` on every
 write tool. Reads (no read tool yet — the system-prompt
 block is the read path for v0) would carry the same
 gate when added.

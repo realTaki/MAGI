@@ -142,7 +142,7 @@ def list_memory(
     live admin session, and ``_current_admin_id`` re-reads
     the cookie to get the int ``uid`` that scopes
     the query. Defends against a future bug where some
-    code path mints a row tied to a different employee and
+    code path mints a row tied to a different contact and
     the operator could read someone else's memory via URL
     guessing.
 

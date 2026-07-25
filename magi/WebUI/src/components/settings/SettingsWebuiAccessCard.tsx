@@ -4,7 +4,7 @@
  * WebUI Access = ``employees WHERE role=admin``. The
  * unified table means a single ``GET /api/employees`` returns
  * the list, and admins can be removed by deleting the
- * underlying employee row (which cascades through the rest
+ * associated Contact row (which cascades through the rest
  * of the system because nothing else refers to that row
  * by primary key — the audit log keeps references alive).
  *
@@ -91,7 +91,7 @@ export function SettingsWebuiAccessCard(props: {
       return;
     }
     // Re-saving the full list (minus this one) is the
-    // current API surface; it also drops the Employee row
+    // current API surface; it also drops the Contact row
     // because the new save-admin deletes admins not in the
     // incoming set.
     const remaining =
@@ -216,7 +216,7 @@ function RoleBadge(props: { role: ContactRow["role"] }) {
           assigned
         </span>
       );
-    case "employee":
+    case "contact":
       return (
         <span className="text-xs text-ink-soft bg-white border border-sky-light/40 rounded px-1.5 py-0.5">
           employee

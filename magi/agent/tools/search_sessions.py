@@ -2,7 +2,7 @@
 operator's chat history, with N-turn context around each hit.
 
 Companion to ``/api/chat/search`` (D.18): same FTS5 index,
-same per-employee scope, but instead of a JSON shape the
+same per-contact scope, but instead of a JSON shape the
 tool returns a text block the LLM can read directly.
 
 Use case
@@ -19,7 +19,7 @@ actually said, not just the matching token.
 Scope
 -----
 
-Same per-employee scope as the WebUI's ``/api/chat/search``:
+Same per-contact scope as the WebUI's ``/api/chat/search``:
 the calling admin's ``Contact.id`` (resolved by the
 agent loop from the ``magi_session`` cookie on every call).
 The SQL filter scopes by ``chat_sessions.uid``;
@@ -182,7 +182,7 @@ class SearchSessionsTool(Tool):
         # Scope: the calling admin's uid. Cross-
         # platform: every session row whose ``uid``
         # matches — webui conversations AND any TG / future
-        # IM conversations handled by that admin employee
+        # IM conversations handled by that admin contact
         # all match. Channel and per-channel delivery address are not part of the
         # search predicate.
         uid = ctx.uid
@@ -274,9 +274,9 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
     (per-channel delivery address; carried on the row
     since D.18). The :meth:`SessionStore.get` lookup is
     scoped by ``ctx.uid`` (the search call
-    already resolved every hit to this employee) — the
+    already resolved every hit to this contact) — the
     store's defence-in-depth check on ``uid``
-    covers the cross-employee case.
+    covers the cross-contact case.
     """
     # Locate the hit in either the active or archive list.
     session = SessionStore(state_dir).get(

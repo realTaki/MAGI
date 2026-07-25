@@ -13,7 +13,7 @@ Four surfaces pinned:
     block with one section per kind, empty when the
     owner has no rows.
   - The four LLM tools gate on the caller's role
-    (admin / assigned write; employee / guest get
+    (admin / assigned write; contact / guest get
     ``is_error=True``).
   - Idempotency: ``delete_memory`` of a non-existent
     id returns success (no false ``is_error``);
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.db import Employee, init_orm, open_session
+from magi.agent.db import Contact, init_orm, open_session
 from magi.agent.memory.magi import (
     KIND_IMPORTANT,
     KIND_ONGOING,
@@ -66,31 +66,31 @@ def fresh_db(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def seed_employees(fresh_db):
-    """Insert three employees: alice (admin), bob
-    (assigned), charlie (employee). The tool gate
+def seed_contacts(fresh_db):
+    """Insert three contacts: alice (admin), bob
+    (assigned), charlie (contact). The tool gate
     tests use charlie to confirm the role check
     fires for non-allowed roles.
     """
     with open_session() as db:
-        alice = Employee(
+        alice = Contact(
             name="Alice",
             telegram_id=9001,
             role="admin",
             provider="minimax",
             api_key="fake-key-alice",
         )
-        bob = Employee(
+        bob = Contact(
             name="Bob",
             telegram_id=9002,
             role="assigned",
             provider="minimax",
             api_key="fake-key-bob",
         )
-        charlie = Employee(
+        charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="employee",
+            role="contact",
             provider="minimax",
             api_key="fake-key-charlie",
         )
@@ -102,12 +102,12 @@ def seed_employees(fresh_db):
     return {"alice": alice, "bob": bob, "charlie": charlie}
 
 
-def _ctx(state: Path, employee: Employee) -> ToolContext:
-    """Build a ToolContext for an employee."""
+def _ctx(state: Path, contact: Contact) -> ToolContext:
+    """Build a ToolContext for a contact."""
     return ToolContext(
         state_dir=str(state),
         workspace=state.parent,
-        uid=employee.id,
+        uid=contact.id,
         channel="webui",
     )
 
@@ -115,10 +115,10 @@ def _ctx(state: Path, employee: Employee) -> ToolContext:
 # -- MemoryStore -----------------------------------------------------------
 
 
-def test_store_adds_important_row(fresh_db, seed_employees):
+def test_store_adds_important_row(fresh_db, seed_contacts):
     store = MemoryStore(fresh_db)
     view = store.add(
-        seed_employees["alice"].id,
+        seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
         subject="Q3 expense policy",
         body="All reimbursements need CFO sign-off.",
@@ -135,10 +135,10 @@ def test_store_get_returns_none_for_missing_id(fresh_db):
     assert store.get(99999) is None
 
 
-def test_store_update_patches_mutable_fields(fresh_db, seed_employees):
+def test_store_update_patches_mutable_fields(fresh_db, seed_contacts):
     store = MemoryStore(fresh_db)
     view = store.add(
-        seed_employees["alice"].id,
+        seed_contacts["alice"].id,
         kind=KIND_ONGOING,
         subject="Follow up with Acme",
         body="Initial outreach last Tuesday.",
@@ -155,10 +155,10 @@ def test_store_update_patches_mutable_fields(fresh_db, seed_employees):
     assert updated.subject == "Follow up with Acme"  # unchanged
 
 
-def test_store_complete_marks_ongoing_done(fresh_db, seed_employees):
+def test_store_complete_marks_ongoing_done(fresh_db, seed_contacts):
     store = MemoryStore(fresh_db)
     view = store.add(
-        seed_employees["alice"].id,
+        seed_contacts["alice"].id,
         kind=KIND_ONGOING,
         subject="Q3 report",
         body="Due Monday.",
@@ -166,19 +166,19 @@ def test_store_complete_marks_ongoing_done(fresh_db, seed_employees):
     completed = store.complete(view.id)
     assert completed.completed_at is not None
     # Filtered out of the default list.
-    listed = store.list_for_owner(seed_employees["alice"].id)
+    listed = store.list_for_owner(seed_contacts["alice"].id)
     assert all(r.id != view.id for r in listed)
     # Visible when explicitly asked.
     listed_with_done = store.list_for_owner(
-        seed_employees["alice"].id, include_completed=True
+        seed_contacts["alice"].id, include_completed=True
     )
     assert any(r.id == view.id for r in listed_with_done)
 
 
-def test_store_delete_is_idempotent(fresh_db, seed_employees):
+def test_store_delete_is_idempotent(fresh_db, seed_contacts):
     store = MemoryStore(fresh_db)
     view = store.add(
-        seed_employees["alice"].id,
+        seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
         subject="Temp note",
         body="Will be removed.",
@@ -189,10 +189,10 @@ def test_store_delete_is_idempotent(fresh_db, seed_employees):
 
 
 def test_store_list_orders_by_importance_then_recency(
-    fresh_db, seed_employees
+    fresh_db, seed_contacts
 ):
     store = MemoryStore(fresh_db)
-    owner = seed_employees["alice"].id
+    owner = seed_contacts["alice"].id
     store.add(owner, kind=KIND_IMPORTANT, subject="Low", body="...", importance=1)
     store.add(owner, kind=KIND_IMPORTANT, subject="High", body="...", importance=5)
     store.add(owner, kind=KIND_IMPORTANT, subject="Mid", body="...", importance=3)
@@ -208,9 +208,9 @@ def test_format_memory_block_empty_when_no_rows():
     assert format_memory_block([]) == ""
 
 
-def test_format_memory_block_groups_by_kind(fresh_db, seed_employees):
+def test_format_memory_block_groups_by_kind(fresh_db, seed_contacts):
     store = MemoryStore(fresh_db)
-    owner = seed_employees["alice"].id
+    owner = seed_contacts["alice"].id
     store.add(
         owner, kind=KIND_IMPORTANT,
         subject="Q3 expense policy",
@@ -236,9 +236,9 @@ def test_format_memory_block_groups_by_kind(fresh_db, seed_employees):
 # -- LLM tools -------------------------------------------------------------
 
 
-def test_add_memory_tool_admin_succeeds(fresh_db, seed_employees):
+def test_add_memory_tool_admin_succeeds(fresh_db, seed_contacts):
     tool = AddMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["alice"])
+    ctx = _ctx(fresh_db, seed_contacts["alice"])
     result = asyncio_run(tool.run(
         ctx,
         kind=KIND_IMPORTANT,
@@ -250,21 +250,21 @@ def test_add_memory_tool_admin_succeeds(fresh_db, seed_employees):
     assert "Q3 expense policy" in result.content
 
 
-def test_add_memory_tool_assigned_succeeds(fresh_db, seed_employees):
+def test_add_memory_tool_assigned_succeeds(fresh_db, seed_contacts):
     tool = AddMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["bob"])
+    ctx = _ctx(fresh_db, seed_contacts["bob"])
     result = asyncio_run(tool.run(
         ctx,
         kind=KIND_ONGOING,
         subject="Migrate SOUL.md",
-        body="Move to per-employee in C4.",
+        body="Move to per-contact in C4.",
     ))
     assert not result.is_error
     assert "Migrate SOUL.md" in result.content
 
 
-def test_add_memory_tool_employee_role_blocked(fresh_db, seed_employees):
-    """``role=employee`` is NOT allowed to write to memory.
+def test_add_memory_tool_contact_role_blocked(fresh_db, seed_contacts):
+    """``role=contact`` is NOT allowed to write to memory.
 
     Same gate as the WebUI API: only ``admin`` and
     ``assigned`` may mutate. The tool returns
@@ -272,7 +272,7 @@ def test_add_memory_tool_employee_role_blocked(fresh_db, seed_employees):
     "permission denied" instead of a silent no-op.
     """
     tool = AddMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["charlie"])
+    ctx = _ctx(fresh_db, seed_contacts["charlie"])
     result = asyncio_run(tool.run(
         ctx,
         kind=KIND_IMPORTANT,
@@ -283,12 +283,12 @@ def test_add_memory_tool_employee_role_blocked(fresh_db, seed_employees):
     assert "role" in result.content
     # No row written.
     store = MemoryStore(fresh_db)
-    assert store.list_for_owner(seed_employees["charlie"].id) == []
+    assert store.list_for_owner(seed_contacts["charlie"].id) == []
 
 
-def test_add_memory_tool_bad_kind_returns_error(fresh_db, seed_employees):
+def test_add_memory_tool_bad_kind_returns_error(fresh_db, seed_contacts):
     tool = AddMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["alice"])
+    ctx = _ctx(fresh_db, seed_contacts["alice"])
     result = asyncio_run(tool.run(
         ctx,
         kind="bogus",
@@ -298,10 +298,10 @@ def test_add_memory_tool_bad_kind_returns_error(fresh_db, seed_employees):
     assert result.is_error
 
 
-def test_update_memory_tool_patches_existing_row(fresh_db, seed_employees):
+def test_update_memory_tool_patches_existing_row(fresh_db, seed_contacts):
     add_tool = AddMemoryTool()
     update_tool = UpdateMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["alice"])
+    ctx = _ctx(fresh_db, seed_contacts["alice"])
 
     add_result = asyncio_run(add_tool.run(
         ctx,
@@ -323,10 +323,10 @@ def test_update_memory_tool_patches_existing_row(fresh_db, seed_employees):
     assert "Final draft" in update_result.content
 
 
-def test_complete_memory_tool_marks_done(fresh_db, seed_employees):
+def test_complete_memory_tool_marks_done(fresh_db, seed_contacts):
     add_tool = AddMemoryTool()
     complete_tool = CompleteMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["alice"])
+    ctx = _ctx(fresh_db, seed_contacts["alice"])
 
     add_result = asyncio_run(add_tool.run(
         ctx, kind=KIND_ONGOING, subject="Q3 report", body="Due Monday."
@@ -338,9 +338,9 @@ def test_complete_memory_tool_marks_done(fresh_db, seed_employees):
     assert '"completed_at": null' not in complete_result.content
 
 
-def test_delete_memory_tool_idempotent(fresh_db, seed_employees):
+def test_delete_memory_tool_idempotent(fresh_db, seed_contacts):
     tool = DeleteMemoryTool()
-    ctx = _ctx(fresh_db, seed_employees["alice"])
+    ctx = _ctx(fresh_db, seed_contacts["alice"])
     # Deleting a never-existed id returns success.
     result = asyncio_run(tool.run(ctx, memory_id=999999))
     assert not result.is_error

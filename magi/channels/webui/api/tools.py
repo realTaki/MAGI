@@ -18,7 +18,7 @@ a tool ships with MAGI or came in via config, and that
 distinction drives how to debug a missing-tool report.
 
 Auth: admin-gated like every other Adam endpoints (read-only
-data; non-sensitive — same gate as ``/api/employees``).
+data; non-sensitive — same gate as ``/api/contacts``).
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def list_tools(_admin: AdminGate) -> ToolListOut:
     tool visible to the dashboard (read-only audit view),
     regardless of who's currently logged in. The dashboard
     shows the registry truth; the agent loop still passes
-    the operator's ``employee.role`` to
+    the operator's ``contact.role`` to
     ``get_tool_schemas(caller_role=...)`` for the LLM's
     menu at chat time.
 

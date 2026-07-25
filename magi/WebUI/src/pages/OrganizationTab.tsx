@@ -7,9 +7,8 @@
  *   - MAGI 团队 (Magics) — MAGIC tree of teams (councils).
  *   - 智能体管理 (Magis) — flat list of every Magi agent row.
  *
- * Contact management (was "员工管理") has moved to the
- * Knowledge → Contacts pane since the unified ``contacts``
- * table now serves both the admin directory and the
+ * Contacts live in the Knowledge → Contacts pane; the unified
+ * ``contacts`` table serves both the admin directory and
  * LLM-managed contact notes.
  */
 

@@ -449,7 +449,7 @@ async def test_maybe_compact_noop_when_under_threshold(
 
     await maybe_compact(
         state_dir, "9001", sess.session_id, msgs,
-        employee_provider="", employee_api_key="", employee_model=None,
+        contact_provider="", contact_api_key="", contact_model=None,
     )
 
     # List untouched (3 prior + 1 new = 4).
@@ -495,7 +495,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
 
     await maybe_compact(
         state_dir, "9001", sess.session_id, msgs,
-        employee_provider="", employee_api_key="", employee_model=None,
+        contact_provider="", contact_api_key="", contact_model=None,
     )
 
     # No archive written; in-memory list untouched.
@@ -521,6 +521,6 @@ async def test_maybe_compact_noop_when_no_session_id(
     msgs = [ChatMessage(role="user", content="first turn")]
     await maybe_compact(
         state_dir, "9001", None, msgs,
-        employee_provider="", employee_api_key="", employee_model=None,
+        contact_provider="", contact_api_key="", contact_model=None,
     )
     assert len(msgs) == 1

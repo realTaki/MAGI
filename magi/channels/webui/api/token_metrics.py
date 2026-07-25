@@ -1,4 +1,4 @@
-"""Per-employee aggregated metrics: token usage.
+"""Per-contact aggregated metrics: token usage.
 
 The single endpoint returns week / month / total aggregates
 in one call so the detail panel can render all three rows
@@ -20,7 +20,7 @@ Why all three periods in one response:
 - Keeps the SQL pattern uniform (one query per period,
   same shape).
 - Avoids three ORM ``query`` objects open at the same
-  time when an admin opens a busy employee's detail panel.
+  time when an admin opens a busy contact's detail panel.
 
 Week / month boundaries use ``zoneinfo`` (Py 3.9+ stdlib)
 — pytz's localize/normalize footgun doesn't apply here
@@ -45,9 +45,9 @@ from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.system_settings import get_system_timezone
 from magi.agent.db import TokenUsage, open_session, require_state_dir
 
-logger = logging.getLogger("magi.api.employee_metrics")
+logger = logging.getLogger("magi.api.token_metrics")
 
-router = APIRouter(tags=["employee-metrics"])
+router = APIRouter(tags=["token-metrics"])
 
 
 def _state_dir() -> str:
@@ -79,10 +79,6 @@ def _period_bounds(period: str, tz: zoneinfo.ZoneInfo) -> PeriodBounds:
             end=now_local,
         )
     if period == "week":
-        # ``weekday()`` is 0 for Monday — subtract that many
-        # days to land on the most recent Monday. Both ends
-        # are 00:00 local; the "end" is the current instant
-        # so today's chat turns are included.
         monday_local = now_local - timedelta(days=now_local.weekday())
         monday_local = monday_local.replace(
             hour=0, minute=0, second=0, microsecond=0,
@@ -130,10 +126,6 @@ def _aggregate_period(
     the aggregation logic cares about timezone math.
     """
     bounds = _period_bounds(period, tz)
-    # Convert the tz-aware bounds to naive UTC so they
-    # match the ``DateTime`` column's storage convention.
-    # astimezone(UTC) gives a tz-aware UTC datetime;
-    # ``replace(tzinfo=None)`` strips it for the SQL bind.
     start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
@@ -154,9 +146,6 @@ def _aggregate_period(
         input_tokens=int(in_sum or 0),
         output_tokens=int(out_sum or 0),
         call_count=int(calls or 0),
-        # Echo the *local* boundaries so the UI can show
-        # "本自然周 06-29 00:00 — 07-03 17:32" without doing
-        # timezone math client-side.
         period_start=bounds.start.isoformat(),
         period_end=bounds.end.isoformat(),
     )
@@ -174,7 +163,7 @@ class PeriodUsageOut(BaseModel):
 
 
 class TokenUsageOut(BaseModel):
-    """``GET /api/employees/{id}/token-usage`` response.
+    """``GET /api/contacts/{uid}/token-usage`` response.
 
     All three periods in one response — the dashboard's
     detail panel renders three rows; one round-trip.
@@ -188,20 +177,20 @@ class TokenUsageOut(BaseModel):
 
 
 @router.get(
-    "/employees/{uid}/token-usage",
+    "/contacts/{uid}/token-usage",
     response_model=TokenUsageOut,
 )
-def get_employee_token_usage(
+def get_contact_token_usage(
     uid: int,
     _admin: AdminGate,
 ) -> TokenUsageOut:
-    """Aggregate token usage for one employee across three
+    """Aggregate token usage for one contact across three
     periods.
 
     All three queries run against the same connection in
     sequence — each one is bounded by the
     ``(uid, ts)`` composite index, so a busy
-    employee with thousands of calls is still O(rows in
+    contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
     state_dir = _state_dir()

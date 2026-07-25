@@ -16,7 +16,7 @@
            the saved bot. Returns ``{ok, display_name}`` or
            ``{ok: false, error}``. **Does not store**.
        ``POST /api/onboarding/save-admin { tgids: list[str] }``
-           Upserts an ``Employee`` row per delivery address with
+           Upserts a ``Contact`` row per delivery address with
            ``role='admin'``, a TG binding (via the channel dispatcher),
            with no team. Display names are resolved via Telegram
            ``getChat``. Idempotent.
@@ -169,7 +169,7 @@ async def get_status() -> OnboardingStatus:
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
 
-    # Super admins live in the employees table (unified with
+    # Super admins live in the contacts table (unified with
     # the rest of the org directory) — that's the single source
     # of truth. The wizard resumes by reading from there so
     # the "you already added N admins" message reflects the
@@ -189,7 +189,7 @@ async def get_status() -> OnboardingStatus:
         # If the table is unreachable (very early boot) the
         # wizard still loads; admins stays empty until the
         # operator re-saves.
-        logger.exception("failed to read admin employees")
+        logger.exception("failed to read admin contacts")
 
     # "True" / "true" / "1" all count. Anything else (including
     # missing) is False. Kept as a plain text flag — the only
@@ -442,7 +442,7 @@ def _generate_code() -> str:
 async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
     """Shared body for the public endpoints and the back-compat alias.
 
-    D.28: this path runs BEFORE the wizard has bound an Employee
+    D.28: this path runs BEFORE the wizard has bound an Contact
     row to a uid, so the channel dispatcher (which resolves
     ``uid → im_id``) can't be used here. The TG-side send
     helper lives in :mod:`magi.channels.telegram.bot`
@@ -560,7 +560,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
        6^6 space against a still-valid code.
     3. **Don't persist yet** — the operator's per-channel delivery
        address is recorded only after they finish the wizard via
-       ``save_admin`` (the Employee row + ``role='admin'``
+       ``save_admin`` (the Contact row + ``role='admin'``
        is the single source of truth). Verify just proves
        ownership; the operator still has to confirm the
        final admin list.
@@ -620,9 +620,9 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     # The code match is the proof-of-ownership; we don't persist
     # the delivery address here. The wizard's ``save_admin``
     # step (the final "Save" button) is what writes admin
-    # rows to the ``employees`` table — that path is the single
+    # rows to the ``contacts`` table — that path is the single
     # source of truth for "who's an admin". Persisting at this
-    # point would create Employee rows that the operator might
+    # point would create Contact rows that the operator might
     # later remove via save_admin's diff step, doubling the
     # work for no gain.
 
@@ -657,7 +657,7 @@ def _now_iso() -> str:
 async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     """Replace the super-admin set with the verified list.
 
-    Each entry becomes an :class:`Employee` row with
+    Each entry becomes an :class:`Contact` row with
     ``role='admin'`` and a bound TG chat (via the channel
     dispatcher, D.28), living under no team (the
     "unassigned" scope). Display name is resolved via Telegram
@@ -665,19 +665,19 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     "12345" without a second round-trip per row.
 
     Side effects on each call:
-      - Any prior ``Employee`` with ``role='admin'`` whose
+      - Any prior ``Contact`` with ``role='admin'`` whose
         bound TG chat isn't in the new list is **deleted**
         (these rows were created by onboarding too; they
         have no business data so dropping is safe).
-      - Any prior ``Employee`` whose bound TG chat matches an
+      - Any prior ``Contact`` whose bound TG chat matches an
         entry gets its ``role`` flipped to ``admin`` even if
-        it was previously a regular employee (this handles
+        it was previously a regular contact (this handles
         the rare case where someone was first added to the
         company, then promoted to admin).
 
-    No settings key is written; the Employee table is the
+    No settings key is written; the Contact table is the
     single source of truth for "who's an admin". The auth
-    gate (``_is_admin_or_assigned_employee`` in
+    gate (``_is_admin_or_assigned_contact`` in
     ``contacts.py``) reads exclusively from this table.
     """
     from magi.agent.db import Contact, open_session
@@ -740,14 +740,14 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 if old.telegram_id is None or old.telegram_id not in new_id_set:
                     session.delete(old)
 
-            # 2) Each new chat → ensure an Employee row
+            # 2) Each new chat → ensure an Contact row
             #    exists with role=admin, no team. The
             #    actual IM binding is the channel adapter's
             #    job (D.28): we call ``dispatcher.bind_im_id``
             #    AFTER the with block to write
             #    ``user_im_bindings`` (canonical) and sync
             #    ``Contact.telegram_id`` (legacy read-cache).
-            # Promote existing regular employees in the rare
+            # Promote existing regular contacts in the rare
             # case the chat was already bound.
             for cid in parsed_ids:
                 emp = session.scalar(
@@ -770,7 +770,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 new_emp_ids.append(emp.id)
             session.commit()
     except Exception as exc:
-        logger.exception("failed to write admin employees")
+        logger.exception("failed to write admin contacts")
         return SaveAdminResponse(ok=False, error=str(exc))
 
     # D.28: bind each new admin's TG chat id through the
@@ -786,7 +786,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
         try:
             channel_dispatcher.bind_im_id(emp_id, "tg", str(cid))
         except Exception:
-            # Best-effort: the Employee row is already
+            # Best-effort: the Contact row is already
             # created with role=admin. If the binding
             # write fails (e.g. FK or DB hiccup), the
             # admin can re-bind via the API later.

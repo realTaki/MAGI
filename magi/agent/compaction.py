@@ -52,9 +52,9 @@ async def maybe_compact(
     session_id: str | None,
     messages: list["ChatMessage"],
     *,
-    employee_provider: str,
-    employee_api_key: str,
-    employee_model: str | None,
+    contact_provider: str,
+    contact_api_key: str,
+    contact_model: str | None,
 ) -> None:
     """Estimate token cost of ``messages``. If over the
     configured threshold, run one compaction pass: move
@@ -103,9 +103,9 @@ async def maybe_compact(
     # the full context this turn at least).
     summary_text = await call_llm_for_summary(
         state_dir=state_dir,
-        employee_provider=employee_provider,
-        employee_api_key=employee_api_key,
-        employee_model=employee_model,
+        contact_provider=contact_provider,
+        contact_api_key=contact_api_key,
+        contact_model=contact_model,
         to_compress=to_archive,
     )
     if not summary_text:
@@ -159,14 +159,14 @@ async def maybe_compact(
 async def call_llm_for_summary(
     *,
     state_dir: str,
-    employee_provider: str,
-    employee_api_key: str,
-    employee_model: str | None,
+    contact_provider: str,
+    contact_api_key: str,
+    contact_model: str | None,
     to_compress: list["ChatMessage"],
 ) -> str | None:
     """One LLM call to compress ``to_compress`` into a
     structured summary. Uses the same provider + creds
-    as the main chat (the employee is paying for it).
+    as the main chat (the contact is paying for it).
     Returns the summary text, or ``None`` on any failure
     so the caller can fall back to "no compaction
     happened".
@@ -189,7 +189,7 @@ async def call_llm_for_summary(
         # to make sense for v0. Skip and log.
         return None
     try:
-        provider = get_provider(employee_provider, employee_api_key, employee_model)
+        provider = get_provider(contact_provider, contact_api_key, contact_model)
         result = await provider.chat(
             system=system,
             messages=[ChatMessage(role="user", content=user_content)],
@@ -199,7 +199,7 @@ async def call_llm_for_summary(
         return text or None
     except Exception:
         logger.exception(
-            "compact: LLM call failed (employee=%s); skipping",
+            "compact: LLM call failed (contact=%s); skipping",
             _uid_for_log(state_dir),
         )
         return None

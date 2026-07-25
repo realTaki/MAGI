@@ -4,10 +4,10 @@ Searches every message (active + archived, in any session
 belonging to the caller) using the FTS5 virtual table
 maintained by triggers on ``chat_messages``.
 
-Scope: per-employee
+Scope: per-contact
 -------------------
 
-The scope is the calling employee's own sessions, identified
+The scope is the calling contact's own sessions, identified
 by the cookie's uid. Pre-D.18 the directory layout
 ``<chat-id>/<sid>.json`` enforced per-operator isolation
 for free; with sessions in SQLite the ``WHERE s.uid =
@@ -15,10 +15,10 @@ for free; with sessions in SQLite the ``WHERE s.uid =
 
 The D.18 search endpoint scopes by ``chat_sessions.uid``
 (cross-channel identity). The ``search_sessions`` tool
-(D.18+1) takes the same approach: the calling employee
-is the scope, but the tool exposes the **employee
+(D.18+1) takes the same approach: the calling contact
+is the scope, but the tool exposes the **contact
 identity** rather than any per-channel delivery
-address, so an LLM working on behalf of one employee
+address, so an LLM working on behalf of one contact
 doesn't accidentally think of itself as "scoped to a
 chat".
 
@@ -105,7 +105,7 @@ class SearchHit(BaseModel):
 
 class SearchResponse(BaseModel):
     q: str
-    # The employee's row id whose history was searched
+    # The contact's row id whose history was searched
     # (cross-platform scope: matches every session row
     # whose ``uid`` equals this, regardless of
     # ``channel`` or the row's ``delivery_address``).
@@ -185,9 +185,9 @@ def search_chat_history(
     ``chat_sessions.uid`` matches, regardless of
     ``channel`` (webui / tg / future IMs) or the row's
     ``delivery_address``. This matches the user's
-    "search all of one employee's history" intent —
+    "search all of one contact's history" intent —
     an admin who has both webui conversations and TG
-    conversations under the same employee row should
+    conversations under the same contact row should
     see them all in one search.
 
     ``q`` may be empty / whitespace-only; returns
@@ -278,12 +278,12 @@ def search_chat(
 ) -> SearchResponse:
     """Full-text search across the operator's sessions.
 
-    Scope: cross-platform via the calling employee's row
+    Scope: cross-platform via the calling contact's row
     id. AdminGate proves "is an admin"; ``_admin_uid``
-    resolves the cookie's uid to the matching Employee
+    resolves the cookie's uid to the matching Contact
     row; the SQL clause ``WHERE s.uid = :uid`` then
-    picks up every session this employee owns — webui,
-    TG, or any future channel. Other employees' rows
+    picks up every session this contact owns — webui,
+    TG, or any future channel. Other contacts' rows
     are never reachable.
     """
     uid = _admin_uid(request, store)

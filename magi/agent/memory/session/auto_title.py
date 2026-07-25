@@ -5,7 +5,7 @@ session, the chat-send endpoint enqueues a :class:`TitleJob`
 on :data:`_title_jobs`. The :func:`_title_worker_loop` (one
 instance per process, started in the FastAPI lifespan) drains
 the queue and runs :func:`_summarize_to_title` for each. The
-job makes one LLM call using the operator's per-employee
+job makes one LLM call using the operator's per-contact
 credentials (no system-default fallback — the chat-send
 endpoint already gated that case) and writes the result back
 to ``Session.title`` via :meth:`SessionStore.rename`.
@@ -75,9 +75,9 @@ class TitleJob:
     delivery_address: str
     session_id: str
     uid: int
-    employee_provider: str
-    employee_api_key: str
-    employee_model: Optional[str] = None
+    contact_provider: str
+    contact_api_key: str
+    contact_model: Optional[str] = None
 
 
 # The queue is intentionally unbounded. v0's per-operator
@@ -100,9 +100,9 @@ async def enqueue_title_job(
     delivery_address: str,
     session_id: str,
     uid: int,
-    employee_provider: str,
-    employee_api_key: str,
-    employee_model: Optional[str] = None,
+    contact_provider: str,
+    contact_api_key: str,
+    contact_model: Optional[str] = None,
 ) -> None:
     """Enqueue a title job.
 
@@ -120,9 +120,9 @@ async def enqueue_title_job(
         delivery_address=delivery_address,
         session_id=session_id,
         uid=uid,
-        employee_provider=employee_provider,
-        employee_api_key=employee_api_key,
-        employee_model=employee_model,
+        contact_provider=contact_provider,
+        contact_api_key=contact_api_key,
+        contact_model=contact_model,
     )
     await _title_jobs.put(job)
     logger.info(
@@ -240,7 +240,7 @@ async def _summarize_to_title(job: TitleJob) -> None:
         # D.23: store key is the operator's uid, not
         # a per-channel delivery address. The latter is
         # still on the job for outbound ``send_message``
-        # later, but the store does its lookup by employee.
+        # later, but the store does its lookup by contact.
         sess = store.get(job.uid, job.session_id)
         if sess is None:
             logger.info(
@@ -268,9 +268,9 @@ async def _summarize_to_title(job: TitleJob) -> None:
 
         try:
             provider = get_provider(
-                job.employee_provider,
-                job.employee_api_key,
-                job.employee_model,
+                job.contact_provider,
+                job.contact_api_key,
+                job.contact_model,
             )
         except Exception as e:
             # ``get_provider`` raises ``LLMAuthError`` (or

@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from magi.agent.memory.session import SessionStore
 from magi.agent.db import init_sqlite
-from magi.agent.db import Employee, init_orm, open_session
+from magi.agent.db import Contact, init_orm, open_session
 
 
 # A fake LLM reply used when we monkey-patch ``handle_message``
@@ -66,17 +66,17 @@ def state(tmp_path, monkeypatch) -> Path:
 
 
 @pytest.fixture
-def admin(state) -> Employee:
+def admin(state) -> Contact:
     """Seed an admin with provider/api_key so /chat/send passes the
     pre-flight. Also seeds the ``UserImBinding`` row so the
     channel dispatcher (D.28) can resolve the admin's bound
-    TG chat id (the canonical store; ``Employee.telegram_id``
+    TG chat id (the canonical store; ``Contact.telegram_id``
     is the legacy read-cache the bot's inbound handler
     still reads).
     """
     from magi.agent.db.models_user_im_binding import UserImBinding
     with open_session() as s:
-        emp = Employee(
+        emp = Contact(
             name="Test Admin",
             telegram_id=9001,
             role="admin",
@@ -130,7 +130,7 @@ def _reset_orm_engine():
     yield
 
 
-def _admin_cookie(admin: Employee) -> dict:
+def _admin_cookie(admin: Contact) -> dict:
     """Cookie payload for the admin route."""
     return {"magi_session": str(admin.id)}
 
@@ -329,11 +329,11 @@ def test_send_with_unknown_session_id_autocreates(client, admin):
 def test_tgids_isolated(client, state):
     """Two admins signing in see distinct session lists."""
     with open_session() as s:
-        a = Employee(
+        a = Contact(
             name="Alice", telegram_id=9101, role="admin",
             provider="minimax", api_key="x",
         )
-        b = Employee(
+        b = Contact(
             name="Bob",   telegram_id=9102, role="admin",
             provider="minimax", api_key="y",
         )

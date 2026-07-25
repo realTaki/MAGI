@@ -109,7 +109,7 @@ export const IconContacts = ({ className }: IconProps) => (
   </Icon>
 );
 
-// -- organization sidebar sections (智能体管理 / 员工管理) ------------------
+// -- organization sidebar sections (MAGI 团队 / 智能体管理) ------------------
 
 // "MAGI team" — a tree/council structure. Three connected
 // nodes in a hierarchy: the top node is the ADAM, the two

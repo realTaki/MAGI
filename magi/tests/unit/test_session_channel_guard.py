@@ -6,7 +6,7 @@ Two layers:
      :meth:`SessionStore.append_messages` rejects writes
      when ``channel=`` is provided AND the stored row's
      channel doesn't match. Reads (``get``, ``list``) are
-     not gated — same employee can browse TG history from
+     not gated — same contact can browse TG history from
      WebUI.
 
   2. **WebUI chat API** — ``POST /api/chat/send`` returns
@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from magi.agent.db import Employee, init_orm, init_sqlite, open_session
+from magi.agent.db import Contact, init_orm, init_sqlite, open_session
 from magi.agent.memory.session import (
     ChannelMismatchError,
     SessionMessage,
@@ -75,10 +75,10 @@ def state(tmp_path: Path, monkeypatch) -> Path:
 
 
 @pytest.fixture
-def admin(state) -> Employee:
+def admin(state) -> Contact:
     """Seed an admin whose telegram_id is the WebUI delivery_address."""
     with open_session() as s:
-        emp = Employee(
+        emp = Contact(
             name="Test Admin",
             telegram_id=9001,
             role="admin",
@@ -219,7 +219,7 @@ def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
 
 def test_get_does_not_check_channel(state: Path) -> None:
     """Reads are cross-channel by design — the same
-    employee may browse their TG history from WebUI."""
+    contact may browse their TG history from WebUI."""
     store = SessionStore(str(state))
     sid = _make_session(state, "tg")
     seed = SessionMessage(
@@ -241,7 +241,7 @@ def test_get_does_not_check_channel(state: Path) -> None:
 
 
 @pytest.fixture
-def client(state: Path, admin: Employee):
+def client(state: Path, admin: Contact):
     """TestClient with ``handle_message`` monkey-patched
     to an AsyncMock so we can detect "did the inbound
     guard trip BEFORE handle_message was called".
@@ -273,7 +273,7 @@ def client(state: Path, admin: Employee):
 
 
 def _post_send(
-    client: TestClient, admin: Employee, text: str, session_id: str,
+    client: TestClient, admin: Contact, text: str, session_id: str,
 ):
     return client.post(
         "/api/chat/send",
@@ -283,7 +283,7 @@ def _post_send(
 
 
 def test_webui_send_to_tg_owned_session_is_403(
-    client: TestClient, admin: Employee, state: Path,
+    client: TestClient, admin: Contact, state: Path,
 ) -> None:
     """WebUI tries to send a message into a session that
     was created by TG. The guard short-circuits with
@@ -311,7 +311,7 @@ def test_webui_send_to_tg_owned_session_is_403(
 
 
 def test_webui_send_to_webui_owned_session_is_200(
-    client: TestClient, admin: Employee, state: Path,
+    client: TestClient, admin: Contact, state: Path,
 ) -> None:
     """Positive control: same channel as the session
     owner — the guard doesn't fire, the request
@@ -335,7 +335,7 @@ def test_webui_send_to_webui_owned_session_is_200(
 
 
 def test_webui_send_to_scheduled_owned_session_is_403(
-    client: TestClient, admin: Employee, state: Path,
+    client: TestClient, admin: Contact, state: Path,
 ) -> None:
     """A scheduled-task-owned session is similarly
     protected — only the proactive runner (channel=
@@ -351,7 +351,7 @@ def test_webui_send_to_scheduled_owned_session_is_403(
 
 
 def test_webui_list_includes_cross_channel_sessions(
-    client: TestClient, admin: Employee, state: Path,
+    client: TestClient, admin: Contact, state: Path,
 ) -> None:
     """The list endpoint must include sessions owned by
     any channel — the operator can see their TG history

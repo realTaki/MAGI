@@ -78,10 +78,10 @@ class MemoryEntry(Base):
     __tablename__ = "memory_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # The MAGI's own assigned employee. On a single-
-    # instance setup this is the one assigned employee
+    # The MAGI's own assigned contact. On a single-
+    # instance setup this is the one assigned contact
     # for this node; could differ in a multi-tenant
-    # future. ON DELETE CASCADE: removing the employee
+    # future. ON DELETE CASCADE: removing the contact
     # clears their memory (the row is meaningless
     # without the owner).
     uid: Mapped[int] = mapped_column(

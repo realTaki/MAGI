@@ -1,7 +1,7 @@
 """TG-specific binding admin endpoints (D.28).
 
 Routes:
-  POST   /api/telegram/bind                  — bind a TG chat id to an employee
+  POST   /api/telegram/bind                  — bind a TG chat id to a contact
   DELETE /api/telegram/bind/{telegram_id}    — unbind a TG chat id
   GET    /api/telegram/bind/{telegram_id}    — look up the current binding
 
@@ -32,7 +32,7 @@ router = APIRouter(tags=["telegram"])
 class TGBindRequest(BaseModel):
     """Body for ``POST /api/telegram/bind``.
 
-    ``uid`` is the row in ``employees`` to bind to.
+    ``uid`` is the row in ``contacts`` to bind to.
     ``telegram_id`` is the TG chat id (numeric). Both
     required.
     """
@@ -55,7 +55,7 @@ def bind_telegram(
 
     Delegates the actual write to the channel dispatcher
     (which calls the TG adapter). The API enforces the
-    "employee is active" + "unbind previous holder" rules
+    "contact is active" + "unbind previous holder" rules
     that are policy concerns, not channel concerns.
     """
     if not payload.telegram_id.lstrip("-").isdigit():
@@ -78,15 +78,15 @@ def bind_telegram(
         if emp is None:
             raise MagiHTTPException(
                 status_code=404,
-                code="not_found.employee",
-                detail=f"employee {payload.uid} not found",
+                code="not_found.contact",
+                detail=f"contact {payload.uid} not found",
             )
         if emp.separated_at is not None:
             raise MagiHTTPException(
                 status_code=409,
-                code="conflict.employee_separated",
+                code="conflict.contact_separated",
                 detail=(
-                    f"employee {emp.name!r} is marked separated; "
+                    f"contact {emp.name!r} is marked separated; "
                     "restore them before binding a TG chat"
                 ),
             )
@@ -161,7 +161,7 @@ def unbind_telegram(
 class TGBindStatus(BaseModel):
     telegram_id: str
     bound_uid: int | None
-    bound_employee_name: str | None = None
+    bound_contact_name: str | None = None
 
 
 @router.get(
@@ -175,7 +175,7 @@ def get_telegram_binding(
     """Return the current binding (if any) for ``telegram_id``.
 
     The operator-facing UI uses this to pre-fill the
-    "unbind" confirmation with the employee name. Even
+    "unbind" confirmation with the contact name. Even
     if the bound row is gone (deleted via the WebUI), the
     endpoint reports ``bound_uid`` so the operator
     can see the dangling reference and re-bind or clean
@@ -208,5 +208,5 @@ def get_telegram_binding(
     return TGBindStatus(
         telegram_id=telegram_id,
         bound_uid=bound_uid,
-        bound_employee_name=bound_name,
+        bound_contact_name=bound_name,
     )

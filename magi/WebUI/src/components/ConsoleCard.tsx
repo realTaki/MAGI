@@ -1,7 +1,7 @@
 /**
  * ConsoleCard — the small white card with a uppercase title used
  * across the dashboard (System, Employees, EVE nodes, Audit log,
- * Connectors, the admin/employee/connector tables, etc.).
+ * Connectors, the admin/contact/connector tables, etc.).
  *
  * `title` may be empty — when it is, the card collapses to just
  * the padded content area (used by the MAGI/Magis tables where the

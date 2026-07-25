@@ -3,7 +3,7 @@
 This is the **unified** contact table that replaces three
 pre-refactor tables:
 
-  - ``employees`` — was the user directory (name, role,
+  - ``contacts`` — was the user directory (name, role,
     provider, api_key, telegram_id, separated_at).
   - ``contact_entries`` — was the per-MAGI contact
     directory (owner_id, person_id FK pairs + notes +
@@ -66,7 +66,7 @@ SOURCE_SYSTEM = "system"
 class Contact(Base):
     """A person MAGI knows. One row per person.
 
-    Replaces ``Employee``, ``ContactEntry``, and
+    Replaces ``Contact``, ``ContactEntry``, and
     ``UserImBinding`` in the unified schema.
     """
 
