@@ -1,5 +1,9 @@
 # MAGI — Modular Agentic Group Intelligence（模块化代理群体智能）
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](#)
+
 一个**由自治、可独立部署的代理**组成的群体智能系统。这些代理我们统称为
 **MAGI**。系统里的每一个代理——控制面、个人助理、未来加入的协调者——都是
 一个 MAGI。系统整体能力来自这些 MAGI 之间的协同方式。
@@ -239,3 +243,20 @@ Schema 迁移已完成：`employees` + `contact_entries` + `user_im_bindings`
 
 文档级 vs 代码级跟进项的完整 backlog 见
 [docs/ROADMAP.md](docs/ROADMAP.md) 中"Post-refactor follow-ups"一节。
+
+## 参与贡献
+
+MAGI 处于实验阶段，欢迎贡献代码。参与方式：
+
+1. 阅读 [CONTRIBUTING.md](CONTRIBUTING.md)
+2. 写代码前先开 Issue 沟通 — 避免方向不对
+3. 挑选 `good first issue` 或提出你的想法
+
+代码规范、提交格式和 PR checklist 见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+所有参与者须遵守 [行为准则](CODE_OF_CONDUCT.md)。
+
+安全漏洞请私下报告 — 见 [SECURITY.md](SECURITY.md)。
+
+## 许可证
+
+MIT — 见 [LICENSE](LICENSE)。

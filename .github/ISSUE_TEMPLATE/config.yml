@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discussion
+    url: https://github.com/realTaki/magi/discussions
+    about: Ask questions or share ideas here.

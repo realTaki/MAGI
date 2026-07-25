@@ -1,5 +1,9 @@
 # MAGI — Modular Agentic Group Intelligence
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](#)
+
 A **group-intelligence system** built from autonomous, independently-deployable
 agents we call **MAGIs**. Every agent in the system — the control plane,
 the personal assistants, the future coordinators — is a MAGI. The system
@@ -281,3 +285,21 @@ See "Post-refactor follow-ups" in [docs/ROADMAP.md](docs/ROADMAP.md).
 The full backlog of doc-level vs code-level follow-ups to this
 reframing lives in [docs/ROADMAP.md](docs/ROADMAP.md) under
 "Post-refactor follow-ups".
+
+## Contributing
+
+MAGI is experimental and welcomes contributions. To get started:
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
+2. Open an Issue before writing code — let's talk
+3. Pick a `good first issue` or suggest your own
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, commit style,
+and PR checklist. All contributors are expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+Report security issues privately — see [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
