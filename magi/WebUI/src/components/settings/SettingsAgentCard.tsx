@@ -27,15 +27,16 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 
 export function SettingsAgentCard() {
   const t = useT();
   return (
-    <ConsoleCard title={t("settings.agent")}>
-      <p className="text-sm text-ink-soft">
-        {t("settings.agentDesc")}
-      </p>
+    <ConsoleCard
+      title={t("settings.agent")}
+      headerRight={<InfoTip text={t("settings.agentDesc")} />}
+    >
       <div className="mt-6 space-y-8">
         <ToolLoopSection />
         <div className="border-t border-sky-light/40" />

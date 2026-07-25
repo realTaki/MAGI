@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 
 export function SettingsSystemTimezoneCard() {
@@ -93,10 +94,10 @@ export function SettingsSystemTimezoneCard() {
   }
 
   return (
-    <ConsoleCard title={t("settings.timezone")}>
-      <p className="text-sm text-ink-soft">
-        {t("settings.timezoneDesc")}
-      </p>
+    <ConsoleCard
+      title={t("settings.timezone")}
+      headerRight={<InfoTip text={t("settings.timezoneDesc")} />}
+    >
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 

@@ -33,6 +33,7 @@
 import { useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 import type { OnboardingData } from "../../pages/onboardingTypes";
 import { BotTokenField } from "./BotTokenField";
@@ -53,13 +54,10 @@ export function SettingsChannelsCard(props: {
     : "(not configured)";
 
   return (
-    <ConsoleCard title={t("settings.channels")}>
-      <p className="text-sm text-ink-soft">
-        Platform adapters the node can mount. WebUI is the
-        console you're using; Telegram is the IM channel the
-        wizard configured. The rest are planned.
-      </p>
-
+    <ConsoleCard
+      title={t("settings.channels")}
+      headerRight={<InfoTip text={t("settings.channelsDesc")} />}
+    >
       <table className="w-full text-sm mt-4">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">

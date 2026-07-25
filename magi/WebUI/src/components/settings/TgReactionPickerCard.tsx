@@ -37,6 +37,7 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 
 type ReactionOut = {
@@ -146,10 +147,10 @@ export function TgReactionPickerCard() {
   }
 
   return (
-    <ConsoleCard title={t("settings.tgReactions")}>
-      <p className="text-sm text-ink-soft">
-        {t("settings.tgReactionsDesc")}
-      </p>
+    <ConsoleCard
+      title={t("settings.tgReactions")}
+      headerRight={<InfoTip text={t("settings.tgReactionsDesc")} />}
+    >
       <ReactionRow
         label={t("settings.tgReadEmoji")}
         state={read}

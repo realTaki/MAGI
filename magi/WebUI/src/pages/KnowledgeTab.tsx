@@ -28,12 +28,12 @@ import { useT } from "../i18n/index";
 type KnowledgeSection = "skills" | "connectors" | "contacts" | "memory" | "tools" | "mcp";
 
 const KNOWLEDGE_SECTIONS: SidebarItem[] = [
-  { id: "skills", labelKey: "sidebar.knowledgeSkills", icon: <IconSkills /> },
-  { id: "connectors", labelKey: "sidebar.knowledgeConnectors", icon: <IconConnectors /> },
-  { id: "contacts", labelKey: "sidebar.knowledgeContacts", icon: <IconContacts /> },
-  { id: "memory", labelKey: "sidebar.knowledgeMemory", icon: <IconMemory /> },
-  { id: "tools", labelKey: "sidebar.knowledgeTools", icon: <IconTools /> },
-  { id: "mcp", labelKey: "sidebar.knowledgeMcp", icon: <IconTools /> },
+  { id: "skills", label: "sidebar.knowledgeSkills", icon: <IconSkills /> },
+  { id: "connectors", label: "sidebar.knowledgeConnectors", icon: <IconConnectors /> },
+  { id: "contacts", label: "sidebar.knowledgeContacts", icon: <IconContacts /> },
+  { id: "memory", label: "sidebar.knowledgeMemory", icon: <IconMemory /> },
+  { id: "tools", label: "sidebar.knowledgeTools", icon: <IconTools /> },
+  { id: "mcp", label: "sidebar.knowledgeMcp", icon: <IconTools /> },
 ];
 
 export default function KnowledgeTab() {
@@ -61,11 +61,7 @@ function KnowledgeSkillsPane() {
     name: string;
     description: string;
     path: string;
-    title: string;
-  };
-  type SkillListResponse = {
-    items: SkillRow[];
-    total: number;
+    version: string;
   };
   const t = useT();
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
@@ -76,8 +72,8 @@ function KnowledgeSkillsPane() {
       try {
         const r = await fetch("/api/skills", { credentials: "include" });
         if (!r.ok) { setLoadError(`${t("settings.knowledgeSkillsLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as SkillListResponse;
-        if (!cancelled) setSkills(body.items);
+        const body = (await r.json()) as SkillRow[];
+        if (!cancelled) setSkills(body ?? []);
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
       }
@@ -167,10 +163,10 @@ export function KnowledgeContactsPane() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch("/api/contacts?with_notes=true", { credentials: "include" });
+        const r = await fetch("/api/contacts", { credentials: "include" });
         if (!r.ok) { setLoadError(`${t("settings.knowledgeContactsLoadFailed")} (${r.status})`); return; }
         const body = (await r.json()) as ContactListResponse;
-        if (!cancelled) setContacts(body.items);
+        if (!cancelled) setContacts(body.items ?? []);
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
       }
@@ -289,7 +285,7 @@ export function KnowledgeMemoryPane() {
         const r = await fetch("/api/memory", { credentials: "include" });
         if (!r.ok) { setLoadError(`${t("settings.knowledgeMemoryLoadFailed")} (${r.status})`); return; }
         const body = (await r.json()) as MemoryListResponse;
-        if (!cancelled) setMemory(body.items);
+        if (!cancelled) setMemory(body.items ?? []);
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
       }
@@ -355,7 +351,7 @@ export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
         const r = await fetch("/api/tools", { credentials: "include" });
         if (!r.ok) { setLoadError(`${t("settings.toolsLoadFailed")} (${r.status})`); return; }
         const body = (await r.json()) as ToolListResponse;
-        if (!cancelled) setTools(body.items);
+        if (!cancelled) setTools(body.items ?? []);
       } catch (err) { if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error"); }
     })();
     return () => { cancelled = true; };

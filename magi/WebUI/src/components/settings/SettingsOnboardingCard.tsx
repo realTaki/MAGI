@@ -10,17 +10,16 @@
  */
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 
 export function SettingsOnboardingCard(props: { onRestart: () => void }) {
   const t = useT();
   return (
-    <ConsoleCard title={t("settings.onboarding")}>
-      <p className="text-sm text-ink-soft">
-        Re-run the first-time setup wizard. Saved bot and admin
-        rows stay in SQLite; the wizard will resume from wherever
-        it left off.
-      </p>
+    <ConsoleCard
+      title={t("settings.onboarding")}
+      headerRight={<InfoTip text={t("settings.onboardingDesc")} />}
+    >
       <button
         type="button"
         onClick={props.onRestart}

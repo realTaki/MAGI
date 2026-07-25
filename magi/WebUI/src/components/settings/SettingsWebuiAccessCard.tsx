@@ -24,6 +24,7 @@
 import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
+import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 import type { ContactRow } from "../../pages/OrganizationTab";
 
@@ -111,18 +112,10 @@ export function SettingsWebuiAccessCard(props: {
   }
 
   return (
-    <ConsoleCard title={t("settings.webuiAccess")}>
-      <p className="text-sm text-ink-soft">
-        Sign-in list. Each row is an <code>Employee</code> with
-        <span className="font-medium"> role=admin</span> and a
-        bound <code>telegram_id</code>. The wizard
-        (step 3) creates these from the verified tgids;
-        the table below mirrors that state. Removing a row
-        calls the same wizard endpoint with the smaller list
-        — the server drops the deleted rows from the
-        employees table.
-      </p>
-
+    <ConsoleCard
+      title={t("settings.webuiAccess")}
+      headerRight={<InfoTip text={t("settings.webuiAccessDesc")} />}
+    >
       <div className="mt-4">
         {admins === null && !loadError && (
           <p className="text-sm text-ink-soft">Loading…</p>
