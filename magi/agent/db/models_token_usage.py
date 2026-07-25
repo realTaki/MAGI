@@ -107,7 +107,7 @@ class TokenUsage(Base):
     # Read-only relationship for admin / debug views;
     # route code never traverses it to mutate the
     # employee.
-    employee: Mapped["Employee"] = relationship(
+    employee: Mapped["Contact"] = relationship(
         foreign_keys=[uid], viewonly=True
     )
 

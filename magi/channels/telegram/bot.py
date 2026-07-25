@@ -148,12 +148,18 @@ async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
     import httpx
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-        })
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+            })
+    except httpx.TimeoutException:
+        raise RuntimeError("Telegram API timed out (network or firewall?)")
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Network error: {exc}")
+
     data = resp.json()
     if not data.get("ok"):
         raise RuntimeError(

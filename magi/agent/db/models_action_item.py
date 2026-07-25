@@ -124,10 +124,10 @@ class ActionItem(Base):
 
     # Viewonly relationships so route code never mutates
     # Employee via the ActionItem collection.
-    employee: Mapped["Employee | None"] = relationship(
+    employee: Mapped["Contact | None"] = relationship(
         foreign_keys=[uid], viewonly=True
     )
-    completed_by: Mapped["Employee | None"] = relationship(
+    completed_by: Mapped["Contact | None"] = relationship(
         foreign_keys=[completed_by_uid], viewonly=True
     )
 
