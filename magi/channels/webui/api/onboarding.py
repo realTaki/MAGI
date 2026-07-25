@@ -379,6 +379,15 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
         logger.exception("failed to write settings")
         return SaveBotResponse(ok=False, error=str(exc))
 
+    # Best-effort: bring up the TG polling bot immediately after
+    # token save so login-code delivery works without requiring a
+    # manual node restart.
+    try:
+        if tg_bot.get_telegram_bot() is None:
+            tg_bot.start_bot(state_dir)
+    except Exception:
+        logger.exception("failed to auto-start telegram bot after save-bot")
+
     logger.info(
         "bot token saved",
         extra={"username": payload.username, "state_dir": state_dir},
@@ -393,9 +402,7 @@ async def verify_admin(payload: VerifyAdminRequest) -> VerifyAdminResponse:
     test message. The new code-based flow uses ``/send-admin-code``
     and ``/verify-admin-code`` instead.
     """
-    return await _send_admin_code_inner(
-        SendAdminCodeRequest(delivery_address=payload.delivery_address)
-    )
+    return await _send_admin_code_inner(SendAdminCodeRequest(tgid=payload.tgid))
 
 
 @router.post("/send-admin-code", response_model=SendAdminCodeResponse)

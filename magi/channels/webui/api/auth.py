@@ -364,16 +364,10 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     the frontend can show "0 assigned employees" today and
     start populating as soon as C6 dispatches the first EVE.
 
-    Display names are best-effort lookups via Telegram
-    ``getChat``; a failure (e.g. the user has blocked the
-    bot, or the network is down) just means we fall back to
-    showing the bare uid. The TG ``getChat`` call is
-    encapsulated in the channel's
-    raw HTTP API so this file doesn't depend on the bot process.
+    Display names come from the local ``Contact`` row only.
+    We intentionally avoid Telegram ``getChat`` network calls here:
+    login must stay fast even when Telegram is slow or blocked.
     """
-    from magi.agent.db.settings import state_get
-
-    bot_token = state_get(_state_dir(), "telegram.bot_token")
     accounts: list[AllowedLoginAccount] = []
 
     # 1. Super admins (wizard-configured). We resolve
@@ -393,35 +387,16 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
                         (emp.id, emp.telegram_id, emp.display_name or emp.name)
                     )
 
-    # Display name resolution — uses raw Telegram HTTP API
-    # so it works even when the bot process isn't running.
     candidates: dict[int, tuple[int, str | None]] = {
         uid: (telegram_id_int, fallback_name)
         for uid, telegram_id_int, fallback_name in admin_rows
     }
-    resolved_names: dict[int, str | None] = {}
-    if bot_token and candidates:
-        results = await asyncio.gather(
-            *(tg_bot.get_chat_name_raw(bot_token, telegram_id_int)
-              for telegram_id_int, _ in candidates.values()),
-            return_exceptions=True,
-        )
-        for (uid, (_telegram_id_int, fallback_name)), name in zip(
-            candidates.items(), results,
-        ):
-            if isinstance(name, BaseException):
-                resolved_names[uid] = fallback_name
-            else:
-                resolved_names[uid] = name or fallback_name
-    else:
-        for uid, (_telegram_id_int, fallback_name) in candidates.items():
-            resolved_names[uid] = fallback_name
 
-    for uid, (telegram_id_int, fallback_name) in sorted(candidates.items()):
+    for uid, (_telegram_id_int, fallback_name) in sorted(candidates.items()):
         accounts.append(
             AllowedLoginAccount(
                 uid=uid,
-                name=resolved_names[uid] or fallback_name or f"uid {uid}",
+                name=fallback_name or f"uid {uid}",
             )
         )
 
@@ -483,7 +458,8 @@ async def send_login_code(
     # the first channel with a live bot. If no IM is
     # bound, refuse — we have no way to deliver the code.
     from magi.channels import dispatcher as channel_dispatcher
-    if channel_dispatcher.lookup_im_id(uid, "tg") is None:
+    im_id = channel_dispatcher.lookup_im_id(uid, "tg")
+    if im_id is None:
         return SendLoginCodeResponse(
             ok=False,
             error="This account has no IM channel configured; "
@@ -529,13 +505,36 @@ async def send_login_code(
     try:
         await channel_dispatcher.send_to_uid(uid, "tg", code_text)
     except RuntimeError as e:
-        # The dispatcher raised because the user has no
-        # binding or the channel's bot is offline. The
-        # pre-call ``lookup_im_id`` already guards the
-        # binding case, so any RuntimeError here is the
-        # bot-offline case.
-        _clear_login_code(uid)
-        return SendLoginCodeResponse(ok=False, error=str(e))
+        # Lazy-start path: token exists but no live bot
+        # instance yet. Try booting the TG bot once, then
+        # retry dispatcher send briefly before falling back
+        # to raw HTTP send.
+        try:
+            tg_bot.start_bot(_state_dir())
+            for _ in range(4):
+                await asyncio.sleep(0.25)
+                if tg_bot.get_telegram_bot() is not None:
+                    break
+            await channel_dispatcher.send_to_uid(uid, "tg", code_text)
+            return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
+        except Exception:
+            # Fall through to raw-send fallback below.
+            pass
+
+        # Raw-send fallback keeps first login usable even if
+        # the polling bot is still starting or unavailable.
+        bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
+        if not bot_token:
+            _clear_login_code(uid)
+            return SendLoginCodeResponse(ok=False, error=str(e))
+        try:
+            await tg_bot.send_text_raw(bot_token, int(im_id), code_text)
+        except Exception as raw_exc:
+            _clear_login_code(uid)
+            return SendLoginCodeResponse(
+                ok=False,
+                error=f"send failed: {raw_exc}",
+            )
     except Exception as e:
         _clear_login_code(uid)
         return SendLoginCodeResponse(ok=False, error=f"send failed: {e}")

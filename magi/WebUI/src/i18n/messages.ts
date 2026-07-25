@@ -528,7 +528,6 @@ const en: Catalog = {
     label: "Language",
     menuAria: "Choose interface language",
   },
-,
   chatSearch: {
     title: "Search conversations",
     emptyHintSearch: "Full-text search across every session. CJK / Latin queries of 3+ characters work.",

@@ -52,12 +52,18 @@ export default function LoginPage(props: {
     setSending(true);
     setError(null);
     try {
-      await fetch("/api/auth/send-login-code", {
+      const res = await fetch("/api/auth/send-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ uid: selectedUid }),
       });
-      setPhase("code");
+      const data = (await res.json()) as { ok: boolean; error?: string };
+      if (data.ok) {
+        setPhase("code");
+      } else {
+        setError(data.error ?? "Failed to send code");
+        setPhase("error");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
       setPhase("error");

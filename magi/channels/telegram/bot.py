@@ -61,6 +61,8 @@ _BOT_REPLIES: dict[str, str] | None = None
 # shutdown so a re-bind doesn't hold a stale reference.
 _telegram_bot_instance: "telegram.Bot | None" = None
 _telegram_bot_lock = threading.Lock()
+_telegram_start_lock = threading.Lock()
+_telegram_bot_thread: threading.Thread | None = None
 
 
 def set_telegram_bot(bot) -> None:
@@ -858,6 +860,14 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     """
     from magi.agent.db.settings import state_get
 
+    # Idempotent start: if a polling thread is already alive,
+    # return it instead of spawning a second one.
+    global _telegram_bot_thread
+    with _telegram_start_lock:
+        if _telegram_bot_thread is not None and _telegram_bot_thread.is_alive():
+            logger.info("telegram bot already running; reusing existing thread")
+            return _telegram_bot_thread
+
     token = state_get(state_dir, "telegram.bot_token")
     if not token:
         logger.info(
@@ -931,6 +941,8 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         name="telegram-bot",
         daemon=True,
     )
+    with _telegram_start_lock:
+        _telegram_bot_thread = thread
     thread.start()
     logger.info(
         "telegram bot started",
