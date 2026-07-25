@@ -136,12 +136,12 @@ function ToolLoopSection() {
 
   return (
     <section>
-      <h3 className="text-sm font-medium text-ink">
-        {t("settings.toolLoop")}
-      </h3>
-      <p className="mt-1 text-xs text-ink-soft">
-        {t("settings.toolLoopDesc")}
-      </p>
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-sm font-medium text-ink">
+          {t("settings.toolLoop")}
+        </h3>
+        <InfoTip text={t("settings.toolLoopDesc")} />
+      </div>
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 
@@ -316,12 +316,12 @@ function CompactSection() {
 
   return (
     <section>
-      <h3 className="text-sm font-medium text-ink">
-        {t("settings.autoCompact")}
-      </h3>
-      <p className="mt-1 text-xs text-ink-soft">
-        {t("settings.autoCompactDesc")}
-      </p>
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-sm font-medium text-ink">
+          {t("settings.autoCompact")}
+        </h3>
+        <InfoTip text={t("settings.autoCompactDesc")} />
+      </div>
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 

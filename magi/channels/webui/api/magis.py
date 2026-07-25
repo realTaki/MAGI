@@ -100,6 +100,7 @@ class MagiBrief(BaseModel):
 
 class MagiOut(BaseModel):
     id: int
+    name: str | None = None
     magic_id: int
     magic_position: str
     provider: str | None = None
@@ -111,12 +112,14 @@ class MagiOut(BaseModel):
 
 class MagiCreate(BaseModel):
     magic_id: int = Field(ge=1)
+    name: str | None = Field(default=None, max_length=100)
     magic_position: str = Field(min_length=1, max_length=16)
     provider: str | None = Field(default=None, max_length=64)
     api_key: str | None = Field(default=None, max_length=256)
 
 
 class MagiUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=100)
     magic_position: Optional[str] = Field(default=None, max_length=16)
     provider: Optional[str] = Field(default=None, max_length=64)
     api_key: Optional[str] = Field(default=None, max_length=256)
@@ -126,6 +129,7 @@ def _serialize(m: Magi) -> MagiOut:
     is_set, last4 = _mask_key(m.api_key)
     return MagiOut(
         id=m.id,
+        name=m.name,
         magic_id=m.magic_id,
         magic_position=m.magic_position,
         provider=m.provider,
@@ -185,12 +189,24 @@ def create_magi(
         )
 
     magi = Magi(
+        name=payload.name,
         magic_id=payload.magic_id,
         magic_position=payload.magic_position,
         provider=payload.provider,
         api_key=payload.api_key,
     )
     session.add(magi)
+    # If this is an Adam, bind it to the MAGIC row so the
+    # MagicsPane renders the ADAM column correctly.
+    if payload.magic_position == "adam":
+        magic = session.get(MAGIC, payload.magic_id)
+        if magic is not None:
+            magic.adam_id = None  # flushed below; populated after magi.id is known
+    session.flush()
+    if payload.magic_position == "adam":
+        magic = session.get(MAGIC, payload.magic_id)
+        if magic is not None:
+            magic.adam_id = magi.id
     session.commit()
     session.refresh(magi)
     return _serialize(magi)
@@ -226,6 +242,9 @@ def update_magi(
             code="not_found.magi",
             detail="magi not found",
         )
+
+    if "name" in payload.model_fields_set and payload.name is not None:
+        magi.name = payload.name
 
     if "magic_position" in payload.model_fields_set and payload.magic_position is not None:
         if payload.magic_position not in _MAGI_POSITIONS:
@@ -264,6 +283,11 @@ def delete_magi(
             code="not_found.magi",
             detail="magi not found",
         )
+    # Clear the MAGIC's adam_id if this was the bound Adam.
+    if magi.magic_position == "adam":
+        magic = session.get(MAGIC, magi.magic_id)
+        if magic is not None and magic.adam_id == magi_id:
+            magic.adam_id = None
     session.delete(magi)
     session.commit()
     return Response(status_code=204)

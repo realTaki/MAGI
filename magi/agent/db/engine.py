@@ -160,12 +160,12 @@ def _register_begin_immediate(engine: Engine) -> None:
 # -- seed defaults (pre-Alembic) -------------------------------------------
 #
 # Hand-seeded "ensure the workspace has a root" bootstrap. The
-# default name is hardcoded to "MAGIC.root" — the deployer can
+# default name is hardcoded to "Genesis" — the deployer can
 # rename it via the dashboard PATCH endpoint (it'll get
-# re-created as MAGIC.root on a fresh DB if they ever wipe and
+# re-created as Genesis on a fresh DB if they ever wipe and
 # start over, but a renamed root stays renamed). When C8
 # hardening lands this becomes configurable via env var.
-_DEFAULT_ROOT_MAGIC_NAME = "MAGIC.root"
+_DEFAULT_ROOT_MAGIC_NAME = "Genesis"
 
 
 def _seed_default_root(engine: Engine) -> None:
@@ -209,18 +209,21 @@ def _seed_default_root(engine: Engine) -> None:
             select(Magi.id).where(Magi.magic_position == "adam").limit(1)
         )
         if has_adam is None:
-            session.add(
-                Magi(
-                    magic_id=existing_root.id,
-                    magic_position="adam",
-                    provider=None,
-                    api_key=None,
-                )
+            adam = Magi(
+                name=f"{_DEFAULT_ROOT_MAGIC_NAME} ADAM",
+                magic_id=existing_root.id,
+                magic_position="adam",
+                provider=None,
+                api_key=None,
             )
+            session.add(adam)
             session.flush()
+            # Bind the Adam to the MAGIC row so the MagicsPane
+            # renders the ADAM column correctly.
+            existing_root.adam_id = adam.id
             logger.info(
-                "seeded default adam Magi under %s",
-                _DEFAULT_ROOT_MAGIC_NAME,
+                "seeded default adam Magi under %s (id=%d)",
+                _DEFAULT_ROOT_MAGIC_NAME, adam.id,
             )
 
         session.commit()

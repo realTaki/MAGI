@@ -49,6 +49,9 @@ class Magi(Base):
     __tablename__ = "magis"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True,
+    )
     magic_id: Mapped[int] = mapped_column(
         ForeignKey("magics.id", ondelete="CASCADE"),
         nullable=False,

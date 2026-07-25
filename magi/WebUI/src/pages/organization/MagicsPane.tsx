@@ -1,20 +1,17 @@
 /**
  * MagicsPane — "MAGI 团队 / MAGIC (MAGI Council)" management pane.
  *
- * Full CRUD for the MAGIC team tree (replaces the old
- * employee management" section). Features:
+ * Full CRUD for the MAGIC team tree. Features:
  *   - Tree view with expand/collapse (DFS flatten, depth-indented rows).
  *   - Create new MAGIC team (name + optional parent).
  *   - Inline edit: rename, reparent, assign ADAM Magi.
  *   - Delete with cascade warning.
- *
- * Reads/writes ``GET/POST/PATCH/DELETE /api/magics`` + reads
- * ``GET /api/magis`` (for the adam picker dropdown).
  */
 
 import { useEffect, useMemo, useState } from "react";
 
 import ConsoleCard from "../../components/ConsoleCard";
+import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 
 // -- backend wire shapes ----------------------------------------------------
@@ -75,9 +72,6 @@ function flattenTree(rows: MAGICRow[]): FlatMAGIC[] {
   return out;
 }
 
-// -- helpers ----------------------------------------------------------------
-
-/** Valid adam candidates: magis with magic_position='adam'. */
 function adamCandidates(magis: MagiBrief[]): MagiBrief[] {
   return magis.filter((m) => m.magic_position === "adam");
 }
@@ -90,13 +84,11 @@ export function MagicsPane() {
   const [magis, setMagis] = useState<MagiBrief[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Create-form state.
   const [createName, setCreateName] = useState("");
   const [createParent, setCreateParent] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Edit state — which row is being edited + its draft values.
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<{
     name: string;
@@ -106,7 +98,6 @@ export function MagicsPane() {
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Expand state: set of ids whose children are visible.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const reload = async () => {
@@ -132,17 +123,10 @@ export function MagicsPane() {
   }, []);
 
   const flat = useMemo(() => (magics ? flattenTree(magics) : []), [magics]);
-  const adams = useMemo(
-    () => (magis ? adamCandidates(magis) : []),
-    [magis],
-  );
+  const adams = useMemo(() => (magis ? adamCandidates(magis) : []), [magis]);
 
-  // Only render children of expanded nodes.
   const visibleIds = useMemo(() => {
     const vis = new Set<number>();
-    const stack: { id: number; depth: number; children: MAGICRow[] }[] = [];
-
-    // Build lookup.
     const byId = new Map<number, MAGICRow & { children: MAGICRow[] }>();
     for (const r of magics ?? []) {
       byId.set(r.id, { ...r, children: [] });
@@ -153,21 +137,21 @@ export function MagicsPane() {
         byId.get(r.parent_id)!.children.push(node);
       }
     }
-
-    // Walk.
-    const roots = (magics ?? []).filter((r) => r.parent_id == null || !byId.has(r.parent_id));
+    const roots = (magics ?? []).filter(
+      (r) => r.parent_id == null || !byId.has(r.parent_id),
+    );
+    const stack: { id: number; depth: number; children: MAGICRow[] }[] = [];
     for (const r of roots) {
       stack.push({ id: r.id, depth: 0, children: byId.get(r.id)!.children });
     }
-
     while (stack.length > 0) {
-      const { id, depth, children } = stack.pop()!;
+      const { id, children } = stack.pop()!;
       vis.add(id);
       if (expanded.has(id)) {
         for (const ch of [...children].reverse()) {
           stack.push({
             id: ch.id,
-            depth: depth + 1,
+            depth: 0,
             children: byId.get(ch.id)!.children,
           });
         }
@@ -176,13 +160,11 @@ export function MagicsPane() {
     return vis;
   }, [magics, expanded]);
 
-  // Pre-sorted flat list filtered to visible nodes.
   const visibleFlat = useMemo(
     () => flat.filter((f) => visibleIds.has(f.id)),
     [flat, visibleIds],
   );
 
-  const isExpanded = (id: number) => expanded.has(id);
   const toggleExpand = (id: number) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -192,7 +174,6 @@ export function MagicsPane() {
     });
   };
 
-  // -- create ---------------------------------------------------------------
   const submitCreate = async () => {
     setCreateError(null);
     const name = createName.trim();
@@ -205,7 +186,6 @@ export function MagicsPane() {
       const body: Record<string, unknown> = { name };
       const pid = Number.parseInt(createParent, 10);
       if (Number.isFinite(pid) && pid > 0) body.parent_id = pid;
-
       const res = await fetch("/api/magics", {
         method: "POST",
         credentials: "include",
@@ -227,7 +207,6 @@ export function MagicsPane() {
     }
   };
 
-  // -- edit -----------------------------------------------------------------
   const startEdit = (row: MAGICRow) => {
     setEditingId(row.id);
     setEditDraft({
@@ -237,12 +216,10 @@ export function MagicsPane() {
     });
     setEditError(null);
   };
-
   const cancelEdit = () => {
     setEditingId(null);
     setEditError(null);
   };
-
   const submitEdit = async (id: number) => {
     setEditError(null);
     const patch: Record<string, unknown> = {};
@@ -260,7 +237,6 @@ export function MagicsPane() {
     } else if (editDraft.adam_id === "") {
       patch.adam_id = null;
     }
-
     setSaving(true);
     try {
       const res = await fetch(`/api/magics/${id}`, {
@@ -283,9 +259,14 @@ export function MagicsPane() {
     }
   };
 
-  // -- delete ---------------------------------------------------------------
   const deleteMagic = async (id: number, name: string) => {
-    if (!confirm(t("magics.deleteConfirm") || `Delete team "${name}"? This will cascade-delete its Magis.`)) return;
+    if (
+      !confirm(
+        t("magics.deleteConfirm") ||
+          `Delete team "${name}"? This will cascade-delete its Magis.`,
+      )
+    )
+      return;
     const res = await fetch(`/api/magics/${id}`, {
       method: "DELETE",
       credentials: "include",
@@ -297,142 +278,202 @@ export function MagicsPane() {
     }
   };
 
-  // -- render ---------------------------------------------------------------
   const rows = visibleFlat;
+  const INDENT_PX = 20;
 
   return (
     <div className="space-y-4">
-      <ConsoleCard title={t("magics.paneTitle")}>
+      <ConsoleCard
+        title={t("magics.paneTitle")}
+        headerRight={<InfoTip text={t("magics.paneDesc")} />}
+      >
         {loadError !== null && (
-          <p className="text-sm text-red-600 mb-3">{loadError}</p>
+          <p className="form-error mb-3">{loadError}</p>
         )}
 
         {/* Tree table */}
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="data-table w-full text-sm">
             <thead>
-              <tr className="text-left text-ink-soft border-b border-ink-soft/20">
-                <th className="py-2 pr-3 w-8"></th>
-                <th className="py-2 pr-3">{t("magics.columnName")}</th>
-                <th className="py-2 pr-3">{t("magics.columnParent")}</th>
-                <th className="py-2 pr-3">{t("magics.columnAdam")}</th>
-                <th className="py-2 pr-3">{t("magics.columnChildren")}</th>
-                <th className="py-2 pr-3">{t("magics.columnActions")}</th>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-3 w-8" />
+                <th className="py-2 pr-3 font-medium">{t("magics.columnName")}</th>
+                <th className="py-2 pr-3 font-medium">{t("magics.columnParent")}</th>
+                <th className="py-2 pr-3 font-medium">{t("magics.columnAdam")}</th>
+                <th className="py-2 pr-3 font-medium w-16 text-center">
+                  {t("magics.columnChildren")}
+                </th>
+                <th className="py-2 pr-3 font-medium w-28 text-right" />
               </tr>
             </thead>
             <tbody>
               {rows.map((m) => {
                 const isEdit = editingId === m.id;
                 const hasChildren = m.child_count > 0;
-                const expandedRow = isExpanded(m.id);
+                const expandedRow = hasChildren && expanded.has(m.id);
                 return (
-                  <tr key={m.id} className="border-b border-ink-soft/10">
-                    {/* Expand toggle */}
-                    <td className="py-1.5 pr-3">
+                  <tr
+                    key={m.id}
+                    className={
+                      "border-b border-sky-light/30 transition-colors " +
+                      (isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10")
+                    }
+                  >
+                    <td className="py-2 pr-0">
                       <button
                         type="button"
                         disabled={!hasChildren}
                         onClick={() => toggleExpand(m.id)}
-                        className={`text-xs w-5 h-5 inline-flex items-center justify-center rounded
-                          ${hasChildren ? "hover:bg-sky-light/60 text-ink" : "text-ink-soft/30 cursor-default"}`}
-                        aria-label={expandedRow ? t("sidebar.orgCollapseChildren") : t("sidebar.orgExpandChildren")}
+                        className={
+                          "w-5 h-5 inline-flex items-center justify-center rounded text-xs " +
+                          (hasChildren
+                            ? "text-ink-soft hover:bg-sky-light/60 hover:text-ink"
+                            : "text-ink-soft/20 cursor-default")
+                        }
+                        aria-label={
+                          expandedRow
+                            ? t("sidebar.orgCollapseChildren")
+                            : t("sidebar.orgExpandChildren")
+                        }
                       >
-                        {hasChildren ? (expandedRow ? "▾" : "▸") : " "}
+                        {hasChildren ? (expandedRow ? "▾" : "▸") : ""}
                       </button>
                     </td>
-                    {/* Name */}
+
                     {isEdit ? (
-                      <td className="py-1.5 pr-3" colSpan={4} style={{ paddingLeft: `${0.5 + m.depth * 1.5}rem` }}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            className="rounded border border-ink-soft/30 px-2 py-0.5 text-sm w-40"
-                            value={editDraft.name}
-                            onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                          />
-                          <select
-                            className="rounded border border-ink-soft/30 px-2 py-0.5 text-sm"
-                            value={editDraft.parent_id}
-                            onChange={(e) => setEditDraft((d) => ({ ...d, parent_id: e.target.value }))}
-                          >
-                            <option value="">{t("magics.createParentNone")}</option>
-                            {magics?.filter((x) => x.id !== m.id).map((x) => (
-                              <option key={x.id} value={String(x.id)}>{x.name}</option>
-                            ))}
-                          </select>
-                          <select
-                            className="rounded border border-ink-soft/30 px-2 py-0.5 text-sm"
-                            value={editDraft.adam_id}
-                            onChange={(e) => setEditDraft((d) => ({ ...d, adam_id: e.target.value }))}
-                          >
-                            <option value="">{t("magics.editAdamNone")}</option>
-                            {adams.map((a) => (
-                              <option key={a.id} value={String(a.id)}>
-                                #{a.id} ({a.provider ?? "?"})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            disabled={saving}
-                            className="rounded bg-ink text-paper px-2 py-0.5 text-xs disabled:opacity-50"
-                            onClick={() => void submitEdit(m.id)}
-                          >
-                            {saving ? "…" : "save"}
-                          </button>
-                          <button
-                            type="button"
-                            className="text-xs text-ink-soft hover:underline"
-                            onClick={cancelEdit}
-                          >
-                            cancel
-                          </button>
-                          {editError && (
-                            <span className="text-xs text-red-600">{editError}</span>
-                          )}
-                        </div>
-                      </td>
-                    ) : (
-                      <td className="py-1.5 pr-3" style={{ paddingLeft: `${0.5 + m.depth * 1.5}rem` }}>
-                        {m.depth > 0 && <span className="text-ink-soft mr-1">└─</span>}
-                        <span className="font-medium">{m.name}</span>
-                        <span className="text-ink-soft font-mono text-xs ml-2">#{m.id}</span>
-                      </td>
-                    )}
-                    {/* Non-edit columns (hidden during edit) */}
-                    {!isEdit && (
+                      /* ── edit row ────────────────────────────── */
                       <>
-                        <td className="py-1.5 pr-3 font-mono text-ink-soft text-xs">
-                          {m.parent_id != null
-                            ? magics?.find((x) => x.id === m.parent_id)?.name ?? `#${m.parent_id}`
-                            : "—"}
-                        </td>
-                        <td className="py-1.5 pr-3 text-xs">
-                          {m.adam_id != null ? (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-mono">
-                              #{m.adam_id}
-                            </span>
-                          ) : (
-                            <span className="text-ink-soft">—</span>
-                          )}
-                        </td>
-                        <td className="py-1.5 pr-3 font-mono text-ink-soft text-center">
-                          {m.child_count}
-                        </td>
-                        <td className="py-1.5 pr-3">
-                          <div className="flex items-center gap-2">
+                        <td
+                          className="py-2 pr-3"
+                          colSpan={hasChildren ? 4 : 4}
+                        >
+                          <div className="flex items-center gap-2 ml-1">
+                            <input
+                              className="form-input text-sm py-1 px-2 w-32"
+                              value={editDraft.name}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({
+                                  ...d,
+                                  name: e.target.value,
+                                }))
+                              }
+                            />
+                            <select
+                              className="form-input text-sm py-1 px-2"
+                              value={editDraft.parent_id}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({
+                                  ...d,
+                                  parent_id: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">
+                                {t("magics.createParentNone")}
+                              </option>
+                              {magics
+                                ?.filter((x) => x.id !== m.id)
+                                .map((x) => (
+                                  <option key={x.id} value={String(x.id)}>
+                                    {x.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <select
+                              className="form-input text-sm py-1 px-2"
+                              value={editDraft.adam_id}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({
+                                  ...d,
+                                  adam_id: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">
+                                {t("magics.editAdamNone")}
+                              </option>
+                              {adams.map((a) => (
+                                <option key={a.id} value={String(a.id)}>
+                                  #{a.id} ({a.provider ?? "?"})
+                                </option>
+                              ))}
+                            </select>
                             <button
                               type="button"
-                              className="text-xs text-sky-700 hover:underline"
-                              onClick={() => startEdit(m)}
+                              disabled={saving}
+                              onClick={() => void submitEdit(m.id)}
+                              className="btn btn-primary text-xs py-1 px-3"
                             >
-                              edit
+                              {saving ? "…" : t("common.save")}
                             </button>
                             <button
                               type="button"
-                              className="text-xs text-red-600 hover:underline"
-                              onClick={() => void deleteMagic(m.id, m.name)}
+                              onClick={cancelEdit}
+                              className="btn btn-secondary text-xs py-1 px-2"
                             >
-                              delete
+                              {t("common.cancel")}
+                            </button>
+                            {editError && (
+                              <span className="text-xs text-rose-600">
+                                {editError}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td />
+                      </>
+                    ) : (
+                      /* ── view row ────────────────────────────── */
+                      <>
+                        <td
+                          className="py-2 pr-3"
+                          style={{ paddingLeft: `${8 + m.depth * INDENT_PX}px` }}
+                        >
+                          <span className="font-medium text-ink">
+                            {m.depth > 0 && (
+                              <span className="text-ink-soft/50 mr-1.5 select-none">
+                                {expandedRow ? "└┬" : "├─"}
+                              </span>
+                            )}
+                            {m.name}
+                          </span>
+                          <span className="text-ink-soft/50 font-mono text-[11px] ml-2">
+                            #{m.id}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 font-mono text-xs text-ink-soft">
+                          {m.parent_id != null
+                            ? (magics?.find((x) => x.id === m.parent_id)
+                                ?.name ?? `#${m.parent_id}`)
+                            : "—"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {m.adam_id != null ? (
+                            <span className="status-pill status-pill--connected text-[11px]">
+                              ADAM #{m.adam_id}
+                            </span>
+                          ) : (
+                            <span className="text-ink-soft text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3 font-mono text-xs text-ink-soft text-center">
+                          {m.child_count}
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(m)}
+                              className="btn btn-secondary text-xs py-1 px-2"
+                            >
+                              {t("common.edit")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteMagic(m.id, m.name)}
+                              className="btn btn-secondary text-xs py-1 px-2 text-rose-600 hover:text-rose-800"
+                            >
+                              {t("common.delete")}
                             </button>
                           </div>
                         </td>
@@ -441,9 +482,12 @@ export function MagicsPane() {
                   </tr>
                 );
               })}
-              {rows.length === 0 && (
+              {rows.length === 0 && !loadError && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-ink-soft text-center">
+                  <td
+                    colSpan={6}
+                    className="py-6 text-ink-soft text-sm text-center"
+                  >
                     {t("magics.empty")}
                   </td>
                 </tr>
@@ -453,44 +497,54 @@ export function MagicsPane() {
         </div>
 
         {/* Create form */}
-        <h3 className="text-sm font-medium text-ink mt-6 mb-2">
-          {t("magics.createHeading")}
-        </h3>
-        {createError !== null && (
-          <p className="text-sm text-red-600 mb-2">{createError}</p>
-        )}
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs text-ink-soft">
-            {t("magics.createNameLabel")}
-            <input
-              className="mt-1 block rounded border border-ink-soft/30 px-2 py-1 text-sm w-48"
-              placeholder={t("magics.createNamePlaceholder")}
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void submitCreate(); }}
-            />
-          </label>
-          <label className="text-xs text-ink-soft">
-            {t("magics.createParentLabel")}
-            <select
-              className="mt-1 block rounded border border-ink-soft/30 px-2 py-1 text-sm"
-              value={createParent}
-              onChange={(e) => setCreateParent(e.target.value)}
+        <div className="mt-6 pt-4 border-t border-sky-light/40">
+          <h3 className="text-sm font-medium text-ink mb-3">
+            {t("magics.createHeading")}
+          </h3>
+          {createError !== null && (
+            <p className="form-error mb-3">{createError}</p>
+          )}
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="form-label">
+                {t("magics.createNameLabel")}
+              </span>
+              <input
+                className="form-input text-sm py-1.5 px-3 w-40"
+                placeholder={t("magics.createNamePlaceholder")}
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitCreate();
+                }}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="form-label">
+                {t("magics.createParentLabel")}
+              </span>
+              <select
+                className="form-input text-sm py-1.5 px-3"
+                value={createParent}
+                onChange={(e) => setCreateParent(e.target.value)}
+              >
+                <option value="">{t("magics.createParentNone")}</option>
+                {(magics ?? []).map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={creating || !createName.trim()}
+              className="btn btn-primary text-sm py-1.5 px-4"
+              onClick={() => void submitCreate()}
             >
-              <option value="">{t("magics.createParentNone")}</option>
-              {(magics ?? []).map((m) => (
-                <option key={m.id} value={String(m.id)}>{m.name}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={creating || !createName.trim()}
-            className="rounded bg-ink text-paper px-3 py-1.5 text-sm disabled:opacity-50"
-            onClick={() => void submitCreate()}
-          >
-            {creating ? "…" : t("common.add")}
-          </button>
+              {creating ? t("common.loading") : t("common.add")}
+            </button>
+          </div>
         </div>
       </ConsoleCard>
     </div>
