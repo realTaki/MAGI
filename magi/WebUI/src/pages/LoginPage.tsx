@@ -1,32 +1,10 @@
 /**
- * Sign-in flow — UID dropdown + 6-digit code.
+ * Sign-in flow — name dropdown + 6-digit code.
  *
- *   1. Page mounts and GETs /api/auth/allowed-accounts, which
- *      returns the list of UIDs that can sign in (today: super
- *      admins with a bound IM; C2+: also employees with a bound
- *      IM + active EVE assignment). Each row carries the bound
- *      ``telegram_id`` for display, but the dropdown's primary
- *      key is the UID — UID is the cookie identity.
- *
- *   2. User picks an account, clicks "Send code".
- *      Backend: POST /api/auth/send-login-code { uid }
- *      → server resolves uid → bound IM and posts the code.
- *      (5-min TTL, 60s resend cooldown.)
- *
- *   3. User checks TG, types the 6 digits, clicks "Verify".
- *      Backend: POST /api/auth/verify-login-code { uid, code }
- *      → sets `magi_session` cookie (HTTPOnly, value = uid).
- *
- *   4. On success, onLoggedIn() is invoked and the parent flips
- *      to the dashboard. The cookie is sent automatically on
- *      subsequent /me calls.
- *
- * Anti-enumeration: the dropdown is a closed set (server-supplied),
- * so users can only sign in as someone who's been explicitly
- * authorized. The send/verify endpoints still anti-enumerate
- * arbitrary uids (e.g. a manually-typed one would 404), so an
- * attacker can't probe the wizard by typing a uid that the
- * server didn't return.
+ *   1. GETs /api/auth/allowed-accounts → list of admin names+UIDs.
+ *   2. User picks a name, clicks "Send code".
+ *   3. Code sent to the bound Telegram chat.
+ *   4. User enters code → cookie set → dashboard.
  */
 
 import { useEffect, useState } from "react";
@@ -36,9 +14,7 @@ type Phase = "send" | "code" | "verifying" | "error";
 
 type AllowedAccount = {
   uid: number;
-  telegram_id: number | null;
-  display_name: string | null;
-  role: string;
+  name: string;
 };
 
 export default function LoginPage(props: {
@@ -62,33 +38,20 @@ export default function LoginPage(props: {
         if (cancelled || !data) return;
         const list: AllowedAccount[] = data.accounts ?? [];
         setAccounts(list);
-        // Pre-select the first account so the user only needs to
-        // confirm unless they want to log in as someone else.
-        if (list.length > 0) {
-          setSelectedUid(list[0].uid);
-        }
+        if (list.length > 0) setSelectedUid(list[0].uid);
       })
       .catch(() => {
         if (cancelled) return;
         setAccounts([]);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   async function handleSend() {
-    if (selectedUid === null) {
-      setError("Pick an account to sign in as.");
-      setPhase("error");
-      return;
-    }
+    if (selectedUid === null) return;
     setSending(true);
     setError(null);
     try {
-      // Fire-and-forget: the verify step is where the truth comes
-      // out. The send endpoint always returns ok for authorized
-      // accounts; we don't gate on `res.ok` here.
       await fetch("/api/auth/send-login-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -105,16 +68,7 @@ export default function LoginPage(props: {
 
   async function handleVerify() {
     const c = code.trim();
-    if (selectedUid === null) {
-      setError("Pick an account to sign in as.");
-      setPhase("error");
-      return;
-    }
-    if (!c || c.length !== 6) {
-      setError("Code must be 6 digits");
-      setPhase("error");
-      return;
-    }
+    if (selectedUid === null || !c || c.length !== 6) return;
     setVerifying(true);
     setError(null);
     try {
@@ -125,10 +79,7 @@ export default function LoginPage(props: {
         credentials: "include",
       });
       const data = (await res.json()) as { ok: boolean; error?: string };
-      if (data.ok) {
-        props.onLoggedIn(selectedUid);
-        return;
-      }
+      if (data.ok) { props.onLoggedIn(selectedUid); return; }
       setError(data.error ?? "Verification failed");
       setPhase("error");
     } catch (err) {
@@ -139,27 +90,16 @@ export default function LoginPage(props: {
     }
   }
 
-  const codeInputVisible =
-    phase === "code" || phase === "verifying" || phase === "error";
-  const accountsLoading = accounts === null;
-  const accountsEmpty = accounts !== null && accounts.length === 0;
-  const canSend = !accountsLoading && !accountsEmpty && selectedUid !== null && !sending;
+  const codeInputVisible = phase === "code" || phase === "verifying" || phase === "error";
+  const loading = accounts === null;
+  const empty = accounts !== null && accounts.length === 0;
 
   return (
     <main className="min-h flex flex-col px-6 py-12">
       <header className="px-2 py-2 max-w-md w-full mx-auto">
         <div className="flex items-center gap-3">
-          <img
-            src="/assets/favicon.svg"
-            alt="MAGI"
-            width={28}
-            height={28}
-            className="rounded"
-          />
-          <span className="text-sm font-semibold tracking-wide text-sky-deep">
-            MAGI
-          </span>
-          <span className="text-xs text-ink-soft ml-2">sign in</span>
+          <img src="/assets/favicon.svg" alt="MAGI" width={28} height={28} className="rounded" />
+          <span className="text-sm font-semibold tracking-wide text-sky-deep">MAGI</span>
         </div>
       </header>
 
@@ -170,24 +110,18 @@ export default function LoginPage(props: {
               {t("login.title")}
             </h1>
 
-            {accountsLoading && (
-              <p className="mt-6 text-sm text-ink-soft">Loading…</p>
-            )}
+            {loading && <p className="mt-6 text-sm text-ink-soft">{t("common.loading")}</p>}
 
-            {accountsEmpty && (
+            {empty && (
               <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                No admin accounts are configured yet. Run the
-                first-time setup to add one.
+                {t("login.noAccounts")}
               </div>
             )}
 
-            {!accountsLoading && !accountsEmpty && (
+            {!loading && !empty && (
               <>
-                <label
-                  htmlFor="login-uid"
-                  className="block mt-6 text-sm font-medium text-sky-deep mb-2"
-                >
-                  Account
+                <label htmlFor="login-uid" className="block mt-6 text-sm font-medium text-sky-deep mb-2">
+                  {t("login.accountLabel")}
                 </label>
                 <div className="flex gap-2">
                   <select
@@ -208,27 +142,17 @@ export default function LoginPage(props: {
                   >
                     {accounts!.map((a) => (
                       <option key={a.uid} value={a.uid}>
-                        {a.display_name
-                          ? a.telegram_id
-                            ? `${a.display_name} (TG: ${a.telegram_id})`
-                            : a.display_name
-                          : a.telegram_id
-                            ? `uid ${a.uid} (TG: ${a.telegram_id})`
-                            : `uid ${a.uid}`}
+                        {a.name}
                       </option>
                     ))}
                   </select>
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={!canSend}
+                    disabled={selectedUid === null || sending}
                     className="btn btn-primary px-4 py-3 shrink-0"
                   >
-                    {sending
-                      ? "Sending…"
-                      : codeInputVisible
-                        ? "Resend"
-                        : "Send code"}
+                    {sending ? t("common.loading") : codeInputVisible ? t("onboarding.resendCode") : t("login.sendCode")}
                   </button>
                 </div>
               </>
@@ -236,11 +160,8 @@ export default function LoginPage(props: {
 
             {codeInputVisible && (
               <div className="mt-4">
-                <label
-                  htmlFor="login-code"
-                  className="block text-sm font-medium text-sky-deep mb-2"
-                >
-                  6-digit code from Telegram
+                <label htmlFor="login-code" className="block text-sm font-medium text-sky-deep mb-2">
+                  {t("login.codeLabel")}
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -259,15 +180,13 @@ export default function LoginPage(props: {
                     disabled={verifying || code.length !== 6}
                     className="btn btn-primary px-4 py-3 shrink-0"
                   >
-                    {verifying ? "Verifying…" : "Verify"}
+                    {verifying ? t("onboarding.verifying") : t("onboarding.verify")}
                   </button>
                 </div>
               </div>
             )}
 
-            {error && (
-              <p className="form-error mt-4">✗ {error}</p>
-            )}
+            {error && <p className="form-error mt-4">✗ {error}</p>}
 
             <div className="mt-6">
               <button
@@ -275,7 +194,7 @@ export default function LoginPage(props: {
                 onClick={props.onBack}
                 className="text-sm text-sky-700 hover:text-sky-deep transition"
               >
-                ← Back
+                ← {t("common.back")}
               </button>
             </div>
           </div>

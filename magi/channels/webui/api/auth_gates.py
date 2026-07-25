@@ -33,19 +33,21 @@ def _is_admin_uid(uid: int) -> bool:
         return False
 
 
+def _resolve_uid(raw: str | None) -> int | None:
+    """Verify the signed session cookie, return uid or None."""
+    from magi.channels.webui.api.auth import _verify_signed_uid
+    return _verify_signed_uid(raw or "")
+
+
 def admin_gate(request: Request) -> str:
     """FastAPI dependency — verify the caller is an admin."""
     raw = request.cookies.get("magi_session")
-    if not raw or not raw.isdigit():
+    uid = _resolve_uid(raw)
+    if uid is None or not _is_admin_uid(uid):
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
-    uid = int(raw)
-    if not _is_admin_uid(uid):
-        raise MagiHTTPException(
-            status_code=401, code="auth.not_signed_in", detail="Not signed in"
-        )
-    return raw
+    return str(uid)
 
 
 AdminGate = Annotated[str, Depends(admin_gate)]
@@ -56,9 +58,8 @@ def admin_or_assigned_gate(request: Request) -> str:
     from magi.agent.db import Contact, open_session
 
     raw = request.cookies.get("magi_session") or ""
-    try:
-        uid = int(raw)
-    except (TypeError, ValueError):
+    uid = _resolve_uid(raw)
+    if uid is None:
         raise MagiHTTPException(
             status_code=403,
             code="auth.soul_edit_forbidden",
@@ -80,7 +81,7 @@ def admin_or_assigned_gate(request: Request) -> str:
             code="auth.soul_edit_forbidden",
             detail="SOUL.md editing requires admin or assigned role",
         )
-    return raw
+    return str(uid)
 
 
 AdminOrAssignedGate = Annotated[str, Depends(admin_or_assigned_gate)]

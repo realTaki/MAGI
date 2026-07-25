@@ -895,6 +895,10 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         Application.builder()
         .token(token)
         .concurrent_updates(True)
+        .connect_timeout(15)
+        .read_timeout(15)
+        .write_timeout(15)
+        .pool_timeout(5)
         .build()
     )
     application.add_handler(MessageHandler(filters.ALL, _on_message))
@@ -909,7 +913,10 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         set_telegram_bot(application.bot)
         try:
             await application.start()
-            await application.updater.start_polling()
+            await application.updater.start_polling(
+                poll_interval=1.0,
+                timeout=10,
+            )
             # Park on an Event that never gets set. The loop exits when the
             # process is shutting down (which kills the daemon thread).
             await asyncio.Event().wait()

@@ -93,6 +93,13 @@ const zh: Catalog = {
     step3Desc: "引导向导完成。点击下方按钮确认完成并登录。",
     okSignIn: "完成，去登录 →",
   },
+  login: {
+    title: "登录",
+    accountLabel: "选择账号",
+    sendCode: "发送验证码",
+    codeLabel: "Telegram 收到的 6 位验证码",
+    noAccounts: "还没有可登录的账号。先完成首次配置添加管理员。",
+  },
   settings: {
     // Settings tab-level header.
     navLabel: "设置分组",
@@ -202,24 +209,7 @@ const zh: Catalog = {
     label: "语言",
     menuAria: "选择界面语言",
   },
-  login: {
-    title: "MAGI 控制台",
-    telegramIdLabel: "Telegram chat ID",
-    telegramIdPlaceholder: "例如 6240201712",
-    sendCode: "发送验证码",
-    sending: "发送中…",
-    codeLabel: "验证码",
-    codePlaceholder: "6 位数字",
-    verify: "验证并登录",
-    verifying: "验证中…",
-    resend: "重新发送",
-    helpText: "如果还没设置 Telegram ID，请找管理员开通。",
-    errors: {
-      invalidTelegramId: "Telegram chat ID 不合法。",
-      codeFailed: "验证码错误或已过期。",
-      networkError: "网络错误，请重试。",
-    },
-  },
+
   chatSearch: {
     title: "搜索对话",
     emptyHintSearch: "跨所有 session 的全文搜索。中英文至少 3 个字符起才能匹配。",
@@ -443,6 +433,13 @@ const en: Catalog = {
     step3Desc: "Setup complete. Confirm below to finish and sign in.",
     okSignIn: "Done — sign in →",
   },
+  login: {
+    title: "Sign in",
+    accountLabel: "Account",
+    sendCode: "Send code",
+    codeLabel: "6-digit code from Telegram",
+    noAccounts: "No accounts configured. Run the first-time setup to add an admin.",
+  },
   settings: {
     navLabel: "Sections",
     navAria: "Settings panel navigation",
@@ -531,24 +528,7 @@ const en: Catalog = {
     label: "Language",
     menuAria: "Choose interface language",
   },
-  login: {
-    title: "MAGI Console",
-    telegramIdLabel: "Telegram chat ID",
-    telegramIdPlaceholder: "e.g. 6240201712",
-    sendCode: "Send code",
-    sending: "Sending…",
-    codeLabel: "Verification code",
-    codePlaceholder: "6 digits",
-    verify: "Verify and sign in",
-    verifying: "Verifying…",
-    resend: "Resend",
-    helpText: "If you don't have a Telegram ID yet, ask the admin to set one up.",
-    errors: {
-      invalidTelegramId: "Invalid Telegram chat ID.",
-      codeFailed: "Wrong or expired code.",
-      networkError: "Network error — please try again.",
-    },
-  },
+,
   chatSearch: {
     title: "Search conversations",
     emptyHintSearch: "Full-text search across every session. CJK / Latin queries of 3+ characters work.",
@@ -767,6 +747,13 @@ const ja: Catalog = {
     step3Desc: "セットアップが完了しました。確認してログインしてください。",
     okSignIn: "完了、ログインへ →",
   },
+  login: {
+    title: "ログイン",
+    accountLabel: "アカウント",
+    sendCode: "コード送信",
+    codeLabel: "Telegram で受信した 6 桁のコード",
+    noAccounts: "ログイン可能なアカウントがありません。初期設定を実行して管理者を追加してください。",
+  },
   settings: {
     navLabel: "セクション",
     navAria: "設定パネルのナビゲーション",
@@ -854,24 +841,6 @@ const ja: Catalog = {
   languageSwitcher: {
     label: "言語",
     menuAria: "表示言語を選択",
-  },
-  login: {
-    title: "MAGI コンソール",
-    telegramIdLabel: "Telegram chat ID",
-    telegramIdPlaceholder: "例: 6240201712",
-    sendCode: "コードを送信",
-    sending: "送信中…",
-    codeLabel: "認証コード",
-    codePlaceholder: "6 桁の数字",
-    verify: "確認してログイン",
-    verifying: "確認中…",
-    resend: "再送",
-    helpText: "Telegram ID をお持ちでない場合は管理者にお問い合わせください。",
-    errors: {
-      invalidTelegramId: "Telegram chat ID が不正です。",
-      codeFailed: "コードが間違っているか、有効期限が切れています。",
-      networkError: "ネットワークエラーが発生しました。再試行してください。",
-    },
   },
   chatSearch: {
     title: "会話を検索",

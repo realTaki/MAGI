@@ -43,7 +43,10 @@ import os
 from datetime import datetime, timezone
 from typing import Annotated
 
+import hashlib
+import hmac
 import asyncio
+from base64 import urlsafe_b64encode, urlsafe_b64decode
 from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -74,10 +77,51 @@ _CODE_TTL_SECONDS = 300
 _RESEND_COOLDOWN_SECONDS = 60
 
 SESSION_COOKIE_NAME = "magi_session"
-# 14 days is long enough to be useful (the deployer doesn't sign in
-# every day) and short enough that an idle laptop eventually kicks
-# them out. C8 will add rotation.
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
+
+
+def _signing_key() -> bytes:
+    """Derive a signing key from the state directory path.
+    Not cryptographically random, but prevents casual cookie
+    tampering — an attacker with filesystem access to the
+    state dir already owns the DB anyway."""
+    return hashlib.sha256(
+        _state_dir().encode() + b"magi-session-signing"
+    ).digest()
+
+
+def _sign_uid(uid: int) -> str:
+    """Return ``uid:timestamp:hmac`` signed token."""
+    ts = str(int(datetime.now(timezone.utc).timestamp()))
+    payload = f"{uid}:{ts}".encode()
+    sig = hmac.new(_signing_key(), payload, hashlib.sha256).hexdigest()[:16]
+    token = f"{uid}:{ts}:{sig}".encode()
+    return urlsafe_b64encode(token).decode().rstrip("=")
+
+
+def _verify_signed_uid(token: str) -> int | None:
+    """Return ``uid`` if the token is valid and not expired, else ``None``."""
+    try:
+        # Add padding back for base64 decode
+        padded = token + "=" * (4 - len(token) % 4)
+        decoded = urlsafe_b64decode(padded).decode()
+        parts = decoded.split(":")
+        if len(parts) != 3:
+            return None
+        uid_str, ts_str, sig = parts
+        uid = int(uid_str)
+        ts = int(ts_str)
+        # Check expiry
+        if datetime.now(timezone.utc).timestamp() - ts > SESSION_TTL_SECONDS:
+            return None
+        # Verify signature
+        payload = f"{uid}:{ts}".encode()
+        expected = hmac.new(_signing_key(), payload, hashlib.sha256).hexdigest()[:16]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        return uid
+    except Exception:
+        return None
 
 
 def _state_dir() -> str:
@@ -156,24 +200,13 @@ def _super_admins() -> set[int]:
 class AllowedLoginAccount(BaseModel):
     """One row in the login-page dropdown.
 
-    ``uid`` is the cross-channel identity; the cookie value
-    after a successful verify is the uid. ``telegram_id``
-    is the bound IM channel used to deliver the 6-digit
-    code; multiple IM channels per UID (Slack, etc.) will
-    extend this row to a list as those channels land.
-
-    Only admin rows with at least one bound IM are listed;
-    an admin with no IM binding can't receive the login
-    code so they have no login affordance today.
-
-    ``role`` disambiguates rows that share a display name
-    (e.g. two employees both called "Alice").
+    ``uid`` is the cross-channel identity. ``name`` is the
+    contact's display name (shown in the dropdown).
     """
 
     uid: int
-    telegram_id: int | None = None
+    name: str
     display_name: str | None = None
-    role: str
 
 
 class AllowedLoginAccountsResponse(BaseModel):
@@ -384,13 +417,11 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
         for uid, (_telegram_id_int, fallback_name) in candidates.items():
             resolved_names[uid] = fallback_name
 
-    for uid, (telegram_id_int, _fallback_name) in sorted(candidates.items()):
+    for uid, (telegram_id_int, fallback_name) in sorted(candidates.items()):
         accounts.append(
             AllowedLoginAccount(
                 uid=uid,
-                telegram_id=telegram_id_int,
-                display_name=resolved_names[uid],
-                role="super_admin",
+                name=resolved_names[uid] or fallback_name or f"uid {uid}",
             )
         )
 
@@ -566,7 +597,7 @@ async def verify_login_code(
     # this with a signed token + a real session table.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=str(uid),
+        value=_sign_uid(uid),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
@@ -603,12 +634,8 @@ async def me(
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
-    if not magi_session or not magi_session.isdigit():
-        raise MagiHTTPException(
-            status_code=401, code="auth.not_signed_in", detail="Not signed in"
-        )
-    uid = int(magi_session)
-    if uid not in _super_admins():
+    uid = _verify_signed_uid(magi_session or "")
+    if uid is None or uid not in _super_admins():
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )

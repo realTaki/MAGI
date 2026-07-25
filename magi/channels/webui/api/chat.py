@@ -226,12 +226,10 @@ async def send_chat(
     # below — WebUI doesn't need it for send / read but
     # we stamp it on the session row for cross-channel
     # tooling.
+    from magi.channels.webui.api.auth import _verify_signed_uid
     cookie_raw = request.cookies.get("magi_session", "")
-    try:
-        cookie_uid = int(cookie_raw)
-    except (TypeError, ValueError):
-        # Should be caught by AdminGate already; defence
-        # in depth.
+    cookie_uid = _verify_signed_uid(cookie_raw)
+    if cookie_uid is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",

@@ -239,16 +239,16 @@ def _resolve_uid(request: Request) -> int:
     the frontend's friendly message covers both
     endpoints.
     """
+    from magi.channels.webui.api.auth import _verify_signed_uid
     raw = request.cookies.get("magi_session") or ""
-    try:
-        eid = int(raw)
-    except (TypeError, ValueError):
+    uid = _verify_signed_uid(raw)
+    if uid is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in employee",
         )
-    return eid
+    return uid
 
 
 def _admin_uid(request: Request, store: SessionStoreDep) -> int:

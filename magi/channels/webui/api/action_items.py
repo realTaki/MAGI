@@ -225,10 +225,10 @@ def _current_admin_id(
     ``Contact.telegram_id == cid_int`` query only
     matches by sheer coincidence.
     """
+    from magi.channels.webui.api.auth import _verify_signed_uid
     raw = request.cookies.get("magi_session") or ""
-    try:
-        uid = int(raw)
-    except (TypeError, ValueError):
+    uid = _verify_signed_uid(raw)
+    if uid is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
