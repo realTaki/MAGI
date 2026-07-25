@@ -33,20 +33,16 @@ import json
 import logging
 import os
 
-import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from magi.agent.db import require_state_dir
+from magi.channels.telegram import bot as tg_bot
 
 logger = logging.getLogger("magi.api.onboarding")
 
 router = APIRouter(tags=["onboarding"])
-
-# 5s is generous for a single Telegram call.
-_TELEGRAM_TIMEOUT_SECONDS = 15.0
-
 
 def _state_dir() -> str:
     """Read MAGI_STATE_DIR each call — keeps state_dir testable + env-friendly."""
@@ -348,45 +344,20 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
 
 @router.post("/verify-bot", response_model=VerifyBotResponse)
 async def verify_bot(payload: VerifyBotRequest) -> VerifyBotResponse:
-    """Verify a Telegram bot token via the official ``getMe`` call.
+    """Verify a Telegram bot token via ``getMe``.
 
-    Never stores anything. Returns ``{ok: true, username}`` on a real
-    bot, or ``{ok: false, error}`` for any failure (network, HTTP, or
-    Telegram's own ``description`` field).
+    Delegates to :func:`magi.channels.telegram.bot.verify_token`
+    so the TG API interaction stays inside the channel package.
     """
     token = payload.token.strip()
     if not token:
         return VerifyBotResponse(ok=False, error="Token is empty")
 
-    url = f"https://api.telegram.org/bot{token}/getMe"
     try:
-        async with httpx.AsyncClient(timeout=_TELEGRAM_TIMEOUT_SECONDS) as client:
-            resp = await client.get(url)
-    except httpx.TimeoutException:
-        return VerifyBotResponse(ok=False, error="Telegram timed out")
-    except httpx.RequestError as exc:
-        return VerifyBotResponse(ok=False, error=f"Network error: {exc}")
-
-    if resp.status_code != 200:
-        return VerifyBotResponse(
-            ok=False,
-            error=f"Telegram returned HTTP {resp.status_code}",
-        )
-
-    data = resp.json()
-    if not data.get("ok"):
-        description = data.get("description", "Unknown error from Telegram")
-        return VerifyBotResponse(ok=False, error=description)
-
-    result = data.get("result") or {}
-    username = result.get("username")
-    if not username:
-        return VerifyBotResponse(
-            ok=False,
-            error="Telegram response missing bot username",
-        )
-
-    return VerifyBotResponse(ok=True, username=username)
+        username = await tg_bot.verify_token(token)
+        return VerifyBotResponse(ok=True, username=username)
+    except RuntimeError as exc:
+        return VerifyBotResponse(ok=False, error=str(exc))
 
 
 @router.post("/save-bot", response_model=SaveBotResponse)
@@ -461,30 +432,6 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def _send_via_raw_api(bot_token: str, chat_id: str, text: str) -> None:
-    """Send a Telegram message via raw HTTP API (no bot process needed).
-
-    Used during onboarding when the bot process hasn't started yet.
-    Raises ``Exception`` on failure — caller handles cleanup.
-    """
-    import httpx
-
-    chat_id_int = int(chat_id)
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json={
-            "chat_id": chat_id_int,
-            "text": text,
-            "parse_mode": "HTML",
-        })
-    data = resp.json()
-    if not data.get("ok"):
-        raise RuntimeError(
-            data.get("description", f"Telegram HTTP {resp.status_code}")
-        )
-    logger.info("sent admin code via raw API to chat_id=%d", chat_id_int)
-
-
 async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
     """Shared body for the public endpoints and the back-compat alias.
 
@@ -492,7 +439,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     row to a uid, so the channel dispatcher (which resolves
     ``uid → im_id``) can't be used here. The TG-side send
     helper lives in :mod:`magi.channels.telegram.bot`
-    (:func:`send_text_to_im_id`) — we call it directly. Once
+    (:func:`magi.channels.telegram.bot.send_text_raw`) — we call it directly. Once
     ``/save-admin`` lands, the operator IS bound to a uid and
     every subsequent outbound goes through the dispatcher.
     """
@@ -579,19 +526,8 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
         f"{_CODE_TTL_SECONDS // 60} minutes."
     )
 
-    from magi.channels.telegram import bot as tg_bot_module
-
     try:
-        await tg_bot_module.send_text_to_im_id(
-            delivery_address, text,
-        )
-    except RuntimeError:
-        # Bot not running — send directly via Telegram HTTP API.
-        await _send_via_raw_api(bot_token, delivery_address, text)
-    except ValueError as exc:
-        from magi.agent.db.settings import state_delete
-        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
-        return SendAdminCodeResponse(ok=False, error=str(exc))
+        await tg_bot.send_text_raw(bot_token, int(delivery_address), text)
     except Exception as exc:
         from magi.agent.db.settings import state_delete
         state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
@@ -683,10 +619,8 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     # later remove via save_admin's diff step, doubling the
     # work for no gain.
 
-    from magi.channels.telegram import bot as tg_bot_module
-    display_name = await tg_bot_module.fetch_chat_display_name(
-        delivery_address,
-    )
+    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
+    display_name = await tg_bot.get_chat_name_raw(bot_token, int(delivery_address))
     logger.info(
         "admin chat verified via code",
         extra={"display_name": display_name},
@@ -695,21 +629,13 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
 
 
 async def _fetch_display_name(delivery_address: str) -> str | None:
-    """Back-compat wrapper around the channel's display-name
-    helper.
-
-    D.28: the actual TG ``getChat`` call is encapsulated in
-    :func:`magi.channels.telegram.bot.fetch_chat_display_name`
-    so this wizard file doesn't directly touch the TG API.
-    New code should call the helper directly; this thin
-    shim keeps the legacy ``_fetch_display_name(chat_id)``
-    callsite working while callers migrate.
-
-    Failures degrade silently to ``None`` — the wizard falls
-    back to showing the bare chat id.
+    """Resolve a TG chat display name via raw HTTP API.
+    Fails silently — returns ``None`` on any error.
     """
-    from magi.channels.telegram import bot as tg_bot_module
-    return await tg_bot_module.fetch_chat_display_name(delivery_address)
+    from magi.agent.db.settings import state_get
+
+    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
+    return await tg_bot.get_chat_name_raw(bot_token, int(delivery_address))
 
 
 def _now_iso() -> str:
@@ -766,16 +692,14 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 error=f"tgid must be numeric, got {c!r}",
             )
 
-    # Display name resolution runs in parallel for all ids —
-    # they're independent TG ``getChat`` calls, no point
-    # serialising. The TG helper (D.28) lives in
-    # ``magi.channels.telegram.bot``.
-    from magi.channels.telegram import bot as tg_bot_module
+    # Display name resolution runs in parallel for all ids.
+    from magi.agent.db.settings import state_get
 
+    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
     display_names: dict[int, str | None] = {}
     if parsed_ids:
         results = await asyncio.gather(
-            *(tg_bot_module.fetch_chat_display_name(str(c)) for c in parsed_ids),
+            *(tg_bot.get_chat_name_raw(bot_token, c) for c in parsed_ids),
             return_exceptions=True,
         )
         for cid, name in zip(parsed_ids, results):

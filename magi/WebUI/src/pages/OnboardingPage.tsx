@@ -4,39 +4,24 @@ import { useT } from "../i18n/index";
 import type { OnboardingData } from "./onboardingTypes";
 
 /**
- * First-time setup wizard — four steps:
- *   1. Pick IM (Telegram only for now) + verify + save bot token.
- *      When a token is already saved, the step renders in a "configured"
- *      view (no input) with "Next →" enabled; "Re-set token" reveals
- *      the input form so the deployer can override.
- *   2. Show the saved bot, click Next.
- *   3. Add 1+ super-admin TG tgids (verify + save).
- *   4. "MAGI is set up." summary + "OK, got it — sign in →" button
- *      → calls onComplete(savedData); the parent flips the server
- *      flag and routes to landing.
- *
- * On mount we GET /api/onboarding/status. The token itself is never
- * returned to the frontend (it's a secret); we only get the username.
+ * First-time setup wizard — three steps:
+ *   1. Connect IM + verify + save bot token.
+ *      When saved, shows a confirmation card inline; click Next to
+ *      proceed. "Edit" link lets you re-enter a different token.
+ *   2. Add admin TG IDs (send code → verify → repeat).
+ *   3. "MAGI is ready." summary → confirm → sign in.
  */
 export default function OnboardingPage(props: {
   onComplete: (data: OnboardingData) => void;
 }) {
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [bot, setBot] = useState<{ token: string; username: string } | null>(
     null,
   );
-  // Step 1 has two views: "view" (bot already saved, show summary + Next)
-  // and "edit" (token input form, for first-time setup or override).
-  // Starts in "edit" and flips to "view" when /status reports a saved bot.
   const [step1Mode, setStep1Mode] = useState<"view" | "edit">("edit");
-  // Pre-existing super admins loaded from /status. Hydrated as pre-verified
-  // rows in step 3 so the user can resume after closing the browser.
   const [initialSuperAdmins, setInitialSuperAdmins] = useState<
     Array<{ telegramId: string; displayName: string | null }>
   >([]);
-  // Filled by step 3's "Finish setup →" and read by step 4's
-  // "OK, got it — sign in →". Kept in OnboardingPage state so we
-  // don't have to re-fetch /status just to render the summary.
   const [completedData, setCompletedData] = useState<OnboardingData | null>(
     null,
   );
@@ -58,9 +43,7 @@ export default function OnboardingPage(props: {
           );
         }
       })
-      .catch(() => {
-        /* network errors are non-fatal — just fall through to step 1 */
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -72,7 +55,7 @@ export default function OnboardingPage(props: {
       <div className="flex-1 flex items-start justify-center pt-8">
         <div className="w-full max-w-2xl">
           <Card>
-            <StepIndicator current={step} total={4} />
+            <StepIndicator current={step} total={3} />
 
             {step === 1 && (
               <Step1View
@@ -83,32 +66,24 @@ export default function OnboardingPage(props: {
                 onSaved={(token, username) => {
                   setBot({ token, username });
                   setStep1Mode("view");
-                  setStep(2);
                 }}
               />
             )}
             {step === 2 && bot && (
               <Step2View
                 bot={bot}
-                onNext={() => setStep(3)}
-                onBack={() => setStep(1)}
-              />
-            )}
-            {step === 3 && bot && (
-              <Step3View
-                bot={bot}
                 initialSuperAdmins={initialSuperAdmins}
-                onBack={() => setStep(2)}
+                onBack={() => setStep(1)}
                 onComplete={(data) => {
                   setCompletedData(data);
-                  setStep(4);
+                  setStep(3);
                 }}
               />
             )}
-            {step === 4 && completedData && (
-              <Step4View
+            {step === 3 && completedData && (
+              <Step3View
                 data={completedData}
-                onBack={() => setStep(3)}
+                onBack={() => setStep(2)}
                 onContinue={() => props.onComplete(completedData)}
               />
             )}
@@ -129,7 +104,7 @@ export default function OnboardingPage(props: {
 // step completes, the boot routing keeps sending the user back
 // into the wizard — see Auth D in the project memory.
 // ---------------------------------------------------------------------------
-function Step4View(props: {
+function Step3View(props: {
   data: OnboardingData;
   onBack: () => void;
   onContinue: () => void;
@@ -138,9 +113,9 @@ function Step4View(props: {
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        {t("onboarding.step4Title")}
+        {t("onboarding.step3Title")}
       </h1>
-      <p className="mt-2 text-ink-soft">{t("onboarding.step4Desc")}</p>
+      <p className="mt-2 text-ink-soft">{t("onboarding.step3Desc")}</p>
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
         <dt className="text-ink-soft">Bot</dt>
@@ -227,7 +202,7 @@ function BotTokenConfiguredView(props: {
   return (
     <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
       <p className="text-sm font-medium text-emerald-900">
-        {t("onboarding.step2Title")}
+        {t("onboarding.step1Confirmation")}
       </p>
       <dl className="mt-2 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
         <dt className="text-emerald-800/70">Bot username</dt>
@@ -262,66 +237,7 @@ function BotTokenConfiguredView(props: {
 }
 
 // ---------------------------------------------------------------------------
-// step 2 — confirm the saved bot
-// ---------------------------------------------------------------------------
-function Step2View(props: {
-  bot: { token: string; username: string };
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const t = useT();
-  const showToken = props.bot.token.length > 0;
-  const masked = showToken
-    ? props.bot.token.length > 12
-      ? `${props.bot.token.slice(0, 6)}…${props.bot.token.slice(-4)}`
-      : props.bot.token
-    : null;
-
-  return (
-    <>
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        {t("onboarding.step2Title")}
-      </h1>
-      <p className="mt-2 text-ink-soft">
-        {showToken
-          ? t("onboarding.step2DescNew")
-          : t("onboarding.step2DescExisting")}
-      </p>
-
-      <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
-        <dt className="text-ink-soft">Bot username</dt>
-        <dd className="font-mono text-ink">@{props.bot.username}</dd>
-
-        {masked && (
-          <>
-            <dt className="text-ink-soft">Token</dt>
-            <dd className="font-mono text-sky-deep">{masked}</dd>
-          </>
-        )}
-      </dl>
-
-      <div className="mt-8 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={props.onBack}
-          className="btn btn-secondary px-4 py-2.5"
-        >
-          {t("common.back")}
-        </button>
-        <button
-          type="button"
-          onClick={props.onNext}
-          className="btn btn-primary px-5 py-2.5"
-        >
-          {t("common.next")}
-        </button>
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// step 3 — super admin tgids (code-based verify + save)
+// step 2 — admin tgids (code-based verify + save)
 // ---------------------------------------------------------------------------
 //
 // Row state machine (kept local; no need for XState):
@@ -345,7 +261,7 @@ interface AdminRow {
   error: string;
 }
 
-function Step3View(props: {
+function Step2View(props: {
   bot: { token: string; username: string };
   initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;
   onBack: () => void;
@@ -534,10 +450,10 @@ function Step3View(props: {
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        {t("onboarding.step3Title")}
+        {t("onboarding.step2Title")}
       </h1>
       <p className="mt-2 text-ink-soft">
-        {t("onboarding.step3Desc").replace("{username}", props.bot.username)}
+        {t("onboarding.step2Desc").replace("{username}", props.bot.username)}
       </p>
 
       <div className="mt-6 space-y-3">

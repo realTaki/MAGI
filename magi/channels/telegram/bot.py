@@ -91,36 +91,44 @@ def get_telegram_bot():
         return _telegram_bot_instance
 
 
-async def send_text_to_im_id(im_id: str, text: str) -> None:
-    """Push ``text`` to the TG chat ``im_id``.
+async def verify_token(bot_token: str) -> str:
+    """Verify a bot token via Telegram ``getMe``. Returns the
+    bot's username on success. Raises ``RuntimeError`` with a
+    user-facing message on any failure.
+    """
+    import httpx
 
-    The only path that **bypasses** the channel dispatcher's
-    ``uid → im_id`` resolution — used during the onboarding
-    wizard when the operator hasn't yet been bound to an
-    Employee row, so there's no uid to dispatch through.
+    url = f"https://api.telegram.org/bot{bot_token}/getMe"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url)
+    except httpx.TimeoutException:
+        raise RuntimeError("Telegram timed out")
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Network error: {exc}")
 
-    Onboarding flow:
-      - wizard step 3 captures a candidate TG chat id
-        (the ``delivery_address`` payload field on
-        ``/api/onboarding/send-admin-code``)
-      - the server stores a one-shot verification code
-        under ``settings["telegram.verify_code.<im_id>"]``
-      - the bot pushes the code via THIS helper
-      - the wizard asks the user to type the code back,
-        proving they own the chat
-      - only then does ``/api/onboarding/save-admin``
-        create an Employee row and route future traffic
-        through the dispatcher
+    if resp.status_code != 200:
+        raise RuntimeError(f"Telegram returned HTTP {resp.status_code}")
 
-    Raises:
-      - ``RuntimeError`` if the bot isn't running (the
-        operator must finish step 2 first — wizard surfaces
-        a clear "save the bot token first" error)
-      - ``ValueError`` if ``im_id`` isn't a TG chat id
-        (a malformed wizard input — fail fast)
-      - ``telegram.error.TelegramError`` on TG-side errors
-        (network, chat not started, etc.). The wizard's
-        caller maps this to a user-facing retry hint.
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(
+            data.get("description", "Unknown error from Telegram")
+        )
+    username = (data.get("result") or {}).get("username")
+    if not username:
+        raise RuntimeError("Telegram response missing bot username")
+    return username
+
+
+async def send_text(chat_id: int, text: str) -> None:
+    """Push ``text`` to the Telegram chat ``chat_id``.
+
+    Requires the bot to be running (``get_telegram_bot()``
+    is not None). Raises ``RuntimeError`` if not.
+
+    For sending when the bot isn't running (e.g. during
+    onboarding), use :func:`send_text_raw`.
     """
     bot = get_telegram_bot()
     if bot is None:
@@ -128,51 +136,73 @@ async def send_text_to_im_id(im_id: str, text: str) -> None:
             "telegram bot is not running; finish onboarding "
             "step 2 (bot token) first"
         )
-    try:
-        chat_id_int = int(im_id)
-    except (TypeError, ValueError) as e:
-        raise ValueError(
-            f"im_id {im_id!r} is not a valid TG chat id (digits required)"
-        ) from e
-    await bot.send_message(chat_id=chat_id_int, text=text)
+    await bot.send_message(chat_id=chat_id, text=text)
 
 
-async def fetch_chat_display_name(im_id: str) -> str | None:
-    """Resolve the chat's display name via TG's ``getChat``.
+async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
+    """Send via the raw Telegram HTTP API — no bot process needed.
 
-    Returns ``None`` on any failure (no bot, network down,
-    user blocked the bot, etc.) so the wizard can fall back
-    to a bare chat-id display without the operator seeing a
-    console-style error. Mirrors the legacy
-    ``_fetch_display_name`` inline helper in
-    ``onboarding.py`` / ``auth.py``; both call sites now
-    route through this single helper so the TG API surface
-    stays inside the channel package.
+    Used during onboarding before the bot starts. Raises
+    ``RuntimeError`` if Telegram returns ``ok: false``.
+    """
+    import httpx
 
-    Used during onboarding only — post-onboarding the
-    dispatcher writes the bound display name onto the
-    Employee row's ``display_name`` column, so the wizard
-    doesn't need to re-fetch on every refresh.
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        })
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(
+            data.get("description", f"Telegram HTTP {resp.status_code}")
+        )
+    logger.info("raw send to chat_id=%d", chat_id)
+
+
+async def get_chat_name(chat_id: int) -> str | None:
+    """Resolve a Telegram chat's display name via ``getChat``.
+
+    Requires the bot to be running. Returns ``None`` on
+    failure. For calls when the bot isn't running, use
+    :func:`get_chat_name_raw`.
     """
     bot = get_telegram_bot()
     if bot is None:
         return None
     try:
-        chat_id_int = int(im_id)
-    except (TypeError, ValueError):
-        return None
-    try:
-        chat = await bot.get_chat(chat_id=chat_id_int)
+        chat = await bot.get_chat(chat_id=chat_id)
     except Exception:
-        # ``bot.get_chat`` raises ``telegram.error.TelegramError``
-        # on every failure path (bot blocked, network blip,
-        # chat not started). Returning ``None`` lets the
-        # caller fall back to the bare chat-id display; we
-        # don't surface this to the operator.
         return None
     name = getattr(chat, "first_name", None) or getattr(
         chat, "title", None
     ) or getattr(chat, "username", None)
+
+
+async def get_chat_name_raw(bot_token: str, chat_id: int) -> str | None:
+    """Resolve a Telegram chat's display name via raw HTTP API.
+
+    Does not require the bot process. Returns ``None`` on failure.
+    """
+    import httpx
+
+    url = f"https://api.telegram.org/bot{bot_token}/getChat"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json={"chat_id": chat_id})
+        data = resp.json()
+        if data.get("ok"):
+            result = data.get("result", {})
+            first = result.get("first_name") or ""
+            last = result.get("last_name") or ""
+            username = result.get("username") or ""
+            name = f"{first} {last}".strip()
+            return name or username or None
+        return None
+    except Exception:
+        return None
     return name or None
 
 

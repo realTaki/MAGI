@@ -61,10 +61,12 @@ from sqlalchemy import select
 # ``magi/node/__init__.py``: hoist the import.
 from magi.agent.db import Contact, open_session, require_state_dir  # noqa: E402
 from magi.agent.db.settings import state_get  # noqa: E402
+from magi.channels.telegram import bot as tg_bot  # noqa: E402
 
 logger = logging.getLogger("magi.api.auth")
 
 router = APIRouter(tags=["auth"])
+
 
 # Same TTL / cooldown as the admin code — reuses the user's mental
 # model. Could be tuned later; for now identical is fine.
@@ -334,8 +336,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     bot, or the network is down) just means we fall back to
     showing the bare uid. The TG ``getChat`` call is
     encapsulated in the channel's
-    :func:`magi.channels.telegram.bot.fetch_chat_display_name`
-    helper (D.28) so this file doesn't directly hit the TG API.
+    raw HTTP API so this file doesn't depend on the bot process.
     """
     from magi.agent.db.settings import state_get
 
@@ -359,12 +360,8 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
                         (emp.id, emp.telegram_id, emp.display_name or emp.name)
                     )
 
-    # Display name resolution runs in parallel for all
-    # admins — independent TG ``getChat`` calls, no point
-    # serialising. The helper handles the "no bot / network
-    # down / user blocked" fall-back paths.
-    from magi.channels.telegram import bot as tg_bot_module
-
+    # Display name resolution — uses raw Telegram HTTP API
+    # so it works even when the bot process isn't running.
     candidates: dict[int, tuple[int, str | None]] = {
         uid: (telegram_id_int, fallback_name)
         for uid, telegram_id_int, fallback_name in admin_rows
@@ -372,7 +369,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     resolved_names: dict[int, str | None] = {}
     if bot_token and candidates:
         results = await asyncio.gather(
-            *(tg_bot_module.fetch_chat_display_name(str(telegram_id_int))
+            *(tg_bot.get_chat_name_raw(bot_token, telegram_id_int)
               for telegram_id_int, _ in candidates.values()),
             return_exceptions=True,
         )
