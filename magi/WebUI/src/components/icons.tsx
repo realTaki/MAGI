@@ -111,18 +111,6 @@ export const IconContacts = ({ className }: IconProps) => (
 
 // -- organization sidebar sections (智能体管理 / 员工管理) ------------------
 
-// Legacy dept-tree icon, retained for any reference that still
-// points at the old ``IconDepartments`` name (the dept sub-tree
-// concept was dropped in the post-refactor reframe; the active
-// sidebar entry is now ``IconMagis`` below).
-export const IconDepartments = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <rect x="3" y="4" width="18" height="5" rx="1" />
-    <rect x="3" y="15" width="18" height="5" rx="1" />
-    <path d="M12 9v6" />
-  </Icon>
-);
-
 // "MAGI team" — a tree/council structure. Three connected
 // nodes in a hierarchy: the top node is the ADAM, the two
 // below are EVEs. Reads as "organization chart" without

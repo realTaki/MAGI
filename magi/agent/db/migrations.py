@@ -31,25 +31,24 @@ logger = logging.getLogger("magi.agent.db.migrations")
 
 _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # C1.1: added provider, api_key to employees.
-    # ``department_id`` was dropped in the post-refactor reframe
-    # (the ``departments`` table went away; the org structure is
-    # now ``MAGIC`` → ``Magi`` → ``User``). For pre-existing DBs
-    # the column is left in place but ignored by the ORM.
-    ("employees", "provider", "VARCHAR(32)"),
-    ("employees", "api_key", "VARCHAR(512)"),
+    # Post-refactor: table renamed to contacts; column refs
+    # now target ``contacts``. Pre-existing ``employees``
+    # rows are preserved by the table rename below.
+    ("contacts", "provider", "VARCHAR(32)"),
+    ("contacts", "api_key", "VARCHAR(512)"),
     # C1.1 (soft-delete): separated_at lets the dashboard mark
-    # an employee as 离职 without losing the row.
-    ("employees", "separated_at", "DATETIME"),
-    # C1.x (role + TG binding): unifies the WebUI Access list
-    # with the employees table. Existing rows default to
-    # role='assigned' (in v0 single-instance, this MAGI
-    # serves every employee); telegram_id stays NULL until
-    # the /start binding flow runs. The UNIQUE constraint
-    # on telegram_id is added as a separate index step
-    # below (SQLite can't ALTER TABLE ADD COLUMN with
-    # UNIQUE).
-    ("employees", "role", "VARCHAR(16) NOT NULL DEFAULT 'assigned'"),
-    ("employees", "telegram_id", "BIGINT"),
+    # a contact as separated without losing the row.
+    ("contacts", "separated_at", "DATETIME"),
+    # C1.x (role + TG binding). Existing rows default to
+    # role='contact' (the new default); telegram_id stays
+    # NULL until the /start binding flow runs.
+    ("contacts", "role", "VARCHAR(16) NOT NULL DEFAULT 'contact'"),
+    ("contacts", "telegram_id", "BIGINT"),
+    # Post-refactor contact_entries merge: notes, source,
+    # last_seen_at moved from contact_entries into contacts.
+    ("contacts", "notes", "TEXT NOT NULL DEFAULT ''"),
+    ("contacts", "source", "VARCHAR(16) NOT NULL DEFAULT 'manual'"),
+    ("contacts", "last_seen_at", "DATETIME NOT NULL DEFAULT (datetime('now'))"),
     # Tasks: ``run_at`` carries an ISO datetime string for
     # one-shot ("once") tasks. Nullable — cron-driven rows
     # keep it NULL. The ISO round-trip check runs at the
@@ -206,8 +205,8 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
 # telegram_id index, which is nullable for non-bound rows).
 _UNIQUE_INDEX_MIGRATIONS: list[tuple[str, str, str, str | None]] = [
     (
-        "employees",
-        "ux_employees_telegram_id",
+        "contacts",
+        "ux_contacts_telegram_id",
         "telegram_id",
         None,
     ),
@@ -299,7 +298,28 @@ _FTS_MIGRATIONS: list[tuple[str, str]] = [
 
 def _run_inline_migrations(engine: Engine) -> None:
     with engine.begin() as conn:
-        # Column renames first — once the column is renamed
+        # ---- table renames ---------------------------------------------------
+        # employees → contacts (post-refactor unified table).
+        # Also drop the now-unused contact_entries and
+        # user_im_bindings tables.
+        all_tables = set(
+            row[0] for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            ).fetchall()
+        )
+        if "employees" in all_tables and "contacts" not in all_tables:
+            logger.info("inline migration: renaming table employees → contacts")
+            conn.execute(text("ALTER TABLE employees RENAME TO contacts"))
+            all_tables.discard("employees")
+            all_tables.add("contacts")
+        # Drop legacy tables (no-op if they don't exist).
+        for legacy_table in ("contact_entries", "user_im_bindings"):
+            if legacy_table in all_tables:
+                logger.info("inline migration: dropping legacy table %s", legacy_table)
+                conn.execute(text(f"DROP TABLE IF EXISTS {legacy_table}"))
+                all_tables.discard(legacy_table)
+
+        # ---- column renames -------------------------------------------------
         # to its new name, the ``CREATE TABLE`` of a fresh DB
         # that already declares the new column will see
         # ``table_info`` reflect it, and the migrations

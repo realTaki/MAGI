@@ -157,7 +157,7 @@ class Tool(ABC):
         before role filtering landed. The production path
         in :func:`magi.agent.loop.handle_message` always
         passes an explicit ``caller_role`` (resolved from
-        the operator's ``Employee.role``), so an unfiltered
+        the operator's ``Contact.role``), so an unfiltered
         ``None`` call from production would itself be a bug
         — and the right fix for that bug is to wire the
         caller_role through, not to add a layer of refusal
@@ -232,9 +232,9 @@ def caller_role_denied_reason(
             "caller did not authenticate through a "
             "cookie / TG binding."
         )
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     with open_session() as db:
-        emp = db.get(Employee, emp_id)
+        emp = db.get(Contact, emp_id)
     if emp is None:
         return f"employee {emp_id!r} not found"
     if emp.role not in allowed_roles:

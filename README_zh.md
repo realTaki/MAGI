@@ -233,10 +233,9 @@ Schema 收敛成**三张表 + 一张 IM 绑定表**。"agent-centered" 框架
   `users.magi_id` FK）；未来需要 multi-MAGI 绑定，加
   `user_magi_bindings` junction。
 
-从当前 schema 迁移（砍掉 `employees` / `agents` / `agent_assignments` /
-`departments`；`contact_entries` → `users`、`user_im_bindings` →
-`magi_im_bindings`）写在 [docs/ROADMAP.md](docs/ROADMAP.md) 的
-"Post-refactor follow-ups"里。
+Schema 迁移已完成：`employees` + `contact_entries` + `user_im_bindings`
+三表合一为 `contacts`；`departments` 被 `magics`（MAGI 团队）替代。
+详见 [docs/ROADMAP.md](docs/ROADMAP.md) 的 "Post-refactor follow-ups"。
 
 文档级 vs 代码级跟进项的完整 backlog 见
 [docs/ROADMAP.md](docs/ROADMAP.md) 中"Post-refactor follow-ups"一节。

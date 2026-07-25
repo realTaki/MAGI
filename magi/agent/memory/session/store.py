@@ -14,8 +14,8 @@ identifier. Sessions are pinned to the *person*
 (the Employee row), not the channel that happened to
 create them:
 
-  - WebUI caller:  ``Employee.id`` from the admin cookie.
-  - TG caller:     ``Employee.id`` resolved from
+  - WebUI caller:  ``Contact.id`` from the admin cookie.
+  - TG caller:     ``Contact.id`` resolved from
     the dispatcher's ``lookup_im_id(uid, "telegram")``.
   - scheduled:     the employee the task was created for.
 
@@ -307,8 +307,8 @@ class SessionStore:
 
         ``uid`` is the cross-channel session key (D.23);
         callers must resolve it from the inbound transport
-        (WebUI cookie → admin's ``Employee.id``; TG inbound →
-        ``Employee.id`` from ``telegram_id``).
+        (WebUI cookie → admin's ``Contact.id``; TG inbound →
+        ``Contact.id`` from ``telegram_id``).
 
         Channel ownership (D.22):
           ``channel`` is the caller's channel tag (e.g.

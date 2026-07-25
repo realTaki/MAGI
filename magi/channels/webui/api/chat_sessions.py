@@ -18,7 +18,7 @@ The ``{session_id}`` route uses the URL as the only
 identification: the cookie's uid already pins the caller.
 The per-channel delivery address stamped on the new row
 is resolved server-side via the channel dispatcher (D.28),
-so the endpoint never reads ``Employee.telegram_id``
+so the endpoint never reads ``Contact.telegram_id``
 directly.
 """
 
@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.memory.session import (
     Session,
@@ -45,7 +45,7 @@ from magi.agent.memory.session import (
     SessionSummary,
     new_session_id,
 )
-from magi.agent.db import Employee, open_session, require_state_dir
+from magi.agent.db import Contact, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.chat_sessions")
 
@@ -146,7 +146,7 @@ class CreateSessionResponse(BaseModel):
 class UpdateSessionRequest(BaseModel):
     """Body for ``PATCH /api/chat/sessions/{session_id}``.
 
-    Mirrors :class:`magi.channels.webui.api.departments.EmployeeUpdate`
+    Mirrors :class:`magi.channels.webui.api.contacts.ContactUpdate`
     semantics (``model_fields_set``): a field's *absence*
     means "don't change". An explicit ``None`` or empty string
     means "clear the title".
@@ -211,7 +211,7 @@ def _delivery_address_for_uid(uid: int, channel: str = "tg") -> str:
 
     D.28: the channel dispatcher owns the
     ``uid → im_id`` mapping. This endpoint never reads
-    ``Employee.telegram_id`` directly — the dispatcher
+    ``Contact.telegram_id`` directly — the dispatcher
     opens its own session, so we also avoid touching
     the caller's ORM session here.
 
@@ -270,7 +270,7 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
     """
     uid = _resolve_uid(request)
     with open_session() as session:
-        emp = session.get(Employee, uid)
+        emp = session.get(Contact, uid)
         if emp is None or emp.role != "admin":
             raise MagiHTTPException(
                 status_code=401,
@@ -305,7 +305,7 @@ def create_session(
     # column (renamed from the legacy per-channel chat-id
     # column in D.28). We resolve it via the channel
     # dispatcher so this endpoint never reads
-    # ``Employee.telegram_id`` directly. The store key,
+    # ``Contact.telegram_id`` directly. The store key,
     # however, is ``uid`` — see
     # :meth:`SessionStore.create`.
     delivery_address = _delivery_address_for_uid(uid)

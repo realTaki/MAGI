@@ -11,7 +11,7 @@ actual write logic is in
 :meth:`magi.channels.telegram.adapter.TelegramAdapter.bind_im_id` /
 ``unbind_im_id`` / ``lookup_im_id`` — which writes both
 ``user_im_bindings`` (the canonical store) and the legacy
-``Employee.telegram_id`` column (read-cache, kept for the
+``Contact.telegram_id`` column (read-cache, kept for the
 bot's inbound path).
 """
 
@@ -21,9 +21,9 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.agent.db import Employee, open_session
+from magi.agent.db import Contact, open_session
 from magi.channels import dispatcher as channel_dispatcher
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["telegram"])
@@ -74,7 +74,7 @@ def bind_telegram(
         )
 
     with open_session() as session:
-        emp = session.get(Employee, payload.uid)
+        emp = session.get(Contact, payload.uid)
         if emp is None:
             raise MagiHTTPException(
                 status_code=404,
@@ -96,7 +96,7 @@ def bind_telegram(
         # on commit if we skipped this; doing it explicitly
         # gives a cleaner error and a clear log line.
         existing = session.scalar(
-            select(Employee).where(Employee.telegram_id == telegram_id_int)
+            select(Contact).where(Contact.telegram_id == telegram_id_int)
         )
         if existing is not None and existing.id != emp.id:
             existing.telegram_id = None
@@ -104,7 +104,7 @@ def bind_telegram(
 
         # Hand the actual write to the channel dispatcher
         # (D.28). The adapter writes ``user_im_bindings``
-        # AND syncs ``Employee.telegram_id`` (the read-
+        # AND syncs ``Contact.telegram_id`` (the read-
         # cache the bot's inbound handler still uses).
         channel_dispatcher.bind_im_id(emp.id, "tg", str(telegram_id_int))
         session.refresh(emp)  # pick up the legacy column write-back
@@ -151,7 +151,7 @@ def unbind_telegram(
     # adapter drops both the new and legacy rows.
     with open_session() as session:
         bound_emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == telegram_id_int)
+            select(Contact).where(Contact.telegram_id == telegram_id_int)
         )
     if bound_emp is not None:
         channel_dispatcher.unbind_im_id(bound_emp.id)
@@ -200,7 +200,7 @@ def get_telegram_binding(
     bound_name = None
     with open_session() as session:
         emp = session.scalar(
-            select(Employee).where(Employee.telegram_id == telegram_id_int)
+            select(Contact).where(Contact.telegram_id == telegram_id_int)
         )
         if emp is not None:
             bound_uid = emp.id

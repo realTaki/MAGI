@@ -18,7 +18,7 @@
        ``POST /api/onboarding/save-admin { tgids: list[str] }``
            Upserts an ``Employee`` row per delivery address with
            ``role='admin'``, a TG binding (via the channel dispatcher),
-           and no department. Display names are resolved via Telegram
+           with no team. Display names are resolved via Telegram
            ``getChat``. Idempotent.
 
 All four endpoints are read-only or write-only against the ``settings``
@@ -167,7 +167,7 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     from magi.agent.db.settings import state_get
 
     state_dir = _state_dir()
@@ -185,7 +185,7 @@ async def get_status() -> OnboardingStatus:
     try:
         with open_session() as session:
             for emp in session.scalars(
-                select(Employee).where(Employee.role == "admin")
+                select(Contact).where(Contact.role == "admin")
             ).all():
                 if emp.telegram_id is not None:
                     admins.append(str(emp.telegram_id))
@@ -275,7 +275,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     from magi.channels.webui.api.action_items import (
         _ensure_llm_credentials_item,
     )
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     from magi.agent.db.settings import state_set
 
     # 1. Stamp one nudge per current admin. Helper is
@@ -286,7 +286,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
         with open_session() as session:
             admins = list(
                 session.scalars(
-                    select(Employee).where(Employee.role == "admin")
+                    select(Contact).where(Contact.role == "admin")
                 ).all()
             )
             inserted = 0
@@ -707,8 +707,8 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
 
     Each entry becomes an :class:`Employee` row with
     ``role='admin'`` and a bound TG chat (via the channel
-    dispatcher, D.28), living under no department (the
-    "未指定部门" scope). Display name is resolved via Telegram
+    dispatcher, D.28), living under no team (the
+    "unassigned" scope). Display name is resolved via Telegram
     ``getChat`` so the dashboard can show "Alice" instead of
     "12345" without a second round-trip per row.
 
@@ -726,9 +726,9 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     No settings key is written; the Employee table is the
     single source of truth for "who's an admin". The auth
     gate (``_is_admin_or_assigned_employee`` in
-    ``departments.py``) reads exclusively from this table.
+    ``contacts.py``) reads exclusively from this table.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     from magi.channels import dispatcher as channel_dispatcher
 
     state_dir = _state_dir()
@@ -776,14 +776,14 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             # 1) Existing admin rows not in the new list → delete
             #    (these are onboarding-created shells; no
             #    business data so dropping is safe). Match by
-            #    the legacy ``Employee.telegram_id`` column
+            #    the legacy ``Contact.telegram_id`` column
             #    (the read-cache the inbound handler still
             #    uses) — admins without a TG binding can't
             #    ever have been put here by onboarding, but
             #    we tolerate them for parity with the API
             #    surface.
             existing_admins = session.scalars(
-                select(Employee).where(Employee.role == "admin")
+                select(Contact).where(Contact.role == "admin")
             ).all()
             new_id_set = set(parsed_ids)
             for old in existing_admins:
@@ -791,23 +791,22 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     session.delete(old)
 
             # 2) Each new chat → ensure an Employee row
-            #    exists with role=admin, no department. The
+            #    exists with role=admin, no team. The
             #    actual IM binding is the channel adapter's
             #    job (D.28): we call ``dispatcher.bind_im_id``
             #    AFTER the with block to write
             #    ``user_im_bindings`` (canonical) and sync
-            #    ``Employee.telegram_id`` (legacy read-cache).
+            #    ``Contact.telegram_id`` (legacy read-cache).
             # Promote existing regular employees in the rare
             # case the chat was already bound.
             for cid in parsed_ids:
                 emp = session.scalar(
-                    select(Employee).where(Employee.telegram_id == cid)
+                    select(Contact).where(Contact.telegram_id == cid)
                 )
                 if emp is None:
-                    emp = Employee(
+                    emp = Contact(
                         name=display_names[cid] or f"Admin {cid}",
                         display_name=display_names[cid],
-                        department_id=None,
                         role="admin",
                     )
                     session.add(emp)
@@ -827,7 +826,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     # D.28: bind each new admin's TG chat id through the
     # channel dispatcher. The adapter writes
     # ``user_im_bindings`` (canonical) and syncs the
-    # legacy ``Employee.telegram_id`` column for the bot's
+    # legacy ``Contact.telegram_id`` column for the bot's
     # inbound handler. Done outside the with block because
     # the dispatcher opens its own session (nested BEGIN
     # IMMEDIATE inside an outer transaction would deadlock

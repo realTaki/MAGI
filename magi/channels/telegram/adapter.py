@@ -14,11 +14,11 @@ Adapter contract — see ``magi.channels.dispatcher``:
     TG chat id as a string (the column is ``BigInteger`` but
     the dispatcher surface is string-typed).
   - ``bind_im_id(uid, im_id)`` writes a new row. The
-    Employee.telegram_id column is kept in sync (the legacy
+    Contact.telegram_id column is kept in sync (the legacy
     cache; see D.29+ for removing it once all reads go
     through the dispatcher).
   - ``unbind_im_id(uid)`` drops the binding row + clears
-    the Employee.telegram_id cache.
+    the Contact.telegram_id cache.
 
 The adapter is registered into the dispatcher at module
 import time (see ``channels/telegram/__init__.py``).
@@ -33,7 +33,6 @@ import threading
 from sqlalchemy import select
 
 from magi.agent.db import open_session
-from magi.agent.db.models_user_im_binding import UserImBinding
 from magi.channels.dispatcher import (
     ChannelAdapter,
     register_adapter,
@@ -87,53 +86,29 @@ class TelegramAdapter:
 
     def lookup_im_id(self, uid: int) -> str | None:
         with open_session() as db:
-            row = db.get(UserImBinding, (uid, "tg"))
-        if row is None:
+            contact = db.get(Contact, uid)
+        if contact is None or contact.telegram_id is None:
             return None
-        return row.im_id
+        return str(contact.telegram_id)
 
     def bind_im_id(self, uid: int, im_id: str) -> None:
         with _BIND_LOCK:
             with open_session() as db:
-                existing = db.get(UserImBinding, (uid, "tg"))
-                if existing is None:
-                    db.add(UserImBinding(
-                        uid=uid, channel="tg", im_id=im_id,
-                    ))
-                else:
-                    existing.im_id = im_id
-                # Keep Employee.telegram_id in sync — legacy
-                # read paths (and the bot's update handler)
-                # still read that column. Drop it in a future
-                # C8 cleanup once all reads go through the
-                # dispatcher.
-                emp = db.scalar(
-                    select(__import__(
-                        "magi.agent.db", fromlist=["Employee"]
-                    ).Employee).where(
-                        __import__(
-                            "magi.agent.db", fromlist=["Employee"]
-                        ).Employee.id == uid
-                    )
-                )
-                if emp is not None:
-                    try:
-                        emp.telegram_id = int(im_id)
-                    except (TypeError, ValueError):
-                        emp.telegram_id = None
+                contact = db.get(Contact, uid)
+                if contact is None:
+                    return
+                try:
+                    contact.telegram_id = int(im_id)
+                except (TypeError, ValueError):
+                    contact.telegram_id = None
                 db.commit()
 
     def unbind_im_id(self, uid: int) -> None:
         with _BIND_LOCK:
             with open_session() as db:
-                row = db.get(UserImBinding, (uid, "tg"))
-                if row is not None:
-                    db.delete(row)
-                # Sync the legacy column.
-                from magi.agent.db import Employee
-                emp = db.get(Employee, uid)
-                if emp is not None:
-                    emp.telegram_id = None
+                contact = db.get(Contact, uid)
+                if contact is not None:
+                    contact.telegram_id = None
                 db.commit()
 
 

@@ -10,18 +10,16 @@ The MAGIC tree endpoints live in :mod:`magi.channels.webui.api.magics`
 manages the per-MAGIC ``Magi`` rows.
 
 All routes require the caller to be signed in **and** an
-admin (an ``Employee`` row with ``role='admin'``); both
+admin (a ``Contact`` row with ``role='admin'``); both
 checks run via the shared :func:`admin_gate` dependency in
-:meth:`magi.channels.webui.api.employees.admin_gate` (re-
-imported here to avoid a circular import — the employees
-router exposes the gate as a module-level callable).
+:mod:`magi.channels.webui.api.auth_gates`.
 
 Notes
 -----
 
 - ``provider`` / ``api_key`` are write-only on PATCH (the
   key is never read back; only a ``last4`` is returned in
-  GET responses, mirroring :class:`Employee`).
+  GET responses, mirroring :class:`Contact`).
 - The seeded root MAGIC is guaranteed to have one
   ``Magi(magic_position='adam')`` row at boot — see
   :func:`magi.agent.db.engine._seed_default_root`.
@@ -55,20 +53,18 @@ router = APIRouter(tags=["magis"])
 
 # -- admin gate -------------------------------------------------------------
 #
-# Reuse the employees router's gate so the admin check lives
-# in one place. The employees router imports this module
-# only indirectly (via app.py router order) so there's no
-# circular import at module-load time.
+# Reuse the auth_gates module so the admin check lives in
+# one place.
 
 
 def _admin_gate(request: Request) -> str:
     """FastAPI dependency — verify the caller is an admin.
 
-    Delegates to :func:`magi.channels.webui.api.employees.admin_gate`
-    which reads the ``magi_session`` cookie (D.24 carries the
-    uid, not a chat id) and confirms ``Employee.role == 'admin'``.
+    Delegates to :func:`magi.channels.webui.api.auth_gates.admin_gate`
+    which reads the ``magi_session`` cookie and confirms
+    ``Contact.role == 'admin'``.
     """
-    from magi.channels.webui.api.employees import admin_gate
+    from magi.channels.webui.api.auth_gates import admin_gate
 
     return admin_gate(request)
 

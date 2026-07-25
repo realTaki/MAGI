@@ -8,22 +8,24 @@ were updated in lockstep).
 
 Layout:
 
-  - :mod:`.base`             — :class:`Base` declarative class
-  - :mod:`.engine`           — engine singleton + ``init_orm``
-                               + ``get_session`` / ``open_session``
-  - :mod:`.models_employee`  — :class:`Employee`
-  - :mod:`.models_magic`     — :class:`MAGIC` (a tree of MAGI
-                               teams; replaces the old
-                               ``departments`` table)
-  - :mod:`.models_magi`      — :class:`Magi` (MAGI runtime
-                               agent rows bound to a ``MAGIC``)
-  - :mod:`.models_dashboard` — :class:`ActionItem`, :class:`TokenUsage`
-  - :mod:`.migrations`       — pre-Alembic ``ALTER TABLE`` pass
-                               + FTS5 sync triggers
-  - :mod:`.local_db`         — raw-SQL ``meta`` KV table
-                               (kept hand-rolled, see module docstring)
-  - :mod:`.settings`         — raw-SQL ``settings`` KV table
-                               (the C0 system-level config)
+  - :mod:`.base`                — :class:`Base` declarative class
+  - :mod:`.engine`              — engine singleton + ``init_orm``
+                                  + ``get_session`` / ``open_session``
+  - :mod:`.models_contact`      — :class:`Contact` (the unified
+                                  person directory; replaces the old
+                                  ``employees``, ``contact_entries``,
+                                  and ``user_im_bindings`` tables)
+  - :mod:`.models_magic`        — :class:`MAGIC` (a tree of MAGI
+                                  teams / councils)
+  - :mod:`.models_magi`         — :class:`Magi` (MAGI runtime
+                                  agent rows bound to a ``MAGIC``)
+  - :mod:`.models_dashboard`    — :class:`ActionItem`, :class:`TokenUsage`
+  - :mod:`.migrations`          — pre-Alembic ``ALTER TABLE`` pass
+                                  + FTS5 sync triggers
+  - :mod:`.local_db`            — raw-SQL ``meta`` KV table
+                                  (kept hand-rolled, see module docstring)
+  - :mod:`.settings`            — raw-SQL ``settings`` KV table
+                                  (the C0 system-level config)
 
 Public surface (re-exported below): the names the ~30
 external callers need (``Base`` + every model class +
@@ -34,11 +36,11 @@ in routes + tests.
 The session-domain tables (:class:`ChatSession`,
 :class:`ChatMessage`) live in
 :mod:`magi.agent.memory.session.tables` — they're owned by
-the ``session`` package (singular: this is the
-*manager* of sessions, not a place where sessions are
-*stored* in bulk). The db package re-exports them so
-existing ``from magi.agent.db import ChatSession``
-imports keep working.
+the ``session`` package (singular: this is the *manager*
+of sessions, not a place where sessions are *stored* in
+bulk). The db package re-exports them so existing
+``from magi.agent.db import ChatSession`` imports keep
+working.
 """
 
 from __future__ import annotations
@@ -56,11 +58,10 @@ from magi.agent.db.engine import (
 )
 from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_action_item import ActionItem
-from magi.agent.db.models_employee import Employee
+from magi.agent.db.models_contact import Contact
 from magi.agent.db.models_magi import Magi
 from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_token_usage import TokenUsage
-from magi.agent.db.models_user_im_binding import UserImBinding
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
@@ -78,14 +79,12 @@ __all__ = [
     "require_state_dir",
     "init_sqlite",
     # org
-    "Employee",
+    "Contact",
     "MAGIC",
     "Magi",
     # dashboard
     "ActionItem",
     "TokenUsage",
-    # IM bindings (D.29 dispatcher contract)
-    "UserImBinding",
     # sessions (re-exported from sessions/tables.py)
     "ChatSession",
     "ChatMessage",

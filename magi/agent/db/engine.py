@@ -250,16 +250,14 @@ def init_orm(state_dir: str | None = None) -> Engine:
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.agent.db.models_employee  # noqa: F401 — registers on Base
+    import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
     import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_token_usage  # noqa: F401
-    import magi.agent.db.models_user_im_binding  # noqa: F401 — channel bindings (D.28)
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
-    import magi.agent.memory.contacts.models  # noqa: F401 — contacts table
     Base.metadata.create_all(engine)
     _run_inline_migrations(engine)
     _seed_default_root(engine)

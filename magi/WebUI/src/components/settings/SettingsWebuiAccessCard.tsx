@@ -17,7 +17,7 @@
  * ``RoleBadge`` is shared by the table only — keeping it
  * in this file (vs. a top-level ``components/RoleBadge.tsx``)
  * is intentional: it's tightly coupled to the role union
- * and the EmployeeRow shape. If a second surface needs it,
+ * and the ContactRow shape. If a second surface needs it,
  * promote at that point.
  */
 
@@ -25,7 +25,7 @@ import { useEffect, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
 import { useT } from "../../i18n/index";
-import type { EmployeeRow } from "../../pages/OrganizationTab";
+import type { ContactRow } from "../../pages/OrganizationTab";
 
 export function SettingsWebuiAccessCard(props: {
   signedInUser: { telegram_id: string; display_name: string | null };
@@ -38,7 +38,7 @@ export function SettingsWebuiAccessCard(props: {
   // table means a single GET returns the list, the new
   // employees / remove flow can delete rows directly, and
   // we don't have to keep two views in sync.
-  const [admins, setAdmins] = useState<EmployeeRow[] | null>(null);
+  const [admins, setAdmins] = useState<ContactRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addingNew, setAddingNew] = useState(false);
 
@@ -46,7 +46,7 @@ export function SettingsWebuiAccessCard(props: {
     setLoadError(null);
     try {
       const r = await fetch(
-        "/api/employees?role=admin&page=1&page_size=100",
+        "/api/contacts?role=admin&page=1&page_size=100",
         { credentials: "include" },
       );
       if (!r.ok) {
@@ -54,7 +54,7 @@ export function SettingsWebuiAccessCard(props: {
         return;
       }
       const data = (await r.json()) as {
-        items: EmployeeRow[];
+        items: ContactRow[];
         total: number;
       };
       setAdmins(data.items);
@@ -78,7 +78,7 @@ export function SettingsWebuiAccessCard(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleRemoveAdmin(emp: EmployeeRow) {
+  async function handleRemoveAdmin(emp: ContactRow) {
     if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) {
       return; // belt + suspenders
     }
@@ -209,7 +209,7 @@ export function SettingsWebuiAccessCard(props: {
   );
 }
 
-function RoleBadge(props: { role: EmployeeRow["role"] }) {
+function RoleBadge(props: { role: ContactRow["role"] }) {
   switch (props.role) {
     case "admin":
       return (

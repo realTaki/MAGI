@@ -127,7 +127,7 @@ def build_system_prompt(
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.agent.db import Employee, open_session
+    from magi.agent.db import Contact, open_session
     from magi.agent.memory.contacts.store import ContactStore
     from magi.agent.memory.contacts.prompt import format_contact_block
     from magi.agent.memory.magi.prompt import format_memory_block
@@ -163,12 +163,12 @@ def build_system_prompt(
     # "Current chatter" header.
     contact_block = ""
     try:
-        contact = ContactStore(state_dir).find_by_person(uid, uid)
+        contact = ContactStore(state_dir).get(uid)
         display_name = None
         with open_session() as db:
-            emp = db.get(Employee, uid)
-            if emp is not None:
-                display_name = emp.name
+            c = db.get(Contact, uid)
+            if c is not None:
+                display_name = c.display_name or c.name
         contact_block = format_contact_block(
             contact, display_name=display_name,
         )

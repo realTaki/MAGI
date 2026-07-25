@@ -46,7 +46,7 @@ from tzlocal import get_localzone
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.agent.db.settings import state_get, state_set
 from magi.agent.db.engine import require_state_dir
 

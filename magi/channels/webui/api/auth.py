@@ -59,7 +59,7 @@ from sqlalchemy import select
 # resolve the name at import time, before the function
 # body ever runs. Same root cause as the D.22 fix on
 # ``magi/node/__init__.py``: hoist the import.
-from magi.agent.db import Employee, open_session, require_state_dir  # noqa: E402
+from magi.agent.db import Contact, open_session, require_state_dir  # noqa: E402
 from magi.agent.db.settings import state_get  # noqa: E402
 
 logger = logging.getLogger("magi.api.auth")
@@ -91,7 +91,7 @@ def _super_admins() -> set[int]:
     employee signing in via WebUI. The legacy
     ``telegram.super_admins`` meta key (pre-D.24) stores
     raw TG chat ids; the fallback path resolves each legacy
-    chat id to its current ``Employee.id`` so old state
+    chat id to its current ``Contact.id`` so old state
     files keep working.
 
     Source of truth is the ``employees`` table (rows with
@@ -103,7 +103,7 @@ def _super_admins() -> set[int]:
     try:
         with open_session() as session:
             for emp in session.scalars(
-                select(Employee).where(Employee.role == "admin")
+                select(Contact).where(Contact.role == "admin")
             ).all():
                 result.add(emp.id)
         if result:
@@ -123,7 +123,7 @@ def _super_admins() -> set[int]:
     if not isinstance(parsed, list):
         return set()
     # Legacy entries were TG chat ids (decimal digit
-    # strings). Resolve each to the current Employee.id via
+    # strings). Resolve each to the current Contact.id via
     # the ``telegram_id`` column (the bot's inbound-handler
     # read-cache) so the cookie identity matches the new
     # schema.
@@ -138,8 +138,8 @@ def _super_admins() -> set[int]:
     try:
         with open_session() as session:
             rows = session.scalars(
-                select(Employee).where(
-                    Employee.telegram_id.in_(legacy_chat_ids)
+                select(Contact).where(
+                    Contact.telegram_id.in_(legacy_chat_ids)
                 )
             ).all()
             return {emp.id for emp in rows}
@@ -352,7 +352,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     if admin_uids:
         with open_session() as session:
             for emp in session.scalars(
-                select(Employee).where(Employee.id.in_(admin_uids))
+                select(Contact).where(Contact.id.in_(admin_uids))
             ).all():
                 if emp.telegram_id is not None:
                     admin_rows.append(
@@ -624,7 +624,7 @@ async def me(
     # with.
     try:
         with open_session() as session:
-            emp = session.get(Employee, uid)
+            emp = session.get(Contact, uid)
         if emp is None:
             return MeResponse(
                 uid=uid,

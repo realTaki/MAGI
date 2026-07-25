@@ -54,7 +54,8 @@ from sqlalchemy.orm import Session
 
 from magi.agent.memory.magi.models import MemoryEntry
 from magi.channels.webui.api.action_items import _current_admin_id
-from magi.channels.webui.api.departments import AdminGate, get_session
+from magi.channels.webui.api.auth_gates import AdminGate
+from magi.agent.db import get_session
 
 logger = logging.getLogger("magi.api.memory")
 

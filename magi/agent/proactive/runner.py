@@ -70,7 +70,7 @@ from magi.agent.memory.session import (
     new_session_id,
     utcnow_iso,
 )
-from magi.agent.db import ActionItem, ChatMessage, ChatSession, Employee, TokenUsage, open_session, require_state_dir
+from magi.agent.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 
 # D.28: the runner no longer touches the TG client API
@@ -132,7 +132,7 @@ async def execute_task(
         if task is None:
             logger.info("execute_task: task %s vanished mid-flight", task_id)
             return None
-        employee = db.get(Employee, task.uid)
+        employee = db.get(Contact, task.uid)
         if employee is None or not employee.api_key or not employee.provider:
             _finalise_run_failure(
                 db, run_id=run_id, task_id=task_id, uid=task.uid,

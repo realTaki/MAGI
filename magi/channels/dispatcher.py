@@ -40,8 +40,7 @@ from typing import Awaitable, Callable, Protocol, runtime_checkable
 from sqlalchemy import select
 from sqlalchemy.exc import MultipleResultsFound
 
-from magi.agent.db import open_session
-from magi.agent.db.models_user_im_binding import UserImBinding
+from magi.agent.db import Contact, open_session
 
 logger = logging.getLogger("magi.channels.dispatcher")
 
@@ -262,25 +261,15 @@ def bind_im_id(uid: int, channel: str, im_id: str) -> None:
 def list_bindings(uid: int) -> list[tuple[str, str]]:
     """All (channel, im_id) pairs bound to ``uid``.
 
-    Ordered by channel name. Returns ``[]`` when the user
-    has no bindings. Used by the dashboard's "your
-    accounts" view.
+    Currently returns the TG binding when ``Contact.telegram_id``
+    is set. Future channels (WeChat, Slack) will add their own
+    columns to ``Contact`` and read from there.
     """
     with open_session() as db:
-        rows = db.scalars(
-            select(UserImBinding).where(UserImBinding.uid == uid)
-        ).all()
-    # Defensive: if the same uid has duplicate (uid, channel)
-    # rows somehow (shouldn't happen — UNIQUE constraint),
-    # surface them in stable order.
-    seen: set[tuple[str, str]] = set()
-    pairs: list[tuple[str, str]] = []
-    for r in sorted(rows, key=lambda r: (r.channel, r.im_id)):
-        key = (r.channel, r.im_id)
-        if key not in seen:
-            seen.add(key)
-            pairs.append(key)
-    return pairs
+        contact = db.get(Contact, uid)
+    if contact is None or contact.telegram_id is None:
+        return []
+    return [("telegram", str(contact.telegram_id))]
 
 
 __all__ = [

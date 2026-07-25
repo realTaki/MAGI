@@ -6,9 +6,9 @@ Magi (the manager), enforced at the application layer (v0
 doesn't have a partial UNIQUE index yet — F1 adds it).
 
 All routes require the caller to be signed in **and** an
-admin (an ``Employee`` row with ``role='admin'``); the
+admin (a ``Contact`` row with ``role='admin'``); the
 ``admin_gate`` dependency is shared from
-:mod:`magi.channels.webui.api.employees`.
+:mod:`magi.channels.webui.api.auth_gates`.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ router = APIRouter(tags=["magics"])
 
 
 def _admin_gate(request: Request) -> str:
-    from magi.channels.webui.api.employees import admin_gate
+    from magi.channels.webui.api.auth_gates import admin_gate
 
     return admin_gate(request)
 

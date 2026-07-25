@@ -57,7 +57,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.webui.api.departments import AdminOrAssignedGate
+from magi.channels.webui.api.auth_gates import AdminOrAssignedGate
 from magi.agent.db.engine import require_state_dir
 from magi.agent.workspace import workspace_root
 

@@ -28,7 +28,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.agent.db.engine import require_state_dir
 from magi.channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,

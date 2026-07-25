@@ -7,8 +7,8 @@
  *   - Connectors  — placeholder; Telegram is live via the
  *                   wizard, Email / Calendar are Phase 2.
  *   - Contacts    — live (``GET /api/contacts``); people
- *                   MAGI knows about, with JOIN to
- *                   Employee + Department for display fields.
+ *                   MAGI knows about from the unified
+ *                   contacts table.
  *   - Memory      — live (``GET /api/memory``); MAGI's own
  *                   facts + ongoing work, ordered by
  *                   importance then recency (same as the
@@ -279,41 +279,29 @@ export function KnowledgeConnectorRow(props: {
 
 // -- pane: contacts ---------------------------------------------------------
 //
-// Live today. Reads ``GET /api/contacts`` (admin-gated,
-// served by ``magi.channels.webui.api.contacts``) on mount
-// and renders the admin's contact rows in a 5-column
-// table. Each row is one ``ContactEntry`` — a snapshot the
-// LLM has recorded in conversation. The JOIN to Employee +
-// Department is done server-side so the UI never has to
-// issue a second request per row.
+// Live today. Reads ``GET /api/contacts?with_notes=true``
+// (admin-gated) on mount and renders each contact row.
+// The unified ``contacts`` table replaces the old
+// ``employees`` + ``contact_entries`` tables.
 //
-// v0 deliberately omits edit / delete affordances. The LLM
-// already exposes ``add_contact`` / ``update_contact`` /
-// ``delete_contact`` tools; adding WebUI buttons for the
-// same CRUD surface would just duplicate them. A future
-// "operator can curate" surface would land here once we
-// see real demand.
+// Two modes:
+//   - "directory" (default) — contacts with LLM-recorded notes.
+//   - "all" — all contacts (admin directory, was "员工管理").
 //
-// Notes preview is clipped to 100 chars server-side (the
-// full text is in the ``title=`` tooltip) — keeps the
-// table scannable without losing detail on demand.
+// v0 shows name / role / TG / notes / last-seen. Edit/delete
+// affordances are deferred — the LLM tools already handle
+// notes CRUD, and role/provider changes go through the
+// Settings → WebUI Access card.
+//
 const NOTES_PREVIEW_CHARS = 100;
 
 function truncateNotes(s: string): string {
   if (s.length <= NOTES_PREVIEW_CHARS) return s;
-  // Don't break in the middle of a multibyte char; the
-  // … suffix makes the truncation explicit.
   return s.slice(0, NOTES_PREVIEW_CHARS).trimEnd() + "…";
 }
 
-// "2026-07-03T04:19:45Z" → "2026-07-03 04:19". The seconds
-// are noise in a table column; the date alone gives enough
-// context for "how recent is this contact?". Falls back to
-// "—" when the server didn't stamp a timestamp.
 function formatTimestamp(iso: string): string {
   if (!iso) return "—";
-  // Strip trailing "Z" so Date() parses; keep just YYYY-MM-DD
-  // + HH:MM.
   const m = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
   return m ? `${m[1]} ${m[2]}` : iso;
 }
@@ -321,14 +309,13 @@ function formatTimestamp(iso: string): string {
 export function KnowledgeContactsPane() {
   type ContactRow = {
     id: number;
-    person_id: number | null;
-    person: {
-      id: number;
-      name: string;
-      department_id: number | null;
-      department_name: string | null;
-    } | null;
+    name: string;
+    display_name: string | null;
     role: string | null;
+    provider: string | null;
+    api_key_set: boolean;
+    telegram_id: number | null;
+    separated_at: string | null;
     notes: string;
     source: string;
     last_seen_at: string;
@@ -341,50 +328,60 @@ export function KnowledgeContactsPane() {
   };
 
   const t = useT();
-  const { locale } = useI18n();
+  const [mode, setMode] = useState<"directory" | "all">("directory");
   const [contacts, setContacts] = useState<ContactRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/contacts", { credentials: "include" });
-        if (!r.ok) {
-          if (!cancelled) {
-            setLoadError(
-              `${t("settings.knowledgeContactsLoadFailed")} (${r.status})`,
-            );
-          }
-          return;
-        }
-        const body = (await r.json()) as ContactListResponse;
-        if (!cancelled) setContacts(body.items);
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(
-            err instanceof Error ? err.message : "Network error",
-          );
-        }
+  const load = async (showAll: boolean) => {
+    setLoadError(null);
+    try {
+      const qs = showAll ? "?include_separated=true&page_size=200" : "?with_notes=true";
+      const r = await fetch(`/api/contacts${qs}`, { credentials: "include" });
+      if (!r.ok) {
+        setLoadError(`${t("settings.knowledgeContactsLoadFailed")} (${r.status})`);
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      const body = (await r.json()) as ContactListResponse;
+      setContacts(body.items);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Network error");
+    }
+  };
+
+  useEffect(() => {
+    void load(mode === "all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-ink">
-          {t("settings.knowledgeContactsHeading")}
-        </h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t("settings.knowledgeContactsIntro")}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">
+            {t("settings.knowledgeContactsHeading")}
+          </h2>
+          <p className="mt-1 text-sm text-ink-soft">
+            {t("settings.knowledgeContactsIntro")}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            className={`px-3 py-1 rounded ${mode === "directory" ? "bg-ink text-paper" : "bg-ink-soft/10 text-ink-soft hover:bg-ink-soft/20"}`}
+            onClick={() => setMode("directory")}
+          >
+            {t("sidebar.knowledgeContacts")}
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-1 rounded ${mode === "all" ? "bg-ink text-paper" : "bg-ink-soft/10 text-ink-soft hover:bg-ink-soft/20"}`}
+            onClick={() => setMode("all")}
+          >
+            {t("sidebar.orgEmployees")}
+          </button>
+        </div>
       </div>
-      <ConsoleCard title={t("settings.knowledgeContactsHeading")}>
+      <ConsoleCard title={mode === "all" ? t("sidebar.orgEmployees") : t("settings.knowledgeContactsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
         {contacts === null && !loadError && (
           <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>
@@ -402,11 +399,9 @@ export function KnowledgeContactsPane() {
                   {t("settings.knowledgeContactsColumnPerson")}
                 </th>
                 <th className="py-2 pr-4 font-medium">
-                  {t("settings.knowledgeContactsColumnDepartment")}
-                </th>
-                <th className="py-2 pr-4 font-medium">
                   {t("settings.knowledgeContactsColumnRole")}
                 </th>
+                <th className="py-2 pr-4 font-medium">TG</th>
                 <th className="py-2 pr-4 font-medium">
                   {t("settings.knowledgeContactsColumnLastSeen")}
                 </th>
@@ -422,44 +417,35 @@ export function KnowledgeContactsPane() {
                   className="border-b border-sky-light/30 last:border-0 align-top"
                 >
                   <td className="py-2 pr-4 text-ink text-xs">
-                    {c.person ? (
-                      <span className="font-medium">{c.person.name}</span>
-                    ) : (
-                      // Orphan row — person_id is null because the
-                      // underlying Employee was deleted. The row stays
-                      // in the table per ContactEntry.person_id ON
-                      // DELETE SET NULL; render a placeholder so the
-                      // operator sees the history isn't lost.
-                      <span className="text-ink-soft italic">
+                    <span className="font-medium">
+                      {c.display_name || c.name}
+                    </span>
+                    {c.separated_at && (
+                      <span className="ml-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
                         {t("settings.knowledgeContactsOrphaned")}
                       </span>
                     )}
+                    <div className="text-[10px] text-ink-soft font-mono mt-1">
+                      #{c.id} · {c.source || "manual"}
+                    </div>
                   </td>
-                  <td className="py-2 pr-4 text-ink-soft text-xs">
-                    {c.person?.department_name ?? "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-ink-soft text-xs">
-                    {/* Role is a SNAPSHOT — frozen at the time the LLM
-                        recorded the row, decoupled from the live
-                        Employee.role. The localized "(then)" suffix
-                        tells the operator the value may not match
-                        Org tab. The 3-way split mirrors the
-                        settings.knowledgeContactsColumnRole header
-                        so the column reads as a unit. */}
+                  <td className="py-2 pr-4 text-xs">
                     {c.role ? (
-                      <span>
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        c.role === "admin" ? "bg-amber-100 text-amber-800" :
+                        c.role === "assigned" ? "bg-sky-100 text-sky-800" :
+                        "bg-ink-soft/10 text-ink-soft"
+                      }`}>
                         {c.role}
-                        {locale === "zh"
-                          ? "（当时）"
-                          : locale === "ja"
-                            ? "（当時）"
-                            : " (then)"}
                       </span>
                     ) : (
-                      <span className="italic">
+                      <span className="italic text-ink-soft">
                         {t("settings.knowledgeContactsNoRole")}
                       </span>
                     )}
+                  </td>
+                  <td className="py-2 pr-4 text-ink-soft text-xs font-mono">
+                    {c.telegram_id ?? "—"}
                   </td>
                   <td className="py-2 pr-4 text-ink-soft text-xs whitespace-nowrap">
                     {formatTimestamp(c.last_seen_at)}
@@ -468,7 +454,7 @@ export function KnowledgeContactsPane() {
                     className="py-2 pr-4 text-ink-soft text-xs max-w-md"
                     title={c.notes}
                   >
-                    {truncateNotes(c.notes)}
+                    {truncateNotes(c.notes) || "—"}
                   </td>
                 </tr>
               ))}

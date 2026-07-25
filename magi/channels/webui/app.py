@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.webui.api import auth, employees, magics, magis, onboarding
+from magi.channels.webui.api import auth, contacts, magics, magis, onboarding
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -107,14 +107,13 @@ def create_app() -> FastAPI:
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(onboarding.router, prefix="/api/onboarding")
-    # Employees router owns the directory / TG-binding /
-    # role surface and exposes the shared ``admin_gate``
-    # dependency for other routers (``magis``, ``tasks``,
-    # ``soul``, ...) to reuse.
-    app.include_router(employees.router, prefix="/api")
+    # Contacts router — unified contact directory + CRUD.
+    # Serves both the Knowledge pane (GET ?with_notes=true)
+    # and the admin management surface (POST/PATCH).
+    app.include_router(contacts.router, prefix="/api")
     # Magics router — the "MAGI 团队 / MAGIC (MAGI Council)"
     # surface for the MAGI team tree (replaces the old
-    # ``/api/departments`` routes, which were dropped when the
+    # ``/api/departments`` routes (dropped in the post-refactor reframe)
     # dept sub-tree concept went away in the post-refactor
     # reframe).
     app.include_router(magics.router, prefix="/api")
@@ -147,9 +146,8 @@ def create_app() -> FastAPI:
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``
     # from) are mounted first.
-    from magi.channels.webui.api import action_items, contacts, memory, prompts
+    from magi.channels.webui.api import action_items, memory, prompts
     app.include_router(action_items.router, prefix="/api")
-    app.include_router(contacts.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
     app.include_router(prompts.router, prefix="/api")
     # Soul editor — the persona text the agent loop reads as

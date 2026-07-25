@@ -3,10 +3,8 @@
 A :class:`MAGIC` row is the org container: one team of
 MAGI agents (``magis`` table, see :mod:`.models_magi`)
 coordinated by exactly one ``Magi`` with ``magic_position
-= 'adam'``. The row keeps the tree shape of the old
-``departments`` table (``parent_id`` self-FK) for now —
-the parent structure is part of the legacy org UI and
-will be reconsidered in F1.
+= 'adam'``. The tree shape is maintained via
+``parent_id`` self-FK.
 
 ``adam_id`` references ``magis.id`` (the manager MAGI for
 this team) and is nullable — a ``MAGIC`` can exist before

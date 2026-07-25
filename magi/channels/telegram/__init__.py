@@ -7,7 +7,7 @@ D.28 collapsed all TG-specific knowledge into this package:
     the incoming Update.
   - ``adapter.py`` — the dispatcher-registered channel
     adapter. Reads ``tgid`` from ``user_im_bindings`` (or the
-    legacy ``Employee.telegram_id`` cache) and pushes via
+    legacy ``Contact.telegram_id`` cache) and pushes via
     ``bot.send_message(chat_id=<tgid>, text=...)``.
   - ``config.py``  — the bot token / runtime config.
 

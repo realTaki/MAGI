@@ -41,7 +41,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.system_settings import get_system_timezone
 from magi.agent.db import TokenUsage, open_session, require_state_dir
 

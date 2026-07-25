@@ -1,4 +1,4 @@
-"""Provider factory — turn a string from ``Employee.provider``
+"""Provider factory — turn a string from ``Contact.provider``
 into a ready-to-call ``LLMProvider``.
 
 Three providers ship in v0, all on the Anthropic
@@ -76,7 +76,7 @@ def get_provider(
     Parameters
     ----------
     provider_name
-        The id stored in ``Employee.provider`` (or the
+        The id stored in ``Contact.provider`` (or the
         system default). Case-insensitive. ``"minimax"``
         alone is still accepted as a synonym for
         ``"minimax-cn"`` for backward compat — pre-v0

@@ -34,7 +34,7 @@ Columns / defaults
   (which has no native tz support).
 - ``enabled`` is an ``Integer`` 0/1 (not Boolean) for
   consistency with the rest of the schema (``chat_messages.archived``,
-  ``departments.deleted_at``).
+  ``contacts.separated_at``).
 
 Cross-table FKs
 ---------------
@@ -127,7 +127,7 @@ class Task(Base):
     #
     #   channel="telegram" → TG chat id (string of digits);
     #                        ``None`` ⇒ use the operator's
-    #                        bound ``Employee.telegram_id``.
+    #                        bound ``Contact.telegram_id``.
     #   channel="webui"    → Either the literal string
     #                        ``"new"`` (fire into a fresh chat
     #                        session per fire) or a persisted
@@ -173,7 +173,7 @@ class Task(Base):
     # first removing their tasks (mirrors the action_items
     # pattern).
     uid: Mapped[int] = mapped_column(
-        ForeignKey("employees.id", ondelete="RESTRICT"),
+        ForeignKey("contacts.id", ondelete="RESTRICT"),
         nullable=False,
     )
 
@@ -214,7 +214,7 @@ class Task(Base):
         order_by="TaskRun.started_at.desc()",
         cascade="all, delete-orphan",
     )
-    employee: Mapped["Employee"] = relationship(viewonly=True)
+    employee: Mapped["Contact"] = relationship(viewonly=True)
 
     __table_args__ = (
         # Surface name collisions early — if two operators

@@ -31,7 +31,7 @@ import logging
 from fastapi import APIRouter
 
 from magi.agent.prompts import _cache, _cache_lock, reset_cache
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 
 logger = logging.getLogger("magi.api.prompts")
 

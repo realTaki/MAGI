@@ -64,7 +64,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from magi.channels.webui.api.chat_sessions import _admin_uid, SessionStoreDep
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.db import open_session
 

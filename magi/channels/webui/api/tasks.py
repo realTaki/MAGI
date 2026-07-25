@@ -14,7 +14,7 @@ Surface
 Auth
 ----
 Same ``AdminGate`` every other Adam endpoint uses
-(``magi.channels.webui.api.departments.admin_gate``). The
+(``magi.channels.webui.api.auth_gates.admin_gate``). The
 operator must be a signed-in admin employee; the
 ``_admin_uid`` helper from
 :meth:`magi.channels.webui.api.chat_sessions` resolves
@@ -45,13 +45,14 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from magi.channels.webui.api.departments import AdminGate, get_session
+from magi.channels.webui.api.auth_gates import AdminGate
+from magi.agent.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
 from magi.agent.proactive.orm_models import Task, TaskRun
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import ChatSession, Employee, require_state_dir
+from magi.agent.db import ChatSession, Contact, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -669,7 +670,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     """Decide the owner of the new task.
 
     Resolution order:
-      1. ``X-Employee-Id`` header (explicit, may be used
+      1. ``X-Contact-Id`` header (explicit, may be used
          by future operator consoles; v0 WebUI doesn't
          expose it).
       2. Fall back to the cookie's signed-in employee
@@ -687,16 +688,16 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     cron time fires + LLM call charges the creator's
     own provider / API key).
     """
-    raw = request.headers.get("X-Employee-Id")
+    raw = request.headers.get("X-Contact-Id")
     if raw is not None and raw.strip():
         try:
             cand = int(raw)
         except ValueError as exc:
             raise MagiHTTPException(
                 status_code=400, code="validation.uid",
-                detail="X-Employee-Id must be an integer",
+                detail="X-Contact-Id must be an integer",
             ) from exc
-        emp = session.get(Employee, cand)
+        emp = session.get(Contact, cand)
         if emp is None:
             raise MagiHTTPException(
                 status_code=404, code="not_found.employee",
@@ -706,7 +707,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
         return emp.id
     # Fall back to the cookie: D.24 made ``magi_session``
     # carry the uid directly, so the lookup is
-    # ``session.get(Employee, eid)`` — no telegram_id
+    # ``session.get(Contact, eid)`` — no telegram_id
     # detour. The role gate is duplicated inline (instead
     # of reusing :func:`_admin_uid`) because
     # ``assigned`` is also welcome here, and
@@ -714,7 +715,7 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     # only.
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
-    emp = session.get(Employee, eid)
+    emp = session.get(Contact, eid)
     if emp is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",

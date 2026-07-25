@@ -118,7 +118,7 @@ class LLMProvider(ABC):
     Subclasses must set:
 
     - ``name`` (class attr or instance attr): the canonical
-      provider id as it appears in ``Employee.provider`` and
+      provider id as it appears in ``Contact.provider`` and
       the audit log. Lowercase, hyphenated.
     - ``default_model()``: the fallback model name when the
       caller doesn't pass one explicitly.

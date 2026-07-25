@@ -47,7 +47,7 @@ from magi.agent.db.base import Base
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_employee import Employee
+    from magi.agent.db.models_contact import Contact
 
 
 class ActionItem(Base):
@@ -71,7 +71,7 @@ class ActionItem(Base):
     # leaving the action item as an orphan until something
     # re-binds it.
     uid: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
         nullable=True,
     )
     # Stable identifier per row category. Free-form string;
@@ -107,7 +107,7 @@ class ActionItem(Base):
         DateTime, nullable=True
     )
     completed_by_uid: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
         nullable=True,
     )
     # Optional reason captured at complete-time; useful

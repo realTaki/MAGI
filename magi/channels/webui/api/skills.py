@@ -31,7 +31,8 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from magi.channels.webui.api.departments import AdminGate, get_session
+from magi.channels.webui.api.auth_gates import AdminGate
+from magi.agent.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.tools.skill_loader import get_skill_loader
 

@@ -28,7 +28,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.agent.tools.base import Tool
 from magi.agent.tools.registry import get_tools_grouped
 

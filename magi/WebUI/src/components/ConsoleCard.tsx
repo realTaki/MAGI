@@ -4,7 +4,7 @@
  * Connectors, the admin/employee/connector tables, etc.).
  *
  * `title` may be empty — when it is, the card collapses to just
- * the padded content area (used by the 部门/员工 tables where the
+ * the padded content area (used by the MAGI/Magis tables where the
  * title is rendered outside the card to make room for a "+ Create"
  * button on the right).
  *

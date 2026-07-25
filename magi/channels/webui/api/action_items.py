@@ -55,9 +55,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.db import ActionItem, Employee, get_session
+from magi.agent.db import ActionItem, Contact, get_session
 from magi.agent.db.base import utcnow_naive
 
 logger = logging.getLogger("magi.api.action_items")
@@ -222,7 +222,7 @@ def _current_admin_id(
     is by primary key, not by ``telegram_id`` — that
     matched the pre-D.24 cookie (which carried a TG
     chat id), but with the employee-id cookie the
-    ``Employee.telegram_id == cid_int`` query only
+    ``Contact.telegram_id == cid_int`` query only
     matches by sheer coincidence.
     """
     raw = request.cookies.get("magi_session") or ""
@@ -234,7 +234,7 @@ def _current_admin_id(
             code="chat.unknown_sender",
             detail="no admin employee row bound to this session",
         )
-    emp = session.get(Employee, uid)
+    emp = session.get(Contact, uid)
     if emp is None or emp.role != "admin":
         raise MagiHTTPException(
             status_code=401,

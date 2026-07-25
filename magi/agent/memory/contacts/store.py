@@ -1,12 +1,11 @@
-"""ContactStore — SQLite-backed CRUD for ``ContactEntry``.
+"""ContactStore — SQLite-backed CRUD for ``Contact`` notes.
 
-Same shape as :class:`magi.agent.memory.magi.store.MemoryStore`:
-stateless, safe to instantiate per-request. The
-``add`` path is upsert-style: if a row already exists
-for the (owner, person) pair, the existing row is
-patched instead of inserting a new one — keeps the
-directory's "one row per person" invariant without
-requiring the LLM to first check existence.
+The unified ``contacts`` table replaces the old
+``contact_entries`` table. Each ``Contact`` row now carries
+a ``notes`` field (free-form markdown, LLM-managed) and a
+``source`` field (who recorded it).
+
+The store is stateless, safe to instantiate per-request.
 """
 
 from __future__ import annotations
@@ -18,13 +17,9 @@ from typing import Optional
 
 from sqlalchemy import select
 
-from magi.agent.db import open_session
+from magi.agent.db import Contact, open_session
 from magi.agent.db.base import utcnow_naive
-from magi.agent.memory.contacts.models import (
-    ContactEntry,
-    SOURCE_EVE,
-)
-
+from magi.agent.db.models_contact import SOURCE_EVE
 
 logger = logging.getLogger("magi.agent.memory.contacts.store")
 
@@ -35,32 +30,30 @@ _ROLE_MAX = 64
 @dataclass(frozen=True)
 class ContactView:
     """The in-memory shape returned to callers.
-
-    Mirrors :class:`ContactEntry` (a SQLAlchemy row) but
-    is decoupled from the ORM class — the LLM-facing
-    tool result is JSON-serialised and a dataclass
-    keeps the JSON shape stable across schema changes.
+    Mirrors Contact fields relevant for the LLM tools.
     """
 
     id: int
-    owner_id: int
-    person_id: Optional[int]
-    role: Optional[str]
+    name: str
+    display_name: str | None
+    role: str | None
     notes: str
     source: str
+    telegram_id: int | None
     last_seen_at: str
     created_at: str
     updated_at: str
 
     @classmethod
-    def from_row(cls, row: ContactEntry) -> "ContactView":
+    def from_row(cls, row: Contact) -> "ContactView":
         return cls(
             id=row.id,
-            owner_id=row.owner_id,
-            person_id=row.person_id,
+            name=row.name,
+            display_name=row.display_name,
             role=row.role,
             notes=row.notes,
             source=row.source,
+            telegram_id=row.telegram_id,
             last_seen_at=row.last_seen_at.isoformat().replace("+00:00", "Z"),
             created_at=row.created_at.isoformat().replace("+00:00", "Z"),
             updated_at=row.updated_at.isoformat().replace("+00:00", "Z"),
@@ -69,11 +62,12 @@ class ContactView:
     def to_dict(self) -> dict:
         return {
             "id": self.id,
-            "owner_id": self.owner_id,
-            "person_id": self.person_id,
+            "name": self.name,
+            "display_name": self.display_name,
             "role": self.role,
             "notes": self.notes,
             "source": self.source,
+            "telegram_id": self.telegram_id,
             "last_seen_at": self.last_seen_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -82,37 +76,21 @@ class ContactView:
 
 @dataclass
 class ContactStore:
-    """Stateless CRUD wrapper for :class:`ContactEntry`.
-
-    Single ``state_dir`` arg kept for caller compat —
-    the actual path is resolved once per process via
-    the ORM engine singleton.
-    """
+    """Stateless CRUD wrapper for Contact notes."""
 
     state_dir: str | os.PathLike[str]
 
     # -- public -----------------------------------------------------------
 
-    def upsert(
+    def add_note(
         self,
-        owner_id: int,
-        person_id: int,
+        contact_id: int,
         *,
         notes: str,
         role: Optional[str] = None,
         source: str = SOURCE_EVE,
     ) -> ContactView:
-        """Insert or update the (owner, person) row.
-
-        ``upsert`` instead of ``add`` because the LLM
-        often learns new things about the same person
-        in different turns; we want a single
-        cumulative row rather than a journal.
-
-        ``last_seen_at`` is bumped to "now" on every
-        call so the per-chat prompt can prefer
-        recently-touched people.
-        """
+        """Append/add notes about a contact."""
         notes = notes.strip()[:_NOTES_MAX]
         if not notes:
             raise ValueError("notes is required")
@@ -120,101 +98,81 @@ class ContactStore:
             role = role.strip()[:_ROLE_MAX] or None
 
         with open_session() as db:
-            row = db.execute(
-                select(ContactEntry).where(
-                    ContactEntry.owner_id == owner_id,
-                    ContactEntry.person_id == person_id,
-                )
-            ).scalar_one_or_none()
-            now = utcnow_naive()
+            row = db.get(Contact, contact_id)
             if row is None:
-                row = ContactEntry(
-                    owner_id=owner_id,
-                    person_id=person_id,
-                    role=role,
+                # Create a new contact entry on the fly.
+                row = Contact(
+                    name=f"contact-{contact_id}",
+                    role=role or "contact",
                     notes=notes,
                     source=source,
-                    last_seen_at=now,
+                    last_seen_at=utcnow_naive(),
                 )
                 db.add(row)
             else:
                 row.notes = notes
-                row.role = role
-                row.last_seen_at = now
+                if role is not None:
+                    row.role = role
+                row.source = source
+                row.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
-        logger.info(
-            "contact upserted",
-            extra={
-                "contact_id": row.id,
-                "owner_id": owner_id,
-                "person_id": person_id,
-            },
-        )
+        logger.info("contact note updated", extra={"contact_id": row.id})
         return ContactView.from_row(row)
 
     def get(self, contact_id: int) -> Optional[ContactView]:
         with open_session() as db:
-            row = db.get(ContactEntry, contact_id)
+            row = db.get(Contact, contact_id)
         if row is None:
             return None
         return ContactView.from_row(row)
 
-    def find_by_person(
-        self,
-        owner_id: int,
-        person_id: int,
-    ) -> Optional[ContactView]:
-        """Return the single contact row for a person.
-
-        The (owner, person) unique index guarantees
-        at most one row, so ``scalar_one_or_none`` is
-        the right read.
-        """
+    def find_by_name(self, name: str) -> Optional[ContactView]:
+        """Find a contact by exact name match."""
         with open_session() as db:
-            row = db.execute(
-                select(ContactEntry).where(
-                    ContactEntry.owner_id == owner_id,
-                    ContactEntry.person_id == person_id,
+            row = db.scalar(
+                select(Contact).where(Contact.name == name)
+            )
+        if row is None:
+            return None
+        return ContactView.from_row(row)
+
+    def search(self, query: str, limit: int = 20) -> list[ContactView]:
+        """Simple substring search on name and notes."""
+        with open_session() as db:
+            pattern = f"%{query}%"
+            rows = db.scalars(
+                select(Contact)
+                .where(
+                    (Contact.name.ilike(pattern))
+                    | (Contact.notes.ilike(pattern))
                 )
-            ).scalar_one_or_none()
-        if row is None:
-            return None
-        return ContactView.from_row(row)
-
-    def list_for_owner(
-        self,
-        owner_id: int,
-        *,
-        limit: int = 50,
-    ) -> list[ContactView]:
-        """All contacts owned by ``owner_id``, ordered
-        by ``last_seen_at`` desc (most recent first).
-
-        Used by the WebUI directory view, not by the
-        system-prompt formatter (the formatter only
-        includes the current chatter's contact, not
-        the whole directory).
-        """
-        with open_session() as db:
-            rows = db.execute(
-                select(ContactEntry)
-                .where(ContactEntry.owner_id == owner_id)
-                .order_by(ContactEntry.last_seen_at.desc())
+                .order_by(Contact.last_seen_at.desc())
                 .limit(limit)
-            ).scalars().all()
+            ).all()
         return [ContactView.from_row(r) for r in rows]
 
-    def update(
+    def list_with_notes(self, limit: int = 50) -> list[ContactView]:
+        """All contacts that have non-empty notes."""
+        with open_session() as db:
+            rows = db.scalars(
+                select(Contact)
+                .where(Contact.notes != "")
+                .order_by(Contact.last_seen_at.desc())
+                .limit(limit)
+            ).all()
+        return [ContactView.from_row(r) for r in rows]
+
+    def update_notes(
         self,
         contact_id: int,
         *,
         notes: Optional[str] = None,
         role: Optional[str] = None,
     ) -> ContactView:
-        """Patch one or more mutable fields."""
+        """Patch notes and/or role."""
         with open_session() as db:
-            row = db.get(ContactEntry, contact_id)
+            row = db.get(Contact, contact_id)
             if row is None:
                 raise LookupError(f"contact {contact_id!r} not found")
             if notes is not None:
@@ -224,24 +182,17 @@ class ContactStore:
             row.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
-        logger.info(
-            "contact updated",
-            extra={"contact_id": contact_id},
-        )
         return ContactView.from_row(row)
 
-    def delete(self, contact_id: int) -> bool:
-        """Remove one row. ``True`` if it existed."""
+    def delete_notes(self, contact_id: int) -> bool:
+        """Clear the notes field (no longer remember)."""
         with open_session() as db:
-            row = db.get(ContactEntry, contact_id)
+            row = db.get(Contact, contact_id)
             if row is None:
                 return False
-            db.delete(row)
+            row.notes = ""
+            row.source = "manual"
             db.commit()
-        logger.info(
-            "contact deleted",
-            extra={"contact_id": contact_id},
-        )
         return True
 
 

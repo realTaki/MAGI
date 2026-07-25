@@ -13,7 +13,7 @@ client. This is a thin subclass of
 :class:`magi.agent.llm.anthropic.AnthropicProvider`
 that fixes the per-region config.
 
-A bare ``"minimax"`` in ``Employee.provider`` is
+A bare ``"minimax"`` in ``Contact.provider`` is
 treated as a synonym for ``"minimax-cn"``; the
 factory handles that.
 

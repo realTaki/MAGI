@@ -1,8 +1,8 @@
 /**
  * MagicsPane — "MAGI 团队 / MAGIC (MAGI Council)" management pane.
  *
- * Full CRUD for the MAGIC team tree (replaces the old "部门管理 /
- * Departments" section). Features:
+ * Full CRUD for the MAGIC team tree (replaces the old
+ * employee management" section). Features:
  *   - Tree view with expand/collapse (DFS flatten, depth-indented rows).
  *   - Create new MAGIC team (name + optional parent).
  *   - Inline edit: rename, reparent, assign ADAM Magi.

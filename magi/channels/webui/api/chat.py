@@ -52,7 +52,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.channels.webui.api.departments import AdminGate
+from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.loop import handle_message
 from magi.agent.memory.session import (
@@ -63,7 +63,7 @@ from magi.agent.memory.session import (
     new_session_id,
     utcnow_iso as _utcnow_iso,
 )
-from magi.agent.db import Employee, open_session, require_state_dir
+from magi.agent.db import Contact, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -117,7 +117,7 @@ def _resolve_caller_credentials(
     """
     try:
         with open_session() as session:
-            emp = session.get(Employee, uid)
+            emp = session.get(Contact, uid)
     except Exception:
         logger.exception(
             "chat: ORM lookup failed for uid %s", uid,
@@ -297,7 +297,7 @@ async def send_chat(
         # The value comes from the channel dispatcher
         # (D.28 centralised the uid → IM-id mapping in
         # the adapter registry, so this file no longer
-        # reads ``Employee.telegram_id`` directly). An
+        # reads ``Contact.telegram_id`` directly). An
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).

@@ -273,11 +273,10 @@ the agents belong to.
   v0 binds a User to at most one Magi via `users.magi_id`; for
   multi-MAGI assignments, add a `user_magi_bindings` junction later.
 
-The migration from the current schema (dropping `employees`,
-`agents`, `agent_assignments`, `departments`; renaming
-`contact_entries` → `users` and `user_im_bindings` →
-`magi_im_bindings`) is documented under "Post-refactor follow-ups"
-in [docs/ROADMAP.md](docs/ROADMAP.md).
+The migration from the old schema unified three tables into one:
+`employees` + `contact_entries` + `user_im_bindings` → `contacts`.
+The `departments` table was replaced by `magics` (MAGI teams).
+See "Post-refactor follow-ups" in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 The full backlog of doc-level vs code-level follow-ups to this
 reframing lives in [docs/ROADMAP.md](docs/ROADMAP.md) under

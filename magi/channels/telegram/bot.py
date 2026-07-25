@@ -5,7 +5,7 @@ When **anyone other than a registered admin** sends the bot a
 message (including the first ``/start``), we reply with their tgid
 and a "contact the admin" message. That way unprivileged users can
 discover their own tgid to hand to the deployer. Admin status
-is determined by ``Employee.role='admin'`` (the unified table
+is determined by ``Contact.role='admin'`` (the unified table
 written during onboarding) — there is no separate settings key for
 the admin allowlist, by design: a single source of truth for
 "who's an admin" avoids drift between ORM rows and meta blobs.
@@ -190,10 +190,10 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Handle any inbound message from any chat.
 
     Role resolution (in order):
-      1. ``Employee.telegram_id == tgid`` and role is
+      1. ``Contact.telegram_id == tgid`` and role is
          ``"admin"`` — log only for v0; C6+ adds real admin
          commands.
-      2. ``Employee.telegram_id == tgid`` and role is
+      2. ``Contact.telegram_id == tgid`` and role is
          ``"employee"`` / ``"assigned"`` — route through the
          agent loop using that employee's LLM credentials
          (falls back to system default if the employee has
@@ -205,7 +205,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     The legacy ``telegram.user.<tgid>.uid`` meta
     binding is **deprecated** — bindings now live on
-    ``Employee.telegram_id``. The read path falls back to
+    ``Contact.telegram_id``. The read path falls back to
     the meta for state files written before the unified
     table landed (C1.x), so a half-migrated state still
     works.
@@ -290,7 +290,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # 3. No employee bound — treat as GUEST.
     #
     # The tgid discovery reply goes out to anyone not
-    # bound to an Employee row; the ``Employee.telegram_id``
+    # bound to an Employee row; the ``Contact.telegram_id``
     # is the only source of truth for who's been "claimed".
     # There's nothing else to track here — historically we
     # wrote ``telegram.user.<tgid>.{role,display_name}``
@@ -313,7 +313,7 @@ def _find_employee_by_telegram_id(
 ) -> tuple[int, str, str, bool, str | None, str | None] | None:
     """Resolve a TG tgid to its bound employee.
 
-    Single ORM read on ``Employee.telegram_id``; returns
+    Single ORM read on ``Contact.telegram_id``; returns
     ``(uid, role, name, separated, provider, api_key)``
     on hit, ``None`` when no row has the tgid bound.
     The role is what the dispatcher uses to decide
@@ -330,7 +330,7 @@ def _find_employee_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.agent.db import Employee, open_session, require_state_dir
+    from magi.agent.db import Contact, open_session, require_state_dir
     from magi.agent.db.settings import state_get
 
     try:
@@ -338,7 +338,7 @@ def _find_employee_by_telegram_id(
     except (TypeError, ValueError):
         return None
 
-    def _fields(e: Employee) -> tuple[int, str, str, bool, str | None, str | None]:
+    def _fields(e: Contact) -> tuple[int, str, str, bool, str | None, str | None]:
         return (
             e.id,
             e.role,
@@ -351,7 +351,7 @@ def _find_employee_by_telegram_id(
     try:
         with open_session() as session:
             emp = session.scalar(
-                select(Employee).where(Employee.telegram_id == cid_int)
+                select(Contact).where(Contact.telegram_id == cid_int)
             )
             if emp is not None:
                 return _fields(emp)
@@ -374,7 +374,7 @@ def _find_employee_by_telegram_id(
         return None
     try:
         with open_session() as session:
-            emp = session.get(Employee, legacy_emp_id)
+            emp = session.get(Contact, legacy_emp_id)
             if emp is None:
                 return None
             return _fields(emp)

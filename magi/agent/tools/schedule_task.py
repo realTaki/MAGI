@@ -49,7 +49,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at, val
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import ChatSession, Employee, open_session
+from magi.agent.db import ChatSession, Contact, open_session
 from magi.agent.db.settings import state_get
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -324,7 +324,7 @@ class ScheduleTaskTool(Tool):
         # a mis-wired caller can't punch above its
         # authority.
         with open_session() as db:
-            emp = db.get(Employee, ctx.uid)
+            emp = db.get(Contact, ctx.uid)
             if emp is None:
                 return ToolResult(content="caller not found", is_error=True)
             if emp.role not in _ROLE_MAY_CREATE:

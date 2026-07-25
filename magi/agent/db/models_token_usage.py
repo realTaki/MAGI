@@ -61,7 +61,7 @@ from magi.agent.db.base import Base
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_employee import Employee
+    from magi.agent.db.models_contact import Contact
 
 
 class TokenUsage(Base):
@@ -71,7 +71,7 @@ class TokenUsage(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uid: Mapped[int] = mapped_column(
-        ForeignKey("employees.id", ondelete="CASCADE"),
+        ForeignKey("contacts.id", ondelete="CASCADE"),
         nullable=False,
     )
     channel: Mapped[str] = mapped_column(String(16), nullable=False)

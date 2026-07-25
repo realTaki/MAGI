@@ -74,7 +74,7 @@ def format_contact_block(
     # ``display_name ?? person_id`` — the caller passes
     # the resolved Employee display name when they have
     # it; fall back to the raw int FK only if not.
-    header_label = display_name or str(contact.person_id)
+    header_label = display_name or contact.display_name or contact.name or f"contact #{contact.id}"
     header = f"**{header_label}**"
     if contact.role:
         lines.append(f"- {header} — role: {contact.role}")

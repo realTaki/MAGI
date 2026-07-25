@@ -85,7 +85,7 @@ class MemoryEntry(Base):
     # clears their memory (the row is meaningless
     # without the owner).
     uid: Mapped[int] = mapped_column(
-        ForeignKey("employees.id", ondelete="CASCADE"),
+        ForeignKey("contacts.id", ondelete="CASCADE"),
         nullable=False,
     )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)

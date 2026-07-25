@@ -197,7 +197,7 @@ def run() -> None:
 
     _init_state(cfg)
 
-    # Initialise the SQLAlchemy ORM tables (Department, Employee,
+    # Initialise the SQLAlchemy ORM tables (Contact, MAGIC, Magi,
     # and the future C1.x additions). Idempotent — ``create_all``
     # is a no-op for existing tables, so this is safe on every
     # boot. Runs in the same ``magi.db`` file as the hand-rolled

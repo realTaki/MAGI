@@ -2,7 +2,7 @@
 
 Each row is a MAGI runtime process bound to one :class:`MAGIC`.
 ``magic_id`` references :class:`MAGIC` (in
-:mod:`magi.agent.db.models_department`) and ``magic_position``
+:mod:`magi.agent.db.models_magic`) and ``magic_position``
 is one of ``"adam"`` (the manager, exactly one per MAGIC) /
 ``"eve"`` (a worker, N per MAGIC).
 
@@ -12,8 +12,7 @@ read by :func:`magi.agent.loop.handle_message` on each call.
 
 Forward references to ``MAGIC`` resolve at mapper-config time
 via the standard ``TYPE_CHECKING`` + ``from __future__ import
-annotations`` pattern — same as :mod:`.models_employee` and
-:mod:`.models_department`.
+annotations`` pattern.
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ from magi.agent.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_department import MAGIC
+    from magi.agent.db.models_magic import MAGIC
 
 
 class Magi(Base):
