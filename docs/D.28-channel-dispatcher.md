@@ -102,7 +102,7 @@ data survives (rename is metadata-only on SQLite).
 
 ### `users.telegram_id` stays (for now)
 
-Today this column lives on the `employees` table (which the
+Today this column lives on the `contacts` table (which the
 post-refactor follow-ups rename to `users` — see F1 in
 `docs/ROADMAP.md`). It's the TG channel's binding for the
 User. Other channels will eventually get sibling columns OR
@@ -114,12 +114,12 @@ facade). Reads from outside the TG adapter drop to zero.
 ### Future: `user_im_bindings` table (D.29+)
 
 ```python
-class UserImBinding(Base):
-    __tablename__ = "user_im_bindings"
-    uid: int                  # FK -> employees.id
+class MagiImBinding(Base):
+    __tablename__ = "magi_im_bindings"
+    magi_id: int              # FK -> magis.id
     channel: str               # "telegram", "slack", ...
     im_id: str                 # the per-channel IM identifier
-    __table_args__ = (UniqueConstraint("uid", "channel"),)
+    __table_args__ = (UniqueConstraint("magi_id", "channel"),)
 ```
 
 When this lands, `users.telegram_id` becomes a denormalised
@@ -218,7 +218,7 @@ TG adapter.
 
   - `magi/channels/telegram/binding.py` (new, replacing
     `tg_bindings.py` + `onboarding.py`'s TG-binding step) —
-    owns the `Employee.telegram_id` writes and the verification
+    owns the `Contact.telegram_id` writes and the verification
     code path. Imports `bot.py`'s send helpers.
 
   - Tests under `magi/tests/unit/` that exercise TG-specific
@@ -230,7 +230,7 @@ TG adapter.
   1. **Add `chat_sessions.delivery_address`** (rename column
      via `_RENAME_COLUMN_MIGRATIONS`). All references to
      `chat_sessions.tgid` become `chat_sessions.delivery_address`.
-     `Employee.telegram_id` stays put for now.
+     `Contact.telegram_id` stays put for now.
 
   2. **Add `magi/channels/dispatcher.py`** with the `Protocol`
      interface + a registry. Initially the registry contains
@@ -244,7 +244,7 @@ TG adapter.
      `magi/channels/telegram/binding.py`. The wizard's
      `/api/onboarding/save-admin` body becomes
      `{uid, channel: "telegram", im_id}` and delegates to
-     the adapter. `Employee.telegram_id` writes are now an
+     the adapter. `Contact.telegram_id` writes are now an
      implementation detail of the adapter.
 
   4. **Replace `_resolve_tg_target` and `_tg_send_callback`**

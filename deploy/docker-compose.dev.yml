@@ -7,7 +7,8 @@
 #   - magi/WebUI/dist baked in, served by FastAPI on :42069
 #
 # This override swaps that for the dev image (Dockerfile.dev) which has
-# both Python and Node, mounts the source trees as volumes, and runs
+# both Python and Node, mounts the source tree outside the agent workspace,
+# and runs
 # `vite dev` alongside `magi` inside the same container.
 #
 # Dev workflow (zero build required for source / script edits):
@@ -31,16 +32,13 @@ services:
       dockerfile: deploy/Dockerfile.dev
     image: magi:dev
     volumes:
-      # Source mounts. The image already has the source baked in (so
-      # `magi` can run even without these mounts) — the mounts
-      # override at runtime so the dev container sees host edits.
-      # The compose file lives in deploy/ so the path is one level up.
-      #
-      # magi/ is read-only (Python doesn't need to write source).
-      # magi/WebUI/ is read-write because vite writes its config cache
-      # and HMR state under .vite/ and node_modules/.vite/.
-      - ../magi:/workspace/magi:ro
-      - ../magi/WebUI:/web
+      # Mount the complete source tree outside /workspace. The agent's
+      # file tools are rooted at /workspace, and the read-only mount means
+      # even an agent shell cannot rewrite the runtime source. WebUI is
+      # part of magi/, so it deliberately has no second source mount.
+      # The dependency volume below is the only writable child mount.
+      - ../magi:/app/magi:ro
+      - magi_web_node_modules:/app/magi/WebUI/node_modules
       # Dev entrypoint (start vite + exec magi) lives on the host so
       # we can edit it without rebuilding the image. The image
       # has no entrypoint script — if this mount is missing, the
@@ -59,7 +57,9 @@ services:
     environment:
       MAGI_RELOAD: "1"
       MAGI_PORT: "8000"
-      PYTHONPATH: /workspace
+      # Import the read-only source mount rather than the copy installed
+      # into the image during Dockerfile.dev's build.
+      PYTHONPATH: /app
       VITE_BACKEND_URL: "http://127.0.0.1:8000"
 
     # Override the image's CMD so the bind-mounted dev entrypoint
@@ -68,3 +68,8 @@ services:
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     ports:
       - "42069:42069"
+
+volumes:
+  # Initialized from the dependencies installed in Dockerfile.dev. It is
+  # writable for Vite's cache while the source bind mount stays read-only.
+  magi_web_node_modules:

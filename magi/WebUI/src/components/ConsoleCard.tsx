@@ -1,6 +1,6 @@
 /**
  * ConsoleCard — the small white card with a uppercase title used
- * across the dashboard (System, Employees, EVE nodes, Audit log,
+ * across the dashboard (System, Contacts, EVE nodes, Audit log,
  * Connectors, the admin/contact/connector tables, etc.).
  *
  * `title` may be empty — when it is, the card collapses to just

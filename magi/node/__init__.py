@@ -340,12 +340,16 @@ def _launch_webui(cfg: NodeConfig) -> None:
     )
     # Pin the reload watcher to the magi package root.
     # Without this, uvicorn falls back to ``os.getcwd()`` —
-    # which inside the dev container is ``/web`` (the Vite
-    # web root, not the Python source tree). The watcher
+    # which inside the dev container is ``/app/magi/WebUI``
+    # (the Vite web root, not the Python source tree). The watcher
     # silently no-ops against the wrong tree, so D.6 / D.7
     # edits never reached the running process and a manual
     # ``docker restart`` was needed to pick them up.
-    reload_dirs = ["/workspace/magi"] if cfg.reload else None
+    # The agent workspace is intentionally not the source tree. In dev,
+    # docker-compose mounts the read-only checkout at /app/magi so an agent
+    # shell cannot edit the code it is running. Keep the reload watcher on
+    # that source path rather than under /workspace.
+    reload_dirs = ["/app/magi"] if cfg.reload else None
 
     uvicorn.run(
         "magi.channels.webui.app:create_app",

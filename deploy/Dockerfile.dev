@@ -43,15 +43,14 @@ COPY pyproject.toml uv.lock* README.md ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
-# Install web deps. Source itself is bind-mounted at runtime; this
-# baseline just ensures the `node_modules/` is present in case the
-# user runs the image without the dev override (e.g. for a quick
-# `docker run magi:dev` smoke test).
-COPY magi/WebUI/package.json magi/WebUI/package-lock.json* /web/
-RUN cd /web && npm ci --no-audit --no-fund
+# Install web deps alongside the baked-in source. At runtime the source
+# tree is replaced by a read-only bind mount at the same path, while the
+# dev compose file overlays a writable named volume at
+# `/app/magi/WebUI/node_modules` so Vite can keep its cache there.
+RUN cd /app/magi/WebUI && npm ci --no-audit --no-fund
 
-# /workspace mirrors the prod image's working dir so source paths
-# (magi/, magi/WebUI/) line up regardless of how the user mounts them.
+# /workspace remains the agent's persistent workspace. Runtime source is
+# deliberately kept under /app/magi instead, outside the agent workspace.
 WORKDIR /workspace
 RUN mkdir -p /workspace/memories
 

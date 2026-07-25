@@ -27,7 +27,7 @@ import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconActionItems,
   IconConnectors,
-  IconEmployees,
+  IconContacts,
   IconReminders,
   IconScheduledTasks,
   IconSkills,
@@ -57,7 +57,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
-  { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconEmployees /> },
+  { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
 

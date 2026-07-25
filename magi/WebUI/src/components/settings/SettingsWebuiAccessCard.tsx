@@ -1,12 +1,13 @@
 /**
  * SettingsWebuiAccessCard + AddAdminForm + RoleBadge.
  *
- * WebUI Access = ``employees WHERE role=admin``. The
- * unified table means a single ``GET /api/employees`` returns
- * the list, and admins can be removed by deleting the
- * associated Contact row (which cascades through the rest
- * of the system because nothing else refers to that row
- * by primary key — the audit log keeps references alive).
+ * WebUI Access = ``contacts WHERE role='admin'``. The
+ * unified table means a single ``GET /api/contacts?role=admin``
+ * returns the list, and admins can be removed by deleting
+ * the associated Contact row (which cascades through the
+ * rest of the system because nothing else refers to that
+ * row by primary key — the audit log keeps references
+ * alive).
  *
  * ``AddAdminForm`` mirrors the wizard's Step 3 row but as a
  * single self-contained subcomponent (no add-another-row
@@ -35,9 +36,9 @@ export function SettingsWebuiAccessCard(props: {
   ) => void;
 }) {
   const t = useT();
-  // WebUI Access = employees WHERE role=admin. The unified
+  // WebUI Access = contacts WHERE role=admin. The unified
   // table means a single GET returns the list, the new
-  // employees / remove flow can delete rows directly, and
+  // add / remove flow can delete rows directly, and
   // we don't have to keep two views in sync.
   const [admins, setAdmins] = useState<ContactRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export function SettingsWebuiAccessCard(props: {
     }
     if (
       !confirm(
-        `确定移除管理员「${emp.name}」？这会从 employees 表删掉这一行。`,
+        `确定移除管理员「${emp.name}」?这会从 contacts 表删掉这一行。`,
       )
     ) {
       return;
@@ -219,7 +220,7 @@ function RoleBadge(props: { role: ContactRow["role"] }) {
     case "contact":
       return (
         <span className="text-xs text-ink-soft bg-white border border-sky-light/40 rounded px-1.5 py-0.5">
-          employee
+          contact
         </span>
       );
     case "guest":

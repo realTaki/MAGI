@@ -121,7 +121,7 @@ function Step3View(props: {
         <dt className="text-ink-soft">Bot</dt>
         <dd className="font-mono text-ink">@{props.data.bot.username}</dd>
 
-        <dt className="text-ink-soft">{t("sidebar.orgEmployees")}</dt>
+        <dt className="text-ink-soft">{t("sidebar.orgContacts")}</dt>
         <dd className="text-sky-deep">
           {props.data.superAdmins.length} (
           {props.data.superAdmins

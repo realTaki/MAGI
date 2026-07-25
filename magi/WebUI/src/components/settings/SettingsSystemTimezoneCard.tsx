@@ -5,7 +5,9 @@
  * "natural month" bucket boundaries. Read by the
  * token-bill aggregation endpoint on every call, so a
  * Save here is immediately reflected in the next
- * ``GET /api/employees/{id}/token-usage``.
+ * ``GET /api/contacts/{uid}/token-usage`` (the per-contact
+ * token-usage aggregation; tz affects how the "natural
+ * week / month" boundaries are placed).
  *
  * The dropdown lists the full IANA tz database
  * (``zoneinfo.available_timezones()``) sorted

@@ -9,7 +9,7 @@
 # docker-compose.dev.yml; uvicorn picks it up via NodeConfig.
 
 set -eu
-cd /web
+cd /app/magi/WebUI
 npm run dev -- --host 0.0.0.0 --port 42069 &
 VITE_PID=$!
 trap "kill $VITE_PID 2>/dev/null || true" EXIT INT TERM

@@ -30,7 +30,7 @@ file.
 | C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-User LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
 | C4 — per-MAGI persona + memory UI | **~55%** | `action_items.source="eve"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-MAGI SOUL.md, memory management UI still pending |
 | C5 — more channels (Email + Calendar) | **0%** | Not started |
-| D.28 + D.29 — channel dispatcher + ``user_im_bindings`` table | **Done** | Per-channel IM ids (currently TG chat id) live in a single ``user_im_bindings(uid, channel, im_id)`` table; domain code (agent tools, runner, webui api auth) talks only to ``magi.channels.dispatcher`` and never reads the per-channel IM id directly. Each channel implements a :class:`ChannelAdapter` Protocol; adding a new channel = writing one adapter + registering it. The legacy ``Employee.telegram_id`` column (the table is renamed to ``users`` in the post-refactor follow-ups) is kept in sync as a read-cache for the bot's inbound path. See ``docs/D.28-channel-dispatcher.md``. |
+| D.28 + D.29 — channel dispatcher + ``magi_im_bindings`` table | **Done** | Per-channel IM ids (currently TG chat id) live in a single ``magi_im_bindings(magi_id, channel, im_id)`` table; domain code (agent tools, runner, webui api auth) talks only to ``magi.channels.dispatcher`` and never reads the per-channel IM id directly. Each channel implements a :class:`ChannelAdapter` Protocol; adding a new channel = writing one adapter + registering it. The legacy ``Contact.telegram_id`` column is kept in sync as a read-cache for the bot's inbound path. See ``docs/D.28-channel-dispatcher.md``. |
 | C6 — cross-MAGI + cross-User | **~5%** | Role enum in place; `/api/eves/{id}/dispatch`, cross-User query still pending |
 | C7 — WebSocket stream console | **0%** | Not started |
 | C8 — hardening (encryption, degraded mode, audit outbox) | **0%** | Not started |
@@ -127,7 +127,7 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| SQLAlchemy `Base` + per-table ORM models (Users / departments / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — User rows live in the `employees` table today; the post-refactor follow-up renames it to `users` |
+| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIC / Magi / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIC` + `Magi` carry the org tree |
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
 | Inline `ALTER TABLE` pass for columns the SQLAlchemy `create_all` can't add | **Done** | `magi/agent/db/migrations.py` |
 | FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | Same file; trigram tokenizer for CJK-friendly substring search |
@@ -139,9 +139,9 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| `api/users` router: full CRUD + assign to dept | **Done** | `magi/channels/webui/api/users.py` (formerly `employees.py`; see post-refactor follow-ups) |
-| User lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_employee.py` docstring |
-| `api/departments` manager picker v2 | **Later** | Current C1.1 picker is minimal; full picker scheduled in C1.2 + C1.3 |
+| `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/webui/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
+| Contact lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_contact.py` docstring |
+| `api/magics` + `api/magis` for MAGIC + Magi rows | **Done** | `magi/channels/webui/api/magics.py` + `magis.py`; replaces the old `api/departments` |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
@@ -244,8 +244,8 @@ that needs to be visible across them.
 
 | Item | Status | Notes |
 |---|---|---|
-| `User.role` = `"worker"` / `"guest"` semantics (not just `"operator"` / `"assigned"`) | **Done** | `models_user.py` (formerly `models_employee.py`) already supports all four; C1.1 writes `operator` / `assigned`, C6 fills the rest |
-| Eve-of-another-MAGI bot refusal ("you can talk to your own EVE, not mine") | **Later** | `models_user.py: "C6+ (cross-MAGI access, public visitors)"` |
+| `Contact.role` = `"user"` / `"guest"` semantics (not just `"admin"` / `"assigned"`) | **Done** | `models_contact.py` (formerly `models_employee.py`) already supports all four; C1.1 writes `admin` / `assigned`, C6 fills the rest |
+| Eve-of-another-MAGI bot refusal ("you can talk to your own EVE, not mine") | **Later** | `models_contact.py: "C6+ (cross-MAGI access, public visitors)"` |
 | `api/eves/{id}/dispatch`, `api/eves/{id}/recall` | **Next** | `app.py: "C6 — /api/eves/{id}/dispatch, /api/eves/{id}/recall"` |
 | Cross-User query / summary (operator-side, in Adam) | **Later** | Per the product spec: "汇总 / 跨 User 查询 in Adam, not EVE → EVE" |
 | Per-User LLM key per assigned User enforced everywhere | **Next** | C3 wires the dispatcher; C6 closes the loop on cross-User queries |
@@ -522,7 +522,7 @@ class MagiImBinding(Base):
 | `user_im_bindings` | **`magi_im_bindings`** | binding is on the MAGI side, not the user side |
 | `user_im_bindings.uid` | `magi_im_bindings.magi_id` | same |
 | `ToolContext.uid` | `ToolContext.magi_id` | runtime cookie identity = `magi_id` |
-| `magi_session` cookie value | unchanged (it's just an int) | value is `magi_id` now; old cookies carrying `employee.id` need re-login |
+| `magi_session` cookie value | unchanged (it's just an int) | value is `magi_id` now; old cookies carrying `contact.id` need re-login |
 | `MAGI_NODE_ROLE=adam/eve` | `MAGI_NODE_ROLE=adam/eve` (kept) | docstring updated to "position selector" — env name stays for back-compat |
 
 #### What changes code-wise

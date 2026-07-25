@@ -169,8 +169,9 @@ def create_app() -> FastAPI:
     # ``/api/contacts/…/token-usage``.
     from magi.channels.webui.api import system_settings
     app.include_router(system_settings.router, prefix="/api")
-    # Token metrics — per-contact usage aggregation. One
-    # endpoint, three periods (week / month / total).
+    # Contact token metrics — token-usage aggregation. One
+    # endpoint per contact, three periods (week / month /
+    # total) in one response.
     from magi.channels.webui.api import token_metrics
     app.include_router(token_metrics.router, prefix="/api")
     # Scheduled tasks — operator-facing CRUD + manual

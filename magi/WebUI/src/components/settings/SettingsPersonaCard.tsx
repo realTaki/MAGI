@@ -1,7 +1,7 @@
 /**
  * SettingsPersonaCard — edit the workspace ``SOUL.md``.
  *
- * Single company-wide persona for v0 (per-employee
+ * Single workspace-wide persona for v0 (per-MAGI
  * personas land in C4). One textarea: the operator sees
  * the on-disk content and edits in place; ``Save`` commits,
  * ``Reset`` restores the bundled default. The

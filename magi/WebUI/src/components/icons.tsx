@@ -142,7 +142,7 @@ export const IconMagis = ({ className }: IconProps) => (
   </Icon>
 );
 
-export const IconEmployees = ({ className }: IconProps) => (
+export const IconContacts = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="9" cy="8" r="3.5" />
     <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />

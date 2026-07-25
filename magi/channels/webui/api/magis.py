@@ -94,7 +94,7 @@ class MagiBrief(BaseModel):
     a "team" column without an extra round-trip per row."""
 
     id: int
-    name: str
+    name: str | None = None
     magic_position: str | None = None
 
 
@@ -181,11 +181,29 @@ def create_magi(
                 f"Valid: {', '.join(_MAGI_POSITIONS)}"
             ),
         )
-    if session.get(MAGIC, payload.magic_id) is None:
+    magic = session.get(MAGIC, payload.magic_id)
+    if magic is None:
         raise MagiHTTPException(
             status_code=400,
             code="validation.magic_id_not_found",
             detail=f"magic_id {payload.magic_id} not found",
+        )
+
+    # Adam invariant: a MAGIC can have at most one Magi with
+    # ``magic_position='adam'``. Refuse with 409 rather than
+    # silently overwriting an existing binding — the operator
+    # should PATCH the existing adam's MAGIC via
+    # ``/api/magics/{id}`` (which validates the magic_position
+    # target), or unbind the old adam first.
+    if payload.magic_position == "adam" and magic.adam_id is not None:
+        raise MagiHTTPException(
+            status_code=409,
+            code="validation.adam_already_assigned",
+            detail=(
+                f"MAGIC {payload.magic_id} already has an adam "
+                f"(magi id={magic.adam_id}); unbind the existing "
+                f"adam or use PATCH /api/magics to reassign"
+            ),
         )
 
     magi = Magi(
@@ -196,17 +214,10 @@ def create_magi(
         api_key=payload.api_key,
     )
     session.add(magi)
-    # If this is an Adam, bind it to the MAGIC row so the
-    # MagicsPane renders the ADAM column correctly.
     if payload.magic_position == "adam":
-        magic = session.get(MAGIC, payload.magic_id)
-        if magic is not None:
-            magic.adam_id = None  # flushed below; populated after magi.id is known
-    session.flush()
-    if payload.magic_position == "adam":
-        magic = session.get(MAGIC, payload.magic_id)
-        if magic is not None:
-            magic.adam_id = magi.id
+        # Bind the new adam to the MAGIC row. The 409 above
+        # guarantees ``magic.adam_id`` is currently NULL.
+        magic.adam_id = magi.id
     session.commit()
     session.refresh(magi)
     return _serialize(magi)

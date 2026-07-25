@@ -172,12 +172,13 @@ def _seed_default_root(engine: Engine) -> None:
     """Ensure the workspace has a root MAGIC + a default adam Magi.
 
     On first boot, if no ``MAGIC`` rows exist, seed one
-    top-level ``MAGIC.root`` row (the council anchor). If the
-    deployer later deletes it, this will recreate it on the
-    next boot — which is the right trade-off for C0 (we don't
-    have a "root" concept enforced by the schema yet). Also
-    seeds one ``Magi`` row with ``magic_position='adam'`` for
-    the seeded MAGIC so the "智能体管理" page is never empty on
+    top-level row named ``_DEFAULT_ROOT_MAGIC_NAME``
+    ("Genesis") as the council anchor. If the deployer later
+    deletes it, this will recreate it on the next boot —
+    which is the right trade-off for C0 (we don't have a
+    "root" concept enforced by the schema yet). Also seeds
+    one ``Magi`` row with ``magic_position='adam'`` for the
+    seeded MAGIC so the "智能体管理" page is never empty on
     first boot.
     """
     # Local imports — the model modules depend on ``Base`` being

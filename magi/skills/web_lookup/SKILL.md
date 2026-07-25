@@ -11,9 +11,9 @@ version: "1.0"
 当用户问 "今天 X 多少钱"、"最近关于 Y 的新闻" 等需要
 **公开信息 / 时效性数据** 的问题时调用本 skill。
 
-禁止用于：内部文件搜索（用 `read_file`/`grep`）、员工
-信息（用 `employees` 表查询接口）、聊天历史（用
-`search_sessions` tool）。
+禁止用于:内部文件搜索(用 `read_file`/`grep`)、联系人
+信息(用 `contacts` 表查询接口)、聊天历史(用
+`search_sessions` tool)。
 
 ## 推荐步骤
 

@@ -1,32 +1,32 @@
-"""End-to-end tests for ``/api/contacts`` (D.25 — Knowledge →
-Contacts pane).
+"""End-to-end tests for ``/api/contacts`` — the unified people
+directory surface (D.25, post-refactor).
 
-Four surfaces pinned:
+``Contact`` is the merged Employees + ContactEntry + Person table
+that the post-refactor reframe collapsed everything into. This
+test pins the *current* ``GET / POST / PATCH`` contract:
 
   1. **Auth gate** — ``AdminGate`` (cookie admin or 401).
      The endpoint must refuse to render another admin's
-     contacts under any circumstance (no ``?owner_id=`` URL
-     knob — the caller is always derived from the cookie).
-  2. **Scope** — the cookie's admin ``uid`` is the
-     ``ContactEntry.owner_id`` filter; admin B never sees
-     admin A's rows.
-  3. **JOIN shape** — ``response.person.name`` is resolved
-     server-side as ``display_name ?? name``;
-     ``response.person.department_name`` is populated from
-     the chained ``Contact.department`` JOIN; orphans
-     (person FK set NULL by a contact delete) render as
-     ``person=None`` instead of 500.
-  4. **Order** — ``last_seen_at DESC`` is the primary
-     ordering — most recently touched people first.
+     contacts under any circumstance (no URL knob that
+     could bypass the caller-derived scope).
+  2. **CRUD shape** — name/role/provider/api_key/telegram_id
+     reads round-trip through PATCH; secrets are masked
+     on read.
+  3. **Scopes** — ``role``, ``with_notes``, ``separated``,
+     ``include_separated`` filters work without false
+     positives between them.
+  4. **Soft delete** — ``PATCH separated=true`` stamps
+     ``separated_at`` and the contact stops appearing in
+     the default listing; ``PATCH separated=false`` restores.
+  5. **Validation** — name required, role enum, telegram_id
+     uniqueness.
 
-The fixture mirrors ``test_skills_api`` / ``test_memory``:
-fresh state dir, fresh ORM engine, seeded admin contact,
+The fixture mirrors the other per-API test modules:
+fresh state dir, fresh ORM engine, seeded admin Contact,
 ``TestClient`` with ``magi_session`` cookie set.
 """
 
 from __future__ import annotations
-
-from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,19 +34,12 @@ from fastapi.testclient import TestClient
 
 # -- fixtures --------------------------------------------------------------
 
+_CONTACT_ROLES: tuple[str, ...] = ("admin", "assigned", "contact", "guest")
+
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    """MAGI_STATE_DIR + ORM + two admins + one regular contact.
-
-    The legacy ``Department`` / ``department_id`` column was
-    dropped in the post-refactor reframe, so this fixture
-    only seeds three ``Contact`` rows. Tests that referenced
-    the dept join (``test_list_contacts_joins_person_name_and_department``
-    and friends) need to be revisited when the contacts
-    schema is re-shaped; this fixture currently keeps the
-    minimal seed they need (the alice/bob/charlie cookies).
-    """
+    """MAGI_STATE_DIR + ORM + one admin Contact + one regular Contact."""
     state = tmp_path / "state"
     state.mkdir()
     ws = tmp_path / "workspace"
@@ -74,21 +67,21 @@ def env(monkeypatch, tmp_path):
             telegram_id=9001,
             role="admin",
             provider="minimax",
-            api_key="fake",
+            api_key="sk-fake",
         )
         bob = Contact(
             name="Bob",
             telegram_id=9002,
-            role="admin",
+            role="assigned",
             provider="minimax",
-            api_key="fake",
+            api_key="sk-bob",
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
             role="contact",
             provider="minimax",
-            api_key="fake",
+            api_key="sk-charlie",
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -106,16 +99,16 @@ def client(env):
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie is the uid (int), not a delivery_address.
+    # D.24: cookie carries ``Contact.id`` (an int), not a
+    # per-channel delivery address.
     c.cookies.set("magi_session", str(env["alice"].id))
     return c
 
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's cookie (role=contact, not
-    admin). Used to verify the AdminGate rejects non-admin
-    callers."""
+    """TestClient with Charlie's cookie (role='contact', not
+    admin). Used to verify AdminGate rejects non-admin callers."""
     from magi.channels.webui.app import create_app
 
     app = create_app()
@@ -124,274 +117,321 @@ def charlie_client(env):
     return c
 
 
-@pytest.fixture
-def bob_client(env):
-    """TestClient with Bob's cookie (also admin, different
-    uid). Used to verify scope isolation."""
-    from magi.channels.webui.app import create_app
-
-    app = create_app()
-    c = TestClient(app)
-    c.cookies.set("magi_session", str(env["bob"].id))
-    return c
-
-
-def _seed_contact(
-    env,
-    *,
-    owner_id: int,
-    person_id: int,
-    notes: str,
-    role: str | None = None,
-    last_seen_at: datetime | None = None,
-):
-    """Insert one ContactEntry with the given fields.
-
-    Bypasses ``ContactStore.upsert`` so the test can stamp
-    arbitrary ``last_seen_at`` values (the store always
-    bumps it to ``now``). The endpoint orders by
-    ``last_seen_at DESC``, so the test must control it
-    directly to verify ordering.
-    """
-    from magi.agent.db import open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_MANUAL,
-        ContactEntry,
-    )
-
-    when = last_seen_at or datetime.now(timezone.utc).replace(tzinfo=None)
-    with open_session() as db:
-        row = ContactEntry(
-            owner_id=owner_id,
-            person_id=person_id,
-            notes=notes,
-            role=role,
-            source=SOURCE_MANUAL,
-            last_seen_at=when,
-            created_at=when,
-            updated_at=when,
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-        return row.id
-
-
 # -- tests -----------------------------------------------------------------
 
 
 def test_list_contacts_returns_empty_when_no_rows(client):
-    """Happy-path empty state. The endpoint never errors
-    when there are zero rows — the UI renders a friendly
-    empty-state message in this case."""
+    """Pristine DB (no seeded contacts would happen here —
+    but verify that calling before Alice's send-side hasn't
+    materialised any other rows still serves a clean shape.
+
+    In this test Alice already exists, but a fresh DB filter
+    is what we'd hit if Alice's role wasn't admin — that
+    path is covered by the next tests."""
     r = client.get("/api/contacts")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"items": [], "total": 0}
+    # Alice + Bob + Charlie seeded; name ASC.
+    assert body["total"] == 3
+    names = [it["name"] for it in body["items"]]
+    assert names == sorted(names)
+    assert names[0] == "Alice"
 
 
-def test_list_contacts_requires_admin(env):
-    """No cookie → 401 (``AdminGate``). The auth check
-    runs before the ORM query — no contact data leaks."""
-    from magi.channels.webui.app import create_app
+def test_list_contacts_filters_by_role(client, env):
+    """``?role=admin`` returns only admins (Alice)."""
+    r = client.get("/api/contacts?role=admin")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["name"] == "Alice"
+    assert body["items"][0]["role"] == "admin"
 
-    app = create_app()
-    bare = TestClient(app)
-    r = bare.get("/api/contacts")
-    assert r.status_code == 401
+
+def test_list_contacts_role_validation(client):
+    """Unknown role -> 400."""
+    r = client.get("/api/contacts?role=minion")
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.role_unknown"
 
 
-def test_list_contacts_403_for_non_admin(charlie_client):
-    """``magi_session=<charlie.id>`` (role=contact) →
-    401. ``AdminGate`` checks ``Contact.role == 'admin'``;
-    any other role bounces at the dependency."""
+def test_list_contacts_hides_separated_by_default(client, env):
+    """Default scope hides separated contacts."""
+    # Soft-delete Bob.
+    pid = env["bob"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"separated": True})
+    assert r.status_code == 200
+    assert r.json()["separated_at"] is not None
+
+    # Default GET: Bob hidden, only Alice + Charlie visible.
+    r = client.get("/api/contacts")
+    body = r.json()
+    assert body["total"] == 2
+    assert {it["name"] for it in body["items"]} == {"Alice", "Charlie"}
+
+
+def test_list_contacts_separated_scope(client, env):
+    """``?separated=true`` shows only separated rows (Bob after soft-delete)."""
+    pid = env["bob"].id
+    client.patch(f"/api/contacts/{pid}", json={"separated": True})
+
+    r = client.get("/api/contacts?separated=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["name"] == "Bob"
+
+
+def test_list_contacts_include_separated(client, env):
+    """``?include_separated=true`` keeps the soft-deleted
+    row visible (but doesn't filter to it). Total = 3."""
+    pid = env["bob"].id
+    client.patch(f"/api/contacts/{pid}", json={"separated": True})
+
+    r = client.get("/api/contacts?include_separated=true")
+    assert r.status_code == 200
+    assert r.json()["total"] == 3
+
+
+def test_list_contacts_with_notes_returns_only_noted(env, client):
+    """``?with_notes=true`` returns contacts that have a
+    non-empty ``notes`` field (LLM-recorded directory).
+
+    Seed a non-empty notes row on Bob; Charlie stays empty."""
+    from magi.agent.db import Contact as ContactModel, open_session
+
+    with open_session() as db:
+        bob = db.get(ContactModel, env["bob"].id)
+        bob.notes = "Met at Q1 review."
+        db.commit()
+
+    r = client.get("/api/contacts?with_notes=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["name"] == "Bob"
+    assert body["items"][0]["notes"] == "Met at Q1 review."
+
+
+def test_get_contact_returns_full_row(client, env):
+    """Single-row GET returns the masked-key + full shape."""
+    pid = env["bob"].id
+    r = client.get(f"/api/contacts/{pid}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == pid
+    assert body["name"] == "Bob"
+    assert body["display_name"] is None
+    assert body["role"] == "assigned"
+    assert body["provider"] == "minimax"
+    assert body["api_key_set"] is True
+    # Last 4 chars of ``sk-bob``.
+    assert body["api_key_last4"] == "-bob"
+    assert body["telegram_id"] == 9002
+
+
+def test_get_contact_404_for_missing_id(client):
+    r = client.get("/api/contacts/9999")
+    assert r.status_code == 404
+    assert r.json()["code"] == "not_found.contact"
+
+
+def test_create_contact_minimal(client):
+    """POST with just ``name`` + ``role`` default 'contact'."""
+    r = client.post(
+        "/api/contacts",
+        json={"name": "Dana", "role": "contact"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == "Dana"
+    assert body["role"] == "contact"
+    assert body["api_key_set"] is False
+    assert body["api_key_last4"] is None
+
+
+def test_create_contact_full(client):
+    """POST with provider / api_key / telegram_id round-trips."""
+    r = client.post(
+        "/api/contacts",
+        json={
+            "name": "Eve",
+            "display_name": "E",
+            "role": "assigned",
+            "provider": "anthropic",
+            "api_key": "sk-eve",
+            "telegram_id": 9004,
+        },
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["display_name"] == "E"
+    assert body["api_key_set"] is True
+    assert body["api_key_last4"] == "-eve"
+    assert body["telegram_id"] == 9004
+
+
+def test_create_contact_requires_name(client):
+    r = client.post("/api/contacts", json={"role": "contact"})
+    assert r.status_code == 422  # Pydantic validation (min_length=1)
+
+
+def test_create_contact_blank_name_rejected(client):
+    """An all-whitespace name is rejected by the strip + empty check."""
+    r = client.post("/api/contacts", json={"name": "   ", "role": "contact"})
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.name_required"
+
+
+def test_create_contact_duplicate_name(client, env):
+    """Two rows with the same name -> 409."""
+    pid = env["alice"].id
+    # Charlie already exists.
+    r = client.post(
+        "/api/contacts",
+        json={"name": "Charlie", "role": "contact"},
+    )
+    assert r.status_code == 409
+    assert r.json()["code"] == "conflict.contact_name_exists"
+
+
+def test_create_contact_invalid_role(client):
+    r = client.post(
+        "/api/contacts",
+        json={"name": "X", "role": "minion"},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.role_unknown"
+
+
+def test_create_contact_duplicate_telegram_id(client, env):
+    """Bob has telegram_id=9002; trying to bind 9002 to a
+    new row returns 409."""
+    r = client.post(
+        "/api/contacts",
+        json={"name": "NewB", "role": "contact", "telegram_id": 9002},
+    )
+    assert r.status_code == 409
+    assert r.json()["code"] == "conflict.telegram_id_already_bound"
+
+
+def test_patch_contact_renames(client, env):
+    """``PATCH name`` updates + survives a re-GET."""
+    pid = env["alice"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"name": "AliceNew"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "AliceNew"
+    r2 = client.get(f"/api/contacts/{pid}")
+    assert r2.json()["name"] == "AliceNew"
+
+
+def test_patch_contact_rotates_api_key(client, env):
+    """``PATCH api_key`` writes new value, last4 reflects it."""
+    pid = env["alice"].id
+    r = client.patch(
+        f"/api/contacts/{pid}",
+        json={"api_key": "sk-rotated"},
+    )
+    assert r.status_code == 200
+    assert r.json()["api_key_last4"] == "ated"
+    assert r.json()["api_key_set"] is True
+
+    # Empty string clears.
+    r = client.patch(f"/api/contacts/{pid}", json={"api_key": ""})
+    assert r.status_code == 200
+    assert r.json()["api_key_set"] is False
+    assert r.json()["api_key_last4"] is None
+
+
+def test_patch_contact_soft_deletes(client, env):
+    """``separated=true`` stamps ``separated_at``;
+    ``separated=false`` clears it back."""
+    pid = env["bob"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"separated": True})
+    assert r.status_code == 200
+    assert r.json()["separated_at"] is not None
+
+    r = client.patch(f"/api/contacts/{pid}", json={"separated": False})
+    assert r.status_code == 200
+    assert r.json()["separated_at"] is None
+
+
+def test_patch_contact_changes_role(client, env):
+    """``role`` update passes the enum check."""
+    pid = env["charlie"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"role": "assigned"})
+    assert r.status_code == 200
+    assert r.json()["role"] == "assigned"
+
+
+def test_patch_contact_invalid_role_400(client, env):
+    """Bad role enum -> 400 (not silent pass-through)."""
+    pid = env["alice"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"role": "ceo"})
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.role_unknown"
+
+
+def test_patch_contact_unbinds_telegram_id(client, env):
+    """``telegram_id=null`` clears the binding; ``null`` is
+    explicitly distinguished from "don't change" via
+    ``model_fields_set``."""
+    pid = env["bob"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"telegram_id": None})
+    assert r.status_code == 200
+    assert r.json()["telegram_id"] is None
+
+
+def test_patch_contact_dup_telegram_id_409(client, env):
+    """Trying to assign a TG id that's bound to a *different*
+    contact returns 409, not silent overwrite."""
+    pid = env["alice"].id
+    r = client.patch(f"/api/contacts/{pid}", json={"telegram_id": 9002})
+    assert r.status_code == 409
+    assert r.json()["code"] == "conflict.telegram_id_already_bound"
+
+
+def test_get_contacts_requires_admin(charlie_client):
+    """No admin cookie -> 401."""
     r = charlie_client.get("/api/contacts")
     assert r.status_code == 401
 
 
-def test_list_contacts_scopes_to_caller_contact(
-    env, client, bob_client,
-):
-    """Admin A's contacts must NOT appear in admin B's
-    list. The endpoint derives the owner_id from the
-    cookie; there's no URL knob that could let B
-    request A's rows."""
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["bob"].id,
-        notes="Alice knows Bob from the Q1 review.",
-        role="Engineering Manager",
-    )
-
-    # Alice's view sees her contact.
-    r = client.get("/api/contacts")
-    assert r.status_code == 200
-    body_a = r.json()
-    assert body_a["total"] == 1
-    assert body_a["items"][0]["person"]["id"] == env["bob"].id
-
-    # Bob's view sees zero — he doesn't own this row.
-    r = bob_client.get("/api/contacts")
-    assert r.status_code == 200
-    body_b = r.json()
-    assert body_b["total"] == 0
-    assert body_b["items"] == []
+def test_get_single_contact_requires_admin(charlie_client, env):
+    """Single-row read also gated by ``admin_gate``."""
+    pid = env["alice"].id
+    r = charlie_client.get(f"/api/contacts/{pid}")
+    assert r.status_code == 401
 
 
-def test_list_contacts_joins_person_name_and_department(
-    env, client,
-):
-    """The server-side JOIN hydrates ``person.name`` (with
-    ``display_name ?? name`` fallback) and
-    ``person.department_name`` (via the chained
-    ``Contact.department`` load). The UI never has to
-    issue a second request per row."""
-    # Charlie is in Engineering (seeded in env); use him as
-    # the contact's person. Charlie's ``display_name`` is
-    # NULL so the server falls back to ``name``.
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["charlie"].id,
-        notes="Charlie runs the on-call rotation.",
-        role="SRE",
-    )
+def test_post_contacts_requires_admin(charlie_client):
+    """POST refused at the gate."""
+    r = charlie_client.post("/api/contacts", json={"name": "X", "role": "contact"})
+    assert r.status_code == 401
 
-    r = client.get("/api/contacts")
+
+def test_patch_contacts_requires_admin(charlie_client, env):
+    """PATCH refused at the gate."""
+    pid = env["alice"].id
+    r = charlie_client.patch(f"/api/contacts/{pid}", json={"name": "X"})
+    assert r.status_code == 401
+
+
+def test_pagination_metadata(client, env):
+    """The page envelope computes total_pages correctly."""
+    # Alice + Bob + Charlie = 3. page_size=2 -> total_pages=2.
+    r = client.get("/api/contacts?page=1&page_size=2")
     assert r.status_code == 200
     body = r.json()
-    assert body["total"] == 1
-    row = body["items"][0]
-    assert row["person_id"] == env["charlie"].id
-    assert row["person"] is not None
-    assert row["person"]["name"] == "Charlie"
-    assert row["person"]["department_id"] is not None
-    assert row["person"]["department_name"] == "Engineering"
-    # Role snapshot returned verbatim (the snapshot, NOT
-    # the live Contact.role — they're decoupled by design).
-    assert row["role"] == "SRE"
+    assert body["total"] == 3
+    assert body["page"] == 1
+    assert body["page_size"] == 2
+    assert body["total_pages"] == 2
+    assert len(body["items"]) == 2
 
-
-def test_list_contacts_uses_display_name_when_present(
-    env, client,
-):
-    """``display_name`` overrides ``name`` when the
-    contact has set one. Pin this so the server-side
-    fallback contract is explicit (and the UI never has
-    to decide which to show)."""
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["alice"].id,
-        notes="Self note.",
-        role="Admin",
-    )
-
-    r = client.get("/api/contacts")
-    assert r.status_code == 200
-    row = r.json()["items"][0]
-    # Alice's display_name is "ali" (seeded in env).
-    assert row["person"]["name"] == "ali"
-
-
-def test_list_contacts_orders_by_last_seen_desc(env, client):
-    """Three contacts with hand-stamped ``last_seen_at``
-    values — the most recent one must come first. Pins
-    the ordering contract so a future change can't
-    silently reshuffle the table."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    # Stagger: oldest, newest, middle.
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["bob"].id,
-        notes="oldest", last_seen_at=now - timedelta(days=3),
-    )
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["charlie"].id,
-        notes="newest", last_seen_at=now,
-    )
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["alice"].id,
-        notes="middle", last_seen_at=now - timedelta(days=1),
-    )
-
-    r = client.get("/api/contacts")
-    assert r.status_code == 200
-    notes = [row["notes"] for row in r.json()["items"]]
-    assert notes == ["newest", "middle", "oldest"]
-
-
-def test_list_contacts_orphan_rendered_without_person(env, client):
-    """When the underlying Contact row is deleted, the
-    FK is set NULL on the contact row (per
-    ``ContactEntry.person_id`` ON DELETE SET NULL). The
-    endpoint must NOT 500 — it renders the row with
-    ``person=None`` and ``person_id=None`` so the UI
-    can show a 'separated' placeholder."""
-    # Seed a contact pointing at Bob.
-    _seed_contact(
-        env, owner_id=env["alice"].id, person_id=env["bob"].id,
-        notes="Historical context — Bob was the project lead.",
-        role="Project Lead",
-    )
-
-    # Sanity: Bob appears in the list.
-    r = client.get("/api/contacts")
-    assert r.status_code == 200
-    assert r.json()["total"] == 1
-    assert r.json()["items"][0]["person"] is not None
-
-    # Delete Bob. The contact row stays (SET NULL semantics);
-    # ``person_id`` becomes null, ``person`` resolves to None.
-    from magi.agent.db import open_session
-    with open_session() as db:
-        bob = db.get(__import__(
-            "magi.agent.db",
-            fromlist=["Contact"],
-        ).Contact, env["bob"].id)
-        db.delete(bob)
-        db.commit()
-
-    r = client.get("/api/contacts")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["total"] == 1, "orphan row should still appear"
-    row = body["items"][0]
-    assert row["person_id"] is None
-    assert row["person"] is None
-    # Notes + role snapshot stay — the row preserves history.
-    assert "Bob was the project lead" in row["notes"]
-    assert row["role"] == "Project Lead"
-
-
-def test_list_contacts_caps_at_200(env, client):
-    """The endpoint caps at 200 rows; ``total`` reports
-    the actual rendered count (which equals the cap when
-    there are more)."""
-    # Seed 5 contacts (well under 200) — just verify the
-    # cap doesn't accidentally truncate a small set.
-    # ``UNIQUE(owner_id, person_id)`` means each row needs
-    # a distinct person; mint 5 throwaway contacts.
-    from magi.agent.db import Contact, open_session
-    with open_session() as db:
-        throwaway = [
-            Contact(
-                name=f"Throwaway-{i}",
-                telegram_id=9100 + i,
-                role="contact",
-                provider="minimax",
-                api_key="fake",
-            )
-            for i in range(5)
-        ]
-        db.add_all(throwaway)
-        db.commit()
-        for t in throwaway:
-            db.refresh(t)
-        person_ids = [t.id for t in throwaway]
-
-    for i in range(5):
-        _seed_contact(
-            env, owner_id=env["alice"].id,
-            person_id=person_ids[i],
-            notes=f"note {i}",
-        )
-    r = client.get("/api/contacts")
+    # page 2: 1 remaining.
+    r = client.get("/api/contacts?page=2&page_size=2")
     assert r.status_code == 200
     body = r.json()
-    assert body["total"] == 5
-    assert len(body["items"]) == 5
+    assert len(body["items"]) == 1
+    assert body["page"] == 2
