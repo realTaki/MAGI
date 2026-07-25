@@ -47,17 +47,21 @@ services:
       # container fails fast on boot (the image's CMD points at
       # /usr/local/bin/entrypoint.sh which won't exist).
       - ./entrypoint.dev.sh:/usr/local/bin/entrypoint.sh:ro
+    dns:
+      # Docker's built-in DNS (127.0.0.11) sometimes returns only
+      # IPv6 (AAAA) for api.telegram.org when the host's resolver
+      # (systemd-resolved) returns IPv6-first. Since the container
+      # has no IPv6 connectivity, Telegram API calls time out.
+      # Bypass with public IPv4-capable resolvers.
+      - 8.8.8.8
+      - 1.1.1.1
+      - 114.114.114.114
     environment:
       MAGI_RELOAD: "1"
       MAGI_PORT: "8000"
       PYTHONPATH: /workspace
       VITE_BACKEND_URL: "http://127.0.0.1:8000"
-    # Disable IPv6 in container — Docker bridge networks
-    # can't route IPv6, and httpx's happy-eyeballs tries
-    # IPv6 first, consuming the connection timeout before
-    # falling back to IPv4.
-    sysctls:
-      net.ipv6.conf.all.disable_ipv6: 1
+
     # Override the image's CMD so the bind-mounted dev entrypoint
     # script runs instead of the bare ``magi``. The script starts
     # vite in the background and execs magi as PID 1.

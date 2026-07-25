@@ -50,11 +50,16 @@ export default function DashboardPage(props: {
   onSignOut: () => void;
 }) {
   // The dashboard is only meaningful after a successful sign-in.
-  // The boot routing sets signedInUser as part of the /me branch,
-  // so this should never be null in practice — the fallback
-  // returns nothing rather than render a confusing half-state.
+  // In practice, a transient /me read failure right after login
+  // can leave this null for one render; show a lightweight
+  // fallback instead of returning null (which looks like a white
+  // screen to the user).
   if (!props.signedInUser) {
-    return null;
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <p className="text-ink-soft text-sm">MAGI · loading dashboard…</p>
+      </main>
+    );
   }
   const user = props.signedInUser;
   return (

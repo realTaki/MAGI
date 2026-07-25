@@ -177,7 +177,7 @@ export default function App() {
   } else if (view === "login") {
     content = (
       <LoginPage
-        onLoggedIn={async () => {
+        onLoggedIn={async (uid) => {
           // Pull the now-valid session so the dashboard can greet
           // the user. /me returns 401 (and we still go to
           // dashboard) only if the cookie is missing — the
@@ -194,7 +194,16 @@ export default function App() {
           } catch {
             /* network — dashboard will show "Signed in" generically */
           }
-          setSignedInUser(me);
+          // Never leave dashboard without an identity object.
+          // If /me is temporarily unavailable right after
+          // verify-login-code, fall back to the selected uid so
+          // the page still renders and the user can continue.
+          setSignedInUser(
+            me ?? {
+              telegram_id: String(uid),
+              display_name: null,
+            },
+          );
           setView("dashboard");
         }}
         onBack={() => setView("landing")}

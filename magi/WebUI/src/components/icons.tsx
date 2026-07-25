@@ -151,6 +151,17 @@ export const IconEmployees = ({ className }: IconProps) => (
   </Icon>
 );
 
+// Brain/neural — used for the Memory pane in the Knowledge tab.
+export const IconMemory = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M12 3a5 5 0 0 0-5 5c0 1.5.5 3 1.5 4l-2.9 7.4c-.2.5.2 1.1.7 1.1h11.4c.5 0 .9-.6.7-1.1l-2.9-7.4c1-1 1.5-2.5 1.5-4a5 5 0 0 0-5-5Z" />
+    <path d="M9 12h6" />
+    <circle cx="10" cy="8" r="0.8" fill="currentColor" stroke="none" />
+    <circle cx="14" cy="8" r="0.8" fill="currentColor" stroke="none" />
+    <path d="M12 9.5V7" />
+  </Icon>
+);
+
 // Wrench — used for the Tools pane in the Knowledge tab.
 // Slight indented variant: the bolt-and-nut symbol reads
 // "settings / capability" without leaning on the more common
