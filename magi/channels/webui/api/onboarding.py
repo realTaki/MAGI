@@ -45,7 +45,7 @@ logger = logging.getLogger("magi.api.onboarding")
 router = APIRouter(tags=["onboarding"])
 
 # 5s is generous for a single Telegram call.
-_TELEGRAM_TIMEOUT_SECONDS = 5.0
+_TELEGRAM_TIMEOUT_SECONDS = 15.0
 
 
 def _state_dir() -> str:
@@ -461,6 +461,30 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+async def _send_via_raw_api(bot_token: str, chat_id: str, text: str) -> None:
+    """Send a Telegram message via raw HTTP API (no bot process needed).
+
+    Used during onboarding when the bot process hasn't started yet.
+    Raises ``Exception`` on failure — caller handles cleanup.
+    """
+    import httpx
+
+    chat_id_int = int(chat_id)
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(url, json={
+            "chat_id": chat_id_int,
+            "text": text,
+            "parse_mode": "HTML",
+        })
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(
+            data.get("description", f"Telegram HTTP {resp.status_code}")
+        )
+    logger.info("sent admin code via raw API to chat_id=%d", chat_id_int)
+
+
 async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCodeResponse:
     """Shared body for the public endpoints and the back-compat alias.
 
@@ -544,36 +568,31 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
         ),
     )
 
-    # Push the code via the TG channel's send helper. The
-    # helper checks the bot is running and validates the chat
-    # id format; failures here surface as ``RuntimeError`` /
-    # ``ValueError`` (already mapped to wizard-friendly errors
-    # by the helper's contract).
+    # Push the code. Try the running bot first (covers the
+    # post-onboarding case); if the bot isn't running yet (the
+    # common onboarding case), send directly via Telegram HTTP
+    # API using the saved token.
+    text = (
+        f"Your MAGI setup code is: <code>{code}</code>\n\n"
+        f"Enter this code in the MAGI admin wizard to "
+        f"verify your chat. The code expires in "
+        f"{_CODE_TTL_SECONDS // 60} minutes."
+    )
+
     from magi.channels.telegram import bot as tg_bot_module
 
     try:
         await tg_bot_module.send_text_to_im_id(
-            delivery_address,
-            (
-                f"Your MAGI setup code is: <code>{code}</code>\n\n"
-                f"Enter this code in the MAGI admin wizard to "
-                f"verify your chat. The code expires in "
-                f"{_CODE_TTL_SECONDS // 60} minutes."
-            ),
+            delivery_address, text,
         )
-    except RuntimeError as exc:
-        # Bot not running — clean up the stored code so a retry
-        # can issue a fresh one once the bot comes back.
-        from magi.agent.db.settings import state_delete
-        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
-        return SendAdminCodeResponse(ok=False, error=str(exc))
+    except RuntimeError:
+        # Bot not running — send directly via Telegram HTTP API.
+        await _send_via_raw_api(bot_token, delivery_address, text)
     except ValueError as exc:
         from magi.agent.db.settings import state_delete
         state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
         return SendAdminCodeResponse(ok=False, error=str(exc))
     except Exception as exc:
-        # Telegram-side error (network, chat not started,
-        # bot blocked). Map to a friendly wizard message.
         from magi.agent.db.settings import state_delete
         state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
         return SendAdminCodeResponse(

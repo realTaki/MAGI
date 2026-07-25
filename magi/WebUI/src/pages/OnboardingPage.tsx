@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useT } from "../i18n/index";
 import type { OnboardingData } from "./onboardingTypes";
 
 /**
@@ -133,24 +134,21 @@ function Step4View(props: {
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const t = useT();
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        MAGI is set up.
+        {t("onboarding.step4Title")}
       </h1>
-      <p className="mt-2 text-ink-soft">
-        First-time wizard completed. Click below to mark the setup
-        as confirmed and go sign in.
-      </p>
+      <p className="mt-2 text-ink-soft">{t("onboarding.step4Desc")}</p>
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
         <dt className="text-ink-soft">Bot</dt>
         <dd className="font-mono text-ink">@{props.data.bot.username}</dd>
 
-        <dt className="text-ink-soft">Super admins</dt>
+        <dt className="text-ink-soft">{t("sidebar.orgEmployees")}</dt>
         <dd className="text-sky-deep">
-          {props.data.superAdmins.length} tgid
-          {props.data.superAdmins.length === 1 ? "" : "s"} (
+          {props.data.superAdmins.length} (
           {props.data.superAdmins
             .map((a) => (a.displayName ? `${a.displayName}` : a.telegramId))
             .join(", ")}
@@ -164,14 +162,14 @@ function Step4View(props: {
           onClick={props.onBack}
           className="btn btn-secondary px-4 py-2.5"
         >
-          Back
+          {t("common.back")}
         </button>
         <button
           type="button"
           onClick={props.onContinue}
           className="btn btn-primary px-5 py-2.5"
         >
-          OK, got it — sign in →
+          {t("onboarding.okSignIn")}
         </button>
       </div>
     </>
@@ -188,6 +186,7 @@ function Step1View(props: {
   onReSet: () => void;
   onSaved: (token: string, username: string) => void;
 }) {
+  const t = useT();
   const [channel, setChannel] = useState("telegram");
 
   const selected = channels.find((c) => c.id === channel);
@@ -196,11 +195,10 @@ function Step1View(props: {
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        How should EVE reach your employees?
+        {t("onboarding.step1Title")}
       </h1>
       <p className="mt-2 text-ink-soft">
-        Pick the messaging platform your team already uses. You can add more
-        later.
+        {t("onboarding.step1Desc")}
       </p>
 
       <ChannelSelect value={channel} onChange={setChannel} />
@@ -225,10 +223,11 @@ function BotTokenConfiguredView(props: {
   onNext: () => void;
   onReSet: () => void;
 }) {
+  const t = useT();
   return (
     <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
       <p className="text-sm font-medium text-emerald-900">
-        Telegram bot already connected
+        {t("onboarding.step2Title")}
       </p>
       <dl className="mt-2 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
         <dt className="text-emerald-800/70">Bot username</dt>
@@ -238,7 +237,7 @@ function BotTokenConfiguredView(props: {
         <dd className="font-mono text-emerald-900/80 text-xs">
           {props.bot.token
             ? `${props.bot.token.slice(0, 6)}…${props.bot.token.slice(-4)}`
-            : "(saved — only the username is shown)"}
+            : "(saved)"}
         </dd>
       </dl>
 
@@ -248,14 +247,14 @@ function BotTokenConfiguredView(props: {
           onClick={props.onNext}
           className="btn btn-primary px-5 py-2.5"
         >
-          Next →
+          {t("common.next")}
         </button>
         <button
           type="button"
           onClick={props.onReSet}
           className="text-sm text-ink-soft hover:text-sky-deep transition"
         >
-          Re-set token
+          {t("common.edit")}
         </button>
       </div>
     </div>
@@ -270,8 +269,7 @@ function Step2View(props: {
   onNext: () => void;
   onBack: () => void;
 }) {
-  // Token may be empty (came from /status which doesn't return the
-  // secret). Only show the masked token when we actually have it.
+  const t = useT();
   const showToken = props.bot.token.length > 0;
   const masked = showToken
     ? props.bot.token.length > 12
@@ -282,12 +280,12 @@ function Step2View(props: {
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        Telegram bot connected
+        {t("onboarding.step2Title")}
       </h1>
       <p className="mt-2 text-ink-soft">
         {showToken
-          ? "Token verified and saved. You can change it later from the admin dashboard."
-          : "Bot already connected from a previous setup. You can keep going or restart with a new token from the dashboard."}
+          ? t("onboarding.step2DescNew")
+          : t("onboarding.step2DescExisting")}
       </p>
 
       <dl className="mt-6 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
@@ -308,14 +306,14 @@ function Step2View(props: {
           onClick={props.onBack}
           className="btn btn-secondary px-4 py-2.5"
         >
-          Back
+          {t("common.back")}
         </button>
         <button
           type="button"
           onClick={props.onNext}
           className="btn btn-primary px-5 py-2.5"
         >
-          Next →
+          {t("common.next")}
         </button>
       </div>
     </>
@@ -532,17 +530,14 @@ function Step3View(props: {
 
   const verifiedCount = rows.filter((r) => r.rowState === "verified").length;
 
+  const t = useT();
   return (
     <>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
-        Who's the super admin?
+        {t("onboarding.step3Title")}
       </h1>
       <p className="mt-2 text-ink-soft">
-        Add 1+ Telegram chat IDs. For each one, MAGI sends a 6-digit
-        code to that chat via{" "}
-        <span className="font-mono">@{props.bot.username}</span>; type
-        the code back to confirm. Codes expire after 5 minutes — click
-        Send again for a new one.
+        {t("onboarding.step3Desc").replace("{username}", props.bot.username)}
       </p>
 
       <div className="mt-6 space-y-3">
@@ -564,7 +559,7 @@ function Step3View(props: {
         onClick={addRow}
         className="mt-3 text-sm text-sky-700 hover:text-sky-deep transition"
       >
-        + Add another super admin
+        {t("onboarding.addAdmin")}
       </button>
 
       {saveError && (
@@ -577,7 +572,7 @@ function Step3View(props: {
           onClick={props.onBack}
           className="btn btn-secondary px-4 py-2.5"
         >
-          Back
+          {t("common.back")}
         </button>
         <button
           type="button"
@@ -586,10 +581,10 @@ function Step3View(props: {
           className="btn btn-primary px-5 py-2.5"
         >
           {saving
-            ? "Saving…"
+            ? t("onboarding.saving")
             : verifiedCount === 0
-              ? "Verify at least one admin"
-              : `Finish setup → (${verifiedCount} verified)`}
+              ? t("onboarding.verifyOne")
+              : t("onboarding.finishSetup").replace("{count}", String(verifiedCount))}
         </button>
       </div>
     </>
@@ -605,11 +600,7 @@ function AdminRowView(props: {
   onRemove: () => void;
 }) {
   const { row, onChangeTelegramId, onChangeCode, onSendCode, onVerifyCode, onRemove } = props;
-  // Code input is only shown between sending a code and finishing
-  // verification. Once a row hits "verified" the code has been
-  // burned server-side, so showing the input again would be
-  // misleading. To re-issue a code, click "Resend" (which resets
-  // the row state to code-sent and reveals the input again).
+  const t = useT();
   const codeInputVisible =
     row.rowState === "code-sent" ||
     row.rowState === "verifying-code" ||
@@ -637,15 +628,15 @@ function AdminRowView(props: {
           className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
           {row.rowState === "sending-code"
-            ? "Sending…"
+            ? t("common.loading")
             : row.rowState === "code-sent"
-              ? "Resend"
-              : "Send code"}
+              ? t("onboarding.resendCode")
+              : t("onboarding.sendCode")}
         </button>
         <button
           type="button"
           onClick={onRemove}
-          title="Remove this row"
+          title={t("common.remove")}
           className="btn btn-secondary text-sm py-2 px-2 shrink-0"
         >
           ✕
@@ -662,7 +653,7 @@ function AdminRowView(props: {
             onChange={(e) =>
               onChangeCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
-            placeholder="6-digit code from TG"
+            placeholder={t("onboarding.codePlaceholder")}
             className="form-input flex-1 text-sm py-2 px-3 font-mono tracking-widest"
             disabled={row.rowState === "verifying-code" || row.rowState === "verified"}
           />
@@ -676,7 +667,7 @@ function AdminRowView(props: {
             }
             className="btn btn-primary text-sm py-2 px-3 shrink-0"
           >
-            {row.rowState === "verifying-code" ? "Verifying…" : "Verify"}
+            {row.rowState === "verifying-code" ? t("onboarding.verifying") : t("onboarding.verify")}
           </button>
         </div>
       )}
@@ -687,27 +678,25 @@ function AdminRowView(props: {
 }
 
 function RowStatusMessage({ row }: { row: AdminRow }) {
+  const t = useT();
   switch (row.rowState) {
     case "verified":
       return (
         <p className="mt-2 text-xs text-emerald-700">
-          ✓ Verified &amp; saved{row.displayName ? ` — ${row.displayName}` : ""}
+          {t("onboarding.verifiedHint")}{row.displayName ? ` — ${row.displayName}` : ""}
         </p>
       );
     case "sending-code":
       return (
-        <p className="mt-2 text-xs text-ink-soft">Sending code…</p>
+        <p className="mt-2 text-xs text-ink-soft">{t("common.loading")}</p>
       );
     case "code-sent":
       return (
-        <p className="mt-2 text-xs text-sky-700">
-          Code sent — check the Telegram chat and enter the 6 digits
-          above. Click Resend to issue a new code.
-        </p>
+        <p className="mt-2 text-xs text-sky-700">{t("onboarding.codeSentHint")}</p>
       );
     case "verifying-code":
       return (
-        <p className="mt-2 text-xs text-ink-soft">Verifying code…</p>
+        <p className="mt-2 text-xs text-ink-soft">{t("onboarding.verifying")}</p>
       );
     case "error":
       return (
@@ -715,10 +704,7 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
       );
     case "idle":
       return (
-        <p className="mt-2 text-xs text-ink-soft">
-          Click Send code to deliver a 6-digit code to this chat via the
-          bot.
-        </p>
+        <p className="mt-2 text-xs text-ink-soft">{t("onboarding.idleHint")}</p>
       );
   }
 }
@@ -727,6 +713,7 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
 // shared bits
 // ---------------------------------------------------------------------------
 function Header() {
+  const t = useT();
   return (
     <header className="px-2 py-2">
       <div className="max-w-2xl mx-auto flex items-center gap-3">
@@ -740,7 +727,7 @@ function Header() {
         <span className="text-sm font-semibold tracking-wide text-sky-deep">
           MAGI
         </span>
-        <span className="text-xs text-ink-soft ml-2">first-time setup</span>
+        <span className="text-xs text-ink-soft ml-2">{t("onboarding.header")}</span>
       </div>
     </header>
   );
@@ -780,9 +767,6 @@ function ChannelSelect(props: {
 }) {
   return (
     <div className="mt-6">
-      <label htmlFor="channel-select" className="form-label">
-        Messaging platform
-      </label>
       <select
         id="channel-select"
         value={props.value}
@@ -808,10 +792,9 @@ function ChannelSelect(props: {
 }
 
 function ChannelDescription({ channel }: { channel: ChannelOption | undefined }) {
-  if (!channel) {
-    return null;
-  }
-  return <p className="mt-3 text-sm text-ink-soft">{channel.description}</p>;
+  const t = useT();
+  if (!channel) return null;
+  return <p className="mt-3 text-sm text-ink-soft">{t(channel.descriptionKey)}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -897,10 +880,12 @@ function BotTokenField(props: {
     token === verifiedToken &&
     saveState !== "saving";
 
+  const t = useT();
+
   return (
     <div className="mt-6">
       <label htmlFor="bot-token" className="form-label">
-        Telegram bot token
+        {t("onboarding.botTokenLabel")}
       </label>
       <div className="flex gap-2">
         <input
@@ -908,7 +893,7 @@ function BotTokenField(props: {
           type="password"
           value={token}
           onChange={(e) => handleTokenChange(e.target.value)}
-          placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+          placeholder={t("onboarding.botTokenPlaceholder")}
           autoComplete="off"
           spellCheck={false}
           disabled={saveState === "saved"}
@@ -920,13 +905,13 @@ function BotTokenField(props: {
           disabled={testState === "testing" || !token.trim() || saveState === "saved"}
           className="btn btn-primary px-4 py-3 shrink-0"
         >
-          {testState === "testing" ? "Testing…" : "Test connection"}
+          {testState === "testing" ? t("onboarding.testing") : t("onboarding.testConnection")}
         </button>
       </div>
 
       {testState === "success" && (
         <p className="mt-2 text-sm text-emerald-700">
-          ✓ Verified — bot is <span className="font-mono">@{username}</span>
+          {t("onboarding.tokenVerified").replace("{username}", username)}
         </p>
       )}
       {testState === "error" && (
@@ -934,8 +919,7 @@ function BotTokenField(props: {
       )}
       {testState === "idle" && (
         <p className="mt-2 text-xs text-ink-soft">
-          Create a bot with <span className="font-mono">@BotFather</span> on
-          Telegram and paste the token here.
+          {t("onboarding.botTokenHint")}
         </p>
       )}
 
@@ -948,10 +932,10 @@ function BotTokenField(props: {
             className="btn btn-primary px-4 py-2.5"
           >
             {saveState === "saving"
-              ? "Saving…"
+              ? t("onboarding.saving")
               : saveState === "saved"
-                ? "Saved ✓"
-                : "Save bot token"}
+                ? t("onboarding.saved")
+                : t("onboarding.saveToken")}
           </button>
           {saveState === "error" && (
             <p className="form-error">✗ {saveError}</p>
@@ -965,29 +949,27 @@ function BotTokenField(props: {
 interface ChannelOption {
   id: string;
   name: string;
-  description: string;
+  descriptionKey: string;
   available: boolean;
 }
 
-// Hardcoded for now. When C1.2 lands the available-channels list comes
-// from the backend, and this constant becomes a TanStack Query hook.
 const channels: ChannelOption[] = [
   {
     id: "telegram",
     name: "Telegram",
-    description: "Each EVE owns one bot account; employees message it directly.",
+    descriptionKey: "onboarding.channelTelegramDesc",
     available: true,
   },
   {
     id: "slack",
     name: "Slack",
-    description: "Coming soon — C2+.",
+    descriptionKey: "onboarding.channelSlackDesc",
     available: false,
   },
   {
     id: "wechat",
     name: "WeChat",
-    description: "Coming soon.",
+    descriptionKey: "onboarding.channelWechatDesc",
     available: false,
   },
 ];
