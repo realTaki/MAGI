@@ -74,18 +74,7 @@ class TelegramAdapter:
                 f"telegram adapter: uid={uid} binding "
                 f"is not numeric ({im_id!r})"
             ) from e
-        # Use raw HTTP to avoid event-loop binding issues:
-        # the python-telegram-bot Bot is created in the bot
-        # thread's event loop, but `send` is called from the
-        # FastAPI event loop (main thread). ``send_text_raw``
-        # creates its own httpx client per call.
-        from magi.agent.db.settings import state_get
-        from magi.agent.db.engine import require_state_dir
-
-        bot_token = state_get(require_state_dir(), "telegram.bot_token")
-        if not bot_token:
-            raise RuntimeError("telegram adapter: bot token not saved")
-        await tg_bot_module.send_text_raw(bot_token, chat_id_int, text)
+        await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:
         with open_session() as db:

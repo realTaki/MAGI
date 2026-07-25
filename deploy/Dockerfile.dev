@@ -55,7 +55,10 @@ RUN cd /web && npm ci --no-audit --no-fund
 WORKDIR /workspace
 RUN mkdir -p /workspace/memories
 
-ENV MAGI_STATE_DIR=/workspace/memories
+ENV MAGI_STATE_DIR=/workspace/memories \
+    # Dev image default: keep Python auto-reload enabled even
+    # when compose env overrides are omitted.
+    MAGI_RELOAD=1
 
 EXPOSE 42069
 

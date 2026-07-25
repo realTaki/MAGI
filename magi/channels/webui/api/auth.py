@@ -484,8 +484,6 @@ async def send_login_code(
                     error=f"Wait {remaining}s before requesting a new code.",
                 )
 
-    from magi.agent.db.settings import state_get
-
     code = _generate_code()
     issued_at = datetime.now(timezone.utc)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
@@ -523,12 +521,8 @@ async def send_login_code(
 
         # Raw-send fallback keeps first login usable even if
         # the polling bot is still starting or unavailable.
-        bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
-        if not bot_token:
-            _clear_login_code(uid)
-            return SendLoginCodeResponse(ok=False, error=str(e))
         try:
-            await tg_bot.send_text_raw(bot_token, int(im_id), code_text)
+            await tg_bot.send_text_auto(int(im_id), code_text)
         except Exception as raw_exc:
             _clear_login_code(uid)
             return SendLoginCodeResponse(

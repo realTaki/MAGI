@@ -141,12 +141,32 @@ async def send_text(chat_id: int, text: str) -> None:
     await bot.send_message(chat_id=chat_id, text=text)
 
 
-async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
-    """Send via the raw Telegram HTTP API — no bot process needed.
+async def send_text_auto(chat_id: int, text: str) -> None:
+    """Send ``text`` to ``chat_id`` via raw HTTP, reading the
+    bot token from settings internally.
 
-    Used during onboarding before the bot starts. Raises
-    ``RuntimeError`` if Telegram returns ``ok: false``.
+    Does NOT use the python-telegram-bot Bot instance — avoids
+    cross-thread event-loop issues. The raw HTTP approach is
+    reliable inside Docker where the bot's event loop lives in
+    a different thread.
+
+    This is the preferred entry point for channel-internal
+    callers (adapter, dispatcher). No caller outside
+    ``magi/channels/telegram/`` should touch the bot token
+    or raw HTTP directly.
     """
+    from magi.agent.db.engine import require_state_dir
+    from magi.agent.db.settings import state_get
+
+    bot_token = state_get(require_state_dir(), "telegram.bot_token")
+    if not bot_token:
+        raise RuntimeError("telegram: no bot token saved; cannot send")
+    await _send_via_raw_http(bot_token, chat_id, text)
+
+
+async def _send_via_raw_http(bot_token: str, chat_id: int, text: str) -> None:
+    """Internal raw HTTP send — used by ``send_text_raw`` and
+    ``send_text_auto``. Raises ``RuntimeError`` on failure."""
     import httpx
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -168,6 +188,14 @@ async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
             data.get("description", f"Telegram HTTP {resp.status_code}")
         )
     logger.info("raw send to chat_id=%d", chat_id)
+
+
+async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
+    """Send via raw HTTP — requires explicit ``bot_token``.
+
+    Used during onboarding before the bot starts.
+    """
+    await _send_via_raw_http(bot_token, chat_id, text)
 
 
 async def get_chat_name(chat_id: int) -> str | None:
