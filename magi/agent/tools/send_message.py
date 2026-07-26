@@ -35,9 +35,12 @@ a Slack adapter + register it; this tool doesn't change.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
+
+logger = logging.getLogger("magi.agent.tools.send_message")
 
 
 _MAX_TEXT_LEN = 4000  # matches common IM client caps (TG 4096, Slack 40k, ...)
@@ -119,8 +122,13 @@ class SendMessageTool(Tool):
         # channel-agnostic.
         from magi.channels import dispatcher
 
+        logger.info(
+            "send_message: dispatching %d chars to session=%s channel=%s",
+            len(text), ctx.session_id, ctx.channel,
+        )
         try:
             await dispatcher.send_to_session(ctx.session_id, text)
+            logger.info("send_message: delivered to session=%s", ctx.session_id)
         except KeyError as e:
             # Unknown channel / missing session — surface
             # the dispatcher's diagnostic verbatim.

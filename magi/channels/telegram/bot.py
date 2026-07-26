@@ -818,7 +818,7 @@ _TYPING_REFRESH_SECONDS = 4.0
 
 async def _typing_indicator_loop(
     bot,
-    delivery_address: int,
+    chat_id: int,
     stop_event: "asyncio.Event",  # noqa: F821 — forward ref avoids an extra import
 ) -> None:
     """Send ``send_chat_action(typing)`` every 4s until
@@ -842,7 +842,7 @@ async def _typing_indicator_loop(
             return
         try:
             await bot.send_chat_action(
-                delivery_address=delivery_address,
+                chat_id=chat_id,
                 action="typing",
             )
         except Exception:
@@ -853,7 +853,7 @@ async def _typing_indicator_loop(
             # silently dropping the typing indicator.
             logger.exception(
                 "telegram: typing indicator failed (chat=%s); "
-                "disabling further refreshes", delivery_address,
+                "disabling further refreshes", chat_id,
             )
             return
         # Wait up to 4s OR until the reply arrives.

@@ -592,6 +592,46 @@ export default function ChatTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const queryClient = useQueryClient();
+  const sendChatMut = useMutation({
+    mutationFn: (vars: { text: string; sessionId: string | null }) =>
+      apiFetch<{ reply: string; session_id: string }>("/api/chat/send", {
+        method: "POST",
+        body: { text: vars.text, session_id: vars.sessionId },
+      }),
+    onSuccess: (data, vars) => {
+      if (data.session_id !== vars.sessionId) {
+        setSessionId(data.session_id);
+        localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+        setActiveTitle(null);
+        setActivePreview(vars.text);
+        void refreshHistory();
+      }
+      setChatMessages((prev) => [
+        ...prev,
+        { id: Date.now() + 1, role: "assistant", text: data.reply },
+      ]);
+      void queryClient.invalidateQueries({
+        queryKey: qk.chatMessages(data.session_id),
+      });
+    },
+    onError: (err: unknown) => {
+      if (err && typeof err === "object" && "status" in err) {
+        const e = err as { status?: number; message?: string };
+        if (e.status && e.status >= 400 && e.status < 500) {
+          setChatError({
+            code: "unknown",
+            detail: e.message ?? `Send failed (${e.status})`,
+          });
+          return;
+        }
+      }
+      setChatError({
+        code: "network",
+        detail: err instanceof Error ? err.message : "Network error",
+      });
+    },
+  });
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatSending) return;
@@ -601,46 +641,7 @@ export default function ChatTab() {
     setChatMessages((prev) => [...prev, userMsg]);
     setChatSending(true);
     try {
-      const r = await fetch("/api/chat/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, session_id: sessionId }),
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          code?: string;
-          detail?: string;
-        };
-        setChatError({
-          code: body.code ?? "unknown",
-          detail: body.detail ?? `Send failed (${r.status})`,
-        });
-        return;
-      }
-      const data = (await r.json()) as { reply: string; session_id: string };
-      // Pin the session id on the first send (the server
-      // auto-created one) and refresh the history so the
-      // sidebar reflects the freshly-persisted thread.
-      if (data.session_id !== sessionId) {
-        setSessionId(data.session_id);
-        localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
-        // D.8: first send of a fresh thread — no title yet
-        // (the auto-title worker hasn't run), so seed the
-        // pane header with the user message text as preview.
-        setActiveTitle(null);
-        setActivePreview(text);
-        void refreshHistory();
-      }
-      setChatMessages((prev) => [
-        ...prev,
-        { id: Date.now() + 1, role: "assistant", text: data.reply },
-      ]);
-    } catch (err) {
-      setChatError({
-        code: "network",
-        detail: err instanceof Error ? err.message : "Network error",
-      });
+      await sendChatMut.mutateAsync({ text, sessionId });
     } finally {
       setChatSending(false);
     }

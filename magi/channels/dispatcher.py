@@ -220,6 +220,14 @@ async def send_to_session(session_id: str, text: str) -> None:
         sess = db.get(ChatSession, session_id)
     if sess is None:
         raise KeyError(f"no session {session_id}")
+
+    # WebUI has no out-of-band adapter — the operator sees
+    # the reply inline in the chat scroll. A no-op success
+    # keeps the ``send_message`` tool from erroring when
+    # the LLM side-channels inside a webui session.
+    if sess.channel == Channel.WEBUI:
+        return
+
     _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(sess.channel)
     if adapter is None:
