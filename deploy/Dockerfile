@@ -67,8 +67,7 @@ COPY --from=web-builder /web/dist /app/magi/WebUI/dist
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    MAGI_STATE_DIR=/workspace/memories
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /workspace
 USER magi

@@ -5,10 +5,17 @@
  * component so SettingsChannelsCard (telegram re-set) and
  * SettingsWebuiAccessCard (super-admin rotation) can both
  * flow operator-edits through one component.
+ *
+ * Migrated to react-query: the two POSTs (verify-bot,
+ * save-bot) go through ``useVerifyBot`` / ``useSaveBot``.
+ * The local ``useState`` slots keep the per-step UX state
+ * (idle / testing / success / error) — react-query only
+ * owns the network round-trip.
  */
 import { useState } from "react";
 
 import { useT } from "../../i18n/index";
+import { useSaveBot, useVerifyBot } from "../../lib/queries";
 
 export function BotTokenField(props: {
   onSaved: (token: string, username: string) => void;
@@ -27,6 +34,9 @@ export function BotTokenField(props: {
   >("idle");
   const [saveError, setSaveError] = useState("");
 
+  const verifyMut = useVerifyBot();
+  const saveMut = useSaveBot();
+
   function handleTokenChange(newValue: string) {
     setToken(newValue);
     if (testState === "success" || testState === "error") {
@@ -39,17 +49,7 @@ export function BotTokenField(props: {
     setTestState("testing");
     setTestError("");
     try {
-      const res = await fetch("/api/onboarding/verify-bot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.trim() }),
-        credentials: "include",
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        username?: string;
-        error?: string;
-      };
+      const data = await verifyMut.mutateAsync(token.trim());
       if (data.ok && data.username) {
         setTestState("success");
         setUsername(data.username);
@@ -69,13 +69,10 @@ export function BotTokenField(props: {
     setSaveState("saving");
     setSaveError("");
     try {
-      const res = await fetch("/api/onboarding/save-bot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: verifiedToken, username }),
-        credentials: "include",
+      const data = await saveMut.mutateAsync({
+        token: verifiedToken,
+        username,
       });
-      const data = (await res.json()) as { ok: boolean; error?: string };
       if (data.ok) {
         setSaveState("saved");
         props.onSaved(verifiedToken, username);

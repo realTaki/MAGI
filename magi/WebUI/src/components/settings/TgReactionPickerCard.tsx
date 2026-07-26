@@ -32,117 +32,49 @@
  * a label-per-emoji row would push the picker past the
  * visible area of the card. The semantic split
  * (read row / done row) is the only labelling needed.
+ *
+ * Migrated to react-query: ``useTgReaction(kind)`` +
+ * ``useUpdateTgReaction(kind)`` with optimistic update
+ * baked into the mutation (``onMutate`` / ``onError`` /
+ * ``onSettled``). Each kind is its own query, so the
+ * two rows render in parallel via react-query's dedup.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
-
-type ReactionOut = {
-  current: string;
-  default: string;
-  choices: { value: string }[];
-};
+import { useTgReaction, useUpdateTgReaction } from "../../lib/queries";
 
 type Kind = "read" | "done";
 
-const ENDPOINTS: Record<Kind, string> = {
-  read: "/api/tg-settings/read-reaction",
-  done: "/api/tg-settings/done-reaction",
-};
-
 export function TgReactionPickerCard() {
   const t = useT();
-  // One state slot per kind so the two rows don't
-  // stomp on each other during the initial load.
-  const [read, setRead] = useState<{
-    picked: string;
-    choices: string[];
-    error: string | null;
-    saving: boolean;
-  }>({ picked: "", choices: [], error: null, saving: false });
-  const [done, setDone] = useState<{
-    picked: string;
-    choices: string[];
-    error: string | null;
-    saving: boolean;
-  }>({ picked: "", choices: [], error: null, saving: false });
+  const readQuery = useTgReaction("read");
+  const doneQuery = useTgReaction("done");
+  // Per-row inline error; not driven by the mutation
+  // (the mutation's onError is shared across both kinds
+  // and would surface the same error in both rows).
+  const [readError, setReadError] = useState<string | null>(null);
+  const [doneError, setDoneError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      // Fetch both in parallel — the two endpoints are
-      // independent. One failing doesn't block the other.
-      const results = await Promise.all(
-        (Object.keys(ENDPOINTS) as Kind[]).map(async (kind) => {
-          try {
-            const r = await fetch(ENDPOINTS[kind], {
-              credentials: "include",
-            });
-            if (!r.ok) return [kind, null] as const;
-            const body = (await r.json()) as ReactionOut;
-            return [
-              kind,
-              {
-                picked: body.current,
-                choices: body.choices.map((c) => c.value),
-              },
-            ] as const;
-          } catch {
-            return [kind, null] as const;
-          }
-        }),
-      );
-      for (const [kind, payload] of results) {
-        if (!payload) continue;
-        if (kind === "read") {
-          setRead((s) => ({ ...s, ...payload }));
-        } else {
-          setDone((s) => ({ ...s, ...payload }));
-        }
-      }
-    })();
-  }, []);
+  const readMut = useUpdateTgReaction("read");
+  const doneMut = useUpdateTgReaction("done");
 
   async function pick(kind: Kind, emoji: string) {
-    const set = kind === "read" ? setRead : setDone;
-    // Optimistic update — flip the visual immediately so
-    // the click feels instant. On PUT failure we revert.
-    const previous =
-      kind === "read" ? read.picked : done.picked;
-    set((s) => ({ ...s, picked: emoji, error: null, saving: true }));
+    const setError = kind === "read" ? setReadError : setDoneError;
+    setError(null);
     try {
-      const r = await fetch(ENDPOINTS[kind], {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji }),
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        set((s) => ({
-          ...s,
-          picked: previous,
-          error: body.detail ?? `Save failed (${r.status})`,
-        }));
-        return;
+      // The mutation owns the optimistic update + rollback;
+      // a rejection propagates as a thrown Error.
+      if (kind === "read") {
+        await readMut.mutateAsync(emoji);
+      } else {
+        await doneMut.mutateAsync(emoji);
       }
-      const body = (await r.json()) as ReactionOut;
-      set((s) => ({
-        ...s,
-        picked: body.current,
-        error: null,
-        saving: false,
-      }));
     } catch (err) {
-      set((s) => ({
-        ...s,
-        picked: previous,
-        error: err instanceof Error ? err.message : t("settings.networkError"),
-      }));
+      setError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -153,12 +85,16 @@ export function TgReactionPickerCard() {
     >
       <ReactionRow
         label={t("settings.tgReadEmoji")}
-        state={read}
+        data={readQuery.data}
+        isLoading={readQuery.isLoading}
+        error={readError}
         onPick={(e) => pick("read", e)}
       />
       <ReactionRow
         label={t("settings.tgDoneEmoji")}
-        state={done}
+        data={doneQuery.data}
+        isLoading={doneQuery.isLoading}
+        error={doneError}
         onPick={(e) => pick("done", e)}
         className="mt-5"
       />
@@ -169,32 +105,30 @@ export function TgReactionPickerCard() {
 
 function ReactionRow(props: {
   label: string;
-  state: {
-    picked: string;
-    choices: string[];
-    error: string | null;
-    saving: boolean;
-  };
+  data: { current: string; default: string; choices: { value: string }[] } | undefined;
+  isLoading: boolean;
+  error: string | null;
   onPick: (emoji: string) => void;
   className?: string;
 }) {
+  const choices = props.data?.choices.map((c) => c.value) ?? [];
+  const picked = props.data?.current ?? "";
   return (
     <div className={"mt-4 " + (props.className ?? "")}>
       <div className="text-sm font-medium text-sky-deep mb-2">
         {props.label}
       </div>
-      {props.state.choices.length === 0 ? (
+      {props.isLoading && choices.length === 0 ? (
         <p className="text-xs text-ink-soft">Loading…</p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {props.state.choices.map((emoji) => {
-            const selected = emoji === props.state.picked;
+          {choices.map((emoji) => {
+            const selected = emoji === picked;
             return (
               <button
                 key={emoji}
                 type="button"
                 onClick={() => props.onPick(emoji)}
-                disabled={props.state.saving && selected}
                 className={
                   "w-10 h-10 rounded-full text-xl flex items-center justify-center transition " +
                   (selected
@@ -210,8 +144,8 @@ function ReactionRow(props: {
           })}
         </div>
       )}
-      {props.state.error && (
-        <p className="form-error mt-2">✗ {props.state.error}</p>
+      {props.error && (
+        <p className="form-error mt-2">✗ {props.error}</p>
       )}
     </div>
   );

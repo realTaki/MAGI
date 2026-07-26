@@ -37,41 +37,16 @@ from magi.agent.db.migrations import _run_inline_migrations
 logger = logging.getLogger("magi.agent.db.engine")
 
 
-class _MissingStateDirError(RuntimeError):
-    """``MAGI_STATE_DIR`` is unset.
-
-    Raised by :func:`require_state_dir` when no env var is
-    present. The previous behaviour silently fell back to
-    ``/workspace/memories``, which leaked a host-system path
-    on dev machines (where ``/workspace`` is not a real
-    mounted volume) and produced a confusing ``magi.db``
-    on the host filesystem.
-    """
-
-
 def require_state_dir() -> str:
     """Return the absolute path to the state directory.
 
-    Reads ``MAGI_STATE_DIR``. If the env var is missing, raises
-    :class:`_MissingStateDirError` with a clear remediation
-    message — explicitly named so the dev sees what's wrong
-    instead of a cryptic ``sqlite3.OperationalError`` on a
-    phantom path.
-
-    Production (Docker) sets the env var in the image
-    (``deploy/Dockerfile`` / ``Dockerfile.dev``). Tests set
-    it via ``monkeypatch.setenv``. CLI invocations without
-    the env var get the explicit error.
+    Returns the hardcoded :data:`magi.constants.STATE_DIR`
+    (``/workspace/memories``).  The ``MAGI_STATE_DIR`` env
+    var is honoured as an **escape hatch for tests only** —
+    production code never sets or reads it.
     """
-    sd = os.environ.get("MAGI_STATE_DIR")
-    if not sd:
-        raise _MissingStateDirError(
-            "MAGI_STATE_DIR is not set. Production sets it in "
-            "deploy/Dockerfile (=/workspace/memories). For local "
-            "dev, export MAGI_STATE_DIR=./.state or similar before "
-            "running. Tests must monkeypatch.setenv it per test."
-        )
-    return sd
+    from magi.constants import STATE_DIR
+    return os.environ.get("MAGI_STATE_DIR") or STATE_DIR
 
 
 # -- bootstrap --------------------------------------------------------------

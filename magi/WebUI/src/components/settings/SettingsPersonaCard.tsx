@@ -12,17 +12,30 @@
  * Save the textarea is your scratch pad, not the agent's
  * persona — explicit contract, no surprise edits landing
  * in the system prompt.
+ *
+ * Migrated to react-query: ``useSoul`` is the cached
+ * server baseline. On first load it seeds both
+ * ``savedContent`` and ``draftContent``; subsequent
+ * refetches (after Save / Reset) only update the
+ * ``savedContent`` baseline — the operator's in-flight
+ * edits in ``draftContent`` are left alone so the dirty
+ * flag stays meaningful.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
+import { useResetSoul, useSoul, useUpdateSoul } from "../../lib/queries";
 
 export function SettingsPersonaCard() {
   const t = useT();
-  // One textarea. The loaded value IS the editable value:
+  const soulQuery = useSoul();
+  const updateMut = useUpdateSoul();
+  const resetMut = useResetSoul();
+
+  // Single textarea. The loaded value IS the editable value:
   // the operator sees the on-disk SOUL.md content right away
   // (no separate read-only block) and edits in place. Click
   // Save to commit; click Reset to restore the bundled default.
@@ -33,22 +46,11 @@ export function SettingsPersonaCard() {
   // us when the operator has unsaved changes and drives the
   // Save button's disabled state + the "放弃改动" revert
   // affordance.
-  //
-  // Why one textarea instead of "current view + draft" —
-  // the operator wants to **see what the agent is using**
-  // and **edit it**. Two views force them to translate
-  // between "what's in the editor" and "what the agent
-  // sees"; one view + Save makes the contract explicit:
-  // until you press Save, the textarea is your scratch
-  // pad, not the agent's persona.
   const [draftContent, setDraftContent] = useState<string>("");
   const [savedContent, setSavedContent] = useState<string>("");
   const [modifiedAt, setModifiedAt] = useState<string | null>(null);
   const [isFallback, setIsFallback] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // 8 KB cap mirrors the backend's
@@ -62,38 +64,30 @@ export function SettingsPersonaCard() {
   const nearLimit = chars > SOUL_WARN;
   const dirty = draftContent !== savedContent;
 
-  async function load() {
-    setLoadError(null);
-    try {
-      const r = await fetch("/api/soul", { credentials: "include" });
-      if (!r.ok) {
-        setLoadError(`${t("persona.loadFailed")} (${r.status})`);
-        return;
-      }
-      const data = (await r.json()) as {
-        content: string;
-        modified_at: string | null;
-        is_bundled_fallback: boolean;
-      };
-      // Both slots collapse to the same value — the
-      // textarea shows what's on disk, ``dirty`` is false
-      // until the operator types something.
-      setSavedContent(data.content);
-      setDraftContent(data.content);
-      setModifiedAt(data.modified_at);
-      setIsFallback(data.is_bundled_fallback);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
-    }
-  }
+  // Track the last server content we hydrated the draft
+  // from. The ref lets the next ``useEffect`` skip the
+  // hydrate when the cache refetch is the SAME content
+  // we already have (e.g. ``refetchOnWindowFocus``).
+  const lastHydratedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    void load();
-    // ``t`` is stable across renders (the i18n context
-    // returns a memoised value), so this doesn't refire on
-    // locale switch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!soulQuery.data) return;
+    const incoming = soulQuery.data.content;
+    if (lastHydratedRef.current === incoming) return;
+    lastHydratedRef.current = incoming;
+    // Always update the baseline so the dirty flag
+    // reflects the latest server value. The draft is
+    // seeded only on the first hydration; on later
+    // refetches (e.g. after save / reset invalidates
+    // the cache) we leave the draft alone so the
+    // operator's in-flight edits aren't blown away.
+    setSavedContent(incoming);
+    setModifiedAt(soulQuery.data.modified_at);
+    setIsFallback(soulQuery.data.is_bundled_fallback);
+    if (draftContent === "" && savedContent === "") {
+      setDraftContent(incoming);
+    }
+  }, [soulQuery.data, draftContent, savedContent]);
 
   async function save() {
     setSaveError(null);
@@ -103,35 +97,21 @@ export function SettingsPersonaCard() {
       setSaveError("Persona 内容不能为空（空白不算）");
       return;
     }
-    setSaving(true);
     try {
-      const r = await fetch("/api/soul", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: trimmed }),
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          code?: string;
-          detail?: string;
-        };
-        setSaveError(body.detail ?? `${t("persona.saveFailed")} (${r.status})`);
-        return;
-      }
-      const data = (await r.json()) as { modified_at: string };
-      // Promote the textarea value to "saved" baseline.
-      // ``dirty`` flips false; the textarea stays exactly
-      // where the operator left it (no need to re-mount).
+      const data = await updateMut.mutateAsync(trimmed);
       setSavedContent(trimmed);
       setDraftContent(trimmed);
       setModifiedAt(data.modified_at);
       setIsFallback(false);
+      // Mark the hydration as up-to-date so the
+      // refetch the mutation triggers doesn't clobber
+      // the now-stable draft with the same content.
+      lastHydratedRef.current = trimmed;
       setSavedNotice(t("persona.savedNotice"));
     } catch (err) {
+      // ``apiFetch`` already throws with the server's
+      // ``detail`` message; surface it directly.
       setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -141,28 +121,14 @@ export function SettingsPersonaCard() {
     }
     setSaveError(null);
     setSavedNotice(null);
-    setResetting(true);
     try {
-      const r = await fetch("/api/soul/reset", {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          code?: string;
-          detail?: string;
-        };
-        setSaveError(body.detail ?? `${t("persona.resetFailed")} (${r.status})`);
-        return;
-      }
-      // Re-load so the textarea picks up the canonical
-      // truth the backend just wrote.
-      await load();
+      await resetMut.mutateAsync();
+      // The mutation invalidates ``qk.soul``; the
+      // refetch will hydrate the draft via the
+      // useEffect above.
       setSavedNotice(t("persona.resetNotice"));
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
-    } finally {
-      setResetting(false);
     }
   }
 
@@ -182,6 +148,12 @@ export function SettingsPersonaCard() {
       return iso;
     }
   }
+
+  const saving = updateMut.isPending;
+  const resetting = resetMut.isPending;
+  const loadError = soulQuery.error
+    ? (soulQuery.error as Error).message
+    : null;
 
   return (
     <ConsoleCard

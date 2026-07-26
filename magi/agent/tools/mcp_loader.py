@@ -37,6 +37,11 @@ to a non-empty value. An operator who leaves a key blank
 sends ``""`` and the subprocess sees ``KEY=""`` —
 explicit, never silently inherited.
 
+MCP timeouts live in the ``settings`` table
+(``mcp.connect_timeout`` / ``execute_timeout`` /
+``sse_read_timeout``). There are no ``MAGI_MCP_*``
+env vars.
+
 Lifecycle
 ---------
 
@@ -95,29 +100,27 @@ class MCPTimeoutConfig:
     sse_read_timeout: float = 120.0
 
 
-# Default timeouts — overridable via env so a CI harness or a
-# deployer can tighten them without touching code.
-_ENV_CONNECT = "MAGI_MCP_CONNECT_TIMEOUT"
-_ENV_EXEC = "MAGI_MCP_EXECUTE_TIMEOUT"
-_ENV_SSE = "MAGI_MCP_SSE_READ_TIMEOUT"
+# -- MCP timeouts (from settings table) ----------------------------------
 
 
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return default
+def _timeout_from_settings(key: str, default: float) -> float:
+    """Read a float setting, falling back to *default*."""
     try:
-        return float(raw)
-    except ValueError:
-        logger.warning("ignoring bad %s=%r (expected float)", name, raw)
-        return default
+        from magi.agent.db.settings import state_get
+        from magi.constants import STATE_DIR
+        raw = state_get(STATE_DIR, key)
+        if raw:
+            return float(raw)
+    except (ValueError, Exception):
+        pass
+    return default
 
 
 def _defaults() -> MCPTimeoutConfig:
     return MCPTimeoutConfig(
-        connect_timeout=_env_float(_ENV_CONNECT, 10.0),
-        execute_timeout=_env_float(_ENV_EXEC, 60.0),
-        sse_read_timeout=_env_float(_ENV_SSE, 120.0),
+        connect_timeout=_timeout_from_settings("mcp.connect_timeout", 10.0),
+        execute_timeout=_timeout_from_settings("mcp.execute_timeout", 60.0),
+        sse_read_timeout=_timeout_from_settings("mcp.sse_read_timeout", 120.0),
     )
 
 

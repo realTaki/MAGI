@@ -22,13 +22,24 @@
  * server-side round-trip — there's no combined PUT.
  * The "Save" button at the bottom of each section is
  * scoped to that section.
+ *
+ * Migrated to react-query: each section is one
+ * ``useQuery`` + one ``useMutation``. The dirty flag
+ * stays in local ``useState`` (it's a derived comparison,
+ * not a server state).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
+import {
+  useCompactConfig,
+  useToolMaxIterations,
+  useUpdateCompactConfig,
+  useUpdateToolMaxIterations,
+} from "../../lib/queries";
 
 export function SettingsAgentCard() {
   const t = useT();
@@ -51,45 +62,26 @@ export function SettingsAgentCard() {
 
 function ToolLoopSection() {
   const t = useT();
-  type IterationsOut = {
-    current: number;
-    default: number;
-    min: number;
-    max: number;
-  };
-
-  const [data, setData] = useState<IterationsOut | null>(null);
+  const query = useToolMaxIterations();
+  const updateMut = useUpdateToolMaxIterations();
   const [picked, setPicked] = useState<string>("");
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const lastHydratedRef = useRef<number | null>(null);
 
-  async function load() {
-    setLoadError(null);
-    try {
-      const r = await fetch(
-        "/api/system-settings/tool-max-iterations",
-        { credentials: "include" },
-      );
-      if (!r.ok) {
-        setLoadError(`Failed to load (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as IterationsOut;
-      setData(body);
-      setPicked(String(body.current));
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
-    }
-  }
-
+  // First-time hydration: seed the input from the
+  // server's ``current`` value. Subsequent refetches
+  // (e.g. from window focus) leave the input alone so
+  // the operator's in-flight edits aren't clobbered.
   useEffect(() => {
-    void load();
-  }, []);
+    if (!query.data) return;
+    if (lastHydratedRef.current === query.data.current) return;
+    lastHydratedRef.current = query.data.current;
+    setPicked(String(query.data.current));
+  }, [query.data]);
 
-  const dirty =
-    data !== null && Number(picked) !== data.current && picked !== "";
+  const data = query.data;
+  const dirty = data !== undefined && Number(picked) !== data.current && picked !== "";
 
   async function save() {
     setSaveError(null);
@@ -99,40 +91,24 @@ function ToolLoopSection() {
       setSaveError(t("settings.agentMustBeInteger"));
       return;
     }
-    if (data !== null && (value < data.min || value > data.max)) {
+    if (data !== undefined && (value < data.min || value > data.max)) {
       setSaveError(`必须介于 ${data.min} 和 ${data.max} 之间`);
       return;
     }
-    setSaving(true);
     try {
-      const r = await fetch(
-        "/api/system-settings/tool-max-iterations",
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value }),
-          credentials: "include",
-        },
-      );
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        setSaveError(body.detail ?? `Save failed (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as IterationsOut;
-      setData(body);
+      const body = await updateMut.mutateAsync(value);
+      lastHydratedRef.current = body.current;
       setPicked(String(body.current));
-      setSavedNotice(
-        t("settings.agentToolLoopSaved"),
-      );
+      setSavedNotice(t("settings.agentToolLoopSaved"));
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
-    } finally {
-      setSaving(false);
     }
   }
+
+  const loadError = query.error
+    ? (query.error as Error).message
+    : null;
+  const saving = updateMut.isPending;
 
   return (
     <section>
@@ -208,50 +184,31 @@ function ToolLoopSection() {
 
 function CompactSection() {
   const t = useT();
-  type CompactOut = {
-    context_window: number;
-    threshold_pct: number;
-    keep_recent: number;
-    default_context_window: number;
-    default_threshold_pct: number;
-    default_keep_recent: number;
-  };
-
-  const [data, setData] = useState<CompactOut | null>(null);
+  const query = useCompactConfig();
+  const updateMut = useUpdateCompactConfig();
   const [contextWindow, setContextWindow] = useState<string>("");
   const [thresholdPct, setThresholdPct] = useState<string>("");
   const [keepRecent, setKeepRecent] = useState<string>("");
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function load() {
-    setLoadError(null);
-    try {
-      const r = await fetch("/api/system-settings/compact-config", {
-        credentials: "include",
-      });
-      if (!r.ok) {
-        setLoadError(`Failed to load (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as CompactOut;
-      setData(body);
-      setContextWindow(String(body.context_window));
-      setThresholdPct(String(body.threshold_pct));
-      setKeepRecent(String(body.keep_recent));
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
-    }
-  }
+  const lastHydratedRef = useRef<number | null>(null);
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (!query.data) return;
+    // Use a single fingerprint stamp of all three values
+    // so a refetch that returns the same numbers doesn't
+    // re-seed the inputs.
+    const stamp = query.data.context_window;
+    if (lastHydratedRef.current === stamp) return;
+    lastHydratedRef.current = stamp;
+    setContextWindow(String(query.data.context_window));
+    setThresholdPct(String(query.data.threshold_pct));
+    setKeepRecent(String(query.data.keep_recent));
+  }, [query.data]);
 
+  const data = query.data;
   const dirty =
-    data !== null &&
+    data !== undefined &&
     (Number(contextWindow) !== data.context_window ||
       Number(thresholdPct) !== data.threshold_pct ||
       Number(keepRecent) !== data.keep_recent);
@@ -266,7 +223,7 @@ function CompactSection() {
       setSaveError(t("settings.agentAllMustBeInteger"));
       return;
     }
-    if (data !== null) {
+    if (data !== undefined) {
       if (cw < 16000 || cw > 200000) {
         setSaveError("context_window 必须介于 16000 与 200000 之间");
         return;
@@ -280,39 +237,26 @@ function CompactSection() {
         return;
       }
     }
-    setSaving(true);
     try {
-      const r = await fetch("/api/system-settings/compact-config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          context_window: cw,
-          threshold_pct: tp,
-          keep_recent: kr,
-        }),
-        credentials: "include",
+      const body = await updateMut.mutateAsync({
+        context_window: cw,
+        threshold_pct: tp,
+        keep_recent: kr,
       });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        setSaveError(body.detail ?? `Save failed (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as CompactOut;
-      setData(body);
+      lastHydratedRef.current = body.context_window;
       setContextWindow(String(body.context_window));
       setThresholdPct(String(body.threshold_pct));
       setKeepRecent(String(body.keep_recent));
-      setSavedNotice(
-        t("settings.agentCompactSaved"),
-      );
+      setSavedNotice(t("settings.agentCompactSaved"));
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
-    } finally {
-      setSaving(false);
     }
   }
+
+  const loadError = query.error
+    ? (query.error as Error).message
+    : null;
+  const saving = updateMut.isPending;
 
   return (
     <section>

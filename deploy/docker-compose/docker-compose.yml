@@ -4,11 +4,11 @@
 # defined here yet — they land in C6 via the Adam Web UI
 # dispatch button, which renders per-employee compose files.
 #
-# Configuration lives in the SQLite database. The only
+# Configuration lives in the SQLite database. Hardcoded
+# constants live in ``magi/constants.py``. The only
 # compose-time variable is MAGI_WORKSPACE_DIR (host-side
-# bind-mount source — set in docker-compose/.env, NOT passed
-# into the container). Inside the container the workspace is
-# always at /workspace (hardcoded, derived from MAGI_STATE_DIR).
+# bind-mount source). Inside the container the workspace is
+# always at /workspace (hardcoded).
 #
 # C0: Adam serves /health + WebUI on :42069. SQLite at
 # /workspace/memories/magi.db inside the container.

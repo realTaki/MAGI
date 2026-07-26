@@ -28,7 +28,6 @@ import {
   useCreateMcpServer,
   useDeleteMcpServer,
   useMcpServers,
-  useRefreshMcp,
   useToggleMcpServer,
   useUpdateMcpServer,
   type McpServerIn,
@@ -87,7 +86,6 @@ const kvToDict = (rows: KvRow[]): Record<string, string> => {
 
 export function SettingsMcpCard() {
   const t = useT();
-  const refresh = useRefreshMcp();
   const serversQuery = useMcpServers();
   const createMut = useCreateMcpServer();
   const updateMut = useUpdateMcpServer();
@@ -302,7 +300,7 @@ export function SettingsMcpCard() {
                         draft={editDraft}
                         envRows={editEnvRows}
                         headerRows={editHeaderRows}
-                        onChange={setEditDraft}
+                        onChange={(next) => setEditDraft(next as EditDraft)}
                         onEnvRowsChange={setEditEnvRows}
                         onHeaderRowsChange={setEditHeaderRows}
                       />
@@ -427,7 +425,13 @@ type FormFieldsProps = {
   draft: McpServerIn | EditDraft;
   envRows: KvRow[];
   headerRows: KvRow[];
-  onChange: (next: McpServerIn) => void;
+  // Generic over both ``McpServerIn`` (add) and
+  // ``EditDraft`` (edit) — both extend ``McpServerIn``
+  // shape, ``EditDraft`` just adds ``originalName``.
+  // The component only ever calls
+  // ``onChange({ ...draft, ...patch })`` so the type
+  // is naturally a partial of the input.
+  onChange: (next: McpServerIn | EditDraft) => void;
   onEnvRowsChange: (next: KvRow[]) => void;
   onHeaderRowsChange: (next: KvRow[]) => void;
 };

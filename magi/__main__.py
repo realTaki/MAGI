@@ -1,56 +1,34 @@
-"""MAGI node — single entry point for both Adam and EVE.
+"""MAGI node — single entry point.
 
-The Adam / EVE designation is **runtime configuration**, not a code-path
-difference. There is one ``magi`` console script; which role it plays is
-decided by ``MAGI_NODE_ROLE`` (or ``--role`` to override on the CLI).
+Adam / Eve is a **relationship in the MAGIC tree**, determined by
+the ``magis`` table — not a code-path difference. There is one
+``magi`` console script; the node derives its role from the
+database at boot.
 
 Dispatch goes to ``magi.node`` — see ``node/__init__.py`` for the
-config / run / check surface. There are deliberately no per-role entry
-modules.
+config / run / check surface.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 
 from magi import __version__
-from magi.node import VALID_ROLES, check, run
-
-
-def _resolve_role(args_role: str | None) -> str:
-    # Role defaults to "adam" — the solo-node case seeds Genesis.
-    # C6 EVEs will set ``--role eve`` explicitly when dispatched.
-    role = (args_role or os.environ.get("MAGI_NODE_ROLE", "adam")).strip().lower()
-    if role not in VALID_ROLES:
-        print(
-            f"magi: role must be one of {VALID_ROLES!r}, got {role!r}",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-    return role
+from magi.node import check, run
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="magi",
-        description=(
-            "MAGI node. Role is decided by MAGI_NODE_ROLE "
-            f"(one of: {', '.join(VALID_ROLES)})."
-        ),
+        description="MAGI node. Role is derived from the MAGIC tree in the database.",
     )
     parser.add_argument("--version", action="version", version=f"magi {__version__}")
-    parser.add_argument(
-        "--role",
-        choices=VALID_ROLES,
-        help="Override MAGI_NODE_ROLE for this invocation.",
-    )
     parser.add_argument(
         "--check",
         action="store_true",
         help=(
-            "Print resolved role + config as JSON and exit. "
+            "Print resolved config as JSON and exit. "
             "Used by container readiness probes."
         ),
     )
@@ -60,9 +38,6 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    # Validate the role even when we're only printing --check, so a
-    # misconfigured container fails fast with a clear message.
-    _resolve_role(args.role)
 
     if args.check:
         return check()

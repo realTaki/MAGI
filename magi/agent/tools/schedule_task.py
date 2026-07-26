@@ -49,7 +49,7 @@ from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at, val
 from magi.agent.proactive.orm_models import Task
 from magi.agent.proactive.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import ChatSession, Contact, open_session
+from magi.agent.db import ChatSession, Contact, open_session, require_state_dir
 from magi.agent.db.settings import state_get
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 from magi.channels import Channel
@@ -481,7 +481,7 @@ def _resolve_system_tz() -> str:
     )
 
     raw = state_get(
-        os.environ.get("MAGI_STATE_DIR", "/workspace/memories"),
+        require_state_dir(),
         "system.timezone",
     )
     if raw:

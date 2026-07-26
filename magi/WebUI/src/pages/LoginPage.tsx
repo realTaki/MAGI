@@ -5,59 +5,53 @@
  *   2. User picks a name, clicks "Send code".
  *   3. Code sent to the bound Telegram chat.
  *   4. User enters code → cookie set → dashboard.
+ *
+ * Migrated to react-query: ``useAllowedAccounts`` is the
+ * cached dropdown population; the two POSTs go through
+ * ``useSendLoginCode`` / ``useVerifyLoginCode``. The phase
+ * machine stays in ``useState`` (UI flow, not data).
  */
 
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/index";
+import {
+  useAllowedAccounts,
+  useSendLoginCode,
+  useVerifyLoginCode,
+} from "../lib/queries";
 
 type Phase = "send" | "code" | "verifying" | "error";
-
-type AllowedAccount = {
-  uid: number;
-  name: string;
-};
 
 export default function LoginPage(props: {
   onLoggedIn: (uid: number) => void;
   onBack: () => void;
 }) {
   const t = useT();
-  const [accounts, setAccounts] = useState<AllowedAccount[] | null>(null);
+  const accountsQuery = useAllowedAccounts();
+  const sendMut = useSendLoginCode();
+  const verifyMut = useVerifyLoginCode();
+
   const [selectedUid, setSelectedUid] = useState<number | null>(null);
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("send");
   const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
 
+  // Seed the default selection once the accounts list
+  // first resolves. Don't re-seed on every refetch —
+  // the operator may have picked a different uid in
+  // the meantime.
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/auth/allowed-accounts")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return;
-        const list: AllowedAccount[] = data.accounts ?? [];
-        setAccounts(list);
-        if (list.length > 0) setSelectedUid(list[0].uid);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setAccounts([]);
-      });
-    return () => { cancelled = true; };
-  }, []);
+    if (!accountsQuery.data) return;
+    if (selectedUid !== null) return;
+    const list = accountsQuery.data.accounts;
+    if (list.length > 0) setSelectedUid(list[0].uid);
+  }, [accountsQuery.data, selectedUid]);
 
   async function handleSend() {
     if (selectedUid === null) return;
-    setSending(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/send-login-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: selectedUid }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
+      const data = await sendMut.mutateAsync(selectedUid);
       if (data.ok) {
         setPhase("code");
       } else {
@@ -67,38 +61,37 @@ export default function LoginPage(props: {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
       setPhase("error");
-    } finally {
-      setSending(false);
     }
   }
 
   async function handleVerify() {
     const c = code.trim();
     if (selectedUid === null || !c || c.length !== 6) return;
-    setVerifying(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/verify-login-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid: selectedUid, code: c }),
-        credentials: "include",
+      const data = await verifyMut.mutateAsync({
+        uid: selectedUid,
+        code: c,
       });
-      const data = (await res.json()) as { ok: boolean; error?: string };
-      if (data.ok) { props.onLoggedIn(selectedUid); return; }
+      if (data.ok) {
+        props.onLoggedIn(selectedUid);
+        return;
+      }
       setError(data.error ?? "Verification failed");
       setPhase("error");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
       setPhase("error");
-    } finally {
-      setVerifying(false);
     }
   }
 
-  const codeInputVisible = phase === "code" || phase === "verifying" || phase === "error";
+  const codeInputVisible =
+    phase === "code" || phase === "verifying" || phase === "error";
+  const accounts = accountsQuery.data?.accounts ?? null;
   const loading = accounts === null;
   const empty = accounts !== null && accounts.length === 0;
+  const sending = sendMut.isPending;
+  const verifying = verifyMut.isPending;
 
   return (
     <main className="min-h flex flex-col px-6 py-12">
@@ -124,7 +117,7 @@ export default function LoginPage(props: {
               </div>
             )}
 
-            {!loading && !empty && (
+            {!loading && !empty && accounts && (
               <>
                 <label htmlFor="login-uid" className="block mt-6 text-sm font-medium text-sky-deep mb-2">
                   {t("login.accountLabel")}
@@ -146,7 +139,7 @@ export default function LoginPage(props: {
                       paddingRight: "2.5rem",
                     }}
                   >
-                    {accounts!.map((a) => (
+                    {accounts.map((a) => (
                       <option key={a.uid} value={a.uid}>
                         {a.name}
                       </option>

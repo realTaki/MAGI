@@ -2,6 +2,11 @@
  * OnboardingPage — first-time setup wizard (3 steps).
  *
  * Each step view lives in onboarding/steps/.
+ *
+ * Migrated to react-query: the initial /status probe is
+ * shared with the App boot via ``qk.onboardingStatus`` —
+ * if the App already fetched it, the wizard sees the
+ * cached data immediately and skips the network call.
  */
 import { useEffect, useState } from "react";
 
@@ -10,10 +15,12 @@ import type { OnboardingData } from "./onboardingTypes";
 import { Step1View } from "./onboarding/steps/Step1View";
 import { Step2View } from "./onboarding/steps/Step2View";
 import { Step3View } from "./onboarding/steps/Step3View";
+import { useOnboardingStatus } from "../lib/queries";
 
 export default function OnboardingPage(props: {
   onComplete: (data: OnboardingData) => void;
 }) {
+  const statusQuery = useOnboardingStatus();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [bot, setBot] = useState<{ token: string; username: string } | null>(null);
   const [step1Mode, setStep1Mode] = useState<"view" | "edit">("edit");
@@ -22,23 +29,23 @@ export default function OnboardingPage(props: {
   >([]);
   const [completedData, setCompletedData] = useState<OnboardingData | null>(null);
 
+  // Hydrate the wizard from the status query. A bot
+  // already saved by an earlier session means the
+  // operator skipped step 1; we surface that as the
+  // "view" mode of step 1 instead of an empty form.
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/onboarding/status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (data.bot_saved && data.bot_username) {
-          setBot({ token: "", username: data.bot_username });
-          setStep1Mode("view");
-          setInitialSuperAdmins(
-            (data.super_admins ?? []).map((c: string) => ({ telegramId: c, displayName: null })),
-          );
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+    if (!statusQuery.data) return;
+    if (!statusQuery.data.bot_saved) return;
+    if (!statusQuery.data.bot_username) return;
+    setBot({ token: "", username: statusQuery.data.bot_username });
+    setStep1Mode("view");
+    setInitialSuperAdmins(
+      (statusQuery.data.super_admins ?? []).map((c) => ({
+        telegramId: c,
+        displayName: null,
+      })),
+    );
+  }, [statusQuery.data]);
 
   return (
     <main className="min-h-screen flex flex-col px-6 py-12">

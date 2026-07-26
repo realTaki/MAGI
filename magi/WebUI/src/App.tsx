@@ -6,8 +6,14 @@ import LoginPage from "./pages/LoginPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import type { OnboardingData } from "./pages/onboardingTypes";
 import { I18nProvider } from "./i18n/index";
-
-type View = "landing" | "onboarding" | "login" | "dashboard";
+import {
+  useCompleteOnboarding,
+  useLogout,
+  useMe,
+  useOnboardingStatus,
+  useQueryClient,
+  useRestartOnboarding,
+} from "./lib/queries";
 
 /**
  * App is intentionally not a router. Per the C0 + C1.0b simplification
@@ -29,117 +35,104 @@ type View = "landing" | "onboarding" | "login" | "dashboard";
  *      signed in — we go to landing. From there the landing buttons
  *      are: "Set up" (wizard not yet confirmed) or "Sign in"
  *      (configured, just needs to log in).
+ *
+ * Migrated to react-query: ``useMe`` + ``useOnboardingStatus`` are
+ * the cached boot probes. The mutations ``useLogout``,
+ * ``useRestartOnboarding`` and ``useCompleteOnboarding`` invalidate
+ * the relevant query keys on success so a subsequent boot (or
+ * settings refresh) sees the new state.
  */
 export default function App() {
-  const [view, setView] = useState<View | null>(null); // null = still booting
+  const meQuery = useMe();
+  // Only fetch /status when /me has settled (success or 401).
+  // While /me is in flight, we don't know whether the user is
+  // signed in — a status query would just race the me fetch.
+  const statusQuery = useOnboardingStatus({
+    enabled: meQuery.isFetched,
+  });
+  const logoutMut = useLogout();
+  const restartMut = useRestartOnboarding();
+  const completeMut = useCompleteOnboarding();
+  const qc = useQueryClient();
+
   const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(
     null,
   );
-  const [isFirstTime, setIsFirstTime] = useState(false);
-  // Set after a successful login so the dashboard can greet the
-  // user by their per-channel delivery address (or display name
-  // once we cache one). Null when we landed on dashboard via
-  // the wizard — there the user hasn't authenticated yet, so
-  // we don't pretend we know who they are.
+  // Set after a successful login so the dashboard can greet
+  // the user. Null when we landed on dashboard via the wizard
+  // — there the user hasn't authenticated yet.
   const [signedInUser, setSignedInUser] = useState<{
     telegram_id: string;
     display_name: string | null;
   } | null>(null);
+  // Manual override for the boot-routed view. Used by the
+  // landing page's "Sign in" button (jumps to login even when
+  // the boot logic would otherwise stay on landing) and by
+  // dashboard actions (sign-out, restart, complete) that need
+  // a known next view without waiting for the next boot.
+  const [viewOverride, setViewOverride] = useState<"login" | null>(null);
 
+  // When the user lands on the dashboard via the cookie
+  // (returning user), pre-populate the Settings tab's bot
+  // info. The status query carries the bot username; the
+  // wizard's step 1 form expects ``onboardingData.bot.username``
+  // to render the "saved" pill.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // 1. Try the session cookie. If valid, jump straight to the
-      //    dashboard AND populate signedInUser — otherwise the
-      //    dashboard would render the wrong shell on a page refresh
-      //    (signed in but signedInUser still null from boot).
-      try {
-        const meRes = await fetch("/api/auth/me", {
-          credentials: "include",
-        });
-        if (!cancelled && meRes.ok) {
-          const me = (await meRes.json()) as {
-            telegram_id: string;
-            display_name: string | null;
-          };
-          setSignedInUser(me);
-          // Also pull the bot info for the Settings tab. /status
-          // only returns the bot username (the token is a secret,
-          // it never leaves the server) — the Settings tab handles
-          // the missing token gracefully (shows "(saved — only the
-          // username is shown)" instead of a masked preview).
-          // Without this, a returning user who reloaded the page
-          // would see the Telegram channel as "disconnected" and
-          // the Re-set button hidden, even though the bot is
-          // perfectly wired.
-          try {
-            const stRes = await fetch("/api/onboarding/status", {
-              credentials: "include",
-            });
-            if (!cancelled && stRes.ok) {
-              const st = (await stRes.json()) as {
-                bot_saved?: boolean;
-                bot_username?: string;
-                super_admins?: string[];
-              };
-              if (st.bot_saved && st.bot_username) {
-                setOnboardingData({
-                  bot: { token: "", username: st.bot_username },
-                  superAdmins: (st.super_admins ?? []).map((c) => ({
-                    telegramId: c,
-                    displayName: null,
-                  })),
-                });
-              }
-            }
-          } catch {
-            /* network — Settings tab will show "disconnected" */
-          }
-          setView("dashboard");
-          return;
-        }
-      } catch {
-        /* network error — fall through to status check */
-      }
+    if (!statusQuery.data) return;
+    if (!statusQuery.data.bot_saved) return;
+    if (!statusQuery.data.bot_username) return;
+    setOnboardingData((prev) =>
+      prev && prev.bot.username === statusQuery.data!.bot_username
+        ? prev
+        : {
+            bot: { token: "", username: statusQuery.data!.bot_username! },
+            superAdmins: (statusQuery.data!.super_admins ?? []).map(
+              (c) => ({ telegramId: c, displayName: null }),
+            ),
+          },
+    );
+  }, [statusQuery.data]);
 
-      // 2. No session — decide onboarding vs login via /status.
-      // Single source of truth: ``onboarding_complete``. Set only
-      // when the user clicks the "OK, got it — sign in →" button on
-      // the wizard's step 4 (POST /api/onboarding/complete). Cleared
-      // by "Restart onboarding" (POST /api/onboarding/restart).
-      try {
-        const stRes = await fetch("/api/onboarding/status", {
-          credentials: "include",
-        });
-        if (cancelled) return;
-        if (stRes.ok) {
-          const data = (await stRes.json()) as { onboarding_complete?: boolean };
-          setIsFirstTime(!data.onboarding_complete);
-        } else {
-          // No /status — assume configured (login) rather than blank.
-          setIsFirstTime(false);
-        }
-      } catch {
-        setIsFirstTime(false);
-      }
+  // When /me resolves, capture the identity. On 401
+  // ``meQuery.data`` is undefined and the user is null.
+  useEffect(() => {
+    if (meQuery.data) {
+      setSignedInUser({
+        telegram_id: meQuery.data.telegram_id,
+        display_name: meQuery.data.display_name,
+      });
+    } else {
+      setSignedInUser(null);
+    }
+  }, [meQuery.data]);
 
-      if (!cancelled) {
-        setView("landing");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Route from boot state.
+  let view: View | null = null;
+  if (!meQuery.isFetched || meQuery.isFetching) {
+    view = null; // boot splash
+  } else if (meQuery.data) {
+    view = "dashboard";
+  } else if (statusQuery.data && statusQuery.data.onboarding_complete) {
+    view = "landing";
+  } else {
+    view = "onboarding";
+  }
+  // Apply the manual override last (transient states like
+  // "Sign in" → login form, or "complete onboarding" →
+  // login). The override is reset on every transition.
+  if (viewOverride === "login" && view === "landing") {
+    view = "login";
+  }
+  // The override is irrelevant when /me says we're
+  // already signed in; ignore it.
 
-  // Single I18nProvider wraps every page so the locale
-  // context is available everywhere — including the boot
-  // splash, landing, onboarding, login, and dashboard
-  // branches below. Without this, the dashboard's
-  // LanguageSwitcher would lose its context on view
-  // transitions (since each branch has its own React
-  // subtree). Wrapping here means the locale stays stable
-  // across navigation.
+  // ``isFirstTime`` drives the landing-page branch flag.
+  // It's the inverse of "onboarding_complete" — the
+  // landing's primary button is "Set up" when this is true
+  // and "Sign in" otherwise.
+  const isFirstTime =
+    !statusQuery.data || !statusQuery.data.onboarding_complete;
+
   let content: React.ReactNode;
   if (view === null) {
     content = <BootSplash />;
@@ -149,28 +142,17 @@ export default function App() {
         isFirstTime={isFirstTime}
         onSignIn={() => {
           if (isFirstTime) {
-            setView("onboarding");
+            // Boot logic already maps "no /me + no
+            // onboarding_complete" to the wizard;
+            // invalidating the status query triggers
+            // a refetch on the next render and
+            // re-evaluates the view.
+            void qc.invalidateQueries({
+              queryKey: ["onboarding", "status"],
+            });
           } else {
-            setView("login");
+            setViewOverride("login");
           }
-        }}
-      />
-    );
-  } else if (view === "onboarding") {
-    content = (
-      <OnboardingPage
-        onComplete={async (data) => {
-          // Wizard's step 4 ("MAGI is set up" confirmation) just
-          // got the user to click "OK, got it — sign in →".
-          // Persist the wizard's data, flip the server-side flag,
-          // and route to landing. The boot logic on next mount
-          // will see onboarding_complete=true and show "Sign in".
-          setOnboardingData(data);
-          await fetch("/api/onboarding/complete", { method: "POST" });
-          // Keep local isFirstTime in sync so LandingPage flips to
-          // "Sign in" without waiting for a reload.
-          setIsFirstTime(false);
-          setView("landing");
         }}
       />
     );
@@ -178,35 +160,33 @@ export default function App() {
     content = (
       <LoginPage
         onLoggedIn={async (uid) => {
-          // Pull the now-valid session so the dashboard can greet
-          // the user. /me returns 401 (and we still go to
-          // dashboard) only if the cookie is missing — the
-          // LoginPage's verify just set it, so this is rare.
-          let me: { telegram_id: string; display_name: string | null } | null = null;
-          try {
-            const r = await fetch("/api/auth/me", { credentials: "include" });
-            if (r.ok) {
-              me = (await r.json()) as {
-                telegram_id: string;
-                display_name: string | null;
-              };
-            }
-          } catch {
-            /* network — dashboard will show "Signed in" generically */
-          }
-          // Never leave dashboard without an identity object.
-          // If /me is temporarily unavailable right after
-          // verify-login-code, fall back to the selected uid so
-          // the page still renders and the user can continue.
+          // The LoginPage's verify mutation
+          // invalidated ``qk.me``; force a fresh read
+          // so the dashboard can greet the user.
+          await qc.invalidateQueries({ queryKey: ["me"] });
+          const me = qc.getQueryData<{
+            telegram_id: string;
+            display_name: string | null;
+          }>(["me"]);
           setSignedInUser(
             me ?? {
               telegram_id: String(uid),
               display_name: null,
             },
           );
-          setView("dashboard");
+          setViewOverride(null);
         }}
-        onBack={() => setView("landing")}
+        onBack={() => setViewOverride(null)}
+      />
+    );
+  } else if (view === "onboarding") {
+    content = (
+      <OnboardingPage
+        onComplete={async (data) => {
+          setOnboardingData(data);
+          await completeMut.mutateAsync();
+          setViewOverride("login");
+        }}
       />
     );
   } else {
@@ -215,26 +195,28 @@ export default function App() {
         data={onboardingData}
         signedInUser={signedInUser}
         onBotUpdated={(newBot) => {
-          // Settings tab re-saved the bot. Keep App's view in sync
-          // so other tabs (and the header) see the new token +
-          // username without a remount.
+          // Settings tab re-saved the bot. Keep App's
+          // view in sync so other tabs (and the header)
+          // see the new token + username without a
+          // remount.
           setOnboardingData((prev) =>
             prev
               ? { ...prev, bot: newBot }
               : {
-                  // Edge case: the user reached Settings without
-                  // ever running the wizard (deep link). The bot
-                  // is real (we just saved it) but superAdmins is
-                  // unknown; we fetch from the server to fill in.
+                  // Edge case: the user reached Settings
+                  // without ever running the wizard (deep
+                  // link). The bot is real (we just saved
+                  // it) but superAdmins is unknown; we
+                  // pass an empty list — the Settings
+                  // tab fetches its own admin list.
                   bot: newBot,
                   superAdmins: [],
                 },
           );
         }}
         onAdminsChanged={(next) => {
-          // Admin tab fetched the latest admin list (with display
-          // names) and bubbles it up. We merge into the existing
-          // record, preserving the bot unchanged.
+          // Admin tab fetched the latest admin list
+          // (with display names) and bubbles it up.
           setOnboardingData((prev) =>
             prev
               ? { ...prev, superAdmins: next }
@@ -245,29 +227,28 @@ export default function App() {
           );
         }}
         onRestart={async () => {
-          // Clear the flag server-side so boot routing will send the
-          // user back into the wizard on next load. The saved bot +
-          // admins stay in place, so the wizard resumes from step 1
-          // view mode (or step 3 with prefilled rows) instead of
-          // starting blank.
-          await fetch("/api/onboarding/restart", { method: "POST" });
+          // Clear the flag server-side so boot routing
+          // will send the user back into the wizard on
+          // next load. The saved bot + admins stay in
+          // place, so the wizard resumes from step 1
+          // view mode (or step 3 with prefilled rows)
+          // instead of starting blank.
+          await restartMut.mutateAsync();
           setOnboardingData(null);
-          setIsFirstTime(true);
-          setView("landing");
+          setViewOverride(null);
         }}
         onSignOut={async () => {
-          await fetch("/api/auth/logout", {
-            method: "POST",
-            credentials: "include",
-          });
+          await logoutMut.mutateAsync();
           setSignedInUser(null);
-          setView("landing");
+          setViewOverride(null);
         }}
       />
     );
   }
   return <I18nProvider>{content}</I18nProvider>;
 }
+
+type View = "landing" | "onboarding" | "login" | "dashboard";
 
 function BootSplash() {
   // One-line placeholder so the screen isn't blank while we wait

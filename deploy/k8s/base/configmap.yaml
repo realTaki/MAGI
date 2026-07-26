@@ -6,15 +6,6 @@ metadata:
     app.kubernetes.io/name: magi
     app.kubernetes.io/component: node
 data:
-  # Adam is the default base. The EVE example overlay patches these values.
-  MAGI_NODE_ROLE: adam
-  MAGI_CHANNELS: webui
-  MAGI_STATE_BACKEND: sqlite
-  MAGI_STATE_DIR: /workspace/memories
-  MAGI_HOST: 0.0.0.0
-  MAGI_PORT: "42069"
+  # The only env var the node code still reads.  Everything else
+  # is hardcoded in magi/constants.py or lives in the SQLite DB.
   MAGI_RELOAD: "0"
-  MAGI_LOG_LEVEL: info
-  # The base service is named `magi`; the Adam overlay patches this to the
-  # rendered Adam service name. EVE nodes use the same value to reach Adam.
-  MAGI_ADAM_URL: http://magi:42069
