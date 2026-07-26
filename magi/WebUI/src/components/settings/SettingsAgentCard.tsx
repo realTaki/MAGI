@@ -383,7 +383,6 @@ function CompactSection() {
                 className="form-input text-sm font-mono py-2 px-3 w-full"
               />
             </div>
-            </div>
           </div>
         </div>
       )}

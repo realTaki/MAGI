@@ -186,7 +186,7 @@ export function SettingsPersonaCard() {
   return (
     <ConsoleCard
       title={t("persona.title")}
-      headerRight={<InfoTip text={t("persona.description")} />}
+      headerRight={<InfoTip text={t("persona.description") + " " + t("persona.draftHint")} />}
     >
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 
@@ -204,19 +204,9 @@ export function SettingsPersonaCard() {
           is true, so the operator always knows whether
           their last edit has been committed. */}
       <div className="mt-4">
-        <div className="flex items-baseline justify-between">
-          <h3 className="text-xs font-medium text-ink-soft uppercase tracking-wide">
-            {t("persona.draftLabel")}
-          </h3>
-          {dirty && (
-            <span className="text-[10px] text-amber-700 normal-case tracking-normal">
-              · {t("persona.dirty")}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 text-[11px] text-ink-soft">
-          {t("persona.draftHint")}
-        </p>
+        {dirty && (
+          <p className="text-[10px] text-amber-700 mb-1">{t("persona.dirty")}</p>
+        )}
         <textarea
           value={draftContent}
           onChange={(e) => setDraftContent(e.target.value)}

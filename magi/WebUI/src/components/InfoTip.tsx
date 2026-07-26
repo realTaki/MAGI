@@ -8,34 +8,17 @@
  * this exist / how does it work" prose lives behind a
  * `?` that's visible only when the operator asks.
  *
- * Why a stateful overlay instead of the native ``title=``
- * attribute:
- *
- *   - ``title=`` triggers a multi-second browser delay
- *     before showing; an operator reading quickly past
- *     the card needs the tooltip to feel instant.
- *   - ``title=`` positions itself wherever the OS picks
- *     (often off-screen near the right edge, since the
- *     OS reads the cursor's screen position). The
- *     stateful popover anchors to the icon's right
- *     edge so we always know where it lives.
- *   - ``title=`` is not keyboard-accessible (a tab stop
- *     can't trigger it). The button + on-focus state
- *     makes the explanation reachable without a mouse.
- *   - ``title=`` can't be styled; the in-card popover
- *     matches the dashboard's sky-pale / sky-light
- *     palette so the hint doesn't read as a separate
- *     system surface.
- *
- * Popover direction: opens to the **left** by default
- * (``right-full`` + ``mr-2``). Card titles sit at the
- * top of the panel and the rest of the page has
- * plenty of right-side room — popping to the right
- * would push the tooltip off the viewport for any
- * card that touches the screen edge.
+ * Tooltip is rendered through ``createPortal`` to
+ * ``document.body`` so it escapes any parent
+ * ``overflow: hidden`` / ``overflow: auto`` that might
+ * otherwise clip it (the dashboard's sidebar uses
+ * ``overflow-y-auto`` for scrolling, which would chop
+ * the popover when the ? sits near the right edge of
+ * the main column).
  */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { IconHelp } from "./icons";
 
@@ -52,22 +35,29 @@ type InfoTipProps = {
 
 export function InfoTip({ text, size = 14 }: InfoTipProps) {
   const [open, setOpen] = useState(false);
-  // Mouse leave on the wrapper can fire before mouse enter
-  // on the popover (the two elements are separate DOM
-  // nodes). The ref + small grace timer below prevents the
-  // popover from flickering as the cursor crosses the gap.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const closeTimer = useRef<number | null>(null);
+  const iconRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     return () => {
-      // Drop any pending close-timer on unmount so a
-      // re-render in the same tick doesn't try to set state
-      // on a dead component.
       if (closeTimer.current !== null) {
         window.clearTimeout(closeTimer.current);
       }
     };
   }, []);
+
+  function recomputePosition() {
+    const el = iconRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // tooltip opens to the **right** of the ? — flush at the
+    // icon's vertical centre, with a small gap.
+    setPos({
+      left: rect.right + 8,
+      top: rect.top + rect.height / 2,
+    });
+  }
 
   function scheduleClose() {
     if (closeTimer.current !== null) {
@@ -86,16 +76,14 @@ export function InfoTip({ text, size = 14 }: InfoTipProps) {
   }
 
   return (
-    <span className="relative inline-flex items-center">
+    <>
       <button
+        ref={iconRef}
         type="button"
         aria-label={text}
-        onMouseEnter={() => {
-          cancelClose();
-          setOpen(true);
-        }}
+        onMouseEnter={() => { cancelClose(); recomputePosition(); setOpen(true); }}
         onMouseLeave={scheduleClose}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { recomputePosition(); setOpen(true); }}
         onBlur={() => setOpen(false)}
         className="inline-flex items-center justify-center
                    text-ink-soft hover:text-ink
@@ -106,31 +94,24 @@ export function InfoTip({ text, size = 14 }: InfoTipProps) {
       >
         <IconHelp className="" />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <span
           role="tooltip"
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
-          // Anchor to the **right** of the trigger with a
-          // negative margin so the popover sits flush
-          // left of the `?` icon — keeps the whole
-          // thing on-screen when the card title is at
-          // the right edge of the viewport. ``top-full``
-          // + ``mt-2`` drops the popover below the
-          // trigger (the card title is on the same row;
-          // popping left or right would push it into the
-          // card body or off the right edge).
-          className="absolute z-50 right-full top-1/2 -translate-y-1/2 mr-2
-                     w-72 max-w-xs
+          className="fixed z-[100] w-72 max-w-xs
+                     -translate-y-1/2
                      rounded-md border border-sky-light/40
                      bg-white/95 backdrop-blur
                      px-3 py-2 text-xs leading-relaxed text-ink-soft
-                     shadow-sm
-                     whitespace-normal"
+                     shadow-md
+                     whitespace-normal pointer-events-auto"
+          style={{ left: pos.left, top: pos.top }}
         >
           {text}
-        </span>
+        </span>,
+        document.body,
       )}
-    </span>
+    </>
   );
 }

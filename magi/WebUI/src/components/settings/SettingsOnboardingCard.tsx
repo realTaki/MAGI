@@ -25,7 +25,7 @@ export function SettingsOnboardingCard(props: { onRestart: () => void }) {
         onClick={props.onRestart}
         className="mt-3 btn btn-secondary px-4 py-2"
       >
-        Restart onboarding
+        {t("settings.btnRestartOnboarding")}
       </button>
     </ConsoleCard>
   );
