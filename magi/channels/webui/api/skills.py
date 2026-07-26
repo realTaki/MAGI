@@ -1,26 +1,25 @@
-"""``/api/skills`` — read-only skill registry surface.
+"""``/api/skills`` — skill registry with enable/disable.
 
 The actual machine-readable catalog lives in
-:mod:`magi.agent.skills.loader` and is a module
-singleton. This router just wraps it for the WebUI /
-admin consoles — no caching, no live-rewatch; the loader
-itself caches once at process start. A successful
-operator of a SKILL.md restarts the node to see it.
+::mod:`magi.agent.skills.loader` and is a module
+singleton. This router wraps it for the WebUI / admin
+consoles. Disabled skills are persisted in the
+``settings`` table under ``skills.disabled`` as a
+JSON array of skill names.
 
 Endpoints
 ---------
 
-- ``GET /api/skills``                       → list of skill
-                                                metadata rows
+- ``GET /api/skills``                       → list of skill metadata
+- ``PATCH /api/skills/{name}``             → toggle enabled
 - ``GET /api/skills/{name}/raw``           → markdown body
-                                                (audit / future
-                                                editor only)
 
 Auth: admin-gated like every other Adam endpoint.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -33,6 +32,8 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.agent.db import get_session
+from magi.agent.db.settings import state_get, state_set
+from magi.agent.db.engine import require_state_dir
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.tools.skill_loader import get_skill_loader
 
@@ -41,12 +42,23 @@ logger = logging.getLogger("magi.channels.webui.api.skills")
 router = APIRouter(tags=["skills"])
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
+_DISABLED_KEY = "skills.disabled"
 
 
-# Same lower bound the tool path enforces; ``load_skill``
-# tool runs in the LLM-callable API and reuses this
-# threshold. Clients of both surfaces (UI + LLM) share
-# the constraint.
+def _load_disabled() -> set[str]:
+    raw = state_get(require_state_dir(), _DISABLED_KEY)
+    if not raw:
+        return set()
+    try:
+        return set(json.loads(raw))
+    except (json.JSONDecodeError, TypeError):
+        return set()
+
+
+def _save_disabled(disabled: set[str]) -> None:
+    state_set(require_state_dir(), _DISABLED_KEY, json.dumps(sorted(disabled)))
+
+
 _MAX_BODY_BYTES = 32 * 1024
 
 
@@ -55,6 +67,7 @@ class SkillOut(BaseModel):
     description: str
     path: str
     version: Optional[str] = None
+    enabled: bool = True
 
 
 class SkillBodyOut(BaseModel):
@@ -64,29 +77,59 @@ class SkillBodyOut(BaseModel):
     truncated: bool
 
 
+class SkillToggleIn(BaseModel):
+    enabled: bool
+
+
 @router.get("/skills", response_model=list[SkillOut])
 def list_skills(
     request: Request,
     _admin: AdminGate,
     session: Session = Depends(get_session),
 ) -> list[SkillOut]:
-    """Enumerate every registered skill.
-
-    Sorted by name (already done by the loader) so the
-    WebUI doesn't have to. Path is serialised as a
-    string — the UI uses it for the "where on disk is
-    this?" tooltip, never for navigation.
-    """
+    """Enumerate every registered skill."""
     loader = get_skill_loader()
+    disabled = _load_disabled()
     return [
         SkillOut(
             name=s.name,
             description=s.description,
             path=str(s.path),
             version=s.version,
+            enabled=s.name not in disabled,
         )
         for s in loader.list()
     ]
+
+
+@router.patch("/skills/{name}", response_model=SkillOut)
+def toggle_skill(
+    request: Request,
+    name: str,
+    body: SkillToggleIn,
+    _admin: AdminGate,
+    session: Session = Depends(get_session),
+) -> SkillOut:
+    """Enable or disable a skill."""
+    if not _NAME_RE.match(name):
+        raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
+    loader = get_skill_loader()
+    meta = loader.get(name)
+    if meta is None:
+        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
+    disabled = _load_disabled()
+    if body.enabled:
+        disabled.discard(name)
+    else:
+        disabled.add(name)
+    _save_disabled(disabled)
+    return SkillOut(
+        name=meta.name,
+        description=meta.description,
+        path=str(meta.path),
+        version=meta.version,
+        enabled=body.enabled,
+    )
 
 
 @router.get("/skills/{name}/raw", response_model=SkillBodyOut)
@@ -96,34 +139,18 @@ def get_skill_body(
     _admin: AdminGate,
     session: Session = Depends(get_session),
 ) -> SkillBodyOut:
-    """Return the SKILL.md markdown body for ``name``.
-
-    Used by the audit console today (a future editor
-    may stream-edit through ``PUT``; not in v0). Body
-    is truncated at 32 KB to match the ``load_skill`` tool
-    ceiling — keeps the two surfaces consistent in what's
-    "the full body".
-    """
+    """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
-        raise MagiHTTPException(
-            status_code=400, code="validation.skill_name",
-            detail="invalid skill name",
-        )
+        raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
     loader = get_skill_loader()
     meta = loader.get(name)
     if meta is None:
-        raise MagiHTTPException(
-            status_code=404, code="not_found.skill",
-            detail=f"skill {name!r} not registered",
-        )
+        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
     try:
         raw_bytes = meta.path.read_bytes()
     except OSError as exc:
         logger.warning("get_skill_body: read failed: %s", exc)
-        raise MagiHTTPException(
-            status_code=500, code="skill.read_failed",
-            detail="read failed",
-        ) from exc
+        raise MagiHTTPException(status_code=500, code="skill.read_failed", detail="read failed") from exc
     truncated = len(raw_bytes) > _MAX_BODY_BYTES
     if truncated:
         body_bytes = raw_bytes[:_MAX_BODY_BYTES]
@@ -133,9 +160,4 @@ def get_skill_body(
     else:
         content = raw_bytes.decode("utf-8", errors="replace")
     mtime = datetime.fromtimestamp(meta.path.stat().st_mtime, tz=timezone.utc).isoformat()
-    return SkillBodyOut(
-        name=name,
-        content=content,
-        modified_at=mtime,
-        truncated=truncated,
-    )
+    return SkillBodyOut(name=name, content=content, modified_at=mtime, truncated=truncated)

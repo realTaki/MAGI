@@ -58,6 +58,46 @@ _ROLE_DEFAULT_CHANNELS: dict[str, tuple[str, ...]] = {
 }
 
 
+# Channel → settings-key the wizard writes when the operator
+# completes the wizard for that channel. Used by the node
+# boot path to detect "this channel is already onboarded"
+# and bring its daemon up without an explicit ``MAGI_CHANNELS``.
+_CHANNEL_ONBOARDED_KEY: dict[str, str] = {
+    "telegram": "telegram.bot_token",
+}
+
+
+def _augment_with_onboarded_channels(
+    base: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Add channels whose wizard step has already been
+    completed (as recorded in the settings KV table) to
+    ``base``, preserving order — onboarded channels go
+    after the role-default bundle so webui still boots
+    first.
+
+    The settings DB read is best-effort: a fresh container
+    with no SQLite yet, or a DB that's still being
+    initialised, returns ``()`` and the launcher skips
+    those channels. The wizard's ``save-bot`` step is the
+    canonical way to bring a channel up after that point.
+    """
+    extra: list[str] = []
+    for channel, key in _CHANNEL_ONBOARDED_KEY.items():
+        if channel in base:
+            continue
+        try:
+            from magi.agent.db import require_state_dir
+            from magi.agent.db.settings import state_get
+            if state_get(require_state_dir(), key):
+                extra.append(channel)
+        except Exception:  # noqa: BLE001
+            # DB not ready yet — the wizard step will bring
+            # the daemon up later. Don't block boot.
+            pass
+    return tuple(base) + tuple(extra)
+
+
 # ----------------------------------------------------------------------
 # config
 # ----------------------------------------------------------------------
@@ -107,8 +147,21 @@ class NodeConfig:
             channels = tuple(
                 c.strip().lower() for c in channels_raw.split(",") if c.strip()
             )
+            channels = _augment_with_onboarded_channels(channels)
         else:
-            channels = _ROLE_DEFAULT_CHANNELS[role]
+            # ``MAGI_CHANNELS`` unset — start with the role's
+            # default bundle (Adam → webui, Eve → telegram),
+            # then ask the settings DB "what channels has the
+            # operator already onboarded?". A saved
+            # ``telegram.bot_token`` means the wizard ran step
+            # 2; that channel is now onboarded and the
+            # launcher should bring its daemon up. The
+            # wizard is the single source of truth for "which
+            # channels are live" — the operator never has to
+            # pass ``MAGI_CHANNELS`` in advance.
+            channels = _augment_with_onboarded_channels(
+                _ROLE_DEFAULT_CHANNELS[role]
+            )
 
         unknown = [c for c in channels if c not in VALID_CHANNELS]
         if unknown:

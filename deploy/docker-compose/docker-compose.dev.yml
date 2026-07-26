@@ -37,14 +37,14 @@ services:
       # even an agent shell cannot rewrite the runtime source. WebUI is
       # part of magi/, so it deliberately has no second source mount.
       # The dependency volume below is the only writable child mount.
-      - ../magi:/app/magi:ro
+      - ../../magi:/app/magi:ro
       - magi_web_node_modules:/app/magi/WebUI/node_modules
       # Dev entrypoint (start vite + exec magi) lives on the host so
       # we can edit it without rebuilding the image. The image
       # has no entrypoint script — if this mount is missing, the
       # container fails fast on boot (the image's CMD points at
       # /usr/local/bin/entrypoint.sh which won't exist).
-      - ./entrypoint.dev.sh:/usr/local/bin/entrypoint.sh:ro
+      - ../entrypoint.dev.sh:/usr/local/bin/entrypoint.sh:ro
     dns:
       # Docker's built-in DNS (127.0.0.11) sometimes returns only
       # IPv6 (AAAA) for api.telegram.org when the host's resolver

@@ -7,6 +7,8 @@ export default {
     confirm: "确认",
     delete: "删除",
     edit: "编辑",
+    enabled: "已启用",
+    disabled: "已禁用",
     close: "关闭",
     back: "返回",
     next: "下一步",

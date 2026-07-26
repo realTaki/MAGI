@@ -113,7 +113,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     row_kwargs.setdefault("prompt", "do the thing")
     row_kwargs.setdefault("cron", "")
     row_kwargs.setdefault("tz", "UTC")
-    row_kwargs.setdefault("channel", "webui")
+    row_kwargs.setdefault("target_channel", "webui")
     row_kwargs.setdefault("enabled", 1)
     row_kwargs.setdefault("created_at", "2026-07-20T12:00:00Z")
     row_kwargs.setdefault("updated_at", "2026-07-20T12:00:00Z")
@@ -257,7 +257,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         workspace=state_db.parent,
 
         uid=1,
-        target_channel="webui",
+        channel="webui",
     )
     res = await ScheduleTaskTool().run(
         ctx,
@@ -265,7 +265,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         prompt="tell me what you know about Italian food",
         frequency="once",
         run_at="2099-01-01T12:00:00+00:00",
-        target_channel="webui",
+        channel="webui",
     )
     assert res.is_error is False, res.content
 
@@ -307,7 +307,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         workspace=state_db.parent,
         
         uid=1,
-        target_channel="webui",
+        channel="webui",
     )
     res = await ScheduleTaskTool().run(
         ctx,
@@ -315,7 +315,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         prompt="anything",
         frequency="once",
         run_at="not-a-timestamp",
-        target_channel="webui",
+        channel="webui",
     )
     assert res.is_error is True
     # LLM-facing phrasing: includes the offending input

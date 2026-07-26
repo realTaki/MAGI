@@ -6,7 +6,8 @@
 # the whole service.
 #
 # Auto-reload for Python is driven by MAGI_RELOAD=1 in
-# docker-compose.dev.yml; uvicorn picks it up via NodeConfig.
+# docker-compose/docker-compose.dev.yml; uvicorn picks it up via
+# NodeConfig.
 
 set -eu
 cd /app/magi/WebUI

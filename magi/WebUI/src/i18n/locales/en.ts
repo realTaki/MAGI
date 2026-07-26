@@ -7,6 +7,8 @@ export default {
     confirm: "Confirm",
     delete: "Delete",
     edit: "Edit",
+    enabled: "Enabled",
+    disabled: "Disabled",
     close: "Close",
     back: "Back",
     next: "Next",

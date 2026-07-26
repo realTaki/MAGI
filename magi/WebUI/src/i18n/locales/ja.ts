@@ -7,6 +7,8 @@ export default {
     confirm: "確認",
     delete: "削除",
     edit: "編集",
+    enabled: "有効",
+    disabled: "無効",
     close: "閉じる",
     back: "戻る",
     next: "次へ",

@@ -1,6 +1,6 @@
 # MAGI Kubernetes 部署
 
-这里是 MAGI 的 Kubernetes 部署文件，与 `deploy/docker-compose*.yml` 分开维护。
+这里是 MAGI 的 Kubernetes 部署文件，与 `deploy/docker-compose/*.yml` 分开维护。
 
 当前清单支持：
 
@@ -92,11 +92,11 @@ images:
 
 ## 2. 部署 Adam
 
-默认 Adam 只挂载 WebUI：
+默认 Adam 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置
+（启动逻辑会从 settings DB 自动检测已 onboarded 的通道）：
 
 ```yaml
 MAGI_NODE_ROLE: adam
-MAGI_CHANNELS: webui
 ```
 
 先预览渲染结果：
@@ -147,8 +147,8 @@ http://adam-magi:42069
 WebUI-only Adam 不需要 Secret。清单中的 Secret 引用是 optional 的，因此没有
 Secret 时 Pod 也能启动。
 
-如果 Adam 同时启用 Telegram，推荐通过命令行创建 Secret，而不是把真实密钥写
-进 Git：
+如果 Adam 同时启用 Telegram,推荐通过命令行创建 Secret,而不是把真实密钥写
+进 Git:
 
 ```bash
 kubectl -n magi create secret generic adam-magi-secrets \
@@ -156,11 +156,10 @@ kubectl -n magi create secret generic adam-magi-secrets \
   --from-literal=MAGI_SHARED_SECRET='replace-with-long-random-secret'
 ```
 
-然后将 `overlays/adam/patch-config.yaml` 改为：
-
-```yaml
-MAGI_CHANNELS: webui,telegram
-```
+Adam 默认只跑 webui 通道。TG bot 在 `save-bot` 步骤由 onboarding 拉起
+(daemon 跑在 webui worker 进程里),不需要把 `MAGI_CHANNELS` 预设成
+`webui,telegram` —— settings DB 里 `telegram.bot_token` 一旦写入,
+节点启动时就会自动把 telegram 通道加进来。
 
 也可以参考但不要直接提交真实凭据：
 
@@ -173,10 +172,12 @@ deploy/k8s/secrets/adam-magi-secrets.example.yaml
 `overlays/eve-example` 是一个可复制的 EVE 模板。它会：
 
 - 设置 `MAGI_NODE_ROLE=eve`；
-- 设置 `MAGI_CHANNELS=telegram`；
 - 创建独立的 Deployment 和 PVC；
 - 删除 EVE 的 HTTP Service，因为 Telegram polling 不需要入站 HTTP；
 - 将 `MAGI_ADAM_URL` 指向 `adam-magi:42069`。
+
+EVE 的 `MAGI_CHANNELS` 不需要在启动时预设 —— role 默认值就是
+`("telegram",)`,启动后会自动拉起 daemon。
 
 先复制目录：
 
@@ -198,7 +199,6 @@ cp -R deploy/k8s/overlays/eve-example \
    ```yaml
    data:
      MAGI_NODE_ROLE: eve
-     MAGI_CHANNELS: telegram
      MAGI_UID: alice
      MAGI_ADAM_URL: http://adam-magi:42069
    ```

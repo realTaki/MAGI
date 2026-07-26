@@ -4,7 +4,7 @@
 # Usage:
 #   ./update.sh [dev|prod]    # default: dev
 #
-# Dev mode (deploy/docker-compose.dev.yml override):
+# Dev mode (deploy/docker-compose/docker-compose.dev.yml override):
 #   - source is bind-mounted from the host into the container
 #   - uvicorn (MAGI_RELOAD=1) auto-reloads on .py file changes
 #   - vite HMR handles .tsx / .css changes in the browser
@@ -12,7 +12,7 @@
 #     container picks up the new code automatically — no
 #     container restart needed
 #
-# Prod mode (deploy/docker-compose.yml):
+# Prod mode (deploy/docker-compose/docker-compose.yml):
 #   - the source is baked into the image at build time
 #   - need to rebuild the image + recreate the container
 #   - rebuild takes 1-2 minutes; the previous image layer is
@@ -60,13 +60,13 @@ if [ "$mode" = "prod" ]; then
     exit 0
   fi
   echo ">>> rebuilding adam image"
-  docker compose -f deploy/docker-compose.yml build adam
+  docker compose -f deploy/docker-compose/docker-compose.yml build adam
   echo ">>> recreating adam container"
-  docker compose -f deploy/docker-compose.yml up -d adam
+  docker compose -f deploy/docker-compose/docker-compose.yml up -d adam
 else
   echo ">>> dev mode: uvicorn + vite pick up the new code on the"
   echo "    next request — no container restart needed."
-  echo "    (uvicorn: MAGI_RELOAD=1 in docker-compose.dev.yml;"
+  echo "    (uvicorn: MAGI_RELOAD=1 in docker-compose/docker-compose.dev.yml;"
   echo "     vite: HMR on by default)"
 fi
 

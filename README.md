@@ -24,7 +24,7 @@ True agentic societyAgents form organizations (MAGICs) with leaders and members,
 git clone https://github.com/MAGI/MAGI.git
 cd MAGI
 cp deploy/.env.example deploy/.env
-docker compose -f deploy/docker-compose.yml up --build
+docker compose -f deploy/docker-compose/docker-compose.yml up --build
 # → http://localhost:42069
 ```
 
