@@ -1,22 +1,14 @@
 /**
  * MagisPane — Agent management.
- *
- * Flat table of all agents with inline editing and a per-council breakdown.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
-import type { MAGICRow } from "./MagicsPane";
-
-// -- types --------------------------------------------------------------------
-
-type MagiRow = {
-  id: number; name: string | null; magic_id: number; magic_position: string;
-  provider: string | null; api_key_set: boolean; api_key_last4: string | null;
-  created_at: string; updated_at: string;
-};
+import { qk } from "../../lib/queryClient";
+import { useMagics, useMagis, type MAGICRow, type MagiRow } from "../../lib/queries";
 
 type EditDraft = { name: string; provider: string; api_key: string };
 
@@ -27,29 +19,23 @@ const PROVIDER_OPTIONS = [
   { value: "minimax-cn", label: "Minimax (China)" },
 ];
 
-// -- pane ---------------------------------------------------------------------
-
 export function MagisPane() {
   const t = useT();
-  const [magics, setMagics] = useState<MAGICRow[] | null>(null);
-  const [magis, setMagis] = useState<MagiRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const magicsQuery = useMagics();
+  const magisQuery = useMagis();
+  const magics = magicsQuery.data ?? [];
+  const magis = magisQuery.data ?? [];
+  const loadError = (magicsQuery.error || magisQuery.error)
+    ? (magicsQuery.error instanceof Error ? magicsQuery.error.message : "") || (magisQuery.error instanceof Error ? magisQuery.error.message : "") || "load failed"
+    : null;
 
-  const reload = async () => {
-    setLoadError(null);
-    try {
-      const [mr, gr] = await Promise.all([
-        fetch("/api/magics", { credentials: "include" }),
-        fetch("/api/magis", { credentials: "include" }),
-      ]);
-      if (!mr.ok || !gr.ok) { setLoadError(`load failed (magics=${mr.status}, magis=${gr.status})`); return; }
-      setMagics((await mr.json()) as MAGICRow[]);
-      setMagis((await gr.json()) as MagiRow[]);
-    } catch (e) { setLoadError(`network error: ${(e as Error).message}`); }
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: qk.magics });
+    void qc.invalidateQueries({ queryKey: qk.magis });
   };
-  useEffect(() => { void reload(); }, []);
 
-  const [addForm, setAddForm] = useState({ magic_id: "", name: "", magic_position: "eve" as "adam"|"eve", provider: "", api_key: "" });
+  const [addForm, setAddForm] = useState({ magic_id: "", name: "", magic_position: "eve" as "adam" | "eve", provider: "", api_key: "" });
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -59,10 +45,8 @@ export function MagisPane() {
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const teamName = useMemo(() => { const m = new Map<number, string>(); (magics ?? []).forEach((c) => m.set(c.id, c.name)); return m; }, [magics]);
-  const magisByMagic = useMemo(() => {
-    const out = new Map<number, MagiRow[]>(); (magis ?? []).forEach((m) => { const l = out.get(m.magic_id) ?? []; l.push(m); out.set(m.magic_id, l); }); return out;
-  }, [magis]);
+  const teamName = useMemo(() => { const m = new Map<number, string>(); magics.forEach((c) => m.set(c.id, c.name)); return m; }, [magics]);
+  const magisByMagic = useMemo(() => { const out = new Map<number, MagiRow[]>(); magis.forEach((m) => { const l = out.get(m.magic_id) ?? []; l.push(m); out.set(m.magic_id, l); }); return out; }, [magis]);
 
   const submitCreate = async () => {
     setAddError(null);
@@ -74,7 +58,7 @@ export function MagisPane() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: addForm.name.trim() || null, magic_id: mid, magic_position: addForm.magic_position, provider: addForm.provider || null, api_key: addForm.api_key || null }) });
       if (!res.ok) { setAddError(`create failed: ${res.status} ${await res.text()}`); return; }
-      setAddForm({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" }); setAddOpen(false); await reload();
+      setAddForm({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" }); setAddOpen(false); refresh();
     } catch (e) { setAddError(`network error: ${(e as Error).message}`); }
     finally { setAdding(false); }
   };
@@ -89,19 +73,17 @@ export function MagisPane() {
     try {
       const res = await fetch(`/api/magis/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       if (!res.ok) { setEditError(`save failed: ${res.status} ${await res.text()}`); return; }
-      setEditingId(null); await reload();
+      setEditingId(null); refresh();
     } catch (e) { setEditError(`network error: ${(e as Error).message}`); }
     finally { setSaving(false); }
   };
 
   const del = async (id: number) => {
-    const name = magis?.find((m) => m.id === id)?.name ?? `#${id}`;
+    const name = magis.find((m) => m.id === id)?.name ?? `#${id}`;
     if (!confirm(`${t("magis.deleteConfirm")} (${name})`)) return;
     const res = await fetch(`/api/magis/${id}`, { method: "DELETE", credentials: "include" });
-    if (res.ok) await reload();
+    if (res.ok) refresh();
   };
-
-  // -- render ------------------------------------------------------------------
 
   return (
     <div className="space-y-4">
@@ -128,7 +110,7 @@ export function MagisPane() {
                 <select className="form-input text-sm py-1.5 px-3 w-full" value={addForm.magic_id}
                   onChange={(e) => setAddForm((f) => ({ ...f, magic_id: e.target.value }))}>
                   <option value="" disabled>—</option>
-                  {(magics ?? []).map((c) => (<option key={c.id} value={String(c.id)}>{c.name}</option>))}
+                  {magics.map((c) => (<option key={c.id} value={String(c.id)}>{c.name}</option>))}
                 </select>
               </label>
               <label className="flex flex-col gap-1">
@@ -139,7 +121,7 @@ export function MagisPane() {
               <label className="flex flex-col gap-1">
                 <span className="form-label">{t("magis.createPositionLabel")}</span>
                 <select className="form-input text-sm py-1.5 px-3 w-full" value={addForm.magic_position}
-                  onChange={(e) => setAddForm((f) => ({ ...f, magic_position: e.target.value as "adam"|"eve" }))}>
+                  onChange={(e) => setAddForm((f) => ({ ...f, magic_position: e.target.value as "adam" | "eve" }))}>
                   <option value="eve">EVE</option><option value="adam">ADAM</option>
                 </select>
               </label>
@@ -156,14 +138,13 @@ export function MagisPane() {
                   value={addForm.api_key} onChange={(e) => setAddForm((f) => ({ ...f, api_key: e.target.value }))} />
               </label>
               <button type="button" disabled={adding || !addForm.magic_id}
-                className="btn btn-primary text-sm py-1.5 px-4" onClick={() => void submitCreate()}>
+                className="btn btn-primary text-sm py-1.5 px-4" onClick={() => { void submitCreate(); }}>
                 {adding ? t("common.loading") : t("common.add")}
               </button>
             </div>
           </div>
         )}
 
-        {/* Agents table */}
         <div className="overflow-x-auto">
           <table className="data-table w-full text-sm">
             <thead>
@@ -177,7 +158,7 @@ export function MagisPane() {
               </tr>
             </thead>
             <tbody>
-              {(magis ?? []).map((m) => {
+              {magis.map((m) => {
                 const isEdit = editingId === m.id;
                 const tname = teamName.get(m.magic_id);
                 return (
@@ -194,7 +175,7 @@ export function MagisPane() {
                           <input type="password" className="form-input text-sm py-1 px-2 w-40"
                             placeholder={t("magis.keyNewPlaceholder")} value={editDraft.api_key}
                             onChange={(e) => setEditDraft((d) => ({ ...d, api_key: e.target.value }))} />
-                          <button type="button" disabled={saving} onClick={() => void submitEdit(m.id)}
+                          <button type="button" disabled={saving} onClick={() => { void submitEdit(m.id); }}
                             className="btn btn-primary text-xs py-1 px-3">{saving ? "…" : t("common.save")}</button>
                           <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-1 px-2">{t("common.cancel")}</button>
                           {editError && <span className="text-xs text-rose-600">{editError}</span>}
@@ -222,7 +203,7 @@ export function MagisPane() {
                       {isEdit ? null : (
                         <div className="flex items-center justify-end gap-1">
                           <button type="button" onClick={() => startEdit(m)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
-                          <button type="button" onClick={() => void del(m.id)}
+                          <button type="button" onClick={() => { void del(m.id); }}
                             className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
                         </div>
                       )}
@@ -230,14 +211,13 @@ export function MagisPane() {
                   </tr>
                 );
               })}
-              {magis !== null && magis.length === 0 && (
+              {magis.length === 0 && (
                 <tr><td colSpan={6} className="py-6 text-ink-soft text-sm text-center">{t("magis.empty")}</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Per-council breakdown */}
         {magisByMagic.size > 0 && (
           <div className="mt-6 pt-4 border-t border-sky-light/40">
             <h3 className="text-sm font-medium text-ink mb-3">{t("magis.breakdownHeading")}</h3>
@@ -263,5 +243,3 @@ export function MagisPane() {
     </div>
   );
 }
-
-

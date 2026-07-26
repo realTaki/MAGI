@@ -595,11 +595,11 @@ export default function ChatTab() {
   const queryClientForChat = useQueryClient();
   const sendChatMut = useMutation({
     mutationFn: (vars: { text: string; sessionId: string | null }) =>
-      apiFetch<{ reply: string; session_id: string }>("/api/chat/send", {
+      apiFetch<{ reply: string; session_id: string; messages?: Array<{ message_id: string; role: string; text: string; ts: string }> }>("/api/chat/send", {
         method: "POST",
         body: { text: vars.text, session_id: vars.sessionId },
       }),
-    onSuccess: (data: { reply: string; session_id: string }, vars: { text: string; sessionId: string | null }) => {
+    onSuccess: (data: { reply: string; session_id: string; messages?: Array<{ message_id: string; role: string; text: string; ts: string }> }, vars: { text: string; sessionId: string | null }) => {
       if (data.session_id !== vars.sessionId) {
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
@@ -607,10 +607,21 @@ export default function ChatTab() {
         setActivePreview(vars.text);
         void refreshHistory();
       }
-      setChatMessages((prev) => [
-        ...prev,
-        { id: Date.now() + 1, role: "assistant", text: data.reply },
-      ]);
+      // messages[] includes tool-appended side-channel sends
+      // (e.g. ``send_message`` tool output). When present,
+      // replace the local array wholesale so the scroll
+      // shows the complete session state.
+      if (data.messages && data.messages.length > 0) {
+        setChatMessages(data.messages.map((m, i) => ({
+          id: i, role: m.role as "user" | "assistant",
+          text: m.text, ts: m.ts,
+        })));
+      } else {
+        setChatMessages((prev) => [
+          ...prev,
+          { id: Date.now() + 1, role: "assistant", text: data.reply },
+        ]);
+      }
       void queryClientForChat.invalidateQueries({
         queryKey: qk.chatMessages(data.session_id),
       });

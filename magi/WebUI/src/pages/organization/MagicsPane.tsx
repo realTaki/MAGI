@@ -1,30 +1,16 @@
 /**
  * MagicsPane — MAGI Council management.
- *
- * Tree of councils, each with a leader (ADAM) and members (EVEs).
- * Full CRUD with inline editing.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
+import { qk } from "../../lib/queryClient";
+import { useMagics, useMagis, type MAGICRow, type MagiBrief } from "../../lib/queries";
 
-// -- types --------------------------------------------------------------------
-
-export type MAGICRow = {
-  id: number; name: string; parent_id: number | null;
-  adam_id: number | null; child_count: number;
-  created_at: string; updated_at: string;
-};
-
-export type MagiBrief = {
-  id: number; name: string | null; magic_id: number; magic_position: string;
-  provider: string | null; api_key_set: boolean; api_key_last4: string | null;
-  created_at: string; updated_at: string;
-};
-
-// -- tree flatten -------------------------------------------------------------
+// -- tree flatten ----------------------------------------------------------
 
 type FlatMAGIC = MAGICRow & { depth: number };
 
@@ -44,109 +30,79 @@ function flattenTree(rows: MAGICRow[]): FlatMAGIC[] {
   return out;
 }
 
-// -- pane ---------------------------------------------------------------------
-
 const INDENT = 24;
 
 export function MagicsPane() {
   const t = useT();
-  const [magics, setMagics] = useState<MAGICRow[] | null>(null);
-  const [magis, setMagis] = useState<MagiBrief[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const magicsQuery = useMagics();
+  const magisQuery = useMagis();
+  const magics = magicsQuery.data ?? [];
+  const magis = magisQuery.data ?? [];
+  const loadError = (magicsQuery.error || magisQuery.error)
+    ? (magicsQuery.error instanceof Error ? magicsQuery.error.message : "") || (magisQuery.error instanceof Error ? magisQuery.error.message : "") || "load failed"
+    : null;
 
-  const reload = async () => {
-    setLoadError(null);
-    try {
-      const [mr, gr] = await Promise.all([
-        fetch("/api/magics", { credentials: "include" }),
-        fetch("/api/magis", { credentials: "include" }),
-      ]);
-      if (!mr.ok || !gr.ok) { setLoadError(`load failed (magics=${mr.status}, magis=${gr.status})`); return; }
-      setMagics((await mr.json()) as MAGICRow[]);
-      setMagis((await gr.json()) as MagiBrief[]);
-    } catch (e) { setLoadError(`network error: ${(e as Error).message}`); }
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: qk.magics });
+    void qc.invalidateQueries({ queryKey: qk.magis });
   };
-  useEffect(() => { void reload(); }, []);
-
-  const [createName, setCreateName] = useState("");
-  const [createParent, setCreateParent] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState({ name: "", parent_id: "", adam_id: "" });
+  const [editName, setEditName] = useState("");
+  const [editParentId, setEditParentId] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
+  const [createParentId, setCreateParentId] = useState("");
+  const [createName, setCreateName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
 
+  const tree = useMemo(() => flattenTree(magics), [magics]);
+  const adamByMagic = useMemo(() => {
+    const m = new Map<number, MagiBrief>(); for (const g of magis) { if (g.magic_position === "adam") m.set(g.magic_id, g); } return m;
+  }, [magis]);
 
-  const flat = useMemo(() => (magics ? flattenTree(magics) : []), [magics]);
-  const adams = useMemo(() => (magis ?? []).filter((m) => m.magic_position === "adam"), [magis]);
-
-  const visibleIds = useMemo(() => {
-    const vis = new Set<number>();
-    const byId = new Map<number, MAGICRow & { children: MAGICRow[] }>();
-    for (const r of magics ?? []) byId.set(r.id, { ...r, children: [] });
-    for (const r of magics ?? []) { const n = byId.get(r.id)!; if (r.parent_id != null && byId.has(r.parent_id)) byId.get(r.parent_id)!.children.push(n); }
-    const roots = (magics ?? []).filter((r) => r.parent_id == null || !byId.has(r.parent_id));
-    const stack: { id: number; children: MAGICRow[] }[] = roots.map((r) => ({ id: r.id, children: byId.get(r.id)!.children }));
-    while (stack.length) {
-      const { id, children } = stack.pop()!;
-      vis.add(id);
-      if (expanded.has(id)) for (const ch of [...children].reverse()) stack.push({ id: ch.id, children: byId.get(ch.id)!.children });
-    }
-    return vis;
-  }, [magics, expanded]);
-
-  const visibleFlat = useMemo(() => flat.filter((f) => visibleIds.has(f.id)), [flat, visibleIds]);
-  const toggle = (id: number) => setExpanded((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const submitCreate = async () => {
-    setCreateError(null);
-    if (!createName.trim()) { setCreateError(t("magics.nameDuplicateError")); return; }
-    if (!createParent) { setCreateError(t("magics.createParentRequired")); return; }
-    setCreating(true);
-    try {
-      const body: Record<string, unknown> = { name: createName.trim() };
-      const pid = Number.parseInt(createParent, 10);
-      if (Number.isFinite(pid) && pid > 0) body.parent_id = pid;
-      const res = await fetch("/api/magics", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      if (!res.ok) { setCreateError(`create failed: ${res.status} ${await res.text()}`); return; }
-      setCreateName(""); setCreateParent(""); setCreateOpen(false); await reload();
-    } catch (e) { setCreateError(`network error: ${(e as Error).message}`); }
-    finally { setCreating(false); }
-  };
-
-  const startEdit = (row: MAGICRow) => {
-    setEditingId(row.id);
-    setEditDraft({ name: row.name, parent_id: row.parent_id != null ? String(row.parent_id) : "", adam_id: row.adam_id != null ? String(row.adam_id) : "" });
-    setEditError(null);
-  };
+  const startEdit = (r: MAGICRow) => { setEditingId(r.id); setEditName(r.name); setEditParentId(r.parent_id != null ? String(r.parent_id) : ""); setEditError(null); };
   const cancelEdit = () => { setEditingId(null); setEditError(null); };
   const submitEdit = async (id: number) => {
     setEditError(null);
-    const patch: Record<string, unknown> = {};
-    const nn = editDraft.name.trim(); if (nn) patch.name = nn;
-    const pid = Number.parseInt(editDraft.parent_id, 10);
-    patch.parent_id = Number.isFinite(pid) && pid > 0 ? pid : editDraft.parent_id === "" ? null : undefined;
-    const aid = Number.parseInt(editDraft.adam_id, 10);
-    patch.adam_id = Number.isFinite(aid) && aid > 0 ? aid : editDraft.adam_id === "" ? null : undefined;
+    const body: Record<string, unknown> = { name: editName.trim() };
+    if (editParentId) body.parent_id = Number.parseInt(editParentId, 10);
+    else body.parent_id = null;
     setSaving(true);
     try {
-      const res = await fetch(`/api/magics/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+      const res = await fetch(`/api/magics/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) { setEditError(`save failed: ${res.status} ${await res.text()}`); return; }
-      setEditingId(null); await reload();
+      setEditingId(null); refresh();
     } catch (e) { setEditError(`network error: ${(e as Error).message}`); }
     finally { setSaving(false); }
   };
 
+  const submitCreate = async () => {
+    setCreateError(null);
+    let pid: number | null = null;
+    if (createParentId) { pid = Number.parseInt(createParentId, 10); if (!Number.isFinite(pid)) { setCreateError("invalid parent"); return; } }
+    setCreating(true);
+    try {
+      const res = await fetch("/api/magics", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: createName.trim(), parent_id: pid }) });
+      if (!res.ok) { setCreateError(`create failed: ${res.status} ${await res.text()}`); return; }
+      setCreateParentId(""); setCreateName(""); setCreateOpen(false); refresh();
+    } catch (e) { setCreateError(`network error: ${(e as Error).message}`); }
+    finally { setCreating(false); }
+  };
+
+  const isParent = (id: number) => magics.some((r) => r.parent_id === id);
   const del = async (id: number, _name: string) => {
+    if (isParent(id)) { alert("请先删除子团体"); return; }
     if (!confirm(t("magics.deleteConfirm"))) return;
     const res = await fetch(`/api/magics/${id}`, { method: "DELETE", credentials: "include" });
-    if (res.ok) await reload(); else alert(`delete failed: ${res.status}`);
+    if (res.ok) refresh(); else alert(`delete failed: ${res.status}`);
   };
+
+  const parentOptions = [{ id: "", name: t("magics.createParentNone") }, ...magics];
 
   return (
     <div className="space-y-4">
@@ -163,106 +119,69 @@ export function MagicsPane() {
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}
+        {magicsQuery.isLoading && <p className="text-sm text-ink-soft">{t("common.loading")}</p>}
 
         {createOpen && (
           <div className="mb-5 rounded-lg border border-sky-light/40 bg-sky-pale/10 p-3">
-            {createError && <p className="form-error mb-3">{createError}</p>}
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magics.createNameLabel")}</span>
-                <input className="form-input text-sm py-1.5 px-3 w-36" placeholder={t("magics.createNamePlaceholder")}
-                  value={createName} onChange={(e) => setCreateName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void submitCreate(); }} />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magics.createParentLabel")}</span>
-                <select className="form-input text-sm py-1.5 px-3" value={createParent} onChange={(e) => setCreateParent(e.target.value)}>
-                  <option value="" disabled>{t("magics.createParentPlaceholder")}</option>
-                  {(magics ?? []).map((m) => (<option key={m.id} value={String(m.id)}>{m.name}</option>))}
-                </select>
-              </label>
-              <button type="button" disabled={creating || !createName.trim()}
-                className="btn btn-primary text-sm py-1.5 px-4" onClick={() => void submitCreate()}>
-                {creating ? t("common.loading") : t("common.add")}
-              </button>
+            {createError && <p className="form-error mb-2">{createError}</p>}
+            <div className="flex items-center gap-2">
+              <select className="form-input text-sm py-1.5 px-3" value={createParentId} onChange={(e) => setCreateParentId(e.target.value)}>
+                {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
+              </select>
+              <input className="form-input flex-1 text-sm py-1.5 px-3" placeholder={t("magics.createNamePlaceholder")}
+                value={createName} onChange={(e) => setCreateName(e.target.value)} />
+              <button type="button" disabled={creating || !createName.trim()} onClick={submitCreate}
+                className="btn btn-primary text-sm py-1.5 px-4">{creating ? t("common.loading") : t("common.add")}</button>
             </div>
           </div>
         )}
 
-        {/* Tree */}
-        <div className="overflow-x-auto">
-          {visibleFlat.length === 0 && !loadError && (
-            <p className="py-6 text-ink-soft text-sm text-center">{t("magics.empty")}</p>
-          )}
-          {visibleFlat.map((m) => {
-            const isEdit = editingId === m.id;
-            const hasChildren = m.child_count > 0;
-            const open = hasChildren && expanded.has(m.id);
-            return (
-              <div key={m.id} className={`border-b border-sky-light/20 ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"} transition-colors`}>
-                {isEdit ? (
-                  <div className="flex items-center gap-3 px-2 py-2" style={{ paddingLeft: `${8 + m.depth * INDENT}px` }}>
-                    {/* spacer for the expand toggle column */}
-                    <span className="w-5 shrink-0" />
-                    {/* name + parent share the name column so the ADAM / actions
-                        columns below stay aligned with the display row */}
-                    <div className="flex-1 flex items-center gap-2 min-w-0">
-                      <input className="form-input text-sm py-1 px-2 w-40 shrink-0" value={editDraft.name}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
-                      <select className="form-input text-sm py-1 px-2 flex-1 min-w-0" value={editDraft.parent_id}
-                        onChange={(e) => setEditDraft((d) => ({ ...d, parent_id: e.target.value }))}>
-                        <option value="" disabled>{t("magics.createParentPlaceholder")}</option>
-                        {magics?.filter((x) => x.id !== m.id).map((x) => (<option key={x.id} value={String(x.id)}>{x.name}</option>))}
+        {!magicsQuery.isLoading && magics.length === 0 && (
+          <p className="text-sm text-ink-soft">{t("magics.empty")}</p>
+        )}
+        {magics.length > 0 && (
+          <div className="space-y-0.5">
+            {tree.map((r) => {
+              const isEdit = editingId === r.id;
+              const adam = adamByMagic.get(r.id);
+              const indent = r.depth * INDENT;
+              const prefix = r.depth === 0 ? "" : "├─".padStart(r.depth * 2, " ");
+              return (
+                <div key={r.id}
+                  className={`flex items-center gap-2 px-2 py-1 rounded transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}
+                  style={{ paddingLeft: 8 + indent }}
+                >
+                  {isEdit ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input className="form-input text-sm py-1 px-2 w-40" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                      <select className="form-input text-sm py-1 px-2" value={editParentId} onChange={(e) => setEditParentId(e.target.value)}>
+                        {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
                       </select>
+                      <button type="button" disabled={saving} onClick={() => { void submitEdit(r.id); }}
+                        className="btn btn-primary text-xs py-0.5 px-2">{saving ? "…" : t("common.save")}</button>
+                      <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.cancel")}</button>
+                      {editError && <span className="text-xs text-rose-600">{editError}</span>}
                     </div>
-                    {/* ADAM column — mirrors the ADAM pill position */}
-                    <select className="form-input text-sm py-1 px-2 w-44 shrink-0" value={editDraft.adam_id}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, adam_id: e.target.value }))}>
-                      <option value="">{t("magics.editAdamNone")}</option>
-                      {adams.map((a) => (<option key={a.id} value={String(a.id)}>#{a.id} ({a.provider ?? "?"})</option>))}
-                    </select>
-                    {/* spacer for the child-count column */}
-                    <span className="w-8 shrink-0" />
-                    {/* actions column */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" disabled={saving} onClick={() => void submitEdit(m.id)}
-                        className="btn btn-primary text-xs py-1 px-3">{saving ? "…" : t("common.save")}</button>
-                      <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-1 px-2">{t("common.cancel")}</button>
-                    </div>
-                    {editError && <span className="text-xs text-rose-600 shrink-0">{editError}</span>}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 px-2 py-2.5" style={{ paddingLeft: `${8 + m.depth * INDENT}px` }}>
-                    <button type="button" disabled={!hasChildren} onClick={() => toggle(m.id)}
-                      className={`w-5 h-5 flex items-center justify-center rounded text-xs ${hasChildren ? "text-ink-soft hover:bg-sky-light/60" : "text-ink-soft/15"}`}>
-                      {hasChildren ? (open ? "▾" : "▸") : ""}
-                    </button>
-                    <span className="font-medium text-ink text-sm flex-1">
-                      {m.depth > 0 && <span className="text-ink-soft/30 mr-1.5 select-none">{open ? "└┬" : "├─"}</span>}
-                      {m.name}
-                      <span className="text-ink-soft/30 font-mono text-[11px] ml-2">#{m.id}</span>
-                    </span>
-                    {m.adam_id != null && (
-                      <span className="status-pill status-pill--connected text-[11px] shrink-0">
-                        {t("magics.positionAdam")} {adams.find((a) => a.id === m.adam_id)?.name ?? `#${m.adam_id}`}
-                      </span>
-                    )}
-                    <span className="text-xs text-ink-soft/50 font-mono shrink-0 w-8 text-center">{m.child_count > 0 ? m.child_count : ""}</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button type="button" onClick={() => startEdit(m)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
-                      <button type="button" onClick={() => void del(m.id, m.name)}
-                        className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  ) : (
+                    <>
+                      <span className="text-ocean/30 font-mono text-[11px] shrink-0">{prefix}</span>
+                      <span className="text-sm font-medium text-ink truncate">{r.name}</span>
+                      <span className="font-mono text-[11px] text-ink-soft/40">#{r.id}</span>
+                      {adam && <span className="status-pill status-pill--connected text-[10px]">ADAM</span>}
+                      {r.child_count > 0 && <span className="text-[11px] text-ink-soft">{r.child_count} sub</span>}
+                      <div className="flex items-center gap-1 ml-auto">
+                        <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
+                        <button type="button" onClick={() => { void del(r.id, r.name); }}
+                          className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </ConsoleCard>
     </div>
   );
 }
-
-
-

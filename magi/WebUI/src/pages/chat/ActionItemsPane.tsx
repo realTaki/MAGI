@@ -22,8 +22,11 @@
  * make completions look like future-dated history.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { useT } from "../../i18n/index";
+import { apiFetch, qk } from "../../lib/queryClient";
 
 type ActionItem = {
   id: number;
@@ -71,33 +74,15 @@ function formatRelative(
 
 export default function ActionItemsPane() {
   const t = useT();
-  const [data, setData] = useState<ActionItemListResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Items currently mid-complete — disables the "完成" button
-  // so a slow network doesn't trigger two POSTs.
+  const qc = useQueryClient();
   const [inflight, setInflight] = useState<Set<number>>(new Set());
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const r = await fetch("/api/action_items", {
-        credentials: "include",
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as ApiError;
-        setError(body.detail ?? `Failed (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as ActionItemListResponse;
-      setData(body);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error");
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const query = useQuery({
+    queryKey: qk.actionItems,
+    queryFn: () => apiFetch<ActionItemListResponse>("/api/action_items"),
+  });
+  const data = query.data ?? null;
+  const error = query.error ? (query.error instanceof Error ? query.error.message : "failed") : null;
 
   // Open rows: never completed, never dismissed. The backend
   // already returns them in the right order (open first, then
@@ -154,7 +139,7 @@ export default function ActionItemsPane() {
       } else {
         // Re-fetch so the row is now in `completed` with the
         // server's official `completed_at` + `server_time`.
-        load();
+        void qc.invalidateQueries({ queryKey: qk.actionItems });
       }
     } catch (e) {
       setData(previous);

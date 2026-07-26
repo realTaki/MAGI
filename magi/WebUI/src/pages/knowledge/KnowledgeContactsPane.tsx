@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
+import { useContacts, type ContactRow } from '../../lib/queries';
 
 const NOTES_PREVIEW_CHARS = 80;
 
@@ -41,7 +42,7 @@ export function KnowledgeContactsPane() {
         )}
         {contacts.length > 0 && (
           <div className="space-y-1">
-            {contacts.map((c) => {
+            {contacts.map((c: ContactRow) => {
               const expanded = expandedId === c.id;
               return (
                 <div key={c.id} className="border-b border-sky-light/30 last:border-0">

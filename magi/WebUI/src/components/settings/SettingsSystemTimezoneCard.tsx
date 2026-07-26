@@ -18,11 +18,13 @@
  * a silent fall-back to UTC.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
+import { apiFetch, qk } from "../../lib/queryClient";
 
 export function SettingsSystemTimezoneCard() {
   const t = useT();
@@ -32,34 +34,22 @@ export function SettingsSystemTimezoneCard() {
     choices: string[];
   };
 
-  const [data, setData] = useState<TzOut | null>(null);
+  const query = useQuery({
+    queryKey: qk.systemSettings("timezone"),
+    queryFn: () => apiFetch<TzOut>("/api/system-settings/timezone"),
+  });
+  const data = query.data ?? null;
+  const loadError = query.error
+    ? (query.error instanceof Error ? query.error.message : t("settings.loadFailed"))
+    : null;
+
   const [picked, setPicked] = useState<string>("");
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function load() {
-    setLoadError(null);
-    try {
-      const r = await fetch("/api/system-settings/timezone", {
-        credentials: "include",
-      });
-      if (!r.ok) {
-        setLoadError(`${t("settings.loadFailed")} (${r.status})`);
-        return;
-      }
-      const body = (await r.json()) as TzOut;
-      setData(body);
-      setPicked(body.current);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
+  // Sync picked with loaded data
+  if (data && picked === "") { setPicked(data.current); }
 
   const dirty = data !== null && picked !== data.current;
 

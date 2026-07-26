@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { apiFetch, qk } from '../../lib/queryClient';
 import ConsoleCard from '../../components/ConsoleCard';
 import { useT } from '../../i18n/index';
 
@@ -25,23 +26,16 @@ export function KnowledgeMemoryPane() {
   };
   type MemoryListResponse = { items: MemoryRow[]; total: number };
   const t = useT();
-  const [memory, setMemory] = useState<MemoryRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/memory", { credentials: "include" });
-        if (!r.ok) { setLoadError(`${t("settings.knowledgeMemoryLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as MemoryListResponse;
-        if (!cancelled) setMemory(body.items ?? []);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const query = useQuery({
+    queryKey: qk.memory,
+    queryFn: () => apiFetch<MemoryListResponse>("/api/memory"),
+    select: (data) => data.items,
+  });
+  const memory = query.data ?? [];
+  const loadError = query.error
+    ? (query.error instanceof Error ? query.error.message : t("settings.knowledgeMemoryLoadFailed"))
+    : null;
+  const isLoading = query.isLoading;
   return (
     <div className="space-y-4">
       <div><h2 className="text-lg font-semibold text-ink">{t("settings.knowledgeMemoryHeading")}</h2>
@@ -82,3 +76,4 @@ export function KnowledgeMemoryPane() {
     </div>
   );
 }
+// Ensure no trailing useEffect/useState references

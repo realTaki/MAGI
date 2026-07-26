@@ -1,42 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
+import { apiFetch, qk } from '../../lib/queryClient';
+
+type SkillRow = { name: string; description: string; path: string; version: string };
 
 export function KnowledgeSkillsPane() {
-  type SkillRow = {
-    name: string;
-    description: string;
-    path: string;
-    version: string;
-  };
   const t = useT();
-  const [skills, setSkills] = useState<SkillRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/skills", { credentials: "include" });
-        if (!r.ok) { setLoadError(`${t("settings.knowledgeSkillsLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as SkillRow[];
-        if (!cancelled) setSkills(body ?? []);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const query = useQuery({
+    queryKey: qk.skills,
+    queryFn: () => apiFetch<SkillRow[]>("/api/skills"),
+  });
+  const skills = query.data ?? [];
+  const loadError = query.error
+    ? (query.error instanceof Error ? query.error.message : t("settings.knowledgeSkillsLoadFailed"))
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><InfoTip text={t("settings.knowledgeSkillsIntro")} /></div>
       <ConsoleCard title={t("settings.knowledgeSkillsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {skills === null && !loadError && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
-        {skills !== null && skills.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeSkillsEmpty")}</p>}
-        {skills !== null && skills.length > 0 && (
+        {query.isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {!query.isLoading && skills.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeSkillsEmpty")}</p>}
+        {skills.length > 0 && (
           <table className="data-table w-full">
             <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
               <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>

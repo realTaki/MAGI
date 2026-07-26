@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
+import { apiFetch, qk } from '../../lib/queryClient';
 import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
@@ -11,22 +12,15 @@ export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
   const title = t(props.source === "builtin" ? "settings.toolsBuiltInHeading" : "settings.toolsMcpHeading");
   const tipText = t(props.source === "builtin" ? "settings.toolsBuiltInTip" : "settings.toolsMcpTip");
   const emptyCopy = t(props.source === "builtin" ? "settings.toolsBuiltInEmpty" : "settings.toolsMcpEmpty");
-  const [tools, setTools] = useState<ToolRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/tools", { credentials: "include" });
-        if (!r.ok) { setLoadError(`${t("settings.toolsLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as ToolListResponse;
-        if (!cancelled) setTools(body.items ?? []);
-      } catch (err) { if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error"); }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const filtered = tools?.filter((tool) => tool.source === props.source) ?? [];
+  const query = useQuery({
+    queryKey: [...qk.contacts(), "tools"] as const,
+    queryFn: () => apiFetch<ToolListResponse>("/api/tools"),
+  });
+  const tools = query.data?.items ?? [];
+  const loadError = query.error
+    ? (query.error instanceof Error ? query.error.message : t("settings.toolsLoadFailed"))
+    : null;
+  const filtered = tools.filter((tool) => tool.source === props.source);
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><InfoTip text={tipText} /></div>
