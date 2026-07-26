@@ -19,7 +19,7 @@ export type MAGICRow = {
 };
 
 export type MagiBrief = {
-  id: number; magic_id: number; magic_position: string;
+  id: number; name: string | null; magic_id: number; magic_position: string;
   provider: string | null; api_key_set: boolean; api_key_last4: string | null;
   created_at: string; updated_at: string;
 };
@@ -106,6 +106,7 @@ export function MagicsPane() {
   const submitCreate = async () => {
     setCreateError(null);
     if (!createName.trim()) { setCreateError(t("magics.nameDuplicateError")); return; }
+    if (!createParent) { setCreateError(t("magics.createParentRequired")); return; }
     setCreating(true);
     try {
       const body: Record<string, unknown> = { name: createName.trim() };
@@ -176,7 +177,7 @@ export function MagicsPane() {
               <label className="flex flex-col gap-1">
                 <span className="form-label">{t("magics.createParentLabel")}</span>
                 <select className="form-input text-sm py-1.5 px-3" value={createParent} onChange={(e) => setCreateParent(e.target.value)}>
-                  <option value="">{t("magics.createParentNone")}</option>
+                  <option value="" disabled>{t("magics.createParentPlaceholder")}</option>
                   {(magics ?? []).map((m) => (<option key={m.id} value={String(m.id)}>{m.name}</option>))}
                 </select>
               </label>
@@ -200,23 +201,35 @@ export function MagicsPane() {
             return (
               <div key={m.id} className={`border-b border-sky-light/20 ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"} transition-colors`}>
                 {isEdit ? (
-                  <div className="flex items-center gap-2 px-2 py-2">
-                    <input className="form-input text-sm py-1 px-2 w-32" value={editDraft.name}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
-                    <select className="form-input text-sm py-1 px-2" value={editDraft.parent_id}
-                      onChange={(e) => setEditDraft((d) => ({ ...d, parent_id: e.target.value }))}>
-                      <option value="">{t("magics.createParentNone")}</option>
-                      {magics?.filter((x) => x.id !== m.id).map((x) => (<option key={x.id} value={String(x.id)}>{x.name}</option>))}
-                    </select>
-                    <select className="form-input text-sm py-1 px-2" value={editDraft.adam_id}
+                  <div className="flex items-center gap-3 px-2 py-2" style={{ paddingLeft: `${8 + m.depth * INDENT}px` }}>
+                    {/* spacer for the expand toggle column */}
+                    <span className="w-5 shrink-0" />
+                    {/* name + parent share the name column so the ADAM / actions
+                        columns below stay aligned with the display row */}
+                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                      <input className="form-input text-sm py-1 px-2 w-40 shrink-0" value={editDraft.name}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
+                      <select className="form-input text-sm py-1 px-2 flex-1 min-w-0" value={editDraft.parent_id}
+                        onChange={(e) => setEditDraft((d) => ({ ...d, parent_id: e.target.value }))}>
+                        <option value="" disabled>{t("magics.createParentPlaceholder")}</option>
+                        {magics?.filter((x) => x.id !== m.id).map((x) => (<option key={x.id} value={String(x.id)}>{x.name}</option>))}
+                      </select>
+                    </div>
+                    {/* ADAM column — mirrors the ADAM pill position */}
+                    <select className="form-input text-sm py-1 px-2 w-44 shrink-0" value={editDraft.adam_id}
                       onChange={(e) => setEditDraft((d) => ({ ...d, adam_id: e.target.value }))}>
                       <option value="">{t("magics.editAdamNone")}</option>
                       {adams.map((a) => (<option key={a.id} value={String(a.id)}>#{a.id} ({a.provider ?? "?"})</option>))}
                     </select>
-                    <button type="button" disabled={saving} onClick={() => void submitEdit(m.id)}
-                      className="btn btn-primary text-xs py-1 px-3">{saving ? "…" : t("common.save")}</button>
-                    <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-1 px-2">{t("common.cancel")}</button>
-                    {editError && <span className="text-xs text-rose-600">{editError}</span>}
+                    {/* spacer for the child-count column */}
+                    <span className="w-8 shrink-0" />
+                    {/* actions column */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button type="button" disabled={saving} onClick={() => void submitEdit(m.id)}
+                        className="btn btn-primary text-xs py-1 px-3">{saving ? "…" : t("common.save")}</button>
+                      <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-1 px-2">{t("common.cancel")}</button>
+                    </div>
+                    {editError && <span className="text-xs text-rose-600 shrink-0">{editError}</span>}
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 px-2 py-2.5" style={{ paddingLeft: `${8 + m.depth * INDENT}px` }}>
@@ -230,7 +243,9 @@ export function MagicsPane() {
                       <span className="text-ink-soft/30 font-mono text-[11px] ml-2">#{m.id}</span>
                     </span>
                     {m.adam_id != null && (
-                      <span className="status-pill status-pill--connected text-[11px] shrink-0">ADAM #{m.adam_id}</span>
+                      <span className="status-pill status-pill--connected text-[11px] shrink-0">
+                        {t("magics.positionAdam")} {adams.find((a) => a.id === m.adam_id)?.name ?? `#${m.adam_id}`}
+                      </span>
                     )}
                     <span className="text-xs text-ink-soft/50 font-mono shrink-0 w-8 text-center">{m.child_count > 0 ? m.child_count : ""}</span>
                     <div className="flex items-center gap-1 shrink-0">

@@ -65,7 +65,7 @@ class MAGICOut(BaseModel):
 
 class MAGICCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    parent_id: int | None = Field(default=None, ge=1)
+    parent_id: int = Field(ge=1)
 
 
 class MAGICUpdate(BaseModel):
@@ -115,19 +115,19 @@ def create_magic(
 ) -> MAGICOut:
     """Create a new MAGIC team.
 
-    ``name`` must be unique across the table (enforced by the
-    DB unique constraint). ``parent_id``, when set, must
-    reference an existing MAGIC row.
+    ``name`` must be unique across the table (enforced by the DB
+    unique constraint). ``parent_id`` is required — every user-created
+    MAGIC is created under a parent; only the auto-seeded Genesis root
+    is rootless. ``parent_id`` must reference an existing MAGIC row.
     """
-    # Validate parent_id when provided.
-    if payload.parent_id is not None:
-        parent = session.get(MAGIC, payload.parent_id)
-        if parent is None:
-            raise MagiHTTPException(
-                status_code=400,
-                code="validation.parent_magic_not_found",
-                detail=f"parent MAGIC id {payload.parent_id} not found",
-            )
+    # parent_id is required by the model; validate it references a real row.
+    parent = session.get(MAGIC, payload.parent_id)
+    if parent is None:
+        raise MagiHTTPException(
+            status_code=400,
+            code="validation.parent_magic_not_found",
+            detail=f"parent MAGIC id {payload.parent_id} not found",
+        )
 
     # Check name uniqueness explicitly so we can return a
     # friendly error before hitting the DB constraint.

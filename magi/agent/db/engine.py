@@ -211,17 +211,17 @@ _DEFAULT_ROOT_MAGIC_NAME = "Genesis"
 
 
 def _seed_default_root(engine: Engine) -> None:
-    """Ensure the workspace has a root MAGIC + a default adam Magi.
+    """Ensure the workspace has exactly one root MAGIC + a default adam Magi.
 
-    On first boot, if no ``MAGIC`` rows exist, seed one
-    top-level row named ``_DEFAULT_ROOT_MAGIC_NAME``
-    ("Genesis") as the council anchor. If the deployer later
-    deletes it, this will recreate it on the next boot —
-    which is the right trade-off for C0 (we don't have a
-    "root" concept enforced by the schema yet). Also seeds
-    one ``Magi`` row with ``magic_position='adam'`` for the
-    seeded MAGIC so the "智能体管理" page is never empty on
-    first boot.
+    The *root* of the council tree is identified by ``parent_id IS NULL``
+    (not by the literal name ``"Genesis"``). On first boot, if no root
+    row exists, seed one named ``_DEFAULT_ROOT_MAGIC_NAME`` ("Genesis") as
+    the council anchor. If the deployer later renames or deletes the root,
+    the next boot seeds a fresh Genesis only when no root row remains —
+    so a renamed root stays renamed and we never accumulate duplicate
+    roots. Also seeds one ``Magi`` row with ``magic_position='adam'``
+    (named "Alice") for the root MAGIC so the "智能体管理" page is never
+    empty on first boot.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
@@ -230,8 +230,13 @@ def _seed_default_root(engine: Engine) -> None:
     from magi.agent.db.models_magic import MAGIC
 
     with Session(engine) as session:
+        # Identity of "the root" is being the tree root (parent_id IS
+        # NULL), NOT the literal name "Genesis". Keying on the name let a
+        # rename/delete of the root spawn a duplicate "Genesis" on the
+        # next boot. Pick the first root row if several exist (defensive)
+        # and only seed a fresh Genesis when no root exists at all.
         existing_root = session.scalar(
-            select(MAGIC).where(MAGIC.name == _DEFAULT_ROOT_MAGIC_NAME)
+            select(MAGIC).where(MAGIC.parent_id.is_(None)).order_by(MAGIC.id).limit(1)
         )
         if existing_root is None:
             root = MAGIC(

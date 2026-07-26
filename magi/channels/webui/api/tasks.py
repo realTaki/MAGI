@@ -550,7 +550,13 @@ def update_task(
     # channel + the operator's current bound chat id (via
     # the channel dispatcher, D.28); an unchanged channel
     # still wants the row to track any later TG-binding
-    # edit.
+    # edit. Resolve BEFORE any nested dispatcher call —
+    # the FastAPI ``Depends(get_session)`` transaction is
+    # already open via ``session.get(Task, ...)`` above;
+    # calling ``dispatcher.lookup_im_id`` (inside
+    # ``_resolve_delivery_to``) inside that open txn would
+    # deadlock SQLite. The cache in :func:`_resolve_system_tz`
+    # keeps the second-pass write below cheap too.
     t.delivery_to = _resolve_delivery_to(
         channel=t.channel,
         uid=t.uid, explicit=None,
@@ -561,7 +567,12 @@ def update_task(
         t.enabled = 1 if t.enabled else 0
     # ``tz`` is now always derived from system settings on
     # fire; we keep the column stamped to the latest system
-    # tz so the row's audit info stays useful.
+    # tz so the row's audit info stays useful. Cached
+    # globally so the ``state_get`` round-trip happens at
+    # most once per process (a route that holds an outer
+    # session open can't issue that call inside this
+    # handler — it would deadlock on nested BEGIN
+    # IMMEDIATE).
     t.tz = _resolve_system_tz()
     t.updated_at = _now_iso()
     session.commit()
@@ -879,6 +890,14 @@ def _resolve_delivery_to(
 
     Re-deriving on every PATCH keeps the row coherent with
     any later TG-binding edit the operator made.
+
+    Important: the ``channel='tg'`` branch calls
+    ``dispatcher.lookup_im_id``, which opens its own ORM
+    session. Callers that hold an outer FastAPI
+    ``Depends(get_session)`` transaction must invoke this
+    helper BEFORE issuing any outer-session queries —
+    a nested BEGIN IMMEDIATE inside the open outer txn
+    would deadlock SQLite.
     """
     if channel == "tg":
         from magi.channels import dispatcher as channel_dispatcher

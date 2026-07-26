@@ -6,7 +6,8 @@
  * ``GET /api/chat/sessions/{id}`` and overlays per-fire run
  * status from ``GET /api/tasks/{id}/runs``.
  */
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "../../lib/queryClient";
 
 import { formatRunTimestamp } from "./TaskListPane";
 import type { TaskRunRow } from "./TaskListPane";
@@ -39,73 +40,35 @@ export function RunsHistoryDrawer(props: {
   // reply text, but a quick look at the channel cell on
   // the table tells the operator whether the runner wired
   // ``_tg_send_callback`` for that fire).
-  const [messages, setMessages] = useState<
-    | {
-        message_id: string;
-        role: string;
-        ts: string;
-        text: string;
-      }[]
-    | null
-  >(null);
-  const [runs, setRuns] = useState<TaskRunRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (props.sessionId === null) {
-      setMessages([]);
-      setRuns([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Fetch session messages and run metadata in
-        // parallel — they're independent reads.
-        const [sessResp, runsResp] = await Promise.all([
-          fetch(`/api/chat/sessions/${props.sessionId}`, {
-            credentials: "include",
-          }),
-          fetch(`/api/tasks/${props.taskId}/runs`, {
-            credentials: "include",
-          }),
-        ]);
-        if (!sessResp.ok) {
-          setLoadError(`加载 session 失败 (${sessResp.status})`);
-          return;
-        }
-        if (!runsResp.ok) {
-          setLoadError(`加载 runs 失败 (${runsResp.status})`);
-          return;
-        }
-        const sess = (await sessResp.json()) as {
-          session_id: string;
-          title: string | null;
-          messages: {
-            message_id: string;
-            role: string;
-            ts: string;
-            text: string;
-          }[];
-        };
-        const runsData = (await runsResp.json()) as TaskRunRow[];
-        if (cancelled) return;
-        setMessages(sess.messages ?? []);
-        setSessionTitle(sess.title ?? null);
-        setRuns(runsData);
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(
-            err instanceof Error ? err.message : "Network error",
-          );
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [props.sessionId, props.taskId]);
+  const sessionEnabled = props.sessionId !== null;
+  const sessionQuery = useQuery({
+    queryKey: props.sessionId ? ["chatSessions", props.sessionId] : ["chatSessions", "none"],
+    queryFn: () =>
+      apiFetch<{
+        session_id: string;
+        title: string | null;
+        messages: {
+          message_id: string;
+          role: string;
+          ts: string;
+          text: string;
+        }[];
+      }>(`/api/chat/sessions/${props.sessionId}`),
+    enabled: sessionEnabled,
+  });
+  const runsQuery = useQuery({
+    queryKey: ["taskRuns", props.taskId],
+    queryFn: () => apiFetch<TaskRunRow[]>(`/api/tasks/${props.taskId}/runs`),
+  });
+  const messages = sessionEnabled ? (sessionQuery.data?.messages ?? null) : [];
+  const runs = runsQuery.data ?? null;
+  const sessionTitle = sessionEnabled ? (sessionQuery.data?.title ?? null) : null;
+  const loadError =
+    sessionQuery.error instanceof Error
+      ? `加载 session 失败 (${(sessionQuery.error as { status?: number }).status ?? ""})`
+      : runsQuery.error instanceof Error
+        ? `加载 runs 失败 (${(runsQuery.error as { status?: number }).status ?? ""})`
+        : null;
 
   // Build a quick lookup: user-message ts → matching run
   // (the runner stamps the ChatMessage ts at the same

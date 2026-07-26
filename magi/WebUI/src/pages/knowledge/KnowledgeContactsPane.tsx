@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import ConsoleCard from '../../components/ConsoleCard';
+import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 
 const NOTES_PREVIEW_CHARS = 80;
@@ -48,10 +49,7 @@ export function KnowledgeContactsPane() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-ink">{t("settings.knowledgeContactsHeading")}</h2>
-        <p className="mt-1 text-sm text-ink-soft">{t("settings.knowledgeContactsIntro")}</p>
-      </div>
+      <div className="flex justify-end"><InfoTip text={t("settings.knowledgeContactsIntro")} /></div>
       <ConsoleCard title={t("settings.knowledgeContactsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
         {loading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
