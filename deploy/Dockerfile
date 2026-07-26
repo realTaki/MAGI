@@ -43,7 +43,7 @@ WORKDIR /app
 # copied as a unit. uv finds pyproject at the project root and
 # installs deps into the venv. README.md is also copied because
 # pyproject declares it under [project] readme.
-COPY pyproject.toml uv.lock* README.md ./
+COPY pyproject.toml uv.lock* README.md alembic.ini ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
@@ -57,6 +57,7 @@ RUN useradd --create-home --shell /bin/bash magi \
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY magi /app/magi
+COPY alembic.ini /app/alembic.ini
 # Prebuilt SPA baked in. FastAPI's webui launcher mounts /app/magi/WebUI/dist
 # as StaticFiles (with html=True) so /, /assets/* etc. all serve the SPA,
 # and /api/* still hits the FastAPI routers (registered before the

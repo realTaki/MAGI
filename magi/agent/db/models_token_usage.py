@@ -96,10 +96,8 @@ class TokenUsage(Base):
     # Composite index — supports the aggregation
     # endpoint's ``WHERE uid = ? AND ts BETWEEN
     # ? AND ?``. Listed in ``__table_args__`` so it
-    # gets created alongside the table by ``create_all``
-    # on a fresh DB; for an existing DB,
-    # ``_INDEX_MIGRATIONS`` below patches it in via
-    # ``CREATE INDEX IF NOT EXISTS``.
+    # is part of the baseline Alembic schema. The legacy adoption runner
+    # keeps the same name for databases created before Alembic.
     __table_args__ = (
         Index("ix_token_usage_emp_ts", "uid", "ts"),
     )

@@ -1,11 +1,10 @@
 """SQLAlchemy declarative base for the MAGI ``db`` package.
 
-Single ``Base.metadata`` is shared by every table module
-under :mod:`magi.agent.db.models_*` and the session-package
-tables at :mod:`magi.agent.memory.session.tables`. ``init_orm``
-walks ``Base.metadata`` once at boot to ``create_all``,
-so any new table just needs to import ``Base`` and
-define a subclass — the rest is automatic.
+Single ``Base.metadata`` is shared by every table module under
+:mod:`magi.agent.db.models_*` and the session-package tables at
+:mod:`magi.agent.memory.session.tables`. Alembic uses this metadata for
+autogeneration, while committed revisions own the actual schema changes.
+Adding a model therefore also requires a reviewed Alembic revision.
 
 Also exposes :func:`utcnow_naive` — the canonical
 "replacement for ``datetime.utcnow()``" used by every
@@ -21,7 +20,7 @@ top-level db-package import keeps that loop closed.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import DeclarativeBase
 
@@ -33,10 +32,8 @@ def utcnow_naive() -> datetime:
     stamps a row's ``created_at`` / ``updated_at``. The
     DB columns are typed ``DateTime`` (no tz) — switching
     them to ``DateTime(timezone=True)`` is a future
-    Alembic-migration task (the schema column type, the
-    store-level ISO serialisation, the cross-module
-    ordering all move together); see the project's
-    "Alembic baseline → Next" roadmap entry.
+    Alembic migration task (the schema column type, the store-level ISO
+    serialisation, and the cross-module ordering all move together).
 
     Until then this helper is the canonical "what
     replaces ``datetime.utcnow()``" answer: it returns the
@@ -50,10 +47,9 @@ def utcnow_naive() -> datetime:
     the session-package tables (which use ``String(32)``
     columns rather than ``DateTime``). Two helpers,
     one canonical UTC, two storage shapes — both are
-    intentionally naive-UTC to keep SQLite column values
-    stable across the eventual Alembic migration.
+    intentionally naive-UTC until a dedicated timezone-column revision.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):

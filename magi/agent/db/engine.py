@@ -5,13 +5,10 @@ All application tables, including the legacy ``settings`` KV table, are
 accessed through SQLAlchemy via this module. ``meta`` remains a raw-SQL
 bootstrap table because it only carries schema hand-off metadata.
 
-We deliberately use ``Base.metadata.create_all`` (not Alembic) for
-C1.1 — the schema is small, the tables are new, and adding Alembic
-now would double the surface area. The first Alembic baseline
-migration lands when the schema stabilises (probably end of C1.3).
-Once Alembic is in, this ``init_orm`` becomes the no-op it
-already is at runtime — only ``alembic upgrade head`` touches
-the schema.
+Schema ownership is now Alembic. ``init_orm`` runs ``alembic upgrade head``
+before opening application sessions. The old inline migration module is used
+only once to adopt pre-Alembic databases; versioned revisions own every
+schema change after the baseline.
 
 Thread-safety: a single ``Engine`` shared across the process,
 ``Session`` per request (FastAPI dependency). The engine is
@@ -25,17 +22,17 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from magi.agent.db.alembic_runner import upgrade_head
 from magi.agent.db.base import Base
 from magi.agent.db.migrations import _run_inline_migrations
-
 
 logger = logging.getLogger("magi.agent.db.engine")
 
@@ -191,7 +188,7 @@ def _register_begin_immediate(engine: Engine) -> None:
         dbapi_conn.exec_driver_sql("BEGIN IMMEDIATE")
 
 
-# -- seed defaults (pre-Alembic) -------------------------------------------
+# -- seed defaults ----------------------------------------------------------
 #
 # Hand-seeded "ensure the workspace has a root" bootstrap. The
 # default name is hardcoded to "Genesis" — the deployer can
@@ -265,18 +262,13 @@ def _seed_default_root(engine: Engine) -> None:
 
 
 def init_orm(state_dir: str | None = None) -> Engine:
-    """Create all ORM tables and return the engine.
+    """Run versioned migrations and return the process-wide engine.
 
-    Idempotent — ``create_all`` is a no-op for tables that
-    already exist, so calling on every boot is safe. Run from
-    ``magi.node.run`` alongside ``init_sqlite``; the two target
-    the same file but different tables, so they don't conflict.
-
-    Also runs a tiny ``ALTER TABLE`` pass to add new columns to
-    pre-existing tables — ``create_all`` only creates *missing*
-    tables, not missing columns on existing ones, so this is
-    needed as the schema grows within C1.x. The first Alembic
-    baseline (planned for end of C1.3) replaces this.
+    A database without ``alembic_version`` is a legacy C0/C1 database. For
+    that one-time adoption path, existing ORM tables are first repaired by
+    the old idempotent inline runner, then Alembic records the baseline. A
+    fresh database skips the inline pass and is created by revision 0001.
+    Once ``alembic_version`` exists, only Alembic revisions run.
     """
     if state_dir is not None:
         # Honour an explicit override (mostly for tests) before creating
@@ -285,22 +277,32 @@ def init_orm(state_dir: str | None = None) -> Engine:
         os.environ["MAGI_STATE_DIR"] = state_dir
     engine = get_engine()
     # Eagerly import every model module so its tables register
-    # on ``Base.metadata`` before ``create_all`` runs. Doing
+    # on ``Base.metadata`` before the migration runner starts. Doing
     # this inside ``init_orm`` (rather than at module top) keeps
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
-    import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
-    import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_action_item  # noqa: F401
-    import magi.agent.db.models_token_usage  # noqa: F401
+    import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
+    import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
+    import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
     import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
+    import magi.agent.db.models_token_usage  # noqa: F401
+    import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
-    import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
-    Base.metadata.create_all(engine)
-    _run_inline_migrations(engine)
+    application_tables = set(Base.metadata.tables)
+    existing_tables = set(inspect(engine).get_table_names())
+    is_legacy = "alembic_version" not in existing_tables
+    has_legacy_application_tables = bool(application_tables & existing_tables)
+
+    if is_legacy and has_legacy_application_tables:
+        # Compatibility only: this path is for databases created before
+        # Alembic existed. It must not receive new schema changes.
+        Base.metadata.create_all(engine)
+        _run_inline_migrations(engine)
+
+    upgrade_head(state_dir or require_state_dir(), engine)
     _seed_default_root(engine)
     logger.info(
         "orm initialised",

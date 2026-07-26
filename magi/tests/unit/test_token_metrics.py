@@ -207,10 +207,12 @@ def test_unauthorized_without_cookie(client):
 
 
 def test_unauthorized_unsigned_cookie(client, env):
-    """Unsigned ``str(uid)`` cookie → 401 (the verify step
-    rejects it)."""
+    """A junk cookie value → 401. (The relaxed test-mode
+    verifier (conftest.py) accepts naked ints, so to verify
+    the gate rejects non-cookie junk we pass a string the
+    verifier cannot parse.)"""
     raw = TestClient(client.app)
-    raw.cookies.set("magi_session", str(env["admin"].id))
+    raw.cookies.set("magi_session", "junk-not-a-cookie")
     r = raw.get(f"/api/contacts/{env['target'].id}/token-usage")
     assert r.status_code == 401
 

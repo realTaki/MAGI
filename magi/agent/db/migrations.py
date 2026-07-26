@@ -1,9 +1,12 @@
-"""Pre-Alembic inline migrations + FTS5 sync triggers.
+"""Legacy pre-Alembic compatibility migrations + FTS5 sync triggers.
 
-SQLAlchemy's ``create_all`` is a no-op when the table already
-exists, so it can't add a new column to an existing table. For
-C1.1 we have a small list of known migrations to run by hand;
-the first Alembic baseline (end of C1.3) takes over from here.
+This module is retained only to adopt databases created before the Alembic
+baseline. It runs when ``alembic_version`` is absent and must not receive
+new schema changes. All future schema changes belong in
+``magi/agent/db/alembic/versions``.
+
+SQLAlchemy's ``create_all`` is a no-op when a table already exists, so the
+legacy lists below repair old databases before the baseline is stamped.
 
 Each entry in :data:`_INLINE_MIGRATIONS` is
 ``(table, column, ddl_fragment)``. ``ddl_fragment`` is the part
@@ -24,7 +27,6 @@ import logging
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
-
 
 logger = logging.getLogger("magi.agent.db.migrations")
 

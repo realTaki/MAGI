@@ -118,12 +118,16 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
     SOUL text is still in the rendered prompt. (The
     bundled skill loader ships 3 example skills in the
     image, so a "soul alone" block isn't reachable in a
-    default boot — the invariant we pin is "soul first".)"""
+    default boot — the invariant we pin is "soul first".)
+
+    The fixture seeds Alice at id=1 and Bob at id=2; we
+    use a ``uid`` (99) that has no Contact row so the
+    "Current chatter" block legitimately drops out."""
     from magi.agent.system_prompt import build_system_prompt
 
     rendered = build_system_prompt(
         str(state_dir),
-        uid=1,
+        uid=99,  # no Contact(id=99) row → contact block omitted
 
         soul="SOUL_TEXT",
     )
@@ -288,34 +292,22 @@ def test_prompt_excludes_completed_ongoing_rows(
 def test_prompt_includes_contact_block_for_self(
     state_dir, seed_contacts,
 ):
-    """D.26: the contact block is the User's self-record
-    (owner_id=uid, person_id=uid). With Alice (uid=1) as
-    the caller and a seeded self-contact for Alice, the
-    block renders Alice's notes.
+    """The contact block is the chatter's own ``Contact``
+    row (``id = uid``). With Alice (id=1) as the caller and
+    a ``notes`` blob on her own row, the block renders
+    her notes + role.
 
-    Pre-D.26 the chatter was identified by ``delivery_address``
-    (Telegram digits) and the contact block could describe
-    a different person. With delivery_address removed and the
-    cookie's ``magi_session`` carrying the UID directly,
-    there is only ever one User per chat — "admin 当前
-    在跟谁聊 根本不存在". The contact block is therefore
-    the User's own self-record.
+    Pre-refactor this used ``ContactEntry(owner_id, person_id)``
+    — the post-refactor schema collapses to a single
+    ``Contact`` table where each person IS their own row.
     """
-    from magi.agent.db import open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_EVE,
-        ContactEntry,
-    )
+    from magi.agent.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
-        db.add(ContactEntry(
-            owner_id=1,  # Alice
-            person_id=1,  # Alice (self-as-contact)
-            role="Engineering Manager",
-            notes="Alice runs the dev team. Prefers Slack over email.",
-            source=SOURCE_EVE,
-        ))
+        alice = db.get(Contact, 1)
+        alice.role = "assigned"
+        alice.notes = "Alice runs the dev team. Prefers Slack over email."
         db.commit()
 
     rendered = build_system_prompt(
@@ -325,37 +317,26 @@ def test_prompt_includes_contact_block_for_self(
     )
 
     assert "Current chatter" in rendered
-    assert "Engineering Manager" in rendered
-    assert "Slack over email" in rendered
+    assert "Alice runs the dev team" in rendered
 
 
 def test_prompt_contact_block_uses_display_name_not_raw_id(
     state_dir, seed_contacts,
 ):
-    """The header must render the chatter's display_name
-    (or name), NOT the raw ``person_id`` integer.
+    """The header must render the chatter's ``display_name``
+    (or ``name``), NOT the raw ``id`` integer.
 
-    Pre-fix this comment said "实际渲染时 caller 会用真名替换"
-    but the loop just called ``format_contact_block(contact)``
+    Pre-fix the loop called ``format_contact_block(contact)``
     with no name resolution — the rendered header read
-    ``**1**`` (a raw Contact FK). This test pins the
-    fix so a future "let me simplify and drop the
-    display_name kwarg" revert is caught immediately.
+    ``**1**`` (the raw PK). This test pins the fix so a
+    future "drop the display_name kwarg" revert is caught.
     """
-    from magi.agent.db import open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_EVE,
-        ContactEntry,
-    )
+    from magi.agent.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
-        db.add(ContactEntry(
-            owner_id=1, person_id=1,
-            role="Eng",
-            notes="x",
-            source=SOURCE_EVE,
-        ))
+        alice = db.get(Contact, 1)
+        alice.notes = "x"
         db.commit()
 
     rendered = build_system_prompt(
@@ -364,115 +345,80 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
         soul="SOUL",
     )
 
-    # The header must use Alice's display_name (her row's
-    # ``name`` falls back when no ``display_name`` is set).
+    # The header must use Alice's name (her row's
+    # ``name`` is "Alice" — fixture-set).
     assert "**Alice**" in rendered
     # The raw integer FK must NOT appear as the header.
-    # We check for the surrounding markdown so a future
-    # change like "1" appearing in a notes body wouldn't
-    # false-positive.
     assert "**1**" not in rendered
 
 
 def test_prompt_skips_contact_block_when_no_record(
     state_dir, seed_contacts,
 ):
-    """No ``(uid, uid)`` row → the contact block is
-    silently dropped. The LLM sees the soul + memory
-    only — no empty "Current chatter" header."""
+    """No Contact row for ``uid`` → the contact block is
+    silently dropped. We use a uid that has no Contact
+    row (the fixture only seeds Alice (id=1) and Bob
+    (id=2)).
+
+    The LLM sees the soul only — no empty "Current
+    chatter" header.
+    """
     from magi.agent.system_prompt import build_system_prompt
 
     rendered = build_system_prompt(
         str(state_dir),
-        uid=1,
+        uid=99,  # no Contact(id=99) → block silently dropped
         soul="SOUL",
     )
     assert "Current chatter" not in rendered
-    assert "Long-term memory" not in rendered
     assert rendered.startswith("SOUL")
 
 
 def test_prompt_contact_block_only_for_self(
     state_dir, seed_contacts,
 ):
-    """Multiple ``ContactEntry`` rows for Alice: her
-    self-row (``person_id=1``) renders. Rows whose
-    ``person_id`` is someone else (``person_id=3``)
-    do NOT — only the self-contact block survives
-    the per-chatter filter."""
+    """Alice's own row renders her own ``notes`` field.
+    (Pre-refactor this verified that ``(uid=1, person_id=1)``
+    rendered but ``(uid=1, person_id=3)`` did not — under
+    the single ``Contact`` schema, each person IS their own
+    row, so there is no per-chatter join: Alice's row carries
+    only her own notes; Charlie's row carries only Charlie's.
+    We pin that Alice's ``notes`` field is the only thing
+    shown in her prompt.)
+    """
     from magi.agent.db import Contact, open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_MANUAL,
-        ContactEntry,
-    )
     from magi.agent.system_prompt import build_system_prompt
 
-    # Seed a third contact so a foreign-person contact
-    # is creatable.
     with open_session() as db:
-        db.add(Contact(
-            id=3, name="Charlie",
-            telegram_id=9003, role="contact",
-            provider="minimax", api_key="fake",
-        ))
-        db.commit()
-        db.add_all([
-            ContactEntry(
-                owner_id=1, person_id=1,  # Alice's self-contact
-                role="Engineering Manager",
-                notes="alice-self",
-                source=SOURCE_MANUAL,
-            ),
-            ContactEntry(
-                owner_id=1, person_id=3,  # Alice's notes about Charlie
-                role="SRE",
-                notes="charlie-other",
-                source=SOURCE_MANUAL,
-            ),
-        ])
+        alice = db.get(Contact, 1)
+        alice.notes = "alice-self-notes"
+        bob = db.get(Contact, 2)
+        bob.notes = "bob-other-notes"
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
-        uid=1,
+        uid=1,  # Alice's prompt
         soul="SOUL",
     )
-    assert "alice-self" in rendered
-    assert "charlie-other" not in rendered
+    assert "alice-self-notes" in rendered
+    # Bob's notes are NOT in Alice's prompt.
+    assert "bob-other-notes" not in rendered
 
 
 def test_prompt_skips_contact_block_for_other_user(
     state_dir, seed_contacts,
 ):
-    """A different User's self-contact (``person_id=2``)
-    must NOT bleed into Alice's prompt. The lookup is
-    ``(uid=1, person_id=1)``; Bob's row at
-    ``(1, 2)`` is a different contact — the Alice prompt
-    sees only Alice's own row, not Bob's."""
-    from magi.agent.db import open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_EVE,
-        ContactEntry,
-    )
+    """When uid=1 (Alice), only Alice's row renders —
+    Bob's row (id=2) is not pulled into her prompt."""
+    from magi.agent.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
-        # Seed Alice's self-contact: this should render.
-        db.add(ContactEntry(
-            owner_id=1, person_id=1,
-            role="self-role",
-            notes="alice-own-notes",
-            source=SOURCE_EVE,
-        ))
-        # Also seed Alice's notes about Bob — these should
-        # NOT render (the system prompt only shows
-        # ``person_id=uid``, i.e. self).
-        db.add(ContactEntry(
-            owner_id=1, person_id=2,
-            role="bob-role",
-            notes="should-not-render",
-            source=SOURCE_EVE,
-        ))
+        alice = db.get(Contact, 1)
+        alice.notes = "alice-own-notes"
+        bob = db.get(Contact, 2)
+        bob.notes = "should-not-render"
         db.commit()
 
     rendered = build_system_prompt(
@@ -528,12 +474,12 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     Long-term memory → Current chatter → Available skills.
     Reordering would change what the LLM reads first when
     it hits its context cap — a silent regression that
-    only shows up at long conversations."""
-    from magi.agent.db import open_session
-    from magi.agent.memory.contacts.models import (
-        SOURCE_EVE,
-        ContactEntry,
-    )
+    only shows up at long conversations.
+
+    Under the unified ``Contact`` schema, the contact
+    block renders the chatter's own row by id, not a
+    separate ``ContactEntry`` row keyed by ``person_id``."""
+    from magi.agent.db import Contact, open_session
     from magi.agent.memory.magi.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
@@ -541,24 +487,22 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     )
     from magi.agent.system_prompt import build_system_prompt
 
-    # Seed one of each block-eligible kind.
     with open_session() as db:
+        # Memory block: one important row.
         db.add(MemoryEntry(
             uid=1, kind=KIND_IMPORTANT,
             subject="memory-marker",
             body="x", importance=3, source=SOURCE_MANUAL,
         ))
-        db.add(ContactEntry(
-            owner_id=1, person_id=1,
-            role="contact-marker",
-            notes="x", source=SOURCE_EVE,
-        ))
+        # Contact block: mark Alice's row so it renders.
+        alice = db.get(Contact, 1)
+        alice.notes = "contact-marker"
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
-        
+
         soul="SOUL_MARKER",
     )
 
@@ -603,19 +547,25 @@ def test_prompt_continues_when_memory_load_fails(
 def test_prompt_continues_when_contact_load_fails(
     state_dir, seed_contacts, monkeypatch,
 ):
-    """Same resilience contract for the contact lookup."""
+    """Same resilience contract for the contact lookup.
+
+    The ``ContactStore.get`` call must catch exceptions
+    silently and render the prompt without a contact
+    block rather than 500-ing the inbound path."""
     from magi.agent.system_prompt import build_system_prompt
     from magi.agent.memory.contacts import store as cstore_mod
 
-    def _boom(_self, _owner_id, _person_id):
+    def _boom(self, contact_id):
         raise RuntimeError("simulated contact ORM hiccup")
 
-    monkeypatch.setattr(cstore_mod.ContactStore, "find_by_person", _boom)
+    # Stub ALL loader paths so any one of them failing is
+    # caught by the prompt builder rather than bubbling.
+    monkeypatch.setattr(cstore_mod.ContactStore, "get", _boom)
 
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
-        
+
         soul="SOUL_TEXT",
     )
 

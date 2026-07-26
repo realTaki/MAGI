@@ -728,6 +728,7 @@ name = "magi"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -739,7 +740,6 @@ dependencies = [
 
 [package.optional-dependencies]
 adam = [
-    { name = "alembic" },
     { name = "asyncpg" },
     { name = "jinja2" },
     { name = "mcp" },
@@ -762,7 +762,7 @@ eve = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", marker = "extra == 'adam'", specifier = ">=1.13.0" },
+    { name = "alembic", specifier = ">=1.13.0" },
     { name = "anthropic", marker = "extra == 'eve'", specifier = ">=0.39.0" },
     { name = "apscheduler", marker = "extra == 'eve'", specifier = ">=3.10.4" },
     { name = "asyncpg", marker = "extra == 'adam'", specifier = ">=0.30.0" },

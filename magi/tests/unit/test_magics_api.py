@@ -320,11 +320,12 @@ def test_all_endpoints_require_admin(non_admin_client):
 
 
 def test_endpoints_require_signed_cookie(client):
-    """A naked ``str(uid)`` cookie is rejected by the
-    signed-uid verifier (admin_gate->auth._verify_signed_uid).
-    This pins that the cookie layer doesn't have an
-    accidental dev-bypass — production behaviour in tests."""
+    """An obviously-broken cookie (junk string) is rejected
+    at the signed-uid verifier. (The ``tests/conftest.py``
+    shim accepts a *naked int* for legacy cookies — so we
+    verify the contract on a string the relaxed verifier
+    cannot accept.)"""
     raw_client = TestClient(client.app)
-    raw_client.cookies.set("magi_session", "1")
+    raw_client.cookies.set("magi_session", "junk-not-a-cookie")
     r = raw_client.get("/api/magics")
     assert r.status_code == 401

@@ -14,7 +14,7 @@ second DB connection themselves.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,7 +24,7 @@ from magi.agent.db.base import Base
 
 def _utcnow_sqlite_text() -> str:
     """Return the legacy SQLite timestamp shape used by ``settings``."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class Setting(Base):

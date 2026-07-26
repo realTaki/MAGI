@@ -39,7 +39,7 @@ WORKDIR /app
 # Install Python deps (magi) from pyproject + uv.lock. We still do this
 # so the venv has a baseline magi install — the host mount in
 # docker-compose.dev.yml replaces it at runtime via PYTHONPATH.
-COPY pyproject.toml uv.lock* README.md ./
+COPY pyproject.toml uv.lock* README.md alembic.ini ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 

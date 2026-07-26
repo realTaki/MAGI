@@ -20,8 +20,9 @@ Layout:
   - :mod:`.models_magi`         — :class:`Magi` (MAGI runtime
                                   agent rows bound to a ``MAGIC``)
   - :mod:`.models_dashboard`    — :class:`ActionItem`, :class:`TokenUsage`
-  - :mod:`.migrations`          — pre-Alembic ``ALTER TABLE`` pass
-                                  + FTS5 sync triggers
+  - :mod:`.alembic`            — versioned schema migrations
+  - :mod:`.alembic_runner`     — startup ``upgrade head`` integration
+  - :mod:`.migrations`         — legacy pre-Alembic adoption pass only
   - :mod:`.local_db`            — raw-SQL ``meta`` KV table
                                   (kept hand-rolled, see module docstring)
   - :mod:`.models_setting`      — :class:`Setting` (the system-level
@@ -47,7 +48,6 @@ working.
 
 from __future__ import annotations
 
-
 # Re-export the public surface. Submodules below; the names
 # here are what the ~30 external callers import.
 from magi.agent.db.base import Base
@@ -63,14 +63,13 @@ from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_contact import Contact
 from magi.agent.db.models_magi import Magi
 from magi.agent.db.models_magic import MAGIC
-from magi.agent.db.models_token_usage import TokenUsage
 from magi.agent.db.models_setting import Setting
+from magi.agent.db.models_token_usage import TokenUsage
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
 # surface (``from magi.agent.db import ChatSession``).
 from magi.agent.memory.session.tables import ChatMessage, ChatSession
-
 
 __all__ = [
     # base + engine

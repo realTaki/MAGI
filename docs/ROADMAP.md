@@ -25,7 +25,7 @@ file.
 | C0 — first-touch deploy | **Done** | WebUI + TG + SQLite + ORM, end-to-end |
 | C1.1 — schema baseline | **Done** | ORM + FTS5 + default-root seed |
 | C1.2 — User lifecycle | **Done** | Full CRUD + per-User LLM routing |
-| C1.3 — Alembic + WebUI completion | **Next** | Alembic baseline + `/api/eves` `/api/audit` `/api/login` still pending |
+| C1.3 — Alembic + WebUI completion | **Partial** | Versioned Alembic baseline is live; `/api/eves` `/api/audit` `/api/login` still pending |
 | C2 — chat history | **~90%** | All CRUD/auto-compact/auto-title done; **TG self-serve `/start <code>` still pending**; D.22/D.23/D.24/interrupt/reactions landed |
 | C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-User LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
 | C4 — per-MAGI persona + memory UI | **~55%** | `action_items.source="eve"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-MAGI SOUL.md, memory management UI still pending |
@@ -85,7 +85,7 @@ stubbed or absent.
 | WebUI channel (operator login + dashboard) | **Done** | React 19 + TS + Tailwind + Vite, FastAPI backend |
 | Telegram channel (single bot, first-touch reply) | **Done** | One bot account per node |
 | SQLite as `MAGI_STATE_BACKEND` | **Done** | Default; the only state backend currently wired |
-| `meta` table + `settings` table (raw-SQL hand-rolled) | **Done** | `local_db.py` + `settings.py` — pre-ORM, will be replaced by SQLAlchemy in C1 |
+| `meta` table + `settings` table | **Done** | `meta` remains a raw bootstrap KV; `settings` is now an ORM model behind the compatibility facade |
 | Departments + Users tables (raw-SQL) | **Done** | C1.1 will layer an ORM on top |
 | First-touch handler ("I don't know who you are") | **Done** | node `__init__` C0 path; C3 replaces with the real dispatcher |
 | Single-node deploy (`MAGI_STATE_BACKEND=sqlite`, `MAGI_CHANNELS=webui,telegram`) | **Done** | `node/__init__.py` loops channels in non-blocking first |
@@ -129,8 +129,9 @@ discipline C0 deliberately punted on).
 |---|---|---|
 | SQLAlchemy `Base` + per-table ORM models (Contact / MAGIC / Magi / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIC` + `Magi` carry the org tree |
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
-| Inline `ALTER TABLE` pass for columns the SQLAlchemy `create_all` can't add | **Done** | `magi/agent/db/migrations.py` |
-| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | Same file; trigram tokenizer for CJK-friendly substring search |
+| Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/agent/db/alembic/versions`; `init_orm` runs `upgrade head` |
+| Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/agent/db/migrations.py`, runs only for databases without `alembic_version` |
+| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | Alembic revision `0002_fts5`; trigram tokenizer for CJK-friendly substring search |
 | Default-root seed ("MAGI") | **Done** | `engine._seed_default_root` |
 | Departments tree (parent_id self-FK + manager_id) | **Done** | Cycles prevented at API layer (out-of-scope for C1.1 per `departments.py` comment) |
 | `api_key` plain-text in User table (C0 → C8 hardening plan to encrypt) | **Done** | C8 encrypts at rest with `MAGI_SECRET` |
@@ -148,7 +149,7 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Next** | Multiple comments call this out: "end of C1.3" |
+| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas |
 | All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
@@ -284,7 +285,7 @@ worst-day operational scenarios.
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline (replaces `_run_inline_migrations`) | **Next** (end of C1.3) | Multiple callouts in code |
+| First Alembic baseline (replaces `_run_inline_migrations`) | **Done** | `0001_baseline` + `0002_fts5`; legacy runner is adoption-only |
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
 | `tokens.py` to `llm/` | **Done** | (in this refactor series) |

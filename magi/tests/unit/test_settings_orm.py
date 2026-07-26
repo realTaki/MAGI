@@ -22,7 +22,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 
 def test_state_helpers_use_the_orm_settings_model(state_dir):
-    from magi.agent.db import Setting, init_orm, init_sqlite, open_session
+    from magi.agent.db import Setting, init_sqlite, open_session
     from magi.agent.db.settings import state_delete, state_get, state_set
 
     # The bootstrap no longer creates settings with raw SQL; the ORM creates
