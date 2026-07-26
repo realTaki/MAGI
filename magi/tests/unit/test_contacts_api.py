@@ -92,28 +92,46 @@ def env(monkeypatch, tmp_path):
     return {"state": state, "alice": alice, "bob": bob, "charlie": charlie}
 
 
+def _signed_session_cookie(uid: int) -> str:
+    """Return an HMAC-signed ``magi_session`` value for
+    ``uid`` (the value the prod cookie layer uses).
+
+    D.24: cookie carries ``Contact.id`` (an int) but the
+    server-side gate (:func:`auth_gates.admin_gate`) calls
+    ``auth._verify_signed_uid`` on it, which requires a
+    ``uid:ts:hmac`` triple. A naked ``str(uid)`` is rejected,
+    so test fixtures must mint a real signed token.
+
+    We rely on ``init_orm`` having already set
+    ``MAGI_STATE_DIR`` (so ``_signing_key`` derives a stable
+    key per test).
+    """
+    from magi.channels.webui.api.auth import _sign_uid
+
+    return _sign_uid(uid)
+
+
 @pytest.fixture
 def client(env):
-    """TestClient with Alice's cookie (admin)."""
+    """TestClient with Alice's signed cookie (admin)."""
     from magi.channels.webui.app import create_app
 
     app = create_app()
     c = TestClient(app)
-    # D.24: cookie carries ``Contact.id`` (an int), not a
-    # per-channel delivery address.
-    c.cookies.set("magi_session", str(env["alice"].id))
+    c.cookies.set("magi_session", _signed_session_cookie(env["alice"].id))
     return c
 
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's cookie (role='contact', not
-    admin). Used to verify AdminGate rejects non-admin callers."""
+    """TestClient with Charlie's signed cookie (role='contact',
+    not admin). Used to verify AdminGate rejects non-admin
+    callers."""
     from magi.channels.webui.app import create_app
 
     app = create_app()
     c = TestClient(app)
-    c.cookies.set("magi_session", str(env["charlie"].id))
+    c.cookies.set("magi_session", _signed_session_cookie(env["charlie"].id))
     return c
 
 

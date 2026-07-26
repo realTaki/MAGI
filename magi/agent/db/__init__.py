@@ -24,8 +24,10 @@ Layout:
                                   + FTS5 sync triggers
   - :mod:`.local_db`            — raw-SQL ``meta`` KV table
                                   (kept hand-rolled, see module docstring)
-  - :mod:`.settings`            — raw-SQL ``settings`` KV table
-                                  (the C0 system-level config)
+  - :mod:`.models_setting`      — :class:`Setting` (the system-level
+                                  settings KV table)
+  - :mod:`.settings`            — compatibility facade for the legacy
+                                  ``state_get`` / ``state_set`` API
 
 Public surface (re-exported below): the names the ~30
 external callers need (``Base`` + every model class +
@@ -62,6 +64,7 @@ from magi.agent.db.models_contact import Contact
 from magi.agent.db.models_magi import Magi
 from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_token_usage import TokenUsage
+from magi.agent.db.models_setting import Setting
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
@@ -85,6 +88,7 @@ __all__ = [
     # dashboard
     "ActionItem",
     "TokenUsage",
+    "Setting",
     # sessions (re-exported from sessions/tables.py)
     "ChatSession",
     "ChatMessage",

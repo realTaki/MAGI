@@ -290,12 +290,25 @@ def delete_magic(
             detail="MAGIC not found",
         )
 
-    # Reparent children to the deleted team's parent.
-    children = session.scalars(
-        select(MAGIC).where(MAGIC.parent_id == magic_id)
-    ).all()
-    for child in children:
-        child.parent_id = magic.parent_id
+    # Capture the parent_id before any further session
+    # mutations invalidate it (SQLAlchemy may expire the
+    # attribute once we start touching related rows).
+    reparent_to = magic.parent_id
+
+    # Reparent children to the deleted team's parent *via raw
+    # SQL* (Core ``update()``). Mutating each ``MAGIC`` ORM
+    # instance through a relationship causes SQLAlchemy's
+    # cascade logic to NULL-out the children's parent_id
+    # before the UPDATE is flushed — so the FK ends up
+    # cleared instead of reparented. Raw SQL bypasses the
+    # ORM layer entirely.
+    from sqlalchemy import update
+
+    session.execute(
+        update(MAGIC)
+        .where(MAGIC.parent_id == magic_id)
+        .values(parent_id=reparent_to)
+    )
 
     session.delete(magic)
     session.commit()

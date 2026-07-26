@@ -68,10 +68,15 @@ class MAGIC(Base):
     # that tells SQLAlchemy which side of the parent_id FK
     # is the "many" side, so ``children`` is a list of
     # MAGI teams rather than a back to the parent.
+    #
+    # ``cascade="all, delete-orphan"`` would silently nuke
+    # child MAGIC rows on parent delete (overriding the
+    # RESTRICT FK guard and the API's reparent step). The
+    # delete endpoint re-parents children explicitly
+    # before issuing ``session.delete(parent)``; we
+    # therefore *do not* want ORM-side cascading here.
     children: Mapped[list["MAGIC"]] = relationship(
         back_populates="parent",
-        cascade="all, delete-orphan",
-        single_parent=True,
     )
     parent: Mapped["MAGIC | None"] = relationship(
         back_populates="children",

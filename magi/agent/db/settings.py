@@ -1,88 +1,64 @@
-"""Tiny KV helpers on top of the ``settings`` table.
+"""Compatibility facade for the ORM-backed ``settings`` KV table.
 
-C0 / C1.0b: this is the only writer of bot tokens, channel config
-and similar runtime values. C1.1 will layer a SQLAlchemy model on top
-of the same table; the helpers here are the synchronous fall-back that
-the FastAPI endpoints use for the time being.
+The public ``state_get`` / ``state_set`` / ``state_delete`` names are kept
+because many channel and agent modules use this small API. The table itself
+is no longer accessed through a second raw ``sqlite3`` connection: every
+operation goes through the shared SQLAlchemy engine and ``open_session()``.
 
-Concurrency model
-=================
-
-There's exactly ONE call site that opens sqlite3 — this file.
-The Telegram bot thread and the FastAPI event loop both go
-through ``state_get`` / ``state_set`` / ``state_delete`` here.
-Two design choices keep that race-safe:
-
-1. **One open per call.** We ``with sqlite3.connect(...)`` for
-   every helper, so each request / poll cycle gets a fresh
-   connection. The connection is closed (and its in-flight WAL
-   frame flushed) on context exit. No long-lived connection
-   means no "someone forgot to close it" leak.
-
-2. **WAL + busy_timeout on every connection.** The ``with``
-   helper applies the same PRAGMAs ``init_sqlite`` sets, so a
-   connection opened mid-flight (e.g. the TG thread reading
-   while a FastAPI handler is writing) is just as well-behaved
-   as the boot-time connection. WAL means readers and writers
-   don't block each other; ``busy_timeout`` makes the rare
-   same-row race auto-retry for up to 5s before erroring.
-
-For multi-worker uvicorn later, each worker would have its own
-process and its own connections; SQLite's file-level locking
-serialises them across processes. No change needed here.
+This module is intentionally the only legacy KV facade. New code that needs
+structured settings should use :class:`magi.agent.db.models_setting.Setting`
+directly, while existing system-setting keys can continue using these
+helpers until their callers are migrated.
 """
 
 from __future__ import annotations
 
-import sqlite3
+import os
 from pathlib import Path
 
+from magi.agent.db.engine import open_session
+from magi.agent.db.models_setting import Setting
 
-def _db_path(state_dir: str) -> Path:
-    return Path(state_dir) / "magi.db"
 
+def _prepare_session(state_dir: str):
+    """Return an ORM session bound to ``state_dir``.
 
-def _connect(state_dir: str) -> sqlite3.Connection:
-    """Open a connection with the same PRAGMAs ``init_sqlite`` sets.
-
-    Centralizing this here means the TG thread, the FastAPI
-    request handler, and any future caller all get identical
-    concurrency behavior — readers and writers don't block each
-    other, and a same-row race retries for ``busy_timeout`` ms
-    instead of raising ``OperationalError``.
+    ``state_dir`` remains in the helper signature for compatibility with the
+    pre-ORM KV API. ``open_session`` validates it against the process-wide
+    engine and initialises the engine from it when the caller has not already
+    configured ``MAGI_STATE_DIR``.
     """
-    conn = sqlite3.connect(str(_db_path(state_dir)))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    return conn
+    requested = str(Path(state_dir))
+    if not os.environ.get("MAGI_STATE_DIR"):
+        os.environ["MAGI_STATE_DIR"] = requested
+    return open_session(requested)
 
 
 def state_get(state_dir: str, key: str) -> str | None:
-    """Return the value for ``key`` or ``None`` if unset."""
-    with _connect(state_dir) as conn:
-        row = conn.execute(
-            "SELECT value FROM settings WHERE key = ?", (key,)
-        ).fetchone()
-    return row[0] if row else None
+    """Return the setting value for ``key`` or ``None`` if unset."""
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        return setting.value if setting is not None else None
 
 
 def state_set(state_dir: str, key: str, value: str) -> None:
-    """Upsert ``key=value``. Touches ``updated_at`` on every write."""
-    with _connect(state_dir) as conn:
-        conn.execute(
-            """
-            INSERT INTO settings (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-                value      = excluded.value,
-                updated_at = datetime('now')
-            """,
-            (key, value),
-        )
-        conn.commit()
+    """Upsert ``key=value`` inside one ORM transaction."""
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        if setting is None:
+            db.add(Setting(key=key, value=value))
+        else:
+            setting.value = value
+        db.commit()
 
 
 def state_delete(state_dir: str, key: str) -> None:
-    """Remove a key. No-op if it doesn't exist."""
-    with _connect(state_dir) as conn:
-        conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-        conn.commit()
+    """Delete ``key`` if present, inside one ORM transaction."""
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        if setting is not None:
+            db.delete(setting)
+        db.commit()
+
+
+__all__ = ["state_get", "state_set", "state_delete"]

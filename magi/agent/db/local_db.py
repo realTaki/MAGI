@@ -5,9 +5,10 @@ state and Eve uses it for personal working state. A Postgres store lands
 in C1 alongside the ORM; this module is the SQLite counterpart and stays
 useful for Eve forever.
 
-For C0 the file just contains a ``meta`` table for schema_version
-tracking. C1+ (via SQLAlchemy + Alembic) will add real tables — the
-schema_version row is the hand-off point.
+    The file bootstrap creates only the ``meta`` table for schema_version
+    tracking. Application tables are created by SQLAlchemy in ``init_orm``;
+    the ``settings`` table is no longer created or accessed through this
+    raw-SQL bootstrap path.
 """
 
 from __future__ import annotations
@@ -60,22 +61,6 @@ def init_sqlite(state_dir: str) -> Path:
         conn.execute(
             "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
             (META_SCHEMA_VERSION, INITIAL_SCHEMA_VERSION),
-        )
-        # ``settings`` is a small KV store for runtime config — channel
-        # bot tokens, verified flags, etc. Kept in SQLite (not env)
-        # because the webui writes to it at runtime and env is
-        # read-only. C1.1's ORM/Alembic pass will add a real model
-        # on top of this table; the schema here is deliberately
-        # minimal so that hand-off is a no-op (Alembic baseline sees
-        # the table as already created).
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS settings (
-                key        TEXT PRIMARY KEY,
-                value      TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-            """
         )
         conn.commit()
 

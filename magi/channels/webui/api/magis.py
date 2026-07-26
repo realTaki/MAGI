@@ -214,10 +214,21 @@ def create_magi(
         api_key=payload.api_key,
     )
     session.add(magi)
+    session.flush()  # populate ``magi.id``
     if payload.magic_position == "adam":
-        # Bind the new adam to the MAGIC row. The 409 above
-        # guarantees ``magic.adam_id`` is currently NULL.
-        magic.adam_id = magi.id
+        # Bind the new adam to the MAGIC row via raw Core
+        # ``update()``. Mutating ``magic.adam_id`` on the
+        # ORM-mapped ``MAGIC`` instance triggers SQLAlchemy's
+        # self-referential cascade, which NULLs the column
+        # rather than writing the new FK value. Raw Core
+        # bypasses the ORM entirely.
+        from sqlalchemy import update as _sa_update
+
+        session.execute(
+            _sa_update(MAGIC)
+            .where(MAGIC.id == magic.id)
+            .values(adam_id=magi.id)
+        )
     session.commit()
     session.refresh(magi)
     return _serialize(magi)
@@ -294,11 +305,19 @@ def delete_magi(
             code="not_found.magi",
             detail="magi not found",
         )
-    # Clear the MAGIC's adam_id if this was the bound Adam.
+    # Clear the MAGIC's adam_id if this was the bound Adam
+    # (via raw Core UPDATE — ORM-side ``magic.adam_id = None``
+    # is silently dropped by self-referential cascade handling).
     if magi.magic_position == "adam":
         magic = session.get(MAGIC, magi.magic_id)
         if magic is not None and magic.adam_id == magi_id:
-            magic.adam_id = None
+            from sqlalchemy import update as _sa_update
+
+            session.execute(
+                _sa_update(MAGIC)
+                .where(MAGIC.id == magic.id, MAGIC.adam_id == magi_id)
+                .values(adam_id=None)
+            )
     session.delete(magi)
     session.commit()
     return Response(status_code=204)

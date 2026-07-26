@@ -1,10 +1,9 @@
 """MAGI ``db`` package — engine, bootstrap, and session helpers.
 
-Lives in the same SQLite file as the hand-rolled ``settings`` KV
-store (C0). The two coexist: ``settings`` and ``meta`` are written
-by the raw-SQL helpers in :mod:`magi.agent.db.local_db` /
-:mod:`magi.agent.db.settings`; everything else uses SQLAlchemy via
-this module.
+Lives in the same SQLite file as the small ``meta`` bootstrap table.
+All application tables, including the legacy ``settings`` KV table, are
+accessed through SQLAlchemy via this module. ``meta`` remains a raw-SQL
+bootstrap table because it only carries schema hand-off metadata.
 
 We deliberately use ``Base.metadata.create_all`` (not Alembic) for
 C1.1 — the schema is small, the tables are new, and adding Alembic
@@ -82,6 +81,7 @@ def require_state_dir() -> str:
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
+_aux_sessionmakers: dict[Path, sessionmaker[Session]] = {}
 
 
 def _state_dir_from_env() -> str:
@@ -100,28 +100,62 @@ def get_engine() -> Engine:
         state_dir = Path(_state_dir_from_env())
         state_dir.mkdir(parents=True, exist_ok=True)
         db_path = state_dir / "magi.db"
-        # ``check_same_thread=False`` lets the TG bot thread and
-        # the FastAPI handler thread share the engine. SQLAlchemy
-        # serialises access internally so this is safe.
-        _engine = create_engine(
-            f"sqlite:///{db_path}",
-            connect_args={"check_same_thread": False},
-            future=True,
-        )
-        _register_sqlite_pragmas(_engine)
-        _register_begin_immediate(_engine)
-        _SessionLocal = sessionmaker(
-            bind=_engine, autocommit=False, autoflush=False, expire_on_commit=False
-        )
+        _engine = _create_sqlite_engine(db_path)
+        _SessionLocal = _make_sessionmaker(_engine)
     return _engine
+
+
+def _create_sqlite_engine(db_path: Path) -> Engine:
+    """Create an engine with the process-wide SQLite policy."""
+    # ``check_same_thread=False`` lets the TG bot thread and the
+    # FastAPI handler thread share the engine. SQLAlchemy
+    # serialises access internally so this is safe.
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    _register_sqlite_pragmas(engine)
+    _register_begin_immediate(engine)
+    return engine
+
+
+def _make_sessionmaker(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(
+        bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
+    )
+
+
+def _sessionmaker_for_explicit_state_dir(state_dir: Path) -> sessionmaker[Session]:
+    """Return an ORM session factory for a legacy explicit state path.
+
+    Normal application code uses the process-wide engine. The old KV helper
+    API accepts ``state_dir`` directly, though, and a few migration-era
+    callers can invoke it before the process environment is configured. Keep
+    that compatibility without falling back to raw sqlite3: an explicit
+    alternate path gets its own SQLAlchemy engine with the exact same SQLite
+    transaction policy.
+    """
+    cached = _aux_sessionmakers.get(state_dir)
+    if cached is not None:
+        return cached
+
+    state_dir.mkdir(parents=True, exist_ok=True)
+    engine = _create_sqlite_engine(state_dir / "magi.db")
+    # ``models_setting`` is imported by the compatibility facade before this
+    # path is reached. Creating the registered metadata makes state_set work
+    # even when only init_sqlite (the legacy meta bootstrap) ran first.
+    Base.metadata.create_all(engine)
+    factory = _make_sessionmaker(engine)
+    _aux_sessionmakers[state_dir] = factory
+    return factory
 
 
 # -- SQLAlchemy connection event listeners ----------------------------------
 # Two PRAGMAs and a transaction-mode override that the raw
-# ``sqlite3`` connections in ``local_db.py`` / ``settings.py``
-# already set on themselves, but which SQLAlchemy connections
-# don't inherit (SQLAlchemy creates fresh DBAPI connections from
-# the pool — each needs the PRAGMAs re-applied).
+# The raw ``meta`` bootstrap in ``local_db.py`` sets these for its own
+# connection, but SQLAlchemy connections need the same policy registered
+# here (each pooled DBAPI connection is fresh).
 #
 # ``busy_timeout`` makes contending writers (TG bot thread +
 # FastAPI loop hitting the same row under D.18 search/append/
@@ -244,10 +278,12 @@ def init_orm(state_dir: str | None = None) -> Engine:
     needed as the schema grows within C1.x. The first Alembic
     baseline (planned for end of C1.3) replaces this.
     """
-    engine = get_engine()
     if state_dir is not None:
-        # Honour an explicit override (mostly for tests).
+        # Honour an explicit override (mostly for tests) before creating
+        # the lazy engine. This also lets the settings facade initialise a
+        # fresh database from its legacy ``state_dir`` argument.
         os.environ["MAGI_STATE_DIR"] = state_dir
+    engine = get_engine()
     # Eagerly import every model module so its tables register
     # on ``Base.metadata`` before ``create_all`` runs. Doing
     # this inside ``init_orm`` (rather than at module top) keeps
@@ -259,6 +295,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_token_usage  # noqa: F401
+    import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
@@ -298,8 +335,17 @@ def get_session() -> Generator[Session, None, None]:
 
 
 @contextmanager
-def open_session() -> Generator[Session, None, None]:
+def open_session(
+    state_dir: str | os.PathLike[str] | None = None,
+) -> Generator[Session, None, None]:
     """Context-manager variant of :func:`get_session`.
+
+    ``state_dir`` is optional and exists for compatibility with older
+    helpers that accepted an explicit state directory. When it matches the
+    process-wide path, the normal singleton is used. When it differs, an
+    auxiliary SQLAlchemy engine is used for that explicit legacy path; this
+    avoids silently switching the process-wide engine while keeping the
+    settings facade on the ORM transaction policy.
 
     Use this from code that needs a session outside the
     FastAPI request lifecycle — the TG bot thread, the
@@ -308,10 +354,29 @@ def open_session() -> Generator[Session, None, None]:
     ``Depends(get_session)`` so the session closes at the
     same point the response is sent.
     """
-    if _SessionLocal is None:
-        init_orm()
-    assert _SessionLocal is not None
-    session = _SessionLocal()
+    if state_dir is not None:
+        requested = Path(state_dir).resolve()
+        configured = os.environ.get("MAGI_STATE_DIR")
+        if configured is None:
+            os.environ["MAGI_STATE_DIR"] = str(requested)
+            if _SessionLocal is None:
+                init_orm()
+            assert _SessionLocal is not None
+            session_factory = _SessionLocal
+        elif Path(configured).resolve() == requested:
+            if _SessionLocal is None:
+                init_orm()
+            assert _SessionLocal is not None
+            session_factory = _SessionLocal
+        else:
+            session_factory = _sessionmaker_for_explicit_state_dir(requested)
+    else:
+        if _SessionLocal is None:
+            init_orm()
+        assert _SessionLocal is not None
+        session_factory = _SessionLocal
+
+    session = session_factory()
     try:
         yield session
     finally:
