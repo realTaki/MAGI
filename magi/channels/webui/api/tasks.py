@@ -93,9 +93,9 @@ class TaskIn(BaseModel):
     # Required when ``frequency="once"``; ignored otherwise.
     # The validator below enforces the one-way conditional.
     run_at: Optional[str] = None
-    channel: Channel | str = Field(default=Channel.WEBUI, pattern=r"^(webui|tg)$")
+    target_channel: Channel | str = Field(default=Channel.WEBUI, pattern=r"^(webui|tg)$")
     # Concrete delivery destination — semantic depends on
-    # ``channel`` (see ``Task.delivery_to`` doc). The
+    # ``target_channel`` (see ``Task.delivery_to`` doc). The
     # ``ScheduleTaskTool`` tool path applies the same
     # format-validating logic; the WebUI form sends
     # ``"new"`` for the create-new-session default.
@@ -148,7 +148,7 @@ class TaskPatch(BaseModel):
     # frequency invariant runs on the POST path only).
     run_at: Optional[str] = None
     delivery_to: Optional[str] = None
-    channel: Optional[str] = None
+    target_channel: Optional[str] = None
     enabled: Optional[bool] = None
 
     @field_validator("frequency")
@@ -162,13 +162,13 @@ class TaskPatch(BaseModel):
             raise ValueError(f"unsupported frequency: {v!r}")
         return v
 
-    @field_validator("channel")
+    @field_validator("target_channel")
     @classmethod
     def _v_channel(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
         if v not in (Channel.WEBUI, Channel.TG):
-            raise ValueError("channel must be 'webui' or 'tg'")
+            raise ValueError("target_channel must be 'webui' or 'tg'")
         return v
 
 
@@ -189,7 +189,7 @@ class TaskOut(BaseModel):
     # will land.
     delivery_to: Optional[str] = None
     tz: str
-    channel: str
+    target_channel: str
     uid: int
     enabled: bool
     consecutive_failures: int
@@ -240,7 +240,7 @@ def _task_to_out(t: Task) -> TaskOut:
         run_at=t.run_at,
         delivery_to=t.delivery_to,
         tz=_resolve_system_tz(),
-        channel=t.channel,
+        target_channel=t.target_channel,
         uid=t.uid,
         enabled=bool(t.enabled),
         consecutive_failures=t.consecutive_failures,
@@ -428,7 +428,7 @@ def create_task(
     # above — resolve BEFORE ``session.query`` begins the
     # outer BEGIN IMMEDIATE.
     delivery_to = _resolve_delivery_to(
-        channel=payload.channel,
+        target_channel=payload.target_channel,
         uid=operator_id,
         explicit=payload.delivery_to,
     )
@@ -493,7 +493,7 @@ def create_task(
         # fire time and appends to it.
         session_id=task_session_id,
         tz=system_tz,
-        channel=payload.channel,
+        target_channel=payload.target_channel,
         uid=operator_id,
         enabled=1,
         consecutive_failures=0,
@@ -543,10 +543,10 @@ def update_task(
     # ``delivery_to`` is always re-derived so the row
     # reflects the operator's *current* TG binding (which
     # may have been updated since the row was created).
-    patch_channel = data.pop("channel", None)
+    patch_target_channel = data.pop("target_channel", None)
     data.pop("delivery_to", None)
-    if patch_channel is not None:
-        t.channel = patch_channel
+    if patch_target_channel is not None:
+        t.target_channel = patch_target_channel
     # Always re-derive. The helper reads the row's current
     # channel + the operator's current bound chat id (via
     # the channel dispatcher, D.28); an unchanged channel
@@ -559,7 +559,7 @@ def update_task(
     # deadlock SQLite. The cache in :func:`_resolve_system_tz`
     # keeps the second-pass write below cheap too.
     t.delivery_to = _resolve_delivery_to(
-        channel=t.channel,
+        target_channel=t.target_channel,
         uid=t.uid, explicit=None,
     )
     for k, v in data.items():
@@ -870,7 +870,7 @@ def _invalidate_system_tz_cache() -> None:
 
 def _resolve_delivery_to(
     *,
-    channel: str,
+    target_channel: str,
     uid: int,
     explicit: str | None,
 ) -> str:

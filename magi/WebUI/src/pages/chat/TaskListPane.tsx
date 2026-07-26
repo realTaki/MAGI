@@ -112,7 +112,7 @@ export type TaskRow = {
   // delivery site at a glance.
   delivery_to: string | null;
   tz: string;
-  channel: "webui" | "tg";
+  target_channel: "webui" | "tg";
   uid: number;
   enabled: boolean;
   consecutive_failures: number;
@@ -577,7 +577,7 @@ export default function TaskListPane() {
                           : t.delivery_to
                       }
                     >
-                      {t.channel === "tg"
+                      {t.target_channel === "tg"
                         ? `Telegram → ${
                             t.delivery_to === null
                               ? "(未指定)"

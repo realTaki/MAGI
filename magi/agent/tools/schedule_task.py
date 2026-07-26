@@ -221,7 +221,7 @@ class ScheduleTaskTool(Tool):
         # ``channel`` is referenced up-front by the delivery_to
         # resolution block below (webui vs tg drives both the
         # default-rule branch and the format validator).
-        channel = kwargs.get("channel") or Channel.WEBUI
+        target_channel = kwargs.get("channel") or Channel.WEBUI
         if not name or len(name) > _NAME_MAX:
             return ToolResult(
                 content=f"name must be non-empty and ≤{_NAME_MAX} chars",
@@ -266,9 +266,9 @@ class ScheduleTaskTool(Tool):
         # the source of truth for IM addressing, and
         # the dispatcher is the only thing that interprets
         # the value).
-        if channel == Channel.WEBUI:
+        if target_channel == Channel.WEBUI:
             delivery_to = None
-        elif channel == Channel.TG:
+        elif target_channel == Channel.TG:
             delivery_to = _session_delivery_address(ctx.session_id)
         else:
             delivery_to = None
@@ -313,9 +313,9 @@ class ScheduleTaskTool(Tool):
             except ValueError as exc:
                 return ToolResult(content=f"invalid preset: {exc}", is_error=True)
 
-        if channel not in (Channel.WEBUI, Channel.TG):
+        if target_channel not in (Channel.WEBUI, Channel.TG):
             return ToolResult(
-                content=f"channel must be one of webui/tg, got {channel!r}",
+                content=f"channel must be one of webui/tg, got {target_channel!r}",
                 is_error=True,
             )
 
@@ -373,7 +373,7 @@ class ScheduleTaskTool(Tool):
                 existing.cron = cron
                 existing.run_at = run_at_iso
                 existing.delivery_to = delivery_to
-                existing.channel = channel
+                existing.target_channel = target_channel
                 existing.enabled = 1
                 existing.consecutive_failures = 0
                 existing.uid = operator_id
@@ -415,7 +415,7 @@ class ScheduleTaskTool(Tool):
                     delivery_to=delivery_to,
                     session_id=new_session_id_str,
                     tz=resolved_tz,
-                    channel=channel,
+                    target_channel=target_channel,
                     uid=operator_id,
                     enabled=1,
                     consecutive_failures=0,

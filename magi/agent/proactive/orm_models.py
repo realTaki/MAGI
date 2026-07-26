@@ -121,14 +121,15 @@ class Task(Base):
     tz: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     # "webui" or "tg". Same closed set as ``chat_sessions.channel``;
     # pinned to one of two strings to keep the channel wiring
-    # in the runner simple.
-    channel: Mapped[str] = mapped_column(String(16), nullable=False)
-    # Delivery destination — semantic depends on ``channel``:
+    # in the runner simple.  Named ``target_channel`` in code
+    # to distinguish from a session's ownership channel.
+    target_channel: Mapped[str] = mapped_column("channel", String(16), nullable=False)
+    # Delivery destination — semantic depends on ``target_channel``:
     #
-    #   channel="telegram" → TG chat id (string of digits);
+    #   target_channel="telegram" → TG chat id (string of digits);
     #                        ``None`` ⇒ use the operator's
     #                        bound ``Contact.telegram_id``.
-    #   channel="webui"    → Either the literal string
+    #   target_channel="webui"    → Either the literal string
     #                        ``"new"`` (fire into a fresh chat
     #                        session per fire) or a persisted
     #                        chat session_id (fire into
@@ -138,7 +139,7 @@ class Task(Base):
     #                        landed — runner falls back to
     #                        the operator's most-recent
     #                        chat session.
-    #   channel="email"    → email address (forward-compat;
+    #   target_channel="email"    → email address (forward-compat;
     #                        runner doesn't ship yet).
     #
     # Why both ``channel`` AND ``delivery_to`` rather than

@@ -257,7 +257,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         workspace=state_db.parent,
 
         uid=1,
-        channel="webui",
+        target_channel="webui",
     )
     res = await ScheduleTaskTool().run(
         ctx,
@@ -265,7 +265,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         prompt="tell me what you know about Italian food",
         frequency="once",
         run_at="2099-01-01T12:00:00+00:00",
-        channel="webui",
+        target_channel="webui",
     )
     assert res.is_error is False, res.content
 
@@ -307,7 +307,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         workspace=state_db.parent,
         
         uid=1,
-        channel="webui",
+        target_channel="webui",
     )
     res = await ScheduleTaskTool().run(
         ctx,
@@ -315,7 +315,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         prompt="anything",
         frequency="once",
         run_at="not-a-timestamp",
-        channel="webui",
+        target_channel="webui",
     )
     assert res.is_error is True
     # LLM-facing phrasing: includes the offending input

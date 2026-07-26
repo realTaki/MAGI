@@ -104,6 +104,7 @@ class SessionSummary:
     message_count: int
     preview: str  # first user text, trimmed to _PREVIEW_CHARS
     title: str | None = None
+    channel: str = "webui"
 
 
 def session_from_dict(d: dict) -> Session:

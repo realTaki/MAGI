@@ -131,6 +131,7 @@ class SessionSummaryOut(BaseModel):
     # D.7: same field as ``Session.title`` — list-endpoint
     # projection.
     title: str | None = None
+    channel: str = "webui"
 
 
 class SessionListOut(BaseModel):
@@ -200,6 +201,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
         # D.7: surface the title alongside the preview so the
         # front-end can render ``h.title ?? h.preview``.
         title=s.title,
+        channel=s.channel,
     )
 
 

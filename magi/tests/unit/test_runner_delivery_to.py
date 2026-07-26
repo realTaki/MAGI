@@ -141,7 +141,7 @@ def _seed_task(
             delivery_to=delivery_to,
             session_id=session_id,
             tz="UTC",
-            channel=channel,
+            target_channel=channel,
             uid=emp.id,
             enabled=1,
             consecutive_failures=0,
@@ -341,7 +341,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
             delivery_address=str(emp.telegram_id),
             uid=emp.id,
-            channel="webui",
+            target_channel="webui",
             title="operator's ongoing chat",
             created_at="2026-07-20T09:00:00Z",
             updated_at="2026-07-20T11:00:00Z",
@@ -436,7 +436,7 @@ async def test_cross_contact_does_not_inject_into_other(
 async def test_tg_delivery_to_dispatches_via_channel_adapter(
     state_dir: Path,
 ) -> None:
-    """When ``task.channel='tg'`` and the user has a
+    """When ``task.target_channel='tg'`` and the user has a
     ``user_im_bindings`` row, the agent's reply is
     pushed to TG via the channel dispatcher + TG adapter.
 
@@ -465,7 +465,7 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
     try:
         task_id, _ = _seed_task(
             state_dir, "tg-callback",
-            channel="tg",
+            target_channel="tg",
             delivery_to="9101",
         )
         # Post-refactor: there is no separate
@@ -523,7 +523,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
             session_id="01HTGCHATSESSIONXXXXXXXXX",
             delivery_address="9101",
             uid=emp.id,
-            channel="tg",
+            target_channel="tg",
             title="operator's TG chat",
             created_at="2026-07-20T09:00:00Z",
             updated_at="2026-07-20T11:00:00Z",
@@ -541,7 +541,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
 
     task_id, task_session_id = _seed_task(
         state_dir, "tg-keeps-clean",
-        channel="tg",
+        target_channel="tg",
         delivery_to="9101",
     )
 

@@ -158,7 +158,7 @@ def test_create_magic_duplicate_name_rejected(client, env):
     check; the unique index would also kick in)."""
     r = client.post(
         "/api/magics",
-        json={"name": env["root"].name},
+        json={"name": env["root"].name, "parent_id": env["root"].id},
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_name_duplicate"
@@ -201,9 +201,12 @@ def test_get_magic_404_for_missing(client):
     assert r.json()["code"] == "not_found.magic"
 
 
-def test_update_magic_renames(client):
+def test_update_magic_renames(client, env):
     """``PATCH name`` updates, blank rejected, duplicate rejected."""
-    cr = client.post("/api/magics", json={"name": "OldName"})
+    cr = client.post(
+        "/api/magics",
+        json={"name": "OldName", "parent_id": env["root"].id},
+    )
     mid = cr.json()["id"]
 
     r = client.patch(f"/api/magics/{mid}", json={"name": "NewName"})
@@ -211,7 +214,10 @@ def test_update_magic_renames(client):
     assert r.json()["name"] == "NewName"
 
     # Duplicate — should 400.
-    cr2 = client.post("/api/magics", json={"name": "Other"})
+    cr2 = client.post(
+        "/api/magics",
+        json={"name": "Other", "parent_id": env["root"].id},
+    )
     other_id = cr2.json()["id"]
     r = client.patch(f"/api/magics/{mid}", json={"name": "Other"})
     assert r.status_code == 400

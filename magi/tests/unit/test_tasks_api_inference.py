@@ -155,7 +155,7 @@ def test_webui_channel_without_explicit_infers_new(
     operator's mental model of "I see this row in chat
     history each time it fires"."""
     result = _resolve_delivery_to(
-        channel="webui",
+        target_channel="webui",
         uid=seeded["alice"].id,
         explicit=None,
     )
@@ -171,7 +171,7 @@ def test_webui_channel_with_explicit_session_id_honours_it(
     operator's existing chat instead of starting a new
     thread."""
     result = _resolve_delivery_to(
-        channel="webui",
+        target_channel="webui",
         uid=seeded["alice"].id,
         explicit="01HABCDEFGHJKMNPQRSTVWXY",
     )
@@ -191,7 +191,7 @@ def test_tg_channel_uses_operator_telegram_id(
     passed (the value is silently ignored on the TG
     branch)."""
     result = _resolve_delivery_to(
-        channel="tg",
+        target_channel="tg",
         uid=seeded["alice"].id,
         explicit="bogus-ignored",
     )
@@ -208,7 +208,7 @@ def test_tg_channel_without_telegram_id_raises_400(
     runner then can't dispatch."""
     with pytest.raises(MagiHTTPException) as exc_info:
         _resolve_delivery_to(
-            channel="tg",
+            target_channel="tg",
             uid=seeded["bob"].id,
             explicit=None,
         )
@@ -238,7 +238,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     # 1. Helper re-derives with the row's *current* channel
     #    on a no-explicit call (the route's contract).
     re_derived = _resolve_delivery_to(
-        channel="tg",
+        target_channel="tg",
         uid=alice_id,
         explicit=None,
     )
@@ -248,7 +248,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     #    default — without an explicit session_id, the
     #    helper returns "new".
     re_derived_webui = _resolve_delivery_to(
-        channel="webui",
+        target_channel="webui",
         uid=alice_id,
         explicit=None,
     )
@@ -296,7 +296,7 @@ def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
     ``"new"`` for webui (so PATCH can't accidentally null
     a column that's part of the dispatch contract)."""
     patch = TaskPatch(
-        channel="tg",
+        target_channel="tg",
         delivery_to=None,
     )
     assert patch.channel == "tg"
@@ -316,7 +316,7 @@ def test_task_row_carries_derived_delivery_to(
     a thin wrapper around this helper."""
     alice_id = seeded["alice"].id
     derived = _resolve_delivery_to(
-        channel="tg",
+        target_channel="tg",
         uid=alice_id,
         explicit=None,
     )
@@ -329,7 +329,7 @@ def test_task_row_carries_derived_delivery_to(
             run_at=None,
             delivery_to=derived,
             tz="UTC",
-            channel="tg",
+            target_channel="tg",
             uid=alice_id,
             enabled=1,
             consecutive_failures=0,

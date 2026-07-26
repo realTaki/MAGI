@@ -264,6 +264,7 @@ export default {
     errorCredentials: "LLM プロバイダと API キーが設定されていません。Contacts で自分のプロフィールを開き、Provider と API Key を入力してから再度お試しください。",
     errorNetwork: "ネットワークエラーが発生しました。再試行してください。",
     errorAuth: "セッションが切れました。再度ログインしてください。",
+    readonlyHint: "このセッションは {channel} チャンネルのものです — WebUI では閲覧のみ可能です。{channel} 側で会話を続けてください。",
   },
   sidebar: {
     history: "履歴",

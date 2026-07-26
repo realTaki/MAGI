@@ -264,6 +264,7 @@ export default {
     errorCredentials: "Your LLM provider and API key aren't set. Go to Contacts, open your profile, fill in Provider and API Key, then retry.",
     errorNetwork: "Network error — please try again.",
     errorAuth: "Session expired. Please sign in again.",
+    readonlyHint: "This session belongs to the {channel} channel — read-only in WebUI. Continue the conversation on {channel}.",
   },
   sidebar: {
     history: "History",

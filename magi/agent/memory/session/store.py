@@ -685,6 +685,7 @@ class SessionStore:
                     message_count=count,
                     preview=preview,
                     title=h.title,
+                    channel=h.channel,
                 ))
             return summaries, total
 

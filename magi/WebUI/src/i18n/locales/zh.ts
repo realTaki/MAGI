@@ -296,6 +296,7 @@ export default {
     errorCredentials: "还没设置你的 LLM provider 和 API key。在 Contacts 里找到自己的档案，把 Provider 和 API Key 填上再发消息。",
     errorNetwork: "网络错误，请重试。",
     errorAuth: "登录失效了，重新登录一次再试试。",
+    readonlyHint: "此会话来自 {channel} 通道，仅可查看。在 {channel} 端继续对话。",
   },
   sidebar: {
     history: "历史对话",

@@ -29,6 +29,8 @@ export function ChatConversationPane(props: {
   onLoadOlder: () => void;
   loadingOlder: boolean;
   onNewChat: () => void;
+  readonly?: boolean;
+  channelLabel?: string | null;
 }) {
   const t = useT();
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -128,34 +130,42 @@ export function ChatConversationPane(props: {
         )}
       </div>
 
-      {/* Input composer */}
-      <div className="shrink-0 pt-3 border-t border-sky-light/30">
-        <div className="flex gap-2">
-          <textarea
-            ref={inputRef}
-            value={props.input}
-            onChange={(e) => props.onInputChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (props.input.trim() && !props.sending) props.onSend();
-              }
-            }}
-            placeholder={t("chat.inputPlaceholder")}
-            rows={2}
-            disabled={props.sending}
-            className="form-input flex-1 text-sm py-2 px-3 resize-none"
-          />
-          <button
-            type="button"
-            onClick={props.onSend}
-            disabled={props.sending || !props.input.trim()}
-            className="btn btn-primary text-sm py-2 px-4 shrink-0 self-end"
-          >
-            {props.sending ? t("common.loading") : t("chat.send")}
-          </button>
+      {/* Input composer — hidden for read-only cross-channel sessions */}
+      {props.readonly ? (
+        <div className="shrink-0 pt-3 border-t border-sky-light/30">
+          <p className="text-xs text-ink-soft text-center">
+            {t("chat.readonlyHint").replace("{channel}", props.channelLabel ?? "?")}
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="shrink-0 pt-3 border-t border-sky-light/30">
+          <div className="flex gap-2">
+            <textarea
+              ref={inputRef}
+              value={props.input}
+              onChange={(e) => props.onInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (props.input.trim() && !props.sending) props.onSend();
+                }
+              }}
+              placeholder={t("chat.inputPlaceholder")}
+              rows={2}
+              disabled={props.sending}
+              className="form-input flex-1 text-sm py-2 px-3 resize-none"
+            />
+            <button
+              type="button"
+              onClick={props.onSend}
+              disabled={props.sending || !props.input.trim()}
+              className="btn btn-primary text-sm py-2 px-4 shrink-0 self-end"
+            >
+              {props.sending ? t("common.loading") : t("chat.send")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -37,7 +37,7 @@ export function TaskFormDrawer(props: {
   // submit; the server's ``validate_run_at`` parser is
   // lenient about Z-marker presence.
   const [runAt, setRunAt] = useState("");
-  const [channel, setChannel] = useState<"webui" | "tg">("webui");
+  const [target_channel, setTargetChannel] = useState<"webui" | "tg">("webui");
   // ``delivery_to`` is server-derived per the unified rule:
   //   channel=webui → "new" (every fire spawns a fresh session)
   //   channel=tg    → operator.telegram_id (server-side; the
@@ -52,7 +52,7 @@ export function TaskFormDrawer(props: {
     if (props.taskId === null) {
       setName(""); setPrompt(""); setFrequency("daily");
       setHour(0); setMinute(0); setDayOfWeek(0); setDayOfMonth(1);
-      setRunAt(""); setChannel("webui"); setEnabled(true);
+      setRunAt(""); setTargetChannel("webui"); setEnabled(true);
       return;
     }
     let cancelled = false;
@@ -63,7 +63,7 @@ export function TaskFormDrawer(props: {
         const t = await r.json() as TaskRow;
         if (cancelled) return;
         setName(t.name); setPrompt(t.prompt);
-        setChannel(t.channel); setEnabled(t.enabled);
+        setTargetChannel(t.target_channel); setEnabled(t.enabled);
         if (t.run_at) {
           setFrequency("once");
           const m = t.run_at.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
@@ -77,8 +77,7 @@ export function TaskFormDrawer(props: {
       }
     })();
     return () => { cancelled = true; };
-    }
-  }, [taskQuery.isError, taskQuery.error]);
+  }, [props.taskId]);
 
   function toBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -87,7 +86,7 @@ export function TaskFormDrawer(props: {
       frequency,
       hour,
       minute,
-      channel,
+      target_channel,
       enabled,
     };
     if (frequency === "weekly") body["day_of_week"] = dayOfWeek;
@@ -110,46 +109,28 @@ export function TaskFormDrawer(props: {
     }
     return body;
   }
-  const saveMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) => {
-      if (props.taskId === null) {
-        return apiFetch<TaskRow>("/api/tasks", { method: "POST", body });
-      }
-      return apiFetch<TaskRow>(`/api/tasks/${props.taskId}`, { method: "PATCH", body });
-    },
-    onSuccess: () => {
-      props.onSaved();
-    },
-  });
   async function save() {
     setError(null);
-    if (!name.trim() || !prompt.trim()) {
-      setError("名称 和 prompt 不能为空");
-      return;
-    }
-    if (frequency === "weekly" && (dayOfWeek < 0 || dayOfWeek > 6)) {
-      setError("请选择星期");
-      return;
-    }
-    if (frequency === "monthly" && (dayOfMonth < 1 || dayOfMonth > 31)) {
-      setError("请选择 1-31");
-      return;
-    }
-    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
-      setError("小时必须 0-23");
-      return;
-    }
-    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
-      setError("分钟必须 0-59");
-      return;
-    }
-    if (frequency === "once" && !runAt) {
-      setError("请选择触发时间");
-      return;
-    }
+    if (!name.trim() || !prompt.trim()) { setError("名称 和 prompt 不能为空"); return; }
+    if (frequency === "weekly" && (dayOfWeek < 0 || dayOfWeek > 6)) { setError("请选择星期"); return; }
+    if (frequency === "monthly" && (dayOfMonth < 1 || dayOfMonth > 31)) { setError("请选择 1-31"); return; }
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) { setError("小时必须 0-23"); return; }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) { setError("分钟必须 0-59"); return; }
+    if (frequency === "once" && !runAt) { setError("请选择触发时间"); return; }
     setSaving(true);
     try {
-      await saveMut.mutateAsync(toBody());
+      const body = toBody();
+      let bodyStr: string;
+      if (body instanceof FormData || body instanceof URLSearchParams || body instanceof ReadableStream || body instanceof Blob) {
+        bodyStr = JSON.stringify(body);
+      } else {
+        bodyStr = JSON.stringify(body);
+      }
+      const url = props.taskId === null ? "/api/tasks" : `/api/tasks/${props.taskId}`;
+      const method = props.taskId === null ? "POST" : "PATCH";
+      const r = await fetch(url, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: bodyStr });
+      if (!r.ok) throw new Error(`Save failed: ${r.status}`);
+      props.onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "save failed");
     } finally {
@@ -408,9 +389,9 @@ export function TaskFormDrawer(props: {
             <div>
               <label htmlFor="task-channel" className="form-label">Channel</label>
               <select
-                id="task-channel"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as "webui" | "tg")}
+                id="task-target_channel"
+                value={target_channel}
+                onChange={(e) => setTargetChannel(e.target.value as "webui" | "tg")}
                 className="form-input text-sm py-2 px-3"
               >
                 <option value="webui">webui（写到 chat 历史）</option>

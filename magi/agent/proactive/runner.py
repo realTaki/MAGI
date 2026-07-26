@@ -210,7 +210,7 @@ async def execute_task(
             f"{task.delivery_to or '(unset)'}). If channel='webui', "
             f"the reply lands inline in the operator's chat history "
             f"automatically."
-            if task.channel == Channel.TG
+            if task.target_channel == Channel.TG
             else "Channel='webui': the reply lands inline in the "
                  "operator's chat history automatically."
         )
@@ -224,7 +224,7 @@ async def execute_task(
             f"this fire.\n"
             f"name: {task.name}\n"
             f"schedule: {schedule_desc}\n"
-            f"channel: {task.channel}\n"
+            f"channel: {task.target_channel}\n"
             f"timezone: {task.tz}\n"
             f"delivery_to: {task.delivery_to or '(none — webui only)'}\n"
             f"delivery_directive: {channel_directive}\n"
