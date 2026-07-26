@@ -174,6 +174,17 @@ def _register_sqlite_pragmas(engine: Engine) -> None:
         try:
             cur.execute("PRAGMA busy_timeout=5000")
             cur.execute("PRAGMA foreign_keys=ON")
+            # WAL mode = readers don't block writers, writers
+            # don't block readers. Without WAL, an ``INSERT``
+            # in the bot thread blocks every FastAPI
+            # ``SELECT`` (and vice-versa); with WAL the
+            # background scheduler's ``register()`` no
+            # longer starves the test's serial
+            # ``open_session()`` chain. Setting WAL on
+            # every new connection is a no-op when the DB
+            # is already in WAL mode; safe to call
+            # repeatedly.
+            cur.execute("PRAGMA journal_mode=WAL")
         finally:
             cur.close()
 

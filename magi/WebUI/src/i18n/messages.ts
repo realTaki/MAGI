@@ -108,7 +108,7 @@ const zh: Catalog = {
     // Left-nav entries — order matches SettingsTab's render order.
     navChannels: "通道",
     navPersona: "个性化设置",
-    navTgRead: "TG reaction",
+    navTgRead: "TG 已读反馈",
     navTz: "系统时区",
     navAgent: "Agent 设置",
     navWebuiAccess: "WebUI 访问",
@@ -148,7 +148,7 @@ const zh: Catalog = {
     channels: "通道",
     webuiAccess: "WebUI 访问",
     onboarding: "初始配置",
-    tgReactions: "TG reaction",
+    tgReactions: "TG 已读反馈",
     tgReactionsDesc: "使用者给 EVE bot 发消息时，bot 给那条消息加 emoji 作为「已读」和「完成」的信号。点 emoji 即生效。",
     tgReadEmoji: "已读",
     tgDoneEmoji: "完成",

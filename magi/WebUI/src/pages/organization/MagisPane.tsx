@@ -52,6 +52,7 @@ export function MagisPane() {
   }>({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" });
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   // Inline edit state.
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -200,10 +201,112 @@ export function MagisPane() {
     <div className="space-y-4">
       <ConsoleCard
         title={t("magis.paneTitle")}
-        headerRight={<InfoTip text={t("magis.paneDesc")} />}
+        headerRight={
+          <div className="flex items-center gap-2">
+            <InfoTip text={t("magis.paneDesc")} />
+            <button
+              type="button"
+              className="btn btn-primary text-xs py-1.5 px-3"
+              aria-expanded={addOpen}
+              onClick={() => {
+                setAddOpen((open) => !open);
+                setAddError(null);
+              }}
+            >
+              {addOpen ? t("common.cancel") : t("magis.createHeading")}
+            </button>
+          </div>
+        }
       >
         {loadError !== null && (
           <p className="form-error mb-3">{loadError}</p>
+        )}
+
+        {addOpen && (
+          <div className="mb-5 rounded-lg border border-sky-light/50 bg-sky-pale/15 p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">
+              {t("magis.createHeading")}
+            </h3>
+            {addError !== null && (
+              <p className="form-error mb-3">{addError}</p>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
+              <label className="flex flex-col gap-1">
+                <span className="form-label">{t("magis.createTeamLabel")}</span>
+                <select
+                  className="form-input text-sm py-1.5 px-3 w-full"
+                  value={addForm.magic_id}
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, magic_id: e.target.value }))
+                  }
+                >
+                  <option value="" disabled>—</option>
+                  {(magics ?? []).map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name} (#{c.id})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="form-label">{t("magis.createNameLabel")}</span>
+                <input
+                  className="form-input text-sm py-1.5 px-3 w-full"
+                  placeholder={t("magis.createNamePlaceholder")}
+                  value={addForm.name}
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="form-label">{t("magis.createPositionLabel")}</span>
+                <select
+                  className="form-input text-sm py-1.5 px-3 w-full"
+                  value={addForm.magic_position}
+                  onChange={(e) =>
+                    setAddForm((f) => ({
+                      ...f,
+                      magic_position: e.target.value as "adam" | "eve",
+                    }))
+                  }
+                >
+                  <option value="eve">EVE</option>
+                  <option value="adam">ADAM</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="form-label">{t("magis.createProviderLabel")}</span>
+                <input
+                  className="form-input text-sm py-1.5 px-3 w-full"
+                  placeholder="anthropic / openai"
+                  value={addForm.provider}
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, provider: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="form-label">{t("magis.createApiKeyLabel")}</span>
+                <input
+                  type="password"
+                  className="form-input text-sm py-1.5 px-3 w-full"
+                  value={addForm.api_key}
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, api_key: e.target.value }))
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                disabled={adding || !addForm.magic_id}
+                className="btn btn-primary text-sm py-1.5 px-4"
+                onClick={() => void submitCreate()}
+              >
+                {adding ? t("common.loading") : t("common.add")}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Magis table */}
@@ -413,91 +516,6 @@ export function MagisPane() {
           )}
         </div>
 
-        {/* Create form */}
-        <div className="mt-6 pt-4 border-t border-sky-light/40">
-          <h3 className="text-sm font-medium text-ink mb-3">
-            {t("magis.createHeading")}
-          </h3>
-          {addError !== null && (
-            <p className="form-error mb-3">{addError}</p>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
-            <label className="flex flex-col gap-1">
-              <span className="form-label">{t("magis.createTeamLabel")}</span>
-              <select
-                className="form-input text-sm py-1.5 px-3 w-full"
-                value={addForm.magic_id}
-                onChange={(e) =>
-                  setAddForm((f) => ({ ...f, magic_id: e.target.value }))
-                }
-              >
-                <option value="" disabled>—</option>
-                {(magics ?? []).map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name} (#{c.id})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="form-label">{t("magis.createNameLabel")}</span>
-              <input
-                className="form-input text-sm py-1.5 px-3 w-full"
-                placeholder={t("magis.createNamePlaceholder")}
-                value={addForm.name}
-                onChange={(e) =>
-                  setAddForm((f) => ({ ...f, name: e.target.value }))
-                }
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="form-label">{t("magis.createPositionLabel")}</span>
-              <select
-                className="form-input text-sm py-1.5 px-3 w-full"
-                value={addForm.magic_position}
-                onChange={(e) =>
-                  setAddForm((f) => ({
-                    ...f,
-                    magic_position: e.target.value as "adam" | "eve",
-                  }))
-                }
-              >
-                <option value="eve">EVE</option>
-                <option value="adam">ADAM</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="form-label">{t("magis.createProviderLabel")}</span>
-              <input
-                className="form-input text-sm py-1.5 px-3 w-full"
-                placeholder="anthropic / openai"
-                value={addForm.provider}
-                onChange={(e) =>
-                  setAddForm((f) => ({ ...f, provider: e.target.value }))
-                }
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="form-label">{t("magis.createApiKeyLabel")}</span>
-              <input
-                type="password"
-                className="form-input text-sm py-1.5 px-3 w-full"
-                value={addForm.api_key}
-                onChange={(e) =>
-                  setAddForm((f) => ({ ...f, api_key: e.target.value }))
-                }
-              />
-            </label>
-            <button
-              type="button"
-              disabled={adding || !addForm.magic_id}
-              className="btn btn-primary text-sm py-1.5 px-4"
-              onClick={() => void submitCreate()}
-            >
-              {adding ? t("common.loading") : t("common.add")}
-            </button>
-          </div>
-        </div>
       </ConsoleCard>
     </div>
   );

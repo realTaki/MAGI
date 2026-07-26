@@ -88,6 +88,7 @@ export function MagicsPane() {
   const [createParent, setCreateParent] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<{
@@ -285,10 +286,77 @@ export function MagicsPane() {
     <div className="space-y-4">
       <ConsoleCard
         title={t("magics.paneTitle")}
-        headerRight={<InfoTip text={t("magics.paneDesc")} />}
+        headerRight={
+          <div className="flex items-center gap-2">
+            <InfoTip text={t("magics.paneDesc")} />
+            <button
+              type="button"
+              className="btn btn-primary text-xs py-1.5 px-3"
+              aria-expanded={createOpen}
+              onClick={() => {
+                setCreateOpen((open) => !open);
+                setCreateError(null);
+              }}
+            >
+              {createOpen ? t("common.cancel") : t("magics.createHeading")}
+            </button>
+          </div>
+        }
       >
         {loadError !== null && (
           <p className="form-error mb-3">{loadError}</p>
+        )}
+
+        {createOpen && (
+          <div className="mb-5 rounded-lg border border-sky-light/50 bg-sky-pale/15 p-4">
+            <h3 className="text-sm font-medium text-ink mb-3">
+              {t("magics.createHeading")}
+            </h3>
+            {createError !== null && (
+              <p className="form-error mb-3">{createError}</p>
+            )}
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="form-label">
+                  {t("magics.createNameLabel")}
+                </span>
+                <input
+                  className="form-input text-sm py-1.5 px-3 w-40"
+                  placeholder={t("magics.createNamePlaceholder")}
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void submitCreate();
+                  }}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="form-label">
+                  {t("magics.createParentLabel")}
+                </span>
+                <select
+                  className="form-input text-sm py-1.5 px-3"
+                  value={createParent}
+                  onChange={(e) => setCreateParent(e.target.value)}
+                >
+                  <option value="">{t("magics.createParentNone")}</option>
+                  {(magics ?? []).map((m) => (
+                    <option key={m.id} value={String(m.id)}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={creating || !createName.trim()}
+                className="btn btn-primary text-sm py-1.5 px-4"
+                onClick={() => void submitCreate()}
+              >
+                {creating ? t("common.loading") : t("common.add")}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Tree table */}
@@ -494,57 +562,6 @@ export function MagicsPane() {
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* Create form */}
-        <div className="mt-6 pt-4 border-t border-sky-light/40">
-          <h3 className="text-sm font-medium text-ink mb-3">
-            {t("magics.createHeading")}
-          </h3>
-          {createError !== null && (
-            <p className="form-error mb-3">{createError}</p>
-          )}
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="form-label">
-                {t("magics.createNameLabel")}
-              </span>
-              <input
-                className="form-input text-sm py-1.5 px-3 w-40"
-                placeholder={t("magics.createNamePlaceholder")}
-                value={createName}
-                onChange={(e) => setCreateName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void submitCreate();
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="form-label">
-                {t("magics.createParentLabel")}
-              </span>
-              <select
-                className="form-input text-sm py-1.5 px-3"
-                value={createParent}
-                onChange={(e) => setCreateParent(e.target.value)}
-              >
-                <option value="">{t("magics.createParentNone")}</option>
-                {(magics ?? []).map((m) => (
-                  <option key={m.id} value={String(m.id)}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={creating || !createName.trim()}
-              className="btn btn-primary text-sm py-1.5 px-4"
-              onClick={() => void submitCreate()}
-            >
-              {creating ? t("common.loading") : t("common.add")}
-            </button>
-          </div>
         </div>
       </ConsoleCard>
     </div>

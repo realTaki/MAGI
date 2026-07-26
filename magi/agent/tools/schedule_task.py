@@ -337,14 +337,17 @@ class ScheduleTaskTool(Tool):
                     is_error=True,
                 )
             operator_id = emp.id
+        # Session closed — now safe to open nested ones
+        # (the dispatcher adapter's ``with open_session()``
+        # would otherwise deadlock against SQLite's
+        # ``BEGIN IMMEDIATE`` reservation).
 
         # D.28: stamp the operator's bound IM id on the new
         # session row as a breadcrumb. Resolved via the
-        # channel dispatcher, OUTSIDE the upcoming
-        # ``open_session()`` block (the dispatcher's adapter
-        # opens its own SQLite session — nested inside an
-        # outer txn would deadlock). Empty string when the
-        # operator has no TG binding.
+        # channel dispatcher OUTSIDE the gate's open_session
+        # (the dispatcher opens its own SQLite session
+        # — nested inside an outer txn would deadlock).
+        # Empty string when the operator has no TG binding.
         from magi.channels import dispatcher as channel_dispatcher
         task_session_delivery_address = (
             channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
