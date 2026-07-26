@@ -393,27 +393,22 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
 
     set_system_timezone(str(token_env[0]), "Asia/Shanghai")
 
-    # 4 days ago UTC = part of "this week" in most timezones
-    # (Monday 00:00 local has already passed within the last
-    # 4 days for any tz). Then push it 8h to cross the
-    # tz boundary on the Sunday-end side — actually the
-    # week boundary is at Monday 00:00 local, so we want
-    # a row that is clearly inside "this week" under
-    # Shanghai. Just use "yesterday in Shanghai" which is
-    # robust: 24-32h ago UTC is unambiguously inside this
-    # week (Mon 00:00 SGT is at most 7 days ago, never
-    # further).
+    # Insert at ``now`` so the row is unambiguously inside
+    # the current week boundary under any tz — ``yesterday``
+    # is fragile because the test can run across the local
+    # midnight boundary (e.g. Sat 23:50 UTC → Sun 07:50
+    # SGT) and push the row into the previous week.
     state_dir = token_env[0]
     now = datetime.utcnow()
-    _insert_usage(state_dir, uid=2, when_utc=now - timedelta(hours=18), in_t=99, out_t=11)
+    _insert_usage(state_dir, uid=2, when_utc=now, in_t=99, out_t=11)
 
     r = client.get("/api/contacts/2/token-usage")
     data = r.json()
     assert data["timezone"] == "Asia/Shanghai"
-    # The 18h-ago row is firmly inside this week under
-    # any tz; we just want to confirm the endpoint runs
-    # without error and respects the configured tz in the
-    # response.
+    # The current-minute row is firmly inside this week
+    # under any tz; we just want to confirm the endpoint
+    # runs without error and respects the configured tz
+    # in the response.
     assert data["week"]["call_count"] == 1
     assert data["week"]["input_tokens"] == 99
 

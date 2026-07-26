@@ -31,6 +31,7 @@ x-magi-base: &magi-base
 services:
   adam:
     <<: *magi-base
+    env_file: ../.env
     environment:
       MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
       MAGI_NODE_ROLE: adam

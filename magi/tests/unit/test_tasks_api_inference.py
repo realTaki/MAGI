@@ -299,7 +299,7 @@ def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
         target_channel="tg",
         delivery_to=None,
     )
-    assert patch.channel == "tg"
+    assert patch.target_channel == "tg"
     assert patch.delivery_to is None
 
 

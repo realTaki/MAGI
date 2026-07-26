@@ -54,6 +54,7 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
+from magi.channels.webui.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
 from magi.agent.loop import handle_message
 from magi.agent.memory.session import (
@@ -380,16 +381,35 @@ async def send_chat(
             contact_api_key=contact_api_key,
         )
 
-    reply = await handle_message(
-        _state_dir(),
-        text=text,
-        channel=Channel.WEBUI,
-        session_id=session_id,
-        uid=uid,
-        contact_provider=contact_provider,
-        contact_api_key=contact_api_key,
-        caller_role=contact_role,
-    )
+    try:
+        reply = await handle_message(
+            _state_dir(),
+            text=text,
+            channel=Channel.WEBUI,
+            session_id=session_id,
+            uid=uid,
+            contact_provider=contact_provider,
+            contact_api_key=contact_api_key,
+            caller_role=contact_role,
+        )
+    except Exception as e:
+        # The agent loop only catches LLMError internally.
+        # An unhandled Exception (CancelledError, DB hiccup,
+        # tool crash leaking past the tool-level guard, etc.)
+        # should not become a bare 500 — surface the detail
+        # so the operator knows something went wrong.
+        logger.exception(
+            "chat: handle_message crashed for session=%s uid=%s",
+            session_id, uid,
+        )
+        raise MagiHTTPException(
+            status_code=500,
+            code="chat.agent_crashed",
+            detail=(
+                f"agent loop crashed: {e} — try again. "
+                "If the problem persists, check server logs."
+            ),
+        )
 
     # Defensive truncation — the agent loop should already
     # cap via the LLM's max_tokens, but a misbehaving model
@@ -427,18 +447,31 @@ async def send_chat(
     # appended by tools (e.g. ``send_message``) in the same
     # turn. Without this, tool-side messages land in the DB
     # but never render until the next page refresh.
-    post = store.get(uid, session_id)
+    #
+    # This is intentionally best-effort — if the session
+    # store hiccups during the read-back, we still return the
+    # reply. A missing ``messages`` list on the response is
+    # a minor glitch (frontend falls back to its own
+    # scroll), whereas a 500 swallows everything.
     messages: list[SessionMessageOut] = []
-    if post is not None:
-        messages = [
-            SessionMessageOut(
-                message_id=m.message_id,
-                role=m.role,
-                ts=m.ts,
-                text=m.text,
-            )
-            for m in post.messages
-        ]
+    try:
+        post = store.get(uid, session_id)
+        if post is not None:
+            messages = [
+                SessionMessageOut(
+                    message_id=m.message_id,
+                    role=m.role,
+                    ts=m.ts,
+                    text=m.text,
+                )
+                for m in post.messages
+            ]
+    except Exception:
+        logger.exception(
+            "chat: failed to load session %s for response; "
+            "reply was delivered, messages list omitted",
+            session_id,
+        )
 
     return ChatSendResponse(
         reply=reply, session_id=session_id, messages=messages,

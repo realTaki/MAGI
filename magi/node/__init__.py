@@ -49,12 +49,18 @@ VALID_ROLES = ("adam", "eve")
 VALID_CHANNELS = (Channel.WEBUI, "telegram", Channel.TG)
 VALID_STATE_BACKENDS = ("postgres", "sqlite", "auto")
 
-# Default channel bundle when ``MAGI_CHANNELS`` is unset. This is the only
-# role-driven default that survives — and even it is overridden by an
-# explicit ``MAGI_CHANNELS``.
+# Base channel bundle when ``MAGI_CHANNELS`` is unset. The ``run()``
+# function expands this with auto-detected channels (TG if bot token is
+# saved, etc.). An explicit ``MAGI_CHANNELS`` overrides this completely.
 _ROLE_DEFAULT_CHANNELS: dict[str, tuple[str, ...]] = {
     "adam": (Channel.WEBUI,),
     "eve": ("telegram",),
+}
+
+# Keys in the ``settings`` table whose presence signals a channel
+# should be auto-enabled: ``setting_key → channel_name``.
+_AUTO_DETECT_SETTINGS: dict[str, str] = {
+    "telegram.bot_token": "telegram",
 }
 
 
@@ -302,20 +308,37 @@ def run() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    if not cfg.channels:
+    # Auto-detect configured IM channels from saved credentials
+    # (e.g. TG bot token → enable telegram). This only runs when
+    # MAGI_CHANNELS was NOT explicitly set — an explicit value is
+    # taken verbatim. Auto-detection ensures the onboarding flow is
+    # the single source of truth: save a bot token → TG lights up on
+    # the next restart without editing .env.
+    channels = list(cfg.channels)
+    if not os.environ.get("MAGI_CHANNELS", "").strip():
+        from magi.agent.db.settings import state_get
+        for setting_key, channel_name in _AUTO_DETECT_SETTINGS.items():
+            if channel_name not in channels:
+                if state_get(cfg.state_dir, setting_key):
+                    channels.append(channel_name)
+                    logger.info(
+                        "auto-enabled channel %r (found %r in settings)",
+                        channel_name, setting_key,
+                    )
+    if not channels:
         logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
         return
 
-    # Launch non-blocking channels first (they return quickly, often by
-    # spawning a background thread or task), THEN launch the blocking one
-    # (``webui`` is the only one that holds the main thread via
-    # ``uvicorn.run``). If we iterated in user-given order, putting webui
-    # first would starve every other channel.
+    # Launch non-blocking channels first, THEN blocking ones.
     non_blocking: list[str] = []
     blocking: list[str] = []
-    for channel in cfg.channels:
+    for channel in channels:
         (blocking if channel == Channel.WEBUI else non_blocking).append(channel)
 
+    logger.info(
+        "channels resolved: non_blocking=%s blocking=%s",
+        non_blocking, blocking,
+    )
     for channel in non_blocking + blocking:
         _launch_channel(channel, cfg)
 

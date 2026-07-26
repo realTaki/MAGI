@@ -34,6 +34,8 @@ alembic upgrade head
 ```text
 0001_baseline
 0002_fts5
+0003_memory_entries_uid
+0004_action_items_due_date
 ```
 
 ## 旧数据库迁移

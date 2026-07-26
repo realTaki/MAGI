@@ -1,36 +1,41 @@
-"""``send_message`` tool — deliver a side-channel message
-to the user without leaving the tool loop.
+"""``send_message`` tool — deliver a message to the
+operator without leaving the tool loop.
 
 Use case: the LLM is partway through a multi-turn tool
 chain (e.g. "read SOUL, list skills, then reply") and
 wants to give the user a status update ("Reading your
 SOUL...") instead of going silent for the full tool
-chain duration.
+chain duration. Scheduled tasks also use this tool to
+push results to whichever channel the task targets.
 
-IM-target resolution (D.28)
-----------------------------
+Cross-channel delivery (D.28)
+-----------------------------
 
 The push target is determined by the **session's channel**
-(``chat_sessions.channel``) and the dispatcher's adapter for
-that channel. The tool calls ``dispatcher.send_to_session(
-session_id, text)`` — it never reads the per-channel IM id
-itself (no per-channel IM id, no slack mid, etc.); that's the adapter's
-job.
+(``chat_sessions.channel``) and dispatched via
+``dispatcher.send_to_session(session_id, text)``. The tool
+never reads the per-channel IM id itself — that's the
+adapter's job.
 
-  - WebUI session (``channel="webui"``) — the tool
-    returns ``is_error=True`` because the WebUI operator
-    already sees the LLM's final reply inline. There's no
-    webui adapter today (we push to the chat scroll, not
-    out-of-band).
+  - WebUI session (``channel="webui"``) — the dispatcher
+    appends the message directly to the chat session store
+    so the operator sees it as a chat bubble in the WebUI
+    scroll.
   - TG session (``channel="tg"``) — the TG adapter
     resolves the user's bound chat id and pushes via the
     python-telegram-bot client.
-  - Task session (``channel="task"``) — the task
-    runner's adapter pushes the reply via the same
-    channel that originated the task.
+  - Scheduled task session (``channel="scheduled"``) —
+    the runner creates a session with the task's
+    ``target_channel``; the dispatcher routes to the
+    corresponding adapter.
+  - Future channels (Slack, WeChat, etc.) — write an
+    adapter + register it; this tool doesn't change.
 
-The tool stays channel-agnostic. Adding Slack later = write
-a Slack adapter + register it; this tool doesn't change.
+The tool is fully channel-agnostic. A single scheduled
+task with ``target_channel="tg"`` can deliver to Telegram;
+another with ``target_channel="webui"`` delivers to the
+WebUI chat scroll. The LLM calls ``send_message`` the
+same way regardless.
 """
 
 from __future__ import annotations
@@ -61,13 +66,13 @@ class SendMessageTool(Tool):
     # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Deliver a message to the current user without "
+        "Deliver a message to the operator without "
         "ending the tool loop. Use sparingly — most "
         "communication should happen in the final reply. "
-        "The dispatcher routes the push to whatever "
-        "channel the session belongs to (Telegram, "
-        "WebUI scroll, etc.); the tool itself is channel-"
-        "agnostic."
+        "Cross-channel: works for WebUI, Telegram, and "
+        "scheduled-task sessions equally. The dispatcher "
+        "routes to the session's channel; the tool is "
+        "fully channel-agnostic."
     )
     input_schema = {
         "type": "object",
@@ -115,13 +120,13 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # All channels support ``send_message`` — the
-        # dispatcher routes by ``chat_sessions.channel``:
-        # ``tg`` / ``task`` push via the registered adapter;
-        # ``webui`` appends the message to the local chat
-        # scroll so the operator sees it as a chat bubble.
-        # Either way the LLM gets ``is_error=False`` when
-        # the message landed in its intended surface.
+        # Cross-channel: the dispatcher routes by
+        # ``chat_sessions.channel``. WebUI sessions get the
+        # message appended directly to the chat store
+        # (operator sees it as a chat bubble); TG sessions
+        # push via the registered adapter. The LLM gets
+        # ``is_error=False`` when the message landed in its
+        # intended surface.
 
         # Hand off to the dispatcher. The dispatcher reads
         # ``chat_sessions.channel`` for ``session_id``, picks

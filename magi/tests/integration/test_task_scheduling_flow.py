@@ -159,7 +159,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
         "frequency": "daily",
         "hour": 9,
         "minute": 0,
-        "channel": "webui",
+        "target_channel": "webui",
     })
     assert create.status_code == 201, create.text
     body = create.json()
@@ -167,7 +167,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     session_id = body["session_id"]
     assert session_id is not None and len(session_id) >= 16
     assert body["delivery_to"] == "new"  # server-derived, webui default
-    assert body["channel"] == "webui"
+    assert body["target_channel"] == "webui"
     assert body["uid"] == state["admin"].id
 
     # Step 2: read it back via GET.
@@ -228,7 +228,7 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
         "hour": 14,
         "minute": 30,
         "day_of_week": 4,  # Python weekday 4 = Friday (Mon=0)
-        "channel": "webui",
+        "target_channel": "webui",
     })
     assert create.status_code == 201
     body = create.json()
@@ -291,13 +291,13 @@ def test_create_tg_task_uses_operator_telegram_id_as_delivery_to(
         "frequency": "daily",
         "hour": 10,
         "minute": 0,
-        "channel": "tg",
+        "target_channel": "tg",
         # Caller tries to override — server should ignore.
         "delivery_to": "stale-chat-id",
     })
     assert create.status_code == 201
     body = create.json()
-    assert body["channel"] == "tg"
+    assert body["target_channel"] == "tg"
     # Server-derived from operator.telegram_id (9101).
     assert body["delivery_to"] == "9101"
 
@@ -338,7 +338,7 @@ def test_create_tg_task_without_telegram_binding_returns_400(state):
         "frequency": "daily",
         "hour": 10,
         "minute": 0,
-        "channel": "tg",
+        "target_channel": "tg",
     })
     assert r.status_code == 400
     assert r.json()["code"] == "tasks.telegram_not_bound"

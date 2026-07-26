@@ -900,7 +900,7 @@ def _resolve_delivery_to(
     a nested BEGIN IMMEDIATE inside the open outer txn
     would deadlock SQLite.
     """
-    if channel == Channel.TG:
+    if target_channel == Channel.TG:
         from magi.channels import dispatcher as channel_dispatcher
         chat_id = channel_dispatcher.lookup_im_id(uid, Channel.TG)
         if not chat_id:

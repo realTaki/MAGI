@@ -1,13 +1,19 @@
-"""Regression test for TG ``send_message`` tool callback wiring.
+"""Regression test for TG inbound → ``send_message`` tool wiring.
 
-Without an injected ``tg_send_callback``, the ``send_message``
-tool returns the error "TG callback not wired into the tool
-context". The agent loop injects one based on the value passed
-in by the channel — so the TG channel handler
-(``_handle_contact_message``) MUST pass one. Earlier this was
-missed and the LLM would see "TG callback not wired into the
-tool context" every time it tried to use ``send_message`` from
-a TG inbound.
+D.28 refactor removed the per-call ``tg_send_callback``
+parameter from ``handle_message``. The ``send_message`` tool now
+routes through :func:`magi.channels.dispatcher.send_to_session`,
+which uses the live TG bot instance registered at
+``save-bot`` time. This test pins the post-refactor contract:
+
+  - The TG inbound handler (``_handle_contact_message``) hands
+    off to ``handle_message`` with the channel + delivery
+    address that the dispatcher needs to route a future
+    ``send_message`` push back to the right chat id.
+  - The TG bot is reachable from the same process as the
+    ``send_message`` tool (no cross-thread event-loop dance),
+    so a tool call dispatched from a TG inbound lands on the
+    same bot that received the inbound.
 
 The test:
   1. Stubs ``handle_message`` itself to capture kwargs.
@@ -28,6 +34,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+from magi.channels import Channel
 
 
 @pytest.fixture
@@ -145,21 +153,13 @@ async def test_tg_handler_injects_tg_send_callback(
         contact_api_key="fake-key-for-tests",
     )
 
-    # 6. The fix: ``handle_message`` must have been called
-    #    with a callable ``tg_send_callback``.
-    assert "tg_send_callback" in captured, (
-        "tg handler didn't pass tg_send_callback to handle_message — "
-        "send_message tool will fail with 'TG callback not wired'."
-    )
-    cb = captured["tg_send_callback"]
-    assert callable(cb), (
-        f"tg_send_callback should be callable, got {type(cb)!r}"
-    )
-
-    # 7. Invoking the callback routes through bot.send_message
-    #    with the delivery_address we passed in.
-    await cb(6240201712, "hello from the LLM tool")
-    bot.send_message.assert_awaited_once_with(
-        chat_id=6240201712,
-        text="hello from the LLM tool",
+    # 6. Post-D.28 contract: ``handle_message`` is called with
+    #    the channel + delivery_address that the dispatcher
+    #    needs to route a future ``send_message`` tool call
+    #    back to the right TG chat. No per-call callback.
+    assert captured["channel"] == Channel.TG
+    assert "tg_send_callback" not in captured, (
+        "tg_send_callback was removed in D.28 — the dispatcher "
+        "uses the live bot instance registered at save-bot "
+        "time, so the tool context no longer needs a callback."
     )
