@@ -264,66 +264,57 @@ export default function ChatTab() {
 
   // -- helpers -----------------------------------------------------
 
-  async function loadSession(id: string) {
-    setChatError(null);
-    // Reset pagination state on session switch — the next
-    // fetch starts at the latest page (offset 0 = newest
-    // tail). The previous session's older-page history is
-    // dropped along with the rendered messages.
-    setLoadedCount(0);
-    setTotalActive(0);
-
-    // D.18+2 — switch to the paginated messages endpoint
-    // (the full-session endpoint is still useful for the
-    // audit / "view full transcript" UI; for the chat pane
-    // we want a single round-trip on open + lazy "load
-    // older" on demand).
-    const PAGE_SIZE = 50;
-    const r = await fetch(
-      `/api/chat/sessions/${id}/messages?limit=${PAGE_SIZE}&offset=0`,
-      { credentials: "include" },
-    );
-    if (!r.ok) {
-      if (r.status === 404) {
-        // 404 → stale id (manually deleted or migrated).
-        // Drop the localStorage pointer so the next send
-        // auto-creates; clear messages so the operator
-        // sees an empty thread instead of a flash of
-        // someone else's content.
+  // First page of the active session. Auto-refetched on focus.
+  const PAGE_SIZE = 50;
+  const messagesQuery = useQuery({
+    queryKey: sessionId ? [...qk.chatMessages(sessionId), "page-0"] : ["chatMessages", "none", "page-0"],
+    queryFn: () =>
+      apiFetch<{
+        session_id: string;
+        messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+        total_active: number;
+      }>(`/api/chat/sessions/${sessionId as string}/messages?limit=${PAGE_SIZE}&offset=0`),
+    enabled: sessionId !== null,
+    refetchOnWindowFocus: true,
+  });
+  // Mirror messagesQuery into chatMessages / loadedCount / totalActive
+  // / sessionId. Side effects (404 → clear localStorage, error
+  // envelope) are derived from the query status and applied via
+  // a single useEffect. The legacy callers still mutate
+  // ``chatMessages`` directly (loadOlderMessages, sendChat), so the
+  // mirror has to keep its functional-setter pattern.
+  useEffect(() => {
+    if (sessionId === null) {
+      setChatMessages([]);
+      setLoadedCount(0);
+      setTotalActive(0);
+      setActivePreview(null);
+      return;
+    }
+    if (messagesQuery.isError) {
+      const e = messagesQuery.error as { status?: number } | null;
+      if (e?.status === 404) {
         localStorage.removeItem(SESSION_STORAGE_KEY);
         setSessionId(null);
         setChatMessages([]);
-        // D.8: matching clear — header reverts to default.
         setActiveTitle(null);
         setActivePreview(null);
-        setHistory((h) => h.filter((x) => x.session_id !== id));
+        setHistory((h) => h.filter((x) => x.session_id !== sessionId));
         return;
       }
-      const body = (await r.json().catch(() => ({}))) as {
-        code?: string;
-        detail?: string;
-      };
-      setChatError({
-        code: body.code ?? "unknown",
-        detail: body.detail ?? `Load failed (${r.status})`,
-      });
+      const detail = e instanceof Error ? e.message : `Load failed`;
+      setChatError({ code: "unknown", detail });
       return;
     }
-    const data = (await r.json()) as {
-      session_id: string;
-      messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
-      total_active: number;
-    };
-    setSessionId(data.session_id);
+    if (!messagesQuery.data) return;
+    const data = messagesQuery.data;
+    // Persist the (possibly server-renamed) session id.
+    if (data.session_id !== sessionId) {
+      setSessionId(data.session_id);
+    }
     localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
     setChatMessages(
       data.messages.map((m, i) => ({
-        // id starts at 0 for the newest page; a future
-        // loadOlder() prepends older messages with negative
-        // ids so they sort below the current ones. The
-        // React key uses index-in-array anyway so we
-        // could go either way; negative ids just make
-        // intent obvious in dev tools.
         id: i,
         role: m.role as "user" | "assistant",
         text: m.text,
@@ -331,41 +322,19 @@ export default function ChatTab() {
     );
     setLoadedCount(data.messages.length);
     setTotalActive(data.total_active);
-    // D.8: capture the session's own title + first user message
-    // so the pane header can render them. We don't get the
-    // title from the paginated endpoint, so fall back to a
-    // separate ``/api/chat/sessions/{id}`` fetch in the
-    // background — the chat pane renders immediately on
-    // the messages, and the header updates once the title
-    // round-trip finishes. Empty header in the meantime
-    // is fine (the section already has a sensible default).
-    void refreshTitle(id, data.messages);
+    setActivePreview(
+      data.messages.find((m) => m.role === "user")?.text ?? null,
+    );
+    setChatError(null);
+  }, [sessionId, messagesQuery.data, messagesQuery.isError, messagesQuery.error]);
+  function loadSession(id: string) {
+    setChatError(null);
+    setLoadedCount(0);
+    setTotalActive(0);
+    setSessionId(id);
+    localStorage.setItem(SESSION_STORAGE_KEY, id);
   }
 
-  // Best-effort title fetch — the paginated messages endpoint
-  // doesn't carry the session header, so we hit the legacy
-  // ``GET /api/chat/sessions/{id}`` for the title + preview.
-  // Non-fatal if it 404s (the messages endpoint already
-  // 404'd above and we bailed).
-  async function refreshTitle(id: string, messagesFromFirstPage: Array<{ role: string; text: string }>) {
-    try {
-      const r = await fetch(`/api/chat/sessions/${id}`, { credentials: "include" });
-      if (!r.ok) return;
-      const data = (await r.json()) as { title: string | null };
-      setActiveTitle(data.title ?? null);
-      // Preview is the first user message — derive from the
-      // already-loaded page 0 if we don't get it from the
-      // server.
-      setActivePreview(
-        messagesFromFirstPage.find((m) => m.role === "user")?.text ?? null,
-      );
-    } catch {
-      // Network error on the title fetch is non-fatal.
-      setActivePreview(
-        messagesFromFirstPage.find((m) => m.role === "user")?.text ?? null,
-      );
-    }
-  }
 
   // D.18+2 — load the next older page of messages.
   //
@@ -447,6 +416,23 @@ export default function ChatTab() {
   function refreshHistory() {
     void historyQuery.refetch();
   }
+  // Session header (title + preview). Auto-refetches on focus.
+  const sessionTitleQuery = useQuery({
+    queryKey: sessionId ? qk.chatMessages(sessionId) : ["chatSession", "none"],
+    queryFn: () =>
+      apiFetch<{ title: string | null }>(`/api/chat/sessions/${sessionId as string}`),
+    enabled: sessionId !== null,
+    refetchOnWindowFocus: true,
+  });
+  useEffect(() => {
+    if (sessionId === null) {
+      setActiveTitle(null);
+      return;
+    }
+    if (sessionTitleQuery.data && sessionTitleQuery.data.title) {
+      setActiveTitle(sessionTitleQuery.data.title);
+    }
+  }, [sessionId, sessionTitleQuery.data]);
 
   // (D.18+3 — see ``newChat`` below. The previous behaviour
   // eagerly POSTed ``/api/chat/sessions`` so the sidebar

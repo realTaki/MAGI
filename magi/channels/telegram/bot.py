@@ -530,7 +530,7 @@ async def _handle_contact_message(
         reaction = get_read_reaction_emoji(state_dir)
         if reaction:
             await update.get_bot().set_message_reaction(
-                delivery_address=update.effective_chat.id,
+                chat_id=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=reaction,
             )
@@ -642,12 +642,6 @@ async def _handle_contact_message(
     bot = update.get_bot()
     tgid_int = update.effective_chat.id
 
-    async def _tg_send_callback(to_delivery_address: int, text_to_send: str) -> None:
-        await bot.send_message(
-                    chat_id=to_delivery_address,
-            text=text_to_send,
-        )
-
     try:
         reply = await handle_message(
             state_dir,
@@ -666,7 +660,6 @@ async def _handle_contact_message(
             # refused everyone else with a polite reply),
             # so this is always one of those two roles.
             caller_role=contact_role,
-            tg_send_callback=_tg_send_callback,
         )
     finally:
         # Always cancel — success, error, exception.
@@ -735,7 +728,7 @@ async def _handle_contact_message(
         done_reaction = get_done_reaction_emoji(state_dir)
         if done_reaction:
             await update.get_bot().set_message_reaction(
-                delivery_address=update.effective_chat.id,
+                chat_id=update.effective_chat.id,
                 message_id=update.effective_message.message_id,
                 reaction=done_reaction,
             )
