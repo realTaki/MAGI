@@ -1,0 +1,85 @@
+import { useEffect, useState } from 'react';
+
+import ConsoleCard from '../../components/ConsoleCard';
+import { InfoTip } from '../../components/InfoTip';
+import { useT } from '../../i18n/index';
+
+// ... (kept unchanged for brevity)
+const MEMORY_BODY_PREVIEW_CHARS = 200;
+
+function truncateMemoryBody(s: string): string {
+  if (s.length <= MEMORY_BODY_PREVIEW_CHARS) return s;
+  return s.slice(0, MEMORY_BODY_PREVIEW_CHARS).trimEnd() + "…";
+}
+
+function formatDateOnly(iso: string): string {
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : iso;
+}
+
+export function KnowledgeMemoryPane() {
+  type MemoryRow = {
+    id: number; kind: string; subject: string; body: string;
+    importance: number; source: string; completed_at: string | null;
+    created_at: string; updated_at: string;
+  };
+  type MemoryListResponse = { items: MemoryRow[]; total: number };
+  const t = useT();
+  const [memory, setMemory] = useState<MemoryRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/memory", { credentials: "include" });
+        if (!r.ok) { setLoadError(`${t("settings.knowledgeMemoryLoadFailed")} (${r.status})`); return; }
+        const body = (await r.json()) as MemoryListResponse;
+        if (!cancelled) setMemory(body.items ?? []);
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="space-y-4">
+      <div><h2 className="text-lg font-semibold text-ink">{t("settings.knowledgeMemoryHeading")}</h2>
+      <p className="mt-1 text-sm text-ink-soft">{t("settings.knowledgeMemoryIntro")}</p></div>
+      <ConsoleCard title={t("settings.knowledgeMemoryHeading")}>
+        {loadError && <p className="form-error">✗ {loadError}</p>}
+        {memory === null && !loadError && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {memory !== null && memory.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeMemoryEmpty")}</p>}
+        {memory !== null && memory.length > 0 && (
+          <table className="data-table w-full">
+            <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+              <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnSubject")}</th>
+              <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnKind")}</th>
+              <th className="py-2 pr-4 font-medium w-20">{t("settings.knowledgeMemoryColumnImportance")}</th>
+              <th className="py-2 pr-4 font-medium whitespace-nowrap">{t("settings.knowledgeMemoryColumnUpdated")}</th>
+              <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnBody")}</th>
+            </tr></thead>
+            <tbody>{memory.map((m) => (
+              <tr key={m.id} className="border-b border-sky-light/30 last:border-0 align-top">
+                <td className="py-2 pr-4 text-ink text-xs"><div className="font-medium">{m.subject}</div>
+                <div className="mt-0.5 text-[10px] text-ink-soft font-mono">#{m.id} · {m.source}</div></td>
+                <td className="py-2 pr-4 text-xs">{m.completed_at ? (
+                  <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
+                    {t("settings.knowledgeMemoryCompleted")} · {formatDateOnly(m.completed_at)}</span>
+                ) : (
+                  <span className={`inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 ${m.kind === "important" ? "bg-sky-pale/40 text-ink-soft border-sky-light/40" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                    {m.kind === "important" ? t("settings.knowledgeMemoryKindImportant") : t("settings.knowledgeMemoryKindOngoing")}</span>
+                )}</td>
+                <td className="py-2 pr-4 text-xs text-ink-soft whitespace-nowrap">
+                  <span aria-label={`${m.importance}/5`}>{"●".repeat(m.importance)}<span className="text-ink-soft/40">{"○".repeat(5 - m.importance)}</span></span></td>
+                <td className="py-2 pr-4 text-ink-soft text-xs whitespace-nowrap">{formatDateOnly(m.updated_at)}</td>
+                <td className="py-2 pr-4 text-ink-soft text-xs max-w-md" title={m.body}>{truncateMemoryBody(m.body)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        )}
+      </ConsoleCard>
+    </div>
+  );
+}

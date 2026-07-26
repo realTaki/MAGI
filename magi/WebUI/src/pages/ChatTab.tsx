@@ -15,9 +15,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import ActionItemsPane from "../components/ActionItemsPane";
-import ChatSearchPane from "../components/ChatSearchPane";
-import TaskListPane from "../components/TaskListPane";
+import ActionItemsPane from "./chat/ActionItemsPane";
+import ChatSearchPane from "./chat/ChatSearchPane";
+import TaskListPane from "./chat/TaskListPane";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconActionItems,
