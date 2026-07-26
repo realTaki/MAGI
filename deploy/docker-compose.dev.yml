@@ -57,6 +57,8 @@ services:
     environment:
       MAGI_RELOAD: "1"
       MAGI_PORT: "8000"
+      # Inherit host timezone for natural week/month boundaries.
+      TZ: ${HOST_TZ:-UTC}
       # Import the read-only source mount rather than the copy installed
       # into the image during Dockerfile.dev's build.
       PYTHONPATH: /app

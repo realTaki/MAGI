@@ -64,32 +64,29 @@ def _system_default_timezone() -> str:
     """Resolve the timezone used when ``system.timezone``
     hasn't been set explicitly.
 
-    We default to the **server's** local timezone — a
-    container in Shanghai comes up as ``"Asia/Shanghai"``
-    so weekly/monthly aggregations line up with the
-    operator's wall-clock without a setup step.
-
-    The resolution is wrapped in a function (not a
-    module-level constant) so the test suite can
-    ``monkeypatch.setattr`` it without importing a stale
-    value; ``zoneinfo.ZoneInfo`` validates the result
-    so a misconfigured system clock still produces an
-    IANA name the rest of the stack can parse.
+    Resolution order:
+      1. ``TZ`` environment variable (set by deployer or
+         docker-compose).
+      2. ``get_localzone()`` from ``tzlocal`` (reads
+         ``/etc/localtime``).
+      3. ``Etc/UTC`` as a well-formed IANA fallback.
     """
+    import os
+    # 1. TZ env var — the deployer's explicit choice.
+    tz_env = os.environ.get("TZ", "").strip()
+    if tz_env:
+        try:
+            zoneinfo.ZoneInfo(tz_env)  # validate
+            return tz_env
+        except Exception:
+            logger.debug("TZ env %r is not a valid IANA name", tz_env)
+    # 2. Server localtime via tzlocal.
     try:
         return get_localzone().key
     except Exception:
-        # ``get_localzone`` can raise on a stripped-down
-        # container with no ``/etc/localtime`` — we have
-        # nothing better to fall back to than an IANA
-        # string the rest of the stack can parse, so
-        # emit a warning and let the operator see a
-        # well-formed timezone name in the response.
-        logger.warning(
-            "could not resolve server timezone via tzlocal; "
-            "falling back to Etc/UTC"
-        )
-        return "Etc/UTC"
+        pass
+    # 3. Fallback.
+    return "Etc/UTC"
 
 
 def _state_dir() -> str:

@@ -188,7 +188,19 @@ async def _send_via_raw_http(bot_token: str, chat_id: int, text: str) -> None:
         raise RuntimeError(
             data.get("description", f"Telegram HTTP {resp.status_code}")
         )
-    logger.info("raw send to chat_id=%d", chat_id)
+    # Log the TG-assigned ``message_id`` so on-call can
+    # cross-reference the operator's "I never got that
+    # message" complaint against Telegram's server logs.
+    # ``result`` is a Message object on success; fall back
+    # to chat_id when the shape is unexpected.
+    msg_id = None
+    result = data.get("result")
+    if isinstance(result, dict):
+        msg_id = result.get("message_id")
+    logger.info(
+        "raw send to chat_id=%d message_id=%s",
+        chat_id, msg_id,
+    )
 
 
 async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
