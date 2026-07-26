@@ -226,12 +226,17 @@ async def send_to_session(session_id: str, text: str) -> None:
     # in the WebUI scroll. TG / task channels go through a
     # registered adapter for actual push.
     if sess.channel == Channel.WEBUI:
-        from magi.agent.memory.session.store import SessionStore, SessionMessage
+        from magi.agent.memory.session.store import SessionStore
+        from magi.agent.memory.session.ids import new_session_id, utcnow_iso
+        from magi.agent.memory.session.models import SessionMessage
         from magi.agent.db.engine import require_state_dir
         store = SessionStore(state_dir=require_state_dir())
         store.append_messages(
             sess.uid, session_id,
-            [SessionMessage(role="assistant", text=text)],
+            [SessionMessage(
+                role="assistant", text=text,
+                ts=utcnow_iso(), message_id=new_session_id(),
+            )],
         )
         return
 

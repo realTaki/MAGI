@@ -8,7 +8,7 @@ import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
-import { useMagics, useMagis, type MAGICRow, type MagiRow } from "../../lib/queries";
+import { useMagics, useMagis, type MagiRow } from "../../lib/queries";
 
 type EditDraft = { name: string; provider: string; api_key: string };
 

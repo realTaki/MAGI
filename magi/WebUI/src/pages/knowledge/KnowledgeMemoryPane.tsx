@@ -42,9 +42,9 @@ export function KnowledgeMemoryPane() {
       <p className="mt-1 text-sm text-ink-soft">{t("settings.knowledgeMemoryIntro")}</p></div>
       <ConsoleCard title={t("settings.knowledgeMemoryHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {memory === null && !loadError && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
-        {memory !== null && memory.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeMemoryEmpty")}</p>}
-        {memory !== null && memory.length > 0 && (
+        {isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {!isLoading && memory.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeMemoryEmpty")}</p>}
+        {memory.length > 0 && (
           <table className="data-table w-full">
             <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnSubject")}</th>

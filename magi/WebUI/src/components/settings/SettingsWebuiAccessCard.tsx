@@ -27,27 +27,19 @@ export function SettingsWebuiAccessCard(props: {
 
   const refresh = () => { void qc.invalidateQueries({ queryKey: qk.contacts() }); };
 
-  // The save-admin endpoint mirrors a single on-write POST; we
-  // route it through useMutation so the cache invalidates
-  // atomically.
-  const saveAdminMut = useMutation({
-    mutationFn: (tgids: string[]) =>
-      apiFetch("/api/onboarding/save-admin", { method: "POST", body: { tgids } }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.contacts() });
-    },
-  });
   async function handleRemoveAdmin(emp: ContactRow) {
     if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) return;
     if (!confirm(t("settings.adminRemoveConfirm").replace("{name}", emp.name))) return;
     const remaining = admins
       .filter((c) => c.id !== emp.id && c.telegram_id !== null)
       .map((c) => String(c.telegram_id));
-    try {
-      await saveAdminMut.mutateAsync(remaining);
-    } catch {
-      alert(t("settings.adminRemoveFailed"));
-    }
+    const r = await fetch("/api/onboarding/save-admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tgids: remaining }),
+      credentials: "include",
+    });
+    if (r.ok) { refresh(); } else { alert(t("settings.adminRemoveFailed")); }
   }
 
   return (

@@ -19,7 +19,7 @@
  */
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
@@ -28,6 +28,7 @@ import { apiFetch, qk } from "../../lib/queryClient";
 
 export function SettingsSystemTimezoneCard() {
   const t = useT();
+  const qc = useQueryClient();
   type TzOut = {
     current: string;
     default: string;
@@ -73,7 +74,7 @@ export function SettingsSystemTimezoneCard() {
         return;
       }
       const body = (await r.json()) as TzOut;
-      setData(body);
+      void qc.invalidateQueries({ queryKey: qk.systemSettings("timezone") });
       setPicked(body.current);
       setSavedNotice(t("settings.timezoneSavedNotice"));
       // (saved notice remains in zh for v0; localized copy

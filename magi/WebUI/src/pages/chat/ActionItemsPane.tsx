@@ -76,6 +76,7 @@ export default function ActionItemsPane() {
   const t = useT();
   const qc = useQueryClient();
   const [inflight, setInflight] = useState<Set<number>>(new Set());
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: qk.actionItems,
@@ -111,19 +112,19 @@ export default function ActionItemsPane() {
     // Optimistic remove — keep the response from the server in
     // case it differs (e.g. it was a no-op because someone
     // already completed it on a different tab).
-    const previous = data;
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            items: prev.items.map((row) =>
-              row.id === it.id
-                ? { ...row, completed_at: new Date().toISOString() }
-                : row,
-            ),
-          }
-        : prev,
-    );
+    const previous = query.data;
+    // Optimistic update
+    if (previous) {
+      qc.setQueryData(qk.actionItems, {
+        ...previous,
+        items: previous.items.map((row: ActionItem) =>
+          row.id === it.id
+            ? { ...row, completed_at: new Date().toISOString() }
+            : row,
+        ),
+      });
+    }
+    setCompletionError(null);
     try {
       const r = await fetch(`/api/action_items/${it.id}/complete`, {
         method: "POST",
@@ -132,18 +133,15 @@ export default function ActionItemsPane() {
         body: JSON.stringify({}),
       });
       if (!r.ok) {
-        // Rollback — the optimistic stamp was premature.
-        setData(previous);
+        qc.setQueryData(qk.actionItems, previous); // rollback
         const body = (await r.json().catch(() => ({}))) as ApiError;
-        setError(body.detail ?? `Failed (${r.status})`);
+        setCompletionError(body.detail ?? `Failed (${r.status})`);
       } else {
-        // Re-fetch so the row is now in `completed` with the
-        // server's official `completed_at` + `server_time`.
         void qc.invalidateQueries({ queryKey: qk.actionItems });
       }
     } catch (e) {
-      setData(previous);
-      setError(e instanceof Error ? e.message : "Network error");
+      qc.setQueryData(qk.actionItems, previous); // rollback
+      setCompletionError(e instanceof Error ? e.message : "Network error");
     } finally {
       setInflight((s) => {
         const next = new Set(s);
@@ -262,6 +260,11 @@ export default function ActionItemsPane() {
       {error && (
         <div className="mx-6 mb-2">
           <p className="form-error">✗ {error}</p>
+        </div>
+      )}
+      {completionError && (
+        <div className="mx-6 mb-2">
+          <p className="form-error">✗ {completionError}</p>
         </div>
       )}
     </div>

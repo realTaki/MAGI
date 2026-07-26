@@ -26,9 +26,9 @@ export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
       <div className="flex justify-end"><InfoTip text={tipText} /></div>
       <ConsoleCard title={title}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {!loadError && tools === null && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
-        {!loadError && tools !== null && filtered.length === 0 && <p className="text-sm text-ink-soft">{emptyCopy}</p>}
-        {!loadError && tools !== null && filtered.length > 0 && (
+        {query.isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {!query.isLoading && filtered.length === 0 && !loadError && <p className="text-sm text-ink-soft">{emptyCopy}</p>}
+        {filtered.length > 0 && (
           <table className="data-table w-full">
             <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
               <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
