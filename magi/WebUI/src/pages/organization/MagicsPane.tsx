@@ -141,7 +141,7 @@ export function MagicsPane() {
     finally { setSaving(false); }
   };
 
-  const del = async (id: number, name: string) => {
+  const del = async (id: number, _name: string) => {
     if (!confirm(t("magics.deleteConfirm"))) return;
     const res = await fetch(`/api/magics/${id}`, { method: "DELETE", credentials: "include" });
     if (res.ok) await reload(); else alert(`delete failed: ${res.status}`);

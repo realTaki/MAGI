@@ -1,6 +1,17 @@
 /**
- * TaskListPane — operator-facing CRUD over scheduled tasks.
-function TaskFormDrawer(props: {
+ * TaskFormDrawer — create / edit form for a scheduled task.
+ *
+ * Owns the form state and the preset (frequency + moment) row
+ * of the v2 contract. On submit it POSTs or PATCHes
+ * ``/api/tasks`` and calls ``onSaved`` so the parent can
+ * refresh its list.
+ */
+import { useEffect, useState } from "react";
+
+import { WEEKDAY_LABELS } from "./TaskListPane";
+import type { Frequency, TaskRow } from "./TaskListPane";
+
+export function TaskFormDrawer(props: {
   taskId: string | null;
   onClose: () => void;
   onSaved: () => Promise<void> | void;

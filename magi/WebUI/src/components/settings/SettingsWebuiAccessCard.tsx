@@ -15,34 +15,45 @@ export function SettingsWebuiAccessCard(props: {
   ) => void;
 }) {
   const t = useT();
-  const adminsQuery = useAdminContacts();
-  const admins = adminsQuery.data ?? [];
-  const loadError =
-    adminsQuery.error instanceof Error
-      ? adminsQuery.error.message
-      : adminsQuery.isError
-        ? t("settings.adminLoadFailed")
-        : null;
+  const [admins, setAdmins] = useState<ContactRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [addingNew, setAddingNew] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const reload = () => setRefreshKey((k) => k + 1);
 
   useEffect(() => {
-    props.onAdminsChanged(
-      admins
-        .filter((e) => e.telegram_id !== null)
-        .map((e) => ({
-          telegramId: String(e.telegram_id),
-          displayName: e.display_name ?? e.name,
-        })),
-    );
-  }, [admins, props]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const cr = await fetch("/api/contacts", { credentials: "include" });
+        if (!cr.ok) { if (!cancelled) setLoadError(t("settings.adminLoadFailed") + ` (${cr.status})`); return; }
+        const cb = await cr.json() as { items: ContactRow[] };
+        if (!cancelled) {
+          const adminList = (cb.items ?? []).filter((c) => c.role === "admin");
+          setAdmins(adminList);
+          props.onAdminsChanged(
+            adminList
+              .filter((c) => c.telegram_id !== null)
+              .map((c) => ({
+                telegramId: String(c.telegram_id),
+                displayName: c.display_name ?? c.name,
+              })),
+          );
+        }
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRemoveAdmin(emp: ContactRow) {
     if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) return;
     if (!confirm(t("settings.adminRemoveConfirm").replace("{name}", emp.name))) return;
-    const remaining =
-      (admins ?? [])
-        .filter((e) => e.id !== emp.id && e.telegram_id !== null)
-        .map((e) => String(e.telegram_id));
+    const remaining = (admins ?? [])
+      .filter((c) => c.id !== emp.id && c.telegram_id !== null)
+      .map((c) => String(c.telegram_id));
     const r = await fetch("/api/onboarding/save-admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -50,7 +61,7 @@ export function SettingsWebuiAccessCard(props: {
       credentials: "include",
     });
     if (r.ok) {
-      await adminsQuery.refetch();
+      reload();
     } else {
       setLoadError(t("settings.adminRemoveFailed"));
     }
@@ -80,7 +91,7 @@ export function SettingsWebuiAccessCard(props: {
               </tr>
             </thead>
             <tbody>
-              {admins.map((emp) => {
+              {admins.map((emp: ContactRow) => {
                 const isSelf =
                   String(emp.telegram_id ?? "") === props.signedInUser.telegram_id;
                 return (
@@ -129,7 +140,12 @@ export function SettingsWebuiAccessCard(props: {
 
         {addingNew && (
           <AddAdminForm
-            onAdded={() => { setAddingNew(false); void adminsQuery.refetch(); }}
+            onAdded={(tgid, displayName) => { setAddingNew(false); reload(); props.onAdminsChanged([
+              ...(admins ?? [])
+                .filter((c) => c.telegram_id !== null)
+                .map((c) => ({ telegramId: String(c.telegram_id), displayName: c.display_name ?? c.name })),
+              { telegramId: tgid, displayName },
+            ]); }}
             onCancel={() => setAddingNew(false)}
           />
         )}

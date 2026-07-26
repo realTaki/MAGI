@@ -1,6 +1,17 @@
 /**
- * TaskListPane — operator-facing CRUD over scheduled tasks.
-function RunsHistoryDrawer(props: {
+ * RunsHistoryDrawer — chat-style log of a task's runs.
+ *
+ * Mirrors the conversation page bubble layout (user right,
+ * assistant left). Fetches the task session via
+ * ``GET /api/chat/sessions/{id}`` and overlays per-fire run
+ * status from ``GET /api/tasks/{id}/runs``.
+ */
+import { useEffect, useState } from "react";
+
+import { formatRunTimestamp } from "./TaskListPane";
+import type { TaskRunRow } from "./TaskListPane";
+
+export function RunsHistoryDrawer(props: {
   taskId: string;
   taskName: string;
   sessionId: string | null;

@@ -60,7 +60,7 @@ export function KnowledgeContactsPane() {
         )}
         {contacts !== null && contacts.length > 0 && (
           <div className="space-y-1">
-            {contacts.map((c: ContactRow) => {
+            {contacts.map((c) => {
               const expanded = expandedId === c.id;
               return (
                 <div key={c.id} className="border-b border-sky-light/30 last:border-0">

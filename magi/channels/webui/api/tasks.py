@@ -385,7 +385,7 @@ def create_task(
                     detail=str(exc),
                 ) from exc
 
-    operator_id = _resolve_creator_id(request, payload, session)
+    operator_id = _resolve_creator_id(request, payload)
     cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
     # D.28: resolve the per-channel delivery address via
     # the channel dispatcher BEFORE we open the
@@ -407,6 +407,19 @@ def create_task(
     task_session_delivery_address = (
         channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
     )
+    # ``tz`` is reserved on the model for backend
+    # bookkeeping (DEBUGABILITY — we want to know which
+    # system TZ was in force when the row was created).
+    # The runtime, however, ignores it: every fire reads
+    # the current ``system.timezone`` via
+    # :func:`magi.agent.db.settings.state_get`. Resolve
+    # BEFORE we issue any outer-session queries —
+    # ``state_get`` opens its own ORM session, and a
+    # nested BEGIN IMMEDIATE inside the FastAPI route's
+    # ``Depends(get_session)`` transaction would deadlock
+    # SQLite (the outer txn holds the reserved lock;
+    # the inner ``state_get`` session can't acquire it).
+    system_tz = _resolve_system_tz()
     existing = (
         session.query(Task).filter(Task.name == payload.name).one_or_none()
     )
@@ -461,13 +474,6 @@ def create_task(
     # before the FK reference from Task.session_id below.
     session.flush()
     task_id = new_session_id()
-    # ``tz`` is reserved on the model for backend
-    # bookkeeping (DEBUGABILITY — we want to know which
-    # system TZ was in force when the row was created).
-    # The runtime, however, ignores it: every fire reads
-    # the current ``system.timezone`` via
-    # :func:`magi.agent.db.settings.state_get`.
-    system_tz = _resolve_system_tz()
     t = Task(
         id=task_id,
         name=payload.name,
@@ -674,7 +680,7 @@ def list_task_runs(
 # ──────────────────────────────────────────────────────────────────────── #
 
 
-def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
+def _resolve_creator_id(request: Request, _payload) -> int:
     """Decide the owner of the new task.
 
     Resolution order:
@@ -705,7 +711,14 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
                 status_code=400, code="validation.uid",
                 detail="X-Contact-Id must be an integer",
             ) from exc
-        emp = session.get(Contact, cand)
+        # Open our own short-lived session so the
+        # ``Contact`` lookup doesn't begin a transaction
+        # on the route's session (the dispatcher call in
+        # :func:`create_task` would deadlock against that
+        # outer txn).
+        from magi.agent.db import open_session as _open
+        with _open() as db:
+            emp = db.get(Contact, cand)
         if emp is None:
             raise MagiHTTPException(
                 status_code=404, code="not_found.contact",
@@ -715,15 +728,19 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
         return emp.id
     # Fall back to the cookie: D.24 made ``magi_session``
     # carry the uid directly, so the lookup is
-    # ``session.get(Contact, eid)`` — no telegram_id
+    # ``db.get(Contact, uid)`` — no telegram_id
     # detour. The role gate is duplicated inline (instead
     # of reusing :func:`_admin_uid`) because
     # ``assigned`` is also welcome here, and
-    # ``_admin_uid` enforces ``role == "admin"``
-    # only.
+    # ``_admin_uid`` enforces ``role == "admin"``
+    # only. Same ``open_session`` rationale as above —
+    # we don't want to begin a transaction on the route's
+    # session before the dispatcher lookup fires.
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
-    emp = session.get(Contact, uid)
+    from magi.agent.db import open_session as _open
+    with _open() as db:
+        emp = db.get(Contact, uid)
     if emp is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",

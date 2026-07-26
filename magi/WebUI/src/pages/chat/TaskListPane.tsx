@@ -45,6 +45,8 @@
  */
 import { useEffect, useState } from "react";
 
+import { TaskFormDrawer } from "./TaskFormDrawer";
+import { RunsHistoryDrawer } from "./RunsHistoryDrawer";
 import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 
 
@@ -64,7 +66,7 @@ import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 // - The relative clause falls back to the absolute time
 //   when the run is older than a week (avoids the
 //   "47 days ago" clutter that doesn't help anyone).
-function formatRunTimestamp(iso: string | null): string {
+export function formatRunTimestamp(iso: string | null): string {
   if (!iso) return "—";
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return iso;  // unparseable — fall back to the raw string
@@ -91,7 +93,7 @@ function formatRunTimestamp(iso: string | null): string {
   return abs;
 }
 
-type TaskRow = {
+export type TaskRow = {
   id: string;
   name: string;
   prompt: string;
@@ -133,7 +135,7 @@ type TaskRow = {
 // into ``success`` / ``failed``. The runner writes
 // ``status="running"`` first, then transitions to a terminal
 // state; the loop bails when our ``run_id`` is terminal.
-type TaskRunRow = {
+export type TaskRunRow = {
   id: string;
   task_id: string;
   session_id: string | null;
@@ -146,7 +148,7 @@ type TaskRunRow = {
   reply_excerpt: string | null;
 };
 
-type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
+export type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
 type Filter = "all" | "enabled" | "disabled";
 
 async function api<T>(
@@ -166,7 +168,7 @@ async function api<T>(
   return (await r.json()) as T;
 }
 
-const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+export const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 export default function TaskListPane() {
   const [rows, setRows] = useState<TaskRow[] | null>(null);
