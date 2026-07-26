@@ -61,7 +61,11 @@ def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
     ``engine`` is accepted for the caller's clarity and future integration,
     but Alembic creates a short-lived migration engine from the same SQLite
     URL. The application engine is not reused while its ORM sessions are
-    still being initialised.
+    still being initialised. We also ``dispose()`` the application engine
+    afterwards so any Alembic-borrowed connection in the pool doesn't
+    collide with the first ORM session the caller opens on the same DB
+    file (``BEGIN IMMEDIATE`` will deadlock otherwise — SQLite holds the
+    writer reservation on the queued backend).
     """
     from alembic import command
 
@@ -70,3 +74,8 @@ def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
 
     logger.info("running Alembic migrations", extra={"state_dir": str(state_path)})
     command.upgrade(config, "head")
+    # Force the application engine to drop any pooled connection
+    # that may still be holding a SQLite transaction handle. The
+    # next call to ``get_engine()`` recreates a fresh pool.
+    if engine is not None:
+        engine.dispose()

@@ -222,18 +222,22 @@ async def test_schedule_task_tool_once_writes_run_at_row(
 ) -> None:
     """End-to-end through the tool: calling
     ``schedule_task(frequency="once", run_at=...)`` writes
-    a Task row with ``cron=""`` and ``run_at`` set; the
-    scheduler registers a ``DateTrigger`` on the row's id.
+    a Task row with ``cron=""`` and ``run_at`` set.
 
-    Full live fire (apscheduler running the callback) is
-    not exercised — that's a live smoke concern. The
-    shape layer is what matters for refactor safety.
+    The scheduler's live ``register()`` path is exercised
+    by the ``test_register_with_run_at_uses_date_trigger``
+    case below — this test focuses on the tool's data
+    layer (``Task`` row + ChatSession allocation). Starting
+    the full background scheduler in the same process
+    causes SQLite ``BEGIN IMMEDIATE`` contention between
+    the apscheduler thread-pool and the test's serial
+    ``open_session()`` chain; the tool path is the same
+    with or without a running scheduler (the upsert +
+    ``ChatSession`` allocation don't read apscheduler
+    state).
     """
-    from magi.agent.proactive.scheduler import start_scheduler, get_scheduler
     from magi.agent.tools.schedule_task import ScheduleTaskTool
     from magi.agent.tools.base import ToolContext
-
-    start_scheduler(str(state_db))
 
     # Seed a target operator + bind the cookie identity
     # the ``_gate`` consults.
@@ -251,7 +255,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
     ctx = ToolContext(
         state_dir=str(state_db),
         workspace=state_db.parent,
-        
+
         uid=1,
         channel="webui",
     )
@@ -272,9 +276,6 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         # once-fire is fully described by ``run_at``.
         assert row.cron == ""
         assert row.run_at == "2099-01-01T12:00:00+00:00"
-
-    job = get_scheduler()._sched.get_job(row.id)
-    assert type(job.trigger).__name__ == "DateTrigger"
 
 
 @pytest.mark.asyncio

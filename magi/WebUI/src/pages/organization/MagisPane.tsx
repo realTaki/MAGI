@@ -129,6 +129,7 @@ export function MagisPane() {
         return;
       }
       setAddForm({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" });
+      setAddOpen(false);
       await reload();
     } catch (e) {
       setAddError(`network error: ${(e as Error).message}`);

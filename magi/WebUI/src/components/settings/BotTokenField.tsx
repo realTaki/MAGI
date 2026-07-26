@@ -2,27 +2,19 @@
  * BotTokenField — verify + save form for a Telegram bot token.
  *
  * Identical to wizard step 1, but exposed as a standalone
- * component so :class:`SettingsChannelsCard` (telegram
- * re-set) and :class:`SettingsWebuiAccessCard` (super-admin
- * rotation) can both flow operator-edits through one
- * component. The parent supplies an ``onSaved`` callback
- * that receives ``(token, username)`` so it can update
- * its own state.
- *
- * The form deliberately has *three* internal states
- * (verify / save / saved) and surfaces errors as inline
- * banners rather than dialogs — the wizard UX already
- * validated this pattern, and the only thing the
- * Settings path adds is a Cancel button after a
- * successful verify.
+ * component so SettingsChannelsCard (telegram re-set) and
+ * SettingsWebuiAccessCard (super-admin rotation) can both
+ * flow operator-edits through one component.
  */
-
 import { useState } from "react";
+
+import { useT } from "../../i18n/index";
 
 export function BotTokenField(props: {
   onSaved: (token: string, username: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [token, setToken] = useState("");
   const [testState, setTestState] = useState<
     "idle" | "testing" | "success" | "error"
@@ -64,11 +56,11 @@ export function BotTokenField(props: {
         setVerifiedToken(token.trim());
       } else {
         setTestState("error");
-        setTestError(data.error ?? "Verification failed");
+        setTestError(data.error ?? t("settings.botTokenVerifyFailed"));
       }
     } catch (err) {
       setTestState("error");
-      setTestError(err instanceof Error ? err.message : "Network error");
+      setTestError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -89,11 +81,11 @@ export function BotTokenField(props: {
         props.onSaved(verifiedToken, username);
       } else {
         setSaveState("error");
-        setSaveError(data.error ?? "Save failed");
+        setSaveError(data.error ?? t("settings.botTokenSaveFailed"));
       }
     } catch (err) {
       setSaveState("error");
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -105,7 +97,7 @@ export function BotTokenField(props: {
   return (
     <div className="space-y-2">
       <label htmlFor="settings-bot-token" className="form-label">
-        New Telegram bot token
+        {t("settings.botTokenLabel")}
       </label>
       <div className="flex gap-2">
         <input
@@ -113,7 +105,7 @@ export function BotTokenField(props: {
           type="password"
           value={token}
           onChange={(e) => handleTokenChange(e.target.value)}
-          placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+          placeholder={t("settings.botTokenPlaceholder")}
           autoComplete="off"
           spellCheck={false}
           disabled={saveState === "saved"}
@@ -125,13 +117,13 @@ export function BotTokenField(props: {
           disabled={testState === "testing" || !token.trim() || saveState === "saved"}
           className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
-          {testState === "testing" ? "Testing…" : "Test"}
+          {testState === "testing" ? t("settings.botTokenTesting") : t("settings.botTokenTest")}
         </button>
       </div>
 
       {testState === "success" && (
         <p className="text-sm text-emerald-700">
-          ✓ Verified — bot is <span className="font-mono">@{username}</span>
+          {t("settings.botTokenVerified")}<span className="font-mono">@{username}</span>
         </p>
       )}
       {testState === "error" && (
@@ -147,10 +139,10 @@ export function BotTokenField(props: {
             className="btn btn-primary text-sm py-2 px-4"
           >
             {saveState === "saving"
-              ? "Saving…"
+              ? t("settings.botTokenSaving")
               : saveState === "saved"
-                ? "Saved ✓"
-                : "Save bot token"}
+                ? t("settings.botTokenSaved")
+                : t("settings.botTokenSave")}
           </button>
           <button
             type="button"
@@ -158,7 +150,7 @@ export function BotTokenField(props: {
             disabled={saveState === "saving"}
             className="btn btn-ghost text-sm py-2 px-3"
           >
-            Cancel
+            {t("settings.botTokenCancel")}
           </button>
           {saveState === "error" && (
             <p className="form-error">✗ {saveError}</p>
@@ -172,7 +164,7 @@ export function BotTokenField(props: {
           onClick={props.onCancel}
           className="text-xs text-ink-soft hover:text-sky-deep transition"
         >
-          Cancel
+          {t("settings.botTokenCancel")}
         </button>
       )}
     </div>
