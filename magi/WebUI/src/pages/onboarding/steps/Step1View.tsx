@@ -90,3 +90,48 @@ function BotTokenConfiguredView(props: {
     </div>
   );
 }
+
+
+/** Stand-in channel select. The real implementation lives in
+ *  the settings BotTokenField; this stub keeps the wizard view
+ *  compiling until the dedicated onboarding widget lands.
+ */
+function ChannelSelect(props: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="mt-4">
+      <label className="form-label">Channel</label>
+      <select
+        className="form-input text-sm py-1.5 px-3 mt-1"
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+      >
+        {channels.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function ChannelDescription(props: { channel: ChannelOption | undefined }) {
+  const t = useT();
+  if (!props.channel) return null;
+  return <p className="text-sm text-ink-soft mt-2">{t(props.channel.descriptionKey)}</p>;
+}
+
+function BotTokenField(props: { onSaved: (token: string, username: string) => void }) {
+  return <p className="text-sm text-ink-soft mt-4">Bot token form placeholder.</p>;
+}
+
+function BotTokenConfiguredView(props: {
+  bot: { token: string; username: string };
+  onNext: () => void;
+  onReSet: () => void;
+}) {
+  return (
+    <div className="mt-4">
+      <p>@{props.bot.username}</p>
+      <button type="button" className="btn btn-primary mt-2" onClick={props.onNext}>继续</button>
+    </div>
+  );
+}

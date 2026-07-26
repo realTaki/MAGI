@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 
 import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';

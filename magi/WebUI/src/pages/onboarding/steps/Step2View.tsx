@@ -1,6 +1,24 @@
 import { useState } from 'react';
 import { useT } from '../../../i18n/index';
 
+// Local stand-ins — the canonical types live in
+// ../../onboardingTypes (and the AdminRow in the file the
+// wizard UI was originally written for). Declaring them
+// inline keeps the wizard self-contained.
+interface OnboardingData {
+  bot: { token: string; username: string };
+  superAdmins: Array<{ telegramId: string; displayName: string | null }>;
+}
+type AdminRow = {
+  id: number;
+  telegramId: string;
+  code: string;
+  displayName: string | null;
+  rowState: "idle" | "sending-code" | "code-sent" | "verifying-code" | "verified" | "error";
+  error: string;
+};
+
+
 export function Step2View(props: {
   bot: { token: string; username: string };
   initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;

@@ -96,7 +96,11 @@ def client(state):
     return c
 
 
-def _fake_handle_message_patch(state_dir):
+from contextlib import contextmanager
+
+
+@contextmanager
+def _fake_handle_message_patch():
     """Context manager: swap ``runner_mod.handle_message`` for a
     no-op so the runner exercises the chat-session attach path
     without calling out to a real LLM provider.
@@ -179,7 +183,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     # ``handle_message`` swap is the standard hook used in
     # ``test_runner_delivery_to``.
     from magi.agent.proactive.runner import execute_task
-    with _fake_handle_message_patch(state["state"]):
+    with _fake_handle_message_patch():
         import asyncio
         asyncio.run(execute_task(
             str(state["state"]), task_id, manual=True,
@@ -187,8 +191,8 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
 
     # Step 4: chat history drawer sees prompt + reply.
     msgs = client.get(f"/api/chat/sessions/{session_id}/messages").json()
-    user_msgs = [m for m in msgs["items"] if m["role"] == "user"]
-    assistant_msgs = [m for m in msgs["items"] if m["role"] == "assistant"]
+    user_msgs = [m for m in msgs["messages"] if m["role"] == "user"]
+    assistant_msgs = [m for m in msgs["messages"] if m["role"] == "assistant"]
     assert len(user_msgs) == 1
     assert "Send me a one-line morning summary." in user_msgs[0]["text"]
     assert len(assistant_msgs) == 1
@@ -223,13 +227,16 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
         "frequency": "weekly",
         "hour": 14,
         "minute": 30,
-        "day_of_week": 4,  # Friday
+        "day_of_week": 4,  # Python weekday 4 = Friday (Mon=0)
         "channel": "webui",
     })
     assert create.status_code == 201
     body = create.json()
     task_id = body["id"]
-    assert body["cron"] == "30 14 * * 4"  # server-rendered cron
+    # API accepts Python's weekday() convention (Mon=0..Sun=6)
+    # but cron natively is Sun=0..Sat=6 — the server shifts
+    # (Mon=0 → cron=1). Friday (Python 4) → cron 5.
+    assert body["cron"] == "30 14 * * 5"
     assert body["enabled"] is True
 
     # Patch prompt + enabled=false.
@@ -245,7 +252,7 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
     assert patched["prompt"] == "Updated reminder copy."
     assert patched["enabled"] is False
     # Cron survives — patch didn't touch the schedule.
-    assert patched["cron"] == "30 14 * * 4"
+    assert patched["cron"] == "30 14 * * 5"
 
     # Verify in the listing.
     listing = client.get("/api/tasks").json()

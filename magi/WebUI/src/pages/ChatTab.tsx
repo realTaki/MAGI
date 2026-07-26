@@ -13,7 +13,7 @@
  * Knowledge use raw Chinese; Settings resolves keys in
  * the renderer — see plan TODO.)
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import ActionItemsPane from "./chat/ActionItemsPane";
 import ChatSearchPane from "./chat/ChatSearchPane";
@@ -839,7 +839,7 @@ export default function ChatTab() {
     >
       {selectedId === "new-chat" ? (
         <ChatConversationPane
-          messages={chatMessages}
+          messages={chatMessages as Array<{ id: number; role: "user" | "assistant"; text: string; ts: string }>}
           input={chatInput}
           onInputChange={setChatInput}
           sending={chatSending}
@@ -849,8 +849,10 @@ export default function ChatTab() {
           preview={activePreview}
           hasMoreOlder={loadedCount < totalActive && totalActive > 0}
           totalActive={totalActive}
+          loadedCount={loadedCount}
           loadingOlder={pagingOlder}
           onLoadOlder={loadOlderMessages}
+          onNewChat={() => setSelectedId("new-chat")}
         />
       ) : selectedId === "action-items" ? (
         <ActionItemsPane />
@@ -895,9 +897,4 @@ export default function ChatTab() {
 // disabled while a request is in flight so the user can't
 // double-submit.
 
-type ChatMessageRow = {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-};
 

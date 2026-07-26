@@ -189,6 +189,13 @@ def put_system_timezone(
             code="validation.unknown_timezone",
             detail=f"timezone {tz!r} is not a valid IANA tz name",
         )
+    # Drop the cached value in ``tasks._resolve_system_tz``
+    # so the next task read picks up the new value. The
+    # cache exists to avoid nested BEGIN IMMEDIATE on every
+    # /api/tasks call; the Settings → timezone card is the
+    # only writer so this invalidation is rare and cheap.
+    from magi.channels.webui.api.tasks import _invalidate_system_tz_cache
+    _invalidate_system_tz_cache()
     logger.info("system.timezone set to %r", tz)
     return TimezoneOut(
         current=tz,

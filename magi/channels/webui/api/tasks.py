@@ -812,12 +812,42 @@ def _resolve_system_tz() -> str:
     this helper with the WebUI panel that writes
     ``system.timezone`` so the operator sees the same
     value everywhere.
+
+    Process-wide cache: a single page render calls this
+    3-4 times (once for ``Task.tz`` on create, once in
+    ``_task_to_out`` on the response shape, once per list
+    item on ``GET /api/tasks``). Each call opens its own
+    ORM session via :func:`state_get` — and a FastAPI
+    route that holds its ``Depends(get_session)`` session
+    open during that nested call would deadlock SQLite
+    (BEGIN IMMEDIATE inside the outer txn). Caching the
+    result avoids opening a fresh session at all within
+    one process. The KV row is rare-write — the
+    Settings → timezone card is the only writer — so a
+    stale-by-a-minute read is acceptable; the API endpoint
+    that writes it also clears the cache.
     """
+    global _SYSTEM_TZ_CACHE
+    if _SYSTEM_TZ_CACHE is not None:
+        return _SYSTEM_TZ_CACHE
     from magi.agent.db.settings import state_get
     raw = state_get(_state_dir(), "system.timezone")
-    if not raw:
-        return "UTC"
-    return raw  # the WebUI validates the IANA name on save
+    val = raw if raw else "UTC"
+    _SYSTEM_TZ_CACHE = val
+    return val
+
+
+_SYSTEM_TZ_CACHE: str | None = None
+
+
+def _invalidate_system_tz_cache() -> None:
+    """Drop the cached tz so the next ``_resolve_system_tz``
+    call re-reads from the KV store. The
+    ``PUT /api/system-settings/timezone`` endpoint calls
+    this after a successful write.
+    """
+    global _SYSTEM_TZ_CACHE
+    _SYSTEM_TZ_CACHE = None
 
 
 def _resolve_delivery_to(

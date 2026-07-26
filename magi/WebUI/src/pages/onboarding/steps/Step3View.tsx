@@ -1,5 +1,9 @@
-import { useState } from 'react';
 import { useT } from '../../../i18n/index';
+
+interface OnboardingData {
+  bot: { token: string; username: string };
+  superAdmins: Array<{ telegramId: string; displayName: string | null }>;
+}
 
 export function Step3View(props: {
   data: OnboardingData;
