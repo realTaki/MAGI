@@ -82,6 +82,7 @@ from magi.agent.db.settings import state_get
 # dispatcher is enough; we never reach for
 # ``get_telegram_bot`` directly.
 from magi.channels import dispatcher as channel_dispatcher
+from magi.channels import Channel
 
 logger = logging.getLogger("magi.agent.proactive.runner")
 
@@ -209,7 +210,7 @@ async def execute_task(
             f"{task.delivery_to or '(unset)'}). If channel='webui', "
             f"the reply lands inline in the operator's chat history "
             f"automatically."
-            if task.channel == "tg"
+            if task.channel == Channel.TG
             else "Channel='webui': the reply lands inline in the "
                  "operator's chat history automatically."
         )
@@ -279,7 +280,7 @@ async def execute_task(
     if backfill_session_id is not None and backfill_uid is not None:
         from magi.channels import dispatcher
         fallback_tg_im_id = dispatcher.lookup_im_id(
-            backfill_uid, "tg",
+            backfill_uid, Channel.TG,
         ) or ""
         if fallback_tg_im_id:
             with open_session() as db:
@@ -314,7 +315,7 @@ async def execute_task(
     # adapter based on the session's channel column.
     # We pass ``channel="task"`` so the agent loop's
     # own tool-gating still applies (the tool only
-    # activates for ``channel="tg"``), but the
+    # activates for ``channel=Channel.TG``), but the
     # dispatcher picks the actual IM adapter at push
     # time. No callback injection here.
 
@@ -327,7 +328,7 @@ async def execute_task(
                 # WebUI / TG. The agent loop uses this to
                 # gate send_message tool activation —
                 # the tool returns is_error for non-tg
-                # channels. Passing "scheduled" here (a
+                # channels. Passing Channel.SCHEDULED here (a
                 # leftover from when the runner was a
                 # one-off subsystem) would silently
                 # disable the tool, so the agent's

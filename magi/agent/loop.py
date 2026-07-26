@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from magi.agent.compaction import maybe_compact
+from magi.channels import Channel
 from magi.agent.llm import (
     ChatMessage,
     ChatResult,
@@ -299,7 +300,7 @@ def _validate_credentials(
     contact_provider: str | None,
     contact_api_key: str | None,
     uid: int | None,
-    channel: str,
+    channel: Channel | str,
 ) -> tuple[str, str] | None:
     """Validate strict per-contact LLM credentials.
 
@@ -327,7 +328,7 @@ def _build_context(
     state_dir: str,
     *,
     text: str,
-    channel: str,
+    channel: Channel | str,
     uid: int | None,
     session_id: str | None,
     contact_provider: str,
@@ -533,7 +534,7 @@ def _audit_and_return(
     outcome: _ToolLoopOutcome,
     provider: LLMProvider,
     uid: int | None,
-    channel: str,
+    channel: Channel | str,
     session_id: str | None,
     messages: list[ChatMessage],
 ) -> str:
@@ -586,7 +587,7 @@ async def handle_message(
     state_dir: str,
     *,
     text: str,
-    channel: str,
+    channel: Channel | str,
     uid: int | None = None,
     session_id: str | None = None,
     contact_provider: str | None = None,

@@ -43,12 +43,10 @@
  * refuses other roles); the timezone is read from the
  * Settings panel's ``system.timezone`` field globally.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { TaskFormDrawer } from "./TaskFormDrawer";
 import { RunsHistoryDrawer } from "./RunsHistoryDrawer";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, qk } from "../../lib/queryClient";
 import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 
 
@@ -154,22 +152,36 @@ export type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
 type Filter = "all" | "enabled" | "disabled";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  return apiFetch<T>(`/api/tasks${path}`, init);
+  const r = await fetch(`/api/tasks${path}`, { credentials: "include", ...init });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json() as T;
 }
 
 export const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 export default function TaskListPane() {
   const [filter, setFilter] = useState<Filter>("all");
-  const queryClient = useQueryClient();
-  const tasksQuery = useTasks(filter);
-  const rows = tasksQuery.data ?? null;
-  const loadError =
-    tasksQuery.error instanceof Error
-      ? tasksQuery.error.message
-      : tasksQuery.isError
-        ? "Network error"
-        : null;
+  const [rows, setRows] = useState<TaskRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        if (filter !== "all") params.set("enabled", filter === "enabled" ? "true" : "false");
+        const qs = params.toString();
+        const data = await api<TaskRow[]>(`${qs ? "?" + qs : ""}`);
+        if (!cancelled) { setRows(data); setLoadError(null); }
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filter, refreshKey]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   // ``runsForId`` is the task currently showing the runs-
@@ -193,9 +205,6 @@ export default function TaskListPane() {
     Map<string, string>
   >(() => new Map());
 
-  function refresh() {
-    void queryClient.invalidateQueries({ queryKey: qk.tasks() });
-  }
 
   // Fetch the system-wide tz once so the page header
   // can show "所有任务按 <tz> 调度". A change requires
@@ -297,25 +306,16 @@ export default function TaskListPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runningTasks]);
 
-  const deleteTaskMut = useMutation({
-    mutationFn: (t: TaskRow) =>
-      apiFetch<void>(`/api/tasks/${t.id}`, { method: "DELETE" }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.tasks() }),
-  });
   async function deleteTask(t: TaskRow) {
     if (!confirm(`确定删除任务「${t.name}」？此操作不可撤销。`)) return;
     try {
-      await deleteTaskMut.mutateAsync(t);
+      await api<void>(`/${t.id}`, { method: "DELETE" });
+      refresh();
     } catch {
-      // Mutation error surfaces on tasksQuery on next refetch.
+      // Error surfaces on the next refresh.
     }
   }
 
-  const runNowMut = useMutation({
-    mutationFn: (t: TaskRow) =>
-      apiFetch<{ run_id: string }>(`/api/tasks/${t.id}/run`, { method: "POST" }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.tasks() }),
-  });
   async function runNow(t: TaskRow) {
     // Set the spinner IMMEDIATELY — on the same frame as
     // the click — so the operator sees feedback before
@@ -336,7 +336,7 @@ export default function TaskListPane() {
     });
     let run_id: string;
     try {
-      const out = await runNowMut.mutateAsync(t);
+      const out = await api<{ run_id: string }>(`/${t.id}/run`, { method: "POST" });
       run_id = out.run_id;
     } catch (err) {
       // Roll the optimistic entry back so the spinner
@@ -366,22 +366,18 @@ export default function TaskListPane() {
     // backfill) so the table cell values match reality.
     // This is independent of the polling-driven refresh
     // — both run, second one is a no-op for cell values.
-    void queryClient.invalidateQueries({ queryKey: qk.tasks() });
+    refresh();
   }
 
-  const toggleEnabledMut = useMutation({
-    mutationFn: (t: TaskRow) =>
-      apiFetch<TaskRow>(`/api/tasks/${t.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: !t.enabled }),
-      }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: qk.tasks() }),
-  });
   async function toggleEnabled(t: TaskRow) {
     try {
-      await toggleEnabledMut.mutateAsync(t);
+      await api<TaskRow>(`/${t.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !t.enabled }),
+      });
+      refresh();
     } catch {
-      // Mutation error surfaces on tasksQuery on next refetch.
+      // Error surfaces on the next refresh.
     }
   }
 
@@ -697,7 +693,7 @@ export default function TaskListPane() {
           onClose={() => setDrawerOpen(false)}
           onSaved={() => {
             setDrawerOpen(false);
-            void queryClient.invalidateQueries({ queryKey: qk.tasks() });
+            refresh();
           }}
         />
       )}
@@ -725,20 +721,4 @@ export default function TaskListPane() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────── #
-// Drawer
-// ──────────────────────────────────────────────────────────────────────── #
 
-function useTasks(filter: Filter) {
-  return useQuery({
-    queryKey: [...qk.tasks(), filter] as const,
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (filter !== "all") {
-        params.set("enabled", filter === "enabled" ? "true" : "false");
-      }
-      const qs = params.toString();
-      return apiFetch<TaskRow[]>(`/api/tasks${qs ? "?" + qs : ""}`);
-    },
-  });
-}

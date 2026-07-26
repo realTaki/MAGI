@@ -74,6 +74,7 @@ from magi.agent.memory.session.models import (
     summary_from_session,
 )
 from magi.agent.db.engine import open_session
+from magi.channels import Channel
 from magi.agent.memory.session.tables import ChatMessage, ChatSession
 
 
@@ -116,7 +117,7 @@ class SessionStore:
         self,
         uid: int,
         *,
-        channel: str = "webui",
+        channel: Channel | str = Channel.WEBUI,
         # Per-channel delivery address on this session row.
         # Today: a TG chat id (when ``channel="tg"``); an empty
         # string for WebUI; ``"<scheduled>"`` convention for
@@ -223,7 +224,7 @@ class SessionStore:
                 select(ChatSession)
                 .where(
                     ChatSession.uid == uid,
-                    ChatSession.channel == "tg",
+                    ChatSession.channel == Channel.TG,
                 )
                 .order_by(ChatSession.updated_at.desc())
                 .limit(1)
@@ -296,7 +297,7 @@ class SessionStore:
         msgs: Iterable[SessionMessage],
         *,
         bump_updated: bool = True,
-        channel: str | None = None,
+        channel: Channel | str | None = None,
     ) -> Session:
         """Append one or more messages to a session.
 

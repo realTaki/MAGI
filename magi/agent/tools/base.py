@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from magi.channels import Channel
+
 
 @dataclass(frozen=True)
 class ToolContext:
@@ -56,7 +58,7 @@ class ToolContext:
     state_dir: str
     workspace: Path
     uid: int
-    channel: str
+    channel: Channel | str
     # The chat session's persisted id (``chat_sessions.session_id``).
     # Empty string when there's no session-bound chat — e.g.
     # scheduled-task fires that were never part of a chat, or

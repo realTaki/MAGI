@@ -41,18 +41,19 @@ from magi import __version__
 # deterministic regardless of which entry point runs
 # first.
 from magi.agent.db import require_state_dir  # noqa: E402
+from magi.channels import Channel  # noqa: E402
 
 logger = logging.getLogger("magi.node")
 
 VALID_ROLES = ("adam", "eve")
-VALID_CHANNELS = ("webui", "telegram")
+VALID_CHANNELS = (Channel.WEBUI, "telegram", Channel.TG)
 VALID_STATE_BACKENDS = ("postgres", "sqlite", "auto")
 
 # Default channel bundle when ``MAGI_CHANNELS`` is unset. This is the only
 # role-driven default that survives — and even it is overridden by an
 # explicit ``MAGI_CHANNELS``.
 _ROLE_DEFAULT_CHANNELS: dict[str, tuple[str, ...]] = {
-    "adam": ("webui",),
+    "adam": (Channel.WEBUI,),
     "eve": ("telegram",),
 }
 
@@ -117,7 +118,7 @@ class NodeConfig:
             )
 
         host = port = None
-        if "webui" in channels:
+        if Channel.WEBUI in channels:
             host = os.environ.get("MAGI_HOST", "0.0.0.0")
             port = int(os.environ.get("MAGI_PORT", "42069"))
 
@@ -292,7 +293,7 @@ def run() -> None:
     non_blocking: list[str] = []
     blocking: list[str] = []
     for channel in cfg.channels:
-        (blocking if channel == "webui" else non_blocking).append(channel)
+        (blocking if channel == Channel.WEBUI else non_blocking).append(channel)
 
     for channel in non_blocking + blocking:
         _launch_channel(channel, cfg)
@@ -397,7 +398,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
 
 
 _LAUNCHERS = {
-    "webui": _launch_webui,
+    Channel.WEBUI: _launch_webui,
     "telegram": _launch_telegram,
 }
 

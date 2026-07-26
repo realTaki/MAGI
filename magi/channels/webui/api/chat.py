@@ -54,6 +54,7 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
+from magi.channels import Channel
 from magi.agent.loop import handle_message
 from magi.agent.memory.session import (
     ChannelMismatchError,
@@ -300,9 +301,9 @@ async def send_chat(
         # binding (still legal — WebUI rows don't push
         # anywhere).
         from magi.channels import dispatcher as channel_dispatcher
-        tg_im_id = channel_dispatcher.lookup_im_id(uid, "tg") or ""
+        tg_im_id = channel_dispatcher.lookup_im_id(uid, Channel.TG) or ""
         sess = store.create(
-            uid, channel="webui", delivery_address=tg_im_id,
+            uid, channel=Channel.WEBUI, delivery_address=tg_im_id,
         )
         session_id = sess.session_id
 
@@ -312,7 +313,7 @@ async def send_chat(
     # auto-title worker (D.7) saw a coherent state; SQLite's
     # per-statement atomicity replaces that need.
     #
-    # D.22: ``channel="webui"`` is the cross-channel guard —
+    # D.22: ``channel=Channel.WEBUI`` is the cross-channel guard —
     # if the session was created on TG, the store raises
     # ``ChannelMismatchError`` and we 403 the caller instead
     # of mixing two LLM loops into one history.
@@ -324,7 +325,7 @@ async def send_chat(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
             )],
-            channel="webui",
+            channel=Channel.WEBUI,
         )
     except ChannelMismatchError as e:
         # D.22: the session was created on a different
@@ -381,7 +382,7 @@ async def send_chat(
     reply = await handle_message(
         _state_dir(),
         text=text,
-        channel="webui",
+        channel=Channel.WEBUI,
         session_id=session_id,
         uid=uid,
         contact_provider=contact_provider,
@@ -400,7 +401,7 @@ async def send_chat(
     # Outbound audit-aligned append. A failure here is
     # logged but does NOT raise — the operator already
     # got the reply and a missing history line is worse
-    # than a console line. The same ``channel="webui"``
+    # than a console line. The same ``channel=Channel.WEBUI``
     # guard applies (D.22); a mismatch here would mean
     # ``handle_message`` somehow ran against a TG-owned
     # session, which the inbound check above already
@@ -413,7 +414,7 @@ async def send_chat(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
             )],
-            channel="webui",
+            channel=Channel.WEBUI,
         )
     except Exception:
         logger.exception(

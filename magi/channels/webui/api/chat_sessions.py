@@ -34,6 +34,7 @@ from sqlalchemy import select
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
+from magi.channels import Channel
 from magi.agent.memory.session import (
     Session,
     SessionCorruptError,
@@ -205,7 +206,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _delivery_address_for_uid(uid: int, channel: str = "tg") -> str:
+def _delivery_address_for_uid(uid: int, channel: Channel | str = Channel.TG) -> str:
     """Resolve the operator's bound per-channel delivery
     address (the TG chat id today; opaque to domain code).
 
@@ -310,7 +311,7 @@ def create_session(
     # :meth:`SessionStore.create`.
     delivery_address = _delivery_address_for_uid(uid)
     sess = store.create(
-        uid, channel="webui", delivery_address=delivery_address,
+        uid, channel=Channel.WEBUI, delivery_address=delivery_address,
     )
     return CreateSessionResponse(session_id=sess.session_id)
 

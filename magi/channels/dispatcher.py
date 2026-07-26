@@ -41,6 +41,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import MultipleResultsFound
 
 from magi.agent.db import Contact, open_session
+from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.dispatcher")
 
@@ -173,7 +174,7 @@ def list_channels() -> list[str]:
 # -- High-level API used by domain code ---------------------------------------
 
 
-async def send_to_uid(uid: int, channel: str, text: str) -> None:
+async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
     """Send ``text`` to ``uid`` via ``channel``.
 
     The dispatcher resolves the bound IM id (via the
@@ -229,7 +230,7 @@ async def send_to_session(session_id: str, text: str) -> None:
     await adapter.send(sess.uid, text)
 
 
-def lookup_im_id(uid: int, channel: str) -> str | None:
+def lookup_im_id(uid: int, channel: Channel | str) -> str | None:
     """Return the channel-specific IM id for ``uid``, or
     ``None`` when no binding exists.
 
@@ -244,7 +245,7 @@ def lookup_im_id(uid: int, channel: str) -> str | None:
     return adapter.lookup_im_id(uid)
 
 
-def bind_im_id(uid: int, channel: str, im_id: str) -> None:
+def bind_im_id(uid: int, channel: Channel | str, im_id: str) -> None:
     """Upsert the (uid, channel) → im_id row.
 
     Convenience wrapper for the wizard's verify-and-bind

@@ -46,6 +46,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.auth_gates import AdminGate
+from magi.channels import Channel
 from magi.agent.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
@@ -92,7 +93,7 @@ class TaskIn(BaseModel):
     # Required when ``frequency="once"``; ignored otherwise.
     # The validator below enforces the one-way conditional.
     run_at: Optional[str] = None
-    channel: str = Field(default="webui", pattern=r"^(webui|tg)$")
+    channel: Channel | str = Field(default=Channel.WEBUI, pattern=r"^(webui|tg)$")
     # Concrete delivery destination — semantic depends on
     # ``channel`` (see ``Task.delivery_to`` doc). The
     # ``ScheduleTaskTool`` tool path applies the same
@@ -166,7 +167,7 @@ class TaskPatch(BaseModel):
     def _v_channel(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        if v not in ("webui", "tg"):
+        if v not in (Channel.WEBUI, Channel.TG):
             raise ValueError("channel must be 'webui' or 'tg'")
         return v
 
@@ -405,7 +406,7 @@ def create_task(
     # disables outbound send_message).
     from magi.channels import dispatcher as channel_dispatcher
     task_session_delivery_address = (
-        channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
+        channel_dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
     )
     # ``tz`` is reserved on the model for backend
     # bookkeeping (DEBUGABILITY — we want to know which
@@ -899,9 +900,9 @@ def _resolve_delivery_to(
     a nested BEGIN IMMEDIATE inside the open outer txn
     would deadlock SQLite.
     """
-    if channel == "tg":
+    if channel == Channel.TG:
         from magi.channels import dispatcher as channel_dispatcher
-        chat_id = channel_dispatcher.lookup_im_id(uid, "tg")
+        chat_id = channel_dispatcher.lookup_im_id(uid, Channel.TG)
         if not chat_id:
             raise MagiHTTPException(
                 status_code=400,

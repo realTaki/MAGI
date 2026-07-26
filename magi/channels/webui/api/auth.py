@@ -64,6 +64,7 @@ from sqlalchemy import select
 # ``magi/node/__init__.py``: hoist the import.
 from magi.agent.db import Contact, open_session, require_state_dir  # noqa: E402
 from magi.agent.db.settings import state_get  # noqa: E402
+from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot  # noqa: E402
 
 logger = logging.getLogger("magi.api.auth")
@@ -458,7 +459,7 @@ async def send_login_code(
     # the first channel with a live bot. If no IM is
     # bound, refuse — we have no way to deliver the code.
     from magi.channels import dispatcher as channel_dispatcher
-    im_id = channel_dispatcher.lookup_im_id(uid, "tg")
+    im_id = channel_dispatcher.lookup_im_id(uid, Channel.TG)
     if im_id is None:
         return SendLoginCodeResponse(
             ok=False,
@@ -501,7 +502,7 @@ async def send_login_code(
         f"expires in {_CODE_TTL_SECONDS // 60} minutes."
     )
     try:
-        await channel_dispatcher.send_to_uid(uid, "tg", code_text)
+        await channel_dispatcher.send_to_uid(uid, Channel.TG, code_text)
     except RuntimeError as e:
         # Lazy-start path: token exists but no live bot
         # instance yet. Try booting the TG bot once, then
@@ -513,7 +514,7 @@ async def send_login_code(
                 await asyncio.sleep(0.25)
                 if tg_bot.get_telegram_bot() is not None:
                     break
-            await channel_dispatcher.send_to_uid(uid, "tg", code_text)
+            await channel_dispatcher.send_to_uid(uid, Channel.TG, code_text)
             return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
         except Exception:
             # Fall through to raw-send fallback below.

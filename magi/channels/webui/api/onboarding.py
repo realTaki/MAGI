@@ -39,6 +39,7 @@ from sqlalchemy import select
 
 from magi.agent.db import require_state_dir
 from magi.channels.telegram import bot as tg_bot
+from magi.channels import Channel
 
 logger = logging.getLogger("magi.api.onboarding")
 
@@ -784,7 +785,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     from magi.channels import dispatcher as channel_dispatcher
     for emp_id, cid in zip(new_emp_ids, parsed_ids):
         try:
-            channel_dispatcher.bind_im_id(emp_id, "tg", str(cid))
+            channel_dispatcher.bind_im_id(emp_id, Channel.TG, str(cid))
         except Exception:
             # Best-effort: the Contact row is already
             # created with role=admin. If the binding

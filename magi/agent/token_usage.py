@@ -14,13 +14,14 @@ insert with no hidden state from the loop's locals.
 from __future__ import annotations
 
 from magi.agent.db import TokenUsage, open_session
+from magi.channels import Channel
 
 
 def record_token_usage(
     state_dir: str,
     *,
     uid: int,
-    channel: str,
+    channel: Channel | str,
     provider: str,
     model: str | None,
     usage: dict,

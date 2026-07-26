@@ -42,6 +42,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # don't need to worry about the file system.
 from magi.agent.prompts import load_bot_replies  # noqa: E402
 from magi.agent.db.engine import require_state_dir  # noqa: E402
+from magi.channels import Channel  # noqa: E402
 
 # Loaded once per process. The dict is shared across
 # messages, which is fine — values are templates, not
@@ -582,7 +583,7 @@ async def _handle_contact_message(
                 role="user", text=text, ts=ts_in,
                 message_id=new_session_id(),
             )],
-            channel="tg",
+            channel=Channel.TG,
         )
     except Exception:
         logger.exception(
@@ -651,7 +652,7 @@ async def _handle_contact_message(
         reply = await handle_message(
             state_dir,
             text=text,
-            channel="tg",
+            channel=Channel.TG,
             session_id=session_id,
             uid=uid,
             contact_provider=contact_provider,
@@ -704,7 +705,7 @@ async def _handle_contact_message(
                 role="assistant", text=reply, ts=ts_out,
                 message_id=new_session_id(),
             )],
-            channel="tg",
+            channel=Channel.TG,
         )
     except Exception:
         logger.exception(
@@ -798,7 +799,7 @@ def _resolve_or_create_tg_session(
                 candidate_id, uid,
             )
             sess = None
-        if sess is not None and sess.channel == "tg":
+        if sess is not None and sess.channel == Channel.TG:
             return candidate_id
         # ``find_latest_tg_session`` already filters, but
         # the double-check defends against a future bug
@@ -809,7 +810,7 @@ def _resolve_or_create_tg_session(
     # per-channel delivery address stamped on the row's
     # ``delivery_address`` column for outbound ``send_message`` later.
     sess = store.create(
-        uid, channel="tg", delivery_address=delivery_address,
+        uid, channel=Channel.TG, delivery_address=delivery_address,
     )
     return sess.session_id
 

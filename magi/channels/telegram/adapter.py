@@ -33,6 +33,7 @@ import threading
 from sqlalchemy import select
 
 from magi.agent.db import Contact, open_session
+from magi.channels import Channel
 from magi.channels.dispatcher import (
     ChannelAdapter,
     register_adapter,
@@ -59,7 +60,7 @@ class TelegramAdapter:
     without the dispatcher noticing.
     """
 
-    name: str = "tg"
+    name: str = Channel.TG
 
     async def send(self, uid: int, text: str) -> None:
         im_id = self.lookup_im_id(uid)

@@ -52,6 +52,7 @@ from magi.agent.memory.session import new_session_id
 from magi.agent.db import ChatSession, Contact, open_session
 from magi.agent.db.settings import state_get
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.channels import Channel
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("magi.agent.tools.schedule_task")
@@ -180,8 +181,8 @@ class ScheduleTaskTool(Tool):
             },
             "channel": {
                 "type": "string",
-                "enum": ["webui", "tg"],
-                "default": "webui",
+                "enum": [Channel.WEBUI, Channel.TG],
+                "default": Channel.WEBUI,
                 "description": (
                     "Where the fired reply surfaces. 'webui' "
                     "creates a chat session visible in the "
@@ -220,7 +221,7 @@ class ScheduleTaskTool(Tool):
         # ``channel`` is referenced up-front by the delivery_to
         # resolution block below (webui vs tg drives both the
         # default-rule branch and the format validator).
-        channel = kwargs.get("channel") or "webui"
+        channel = kwargs.get("channel") or Channel.WEBUI
         if not name or len(name) > _NAME_MAX:
             return ToolResult(
                 content=f"name must be non-empty and ≤{_NAME_MAX} chars",
@@ -265,9 +266,9 @@ class ScheduleTaskTool(Tool):
         # the source of truth for IM addressing, and
         # the dispatcher is the only thing that interprets
         # the value).
-        if channel == "webui":
+        if channel == Channel.WEBUI:
             delivery_to = None
-        elif channel == "tg":
+        elif channel == Channel.TG:
             delivery_to = _session_delivery_address(ctx.session_id)
         else:
             delivery_to = None
@@ -312,7 +313,7 @@ class ScheduleTaskTool(Tool):
             except ValueError as exc:
                 return ToolResult(content=f"invalid preset: {exc}", is_error=True)
 
-        if channel not in ("webui", "tg"):
+        if channel not in (Channel.WEBUI, Channel.TG):
             return ToolResult(
                 content=f"channel must be one of webui/tg, got {channel!r}",
                 is_error=True,
@@ -350,7 +351,7 @@ class ScheduleTaskTool(Tool):
         # Empty string when the operator has no TG binding.
         from magi.channels import dispatcher as channel_dispatcher
         task_session_delivery_address = (
-            channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
+            channel_dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────

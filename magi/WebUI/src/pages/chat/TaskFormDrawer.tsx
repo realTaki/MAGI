@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 
+
 import { WEEKDAY_LABELS } from "./TaskListPane";
 import type { Frequency, TaskRow } from "./TaskListPane";
 
@@ -49,96 +50,37 @@ export function TaskFormDrawer(props: {
 
   useEffect(() => {
     if (props.taskId === null) {
-      setName("");
-      setPrompt("");
-      setFrequency("daily");
-      setHour(0);
-      setMinute(0);
-      setDayOfWeek(0);
-      setDayOfMonth(1);
-      setRunAt("");
-      setChannel("webui");
-      setEnabled(true);
-      setError(null);
+      setName(""); setPrompt(""); setFrequency("daily");
+      setHour(0); setMinute(0); setDayOfWeek(0); setDayOfMonth(1);
+      setRunAt(""); setChannel("webui"); setEnabled(true);
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(`/api/tasks/${props.taskId}`, {
-          credentials: "include",
-        });
-        if (!r.ok) {
-          setError(`加载失败 (${r.status})`);
-          return;
-        }
-        const t = (await r.json()) as TaskRow;
-        setName(t.name);
-        setPrompt(t.prompt);
-        setChannel(t.channel);
-        // ``delivery_to`` is server-derived; the drawer
-        // doesn't pre-fill or surface it. The cell snippet
-        // (rendered elsewhere in this component) shows the
-        // resolved value from the row.
-        setEnabled(t.enabled);
-        // If the row is a once-shot, pre-fill the form
-        // with ``once`` + the ISO trimmed to ``YYYY-MM-DDTHH:MM``
-        // (the format ``<input type="datetime-local">`` expects).
-        // ``datetime-local`` has no timezone picker; we
-        // leave the form in operator-local mode and let
-        // ``toISOFromLocal`` carry the offset at submit.
+        const r = await fetch(`/api/tasks/${props.taskId}`, { credentials: "include" });
+        if (!r.ok) { if (!cancelled) setError(`加载失败 (${r.status})`); return; }
+        const t = await r.json() as TaskRow;
+        if (cancelled) return;
+        setName(t.name); setPrompt(t.prompt);
+        setChannel(t.channel); setEnabled(t.enabled);
         if (t.run_at) {
           setFrequency("once");
-          const m = t.run_at.match(
-            /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/,
-          );
+          const m = t.run_at.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
           setRunAt(m ? `${m[1]}T${m[2]}` : "");
         } else {
-          // Preset-into-cron is ambiguous, so we don't
-          // try to derive the preset from cron. The schedule
-          // cell renders a humanised phrase off the row's
-          // ``run_at`` / ``cron`` shape; the edit form
-          // starts from safe defaults and the operator picks
-          // the preset on save.
-          setFrequency("daily");
-          setHour(0);
-          setMinute(0);
-          setDayOfWeek(0);
-          setDayOfMonth(1);
-          setRunAt("");
+          setFrequency("daily"); setHour(0); setMinute(0);
+          setDayOfWeek(0); setDayOfMonth(1); setRunAt("");
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Network error");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Network error");
       }
     })();
-  }, [props.taskId]);
+    return () => { cancelled = true; };
+    }
+  }, [taskQuery.isError, taskQuery.error]);
 
-  async function save() {
-    setError(null);
-    if (!name.trim() || !prompt.trim()) {
-      setError("名称 和 prompt 不能为空");
-      return;
-    }
-    if (frequency === "weekly" && (dayOfWeek < 0 || dayOfWeek > 6)) {
-      setError("请选择星期");
-      return;
-    }
-    if (frequency === "monthly" && (dayOfMonth < 1 || dayOfMonth > 31)) {
-      setError("请选择 1-31");
-      return;
-    }
-    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
-      setError("小时必须 0-23");
-      return;
-    }
-    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
-      setError("分钟必须 0-59");
-      return;
-    }
-    if (frequency === "once" && !runAt) {
-      setError("请选择触发时间");
-      return;
-    }
-
+  function toBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {
       name: name.trim(),
       prompt: prompt.trim(),
@@ -166,26 +108,50 @@ export function TaskFormDrawer(props: {
       const om = String(Math.abs(offset) % 60).padStart(2, "0");
       body["run_at"] = `${runAt}:00${sign}${oh}:${om}`;
     }
-
+    return body;
+  }
+  const saveMut = useMutation({
+    mutationFn: (body: Record<string, unknown>) => {
+      if (props.taskId === null) {
+        return apiFetch<TaskRow>("/api/tasks", { method: "POST", body });
+      }
+      return apiFetch<TaskRow>(`/api/tasks/${props.taskId}`, { method: "PATCH", body });
+    },
+    onSuccess: () => {
+      props.onSaved();
+    },
+  });
+  async function save() {
+    setError(null);
+    if (!name.trim() || !prompt.trim()) {
+      setError("名称 和 prompt 不能为空");
+      return;
+    }
+    if (frequency === "weekly" && (dayOfWeek < 0 || dayOfWeek > 6)) {
+      setError("请选择星期");
+      return;
+    }
+    if (frequency === "monthly" && (dayOfMonth < 1 || dayOfMonth > 31)) {
+      setError("请选择 1-31");
+      return;
+    }
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      setError("小时必须 0-23");
+      return;
+    }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      setError("分钟必须 0-59");
+      return;
+    }
+    if (frequency === "once" && !runAt) {
+      setError("请选择触发时间");
+      return;
+    }
     setSaving(true);
     try {
-      const path = props.taskId ? `/${props.taskId}` : "";
-      const r = await fetch(`/api/tasks${path}`, {
-        method: props.taskId ? "PATCH" : "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) {
-        const detail = (await r.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        setError(detail.detail ?? `${r.status} ${r.statusText}`);
-        return;
-      }
-      await props.onSaved();
+      await saveMut.mutateAsync(toBody());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
+      setError(err instanceof Error ? err.message : "save failed");
     } finally {
       setSaving(false);
     }

@@ -6,8 +6,7 @@
  * ``GET /api/chat/sessions/{id}`` and overlays per-fire run
  * status from ``GET /api/tasks/{id}/runs``.
  */
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "../../lib/queryClient";
+import { useEffect, useState } from "react";
 
 import { formatRunTimestamp } from "./TaskListPane";
 import type { TaskRunRow } from "./TaskListPane";
@@ -41,34 +40,36 @@ export function RunsHistoryDrawer(props: {
   // the table tells the operator whether the runner wired
   // ``_tg_send_callback`` for that fire).
   const sessionEnabled = props.sessionId !== null;
-  const sessionQuery = useQuery({
-    queryKey: props.sessionId ? ["chatSessions", props.sessionId] : ["chatSessions", "none"],
-    queryFn: () =>
-      apiFetch<{
-        session_id: string;
-        title: string | null;
-        messages: {
-          message_id: string;
-          role: string;
-          ts: string;
-          text: string;
-        }[];
-      }>(`/api/chat/sessions/${props.sessionId}`),
-    enabled: sessionEnabled,
-  });
-  const runsQuery = useQuery({
-    queryKey: ["taskRuns", props.taskId],
-    queryFn: () => apiFetch<TaskRunRow[]>(`/api/tasks/${props.taskId}/runs`),
-  });
-  const messages = sessionEnabled ? (sessionQuery.data?.messages ?? null) : [];
-  const runs = runsQuery.data ?? null;
-  const sessionTitle = sessionEnabled ? (sessionQuery.data?.title ?? null) : null;
-  const loadError =
-    sessionQuery.error instanceof Error
-      ? `加载 session 失败 (${(sessionQuery.error as { status?: number }).status ?? ""})`
-      : runsQuery.error instanceof Error
-        ? `加载 runs 失败 (${(runsQuery.error as { status?: number }).status ?? ""})`
-        : null;
+  const [messages, setMessages] = useState<Array<{ message_id: string; role: string; ts: string; text: string }> | null>(null);
+  const [runs, setRuns] = useState<TaskRunRow[] | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [sessRes, runsRes] = await Promise.all([
+          sessionEnabled
+            ? fetch(`/api/chat/sessions/${props.sessionId}`, { credentials: "include" })
+            : null,
+          fetch(`/api/tasks/${props.taskId}/runs`, { credentials: "include" }),
+        ]);
+        if (sessRes && !sessRes.ok) throw new Error(`session ${sessRes.status}`);
+        if (!runsRes.ok) throw new Error(`runs ${runsRes.status}`);
+        const sess = sessRes ? await sessRes.json() as { messages: typeof messages; title: string | null } : null;
+        if (!cancelled) {
+          setMessages(sessionEnabled ? (sess?.messages ?? []) : []);
+          setSessionTitle(sessionEnabled ? (sess?.title ?? null) : null);
+          setRuns(await runsRes.json() as TaskRunRow[]);
+          setLoadError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [props.sessionId, props.taskId, sessionEnabled]);
 
   // Build a quick lookup: user-message ts → matching run
   // (the runner stamps the ChatMessage ts at the same

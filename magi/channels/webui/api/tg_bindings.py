@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from magi.agent.db import Contact, open_session
+from magi.channels import Channel
 from magi.channels import dispatcher as channel_dispatcher
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
@@ -106,7 +107,7 @@ def bind_telegram(
         # (D.28). The adapter writes ``user_im_bindings``
         # AND syncs ``Contact.telegram_id`` (the read-
         # cache the bot's inbound handler still uses).
-        channel_dispatcher.bind_im_id(emp.id, "tg", str(telegram_id_int))
+        channel_dispatcher.bind_im_id(emp.id, Channel.TG, str(telegram_id_int))
         session.refresh(emp)  # pick up the legacy column write-back
         session.commit()
 
