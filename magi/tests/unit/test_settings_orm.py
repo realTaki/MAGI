@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 
 def _reset_engine() -> None:
@@ -56,3 +57,14 @@ def test_settings_table_is_registered_in_orm_metadata(state_dir):
         "value",
         "updated_at",
     }
+
+
+def test_init_orm_records_alembic_head(state_dir):
+    from magi.agent.db import init_orm
+
+    engine = init_orm(str(state_dir))
+
+    with engine.connect() as db:
+        revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
+
+    assert revision == "0002_fts5"

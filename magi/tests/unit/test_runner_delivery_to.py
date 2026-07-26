@@ -452,7 +452,6 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
     ``bot.send_message`` call because the channel
     dispatcher + TG adapter do the work.
     """
-    from magi.agent.db import UserImBinding
     from magi.channels import telegram as _tg
 
     captured: dict = {}
@@ -469,22 +468,12 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
             channel="tg",
             delivery_to="9101",
         )
-        # Seed the IM binding for the operator (the
-        # test Contact seeded by the fixture). The
-        # adapter reads from ``user_im_bindings``; the
-        # legacy ``Contact.telegram_id`` cache is also
-        # populated for any reader that hasn't migrated.
-        with open_session() as db:
-            from magi.agent.proactive.runner import execute_task as _
-            from magi.agent.db.models_contact import Contact
-            emp = db.query(Contact).filter_by(
-                telegram_id=9101,
-            ).first()
-            if emp is not None:
-                db.merge(UserImBinding(
-                    uid=emp.id, channel="tg", im_id="9101",
-                ))
-                db.commit()
+        # Post-refactor: there is no separate
+        # ``user_im_bindings`` table; the dispatcher reads
+        # ``Contact.telegram_id`` directly as the per-channel
+        # IM identifier. The seeded fixture Contact already
+        # has ``telegram_id=9101`` so the dispatch can find
+        # them — nothing extra to seed.
 
         # Patch handle_message to capture the kwargs.
         import magi.agent.proactive.runner as runner_mod

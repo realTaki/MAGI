@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -24,6 +26,15 @@ from magi.agent.db.base import Base
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# The CLI workflow can target the same workspace convention as the runtime:
+# `MAGI_STATE_DIR=/path/to/state alembic ...`. The programmatic runner sets
+# the URL directly, so this is only a convenience override for developers.
+if state_dir := os.environ.get("MAGI_STATE_DIR"):
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"sqlite:///{Path(state_dir).resolve() / 'magi.db'}",
+    )
 
 target_metadata = Base.metadata
 

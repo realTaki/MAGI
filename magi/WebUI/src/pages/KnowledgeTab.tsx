@@ -17,7 +17,6 @@ import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
   IconConnectors,
   IconContacts,
-  IconHelp,
   IconMemory,
   IconSkills,
   IconTools,

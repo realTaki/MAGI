@@ -20,6 +20,9 @@ runtime，按位置需要配置成对应的 archetype（原型）。今天我们
 
 长期计划（C0–C8）见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
+数据库 schema 由 Alembic 版本化管理，启动时会自动执行迁移；迁移说明见
+[docs/database-migrations.md](docs/database-migrations.md)。
+
 ---
 
 ## 为什么叫"群体智能"

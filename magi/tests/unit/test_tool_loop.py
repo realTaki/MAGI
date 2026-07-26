@@ -375,7 +375,6 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     """
     from magi.agent.db import (
         ChatSession,
-        UserImBinding,
         open_session,
     )
     from magi.channels import dispatcher
@@ -385,21 +384,23 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     fake_bot.send_message = AsyncMock()
     monkeypatch.setattr(tg_bot, "get_telegram_bot", lambda: fake_bot)
 
-    # Seed (1) the user-im-bindings row that the TG adapter
-    # reads, and (2) the session row the tool's
-    # ``ctx.session_id`` points at. The binding's ``uid``
-    # needs an Contact row to exist (FK constraint).
+    # Seed: (1) a Contact row the dispatcher reads, and
+    # (2) the session row the tool's ``ctx.session_id``
+    # points at. (Post-refactor: there is no separate
+    # ``user_im_bindings`` table — the post-refactor
+    # dispatcher reads ``Contact.telegram_id`` directly as
+    # the per-channel IM identifier.)
     from magi.agent.db import Contact
     with open_session() as db:
         existing = db.get(Contact, 42)
         if existing is None:
             db.add(Contact(
                 id=42, name="Tool-loop test",
+                telegram_id=9001,
                 role="admin", provider="minimax",
                 api_key="fake",
             ))
             db.commit()
-        db.merge(UserImBinding(uid=42, channel="tg", im_id="9001"))
         sess = ChatSession(
             session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
             delivery_address="9001",

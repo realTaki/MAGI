@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.agent.db.alembic_runner import upgrade_head
+from magi.agent.db.alembic_runner import stamp_baseline, upgrade_head
 from magi.agent.db.base import Base
 from magi.agent.db.migrations import _run_inline_migrations
 
@@ -298,9 +298,14 @@ def init_orm(state_dir: str | None = None) -> Engine:
 
     if is_legacy and has_legacy_application_tables:
         # Compatibility only: this path is for databases created before
-        # Alembic existed. It must not receive new schema changes.
+        # Alembic did not exist yet. Repair legacy schemas before adoption;
+        # this compatibility path must not receive new schema changes.
         Base.metadata.create_all(engine)
         _run_inline_migrations(engine)
+        # The explicit baseline migration is for fresh databases. Legacy
+        # databases already have those tables, so stamp rather than replay
+        # CREATE TABLE statements, then let later revisions run normally.
+        stamp_baseline(state_dir or require_state_dir())
 
     upgrade_head(state_dir or require_state_dir(), engine)
     _seed_default_root(engine)

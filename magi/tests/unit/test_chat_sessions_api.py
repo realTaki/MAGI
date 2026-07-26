@@ -68,13 +68,16 @@ def state(tmp_path, monkeypatch) -> Path:
 @pytest.fixture
 def admin(state) -> Contact:
     """Seed an admin with provider/api_key so /chat/send passes the
-    pre-flight. Also seeds the ``UserImBinding`` row so the
-    channel dispatcher (D.28) can resolve the admin's bound
-    TG chat id (the canonical store; ``Contact.telegram_id``
-    is the legacy read-cache the bot's inbound handler
-    still reads).
+    pre-flight.
+
+    The post-refactor schema carries the per-channel IM
+    identifier directly on ``Contact.telegram_id`` (a
+    read-cache for the bot's inbound handler — the
+    ``user_im_bindings`` table that once held this binding
+    in the legacy schema is gone). Setting
+    ``telegram_id=9001`` is sufficient for the dispatcher
+    to resolve the TG chat id via the admin row.
     """
-    from magi.agent.db.models_user_im_binding import UserImBinding
     with open_session() as s:
         emp = Contact(
             name="Test Admin",
@@ -84,8 +87,6 @@ def admin(state) -> Contact:
             api_key="fake-key-for-tests",
         )
         s.add(emp)
-        s.flush()
-        s.merge(UserImBinding(uid=emp.id, channel="tg", im_id="9001"))
         s.commit()
         s.refresh(emp)
         return emp

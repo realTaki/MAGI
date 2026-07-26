@@ -74,6 +74,15 @@ class TelegramAdapter:
                 f"telegram adapter: uid={uid} binding "
                 f"is not numeric ({im_id!r})"
             ) from e
+        # Production path is the raw HTTP ``send_text_auto``
+        # (avoids cross-thread event-loop issues from the
+        # bot's daemon). Tests set a fake global bot via
+        # ``tg_bot.set_telegram_bot(...)`` — in that case the
+        # bot's ``send_message`` is awaited directly.
+        bot = tg_bot_module.get_telegram_bot()
+        if bot is not None:
+            await bot.send_message(chat_id=chat_id_int, text=text)
+            return
         await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:

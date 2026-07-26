@@ -142,15 +142,6 @@ export const IconMagis = ({ className }: IconProps) => (
   </Icon>
 );
 
-export const IconContacts = ({ className }: IconProps) => (
-  <Icon className={className}>
-    <circle cx="9" cy="8" r="3.5" />
-    <path d="M3 20c0-3 3-5 6-5s6 2 6 5" />
-    <circle cx="17" cy="9" r="2.5" />
-    <path d="M15 14.5c3 0 6 1.5 6 4" />
-  </Icon>
-);
-
 // Brain/neural — used for the Memory pane in the Knowledge tab.
 export const IconMemory = ({ className }: IconProps) => (
   <Icon className={className}>

@@ -26,15 +26,8 @@ def _find_alembic_ini() -> Path:
     return candidates[0]
 
 
-def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
-    """Apply all committed migrations to ``state_dir``.
-
-    ``engine`` is accepted for the caller's clarity and future integration,
-    but Alembic creates a short-lived migration engine from the same SQLite
-    URL. The application engine is not reused while its ORM sessions are
-    still being initialised.
-    """
-    from alembic import command
+def _config_for_state_dir(state_dir: str | Path):
+    """Build an Alembic config pointed at one workspace database."""
     from alembic.config import Config
 
     state_path = Path(state_dir).resolve()
@@ -51,6 +44,29 @@ def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
     config = Config(str(alembic_ini))
     config.set_main_option("script_location", str(_ALEMBIC_SCRIPT_LOCATION))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    return config
+
+
+def stamp_baseline(state_dir: str | Path) -> None:
+    """Stamp a legacy database after the compatibility pass has run."""
+    from alembic import command
+
+    config = _config_for_state_dir(state_dir)
+    command.stamp(config, "0001_baseline")
+
+
+def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
+    """Apply all committed migrations to ``state_dir``.
+
+    ``engine`` is accepted for the caller's clarity and future integration,
+    but Alembic creates a short-lived migration engine from the same SQLite
+    URL. The application engine is not reused while its ORM sessions are
+    still being initialised.
+    """
+    from alembic import command
+
+    state_path = Path(state_dir).resolve()
+    config = _config_for_state_dir(state_path)
 
     logger.info("running Alembic migrations", extra={"state_dir": str(state_path)})
     command.upgrade(config, "head")

@@ -113,8 +113,13 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
     TG chat id (the adapter's bind path also keeps
     ``Contact.telegram_id`` in sync as a legacy read-cache
     for the bot's inbound handler).
+
+    Post-refactor: there is no longer a separate
+    ``user_im_bindings`` table; the post-refactor dispatcher
+    uses ``Contact.telegram_id`` directly as the per-channel
+    IM identifier. Setting ``telegram_id=9101`` on Alice's
+    row is sufficient.
     """
-    from magi.agent.db.models_user_im_binding import UserImBinding
     from magi.channels import dispatcher as channel_dispatcher
     with open_session() as db:
         alice = Contact(
@@ -132,8 +137,6 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
             api_key="fake-key-bob",
         )
         db.add_all([alice, bob])
-        db.flush()
-        db.merge(UserImBinding(uid=alice.id, channel="tg", im_id="9101"))
         db.commit()
         db.refresh(alice)
         db.refresh(bob)
