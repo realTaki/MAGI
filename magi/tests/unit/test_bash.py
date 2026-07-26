@@ -30,9 +30,7 @@ from magi.agent.tools.bash import (
     BashRunTool,
 )
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def workspace_ctx(tmp_path, monkeypatch):
@@ -42,7 +40,6 @@ def workspace_ctx(tmp_path, monkeypatch):
     background-process tests don't share state.
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     return ToolContext(
         state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
@@ -51,7 +48,6 @@ def workspace_ctx(tmp_path, monkeypatch):
         channel="webui",
     )
 
-
 def _run(tool: BashRunTool, ctx: ToolContext, **kwargs) -> ToolResult:
     """Helper to drive the async run() in tests.
 
@@ -59,14 +55,11 @@ def _run(tool: BashRunTool, ctx: ToolContext, **kwargs) -> ToolResult:
     """
     return asyncio.run(tool.run(ctx, **kwargs))
 
-
 def _output(tool: BashOutputTool, ctx: ToolContext, **kwargs) -> ToolResult:
     return asyncio.run(tool.run(ctx, **kwargs))
 
-
 def _kill(tool: BashKillTool, ctx: ToolContext, **kwargs) -> ToolResult:
     return asyncio.run(tool.run(ctx, **kwargs))
-
 
 # Skip the bash tests on Windows PowerShell — the test
 # commands here are POSIX-flavoured. The tool itself
@@ -77,9 +70,7 @@ pytestmark = pytest.mark.skipif(
     reason="BashTool tests use POSIX shell syntax; Windows PowerShell path is not exercised here.",
 )
 
-
 # -- BashRunTool: foreground ---------------------------------------------
-
 
 def test_run_foreground_returns_stdout(workspace_ctx):
     tool = BashRunTool()
@@ -88,13 +79,11 @@ def test_run_foreground_returns_stdout(workspace_ctx):
     assert "hello world" in result.content
     assert "[exit_code] 0" in result.content
 
-
 def test_run_foreground_marks_nonzero_exit_as_error(workspace_ctx):
     tool = BashRunTool()
     result = _run(tool, workspace_ctx, command="exit 7")
     assert result.is_error
     assert "[exit_code] 7" in result.content
-
 
 def test_run_foreground_separates_stderr(workspace_ctx):
     """stderr surfaces in the content with a [stderr]
@@ -112,7 +101,6 @@ def test_run_foreground_separates_stderr(workspace_ctx):
     assert "[stderr]" in result.content
     assert "[exit_code] 3" in result.content
 
-
 def test_run_foreground_handles_no_output(workspace_ctx):
     """A successful command with no stdout/stderr still
     returns a non-error result with the ``(no output)``
@@ -123,7 +111,6 @@ def test_run_foreground_handles_no_output(workspace_ctx):
     assert not result.is_error
     assert "(no output)" in result.content
     assert "[exit_code] 0" in result.content
-
 
 def test_run_foreground_clamps_timeout_to_ceiling(workspace_ctx):
     """``timeout=10000`` should clamp to 600 (the
@@ -145,7 +132,6 @@ def test_run_foreground_clamps_timeout_to_ceiling(workspace_ctx):
     assert not result.is_error
     assert "clamped" in result.content
 
-
 def test_run_foreground_cwd_is_workspace(workspace_ctx):
     """The process is locked to the workspace — ``pwd``
     returns the workspace path, not the agent's cwd."""
@@ -156,7 +142,6 @@ def test_run_foreground_cwd_is_workspace(workspace_ctx):
     # /var on macOS or symlinked tmp dirs.
     expected = str(workspace_ctx.workspace.resolve())
     assert expected in result.content
-
 
 def test_run_foreground_can_write_inside_workspace(workspace_ctx):
     """The LLM should be able to drop a file in the
@@ -175,16 +160,13 @@ def test_run_foreground_can_write_inside_workspace(workspace_ctx):
     assert "from bash" in result.content
     assert (workspace_ctx.workspace / "out.txt").exists()
 
-
 def test_run_foreground_empty_command_rejected(workspace_ctx):
     tool = BashRunTool()
     result = _run(tool, workspace_ctx, command="")
     assert result.is_error
     assert "required" in result.content.lower()
 
-
 # -- BashRunTool: background ----------------------------------------------
-
 
 def test_run_background_returns_bash_id(workspace_ctx):
     """A short backgrounded command returns a bash_id
@@ -202,7 +184,6 @@ def test_run_background_returns_bash_id(workspace_ctx):
     assert "Bash ID:" in result.content
     import re
     assert re.search(r"Bash ID:\s*\w+", result.content) is not None
-
 
 def test_run_background_full_lifecycle(workspace_ctx):
     """End-to-end: start a long-ish background process,
@@ -267,7 +248,6 @@ def test_run_background_full_lifecycle(workspace_ctx):
 
     asyncio.run(_lifecycle())
 
-
 def test_run_background_filter_narrows_output(workspace_ctx):
     """``filter_str`` is a regex; only matching lines
     come back. Non-matching lines are consumed
@@ -307,9 +287,7 @@ def test_run_background_filter_narrows_output(workspace_ctx):
 
     asyncio.run(_filter_flow())
 
-
 # -- BashOutputTool: error paths ------------------------------------------
-
 
 def test_output_missing_bash_id_returns_error(workspace_ctx):
     tool = BashOutputTool()
@@ -317,15 +295,12 @@ def test_output_missing_bash_id_returns_error(workspace_ctx):
     assert result.is_error
     assert "not found" in result.content
 
-
 def test_output_empty_bash_id_rejected(workspace_ctx):
     tool = BashOutputTool()
     result = _output(tool, workspace_ctx, bash_id="")
     assert result.is_error
 
-
 # -- BashKillTool: error paths + idempotency ------------------------------
-
 
 def test_kill_unknown_id_is_idempotent_noop(workspace_ctx):
     """Killing a never-existed id is a successful no-op
@@ -340,12 +315,10 @@ def test_kill_unknown_id_is_idempotent_noop(workspace_ctx):
     assert "not found" in result.content.lower() or \
         "idempotent" in result.content.lower()
 
-
 def test_kill_empty_bash_id_rejected(workspace_ctx):
     tool = BashKillTool()
     result = _kill(tool, workspace_ctx, bash_id="")
     assert result.is_error
-
 
 def test_kill_terminates_a_running_background_process(workspace_ctx):
     """Start a long-running background, kill it,
@@ -382,9 +355,7 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
 
     asyncio.run(_kill_flow())
 
-
 # -- workspace lock ------------------------------------------------------
-
 
 def test_run_initial_cwd_is_workspace(workspace_ctx):
     """The subprocess's **initial** cwd is the workspace
@@ -402,9 +373,7 @@ def test_run_initial_cwd_is_workspace(workspace_ctx):
     expected = str(workspace_ctx.workspace.resolve())
     assert expected in result.content
 
-
 # -- registry integration ------------------------------------------------
-
 
 def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     """Sanity: all three tools are registered. The
@@ -415,7 +384,6 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     gate on roles which require a DB lookup).
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     # The registry builds each tool on first call;
     # the role-gate tools open a session lazily so
     # the engine only needs to be importable here.

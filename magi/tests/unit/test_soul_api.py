@@ -25,16 +25,12 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-
 @pytest.fixture
 def soul_env(monkeypatch, tmp_path):
-    """Pin ``MAGI_STATE_DIR`` to a fresh tmp dir so each test
-    starts with no ``SOUL.md`` (we'll write it explicitly in
-    the cases that need one). The workspace root is
-    ``<tmp>/parent/memories``'s parent = ``<tmp>/parent`` —
-    but :func:`workspace_root` walks ``MAGI_STATE_DIR.parent``,
-    so we set state dir to ``<tmp>/memories`` and the workspace
-    lands at ``<tmp>``.
+    """Pin ``MAGI_STATE_DIR`` so each test has a clean slate.
+
+    Workspace = ``MAGI_STATE_DIR/..`` = ``tmp_path``, so SOUL.md
+    lives at ``tmp_path/SOUL.md``. Tests write it explicitly.
     """
     state = tmp_path / "memories"
     state.mkdir()
@@ -42,13 +38,11 @@ def soul_env(monkeypatch, tmp_path):
     # ``init_orm`` casts the env var to ``os.environ[str]``;
     # pass a plain ``str`` to avoid a PosixPath TypeError on
     # Python 3.12.
+    # ``workspace_root(state_dir)`` derives workspace from
+    # state_dir (``<state>/..`` → ``tmp_path``), so SOUL.md
+    # writes land at ``tmp_path/SOUL.md``.
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    # Set MAGI_WORKSPACE_DIR so ``workspace_root`` returns a
-    # predictable, tmp-scoped path that won't collide with the
-    # host's actual ``/workspace``.
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(workspace))
     return state, workspace
-
 
 @pytest.fixture
 def client(soul_env):
@@ -92,9 +86,7 @@ def client(soul_env):
     c.cookies.set("magi_session", "1")
     return c
 
-
 # -- GET ------------------------------------------------------------------
-
 
 def test_get_soul_returns_bundled_fallback_when_missing(client, soul_env):
     """No SOUL.md on disk → is_bundled_fallback=true.
@@ -118,7 +110,6 @@ def test_get_soul_returns_bundled_fallback_when_missing(client, soul_env):
     # be non-empty so the textarea isn't blank.
     assert len(data["content"]) > 0
 
-
 def test_get_soul_returns_workspace_copy_when_present(client, soul_env):
     """SOUL.md exists → content matches, is_bundled_fallback=false,
     modified_at is set to the file's mtime."""
@@ -134,9 +125,7 @@ def test_get_soul_returns_workspace_copy_when_present(client, soul_env):
     assert "Custom" in data["content"]
     assert "operator's persona" in data["content"]
 
-
 # -- PUT ------------------------------------------------------------------
-
 
 def test_put_soul_persists(client, soul_env):
     """Saving writes the new content to the workspace file."""
@@ -157,12 +146,10 @@ def test_put_soul_persists(client, soul_env):
     assert "Saved" in on_disk
     assert "test persona" in on_disk
 
-
 def test_put_soul_empty_body_rejected(client):
     """Pydantic min_length=1 → 422."""
     r = client.put("/api/soul", json={"content": ""})
     assert r.status_code == 422
-
 
 def test_put_soul_whitespace_only_rejected(client):
     """Trim happens server-side; whitespace-only is also rejected."""
@@ -171,7 +158,6 @@ def test_put_soul_whitespace_only_rejected(client):
     data = r.json()
     assert data["code"] == "validation.soul_empty"
 
-
 def test_put_soul_too_long_rejected(client):
     """> 8 KB → 422 (Pydantic max_length)."""
     r = client.put(
@@ -179,7 +165,6 @@ def test_put_soul_too_long_rejected(client):
         json={"content": "x" * 8001},
     )
     assert r.status_code == 422
-
 
 def test_put_soul_atomic_no_leftover_tmp(client, soul_env):
     """A successful PUT leaves no ``.SOUL.md.*.tmp`` file behind."""
@@ -192,9 +177,7 @@ def test_put_soul_atomic_no_leftover_tmp(client, soul_env):
     leftovers = list(workspace.glob(".SOUL.md.*.tmp"))
     assert leftovers == []
 
-
 # -- POST /reset ---------------------------------------------------------
-
 
 def test_reset_soul_writes_bundled_default(client, soul_env):
     """Reset overwrites a customised SOUL.md with the bundled one."""
@@ -212,9 +195,7 @@ def test_reset_soul_writes_bundled_default(client, soul_env):
     assert "delete me" not in on_disk
     assert "MAGI Soul" in on_disk
 
-
 # -- auth gate ------------------------------------------------------------
-
 
 def test_get_soul_without_cookie_is_403(soul_env):
     """``AdminOrAssignedGate`` rejects cookie-less callers.
@@ -234,7 +215,6 @@ def test_get_soul_without_cookie_is_403(soul_env):
     assert r.status_code == 403
     assert r.json()["code"] == "auth.soul_edit_forbidden"
 
-
 def test_put_soul_without_cookie_is_403(soul_env):
     """Same gate covers PUT."""
     from magi.channels.webui.app import create_app
@@ -245,7 +225,6 @@ def test_put_soul_without_cookie_is_403(soul_env):
     r = c.put("/api/soul", json={"content": "anything"})
     assert r.status_code == 403
 
-
 # -- role-based gate ------------------------------------------------------
 #
 # Spec: ``admin`` and ``assigned`` can read/write SOUL.md;
@@ -253,7 +232,6 @@ def test_put_soul_without_cookie_is_403(soul_env):
 # admin covers the happy paths above; these cases pin the
 # role whitelist so a future "let everyone edit" slip is
 # caught.
-
 
 def _client_with_role(soul_env, *, role: str, delivery_address: int):
     """Build a TestClient whose cookie resolves to an
@@ -295,42 +273,35 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
     c.cookies.set("magi_session", str(uid))
     return c
 
-
 def test_assigned_role_can_read_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.get("/api/soul")
     assert r.status_code == 200
-
 
 def test_assigned_role_can_write_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.put("/api/soul", json={"content": "assigned contact persona"})
     assert r.status_code == 200
 
-
 def test_assigned_role_can_reset_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
     r = c.post("/api/soul/reset")
     assert r.status_code == 200
-
 
 def test_contact_role_cannot_read_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
     r = c.get("/api/soul")
     assert r.status_code == 403
 
-
 def test_contact_role_cannot_write_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 
-
 def test_guest_role_cannot_write_soul(soul_env):
     c = _client_with_role(soul_env, delivery_address=9001, role="guest", )
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
-
 
 def test_gate_uses_uid_not_telegram_id(soul_env):
     """D.24 regression: cookie carries ``Contact.id`` (a

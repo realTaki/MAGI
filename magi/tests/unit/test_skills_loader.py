@@ -9,7 +9,7 @@ Covers:
   - ``format_skills_block`` shape (header + bullets)
   - Body size cap on the system-prompt block
   - Hidden-bootstrap (no env-var reset): the loader
-    honours ``MAGI_WORKSPACE_DIR`` correctly.
+    derives workspace from ``MAGI_STATE_DIR`` correctly.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ from magi.agent.tools.skill_loader import (
     SkillLoader,
     _reset_for_tests,
 )
-
 
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
@@ -50,7 +49,6 @@ def workspace(tmp_path, monkeypatch):
     _reset_for_tests()
     yield ws
     _reset_for_tests()
-
 
 def _write_skill(
     workspace_root: Path,
@@ -81,7 +79,6 @@ def _write_skill(
     lines.append(body)
     skill_dir.joinpath("SKILL.md").write_text("\n".join(lines), encoding="utf-8")
 
-
 def test_loader_finds_a_single_skill(workspace):
     _write_skill(workspace, "alpha")
     loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
@@ -90,7 +87,6 @@ def test_loader_finds_a_single_skill(workspace):
     assert skills[0].description.startswith("alpha skill")
     assert skills[0].version is None
 
-
 def test_loader_sorts_skills_alphabetically(workspace):
     _write_skill(workspace, "zebra")
     _write_skill(workspace, "alpha")
@@ -98,13 +94,11 @@ def test_loader_sorts_skills_alphabetically(workspace):
     loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["alpha", "mango", "zebra"]
 
-
 def test_loader_skips_dir_without_skill_md(workspace):
     (workspace / "skills" / "empty-skill").mkdir()
     _write_skill(workspace, "alpha")
     loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["alpha"]
-
 
 def test_loader_skips_skill_with_no_description(workspace, caplog):
     """An operator who leaves ``description:`` empty
@@ -117,7 +111,6 @@ def test_loader_skips_skill_with_no_description(workspace, caplog):
     _write_skill(workspace, "real")
     loader = SkillLoader(workspace, bundle_dir=workspace.parent / "no-bundle")
     assert [s.name for s in loader.list()] == ["real"]
-
 
 def test_loader_handles_missing_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "nope" / "state"))
@@ -132,7 +125,6 @@ def test_loader_handles_missing_dir(tmp_path, monkeypatch):
         bundle_dir=tmp_path / "no-bundle",
     )
     assert loader.list() == []
-
 
 def test_loader_overrides_duplicate(workspace):
     """Same skill name across two directory paths → only
@@ -158,7 +150,6 @@ def test_loader_overrides_duplicate(workspace):
     # (same frontmatter name, same dir name).
     skills = loader.list()
     assert [s.name for s in skills] == ["dup", "dup2"]
-
 
 def test_loader_duplicate_name_overrides(workspace):
     """Two ``SKILL.md`` files that resolve to the same
@@ -192,13 +183,11 @@ def test_loader_duplicate_name_overrides(workspace):
     # Both pass — they have distinct resolved names.
     assert {s.name for s in loader.list()} == {"alpha", "alpha2"}
 
-
 def test_format_skills_block_is_empty_without_skills():
     """Empty registry → no block. Keeps the per-turn system
     prompt short when there are no operator skills loaded."""
     block = format_skills_block([])
     assert block == ""
-
 
 def test_format_skills_block_lists_each_skill(workspace):
     _write_skill(workspace, "alpha", description="alpha skill", version="1.2")
@@ -209,7 +198,6 @@ def test_format_skills_block_lists_each_skill(workspace):
     assert "(v1.2)" in block
     assert "**zebra**" in block
     assert block.count("\n- ") == 2
-
 
 def test_format_skills_block_respects_metadata_only(workspace):
     """The system-prompt block must NOT contain full bodies
@@ -224,7 +212,6 @@ def test_format_skills_block_respects_metadata_only(workspace):
     assert "very long secrets" not in block
     assert len(block) < 2000  # way under body cap
 
-
 def test_get_skill_loader_singleton(monkeypatch, tmp_path):
     """``get_skill_loader`` returns the same instance for
     repeated calls — cache invalidation rules belong in
@@ -234,15 +221,14 @@ def test_get_skill_loader_singleton(monkeypatch, tmp_path):
     (ws1 / "skills" / "x" / "SKILL.md").write_text(
         "---\nname: x\ndescription: x\n---\n", encoding="utf-8"
     )
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws1))
+    monkeypatch.setenv("MAGI_STATE_DIR", str(ws1 / "state"))
+    (ws1 / "state").mkdir()
     _reset_for_tests()
     a = get_skill_loader()
     b = get_skill_loader()
     assert a is b
 
-
 # -- dual-source loader: bundle + operator roots -----------------------
-
 
 def test_loader_reads_bundle_when_operator_dir_empty(tmp_path, monkeypatch):
     """A fresh deploy with no operator-edited skills still
@@ -251,7 +237,6 @@ def test_loader_reads_bundle_when_operator_dir_empty(tmp_path, monkeypatch):
     operator dir is a separate, empty tmp_path."""
     ws = tmp_path / "ws"
     (ws / "skills").mkdir(parents=True)
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
     _reset_for_tests()
     loader = SkillLoader(ws)
     names = {s.name for s in loader.list()}
@@ -261,7 +246,6 @@ def test_loader_reads_bundle_when_operator_dir_empty(tmp_path, monkeypatch):
     for s in loader.list():
         if s.name in {"codebase_search", "reminder_template", "web_lookup"}:
             assert "magi/skills/" in str(s.path), s.path
-
 
 def test_operator_skill_overrides_bundle_silently(tmp_path, monkeypatch, caplog):
     """Operator puts a same-named SKILL.md in workspace/skills/;
@@ -284,7 +268,6 @@ def test_operator_skill_overrides_bundle_silently(tmp_path, monkeypatch, caplog)
         "operator body",
         encoding="utf-8",
     )
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
     _reset_for_tests()
     with caplog.at_level(logging.WARNING, logger="magi.agent.skills.loader"):
         loader = SkillLoader(ws)
@@ -304,7 +287,6 @@ def test_operator_skill_overrides_bundle_silently(tmp_path, monkeypatch, caplog)
         f"operator override should be silent, got: {[r.getMessage() for r in override_warnings]}"
     )
 
-
 def test_loader_with_empty_bundle_still_finds_operator_skills(tmp_path, monkeypatch):
     """Tests that want to ignore the bundle entirely can
     pass a non-existent bundle_dir. The operator side
@@ -315,9 +297,7 @@ def test_loader_with_empty_bundle_still_finds_operator_skills(tmp_path, monkeypa
     loader = SkillLoader(ws, bundle_dir=tmp_path / "no-bundle-here")
     assert [s.name for s in loader.list()] == ["alpha"]
 
-
 # -- optional frontmatter fields (license / allowed_tools / metadata) -
-
 
 def test_loader_passes_through_license_field(workspace):
     """``license: MIT`` in the frontmatter is read into
@@ -340,7 +320,6 @@ def test_loader_passes_through_license_field(workspace):
     meta = loader.get("alpha")
     assert meta is not None
     assert meta.license == "MIT"
-
 
 def test_loader_passes_through_allowed_tools_list(workspace):
     """``allowed-tools: [foo, bar]`` is read as a
@@ -365,7 +344,6 @@ def test_loader_passes_through_allowed_tools_list(workspace):
     assert meta is not None
     assert meta.allowed_tools == ["read_file", "write_file"]
 
-
 def test_loader_passes_through_metadata_dict(workspace):
     """``metadata: {key: val}`` is read as a
     ``dict[str, str]``.
@@ -388,7 +366,6 @@ def test_loader_passes_through_metadata_dict(workspace):
     assert meta is not None
     assert meta.metadata == {"owner": "finance", "version_tag": "v1.0"}
 
-
 def test_loader_optional_fields_default_to_none(workspace):
     """A SKILL.md without the optional frontmatter
     fields has all three as ``None`` (not empty list /
@@ -403,9 +380,7 @@ def test_loader_optional_fields_default_to_none(workspace):
     assert meta.allowed_tools is None
     assert meta.metadata is None
 
-
 # -- _process_skill_paths (Progressive Disclosure Level 3) ---------
-
 
 def test_process_skill_paths_rewrites_directory_relative_paths(tmp_path):
     """``scripts/foo.py`` → absolute path when the file
@@ -429,7 +404,6 @@ def test_process_skill_paths_rewrites_directory_relative_paths(tmp_path):
     # ``scripts/`` directory component is gone).
     assert "run scripts/with_server.py" not in out
 
-
 def test_process_skill_paths_rewrites_prose_references(tmp_path):
     """``see reference.md`` → ``see `abs/path` (use
     read_file to access)``. LLM can copy-paste the
@@ -445,7 +419,6 @@ def test_process_skill_paths_rewrites_prose_references(tmp_path):
     # The bare relative isn't left in place.
     assert "see reference.md" not in out
 
-
 def test_process_skill_paths_rewrites_markdown_links(tmp_path):
     """Markdown link ``[`text`](relpath)`` →
     ``[`text`](`abs/path`) (use read_file to access)``.
@@ -460,7 +433,6 @@ def test_process_skill_paths_rewrites_markdown_links(tmp_path):
     assert f"[`guide.md`](`{skill_dir / 'guide.md'}`)" in out
     assert "use read_file to access" in out
 
-
 def test_process_skill_paths_leaves_nonexistent_paths_alone(tmp_path):
     """If a path doesn't exist on disk, the body is
     left untouched. Avoids hallucinating files the
@@ -472,7 +444,6 @@ def test_process_skill_paths_leaves_nonexistent_paths_alone(tmp_path):
     out = _process_skill_paths("see ghost.md for context", skill_dir)
     assert out == "see ghost.md for context"
     assert str(skill_dir) not in out
-
 
 def test_skill_root_dir_line_announces_path(tmp_path):
     """The "Skill Root Directory" line is the first
@@ -487,9 +458,7 @@ def test_skill_root_dir_line_announces_path(tmp_path):
     # this as a section break).
     assert "---" in line
 
-
 # -- load_skill body output ------------------------------
-
 
 def test_load_skill_body_prepends_root_dir_line(workspace):
     """The body the LLM sees starts with the "Skill
@@ -518,7 +487,6 @@ def test_load_skill_body_prepends_root_dir_line(workspace):
     assert str(skill_dir) in result.content
     # Body still present.
     assert "the body" in result.content
-
 
 def test_load_skill_body_rewrites_known_sibling_paths(workspace):
     """End-to-end: a body that says ``run scripts/x.py``
@@ -570,7 +538,6 @@ def test_load_skill_body_rewrites_known_sibling_paths(workspace):
     assert "Skill Root Directory" in result.content
     assert str(skill_dir) in result.content
 
-
 def test_load_skill_body_adds_read_file_hint_for_prose_reference(workspace):
     """Pattern 2: ``see reference.md`` →
     ``see `abs/path` (use read_file to access)``.
@@ -596,10 +563,8 @@ def test_load_skill_body_adds_read_file_hint_for_prose_reference(workspace):
     assert str(skill_dir / "reference.md") in result.content
     assert "use read_file to access" in result.content
 
-
 # asyncio_run helper (matches the pattern in test_skills_tool.py)
 import asyncio as _asyncio
-
 
 def asyncio_run(coro):
     return _asyncio.run(coro)

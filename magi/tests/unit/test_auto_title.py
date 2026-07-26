@@ -22,21 +22,17 @@ import pytest
 # ``MAGI_STATE_DIR``. We arrange the fixtures to do that
 # before any test body runs.
 
-
 @pytest.fixture
 def state_dir(monkeypatch, tmp_path):
-    """An isolated ``MAGI_STATE_DIR`` + ``MAGI_WORKSPACE_DIR``.
-    Pinning both lets ``SessionStore`` and the worker
+    """An isolated ``MAGI_STATE_DIR``.
+
+    Pinning it lets ``SessionStore`` and the worker
     helper (``_state_dir_for_job``) read the same path.
     """
     sd = tmp_path / "state"
     sd.mkdir()
-    ws = tmp_path / "ws"
-    ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
     return sd
-
 
 def _seed_admin():
     """Insert one admin contact row with valid LLM creds.
@@ -64,7 +60,6 @@ def _seed_admin():
         s.commit()
         s.refresh(admin)
         return admin
-
 
 class FakeProvider:
     """Drop-in for ``LLMProvider`` that returns a fixed
@@ -107,7 +102,6 @@ class FakeProvider:
             raw_blocks=[],
         )
 
-
 def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled chat"):
     """Patch ``magi.agent.memory.session.auto_title.get_provider`` to return a
     fresh :class:`FakeProvider` per call. Returns the proxy
@@ -142,11 +136,9 @@ def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled ch
 
     return instances, sleep_calls
 
-
 # ────────────────────────────────────────────────────────────────── #
 # cleanse_title
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_cleanse_strips_quotes_and_whitespace():
     from magi.agent.memory.session.auto_title import _cleanse_title
@@ -155,12 +147,10 @@ def test_cleanse_strips_quotes_and_whitespace():
     assert _cleanse_title("'hello world'") == "hello world"
     assert _cleanse_title("`code`") == "code"
 
-
 def test_cleanse_keeps_first_line_only():
     from magi.agent.memory.session.auto_title import _cleanse_title
 
     assert _cleanse_title("first line\nsecond line\nthird") == "first line"
-
 
 def test_cleanse_clamps_to_80_chars():
     from magi.agent.memory.session.auto_title import _cleanse_title
@@ -169,7 +159,6 @@ def test_cleanse_clamps_to_80_chars():
     out = _cleanse_title(long)
     assert len(out) == 80
 
-
 def test_cleanse_returns_empty_for_blank():
     from magi.agent.memory.session.auto_title import _cleanse_title
 
@@ -177,11 +166,9 @@ def test_cleanse_returns_empty_for_blank():
     assert _cleanse_title("   ") == ""
     assert _cleanse_title("\n\n") == ""
 
-
 # ────────────────────────────────────────────────────────────────── #
 # _summarize_to_title — happy path + bails
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.mark.asyncio
 async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
@@ -235,7 +222,6 @@ session_id=sid,
         row = db.get(ChatSession, sid)
     assert row.title == "My first question"
 
-
 @pytest.mark.asyncio
 async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     """Second invocation sees ``title`` set and bails without
@@ -276,7 +262,6 @@ session_id=sid, uid=admin.id,
     # No additional provider calls.
     assert provider_count_after_second == 1
 
-
 @pytest.mark.asyncio
 async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     """A session with only assistant messages (or empty)
@@ -302,7 +287,6 @@ session_id=sess.session_id, uid=admin.id,
     assert store.get(admin.id, sess.session_id).title is None
     assert sum(len(p.calls) for p in providers) == 0
 
-
 @pytest.mark.asyncio
 async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
     """A deleted-mid-job session is silently ignored. Title
@@ -323,7 +307,6 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
         contact_api_key="fake-key",
     ))
     assert sum(len(p.calls) for p in providers) == 0
-
 
 @pytest.mark.asyncio
 async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
@@ -366,7 +349,6 @@ session_id=sid, uid=admin.id,
     ))
     assert store.get(admin.id, sid).title is None  # title wasn't set
 
-
 @pytest.mark.asyncio
 async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch):
     """If the worker fails to construct a provider (some
@@ -401,7 +383,6 @@ session_id=sid, uid=admin.id,
     ))
     assert store.get(admin.id, sid).title is None
 
-
 @pytest.mark.asyncio
 async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     from magi.agent.memory.session import SessionMessage, SessionStore
@@ -427,7 +408,6 @@ session_id=sid, uid=admin.id,
         contact_provider="minimax", contact_api_key="fake",
     ))
     assert len(store.get(admin.id, sid).title) == 80
-
 
 @pytest.mark.asyncio
 async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
@@ -456,11 +436,9 @@ session_id=sid, uid=admin.id,
     ))
     assert store.get(admin.id, sid).title is None
 
-
 # ────────────────────────────────────────────────────────────────── #
 # worker loop + lifecycle
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.mark.asyncio
 async def test_worker_loop_drains_queue(state_dir, monkeypatch):
@@ -514,7 +492,6 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
 
     await stop_title_worker()
 
-
 @pytest.mark.asyncio
 async def test_start_stop_worker_lifecycle(state_dir, monkeypatch):
     """``start`` is idempotent; ``stop`` clears the task.
@@ -539,7 +516,6 @@ async def test_start_stop_worker_lifecycle(state_dir, monkeypatch):
 
     await at_mod.stop_title_worker()  # idempotent on already-stopped
 
-
 @pytest.mark.asyncio
 async def test_enqueue_does_not_block(state_dir, monkeypatch):
     """``enqueue_title_job`` returns immediately even if the
@@ -558,7 +534,6 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
         contact_api_key="k",
     )
     assert _title_jobs.qsize() == 1
-
 
 @pytest.mark.asyncio
 async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch):
