@@ -45,7 +45,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useT } from "../i18n/index";
+import { useT } from "../../i18n/index";
 
 type SearchHit = {
   session_id: string;

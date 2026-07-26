@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useT } from "../i18n/index";
+import { useT } from "../../i18n/index";
 
 type ActionItem = {
   id: number;
