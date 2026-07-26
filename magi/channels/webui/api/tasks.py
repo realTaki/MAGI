@@ -420,6 +420,17 @@ def create_task(
     # SQLite (the outer txn holds the reserved lock;
     # the inner ``state_get`` session can't acquire it).
     system_tz = _resolve_system_tz()
+    # ``_resolve_delivery_to`` also calls the channel
+    # dispatcher internally for ``channel='tg'`` (so it
+    # can return a 400 when the operator has no TG
+    # binding). Same rationale as the dispatcher call
+    # above — resolve BEFORE ``session.query`` begins the
+    # outer BEGIN IMMEDIATE.
+    delivery_to = _resolve_delivery_to(
+        channel=payload.channel,
+        uid=operator_id,
+        explicit=payload.delivery_to,
+    )
     existing = (
         session.query(Task).filter(Task.name == payload.name).one_or_none()
     )
@@ -429,11 +440,6 @@ def create_task(
             code="task.name_conflict",
             detail=f"a task with name {payload.name!r} already exists",
         )
-    delivery_to = _resolve_delivery_to(
-        channel=payload.channel,
-        uid=operator_id,
-        explicit=payload.delivery_to,
-    )
     # Allocate the task's home session NOW. Every cron
     # fire of this task accumulates into this single
     # session — same channel="task", same

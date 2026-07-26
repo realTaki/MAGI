@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useT } from '../../../i18n/index';
+import { BotTokenField } from '../../../components/settings/BotTokenField';
 
 
 type ChannelOption = { id: string; name: string; descriptionKey: string; available: boolean };
@@ -42,9 +43,37 @@ export function Step1View(props: {
             onReSet={props.onReSet}
           />
         ) : (
-          <BotTokenField onSaved={props.onSaved} />
+          <BotTokenField onSaved={props.onSaved} onCancel={() => {}} />
         ))}
     </>
+  );
+}
+
+function ChannelSelect(props: { value: string; onChange: (id: string) => void }) {
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      {channels.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          disabled={!c.available}
+          onClick={() => props.onChange(c.id)}
+          className={`btn px-4 py-2 text-left ${
+            props.value === c.id ? "btn-primary" : ""
+          } ${c.available ? "" : "opacity-50 cursor-not-allowed"}`}
+        >
+          {c.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ChannelDescription(props: { channel: ChannelOption | undefined }) {
+  const t = useT();
+  if (!props.channel) return null;
+  return (
+    <p className="mt-2 text-sm text-ink-soft">{t(props.channel.descriptionKey)}</p>
   );
 }
 
@@ -87,51 +116,6 @@ function BotTokenConfiguredView(props: {
           {t("common.edit")}
         </button>
       </div>
-    </div>
-  );
-}
-
-
-/** Stand-in channel select. The real implementation lives in
- *  the settings BotTokenField; this stub keeps the wizard view
- *  compiling until the dedicated onboarding widget lands.
- */
-function ChannelSelect(props: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="mt-4">
-      <label className="form-label">Channel</label>
-      <select
-        className="form-input text-sm py-1.5 px-3 mt-1"
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-      >
-        {channels.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function ChannelDescription(props: { channel: ChannelOption | undefined }) {
-  const t = useT();
-  if (!props.channel) return null;
-  return <p className="text-sm text-ink-soft mt-2">{t(props.channel.descriptionKey)}</p>;
-}
-
-function BotTokenField(props: { onSaved: (token: string, username: string) => void }) {
-  return <p className="text-sm text-ink-soft mt-4">Bot token form placeholder.</p>;
-}
-
-function BotTokenConfiguredView(props: {
-  bot: { token: string; username: string };
-  onNext: () => void;
-  onReSet: () => void;
-}) {
-  return (
-    <div className="mt-4">
-      <p>@{props.bot.username}</p>
-      <button type="button" className="btn btn-primary mt-2" onClick={props.onNext}>继续</button>
     </div>
   );
 }
