@@ -47,7 +47,8 @@ RUN uv sync --frozen --no-dev --extra adam --extra eve
 # tree is replaced by a read-only bind mount at the same path, while the
 # dev compose file overlays a writable named volume at
 # `/app/magi/WebUI/node_modules` so Vite can keep its cache there.
-RUN cd /app/magi/WebUI && npm ci --no-audit --no-fund
+RUN cd /app/magi/WebUI && npm ci --no-audit --no-fund \
+    && touch node_modules/.package-lock.json
 
 # /workspace remains the agent's persistent workspace. Runtime source is
 # deliberately kept under /app/magi instead, outside the agent workspace.

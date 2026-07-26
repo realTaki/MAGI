@@ -221,11 +221,18 @@ async def send_to_session(session_id: str, text: str) -> None:
     if sess is None:
         raise KeyError(f"no session {session_id}")
 
-    # WebUI has no out-of-band adapter — the operator sees
-    # the reply inline in the chat scroll. A no-op success
-    # keeps the ``send_message`` tool from erroring when
-    # the LLM side-channels inside a webui session.
+    # WebUI has no out-of-band adapter — instead, append
+    # the message directly to the chat session so it lands
+    # in the WebUI scroll. TG / task channels go through a
+    # registered adapter for actual push.
     if sess.channel == Channel.WEBUI:
+        from magi.agent.memory.session.store import SessionStore, SessionMessage
+        from magi.agent.db.engine import require_state_dir
+        store = SessionStore(state_dir=require_state_dir())
+        store.append_messages(
+            sess.uid, session_id,
+            [SessionMessage(role="assistant", text=text)],
+        )
         return
 
     _auto_register_builtin_adapters()

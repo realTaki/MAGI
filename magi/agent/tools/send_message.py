@@ -115,7 +115,12 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # Hand off to the dispatcher. The dispatcher reads
+        # Hand off to the dispatcher. For TG/task channels,
+        # the adapter pushes to the IM surface; for webui,
+        # the dispatcher appends the message directly into
+        # the chat session so it lands in the scroll.
+        # This tool stays channel-agnostic.
+        from magi.channels import dispatcher
         # ``chat_sessions.channel`` for ``session_id``, picks
         # the right adapter, and the adapter handles its own
         # IM id resolution + transport. This tool stays

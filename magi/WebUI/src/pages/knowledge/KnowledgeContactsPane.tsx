@@ -17,46 +17,29 @@ function formatTimestamp(iso: string): string {
   return m ? `${m[1]} ${m[2]}` : iso;
 }
 
-type ContactRow = {
-  id: number; name: string; display_name: string | null; role: string | null;
-  notes: string; source: string; last_seen_at: string; created_at: string; updated_at: string;
-};
-type ContactListResponse = { items: ContactRow[]; total: number };
-
 export function KnowledgeContactsPane() {
   const t = useT();
-  const [contacts, setContacts] = useState<ContactRow[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const contactsQuery = useContacts();
+  const contacts = contactsQuery.data ?? [];
+  const loadError =
+    contactsQuery.error instanceof Error
+      ? contactsQuery.error.message
+      : contactsQuery.isError
+        ? t("settings.knowledgeContactsLoadFailed")
+        : null;
+  const isLoading = contactsQuery.isLoading && contacts.length === 0;
   const [expandedId, setExpandedId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/contacts", { credentials: "include" });
-        if (!r.ok) { if (!cancelled) setLoadError(`${t("settings.knowledgeContactsLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as ContactListResponse;
-        if (!cancelled) setContacts(body.items ?? []);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><InfoTip text={t("settings.knowledgeContactsIntro")} /></div>
       <ConsoleCard title={t("settings.knowledgeContactsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {loading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
-        {!loading && contacts.length === 0 && !loadError && (
+        {isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {!isLoading && contacts.length === 0 && !loadError && (
           <p className="text-sm text-ink-soft">{t("settings.knowledgeContactsEmpty")}</p>
         )}
-        {contacts !== null && contacts.length > 0 && (
+        {contacts.length > 0 && (
           <div className="space-y-1">
             {contacts.map((c) => {
               const expanded = expandedId === c.id;

@@ -14,7 +14,7 @@
  * the renderer — see plan TODO.)
  */
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, qk } from "../lib/queryClient";
 
 
@@ -592,14 +592,14 @@ export default function ChatTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const queryClient = useQueryClient();
+  const queryClientForChat = useQueryClient();
   const sendChatMut = useMutation({
     mutationFn: (vars: { text: string; sessionId: string | null }) =>
       apiFetch<{ reply: string; session_id: string }>("/api/chat/send", {
         method: "POST",
         body: { text: vars.text, session_id: vars.sessionId },
       }),
-    onSuccess: (data, vars) => {
+    onSuccess: (data: { reply: string; session_id: string }, vars: { text: string; sessionId: string | null }) => {
       if (data.session_id !== vars.sessionId) {
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
@@ -611,11 +611,11 @@ export default function ChatTab() {
         ...prev,
         { id: Date.now() + 1, role: "assistant", text: data.reply },
       ]);
-      void queryClient.invalidateQueries({
+      void queryClientForChat.invalidateQueries({
         queryKey: qk.chatMessages(data.session_id),
       });
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown): void => {
       if (err && typeof err === "object" && "status" in err) {
         const e = err as { status?: number; message?: string };
         if (e.status && e.status >= 400 && e.status < 500) {

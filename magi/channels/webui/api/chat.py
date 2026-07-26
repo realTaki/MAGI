@@ -178,6 +178,7 @@ class ChatSendResponse(BaseModel):
     # fresh chat. For an existing-session send it equals
     # what was sent in.
     session_id: str
+    messages: list[SessionMessageOut] = []
 
 
 @router.post("/chat/send", response_model=ChatSendResponse)
@@ -422,4 +423,23 @@ async def send_chat(
             session_id,
         )
 
-    return ChatSendResponse(reply=reply, session_id=session_id)
+    # Load the full session so the frontend sees messages
+    # appended by tools (e.g. ``send_message``) in the same
+    # turn. Without this, tool-side messages land in the DB
+    # but never render until the next page refresh.
+    post = store.get(uid, session_id)
+    messages: list[SessionMessageOut] = []
+    if post is not None:
+        messages = [
+            SessionMessageOut(
+                message_id=m.message_id,
+                role=m.role,
+                ts=m.ts,
+                text=m.text,
+            )
+            for m in post.messages
+        ]
+
+    return ChatSendResponse(
+        reply=reply, session_id=session_id, messages=messages,
+    )
