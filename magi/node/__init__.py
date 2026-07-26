@@ -404,6 +404,7 @@ _LAUNCHERS = {
 
 
 def _launch_channel(name: str, cfg: NodeConfig) -> None:
+    logger.info("_launch_channel: dispatching %r", name)
     launcher = _LAUNCHERS.get(name)
     if launcher is None:
         logger.error("no launcher registered for channel %r", name)

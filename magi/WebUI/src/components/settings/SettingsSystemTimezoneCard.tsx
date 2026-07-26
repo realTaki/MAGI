@@ -89,7 +89,10 @@ export function SettingsSystemTimezoneCard() {
   return (
     <ConsoleCard
       title={t("settings.timezone")}
-      headerRight={<InfoTip text={t("settings.timezoneDesc")} />}
+      headerRight={<InfoTip text={
+        t("settings.timezoneDesc") + " " +
+        (data ? t("settings.timezoneNotSetHint").replace("{tz}", data.default) : "")
+      } />}
     >
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
@@ -107,11 +110,6 @@ export function SettingsSystemTimezoneCard() {
               </option>
             ))}
           </select>
-          {data.default !== data.current && (
-            <p className="text-xs text-ink-soft">
-              {t("settings.timezoneNotSetHint").replace("{tz}", data.default)}
-            </p>
-          )}
         </div>
       )}
 

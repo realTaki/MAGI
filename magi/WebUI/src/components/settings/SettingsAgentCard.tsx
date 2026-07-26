@@ -140,7 +140,10 @@ function ToolLoopSection() {
         <h3 className="text-sm font-medium text-ink">
           {t("settings.toolLoop")}
         </h3>
-        <InfoTip text={t("settings.toolLoopDesc")} />
+        <InfoTip text={
+          t("settings.toolLoopDesc") + " " +
+          (data ? `范围 ${data.min} – ${data.max} · 默认 ${data.default}` : "")
+        } />
       </div>
 
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
@@ -157,9 +160,6 @@ function ToolLoopSection() {
               onChange={(e) => setPicked(e.target.value)}
               className="form-input text-sm font-mono py-2 px-3 w-24"
             />
-            <span className="text-xs text-ink-soft">
-              范围 {data.min} – {data.max} · 默认 {data.default}
-            </span>
           </div>
           {data.default !== data.current && (
             <p className="text-xs text-ink-soft">
@@ -339,7 +339,10 @@ function CompactSection() {
               what the operator was already looking at).
             */}
             <div>
-              <label className="form-label">Context window</label>
+              <div className="flex items-center gap-1.5">
+                <label className="form-label">Context window</label>
+                <InfoTip text={`默认 ${(data?.default_context_window ?? "").toLocaleString()}`} />
+              </div>
               <input
                 type="number"
                 min={16000}
@@ -349,12 +352,12 @@ function CompactSection() {
                 onChange={(e) => setContextWindow(e.target.value)}
                 className="form-input text-sm font-mono py-2 px-3 w-full"
               />
-              <p className="mt-1 text-xs text-ink-soft">
-                默认 {data.default_context_window.toLocaleString()}
-              </p>
             </div>
             <div>
-              <label className="form-label">Threshold (%)</label>
+              <div className="flex items-center gap-1.5">
+                <label className="form-label">Threshold (%)</label>
+                <InfoTip text={`默认 ${data?.default_threshold_pct ?? ""}`} />
+              </div>
               <input
                 type="number"
                 min={50}
@@ -364,12 +367,12 @@ function CompactSection() {
                 onChange={(e) => setThresholdPct(e.target.value)}
                 className="form-input text-sm font-mono py-2 px-3 w-full"
               />
-              <p className="mt-1 text-xs text-ink-soft">
-                默认 {data.default_threshold_pct}
-              </p>
             </div>
             <div>
-              <label className="form-label">Keep recent</label>
+              <div className="flex items-center gap-1.5">
+                <label className="form-label">Keep recent</label>
+                <InfoTip text={`默认 ${data?.default_keep_recent ?? ""}`} />
+              </div>
               <input
                 type="number"
                 min={5}
@@ -379,9 +382,7 @@ function CompactSection() {
                 onChange={(e) => setKeepRecent(e.target.value)}
                 className="form-input text-sm font-mono py-2 px-3 w-full"
               />
-              <p className="mt-1 text-xs text-ink-soft">
-                默认 {data.default_keep_recent}
-              </p>
+            </div>
             </div>
           </div>
         </div>

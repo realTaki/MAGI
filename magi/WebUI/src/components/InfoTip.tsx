@@ -120,7 +120,7 @@ export function InfoTip({ text, size = 14 }: InfoTipProps) {
           // trigger (the card title is on the same row;
           // popping left or right would push it into the
           // card body or off the right edge).
-          className="absolute z-20 right-full top-1/2 -translate-y-1/2 mr-2
+          className="absolute z-50 right-full top-1/2 -translate-y-1/2 mr-2
                      w-72 max-w-xs
                      rounded-md border border-sky-light/40
                      bg-white/95 backdrop-blur
