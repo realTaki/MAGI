@@ -18,8 +18,14 @@ Compose 文件单独成目录，跟 `k8s/` 平行。Dockerfile、entrypoint、RE
 
 ## Docker Compose
 
+Compose 文件**必须**通过 `--env-file deploy/.env` 加载环境变量,因为
+``MAGI_WORKSPACE_DIR`` 是 `MAGI_WORKSPACE_DIR:?...` 必填项(强制 operator
+在 deploy 时显式指定持久化目录)。`deploy/.env` 在仓库 `.gitignore`
+里 —— 第一次部署前 `cp deploy/.env.example deploy/.env` 然后编辑。
+
 ```bash
 docker compose \
+  --env-file deploy/.env \
   -f deploy/docker-compose/docker-compose.yml \
   up -d
 ```
@@ -28,6 +34,7 @@ docker compose \
 
 ```bash
 docker compose \
+  --env-file deploy/.env \
   -f deploy/docker-compose/docker-compose.yml \
   -f deploy/docker-compose/docker-compose.dev.yml \
   up -d

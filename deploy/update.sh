@@ -59,10 +59,20 @@ if [ "$mode" = "prod" ]; then
     echo "aborted"
     exit 0
   fi
+  # ``MAGI_WORKSPACE_DIR`` is required (``:?`` interpolation in
+  # the compose file) — we always load ``deploy/.env`` so the
+  # mount path is the operator's explicit choice, not the
+  # relative-path fallback that would shadow real data.
   echo ">>> rebuilding adam image"
-  docker compose -f deploy/docker-compose/docker-compose.yml build adam
+  docker compose \
+    --env-file deploy/.env \
+    -f deploy/docker-compose/docker-compose.yml \
+    build adam
   echo ">>> recreating adam container"
-  docker compose -f deploy/docker-compose/docker-compose.yml up -d adam
+  docker compose \
+    --env-file deploy/.env \
+    -f deploy/docker-compose/docker-compose.yml \
+    up -d adam
 else
   echo ">>> dev mode: uvicorn + vite pick up the new code on the"
   echo "    next request — no container restart needed."

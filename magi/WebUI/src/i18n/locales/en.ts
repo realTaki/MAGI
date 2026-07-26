@@ -100,6 +100,7 @@ export default {
     knowledgeContactsColumnNotes: "Notes",
     knowledgeContactsEmpty: "MAGI hasn't recorded any contacts yet. Ask the LLM to use the add_contact tool in conversation.",
     knowledgeContactsLoadFailed: "Failed to load contacts",
+    knowledgeContactsDetail: "View details",
     knowledgeContactsOrphaned: "separated",
     knowledgeContactsNoRole: "— (none)",
     knowledgeMemoryHeading: "Memory",

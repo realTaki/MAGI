@@ -31,8 +31,6 @@ function flattenTree(rows: MAGICRow[]): FlatMAGIC[] {
   return out;
 }
 
-const INDENT = 24;
-
 export function MagicsPane() {
   const t = useT();
   const qc = useQueryClient();
@@ -139,60 +137,81 @@ export function MagicsPane() {
           <p className="text-sm text-ink-soft">{t("magics.empty")}</p>
         )}
         {magics.length > 0 && (
-          <div className="space-y-1">
-            {tree.map((r) => {
-              const isEdit = editingId === r.id;
-              const adam = adamByMagic.get(r.id);
-              const indent = r.depth * INDENT;
-              const prefix = r.depth === 0 ? "" : "├─".padStart(r.depth * 2, " ");
-              const hasMeta = adam || r.member_count > 0 || r.child_count > 0;
-              return (
-                <div key={r.id}
-                  className={`rounded transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}
-                  style={{ paddingLeft: 8 + indent }}
-                >
-                  {isEdit ? (
-                    <div className="flex items-center gap-2 px-2 py-1.5">
-                      <input className="form-input text-sm py-1 px-2 w-40" value={editName} onChange={(e) => setEditName(e.target.value)} />
-                      <select className="form-input text-sm py-1 px-2" value={editParentId} onChange={(e) => setEditParentId(e.target.value)}>
-                        {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
-                      </select>
-                      <button type="button" disabled={saving} onClick={() => { void submitEdit(r.id); }}
-                        className="btn btn-primary text-xs py-0.5 px-2">{saving ? "…" : t("common.save")}</button>
-                      <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.cancel")}</button>
-                      {editError && <span className="text-xs text-rose-600">{editError}</span>}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-ocean/30 font-mono text-[11px] shrink-0">{prefix}</span>
-                          <span className="text-sm font-medium text-ink truncate">{r.name}</span>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-3 font-medium">{t("magics.columnName")}</th>
+                <th className="py-2 pr-3 font-medium w-16">ID</th>
+                <th className="py-2 pr-3 font-medium w-28">Adam</th>
+                <th className="py-2 pr-3 font-medium w-16 text-right">成员</th>
+                <th className="py-2 font-medium w-16 text-right">子团体</th>
+                <th className="py-2 font-medium w-14" />
+              </tr>
+            </thead>
+            <tbody>
+              {tree.map((r) => {
+                const isEdit = editingId === r.id;
+                const adam = adamByMagic.get(r.id);
+                const prefix = r.depth > 0 ? "└ ".padStart(r.depth * 2 + 1, " ") : "";
+                return (
+                  <tr key={r.id} className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
+                    {isEdit ? (
+                      <td className="py-2 pr-3" colSpan={6}>
+                        <div className="flex items-center gap-2">
+                          <input className="form-input text-sm py-1 px-2 w-40" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                          <select className="form-input text-sm py-1 px-2" value={editParentId} onChange={(e) => setEditParentId(e.target.value)}>
+                            {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
+                          </select>
+                          <button type="button" disabled={saving} onClick={() => { void submitEdit(r.id); }} title={t("common.save")}
+                            className="p-1 rounded text-emerald-600 hover:text-emerald-800 hover:bg-white/60 transition-colors disabled:opacity-30">
+                            {saving ? <span className="text-[10px]">…</span> : <IconCheck className="h-4 w-4" />}
+                          </button>
+                          <button type="button" onClick={cancelEdit} title={t("common.cancel")}
+                            className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                            <IconX className="h-4 w-4" />
+                          </button>
+                          {editError && <span className="text-xs text-rose-600">{editError}</span>}
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
-                          <button type="button" onClick={() => { void del(r.id, r.name); }}
-                            className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
-                        </div>
-                      </div>
-                      {hasMeta && (
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-soft">
-                          <span className="font-mono text-ink-soft/40">#{r.id}</span>
-                          {adam && (
-                            <span className="status-pill status-pill--connected text-[10px]">
-                              ADAM: {adam.name || `#${adam.id}`}
-                            </span>
+                      </td>
+                    ) : (
+                      <>
+                        <td className="py-2.5 pr-3">
+                          <span className="text-ocean/30 font-mono text-[11px] mr-1.5">{prefix}</span>
+                          <span className="font-medium text-ink">{r.name}</span>
+                        </td>
+                        <td className="py-2.5 pr-3 font-mono text-[11px] text-ink-soft/40">#{r.id}</td>
+                        <td className="py-2.5 pr-3">
+                          {adam ? (
+                            <span className="text-xs text-ink-soft">{adam.name || `#${adam.id}`}</span>
+                          ) : (
+                            <span className="text-xs text-ink-soft/30">—</span>
                           )}
-                          {r.member_count > 0 && <span>{r.member_count} 成员</span>}
-                          {r.child_count > 0 && <span>{r.child_count} sub</span>}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                        </td>
+                        <td className="py-2.5 pr-3 text-right">
+                          <span className="text-xs text-ink-soft">{r.member_count || "—"}</span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          <span className="text-xs text-ink-soft">{r.child_count || "—"}</span>
+                        </td>
+                        <td className="py-2.5">
+                          <div className="flex items-center gap-0.5 justify-end">
+                            <button type="button" onClick={() => startEdit(r)} title={t("common.edit")}
+                              className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                              <IconEdit className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" onClick={() => { void del(r.id, r.name); }} title={t("common.delete")}
+                              className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                              <IconDelete className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </ConsoleCard>
     </div>

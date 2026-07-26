@@ -103,6 +103,7 @@ export default {
     knowledgeContactsColumnNotes: "备注",
     knowledgeContactsEmpty: "MAGI 还没有记录任何联系人。让 LLM 在对话中用 add_contact 工具记一个试试。",
     knowledgeContactsLoadFailed: "联系人列表加载失败",
+    knowledgeContactsDetail: "查看详情",
     knowledgeContactsOrphaned: "已离职",
     knowledgeContactsNoRole: "—（未记录）",
     knowledgeMemoryHeading: "记忆",

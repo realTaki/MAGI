@@ -205,3 +205,11 @@ export const IconX = ({ className }: IconProps) => (
     <path d="M18 6L6 18M6 6l12 12" />
   </Icon>
 );
+
+// Eye — "view details" affordance for list rows.
+export const IconEye = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);

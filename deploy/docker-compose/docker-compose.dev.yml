@@ -16,7 +16,7 @@
 #   - Edit magi/**/*.py          → uvicorn auto-reloads   (MAGI_RELOAD=1)
 #   - Edit magi/WebUI/src/**     → vite HMR updates the browser
 #   - Edit deploy/entrypoint.dev.sh → `docker compose restart adam`
-#   - SQLite at /workspace/memories → bind-mount persists to ./workspace/Adam
+#   - SQLite at /workspace/memories → bind-mount persists to MAGI_WORKSPACE_DIR/Adam
 #
 # Build the image again ONLY when:
 #   - Dockerfile / Dockerfile.dev change (apt deps, ENV baked at build)

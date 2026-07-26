@@ -100,6 +100,7 @@ export default {
     knowledgeContactsColumnNotes: "メモ",
     knowledgeContactsEmpty: "MAGI はまだ連絡先を記録していません。会話中に LLM に add_contact ツールで記録させてみてください。",
     knowledgeContactsLoadFailed: "連絡先リストの読み込みに失敗しました",
+    knowledgeContactsDetail: "詳細を表示",
     knowledgeContactsOrphaned: "离职済み",
     knowledgeContactsNoRole: "—（未記録）",
     knowledgeMemoryHeading: "記憶",

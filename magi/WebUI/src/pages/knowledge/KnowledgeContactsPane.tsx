@@ -2,17 +2,13 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import ConsoleCard from '../../components/ConsoleCard';
+import { IconEye } from '../../components/icons';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 import { apiFetch } from '../../lib/queryClient';
 import { useContacts, type ContactRow } from '../../lib/queries';
 
-const NOTES_PREVIEW_CHARS = 80;
-
-function truncateNotes(s: string): string {
-  if (s.length <= NOTES_PREVIEW_CHARS) return s;
-  return s.slice(0, NOTES_PREVIEW_CHARS).trimEnd() + "…";
-}
+// -- helpers ---------------------------------------------------------------
 
 function formatTimestamp(iso: string): string {
   if (!iso) return "—";
@@ -84,7 +80,7 @@ export function KnowledgeContactsPane() {
         ? t("settings.knowledgeContactsLoadFailed")
         : null;
   const isLoading = contactsQuery.isLoading && contacts.length === 0;
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   return (
     <div className="space-y-4">
@@ -96,66 +92,79 @@ export function KnowledgeContactsPane() {
           <p className="text-sm text-ink-soft">{t("settings.knowledgeContactsEmpty")}</p>
         )}
         {contacts.length > 0 && (
-          <div className="space-y-1">
-            {contacts.map((c: ContactRow) => {
-              const expanded = expandedId === c.id;
-              return (
-                <div key={c.id} className="border-b border-sky-light/30 last:border-0">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expanded ? null : c.id)}
-                    className="w-full text-left py-2.5 pr-4 flex items-center gap-3 hover:bg-sky-pale/30 rounded transition-colors"
-                  >
-                    <span className="text-xs text-ink-soft w-4 text-center shrink-0">
-                      {expanded ? "▾" : "▸"}
-                    </span>
-                    <span className="text-sm font-medium text-ink">
-                      {c.display_name || c.name}
-                    </span>
-                    {c.role && (
-                      <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${
-                        c.role === "admin" ? "bg-amber-100 text-amber-800" :
-                        c.role === "assigned" ? "bg-sky-100 text-sky-800" :
-                        "bg-ink-soft/10 text-ink-soft"
-                      }`}>{c.role}</span>
-                    )}
-                    <span className="flex-1" />
-                    <span className="text-xs text-ink-soft/60 hidden sm:inline">
-                      {formatTimestamp(c.last_seen_at)}
-                    </span>
-                    {!expanded && c.notes && (
-                      <span className="text-xs text-ink-soft/50 max-w-xs truncate hidden sm:inline">
-                        {truncateNotes(c.notes)}
-                      </span>
-                    )}
-                  </button>
-                  {expanded && (
-                    <div className="px-7 pb-3">
-                      <div className="rounded-lg bg-sky-pale/30 border border-sky-light/20 p-3">
-                        <div className="flex items-center gap-2 text-xs text-ink-soft mb-2">
-                          <span className="font-mono">#{c.id}</span>
-                          <span>·</span>
-                          <span>{c.source || "manual"}</span>
-                          <span>·</span>
-                          <span>{formatTimestamp(c.last_seen_at)}</span>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+                <th className="py-2 pr-3 font-medium">{t("settings.knowledgeContactsColumnPerson")}</th>
+                <th className="py-2 pr-3 font-medium w-24">{t("settings.tableHeaderRole")}</th>
+                <th className="py-2 pr-3 font-medium w-40 hidden sm:table-cell">{t("settings.knowledgeContactsColumnLastSeen")}</th>
+                <th className="py-2 font-medium w-10 text-right">{t("settings.tableHeaderAction")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contacts.map((c: ContactRow) => (
+                <>
+                  <tr key={c.id} className="border-b border-sky-light/20 hover:bg-sky-pale/10 transition-colors">
+                    <td className="py-2.5 pr-3">
+                      <span className="font-medium text-ink">{c.display_name || c.name}</span>
+                      <span className="text-ink-soft/40 font-mono text-[11px] ml-1.5">#{c.id}</span>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      {c.role && (
+                        <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${
+                          c.role === "admin" ? "bg-amber-100 text-amber-800" :
+                          c.role === "assigned" ? "bg-sky-100 text-sky-800" :
+                          "bg-ink-soft/10 text-ink-soft"
+                        }`}>{c.role}</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-3 hidden sm:table-cell">
+                      <span className="text-xs text-ink-soft/60">{formatTimestamp(c.last_seen_at)}</span>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDetailId(detailId === c.id ? null : c.id)}
+                        title={t("settings.knowledgeContactsDetail")}
+                        className={`p-1 rounded transition-colors ${
+                          detailId === c.id
+                            ? "text-ocean bg-sky-pale/30"
+                            : "text-ink-soft hover:text-ink hover:bg-white/60"
+                        }`}
+                      >
+                        <IconEye className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                  {detailId === c.id && (
+                    <tr key={`${c.id}-detail`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                      <td colSpan={4} className="p-0">
+                        <div className="px-4 py-3">
+                          <div className="flex items-center gap-2 text-xs text-ink-soft mb-2">
+                            <span className="font-mono">#{c.id}</span>
+                            <span>·</span>
+                            <span>{c.source || "manual"}</span>
+                            <span>·</span>
+                            <span>{formatTimestamp(c.last_seen_at)}</span>
+                          </div>
+                          {c.notes ? (
+                            <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">
+                              {c.notes}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-ink-soft italic">
+                              {t("settings.knowledgeContactsEmpty")}
+                            </p>
+                          )}
+                          <TokenUsageBlock uid={c.id} />
                         </div>
-                        {c.notes ? (
-                          <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">
-                            {c.notes}
-                          </p>
-                        ) : (
-                          <p className="text-sm text-ink-soft italic">
-                            {t("settings.knowledgeContactsEmpty")}
-                          </p>
-                        )}
-                        <TokenUsageBlock uid={c.id} />
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   )}
-                </div>
-              );
-            })}
-          </div>
+                </>
+              ))}
+            </tbody>
+          </table>
         )}
       </ConsoleCard>
     </div>
