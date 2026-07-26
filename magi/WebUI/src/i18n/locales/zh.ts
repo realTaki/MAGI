@@ -131,7 +131,7 @@ export default {
     // its own copy so the operator knows which side they're
     // reading without seeing the word "工具列表" three times
     // in a row.
-    toolsBuiltInHeading: "内置工具",
+    toolsBuiltInHeading: "工具列表",
     toolsMcpHeading: "MCP 工具",
     toolsBuiltInTip: "MAGI 自带的固定工具列表 — file / chat / search / memory / contacts / 定时任务 / 待办。更新要重新构建 MAGI。",
     toolsMcpTip: "通过 mcp.json 配置的 MCP 服务器，每个服务器暴露的工具自动出现在这里。修改后重启节点生效。",
@@ -329,6 +329,7 @@ export default {
     remindersHint: "还没有提醒。EVE 会在 C5 上线后投递提醒（同时支持 WebUI 和 Telegram）。",
     emailHint: "还没有邮件。邮件通道还没接上 — 计划在 Phase 2。",
     tasksHint: "还没有定时任务。EVE 会在 C5 上线后排队并汇报执行情况。",
+    tasksDesc: "按触发方式 + 时间到点跑任务，每次会话独立 — operator 在 chat 历史能看到每一次的回复。",
     reportsHint: "还没有日报。主动引擎会在 C5 上线后自动生成。",
     // CHAT_ACTIONS pane hint copy.
     newChatHint: "选一个联系人开始一段新的对话。C3 先接上 Telegram 通道；这个入口要等 C6 派发至少一个 EVE 之后才真正可用。",
@@ -411,6 +412,9 @@ export default {
     recentCompleted: "最近完成",
     complete: "完成",
     goToSettings: "去设置",
+    priorityHigh: "高",
+    dueDate: "截止",
+    overdue: "已逾期",
   },
   persona: {
     title: "个性（SOUL.md）",

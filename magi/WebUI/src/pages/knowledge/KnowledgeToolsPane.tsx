@@ -6,7 +6,7 @@ import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 
 export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
-  type ToolRow = { name: string; description: string; prop_count: number; source: "builtin" | "mcp"; allowed_roles: string[] };
+  type ToolRow = { name: string; description: string; source: "builtin" | "mcp"; allowed_roles: string[] };
   type ToolListResponse = { items: ToolRow[]; total: number };
   const t = useT();
   const title = t(props.source === "builtin" ? "settings.toolsBuiltInHeading" : "settings.toolsMcpHeading");
@@ -34,7 +34,6 @@ export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
               <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.toolsAllowedRoles")}</th>
-              <th className="py-2 font-medium w-28 text-right">{t("settings.toolsInputs")}</th>
             </tr></thead>
             <tbody>{filtered.map((tool) => (
               <tr key={tool.name} className="border-b border-sky-light/30 last:border-0">
@@ -48,7 +47,6 @@ export function KnowledgeToolsPane(props: { source: "builtin" | "mcp" }) {
                       <span key={role} className="inline-block rounded border border-sky-light/60 bg-sky-pale/40 px-1.5 py-0.5 font-mono text-[10px] text-ink" title={t("settings.toolsAllowedRolesChipTitle").replace("{role}", role)}>{role}</span>
                     ))}</span>
                   )}</td>
-                <td className="py-2 text-right text-xs text-ink-soft">{tool.prop_count > 0 ? `${tool.prop_count}` : t("settings.toolsInputsNone")}</td>
               </tr>
             ))}</tbody>
           </table>

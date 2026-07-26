@@ -294,6 +294,7 @@ export default {
     remindersHint: "リマインダーはありません。EVE は C5 公開後にここで（および Telegram で）リマインダーを配信します。",
     emailHint: "メールはまだありません。メールチャンネルは未接続 — Phase 2 で対応予定。",
     tasksHint: "スケジュールドタスクはまだありません。EVE は C5 公開後にタスクをキューに入れ、実行状況を報告します。",
+    tasksDesc: "トリガー種別と時刻指定でタスクを実行。各実行は独立したセッション — オペレーターはチャット履歴で毎回の返信を確認できます。",
     reportsHint: "日報はまだありません。C5 公開後にプロアクティブエンジンが自動生成します。",
     newChatHint: "連絡先を選んで新しい会話を開始します。C3 でまず Telegram チャンネルを接続；この入口は C6 で EVE が配備されてから本格運用されます。",
     searchHint: "すべての会話を全文検索します。インデックスは EVE ローカルの SQLite（FTS5 + trigram トークナイザ）にあり、ヒットしたメッセージの会話を直接開けます。",
@@ -374,6 +375,9 @@ export default {
     recentCompleted: "最近完了",
     complete: "完了",
     goToSettings: "設定を開く",
+    priorityHigh: "高",
+    dueDate: "期限",
+    overdue: "期限切れ",
   },
   persona: {
     title: "ペルソナ (SOUL.md)",

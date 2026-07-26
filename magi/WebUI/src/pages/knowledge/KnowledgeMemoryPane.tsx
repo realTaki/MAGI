@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch, qk } from '../../lib/queryClient';
 import ConsoleCard from '../../components/ConsoleCard';
+import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 
 // ... (kept unchanged for brevity)
@@ -38,9 +39,10 @@ export function KnowledgeMemoryPane() {
   const isLoading = query.isLoading;
   return (
     <div className="space-y-4">
-      <div><h2 className="text-lg font-semibold text-ink">{t("settings.knowledgeMemoryHeading")}</h2>
-      <p className="mt-1 text-sm text-ink-soft">{t("settings.knowledgeMemoryIntro")}</p></div>
-      <ConsoleCard title={t("settings.knowledgeMemoryHeading")}>
+      <ConsoleCard
+        title={t("settings.knowledgeMemoryHeading")}
+        headerRight={<InfoTip text={t("settings.knowledgeMemoryIntro")} />}
+      >
         {loadError && <p className="form-error">✗ {loadError}</p>}
         {isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
         {!isLoading && memory.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeMemoryEmpty")}</p>}

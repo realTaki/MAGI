@@ -294,6 +294,7 @@ export default {
     remindersHint: "No reminders. EVEs will deliver them here (and on TG) once C5 lands.",
     emailHint: "No email yet. The mail channel isn't wired yet — Phase 2.",
     tasksHint: "No scheduled tasks. EVEs will queue and report on them once C5 lands.",
+    tasksDesc: "Tasks run on schedule by trigger type. Each run is an independent session — the operator sees every reply in chat history.",
     reportsHint: "No daily reports yet. The proactive engine will generate them once C5 lands.",
     newChatHint: "Pick a contact and start a fresh conversation. C3 wires the TG channel up first; this entry point becomes useful once at least one EVE is dispatched (C6).",
     searchHint: "Full-text search across every conversation with an EVE. The index lives in EVE's local SQLite (FTS5 + trigram tokenizer); the result is a deep link into the matching thread.",
@@ -374,6 +375,9 @@ export default {
     recentCompleted: "Recently completed",
     complete: "Done",
     goToSettings: "Open settings",
+    priorityHigh: "High",
+    dueDate: "Due",
+    overdue: "Overdue",
   },
   persona: {
     title: "Persona (SOUL.md)",

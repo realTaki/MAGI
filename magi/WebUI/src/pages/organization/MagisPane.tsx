@@ -90,13 +90,13 @@ export function MagisPane() {
       <ConsoleCard
         title={t("magis.paneTitle")}
         headerRight={
-          <div className="flex items-center gap-2">
+          <>
             <InfoTip text={t("magis.paneDesc")} />
             <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
               onClick={() => { setAddOpen((o) => !o); setAddError(null); }}>
               {addOpen ? t("common.cancel") : `+ ${t("magis.createHeading")}`}
             </button>
-          </div>
+          </>
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}

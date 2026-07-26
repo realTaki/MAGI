@@ -93,6 +93,7 @@ def _serialize(a: ActionItem) -> "ActionItemOut":
         description=a.description,
         target_url=a.target_url,
         priority=a.priority,
+        due_date=_iso(a.due_date),
         source=a.source,
         created_at=_iso(a.created_at) or "",
         completed_at=_iso(a.completed_at),
@@ -110,6 +111,7 @@ class ActionItemOut(BaseModel):
     description: str | None = None
     target_url: str | None = None
     priority: str = "normal"
+    due_date: str | None = None
     source: str = "system"
     created_at: str
     completed_at: str | None = None

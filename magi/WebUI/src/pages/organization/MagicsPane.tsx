@@ -109,13 +109,13 @@ export function MagicsPane() {
       <ConsoleCard
         title={t("magics.paneTitle")}
         headerRight={
-          <div className="flex items-center gap-2">
+          <>
             <InfoTip text={t("magics.paneDesc")} />
             <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
               onClick={() => { setCreateOpen((o) => !o); setCreateError(null); }}>
               {createOpen ? t("common.cancel") : `+ ${t("magics.createHeading")}`}
             </button>
-          </div>
+          </>
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}

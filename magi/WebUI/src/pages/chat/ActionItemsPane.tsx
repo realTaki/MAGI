@@ -25,6 +25,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { apiFetch, qk } from "../../lib/queryClient";
 
@@ -35,6 +36,7 @@ type ActionItem = {
   description: string | null;
   target_url: string | null;
   priority: "normal" | "high";
+  due_date: string | null;
   source: "system" | "eve" | "user";
   created_at: string;
   completed_at: string | null;
@@ -70,6 +72,32 @@ function formatRelative(
   const days = Math.round(hours / 24);
   if (days < 30) return `${days} 天前`;
   return iso.slice(0, 10);
+}
+
+/** Format an ISO UTC datetime into a compact date (MM-DD or
+ *  YYYY-MM-DD if the year differs from now). Returns "" on
+ *  null or unparseable input. */
+function formatDateOnly(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  if (d.getFullYear() !== now.getFullYear()) {
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+  return `${mm}-${dd}`;
+}
+
+/** Returns true if the given ISO date is before today (UTC). */
+function isOverdue(iso: string | null): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return d < today;
 }
 
 export default function ActionItemsPane() {
@@ -157,11 +185,9 @@ export default function ActionItemsPane() {
   if (error && data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40">
+        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
-          <p className="text-xs text-ink-soft">
-            {t("actionItems.description")}
-          </p>
+          <InfoTip text={t("actionItems.description")} />
         </div>
         <div className="flex-1 flex items-center justify-center px-6">
           <p className="form-error">✗ {error}</p>
@@ -173,8 +199,9 @@ export default function ActionItemsPane() {
   if (data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40">
+        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
+          <InfoTip text={t("actionItems.description")} />
         </div>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-sm text-ink-soft">Loading…</p>
@@ -185,11 +212,9 @@ export default function ActionItemsPane() {
 
   return (
     <div className="flex flex-col h-[560px]">
-      <div className="px-6 py-3 border-b border-sky-light/40">
+      <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
         <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
-        <p className="text-xs text-ink-soft">
-          给你的待办。第一次进入 dashboard 时按"OK, got it"完成上线的提醒在这里。
-        </p>
+        <InfoTip text={t("actionItems.description")} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
@@ -204,10 +229,23 @@ export default function ActionItemsPane() {
               className="rounded-lg border border-sky-light/40 bg-white/60 p-4 flex items-start gap-3"
             >
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-medium text-ink">{it.title}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-ink">{it.title}</h3>
+                  {it.priority === "high" && (
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700">
+                      {t("actionItems.priorityHigh")}
+                    </span>
+                  )}
+                </div>
                 {it.description && (
                   <p className="mt-1 text-xs text-ink-soft">
                     {it.description}
+                  </p>
+                )}
+                {it.due_date && (
+                  <p className={`mt-1 text-xs ${isOverdue(it.due_date) ? "text-red-600 font-medium" : "text-ink-soft"}`}>
+                    {t("actionItems.dueDate")}: {formatDateOnly(it.due_date)}
+                    {isOverdue(it.due_date) ? ` · ${t("actionItems.overdue")}` : ""}
                   </p>
                 )}
               </div>

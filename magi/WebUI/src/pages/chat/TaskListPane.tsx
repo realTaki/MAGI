@@ -47,6 +47,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { TaskFormDrawer } from "./TaskFormDrawer";
 import { RunsHistoryDrawer } from "./RunsHistoryDrawer";
+import { InfoTip } from "../../components/InfoTip";
+import { useT } from "../../i18n/index";
 import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 
 
@@ -160,6 +162,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 export default function TaskListPane() {
+  const t = useT();
   const [filter, setFilter] = useState<Filter>("all");
   const [rows, setRows] = useState<TaskRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -392,18 +395,17 @@ export default function TaskListPane() {
     // long lists.
     <div className="flex flex-col h-full min-h-0 space-y-4">
       <div className="shrink-0 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-ink">定时任务</h2>
-          <p className="mt-1 text-sm text-ink-soft">
-            按触发方式 + 时间到点跑任务，每次会话独立 — operator 在 chat 历史能看到每一次的回复。
-            {systemTz && (
-              <span className="ml-2 text-xs text-ink-soft">
-                （时区：<span className="font-mono">{systemTz}</span>，去
-                <a href="/chat/scheduled-tasks?tab=settings" className="text-sky-700 ml-1">设置</a>
-                改）
-              </span>
-            )}
-          </p>
+          <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-ink">{t("sidebar.tasks")}</h2>
+            <InfoTip text={t("sidebar.tasksDesc")} />
+          </div>
+          {systemTz && (
+            <p className="mt-1 text-xs text-ink-soft">
+              时区：<span className="font-mono">{systemTz}</span>，去
+              <a href="/chat/scheduled-tasks?tab=settings" className="text-sky-700 ml-1">设置</a>改
+            </p>
+          )}
         </div>
         <button
           type="button"

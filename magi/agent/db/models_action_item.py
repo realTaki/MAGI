@@ -92,6 +92,13 @@ class ActionItem(Base):
     priority: Mapped[str] = mapped_column(
         String(16), nullable=False, default="normal"
     )
+    # Optional due date — when the to-do is expected to be
+    # completed. Null means "no deadline / whenever". C4
+    # EVE-driven rows can use this for time-sensitive
+    # follow-ups; operator-authored rows may leave it null.
+    due_date: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     # Who created the row. "system" for save_admin /
     # similar, "eve" when C4 EVE-driven rows land, "user"
     # for future operator-authored reminders. Useful for
@@ -135,6 +142,8 @@ class ActionItem(Base):
         return (
             f"ActionItem(id={self.id}, kind={self.kind!r}, "
             f"uid={self.uid}, "
+            f"priority={self.priority!r}, "
+            f"due_date={self.due_date}, "
             f"completed={self.completed_at is not None}, "
             f"dismissed={self.dismissed})"
         )

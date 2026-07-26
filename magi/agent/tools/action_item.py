@@ -146,6 +146,7 @@ def _serialize(item: ActionItem) -> dict[str, Any]:
         "description": item.description,
         "target_url": item.target_url,
         "priority": item.priority,
+        "due_date": _iso(item.due_date),
         "source": item.source,
         "created_at": _iso(item.created_at) or "",
         "completed_at": _iso(item.completed_at),
@@ -167,8 +168,9 @@ class AddActionItemTool(Tool):
         "'记得下周要 Y'. Returns the created row's id. "
         "Inputs: title (required, ≤200 chars), "
         "description (optional, ≤1000 chars), priority "
-        "('normal' default / 'high'), target_url "
-        "(optional in-app link). Each call creates one "
+        "('normal' default / 'high'), due_date "
+        "(optional ISO date like '2026-07-30'), "
+        "target_url (optional in-app link). Each call creates one "
         "row; close with complete_action_item."
     )
     input_schema = {
@@ -199,6 +201,19 @@ class AddActionItemTool(Tool):
                     "sparingly — the dashboard doesn't "
                     "have a colour differentiation yet, "
                     "it's just an ordering key."
+                ),
+            },
+            "due_date": {
+                "type": "string",
+                "description": (
+                    "Optional deadline in ISO date "
+                    "format ('YYYY-MM-DD' or "
+                    "'YYYY-MM-DDTHH:MM'). Null / "
+                    "omitted means 'no deadline'. "
+                    "The dashboard shows it alongside "
+                    "the title; past-due items remain "
+                    "visible — the operator dismisses "
+                    "them manually."
                 ),
             },
             "target_url": {
@@ -246,6 +261,29 @@ class AddActionItemTool(Tool):
                 f"target_url is too long ({len(target_url)} > 500)"
             )
 
+        due_date = None
+        raw_due = kwargs.get("due_date")
+        if raw_due is not None and str(raw_due).strip():
+            raw = str(raw_due).strip()
+            # Accept YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS] as
+            # lenient date parsing. We don't validate
+            # calendar correctness — the ORM column is
+            # nullable; a malformed date that parses to
+            # NaN will be silently set to None.
+            from datetime import datetime as dt
+            try:
+                # Try ISO datetime first
+                due_date = dt.fromisoformat(raw)
+            except ValueError:
+                try:
+                    # Fallback: date-only
+                    due_date = dt.strptime(raw, "%Y-%m-%d")
+                except ValueError:
+                    return _err(
+                        f"due_date must be a valid date "
+                        f"(YYYY-MM-DD), got {raw!r}"
+                    )
+
         with open_session() as db:
             item = ActionItem(
                 uid=int(ctx.uid),
@@ -260,6 +298,7 @@ class AddActionItemTool(Tool):
                 description=description,
                 target_url=target_url,
                 priority=priority,
+                due_date=due_date,
                 source="llm",
             )
             db.add(item)

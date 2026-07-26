@@ -22,11 +22,13 @@ export default function ConsoleCard(props: {
   return (
     <div className="glass-card p-5">
       {props.title && (
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-ocean">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-ocean shrink-0">
             {props.title}
           </h2>
-          {props.headerRight}
+          {props.headerRight && (
+            <div className="flex items-center gap-2 shrink-0">{props.headerRight}</div>
+          )}
         </div>
       )}
       <div className={props.title ? "mt-3" : ""}>{props.children}</div>
