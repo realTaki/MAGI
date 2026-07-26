@@ -49,19 +49,13 @@ VALID_ROLES = ("adam", "eve")
 VALID_CHANNELS = (Channel.WEBUI, "telegram", Channel.TG)
 VALID_STATE_BACKENDS = ("postgres", "sqlite", "auto")
 
-# Base channel bundle when ``MAGI_CHANNELS`` is unset. The ``run()``
-# function expands this with auto-detected channels (TG if bot token is
-# saved, etc.). An explicit ``MAGI_CHANNELS`` overrides this completely.
-_ROLE_DEFAULT_CHANNELS: dict[str, tuple[str, ...]] = {
-    "adam": (Channel.WEBUI,),
-    "eve": ("telegram",),
-}
-
-# Keys in the ``settings`` table whose presence signals a channel
-# should be auto-enabled: ``setting_key → channel_name``.
-_AUTO_DETECT_SETTINGS: dict[str, str] = {
-    "telegram.bot_token": "telegram",
-}
+# Channel enable/disable state lives in ``settings.channels.enabled``
+# (a JSON array).  This is the single source of truth — no
+# MAGI_CHANNELS env var, no auto-detection heuristics.  The onboarding
+# flow and Settings → Channels card both write here; the node reads it.
+# See also :func:`_read_channels_from_db` and
+# :func:`_write_channels_to_db`.
+_CHANNELS_SETTINGS_KEY = "channels.enabled"
 
 
 # Channel → settings-key the wizard writes when the operator
@@ -119,30 +113,11 @@ class NodeConfig:
                 f"MAGI_NODE_ROLE must be one of {VALID_ROLES!r}, got {role!r}"
             )
 
-        channels_raw = os.environ.get("MAGI_CHANNELS", "").strip()
-        if channels_raw:
-            channels = tuple(
-                c.strip().lower() for c in channels_raw.split(",") if c.strip()
-            )
-        else:
-            # ``MAGI_CHANNELS`` unset — start with the role's
-            # default bundle (Adam → webui, Eve → telegram).
-            # The wizard (save-bot step) is the source of
-            # truth for which external channels are live at
-            # runtime; node boot only handles webui.
-            channels = _ROLE_DEFAULT_CHANNELS[role]
-
-        unknown = [c for c in channels if c not in VALID_CHANNELS]
-        if unknown:
-            raise ValueError(
-                f"MAGI_CHANNELS contains unknown channel(s) {unknown!r}; "
-                f"valid: {VALID_CHANNELS!r}"
-            )
-
-        host = port = None
-        if Channel.WEBUI in channels:
-            host = os.environ.get("MAGI_HOST", "0.0.0.0")
-            port = int(os.environ.get("MAGI_PORT", "42069"))
+        # Channels are read from the DB (``settings.channels.enabled``),
+        # not from an env var.  The ``channels`` field here is a
+        # placeholder; the real list is resolved by :func:`run`.
+        host = os.environ.get("MAGI_HOST", "0.0.0.0")
+        port = int(os.environ.get("MAGI_PORT", "42069"))
 
         # ``state_dir`` belongs to the node, not to any specific channel —
         # Adam uses it for SQLite state (small / dev), Eve for local working
@@ -150,15 +125,9 @@ class NodeConfig:
         # working directory (matches Agent convention).
         state_dir = require_state_dir()
 
-        uid = None
-        bot_token_set = False
-        if "telegram" in channels:
-            uid = os.environ.get("MAGI_UID")
-            bot_token_set = bool(os.environ.get("MAGI_BOT_TOKEN"))
-
         return cls(
             role=role,
-            channels=channels,
+            channels=(),
             shared_secret_set=bool(os.environ.get("MAGI_SHARED_SECRET")),
             adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:42069"),
             log_level=os.environ.get("MAGI_LOG_LEVEL", "info"),
@@ -166,8 +135,8 @@ class NodeConfig:
             host=host,
             port=port,
             reload=os.environ.get("MAGI_RELOAD", "0") == "1",
-            uid=uid,
-            bot_token_set=bot_token_set,
+            uid=None,
+            bot_token_set=False,
             state_dir=state_dir,
         )
 
@@ -308,25 +277,12 @@ def run() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    # Auto-detect configured IM channels from saved credentials
-    # (e.g. TG bot token → enable telegram). This only runs when
-    # MAGI_CHANNELS was NOT explicitly set — an explicit value is
-    # taken verbatim. Auto-detection ensures the onboarding flow is
-    # the single source of truth: save a bot token → TG lights up on
-    # the next restart without editing .env.
-    channels = list(cfg.channels)
-    if not os.environ.get("MAGI_CHANNELS", "").strip():
-        from magi.agent.db.settings import state_get
-        for setting_key, channel_name in _AUTO_DETECT_SETTINGS.items():
-            if channel_name not in channels:
-                if state_get(cfg.state_dir, setting_key):
-                    channels.append(channel_name)
-                    logger.info(
-                        "auto-enabled channel %r (found %r in settings)",
-                        channel_name, setting_key,
-                    )
+    # Read channel enable/disable state from the DB
+    # (``settings.channels.enabled``).  First boot seeds
+    # the key so there's always a value after onboarding.
+    channels = _read_channels_from_db(cfg.state_dir)
     if not channels:
-        logger.warning("no channels enabled (MAGI_CHANNELS is empty); exiting")
+        logger.warning("no channels enabled; exiting")
         return
 
     # Launch non-blocking channels first, THEN blocking ones.
@@ -454,6 +410,58 @@ def _launch_channel(name: str, cfg: NodeConfig) -> None:
         logger.error("no launcher registered for channel %r", name)
         return
     launcher(cfg)
+
+
+# -- DB-driven channel state -----------------------------------------------
+
+def _read_channels_from_db(state_dir: str) -> list[str]:
+    """Return the enabled-channels list from ``settings.channels.enabled``.
+
+    On first boot (key absent), seeds [``webui``] — the control plane is
+    always on.  The operator can then toggle TG on via the Settings →
+    Channels card.
+    """
+    from magi.agent.db.settings import state_get, state_set
+    raw = state_get(state_dir, _CHANNELS_SETTINGS_KEY)
+    if not raw:
+        # Seed on first boot
+        default = [Channel.WEBUI]
+        state_set(state_dir, _CHANNELS_SETTINGS_KEY, json.dumps(default))
+        return default
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [c for c in parsed if isinstance(c, str) and c in VALID_CHANNELS]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Corrupt value — fix with safe default
+    default = [Channel.WEBUI]
+    state_set(state_dir, _CHANNELS_SETTINGS_KEY, json.dumps(default))
+    return default
+
+
+def start_channel(name: str, state_dir: str) -> None:
+    """Start a single channel at runtime (no restart needed)."""
+    if name == "telegram":
+        from magi.channels.telegram.bot import start_bot
+        start_bot(state_dir)
+
+
+def stop_channel(name: str) -> None:
+    """Stop a single channel at runtime."""
+    if name == "telegram":
+        from magi.channels.telegram.bot import stop_bot
+        stop_bot()
+
+
+def is_channel_running(name: str) -> bool:
+    """Check whether a channel is currently active."""
+    if name == "telegram":
+        from magi.channels.telegram.bot import is_running
+        return is_running()
+    if name == Channel.WEBUI:
+        return True  # WebUI can't be stopped at runtime
+    return False
 
 
 # ----------------------------------------------------------------------

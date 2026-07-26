@@ -64,6 +64,8 @@ _telegram_bot_instance: "telegram.Bot | None" = None
 _telegram_bot_lock = threading.Lock()
 _telegram_start_lock = threading.Lock()
 _telegram_bot_thread: threading.Thread | None = None
+_telegram_app: "Application | None" = None
+_telegram_shutdown_event: "asyncio.Event | None" = None
 
 
 def set_telegram_bot(bot) -> None:
@@ -948,31 +950,18 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     application.add_handler(MessageHandler(filters.ALL, _on_message))
 
     async def _run_forever() -> None:
+        global _telegram_app, _telegram_shutdown_event
+        _telegram_shutdown_event = asyncio.Event()
         try:
             await application.initialize()
         except RuntimeError as e:
-            # ``Application.initialize()`` raises
-            # ``RuntimeError("This Updater is already running!")``
-            # when a previous worker (the pre-reload process)
-            # left an Updater bound on a now-defunct loop.
-            # The other process's daemon thread is gone, but
-            # PTB's per-process Updater state lingers in the
-            # module re-imported copy. The safe response is
-            # to silently exit — the other worker (if still
-            # alive) already has a healthy polling loop, and
-            # a re-login will re-issue this daemon spawn on
-            # the now-fresh process.
             logger.warning(
                 "telegram _run_forever: initialize() raised %s — "
                 "another worker likely already owns the Updater",
                 e,
             )
             return
-        # ``application.bot`` is the underlying ``telegram.Bot``
-        # — register it once for the cross-thread access path
-        # (``get_telegram_bot()`` consults this from the cron
-        # runner thread). The clear on shutdown ensures a
-        # future re-bind doesn't hold a stale reference.
+        _telegram_app = application
         set_telegram_bot(application.bot)
         try:
             await application.start()
@@ -980,9 +969,9 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
                 poll_interval=1.0,
                 timeout=10,
             )
-            # Park on an Event that never gets set. The loop exits when the
-            # process is shutting down (which kills the daemon thread).
-            await asyncio.Event().wait()
+            # Park until shutdown is requested (via stop_bot)
+            # or the process exits (daemon thread killed).
+            await _telegram_shutdown_event.wait()
         except RuntimeError as e:
             # ``Updater already running`` again — the previous
             # worker's Updater was still tied to its asyncio
@@ -1014,3 +1003,28 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         extra={"username": username, "state_dir": state_dir},
     )
     return thread
+
+
+def stop_bot() -> None:
+    """Gracefully stop the Telegram bot polling loop.
+
+    Idempotent — safe to call when no bot is running.
+    The daemon thread exits once the asyncio loop unparks
+    from the shutdown event.
+    """
+    global _telegram_bot_thread, _telegram_app, _telegram_shutdown_event
+    with _telegram_start_lock:
+        if _telegram_shutdown_event is not None:
+            _telegram_shutdown_event.set()
+        if _telegram_bot_thread is not None and _telegram_bot_thread.is_alive():
+            _telegram_bot_thread.join(timeout=5)
+        _telegram_bot_thread = None
+        _telegram_app = None
+        _telegram_shutdown_event = None
+        clear_telegram_bot()
+    logger.info("telegram bot stopped")
+
+
+def is_running() -> bool:
+    """Return True when the TG bot polling thread is alive."""
+    return _telegram_bot_thread is not None and _telegram_bot_thread.is_alive()

@@ -94,7 +94,6 @@ export default function SettingsTab(props: SettingsTabProps) {
       >
         {section === "channels" && (
           <SettingsChannelsCard
-            data={props.data}
             onBotUpdated={props.onBotUpdated}
           />
         )}

@@ -36,10 +36,9 @@ services:
       MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
       MAGI_NODE_ROLE: adam
       MAGI_RELOAD: ${MAGI_RELOAD:-0}
-      # Empty by default — role-specific defaults kick in (Adam → webui,
-      # EVE → telegram). Override in .env to enable both on Adam for
-      # the first-touch bot test, or to add email/calendar later.
-      MAGI_CHANNELS: ${MAGI_CHANNELS:-}
+      # Channel enable/disable is now DB-driven (settings.channels.enabled).
+      # No MAGI_CHANNELS env var — the Settings → Channels card is the
+      # single source of truth.
       # No MCP secrets here — secrets for upstream services
       # (e.g. the MiniMax API key consumed by the MiniMax MCP)
       # are configured via the WebUI Settings tab once MCP

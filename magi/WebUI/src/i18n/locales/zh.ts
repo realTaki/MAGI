@@ -165,7 +165,7 @@ export default {
     // Card subtitles / descriptions.
     registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 SOUL.md 决定启用哪些。",
     directoryDesc: "联系人列表：成员与 admin，可管理角色、Provider 和 API Key。",
-    channelsDesc: "TG / WebUI / 未来的 Email / IM 通道的开关与配置。",
+    channelsDesc: "各 IM 通道的启用/停用开关。切换即时生效，无需重启。",
     webuiAccessDesc: "谁能登录 WebUI 控制台 — 按 admin / assigned / guest 控制。",
     onboardingDesc: "重新跑一次初始化向导（会重置已保存的 bot token + admin 列表）。",
     toolLoopDesc: "agent 循环在一次 /send 内最多调工具的次数。超过会强制结束当前轮。",
@@ -199,6 +199,8 @@ export default {
     channelWechat: "微信",
     channelLark: "飞书",
     channelTeams: "Teams",
+    channelNoCredentials: "缺凭据",
+    channelTgNoToken: "Telegram 通道已启用，但还没设置 Bot Token。请在下方填入 Token 以完成连接。",
     // -- bot token field ----------------------------------------------------
     botTokenLabel: "新的 Telegram Bot Token",
     botTokenPlaceholder: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",

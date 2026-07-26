@@ -162,6 +162,10 @@ def create_app() -> FastAPI:
     # immediately, no restart.
     from magi.channels.webui.api import tg_settings
     app.include_router(tg_settings.router, prefix="/api")
+    # Channel management — list enabled channels, toggle them
+    # on/off at runtime. Replaces the MAGI_CHANNELS env var.
+    from magi.channels.webui.api import channels as channels_api
+    app.include_router(channels_api.router, prefix="/api")
     # System settings — per-MAGI config (timezone today;
     # future defaults). The token-bill aggregation endpoint
     # reads the timezone on every call so a Save here is
