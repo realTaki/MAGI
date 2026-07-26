@@ -328,6 +328,7 @@ export default {
     columnParent: "Parent Council",
     columnAdam: "ADAM",
     columnChildren: "Children",
+    showChildren: "View children",
     columnActions: "Actions",
     empty: "No MAGI councils yet. Create one to get started.",
     createNameLabel: "Council Name",

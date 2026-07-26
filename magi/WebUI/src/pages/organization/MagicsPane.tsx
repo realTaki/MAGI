@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
-import { IconCheck, IconDelete, IconEdit, IconX } from "../../components/icons";
+import { IconCheck, IconDelete, IconEdit, IconEye, IconX } from "../../components/icons";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
@@ -63,6 +63,20 @@ export function MagicsPane() {
   const adamByMagic = useMemo(() => {
     const m = new Map<number, MagiBrief>(); for (const g of magis) { if (g.magic_position === "adam") m.set(g.magic_id, g); } return m;
   }, [magis]);
+  // Children grouped by parent_id for the detail disclosure.
+  const childrenByParent = useMemo(() => {
+    const m = new Map<number, MAGICRow[]>();
+    for (const r of magics) {
+      if (r.parent_id != null) {
+        const list = m.get(r.parent_id) ?? [];
+        list.push(r);
+        m.set(r.parent_id, list);
+      }
+    }
+    for (const list of m.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+    return m;
+  }, [magics]);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const startEdit = (r: MAGICRow) => { setEditingId(r.id); setEditName(r.name); setEditParentId(r.parent_id != null ? String(r.parent_id) : ""); setEditError(null); };
   const cancelEdit = () => { setEditingId(null); setEditError(null); };
@@ -144,8 +158,7 @@ export function MagicsPane() {
                 <th className="py-2 pr-3 font-medium w-16">ID</th>
                 <th className="py-2 pr-3 font-medium w-28">Adam</th>
                 <th className="py-2 pr-3 font-medium w-16 text-right">成员</th>
-                <th className="py-2 font-medium w-16 text-right">子团体</th>
-                <th className="py-2 font-medium w-14" />
+                <th className="py-2 font-medium w-10" />
               </tr>
             </thead>
             <tbody>
@@ -154,9 +167,10 @@ export function MagicsPane() {
                 const adam = adamByMagic.get(r.id);
                 const prefix = r.depth > 0 ? "└ ".padStart(r.depth * 2 + 1, " ") : "";
                 return (
-                  <tr key={r.id} className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
+                  <>
+                    <tr key={r.id} className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
                     {isEdit ? (
-                      <td className="py-2 pr-3" colSpan={6}>
+                      <td className="py-2 pr-3" colSpan={5}>
                         <div className="flex items-center gap-2">
                           <input className="form-input text-sm py-1 px-2 w-40" value={editName} onChange={(e) => setEditName(e.target.value)} />
                           <select className="form-input text-sm py-1 px-2" value={editParentId} onChange={(e) => setEditParentId(e.target.value)}>
@@ -190,11 +204,21 @@ export function MagicsPane() {
                         <td className="py-2.5 pr-3 text-right">
                           <span className="text-xs text-ink-soft">{r.member_count || "—"}</span>
                         </td>
-                        <td className="py-2.5 text-right">
-                          <span className="text-xs text-ink-soft">{r.child_count || "—"}</span>
-                        </td>
                         <td className="py-2.5">
                           <div className="flex items-center gap-0.5 justify-end">
+                            {r.child_count > 0 && (
+                              <button type="button"
+                                onClick={() => setDetailId(detailId === r.id ? null : r.id)}
+                                title={t("magics.showChildren")}
+                                className={`p-1 rounded transition-colors ${
+                                  detailId === r.id
+                                    ? "text-ocean bg-sky-pale/30"
+                                    : "text-ink-soft hover:text-ink hover:bg-white/60"
+                                }`}
+                              >
+                                <IconEye className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             <button type="button" onClick={() => startEdit(r)} title={t("common.edit")}
                               className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
                               <IconEdit className="h-3.5 w-3.5" />
@@ -208,6 +232,19 @@ export function MagicsPane() {
                       </>
                     )}
                   </tr>
+                  {detailId === r.id && r.child_count > 0 && (
+                    <tr key={`${r.id}-children`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                      <td colSpan={5} className="p-0">
+                        <div className="px-4 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
+                          <span className="text-ink-soft/60">{t("magics.columnChildren")}:</span>
+                          {(childrenByParent.get(r.id) ?? []).map((ch) => (
+                            <span key={ch.id} className="font-medium text-ink">{ch.name}</span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 );
               })}
             </tbody>

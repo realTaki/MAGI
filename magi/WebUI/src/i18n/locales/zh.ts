@@ -365,6 +365,7 @@ export default {
     columnParent: "上级团体",
     columnAdam: "ADAM",
     columnChildren: "子团体",
+    showChildren: "查看子团体",
     columnActions: "操作",
     empty: "还没有 MAGI 团体。创建一个开始吧。",
     createNameLabel: "团体名称",

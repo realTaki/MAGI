@@ -328,6 +328,7 @@ export default {
     columnParent: "親 Council",
     columnAdam: "ADAM",
     columnChildren: "子 Council",
+    showChildren: "子 Council を表示",
     columnActions: "操作",
     empty: "まだ MAGI Council がありません。作成して始めましょう。",
     createNameLabel: "Council 名",
