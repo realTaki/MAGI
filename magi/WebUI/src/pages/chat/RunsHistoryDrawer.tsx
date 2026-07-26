@@ -5,11 +5,14 @@
  * assistant left). Fetches the task session via
  * ``GET /api/chat/sessions/{id}`` and overlays per-fire run
  * status from ``GET /api/tasks/{id}/runs``.
+ *
+ * Migrated to react-query: the Promise.all in the
+ * original ``useEffect`` collapses to two independent
+ * ``useQuery`` hooks (``useChatSession`` + ``useTaskRuns``)
+ * that fire in parallel and dedup across drawer re-opens.
  */
-import { useEffect, useState } from "react";
-
+import { useChatSession, useTaskRuns, type TaskRunRow } from "../../lib/queries";
 import { formatRunTimestamp } from "./TaskListPane";
-import type { TaskRunRow } from "./TaskListPane";
 
 export function RunsHistoryDrawer(props: {
   taskId: string;
@@ -23,53 +26,17 @@ export function RunsHistoryDrawer(props: {
   // bubbles left-aligned) so the operator's mental model
   // of "this is just a chat, the timer started it" holds
   // across both surfaces.
-  //
-  // Source: ``GET /api/chat/sessions/{id}`` returns the full
-  // message list for the task's session. The runner's
-  // task-creation flow allocates that session (channel =
-  // "task"); each cron fire appends one user-message (the
-  // contextual prompt) + the agent's reply, possibly with
-  // intermediate tool calls.
-  //
-  // We also fetch ``GET /api/tasks/{id}/runs`` and overlay
-  // each fire's status / latency next to the user-message
-  // that started it — that's how the operator spots a
-  // "成功" reply that didn't actually push to TG (the
-  // status pill shows success, the chat shows the agent's
-  // reply text, but a quick look at the channel cell on
-  // the table tells the operator whether the runner wired
-  // ``_tg_send_callback`` for that fire).
-  const sessionEnabled = props.sessionId !== null;
-  const [messages, setMessages] = useState<Array<{ message_id: string; role: string; ts: string; text: string }> | null>(null);
-  const [runs, setRuns] = useState<TaskRunRow[] | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const sessionQuery = useChatSession(props.sessionId);
+  const runsQuery = useTaskRuns(props.taskId);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [sessRes, runsRes] = await Promise.all([
-          sessionEnabled
-            ? fetch(`/api/chat/sessions/${props.sessionId}`, { credentials: "include" })
-            : null,
-          fetch(`/api/tasks/${props.taskId}/runs`, { credentials: "include" }),
-        ]);
-        if (sessRes && !sessRes.ok) throw new Error(`session ${sessRes.status}`);
-        if (!runsRes.ok) throw new Error(`runs ${runsRes.status}`);
-        const sess = sessRes ? await sessRes.json() as { messages: typeof messages; title: string | null } : null;
-        if (!cancelled) {
-          setMessages(sessionEnabled ? (sess?.messages ?? []) : []);
-          setSessionTitle(sessionEnabled ? (sess?.title ?? null) : null);
-          setRuns(await runsRes.json() as TaskRunRow[]);
-          setLoadError(null);
-        }
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [props.sessionId, props.taskId, sessionEnabled]);
+  const messages = sessionQuery.data?.messages ?? null;
+  const sessionTitle = sessionQuery.data?.title ?? null;
+  const runs = runsQuery.data ?? null;
+  // Combine the two query errors; first non-null wins.
+  const loadError =
+    (sessionQuery.error as Error | null)?.message ??
+    (runsQuery.error as Error | null)?.message ??
+    null;
 
   // Build a quick lookup: user-message ts → matching run
   // (the runner stamps the ChatMessage ts at the same

@@ -1,5 +1,10 @@
 import { useState } from 'react';
 import { useT } from '../../../i18n/index';
+import {
+  useSaveAdmin,
+  useSendAdminCode,
+  useVerifyAdminCode,
+} from '../../../lib/queries';
 
 // Local stand-ins — the canonical types live in
 // ../../onboardingTypes (and the AdminRow in the file the
@@ -25,6 +30,10 @@ export function Step2View(props: {
   onBack: () => void;
   onComplete: (data: OnboardingData) => void;
 }) {
+  const sendMut = useSendAdminCode();
+  const verifyMut = useVerifyAdminCode();
+  const saveMut = useSaveAdmin();
+
   // Hydrate the rows from any super admins already saved. We start
   // with those rows in the "verified" state — the user can still
   // remove them (which only affects what gets re-saved on Finish).
@@ -53,7 +62,6 @@ export function Step2View(props: {
       error: "",
     }));
   });
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   function addRow() {
@@ -84,13 +92,10 @@ export function Step2View(props: {
         const remainingIds = next
           .filter((r) => r.rowState === "verified" && r.telegramId.trim())
           .map((r) => r.telegramId.trim());
-        void fetch("/api/onboarding/save-admin", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tgids: remainingIds }),
-        }).catch(() => {
-          /* network errors are non-fatal; user can press Finish again */
-        });
+        // Fire-and-forget; the mutation is keyed on
+        // ``tgids`` so a stale snapshot of the list
+        // would still hit the right endpoint.
+        saveMut.mutate(remainingIds);
       }
       return next;
     });
@@ -108,12 +113,7 @@ export function Step2View(props: {
     }
     updateRow(row.id, { rowState: "sending-code", error: "" });
     try {
-      const res = await fetch("/api/onboarding/send-admin-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: telegramId }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
+      const data = await sendMut.mutateAsync(telegramId);
       if (data.ok) {
         updateRow(row.id, { rowState: "code-sent", error: "" });
       } else {
@@ -139,16 +139,7 @@ export function Step2View(props: {
     }
     updateRow(row.id, { rowState: "verifying-code", error: "" });
     try {
-      const res = await fetch("/api/onboarding/verify-admin-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: telegramId, code }),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        display_name?: string;
-        error?: string;
-      };
+      const data = await verifyMut.mutateAsync({ tgid: telegramId, code });
       if (data.ok) {
         updateRow(row.id, {
           rowState: "verified",
@@ -176,14 +167,10 @@ export function Step2View(props: {
       return;
     }
     setSaveError(null);
-    setSaving(true);
     try {
-      const res = await fetch("/api/onboarding/save-admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgids: verified.map((r) => r.telegramId.trim()) }),
-      });
-      const data = (await res.json()) as { ok: boolean; count?: number; error?: string };
+      const data = await saveMut.mutateAsync(
+        verified.map((r) => r.telegramId.trim()),
+      );
       if (data.ok) {
         props.onComplete({
           bot: props.bot,
@@ -194,15 +181,14 @@ export function Step2View(props: {
         });
       } else {
         setSaveError(data.error ?? "Save failed");
-        setSaving(false);
       }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Network error");
-      setSaving(false);
     }
   }
 
   const verifiedCount = rows.filter((r) => r.rowState === "verified").length;
+  const saving = saveMut.isPending;
 
   const t = useT();
   return (

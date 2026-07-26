@@ -6,12 +6,13 @@ import LoginPage from "./pages/LoginPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import type { OnboardingData } from "./pages/onboardingTypes";
 import { I18nProvider } from "./i18n/index";
+import { useQueryClient } from "@tanstack/react-query";
+
 import {
   useCompleteOnboarding,
   useLogout,
   useMe,
   useOnboardingStatus,
-  useQueryClient,
   useRestartOnboarding,
 } from "./lib/queries";
 

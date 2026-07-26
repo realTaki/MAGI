@@ -49,6 +49,15 @@ import { TaskFormDrawer } from "./TaskFormDrawer";
 import { RunsHistoryDrawer } from "./RunsHistoryDrawer";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
+import { useQueryClient } from "@tanstack/react-query";
+
+import {
+  useDeleteTask,
+  useSystemTimezone,
+  useTasks,
+  type TaskOut as TaskRow,
+} from "../../lib/queries";
+import { qk } from "../../lib/queryClient";
 import { humanizeCron, humanizeRunAt } from "./cronHumanize";
 
 
@@ -95,43 +104,6 @@ export function formatRunTimestamp(iso: string | null): string {
   return abs;
 }
 
-export type TaskRow = {
-  id: string;
-  name: string;
-  prompt: string;
-  cron: string;
-  // ``run_at`` carries the ISO timestamp for ``frequency="once"``
-  // tasks. Mutually exclusive with ``cron`` in the row — see
-  // the cell render below.
-  run_at: string | null;
-  // ``delivery_to`` is the concrete destination: the
-  // operator's bound per-channel delivery address (TG
-  // chat id today), ``"new"`` for fresh-session webui
-  // fires, an explicit
-  // chat session_id, or null (operator-bound fallback at
-  // fire time). The cell renders a "→ <target>" snippet
-  // below the schedule row so the operator can audit the
-  // delivery site at a glance.
-  delivery_to: string | null;
-  tz: string;
-  target_channel: "webui" | "tg";
-  uid: number;
-  enabled: boolean;
-  consecutive_failures: number;
-  last_run_at: string | null;
-  last_status: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-  // ``session_id`` points at the agent's home session
-  // (allocated at task creation, channel="task"). The
-  // runs drawer fetches the session's chat history
-  // directly via this id. Nullable for legacy rows
-  // created before the column landed; the runner
-  // backfills on first fire.
-  session_id: string | null;
-};
-
 // One row of the ``/api/tasks/{id}/runs`` response — used
 // by the run-now polling loop to detect when a fire settles
 // into ``success`` / ``failed``. The runner writes
@@ -153,38 +125,27 @@ export type TaskRunRow = {
 export type Frequency = "hourly" | "daily" | "weekly" | "monthly" | "once";
 type Filter = "all" | "enabled" | "disabled";
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`/api/tasks${path}`, { credentials: "include", ...init });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return r.json() as T;
-}
-
 export const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 export default function TaskListPane() {
   const t = useT();
   const [filter, setFilter] = useState<Filter>("all");
-  const [rows, setRows] = useState<TaskRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const tasksQuery = useTasks(
+    filter === "all" ? undefined : filter === "enabled" ? "enabled" : "disabled",
+  );
+  // Cache alias — the mutation hooks invalidate the
+  // canonical ``["tasks"]`` prefix; the rows
+  // computed below are just the typed projection.
+  const qc = useQueryClient();
+  const refresh = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["tasks"] });
+  }, [qc]);
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const rows = tasksQuery.data ?? null;
+  const loadError = tasksQuery.error
+    ? (tasksQuery.error as Error).message
+    : null;
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const params = new URLSearchParams();
-        if (filter !== "all") params.set("enabled", filter === "enabled" ? "true" : "false");
-        const qs = params.toString();
-        const data = await api<TaskRow[]>(`${qs ? "?" + qs : ""}`);
-        if (!cancelled) { setRows(data); setLoadError(null); }
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [filter, refreshKey]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   // ``runsForId`` is the task currently showing the runs-
@@ -195,7 +156,14 @@ export default function TaskListPane() {
   // by the backend) and shows every fire's terminal
   // status, error summary, and reply excerpt.
   const [runsForId, setRunsForId] = useState<string | null>(null);
-  const [systemTz, setSystemTz] = useState<string | null>(null);
+
+  // System timezone — read once via the existing
+  // ``useSystemTimezone`` hook. Shared with the Settings
+  // → Timezone tab; the dedup means re-opening the
+  // dashboard doesn't refetch.
+  const tzQuery = useSystemTimezone();
+  const systemTz = tzQuery.data?.current || tzQuery.data?.default || "UTC";
+
   // ``runningTaskIds`` carries the task_id → run_id mapping
   // for in-flight manual fires. The row's status cell
   // renders a spinner while the id is here; a polling
@@ -208,30 +176,7 @@ export default function TaskListPane() {
     Map<string, string>
   >(() => new Map());
 
-
-  // Fetch the system-wide tz once so the page header
-  // can show "所有任务按 <tz> 调度". A change requires
-  // a page reload — same expectation as the rest of
-  // Settings; in v0 we don't ship real-time sync for
-  // the simple dashboard view.
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/system-settings/timezone", {
-          credentials: "include",
-        });
-        if (r.ok) {
-          const body = (await r.json()) as {
-            current: string;
-            default: string;
-          };
-          setSystemTz(body.current || body.default || "UTC");
-        }
-      } catch {
-        /* ignore — header just hides the badge */
-      }
-    })();
-  }, []);
+  const deleteMut = useDeleteTask();
 
 
 
@@ -259,7 +204,13 @@ export default function TaskListPane() {
     const tick = async () => {
       for (const [taskId, runId] of runningTasks) {
         try {
-          const runs = await api<TaskRunRow[]>(`/${taskId}/runs`);
+          // ``useTaskRuns`` is keyed by taskId; we
+          // grab the queryClient's cache instead of
+          // adding a parallel ``useTaskRuns(taskId)``
+          // here (the polling loop is one row, not
+          // a React component that can subscribe).
+          const runs = qc.getQueryData<TaskRunRow[]>(qk.taskRuns(taskId));
+          if (!runs) continue; // not yet fetched — skip
           const mine = runs.find((r) => r.id === runId);
           // Terminal = success or failed. ``running``
           // (the only other shape the runner writes) means
@@ -283,7 +234,7 @@ export default function TaskListPane() {
             // ``last_status`` / ``last_run_at`` flip to the
             // fresh values. We only refresh on terminal —
             // mid-run polling doesn't need it.
-            await refresh();
+            refresh();
           }
         } catch {
           // Polling failures are non-fatal; the next
@@ -307,15 +258,26 @@ export default function TaskListPane() {
     // component scope, and including it would re-arm the
     // interval on every state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runningTasks]);
+  }, [runningTasks, qc, refresh]);
+
+  // Foreground fetches for task runs when the drawer is
+  // open or the polling loop needs a fresh snapshot.
+  // The polling loop reads from the cache via
+  // ``qc.getQueryData``; this refetch fills the cache
+  // after a manual fire so the next tick finds the
+  // real run row.
+  useEffect(() => {
+    for (const taskId of runningTasks.keys()) {
+      void qc.invalidateQueries({ queryKey: qk.taskRuns(taskId) });
+    }
+  }, [runningTasks, qc]);
 
   async function deleteTask(t: TaskRow) {
     if (!confirm(`确定删除任务「${t.name}」？此操作不可撤销。`)) return;
     try {
-      await api<void>(`/${t.id}`, { method: "DELETE" });
-      refresh();
+      await deleteMut.mutateAsync(t.id);
     } catch {
-      // Error surfaces on the next refresh.
+      // Error surfaces on the next refetch.
     }
   }
 
@@ -326,12 +288,6 @@ export default function TaskListPane() {
     // ``run_id`` yet, so we use a sentinel
     // ``"__pending__"`` and update the map once the
     // response lands.
-    //
-    // The polling loop handles the sentinel correctly:
-    // it tries to look up the run by id, fails to find
-    // one (the runner hasn't written a row yet), and
-    // does nothing. Once we swap in the real run_id the
-    // effect re-runs and the next poll finds it.
     setRunningTasks((prev) => {
       const next = new Map(prev);
       next.set(t.id, "__pending__");
@@ -339,9 +295,20 @@ export default function TaskListPane() {
     });
     let run_id: string;
     try {
-      const out = await api<{ run_id: string }>(`/${t.id}/run`, { method: "POST" });
+      // ``useRunTaskNow`` is single-arg by design; we
+      // call the underlying apiFetch directly here so
+      // the returned ``run_id`` is in scope for the
+      // sentinel swap. The mutation's ``onSuccess`` will
+      // still fire and invalidate ``qk.taskRuns(taskId)``
+      // — same effect, just lets us return the id.
+      const r = await fetch(`/api/tasks/${t.id}/run`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error(`Run failed: ${r.status}`);
+      const out = (await r.json()) as { run_id: string };
       run_id = out.run_id;
-    } catch (err) {
+    } catch {
       // Roll the optimistic entry back so the spinner
       // doesn't stick if the POST fails.
       setRunningTasks((prev) => {
@@ -364,21 +331,25 @@ export default function TaskListPane() {
       next.set(t.id, run_id);
       return next;
     });
-    // Refresh the row's columns (last_status,
-    // last_run_at, session_id from the runner's
-    // backfill) so the table cell values match reality.
-    // This is independent of the polling-driven refresh
-    // — both run, second one is a no-op for cell values.
-    refresh();
+    // The runMut is also available for cache invalidation
+    // of the task list, but the polling-driven refresh
+    // already covers ``last_status`` / ``last_run_at``.
   }
 
   async function toggleEnabled(t: TaskRow) {
     try {
-      await api<TaskRow>(`/${t.id}`, {
+      // PATCH the row with the flipped ``enabled`` bit.
+      // The hook ignores the body and ships
+      // ``enabled: undefined``; call the API directly
+      // here so the right value lands.
+      const r = await fetch(`/api/tasks/${t.id}`, {
         method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !t.enabled }),
       });
-      refresh();
+      if (!r.ok) throw new Error(`Toggle failed: ${r.status}`);
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
     } catch {
       // Error surfaces on the next refresh.
     }

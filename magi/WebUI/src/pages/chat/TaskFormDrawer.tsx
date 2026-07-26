@@ -5,12 +5,20 @@
  * of the v2 contract. On submit it POSTs or PATCHes
  * ``/api/tasks`` and calls ``onSaved`` so the parent can
  * refresh its list.
+ *
+ * Migrated to react-query: ``useTask`` populates the form
+ * for edit; ``useCreateTask`` / ``useUpdateTask`` cover the
+ * save paths. The form state itself stays in ``useState`` —
+ * react-query only owns the network round-trip. The
+ * form-fill effect is guarded by ``useRef`` so a
+ * ``refetchOnWindowFocus`` doesn't blow away the operator's
+ * in-flight edits.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-
+import { useCreateTask, useTask, useUpdateTask } from "../../lib/queries";
 import { WEEKDAY_LABELS } from "./TaskListPane";
-import type { Frequency, TaskRow } from "./TaskListPane";
+import type { Frequency } from "./TaskListPane";
 
 export function TaskFormDrawer(props: {
   taskId: string | null;
@@ -45,39 +53,65 @@ export function TaskFormDrawer(props: {
   // The form no longer asks. The table's "→ <target>" snippet
   // is rendered from the row's resolved value.
   const [enabled, setEnabled] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Edit-mode row fetch. ``enabled: taskId !== null`` so
+  // the create-mode drawer doesn't fire a needless
+  // ``GET /api/tasks/null``.
+  const taskQuery = useTask(props.taskId);
+  const createMut = useCreateTask();
+  const updateMut = useUpdateTask();
+
+  // Hydrate the form once per taskId. The ref guard skips
+  // re-hydration on subsequent refetches (e.g.
+  // refetchOnWindowFocus) so the operator's later edits
+  // aren't blown away.
+  const lastHydratedId = useRef<string | null>(null);
   useEffect(() => {
-    if (props.taskId === null) {
-      setName(""); setPrompt(""); setFrequency("daily");
-      setHour(0); setMinute(0); setDayOfWeek(0); setDayOfMonth(1);
-      setRunAt(""); setTargetChannel("webui"); setEnabled(true);
-      return;
+    if (!taskQuery.data) return;
+    if (lastHydratedId.current === props.taskId) return;
+    lastHydratedId.current = props.taskId;
+    const t = taskQuery.data;
+    setName(t.name);
+    setPrompt(t.prompt);
+    setTargetChannel(t.target_channel);
+    setEnabled(t.enabled);
+    if (t.run_at) {
+      setFrequency("once");
+      const m = t.run_at.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+      setRunAt(m ? `${m[1]}T${m[2]}` : "");
+    } else {
+      setFrequency("daily");
+      setHour(0);
+      setMinute(0);
+      setDayOfWeek(0);
+      setDayOfMonth(1);
+      setRunAt("");
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`/api/tasks/${props.taskId}`, { credentials: "include" });
-        if (!r.ok) { if (!cancelled) setError(`加载失败 (${r.status})`); return; }
-        const t = await r.json() as TaskRow;
-        if (cancelled) return;
-        setName(t.name); setPrompt(t.prompt);
-        setTargetChannel(t.target_channel); setEnabled(t.enabled);
-        if (t.run_at) {
-          setFrequency("once");
-          const m = t.run_at.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-          setRunAt(m ? `${m[1]}T${m[2]}` : "");
-        } else {
-          setFrequency("daily"); setHour(0); setMinute(0);
-          setDayOfWeek(0); setDayOfMonth(1); setRunAt("");
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
+  }, [taskQuery.data, props.taskId]);
+
+  // Reset the form (and the hydration ref) when the
+  // drawer opens for create.
+  useEffect(() => {
+    if (props.taskId !== null) return;
+    lastHydratedId.current = null;
+    setName("");
+    setPrompt("");
+    setFrequency("daily");
+    setHour(0);
+    setMinute(0);
+    setDayOfWeek(0);
+    setDayOfMonth(1);
+    setRunAt("");
+    setTargetChannel("webui");
+    setEnabled(true);
   }, [props.taskId]);
+
+  // Surface query errors as the form-level error.
+  useEffect(() => {
+    if (!taskQuery.error) return;
+    setError(`加载失败 (${(taskQuery.error as Error).message})`);
+  }, [taskQuery.error]);
 
   function toBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {
@@ -117,26 +151,20 @@ export function TaskFormDrawer(props: {
     if (!Number.isInteger(hour) || hour < 0 || hour > 23) { setError("小时必须 0-23"); return; }
     if (!Number.isInteger(minute) || minute < 0 || minute > 59) { setError("分钟必须 0-59"); return; }
     if (frequency === "once" && !runAt) { setError("请选择触发时间"); return; }
-    setSaving(true);
+    const body = toBody();
     try {
-      const body = toBody();
-      let bodyStr: string;
-      if (body instanceof FormData || body instanceof URLSearchParams || body instanceof ReadableStream || body instanceof Blob) {
-        bodyStr = JSON.stringify(body);
+      if (props.taskId === null) {
+        await createMut.mutateAsync(body);
       } else {
-        bodyStr = JSON.stringify(body);
+        await updateMut.mutateAsync({ taskId: props.taskId, payload: body });
       }
-      const url = props.taskId === null ? "/api/tasks" : `/api/tasks/${props.taskId}`;
-      const method = props.taskId === null ? "POST" : "PATCH";
-      const r = await fetch(url, { method, credentials: "include", headers: { "Content-Type": "application/json" }, body: bodyStr });
-      if (!r.ok) throw new Error(`Save failed: ${r.status}`);
       props.onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "save failed");
-    } finally {
-      setSaving(false);
     }
   }
+
+  const saving = createMut.isPending || updateMut.isPending;
 
   // HH:MM string helpers (only for daily / weekly / monthly).
   function setHHMM(h: number, m: number) {

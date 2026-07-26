@@ -44,51 +44,22 @@
  * match the pastel palette.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/index";
+import {
+  useChatSearch,
+  useChatSessions,
+  type ChatSessionList,
+  type ChatSearchResult,
+} from "../../lib/queries";
 
-type SearchHit = {
-  session_id: string;
-  message_id: string;
-  role: "user" | "assistant" | "system";
-  ts: string;
-  snippet: string;
-  title: string | null;
-  score: number;
-  // D.28: per-channel delivery address — opaque string
-  // (TG chat id today). Renamed from the legacy
-  // ``tgid`` field that the server used to surface.
-  deliveryAddress: string;
-  channel: string;
-};
-
-type SearchResponse = {
-  q: string;
-  uid: number;
-  items: SearchHit[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-type SessionSummary = {
-  session_id: string;
-  created_at: string;
-  created_by_uid: number;
-  updated_at: string;
-  message_count: number;
-  preview: string;
-  title: string | null;
-};
-
-type SessionListResponse = {
-  items: SessionSummary[];
-  total: number;
-  limit: number;
-  offset: number;
-};
-
-type ApiError = { code?: string; detail?: string };
+// One row of the search result list. Mirrors the
+// backend's ``SearchHit`` shape (see
+// ``magi.channels.webui.api.chat_search.SearchHit``).
+// Lives here as a named alias so the row component
+// doesn't have to thread the parent type through.
+type SearchHit = ChatSearchResult["items"][number];
+type SessionSummary = ChatSessionList["items"][number];
 
 type Props = {
   /** Deep-link into the matching thread. Matches
@@ -97,7 +68,6 @@ type Props = {
 };
 
 const DEBOUNCE_MS = 300;
-const SEARCH_LIMIT = 20;
 // Browse-mode page size: small enough to render fast on
 // the first paint, large enough that two pages cover the
 // typical "recent activity" view without an extra fetch.
@@ -106,158 +76,87 @@ const BROWSE_PAGE = 20;
 export default function ChatSearchPane({ onOpen }: Props) {
   const t = useT();
   const [query, setQuery] = useState("");
+  // Debounced mirror of ``query`` — the value fed to the
+  // search hook. ``useChatSearch`` is keyed by this
+  // string so a re-typed query hits the cache; a rapid
+  // keystroke sequence fires the network only once after
+  // the operator pauses.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const searchQuery = useChatSearch(debouncedQuery);
 
-  // Search-mode state (existing FTS5 path).
-  const [searchData, setSearchData] = useState<SearchResponse | null>(null);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-
-  // Browse-mode state (paginated recent history).
+  // Browse-mode state. We accumulate pages locally so
+  // an infinite scroll doesn't drop earlier entries
+  // when react-query re-fetches a new page (each page
+  // is its own cache entry, not a replace).
   const [browseItems, setBrowseItems] = useState<SessionSummary[]>([]);
   const [browseTotal, setBrowseTotal] = useState(0);
   const [browseOffset, setBrowseOffset] = useState(0);
-  const [browseLoading, setBrowseLoading] = useState(false);
   const [browseExhausted, setBrowseExhausted] = useState(false);
-  const [browseError, setBrowseError] = useState<string | null>(null);
-
-  // Latest-fired timer ref so a fast-typing operator
-  // doesn't race two requests out of order. We only honour
-  // the last debounced fire.
-  const debounceRef = useRef<number | null>(null);
 
   // Sentinel ref for infinite scroll: an IntersectionObserver
   // watches this div; when it scrolls into view we fetch
   // the next page.
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // ────────────────────────────────────────────────────────
-  // Search mode
-  // ────────────────────────────────────────────────────────
-
-  const runSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) {
-      setSearchData(null);
-      setSearchError(null);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-    setSearchError(null);
-    try {
-      const r = await fetch(
-        `/api/chat/search?q=${encodeURIComponent(trimmed)}&limit=${SEARCH_LIMIT}`,
-        { credentials: "include" },
-      );
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as ApiError;
-        if (r.status === 503) {
-          setSearchError(
-            body.detail ??
-              "Search is not available in this build (FTS5 missing)",
-          );
-        } else {
-          setSearchError(body.detail ?? `Failed (${r.status})`);
-        }
-        setSearchData(null);
-        return;
-      }
-      const body = (await r.json()) as SearchResponse;
-      setSearchData(body);
-    } catch (e) {
-      setSearchError(e instanceof Error ? e.message : "Network error");
-      setSearchData(null);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, []);
+  // Browse-mode page hook. Always enabled (browse mode
+  // is the default when the search box is empty). The
+  // query is keyed by ``(limit, offset)`` so each page
+  // is its own cache entry — perfect for infinite scroll.
+  const browseQuery = useChatSessions({
+    limit: BROWSE_PAGE,
+    offset: browseOffset,
+  });
 
   // ────────────────────────────────────────────────────────
-  // Browse mode (paginated)
+  // Debounce: keep the in-flight search hook input
+  // stable for 300 ms after the last keystroke.
   // ────────────────────────────────────────────────────────
-
-  const loadBrowsePage = useCallback(
-    async (offset: number, replace: boolean) => {
-      setBrowseLoading(true);
-      setBrowseError(null);
-      try {
-        const r = await fetch(
-          `/api/chat/sessions?limit=${BROWSE_PAGE}&offset=${offset}`,
-          { credentials: "include" },
-        );
-        if (!r.ok) {
-          const body = (await r.json().catch(() => ({}))) as ApiError;
-          setBrowseError(body.detail ?? `Failed (${r.status})`);
-          return;
-        }
-        const body = (await r.json()) as SessionListResponse;
-        // Append or replace based on the caller's intent.
-        // ``replace=true`` is the initial fetch (offset 0)
-        // and any re-fetch after a query-clear.
-        setBrowseItems((prev) =>
-          replace ? body.items : [...prev, ...body.items],
-        );
-        setBrowseTotal(body.total);
-        setBrowseOffset(offset + body.items.length);
-        // Stop paging once we've shown everything.
-        if (offset + body.items.length >= body.total) {
-          setBrowseExhausted(true);
-        } else {
-          setBrowseExhausted(false);
-        }
-      } catch (e) {
-        setBrowseError(e instanceof Error ? e.message : "Network error");
-      } finally {
-        setBrowseLoading(false);
-      }
-    },
-    [],
-  );
-
-  // ────────────────────────────────────────────────────────
-  // Effects: search vs browse, debounce, infinite scroll
-  // ────────────────────────────────────────────────────────
-
-  // Debounced search. Empty input clears search results
-  // immediately (no debounce) and triggers a browse-mode
-  // reset so the recent-history list comes back.
+  const debounceRef = useRef<number | null>(null);
   useEffect(() => {
     if (debounceRef.current !== null) {
       window.clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    if (!query.trim()) {
-      setSearchData(null);
-      setSearchError(null);
-      setSearchLoading(false);
-      // Re-prime browse mode: start fresh from offset 0.
-      setBrowseItems([]);
-      setBrowseTotal(0);
-      setBrowseOffset(0);
-      setBrowseExhausted(false);
-      void loadBrowsePage(0, true);
-      return;
     }
     debounceRef.current = window.setTimeout(() => {
-      void runSearch(query);
+      setDebouncedQuery(query);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current !== null) {
         window.clearTimeout(debounceRef.current);
-        debounceRef.current = null;
       }
     };
-  }, [query, runSearch, loadBrowsePage]);
+  }, [query]);
 
-  // First-paint browse fetch. If the user lands on the
-  // search pane with no input, this populates the recent
-  // list before any effect re-runs.
+  // ────────────────────────────────────────────────────────
+  // Browse-mode page accumulation
+  // ────────────────────────────────────────────────────────
+  //
+  // When the search box is empty and we're not in the
+  // first-paint offset, fold the freshly-fetched page
+  // into the accumulated list. The first page replaces
+  // the list (handles the "search cleared" reset).
+  const isFirstBrowsePage = browseOffset === 0;
   useEffect(() => {
-    void loadBrowsePage(0, true);
-    // Intentionally only on mount — loadBrowsePage's deps
-    // are stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (query.trim()) return; // search mode owns the result list
+    if (!browseQuery.data) return;
+    const body: ChatSessionList = browseQuery.data;
+    setBrowseTotal(body.total);
+    setBrowseExhausted(browseOffset + body.items.length >= body.total);
+    setBrowseItems((prev) =>
+      isFirstBrowsePage ? body.items : [...prev, ...body.items],
+    );
+  }, [browseQuery.data, browseOffset, isFirstBrowsePage, query]);
+
+  // Reset browse on query-clear so the recent-history
+  // list comes back when the operator types-then-deletes.
+  useEffect(() => {
+    if (query.trim()) return;
+    setBrowseItems([]);
+    setBrowseTotal(0);
+    setBrowseOffset(0);
+    setBrowseExhausted(false);
+    // The hook will refetch on its own once ``offset`` is
+    // back to 0 (cache key changes).
+  }, [query]);
 
   // Infinite-scroll observer. Fires when the sentinel
   // enters the viewport, requesting the next page if we
@@ -270,13 +169,10 @@ export default function ChatSearchPane({ onOpen }: Props) {
       (entries) => {
         for (const e of entries) {
           if (!e.isIntersecting) continue;
-          // Only fetch when in browse mode (no query), not
-          // already loading, and not exhausted.
-          if (query.trim()) return;
-          if (browseLoading) return;
+          if (query.trim()) return; // search mode
+          if (browseQuery.isFetching) return;
           if (browseExhausted) return;
-          if (browseItems.length === 0 && browseOffset === 0) return;
-          void loadBrowsePage(browseOffset, false);
+          setBrowseOffset((prev) => prev + BROWSE_PAGE);
         }
       },
       // 200px root margin so the next page loads slightly
@@ -286,13 +182,24 @@ export default function ChatSearchPane({ onOpen }: Props) {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [query, browseLoading, browseExhausted, browseItems.length, browseOffset, loadBrowsePage]);
+  }, [query, browseQuery.isFetching, browseExhausted]);
 
   // ────────────────────────────────────────────────────────
   // Render
   // ────────────────────────────────────────────────────────
 
   const inSearchMode = query.trim().length > 0;
+  const searchData = searchQuery.data as ChatSearchResult | undefined;
+  const searchLoading = searchQuery.isFetching;
+  const searchError = (() => {
+    if (!searchQuery.error) return null;
+    const err = searchQuery.error as { status?: number; message?: string };
+    if (err.status === 503) {
+      return err.message ?? "Search is not available in this build (FTS5 missing)";
+    }
+    return err.message ?? "Network error";
+  })();
+  const browseError = (browseQuery.error as Error | null)?.message ?? null;
 
   return (
     // ``h-full`` lets us inherit SidebarShell's column
@@ -364,7 +271,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
               </div>
             )}
 
-            {browseItems.length === 0 && !browseLoading && !browseError && (
+            {browseItems.length === 0 && !browseQuery.isFetching && !browseError && (
               <p className="text-sm text-ink-soft text-center mt-6">
                 {t("chatSearch.emptyBrowse")}
               </p>
@@ -393,7 +300,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
                 ref={sentinelRef}
                 className="py-4 text-center text-xs text-ink-soft"
               >
-                {browseLoading ? t("chatSearch.loadMore") : ""}
+                {browseQuery.isFetching ? t("chatSearch.loadMore") : ""}
               </div>
             )}
             {browseExhausted && browseItems.length > 0 && (
