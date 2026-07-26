@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-node
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: node
+spec:
+  # SQLite is the default state backend, so do not run multiple replicas
+  # against the same PVC. Horizontal scaling requires PostgreSQL first.
+  replicas: 1
+  strategy:
+    type: Recreate
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: magi
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: magi
+        app.kubernetes.io/component: node
+    spec:
+      serviceAccountName: magi
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: magi
+          image: magi:0.1.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: magi-config
+          # Optional so a WebUI-only Adam can start without a Secret. Add
+          # the key when MAGI_CHANNELS includes telegram or when Adam/EVE
+          # RPC authentication is enabled.
+          env:
+            - name: MAGI_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: magi-secrets
+                  key: MAGI_BOT_TOKEN
+                  optional: true
+            - name: MAGI_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: magi-secrets
+                  key: MAGI_SHARED_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 42069
+              protocol: TCP
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          # `magi --check` works for both Adam and EVE, including EVE nodes
+          # that do not mount the WebUI channel.
+          startupProbe:
+            exec:
+              command:
+                - magi
+                - --check
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - magi
+                - --check
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - magi
+                - --check
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: magi-workspace

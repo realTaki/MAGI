@@ -1,0 +1,24 @@
+# Optional example. Copy/adapt this file and add it to kustomization.yaml
+# when an ingress controller and DNS name are available.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: magi
+  annotations:
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: magi.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Kustomize applies the overlay prefix and renders this as
+                # `adam-magi`.
+                name: magi
+                port:
+                  name: http

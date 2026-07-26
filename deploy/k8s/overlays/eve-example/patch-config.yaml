@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: magi-config
+data:
+  MAGI_NODE_ROLE: eve
+  MAGI_CHANNELS: telegram
+  MAGI_UID: eve-example
+  MAGI_ADAM_URL: http://adam-magi:42069

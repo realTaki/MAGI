@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: magi-config
+data:
+  MAGI_NODE_ROLE: adam
+  MAGI_CHANNELS: webui
+  MAGI_ADAM_URL: http://adam-magi:42069

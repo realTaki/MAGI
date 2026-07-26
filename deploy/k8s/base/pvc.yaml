@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: magi-workspace
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: workspace
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Leave storageClassName unset so the cluster's default StorageClass is
+  # used. Set it in an overlay when the cluster has no default class.

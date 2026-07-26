@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Copy this overlay once per EVE and change the prefix and MAGI_UID in
+# patch-config.yaml. The prefix gives every EVE its own Deployment and PVC.
+namePrefix: eve-example-
+
+patches:
+  - path: patch-config.yaml
+  - path: patch-delete-service.yaml
