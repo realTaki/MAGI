@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useT } from '../../../i18n/index';
 
-function Step2View(props: {
+export function Step2View(props: {
   bot: { token: string; username: string };
   initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;
   onBack: () => void;

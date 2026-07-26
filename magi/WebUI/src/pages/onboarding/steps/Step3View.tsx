@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useT } from '../../../i18n/index';
 
-function Step3View(props: {
+export function Step3View(props: {
   data: OnboardingData;
   onBack: () => void;
   onContinue: () => void;

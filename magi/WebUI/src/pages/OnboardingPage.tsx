@@ -53,7 +53,7 @@ export default function OnboardingPage(props: {
                 existingBot={bot}
                 onContinue={() => setStep(2)}
                 onReSet={() => setStep1Mode("edit")}
-                onSaved={(token, username) => { setBot({ token, username }); setStep1Mode("view"); }}
+                onSaved={(token: string, username: string) => { setBot({ token, username }); setStep1Mode("view"); }}
               />
             )}
             {step === 2 && bot && (
@@ -61,7 +61,7 @@ export default function OnboardingPage(props: {
                 bot={bot}
                 initialSuperAdmins={initialSuperAdmins}
                 onBack={() => setStep(1)}
-                onComplete={(data) => { setCompletedData(data); setStep(3); }}
+                onComplete={(data: OnboardingData) => { setCompletedData(data); setStep(3); }}
               />
             )}
             {step === 3 && completedData && (

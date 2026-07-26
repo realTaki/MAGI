@@ -9,7 +9,7 @@ const channels: ChannelOption[] = [
   { id: 'slack', name: 'Slack', descriptionKey: 'onboarding.channelSlackDesc', available: false },
   { id: 'wechat', name: 'WeChat', descriptionKey: 'onboarding.channelWechatDesc', available: false },
 ];
-function Step1View(props: {
+export function Step1View(props: {
   step1Mode: "view" | "edit";
   existingBot: { token: string; username: string } | null;
   onContinue: () => void;

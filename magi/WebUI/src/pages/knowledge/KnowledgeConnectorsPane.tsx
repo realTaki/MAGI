@@ -4,7 +4,7 @@ import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 
-function KnowledgeConnectorsPane() {
+export function KnowledgeConnectorsPane() {
   const t = useT();
   return (
     <div className="space-y-4">

@@ -4,7 +4,7 @@ import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
 
-function KnowledgeSkillsPane() {
+export function KnowledgeSkillsPane() {
   type SkillRow = {
     name: string;
     description: string;
