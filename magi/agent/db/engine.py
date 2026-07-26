@@ -253,7 +253,7 @@ def _seed_default_root(engine: Engine) -> None:
         )
         if has_adam is None:
             adam = Magi(
-                name=f"{_DEFAULT_ROOT_MAGIC_NAME} ADAM",
+                name="Alice",
                 magic_id=existing_root.id,
                 magic_position="adam",
                 provider=None,
