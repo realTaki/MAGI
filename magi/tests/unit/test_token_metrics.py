@@ -24,18 +24,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-
 def _signed_session_cookie(uid: int) -> str:
     """Mint an HMAC-signed ``magi_session`` cookie value."""
     from magi.channels.webui.api.auth import _sign_uid
 
     return _sign_uid(uid)
 
-
 def _iso_utc(d: datetime) -> str:
     """Convert to the same naive-UTC ISO format the ORM uses."""
     return d.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
-
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
@@ -46,8 +43,7 @@ def env(monkeypatch, tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -89,7 +85,6 @@ def env(monkeypatch, tmp_path):
         "target": target,
     }
 
-
 @pytest.fixture
 def client(env):
     from magi.channels.webui.app import create_app
@@ -98,7 +93,6 @@ def client(env):
     c = TestClient(app)
     c.cookies.set("magi_session", _signed_session_cookie(env["admin"].id))
     return c
-
 
 def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
     """Insert one TokenUsage row directly.
@@ -123,9 +117,7 @@ def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
         )
         db.commit()
 
-
 # -- tests -----------------------------------------------------------------
-
 
 def test_empty_returns_zeros(client, env):
     """No usage rows → zero totals; all three periods
@@ -142,7 +134,6 @@ def test_empty_returns_zeros(client, env):
         assert isinstance(body[key]["period_end"], str) and body[key]["period_end"]
     assert isinstance(body["timezone"], str) and body["timezone"]
 
-
 def test_total_aggregates_all_rows(client, env):
     """Two rows in the past 7 days → ``total`` sums them
     (regardless of whether week/month cut them off)."""
@@ -156,7 +147,6 @@ def test_total_aggregates_all_rows(client, env):
     assert body["total"]["input_tokens"] == 400
     assert body["total"]["output_tokens"] == 130
     assert body["total"]["call_count"] == 2
-
 
 def test_week_window_includes_recent(client, env):
     """Rows inside the rolling 7-day window sum into ``week``;
@@ -172,7 +162,6 @@ def test_week_window_includes_recent(client, env):
     assert body["week"]["input_tokens"] == 10
     # Total includes both.
     assert body["total"]["call_count"] == 2
-
 
 def test_scope_to_one_uid(client, env):
     """Aggregation filters by the URL's uid; other Contacts'
@@ -198,13 +187,11 @@ def test_scope_to_one_uid(client, env):
     r = client.get(f"/api/contacts/{env['target'].id}/token-usage")
     assert r.json()["total"]["input_tokens"] == 100  # other.uid NOT counted
 
-
 def test_unauthorized_without_cookie(client):
     """No cookie at all → 401 (admin_gate)."""
     raw = TestClient(client.app)
     r = raw.get("/api/contacts/1/token-usage")
     assert r.status_code == 401
-
 
 def test_unauthorized_unsigned_cookie(client, env):
     """A junk cookie value → 401. (The relaxed test-mode
@@ -215,7 +202,6 @@ def test_unauthorized_unsigned_cookie(client, env):
     raw.cookies.set("magi_session", "junk-not-a-cookie")
     r = raw.get(f"/api/contacts/{env['target'].id}/token-usage")
     assert r.status_code == 401
-
 
 def test_unknown_contact_still_returns_200(client, env):
     """The endpoint doesn't 404 on a non-existent contact —

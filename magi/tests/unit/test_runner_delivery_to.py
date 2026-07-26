@@ -53,9 +53,7 @@ from magi.agent.proactive.scheduler import (
 )
 from magi.agent.proactive.orm_models import Task, TaskRun
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -66,8 +64,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
@@ -93,7 +90,6 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     except Exception:  # noqa: BLE001
         pass
     _reset_for_tests()
-
 
 def _seed_task(
     state_dir: Path,
@@ -153,9 +149,7 @@ def _seed_task(
         db.refresh(t)
     return t.id, session_id
 
-
 # -- single session per task (channel="task") ----------------------------
-
 
 async def test_fire_appends_prompt_and_reply_to_task_session(
     state_dir: Path,
@@ -205,7 +199,6 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
         assert len(assistant_msgs) == 1
         assert assistant_msgs[0].text == "fake reply"
 
-
 async def test_two_tasks_have_independent_sessions(
     state_dir: Path,
 ) -> None:
@@ -240,7 +233,6 @@ async def test_two_tasks_have_independent_sessions(
         assert not any("task-bbbb" in m.text for m in sess_a_msgs)
         assert any("task-bbbb" in m.text for m in sess_b_msgs)
         assert not any("task-aaaa" in m.text for m in sess_b_msgs)
-
 
 async def test_multiple_fires_accumulate_in_same_session(
     state_dir: Path,
@@ -284,9 +276,7 @@ async def test_multiple_fires_accumulate_in_same_session(
         # _fake_fire).
         assert all(m.text == "fake reply" for m in assistant_msgs)
 
-
 # -- legacy rows: session_id None at fire time ---------------------------
-
 
 async def test_legacy_task_without_session_id_backfills_on_first_fire(
     state_dir: Path,
@@ -322,9 +312,7 @@ async def test_legacy_task_without_session_id_backfills_on_first_fire(
         )
         assert any("legacy-row" in m.text for m in msgs)
 
-
 # -- delivery_to=ULID: obsolete, runner ignores it ---------------------
-
 
 async def test_legacy_delivery_to_ulid_is_ignored(
     state_dir: Path,
@@ -381,9 +369,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
         )
         assert any("legacy-ulid" in m.text for m in msgs_task)
 
-
 # -- cross-contact: delivery_to=None / task.session_id is task-owned ------
-
 
 async def test_cross_contact_does_not_inject_into_other(
     state_dir: Path,
@@ -429,9 +415,7 @@ async def test_cross_contact_does_not_inject_into_other(
         )
         assert len(other_sessions) == 0
 
-
 # -- TG delivery_to: wires callback --------------------------------------
-
 
 async def test_tg_delivery_to_dispatches_via_channel_adapter(
     state_dir: Path,
@@ -508,7 +492,6 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
     finally:
         _tg.bot.clear_telegram_bot()
 
-
 async def test_tg_session_is_not_modified_by_task_fire(
     state_dir: Path,
 ) -> None:
@@ -568,9 +551,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
         # different rows; the TG session was untouched.
         assert tg_chat.session_id != task_session_id
 
-
 # -- helper: stand-in for the agent loop so we exercise the runner --------
-
 
 async def _fake_fire(task_id: str, state_dir: Path) -> None:
     """Patch ``handle_message`` to a no-op so the runner's
@@ -597,7 +578,5 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
     finally:
         runner_mod.handle_message = real  # restore
 
-
 # -- TG delivery_to: reuses operator's existing TG chat session ----------
-
 

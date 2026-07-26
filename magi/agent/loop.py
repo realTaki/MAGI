@@ -77,7 +77,11 @@ from magi.agent.token_usage import record_token_usage
 # live in :mod:`magi.agent.system_prompt` — not imported
 # here so this module stays focused on the chat loop.
 from magi.agent.tools.base import ToolContext
-from magi.agent.tools.registry import get_tool, get_tool_schemas
+from magi.agent.tools.registry import (
+    get_tool,
+    get_tool_schemas,
+    maybe_reload_mcp_tools,
+)
 
 logger = logging.getLogger("magi.agent.agent")
 
@@ -598,6 +602,18 @@ async def handle_message(
     caller_role: str | None = None,
 ) -> str:
     """Handle one channel message through validation, context, tools, and audit."""
+    # Lazy MCP reload — fires only when the operator has
+    # edited the ``mcp_servers`` table since the last
+    # chat turn. Cheap when the table is untouched (one
+    # ``MAX(updated_at)`` query), only rebuilds the
+    # subprocess list on a real change. The boot-time
+    # ``bootstrap_mcp_tools`` is the only place that
+    # populates the cache initially; this call is what
+    # makes a save in the WebUI take effect on the next
+    # chat turn. Swallowed failures (DB hiccup) leave the
+    # existing cache in place.
+    maybe_reload_mcp_tools()
+
     credentials = _validate_credentials(
         contact_provider=contact_provider,
         contact_api_key=contact_api_key,

@@ -23,11 +23,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Common fixture: seeded admin + a target contact
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.fixture
 def token_env(monkeypatch, tmp_path):
@@ -43,9 +41,8 @@ def token_env(monkeypatch, tmp_path):
     state.mkdir()
     workspace = tmp_path
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(workspace))
-
-    # Drop the cached engine + sessionmaker so ``get_engine()``
+    
+# Drop the cached engine + sessionmaker so ``get_engine()``
     # rebuilds against the test's tmp_path. ``init_orm`` /
     # ``init_sqlite`` would otherwise no-op on the second
     # test onwards because the global engine is already set.
@@ -86,7 +83,6 @@ def token_env(monkeypatch, tmp_path):
         s.commit()
     return state, workspace
 
-
 @pytest.fixture
 def client(token_env):
     """TestClient with admin cookie."""
@@ -98,11 +94,9 @@ def client(token_env):
     c.cookies.set("magi_session", "1")
     return c
 
-
 # ────────────────────────────────────────────────────────────────── #
 # _record_token_usage (agent helper)
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_record_token_usage_happy_path(token_env):
     """Full Anthropic-shape ``usage`` dict → row with all
@@ -137,7 +131,6 @@ def test_record_token_usage_happy_path(token_env):
     assert r.cache_creation_tokens == 10
     assert r.cache_read_tokens == 5
 
-
 def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     """A provider that returned no usage (or an error
     path) still gets a row with zeros — call count must
@@ -167,7 +160,6 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     assert r.cache_read_tokens == 0
     assert r.model is None
 
-
 def test_record_token_usage_partial_dict(token_env):
     """Missing cache keys default to 0; the helper doesn't
     raise on a minimal Anthropic shape."""
@@ -190,7 +182,6 @@ def test_record_token_usage_partial_dict(token_env):
     assert rows[0].cache_creation_tokens == 0
     assert rows[0].cache_read_tokens == 0
 
-
 # (Full end-to-end ``handle_message`` test omitted on
 # purpose. ``test_tg_admin_routes`` patches
 # ``magi.agent.loop.handle_message`` with an ``AsyncMock``
@@ -202,11 +193,9 @@ def test_record_token_usage_partial_dict(token_env):
 # path is end-to-end-tested by the live smoke
 # (real chat → row in ``token_usage``).)
 
-
 # ────────────────────────────────────────────────────────────────── #
 # /api/system-settings/timezone
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_timezone_get_defaults_to_server_local(token_env, client):
     """When ``system.timezone`` is unset, the default
@@ -230,7 +219,6 @@ def test_timezone_get_defaults_to_server_local(token_env, client):
     assert "UTC" in data["choices"]
     assert "Asia/Shanghai" in data["choices"]
 
-
 def test_timezone_put_round_trip(token_env, client):
     r = client.put(
         "/api/system-settings/timezone",
@@ -244,7 +232,6 @@ def test_timezone_put_round_trip(token_env, client):
     from magi.channels.webui.api.system_settings import get_system_timezone
     assert get_system_timezone(str(token_env[0])) == "Asia/Shanghai"
 
-
 def test_timezone_put_rejects_unknown_tz(token_env, client):
     r = client.put(
         "/api/system-settings/timezone",
@@ -254,7 +241,6 @@ def test_timezone_put_rejects_unknown_tz(token_env, client):
     body = r.json()
     assert body["code"] == "validation.unknown_timezone"
 
-
 def test_timezone_put_empty_rejected_by_pydantic(token_env, client):
     """Empty string is below the Pydantic min_length=1."""
     r = client.put(
@@ -262,7 +248,6 @@ def test_timezone_put_empty_rejected_by_pydantic(token_env, client):
         json={"timezone": ""},
     )
     assert r.status_code == 422
-
 
 def test_timezone_get_requires_admin(token_env):
     """Cookie-less → 401, same gate as the other admin
@@ -274,11 +259,9 @@ def test_timezone_get_requires_admin(token_env):
     r = bare.get("/api/system-settings/timezone")
     assert r.status_code == 401
 
-
 # ────────────────────────────────────────────────────────────────── #
 # /api/contacts/{uid}/token-usage
 # ────────────────────────────────────────────────────────────────── #
-
 
 def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
     """Helper: directly write a token_usage row at a
@@ -301,7 +284,6 @@ def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
         ))
         s.commit()
 
-
 def test_token_usage_returns_three_periods(token_env, client):
     """A fresh contact (no rows) returns 0/0/0 across all
     three periods, with the right shape."""
@@ -323,7 +305,6 @@ def test_token_usage_returns_three_periods(token_env, client):
     # resolved (the server's local tz when ``system.timezone``
     # is unset — see :data:`_system_default_timezone`).
     assert data["timezone"] == get_localzone().key
-
 
 def test_token_usage_aggregates_three_rows(token_env, client):
     """Three rows: 2 today, 1 last week → week=2 calls,
@@ -378,7 +359,6 @@ def test_token_usage_aggregates_three_rows(token_env, client):
     assert data["total"]["input_tokens"] == 60
     assert data["total"]["output_tokens"] == 30
 
-
 def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, client):
     """Set tz to Asia/Shanghai (UTC+8). Insert a row
     that's ``8 hours ago`` UTC — that's "yesterday morning
@@ -412,7 +392,6 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     assert data["week"]["call_count"] == 1
     assert data["week"]["input_tokens"] == 99
 
-
 def test_token_usage_separates_per_contact(token_env, client):
     """Two contacts with rows; each endpoint call sees
     only its own."""
@@ -427,7 +406,6 @@ def test_token_usage_separates_per_contact(token_env, client):
     assert r1["total"]["input_tokens"] == 100
     assert r2["total"]["input_tokens"] == 10
 
-
 def test_token_usage_requires_admin(token_env):
     """Cookie-less → 401."""
     from magi.channels.webui.app import create_app
@@ -436,7 +414,6 @@ def test_token_usage_requires_admin(token_env):
     bare = TestClient(create_app())
     r = bare.get("/api/contacts/2/token-usage")
     assert r.status_code == 401
-
 
 def test_token_usage_handles_no_tz_storage(token_env, client):
     """Fresh env, no tz set → falls back to the server's
@@ -450,7 +427,6 @@ def test_token_usage_handles_no_tz_storage(token_env, client):
     data = r.json()
     assert data["timezone"] == get_localzone().key
 
-
 def test_timezone_get_with_stored_value(token_env, client):
     """After a PUT, the GET returns the new value. Tests
     the persistence round-trip via the API surface (not
@@ -458,7 +434,6 @@ def test_timezone_get_with_stored_value(token_env, client):
     client.put("/api/system-settings/timezone", json={"timezone": "Asia/Tokyo"})
     r = client.get("/api/system-settings/timezone")
     assert r.json()["current"] == "Asia/Tokyo"
-
 
 def test_timezone_falls_back_when_stored_value_invalid(token_env, client):
     """A hand-edited / corrupted value falls back to the

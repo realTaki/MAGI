@@ -18,20 +18,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 @pytest.fixture
 def tg_admin_env(monkeypatch, tmp_path):
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    
     from magi.agent.db import init_sqlite
     from magi.agent.db import Contact, init_orm, open_session
 
     init_sqlite(str(state))
     init_orm(str(state))
     return state
-
 
 def _seed_contact(state_dir: str, *, delivery_address: int, role: str):
     from magi.agent.db import Contact, open_session
@@ -48,7 +46,6 @@ def _seed_contact(state_dir: str, *, delivery_address: int, role: str):
             )
         )
         s.commit()
-
 
 def _make_update(*, delivery_address: int, message_id: int, text: str):
     """Build a minimal ``Update``-shaped mock.
@@ -69,7 +66,6 @@ def _make_update(*, delivery_address: int, message_id: int, text: str):
         set_message_reaction=AsyncMock(return_value=True),
     ))
     return update
-
 
 @pytest.mark.asyncio
 async def test_admin_message_reaches_handler(tg_admin_env):
@@ -102,7 +98,6 @@ async def test_admin_message_reaches_handler(tg_admin_env):
     bot = update.get_bot.return_value
     bot.set_message_reaction.assert_awaited()
 
-
 @pytest.mark.asyncio
 async def test_assigned_message_reaches_handler(tg_admin_env):
     """``assigned`` role is the historical happy path;
@@ -119,7 +114,6 @@ async def test_assigned_message_reaches_handler(tg_admin_env):
 
     update.effective_message.reply_text.assert_awaited()
     update.get_bot.return_value.set_message_reaction.assert_awaited()
-
 
 @pytest.mark.asyncio
 async def test_contact_role_is_refused(tg_admin_env):

@@ -302,6 +302,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
+    import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
     import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.agent.db.models_token_usage  # noqa: F401
     import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table

@@ -2,28 +2,10 @@
 #
 # Usage:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
-# The base compose (docker-compose.yml) is the production deployment:
-#   - Single image built from `Dockerfile`
-#   - magi/WebUI/dist baked in, served by FastAPI on :42069
-#
-# This override swaps that for the dev image (Dockerfile.dev) which has
-# both Python and Node, mounts the source tree outside the agent workspace,
-# and runs
-# `vite dev` alongside `magi` inside the same container.
-#
-# Dev workflow (zero build required for source / script edits):
-#   - Open http://localhost:42069/ in browser
-#   - Edit magi/**/*.py          → uvicorn auto-reloads   (MAGI_RELOAD=1)
-#   - Edit magi/WebUI/src/**     → vite HMR updates the browser
-#   - Edit deploy/entrypoint.dev.sh → `docker compose restart adam`
-#   - SQLite at /workspace/memories → bind-mount persists to MAGI_WORKSPACE_DIR/Adam
-#
-# Build the image again ONLY when:
-#   - Dockerfile / Dockerfile.dev change (apt deps, ENV baked at build)
-#   - pyproject.toml or package.json change (deps installed in build)
-#
-# vite proxies /api/* → 127.0.0.1:8000 (magi, internal). One port (42069)
-# is published to the host.
+# The base compose (docker-compose.yml) is the production deployment.
+# This override swaps it for the dev image (Dockerfile.dev) which has
+# both Python and Node, mounts the source tree, and runs Vite alongside
+# magi.
 
 services:
   adam:
@@ -32,47 +14,22 @@ services:
       dockerfile: deploy/Dockerfile.dev
     image: magi:dev
     env_file: ../.env
+    environment:
+      MAGI_RELOAD: "1"
+      TZ: ${HOST_TZ:-UTC}
+      PYTHONPATH: /app
+      VITE_BACKEND_URL: "http://127.0.0.1:8000"
     volumes:
-      # Mount the complete source tree outside /workspace. The agent's
-      # file tools are rooted at /workspace, and the read-only mount means
-      # even an agent shell cannot rewrite the runtime source. WebUI is
-      # part of magi/, so it deliberately has no second source mount.
-      # The dependency volume below is the only writable child mount.
       - ../../magi:/app/magi:ro
       - magi_web_node_modules:/app/magi/WebUI/node_modules
-      # Dev entrypoint (start vite + exec magi) lives on the host so
-      # we can edit it without rebuilding the image. The image
-      # has no entrypoint script — if this mount is missing, the
-      # container fails fast on boot (the image's CMD points at
-      # /usr/local/bin/entrypoint.sh which won't exist).
       - ../entrypoint.dev.sh:/usr/local/bin/entrypoint.sh:ro
     dns:
-      # Docker's built-in DNS (127.0.0.11) sometimes returns only
-      # IPv6 (AAAA) for api.telegram.org when the host's resolver
-      # (systemd-resolved) returns IPv6-first. Since the container
-      # has no IPv6 connectivity, Telegram API calls time out.
-      # Bypass with public IPv4-capable resolvers.
       - 8.8.8.8
       - 1.1.1.1
       - 114.114.114.114
-    environment:
-      MAGI_RELOAD: "1"
-      MAGI_PORT: "8000"
-      # Inherit host timezone for natural week/month boundaries.
-      TZ: ${HOST_TZ:-UTC}
-      # Import the read-only source mount rather than the copy installed
-      # into the image during Dockerfile.dev's build.
-      PYTHONPATH: /app
-      VITE_BACKEND_URL: "http://127.0.0.1:8000"
-
-    # Override the image's CMD so the bind-mounted dev entrypoint
-    # script runs instead of the bare ``magi``. The script starts
-    # vite in the background and execs magi as PID 1.
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     ports:
       - "42069:42069"
 
 volumes:
-  # Initialized from the dependencies installed in Dockerfile.dev. It is
-  # writable for Vite's cache while the source bind mount stays read-only.
   magi_web_node_modules:

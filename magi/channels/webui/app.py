@@ -189,6 +189,15 @@ def create_app() -> FastAPI:
     # render an operator-facing "what can my MAGI do?" view.
     from magi.channels.webui.api import tools
     app.include_router(tools.router, prefix="/api")
+    # MCP servers — operator-facing CRUD for the
+    # ``mcp_servers`` table. The DB is the single source
+    # of truth for which MCP servers the agent loop
+    # connects to (replaces the legacy ``mcp.json`` flow).
+    # Settings → MCP card drives this router; the
+    # Knowledge → MCP tab stays read-only and surfaces
+    # the tool list as the loader caches it.
+    from magi.channels.webui.api import mcp_servers
+    app.include_router(mcp_servers.router, prefix="/api")
     # Skills — read-only catalog of SKILL.md files in
     # workspace/skills/. Knowledge → Skills is the operator-
     # facing surface; the LLM-side equivalent is the

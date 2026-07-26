@@ -62,7 +62,7 @@ def get_session_store() -> SessionStore:
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override
-    ``MAGI_WORKSPACE_DIR`` need each request to see the
+    ``MAGI_STATE_DIR`` need each request to see the
     current value, not the value captured at import time.
     """
     return SessionStore(_state_dir())

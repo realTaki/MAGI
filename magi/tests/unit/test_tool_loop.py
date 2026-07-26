@@ -50,11 +50,9 @@ from magi.agent.tools.registry import (
 from magi.agent.tools.send_message import SendMessageTool
 from magi.agent.tools.write_file import WriteFileTool
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Schema + provider wiring
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_chat_message_accepts_content_blocks():
     """A ``user`` message with ``tool_result`` blocks
@@ -73,7 +71,6 @@ def test_chat_message_accepts_content_blocks():
     assert msg.content_blocks is not None
     assert msg.content_blocks[0]["tool_use_id"] == "abc"
 
-
 def test_chat_result_carries_stop_reason_and_tool_uses():
     """A assistant turn with ``tool_use`` blocks exposes
     them via ``ChatResult.tool_uses`` so the loop can
@@ -90,7 +87,6 @@ def test_chat_result_carries_stop_reason_and_tool_uses():
     assert result.stop_reason == "tool_use"
     assert result.tool_uses[0]["name"] == "read_file"
 
-
 def test_minimax_provider_chat_signature_accepts_tools_kwarg():
     """``LLMProvider.chat`` signature includes ``tools`` (a
     list of Anthropic-shape schemas). The check is static
@@ -104,7 +100,6 @@ def test_minimax_provider_chat_signature_accepts_tools_kwarg():
     sig = inspect.signature(LLMProvider.chat)
     assert "tools" in sig.parameters
 
-
 def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
     """Stable list of v0 tool names. ``list`` order
     matters — the LLM sees tools in this order every
@@ -113,7 +108,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
     can build role-gate tools (which lazily open a
     session)."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    
     names = [t["name"] for t in get_tool_schemas()]
     assert names == [
         "read_file",
@@ -151,21 +146,18 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "list_action_item",
     ]
 
-
 def test_get_tool_lookup_hits_and_misses(tmp_path, monkeypatch):
     """Registry lookup. ``MAGI_STATE_DIR`` is set so the
     registry can build role-gate tools (which lazily
     open a session)."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    
     assert get_tool("read_file") is not None
     assert get_tool("does_not_exist") is None
-
 
 # ────────────────────────────────────────────────────────────────── #
 # safe_resolve
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_safe_resolve_rejects_path_traversal(tmp_path):
     """``../etc/passwd`` is rejected even though the
@@ -173,13 +165,11 @@ def test_safe_resolve_rejects_path_traversal(tmp_path):
     with pytest.raises(ValueError, match="escapes workspace"):
         safe_resolve(tmp_path, "../etc/passwd")
 
-
 def test_safe_resolve_rejects_absolute_paths(tmp_path):
     """Absolute paths are rejected because they bypass
     the workspace-relative semantics."""
     with pytest.raises(ValueError, match="escapes workspace"):
         safe_resolve(tmp_path, "/etc/passwd")
-
 
 def test_safe_resolve_rejects_long_paths(tmp_path):
     """Path length cap is a defensive guard against the
@@ -187,13 +177,11 @@ def test_safe_resolve_rejects_long_paths(tmp_path):
     with pytest.raises(ValueError, match="path too long"):
         safe_resolve(tmp_path, "a" * 2000)
 
-
 def test_safe_resolve_rejects_nonexistent(tmp_path):
     """``must_be_file=True`` (the default) raises when the
     file doesn't exist."""
     with pytest.raises(ValueError, match="does not exist"):
         safe_resolve(tmp_path, "nope.txt")
-
 
 def test_safe_resolve_rejects_directory_when_must_be_file(tmp_path):
     """Asking for ``must_be_file`` on a directory is
@@ -202,7 +190,6 @@ def test_safe_resolve_rejects_directory_when_must_be_file(tmp_path):
     with pytest.raises(ValueError, match="directory"):
         safe_resolve(tmp_path, "sub")
 
-
 def test_safe_resolve_allows_dirs_when_must_be_file_false(tmp_path):
     """``write_file`` calls with ``must_be_file=False`` so
     it can create a new file in an empty directory."""
@@ -210,18 +197,16 @@ def test_safe_resolve_allows_dirs_when_must_be_file_false(tmp_path):
     target = safe_resolve(tmp_path, "sub/new.txt", must_be_file=False)
     assert target == (tmp_path / "sub" / "new.txt").resolve()
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Tools — end-to-end on a real tmp workspace
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.fixture
 def workspace_ctx(tmp_path, monkeypatch):
     """A ``ToolContext`` pointing at a fresh tmp workspace."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    # Reset the SQLAlchemy engine singleton so each test
+    
+# Reset the SQLAlchemy engine singleton so each test
     # gets a fresh engine pointing at this test's
     # tmp_path. Without this, the second test onwards
     # writes to the first test's DB and the third test's
@@ -236,7 +221,6 @@ def workspace_ctx(tmp_path, monkeypatch):
         channel="webui",
     )
 
-
 @pytest.mark.asyncio
 async def test_read_file_returns_content(workspace_ctx):
     (workspace_ctx.workspace / "SOUL.md").write_text(
@@ -247,7 +231,6 @@ async def test_read_file_returns_content(workspace_ctx):
     assert "# soul" in result.content
     assert "hello" in result.content
 
-
 @pytest.mark.asyncio
 async def test_read_file_rejects_traversal(workspace_ctx):
     """The LLM trying ``../../etc/passwd`` gets a clear
@@ -255,7 +238,6 @@ async def test_read_file_rejects_traversal(workspace_ctx):
     result = await ReadFileTool().run(workspace_ctx, path="../etc/passwd")
     assert result.is_error is True
     assert "escapes workspace" in result.content
-
 
 @pytest.mark.asyncio
 async def test_read_file_truncates_large_files(workspace_ctx):
@@ -271,7 +253,6 @@ async def test_read_file_truncates_large_files(workspace_ctx):
     # boundary depends on UTF-8 char alignment.
     assert len(result.content) < len(big)
 
-
 @pytest.mark.asyncio
 async def test_write_file_creates_file_and_parent_dirs(workspace_ctx):
     result = await WriteFileTool().run(
@@ -280,7 +261,6 @@ async def test_write_file_creates_file_and_parent_dirs(workspace_ctx):
     assert result.is_error is False
     target = workspace_ctx.workspace / "notes" / "today.md"
     assert target.read_text(encoding="utf-8") == "hi"
-
 
 @pytest.mark.asyncio
 async def test_write_file_overwrites_atomically(workspace_ctx):
@@ -295,7 +275,6 @@ async def test_write_file_overwrites_atomically(workspace_ctx):
     assert target.read_text(encoding="utf-8") == "new"
     assert list(workspace_ctx.workspace.glob(".f.txt.*.tmp")) == []
 
-
 @pytest.mark.asyncio
 async def test_write_file_rejects_traversal(workspace_ctx):
     result = await WriteFileTool().run(
@@ -306,7 +285,6 @@ async def test_write_file_rejects_traversal(workspace_ctx):
     # Verify nothing leaked to disk outside the workspace.
     assert not (workspace_ctx.workspace.parent / "escape.txt").exists()
 
-
 @pytest.mark.asyncio
 async def test_write_file_rejects_oversized_content(workspace_ctx):
     """The 256 KB cap is a guard against runaway LLM
@@ -316,7 +294,6 @@ async def test_write_file_rejects_oversized_content(workspace_ctx):
     )
     assert result.is_error is True
     assert "limit" in result.content
-
 
 @pytest.mark.asyncio
 async def test_list_files_returns_entries(workspace_ctx):
@@ -331,7 +308,6 @@ async def test_list_files_returns_entries(workspace_ctx):
     dir_entry = next(e for e in body["entries"] if e["name"] == "b")
     assert dir_entry["type"] == "dir"
 
-
 @pytest.mark.asyncio
 async def test_list_files_rejects_file_path(workspace_ctx):
     """Passing a file path (not a directory) is an
@@ -340,7 +316,6 @@ async def test_list_files_rejects_file_path(workspace_ctx):
     result = await ListFilesTool().run(workspace_ctx, path="a.txt")
     assert result.is_error is True
     assert "not a directory" in result.content
-
 
 @pytest.mark.asyncio
 async def test_send_message_webui_returns_error(workspace_ctx):
@@ -356,7 +331,6 @@ async def test_send_message_webui_returns_error(workspace_ctx):
         or "session" in result.content
         or "not available" in result.content
     )
-
 
 @pytest.mark.asyncio
 async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
@@ -435,7 +409,6 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     # already be True and the adapter already in place).
     assert dispatcher.get_adapter("tg") is not None
 
-
 @pytest.mark.asyncio
 async def test_send_message_tg_no_callback_returns_error():
     """A TG channel call without an injected callback
@@ -450,7 +423,6 @@ async def test_send_message_tg_no_callback_returns_error():
     result = await SendMessageTool().run(ctx, text="hi")
     assert result.is_error is True
 
-
 @pytest.mark.asyncio
 async def test_send_message_rejects_oversized_text(workspace_ctx):
     """4000-char cap matches the TG API limit."""
@@ -460,18 +432,15 @@ async def test_send_message_rejects_oversized_text(workspace_ctx):
     assert result.is_error is True
     assert "limit" in result.content
 
-
 # (End-to-end agent-loop tests removed — see module
 # docstring for the rationale. The 24 unit tests above
 # cover the tools + schema + safety surface; the loop
 # itself is exercised by the live smoke in
 # ``tests/manual/test_tools_live.py``.)
 
-
 # ───────────────────────────────────────────────────────────────── #
 # read_file — windowed mode (offset / limit)
 # ───────────────────────────────────────────────────────────────── #
-
 
 @pytest.mark.asyncio
 async def test_read_file_windowed_returns_line_numbers(workspace_ctx):
@@ -499,7 +468,6 @@ async def test_read_file_windowed_returns_line_numbers(workspace_ctx):
     # Suffix offers the next page.
     assert "offset=4" in result.content
 
-
 @pytest.mark.asyncio
 async def test_read_file_windowed_offset_past_end_errors(workspace_ctx):
     """``offset`` past EOF is a clean error, not a
@@ -512,7 +480,6 @@ async def test_read_file_windowed_offset_past_end_errors(workspace_ctx):
     )
     assert result.is_error is True
     assert "past the end" in result.content
-
 
 @pytest.mark.asyncio
 async def test_read_file_windowed_no_more_pages_omits_suffix(workspace_ctx):
@@ -532,7 +499,6 @@ async def test_read_file_windowed_no_more_pages_omits_suffix(workspace_ctx):
     assert "two" in result.content
     assert "more lines" not in result.content
 
-
 @pytest.mark.asyncio
 async def test_read_full_file_still_no_line_numbers(workspace_ctx):
     """Without ``offset``/``limit`` we keep the
@@ -550,11 +516,9 @@ async def test_read_full_file_still_no_line_numbers(workspace_ctx):
     assert "first\nsecond" in result.content
     assert "|" not in result.content.split("\n")[0]
 
-
 # ───────────────────────────────────────────────────────────────── #
 # edit_file
 # ───────────────────────────────────────────────────────────────── #
-
 
 @pytest.mark.asyncio
 async def test_edit_file_replaces_unique_match(workspace_ctx):
@@ -583,7 +547,6 @@ async def test_edit_file_replaces_unique_match(workspace_ctx):
         "name: app\nversion: 1\nport: 9090\n"
     )
 
-
 @pytest.mark.asyncio
 async def test_edit_file_rejects_non_unique_match(workspace_ctx):
     """If ``old_str`` appears more than once the
@@ -606,7 +569,6 @@ async def test_edit_file_rejects_non_unique_match(workspace_ctx):
     # File unchanged.
     assert target.read_text(encoding="utf-8") == "foo\nbar\nfoo\n"
 
-
 @pytest.mark.asyncio
 async def test_edit_file_rejects_missing_match(workspace_ctx):
     """``old_str`` not in the file → clear error,
@@ -624,7 +586,6 @@ async def test_edit_file_rejects_missing_match(workspace_ctx):
     )
     assert result.is_error is True
     assert "not found" in result.content
-
 
 @pytest.mark.asyncio
 async def test_edit_file_supports_empty_new_str(workspace_ctx):
@@ -649,7 +610,6 @@ async def test_edit_file_supports_empty_new_str(workspace_ctx):
         "def f():\n    return 1\n"
     )
 
-
 @pytest.mark.asyncio
 async def test_edit_file_rejects_traversal(workspace_ctx):
     """Path resolution goes through ``safe_resolve`` —
@@ -667,7 +627,6 @@ async def test_edit_file_rejects_traversal(workspace_ctx):
     assert result.is_error is True
     assert "escapes workspace" in result.content
 
-
 @pytest.mark.asyncio
 async def test_edit_file_rejects_non_utf8(workspace_ctx):
     """Editing a non-UTF-8 file fails with a clear
@@ -684,7 +643,6 @@ async def test_edit_file_rejects_non_utf8(workspace_ctx):
     )
     assert result.is_error is True
     assert "not valid UTF-8" in result.content
-
 
 @pytest.mark.asyncio
 async def test_edit_file_rejects_oversized_old_str(workspace_ctx):
@@ -704,7 +662,6 @@ async def test_edit_file_rejects_oversized_old_str(workspace_ctx):
     )
     assert result.is_error is True
     assert "smaller chunk" in result.content
-
 
 @pytest.mark.asyncio
 async def test_edit_file_atomicity_preserves_previous_on_failure(
@@ -748,13 +705,12 @@ async def test_edit_file_atomicity_preserves_previous_on_failure(
     ]
     assert leftovers == [], f"leftover tmp files: {leftovers}"
 
-
 def test_edit_file_appears_in_registry(tmp_path, monkeypatch):
     """Sanity: edit_file is registered alongside the
     other file tools.
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    
     from magi.agent.tools.registry import get_tool_schemas
     names = [t["name"] for t in get_tool_schemas()]
     assert "edit_file" in names

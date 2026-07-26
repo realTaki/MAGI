@@ -1,24 +1,14 @@
 """MAGI node — single ``Node`` assembly.
 
-A MAGI process is a node with **independent configuration axes**:
+A MAGI process is a node. Configuration is read from the database
+(``settings`` table), not from environment variables. The only env
+var is ``MAGI_STATE_DIR`` (always ``/workspace/memories`` inside
+the container — not user-overridable). Everything else lives in
+the SQLite database under ``/workspace/memories/magi.db``.
 
-- ``MAGI_NODE_ROLE`` — permission scope preset (``adam`` = enterprise,
-  ``eve`` = personal). Acts as a default for a few other axes; every
-  axis can still be overridden explicitly.
-- ``MAGI_CHANNELS`` — comma-separated list of channel adapters to mount
-  (``webui``, ``telegram``, future ``email`` / ``calendar`` …). Any
-  role can mount any subset of channels.
-- ``MAGI_STATE_BACKEND`` — which persistent store to use
-  (``postgres`` | ``sqlite`` | ``auto``). Independent of role.
-- ``MAGI_ADAM_URL`` / ``MAGI_SHARED_SECRET`` — how to reach / auth Adam
-  for ingest RPC. Any node may need these; not role-gated.
-
-The role only affects the permission gate inside the runtime; it never
-picks storage, channels or peers on its own. The presets exist for
-operator ergonomics — ``MAGI_NODE_ROLE=adam`` is just a shorthand for
-"scope=enterprise, default channels=webui" and ``MAGI_NODE_ROLE=eve``
-for "scope=personal, default channels=telegram"; every underlying
-field is overridable.
+Boot flow: if this MAGI doesn't know its parent MAGIC (no ``magics``
+row references it), it seeds the Genesis MAGIC and becomes Adam.
+C6 EVEs will receive their parent MAGIC IP at startup and register.
 """
 
 from __future__ import annotations
@@ -69,88 +59,63 @@ _CHANNELS_SETTINGS_KEY = "channels.enabled"
 # ``Application`` is reused after a Python reload).
 
 
+# -- hard-coded container paths (not env-var configurable) -----------------
+_STATE_DIR = "/workspace/memories"
+_WEBUI_HOST = "0.0.0.0"
+_WEBUI_PORT = 42069
+
 # ----------------------------------------------------------------------
 # config
 # ----------------------------------------------------------------------
 @dataclass(frozen=True)
 class NodeConfig:
-    """Environment-driven config for a single MAGI node.
+    """Minimal config for a MAGI node.  Nearly everything lives in the DB."""
 
-    All fields are flat and independent. ``role`` is just a tag; every
-    other field can be set regardless of role. Anything left ``None``
-    means "not relevant to the current channel mix" — it's the absence
-    of a requirement, not a coupling.
-    """
-
-    role: str
+    role: str = "adam"
     channels: tuple[str, ...] = field(default_factory=tuple)
-
-    # — always-on (read regardless of role / channels) —
-    shared_secret_set: bool = False
-    adam_url: str = "http://adam:42069"
-    log_level: str = "info"
-
-    # — persistent store (any role, any channel mix) —
-    # ``auto`` means "postgres if DATABASE_URL is set, else sqlite".
-    state_backend: str = "auto"
-
-    # — WebUI channel (when "webui" in channels) —
-    host: str | None = None
-    port: int | None = None
+    state_dir: str = _STATE_DIR
+    host: str = _WEBUI_HOST
+    port: int = _WEBUI_PORT
     reload: bool = False
-
-    # — Telegram channel (when "telegram" in channels) —
-    uid: str | None = None
-    bot_token_set: bool = False
-    state_dir: str | None = None
+    log_level: str = "info"
 
     # ------------------------------------------------------------------
     @classmethod
     def from_env(cls) -> "NodeConfig":
-        role = (os.environ.get("MAGI_NODE_ROLE", "")).strip().lower()
+        """Build config.  The only env var honoured is ``--role`` via
+        CLI (see ``magi/__main__.py``); everything else is hardcoded or
+        read from the DB at boot.
+        """
+        # Role from CLI only; defaults to "adam" for the solo-node case.
+        role = (os.environ.get("MAGI_NODE_ROLE", "")).strip().lower() or "adam"
         if role not in VALID_ROLES:
             raise ValueError(
                 f"MAGI_NODE_ROLE must be one of {VALID_ROLES!r}, got {role!r}"
             )
 
-        # Channels are read from the DB (``settings.channels.enabled``),
-        # not from an env var.  The ``channels`` field here is a
-        # placeholder; the real list is resolved by :func:`run`.
-        host = os.environ.get("MAGI_HOST", "0.0.0.0")
-        port = int(os.environ.get("MAGI_PORT", "42069"))
+        # Log level: read from settings if available, fall back to "info".
+        # The DB isn't up yet during from_env, so we use a temp default;
+        # ``run()`` will re-read and apply it after ORM init.
+        log_level = "info"
+        try:
+            from magi.agent.db.settings import state_get
+            db_level = state_get(_STATE_DIR, "system.log_level")
+            if db_level and db_level in ("debug", "info", "warning", "error"):
+                log_level = db_level
+        except Exception:
+            pass
 
-        # ``state_dir`` belongs to the node, not to any specific channel —
-        # Adam uses it for SQLite state (small / dev), Eve for local working
-        # state. Read it unconditionally. Default matches the container's
-        # working directory (matches Agent convention).
-        state_dir = require_state_dir()
+        reload = os.environ.get("MAGI_RELOAD", "0") == "1"
 
         return cls(
             role=role,
             channels=(),
-            shared_secret_set=bool(os.environ.get("MAGI_SHARED_SECRET")),
-            adam_url=os.environ.get("MAGI_ADAM_URL", "http://adam:42069"),
-            log_level=os.environ.get("MAGI_LOG_LEVEL", "info"),
-            state_backend=_resolve_state_backend(os.environ.get("MAGI_STATE_BACKEND")),
-            host=host,
-            port=port,
-            reload=os.environ.get("MAGI_RELOAD", "0") == "1",
-            uid=None,
-            bot_token_set=False,
-            state_dir=state_dir,
+            state_dir=_STATE_DIR,
+            host=_WEBUI_HOST,
+            port=_WEBUI_PORT,
+            reload=reload,
+            log_level=log_level,
         )
-
-
-def _resolve_state_backend(raw: str | None) -> str:
-    """Validate MAGI_STATE_BACKEND; ``auto`` resolves at use time."""
-    backend = (raw or "auto").strip().lower()
-    if backend not in VALID_STATE_BACKENDS:
-        raise ValueError(
-            f"MAGI_STATE_BACKEND must be one of {VALID_STATE_BACKENDS!r}, got {raw!r}"
-        )
-    if backend == "auto":
-        return "postgres" if os.environ.get("DATABASE_URL") else "sqlite"
-    return backend
 
 
 # ----------------------------------------------------------------------
@@ -170,37 +135,25 @@ def check() -> int:
 
 
 def run() -> None:
-    """Boot the node: for each enabled channel, run its launcher."""
+    """Boot the node: init SQLite, then launch channels from DB config."""
     cfg = NodeConfig.from_env()
     logging.basicConfig(
         level=cfg.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    logger.info("node starting", extra={
-        "version": __version__,
-        "role": cfg.role,
-        "channels": list(cfg.channels),
-    })
+    logger.info("node starting",
+        extra={"version": __version__, "role": cfg.role})
 
-    logger.info(
-        "node starting",
-        extra={
-            "version": __version__,
-            "role": cfg.role,
-            "channels": list(cfg.channels),
-            "state_backend": cfg.state_backend,
-        },
-    )
+    state_dir = cfg.state_dir or _STATE_DIR
 
-    _init_state(cfg)
+    # SQLite init — always SQLite, no Postgres switch.
+    from magi.agent.db import init_sqlite
+    db_path = init_sqlite(state_dir)
+    logger.info("sqlite initialised", extra={"path": str(db_path)})
 
-    # Initialise the SQLAlchemy ORM tables (Contact, MAGIC, Magi,
-    # and the future C1.x additions). Idempotent — ``create_all``
-    # is a no-op for existing tables, so this is safe on every
-    # boot. Runs in the same ``magi.db`` file as the hand-rolled
-    # KV store; the two write to disjoint tables.
-    from magi.agent.db import init_orm, require_state_dir
-    init_orm(cfg.state_dir)
+    # Initialise the ORM tables. Idempotent.
+    from magi.agent.db import init_orm
+    init_orm(state_dir)
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
     # session files. Idempotent (INSERT OR IGNORE on the
@@ -213,21 +166,24 @@ def run() -> None:
     from pathlib import Path
     from magi.agent.memory.session import migrate_from_json
     from magi.agent.workspace import workspace_root
-    migrate_from_json(Path(workspace_root(cfg.state_dir)))
+    migrate_from_json(Path(workspace_root(state_dir)))
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent — every boot re-checks but
     # only creates what's missing, so deployer edits to SOUL.md
     # (or anything else) survive across restarts.
     from magi.agent.workspace import bootstrap_workspace, workspace_root
-    bootstrap_workspace(workspace_root(cfg.state_dir))
+    bootstrap_workspace(workspace_root(state_dir))
 
-    # D.X — load any MCP servers declared in mcp.json. The
-    # loader is sync at the boot layer because the rest of
-    # ``run()`` is sync; ``bootstrap_mcp_tools`` internally
-    # spins a private event loop. Errors degrade to "no MCP
-    # tools" so a misconfigured MCP config never blocks
-    # startup.
+    # D.X — bootstrap MCP servers declared in the
+    # ``mcp_servers`` table. The loader is sync at the
+    # boot layer because the rest of ``run()`` is sync;
+    # ``bootstrap_mcp_tools`` internally spins a private
+    # event loop. Errors degrade to "no MCP tools" so a
+    # misconfigured server never blocks startup. The
+    # agent loop's :func:`maybe_reload_mcp_tools` is
+    # what makes operator edits in the WebUI take effect
+    # on the next chat turn.
     try:
         from magi.agent.tools.registry import bootstrap_mcp_tools
         bootstrap_mcp_tools()
@@ -243,7 +199,7 @@ def run() -> None:
     # handler.
     try:
         from magi.agent.proactive.scheduler import start_scheduler
-        start_scheduler(cfg.state_dir)
+        start_scheduler(state_dir)
     except Exception as e:  # noqa: BLE001
         logger.warning("scheduler bootstrap skipped: %s", e)
 
@@ -277,10 +233,8 @@ def run() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    # Read channel enable/disable state from the DB
-    # (``settings.channels.enabled``).  First boot seeds
-    # the key so there's always a value after onboarding.
-    channels = _read_channels_from_db(cfg.state_dir)
+    # Read channel enable/disable state from the DB.
+    channels = _read_channels_from_db(state_dir)
     if not channels:
         logger.warning("no channels enabled; exiting")
         return
@@ -299,23 +253,9 @@ def run() -> None:
         _launch_channel(channel, cfg)
 
 
-def _init_state(cfg: NodeConfig) -> None:
-    """Bring up the local state backend before any channel starts.
-
-    For ``sqlite`` (the default in C0), creates the SQLite file under
-    ``MAGI_STATE_DIR`` and logs the path. Postgres initialisation lands
-    alongside the ORM in C1.
-    """
-    if cfg.state_backend != "sqlite":
-        logger.info(
-            "state backend %s — deferring init to its own module (C1+)",
-            cfg.state_backend,
-        )
-        return
-
-    state_dir = cfg.state_dir or "/workspace/memories"
+def _init_state(state_dir: str) -> None:
+    """Create the SQLite file under ``state_dir``.  Always SQLite."""
     from magi.agent.db import init_sqlite
-
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
@@ -325,31 +265,10 @@ def _init_state(cfg: NodeConfig) -> None:
 # in C3 once the Telegram runtime exists (asyncio.gather).
 # ----------------------------------------------------------------------
 def _launch_webui(cfg: NodeConfig) -> None:
-    """Mount the WebUI channel: serve FastAPI on cfg.host:cfg.port.
-
-    Uses uvicorn's ``factory=True`` mode (the import string points at
-    ``create_app``) so ``reload=True`` works — uvicorn needs an import
-    string, not a pre-built app object, to spawn the reloader watcher.
-    """
-    from magi.channels.webui.app import create_app  # lazy: keeps FastAPI off EVE-without-webui
-
-    host = cfg.host or "0.0.0.0"
-    port = cfg.port or 42069
-    logger.info(
-        "webui channel starting",
-        extra={"host": host, "port": port, "reload": cfg.reload},
-    )
-    # Pin the reload watcher to the magi package root.
-    # Without this, uvicorn falls back to ``os.getcwd()`` —
-    # which inside the dev container is ``/app/magi/WebUI``
-    # (the Vite web root, not the Python source tree). The watcher
-    # silently no-ops against the wrong tree, so D.6 / D.7
-    # edits never reached the running process and a manual
-    # ``docker restart`` was needed to pick them up.
-    # The agent workspace is intentionally not the source tree. In dev,
-    # docker-compose mounts the read-only checkout at /app/magi so an agent
-    # shell cannot edit the code it is running. Keep the reload watcher on
-    # that source path rather than under /workspace.
+    """Mount the WebUI channel: serve FastAPI on the hardcoded port."""
+    from magi.channels.webui.app import create_app
+    host = cfg.host
+    port = cfg.port
     reload_dirs = ["/app/magi"] if cfg.reload else None
 
     uvicorn.run(
@@ -357,44 +276,21 @@ def _launch_webui(cfg: NodeConfig) -> None:
         factory=True,
         host=host,
         port=port,
-        log_level=cfg.log_level.lower(),
+        log_level=cfg.log_level,
         reload=cfg.reload,
         reload_dirs=reload_dirs,
     )
 
 
 def _launch_telegram(cfg: NodeConfig) -> None:
-    """Mount the Telegram channel: start a python-telegram-bot listener.
-
-    C0 behaviour is the "first-touch" handler from
-    ``magi.channels.telegram.bot``: anyone not in the admin
-    list (an ``Contact`` row with ``role='admin'``) gets a
-    reply with their own chat id and a "contact admin" nudge.
-    C3 will replace this with the real agent-loop dispatcher.
-
-    No-op when no bot token has been saved (e.g. onboarding step 1 not
-    yet done). The bot daemon thread restarts are not required to pick
-    up new admins — the allowlist is re-read on every message.
-    """
-    state_dir = cfg.state_dir or "/workspace/memories"
+    """Mount the Telegram channel: start the bot polling daemon."""
     from magi.channels.telegram.bot import start_bot
 
     thread = start_bot(state_dir)
     if thread is None:
-        logger.info(
-            "telegram: bot token not saved yet — channel idle until onboarding completes",
-            extra={"state_dir": state_dir},
-        )
+        logger.info("telegram: bot token not saved yet — channel idle")
         return
-    logger.info(
-        "telegram channel running",
-        extra={
-            "uid": cfg.uid,
-            "adam_url": cfg.adam_url,
-            "state_dir": state_dir,
-            "bot_thread": thread.name,
-        },
-    )
+    logger.info("telegram channel running", extra={"bot_thread": thread.name})
 
 
 _LAUNCHERS = {

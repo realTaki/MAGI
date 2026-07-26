@@ -37,6 +37,16 @@ _tools_cache: list["Tool"] | None = None
 # merges the two lists.
 _mcp_tools_cache: list["Tool"] | None = None
 
+# Stamp of the most recent successful MCP load —
+# specifically, the ``max(updated_at)`` observed across
+# the ``mcp_servers`` table at load time. Compared on
+# every chat turn by :func:`maybe_reload_mcp_tools`: a
+# mismatch means an operator edited (added / removed /
+# toggled / deleted) a server since the last load and
+# the cache is stale. ``None`` means "never loaded",
+# which forces a reload on the first chat turn.
+_mcp_loaded_at_db = None
+
 
 def _build_tools() -> list["Tool"]:
     """Construct one instance of every v0 tool.
@@ -204,7 +214,7 @@ def reset_cache() -> None:
     _tools_cache = None
 
 
-def bootstrap_mcp_tools(config_path: str | None = None) -> list["Tool"]:
+def bootstrap_mcp_tools() -> list["Tool"]:
     """One-shot MCP loader used by :mod:`magi.node` at startup.
 
     Sync from the caller's POV — it runs the asyncio
@@ -212,15 +222,40 @@ def bootstrap_mcp_tools(config_path: str | None = None) -> list["Tool"]:
     discovered tools (also cached so subsequent
     :func:`get_tools` calls reuse them).
 
+    The loader reads from the ``mcp_servers`` table — the
+    table is the only source of truth (the legacy
+    ``mcp.json`` flow is gone). The table is read every
+    time this function runs, including on a lazy reload
+    triggered by :func:`maybe_reload_mcp_tools`.
+
     Errors degrade to "no MCP tools". The boot never fails
     because MCP didn't make it through. See
     ``load_mcp_tools_blocking`` for the loop mechanics.
     """
-    global _mcp_tools_cache
+    global _mcp_tools_cache, _mcp_loaded_at_db
+    from magi.agent.db import McpServer, open_session
     from magi.agent.tools.mcp_loader import load_mcp_tools_blocking
 
-    tools = load_mcp_tools_blocking(config_path)
+    tools = load_mcp_tools_blocking()
     _mcp_tools_cache = list(tools)
+    # Stamp the cache with the table's max ``updated_at``
+    # so a subsequent :func:`maybe_reload_mcp_tools` can
+    # detect a stale cache without a monotonic-float
+    # comparison. ``None`` when the table is empty — the
+    # "did the table change?" check below handles that
+    # path explicitly.
+    try:
+        with open_session() as s:
+            stamp = s.query(McpServer.updated_at).order_by(
+                McpServer.updated_at.desc()
+            ).first()
+        _mcp_loaded_at_db = stamp[0] if stamp is not None else None
+    except Exception:
+        # Don't let a DB read failure poison the cache
+        # load. The next chat turn will retry the stamp
+        # read; until then the cache is fresh from the
+        # loader's POV.
+        _mcp_loaded_at_db = None
     if tools:
         logger.info("MCP bootstrap registered %d tool(s): %s",
                     len(tools), ", ".join(t.name for t in tools))
@@ -233,6 +268,59 @@ def reset_mcp_cache() -> None:
     Unlike :func:`reset_cache` (which wipes the built-in
     tools too), this is used by tests that want to swap the
     MCP config without rebuilding the slow built-in list.
+
+    Also resets the load stamp so the next
+    :func:`maybe_reload_mcp_tools` will fire even if the
+    test edits the table without bumping ``updated_at``.
     """
-    global _mcp_tools_cache
+    global _mcp_tools_cache, _mcp_loaded_at_db
     _mcp_tools_cache = None
+    _mcp_loaded_at_db = None
+
+
+def maybe_reload_mcp_tools() -> list["Tool"] | None:
+    """Re-bootstrap the MCP cache if the table changed.
+
+    Called at the top of every chat turn (see
+    :mod:`magi.agent.loop`). Cheap when the table is
+    untouched — a single ``SELECT MAX(updated_at) FROM
+    mcp_servers`` query, no reconnect, no subprocess.
+
+    Returns the freshly-loaded list when a reload fired
+    (or an empty list when the table is empty after the
+    reload) so the caller can log "MCP reloaded with N
+    tools". Returns ``None`` when the cache was up to date
+    — no logging, no churn.
+    """
+    from magi.agent.db import McpServer, open_session
+
+    try:
+        with open_session() as s:
+            latest = s.query(McpServer.updated_at).order_by(
+                McpServer.updated_at.desc()
+            ).first()
+    except Exception:
+        # Missing table (pre-init) or DB hiccup — leave
+        # the cache alone. The next chat turn will try
+        # again, and the boot path (``init_orm``)
+        # guarantees the table exists before the first
+        # turn anyway.
+        return None
+
+    latest_stamp = latest[0] if latest is not None else None
+
+    if latest_stamp == _mcp_loaded_at_db:
+        # No row has been touched since the last load
+        # AND the cache is fresh. ``_mcp_tools_cache``
+        # might still be ``None`` if the last reload
+        # produced zero tools — that's fine, we treat
+        # the empty-table case as "no edit needed"
+        # too.
+        return None
+
+    # Either the table is now non-empty (was empty at
+    # last load) OR the latest ``updated_at`` has moved
+    # forward. Either way: reload. Bootstrap logs the
+    # new tool count; we just return the list so the
+    # caller can plumb a debug log.
+    return bootstrap_mcp_tools()

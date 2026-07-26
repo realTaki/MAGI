@@ -36,9 +36,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -48,8 +46,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -76,7 +73,6 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         db.refresh(admin)
     return {"state": sd, "workspace": ws, "admin": admin}
 
-
 @pytest.fixture
 def client(state):
     """TestClient signed in as Alice (admin)."""
@@ -88,9 +84,7 @@ def client(state):
     c.cookies.set("magi_session", _sign_uid(state["admin"].id))
     return c
 
-
 # -- soul (persona) -------------------------------------------------------
-
 
 def test_soul_load_save_reset_round_trip(state, client):
     """The operator edits ``SOUL.md`` via the Settings tab:
@@ -149,9 +143,7 @@ def test_soul_load_save_reset_round_trip(state, client):
     # Content differs from the user-saved persona.
     assert after_reset["content"].strip() != new_persona
 
-
 # -- system timezone -----------------------------------------------------
-
 
 def test_timezone_load_save_reread_round_trip(state, client):
     """The operator changes the system timezone via the
@@ -198,9 +190,7 @@ def test_timezone_load_save_reread_round_trip(state, client):
     still_good = client.get("/api/system-settings/timezone").json()
     assert still_good["current"] == new_tz
 
-
 # -- cross-flow: tz change is reflected in a new task ---------------------
-
 
 def test_timezone_change_propagates_to_newly_created_task(
     state, client,

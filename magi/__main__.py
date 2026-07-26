@@ -20,10 +20,12 @@ from magi.node import VALID_ROLES, check, run
 
 
 def _resolve_role(args_role: str | None) -> str:
-    role = (args_role or os.environ.get("MAGI_NODE_ROLE", "")).strip().lower()
+    # Role defaults to "adam" — the solo-node case seeds Genesis.
+    # C6 EVEs will set ``--role eve`` explicitly when dispatched.
+    role = (args_role or os.environ.get("MAGI_NODE_ROLE", "adam")).strip().lower()
     if role not in VALID_ROLES:
         print(
-            f"magi: MAGI_NODE_ROLE must be one of {VALID_ROLES!r}, got {role!r}",
+            f"magi: role must be one of {VALID_ROLES!r}, got {role!r}",
             file=sys.stderr,
         )
         sys.exit(2)

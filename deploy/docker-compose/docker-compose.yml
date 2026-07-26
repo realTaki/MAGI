@@ -1,24 +1,17 @@
 # MAGI docker-compose — minimal local deployment.
 #
-# Single image, one service: Adam.
-# Eve containers are not defined here yet — they land in C6 via the
-# Adam Web UI dispatch button, which renders per-employee compose files.
+# Single image, one service: Adam. Eve containers are not
+# defined here yet — they land in C6 via the Adam Web UI
+# dispatch button, which renders per-employee compose files.
 #
-# Build context is the repo root (``..``) so the Dockerfile at
-# ``deploy/Dockerfile`` can ``COPY magi/`` and ``COPY pyproject.toml``.
-# This file lives in ``deploy/`` so ``.env`` is auto-loaded by compose
-# from the same directory.
+# Configuration lives in the SQLite database. The only
+# compose-time variable is MAGI_WORKSPACE_DIR (host-side
+# bind-mount source — set in docker-compose/.env, NOT passed
+# into the container). Inside the container the workspace is
+# always at /workspace (hardcoded, derived from MAGI_STATE_DIR).
 #
-# All hard-coded values that depend on the deployment (port, host-side
-# workspace path, log level) are pulled from .env via ${VAR:-default}
-# so the user can override them without editing this file.
-#
-# C0: Adam only serves /health. SQLite lands at /workspace/state/magi.db
-# inside the container. The host-side bind mount is
-# ${MAGI_WORKSPACE_DIR:-../../workspace}/Adam — Adam owns its own subdirectory under
-# the shared workspace, so EVE containers can sit next to
-# it (eve-<id>:/workspace) once C6 lands.
-# Postgres returns in C1.
+# C0: Adam serves /health + WebUI on :42069. SQLite at
+# /workspace/memories/magi.db inside the container.
 
 name: magi
 
@@ -32,29 +25,7 @@ services:
   adam:
     <<: *magi-base
     env_file: ../.env
-    environment:
-      MAGI_LOG_LEVEL: ${MAGI_LOG_LEVEL:-info}
-      MAGI_NODE_ROLE: adam
-      MAGI_RELOAD: ${MAGI_RELOAD:-0}
-      # Channel enable/disable is now DB-driven (settings.channels.enabled).
-      # No MAGI_CHANNELS env var — the Settings → Channels card is the
-      # single source of truth.
-      # No MCP secrets here — secrets for upstream services
-      # (e.g. the MiniMax API key consumed by the MiniMax MCP)
-      # are configured via the WebUI Settings tab once MCP
-      # support lands there. Embedding them in the deploy
-      # manifest would also make the deploy an attractive
-      # secrets-handling surface for whoever reads it.
     ports:
-      - "${MAGI_PORT:-42069}:42069"
+      - "42069:42069"
     volumes:
-      # Each container gets its own subdirectory under
-      # MAGI_WORKSPACE_DIR so Adam and future Eve containers don't
-      # trample each other's SQLite. Required — must be set in
-      # ``deploy/.env`` (or via the shell env when invoking
-      # ``docker compose``). Must be an absolute path; relative
-      # paths would resolve against the compose file's
-      # directory and shadow the operator's real data with a
-      # fresh ``deploy/docker-compose/workspace/Adam`` on every
-      # ``up``.
       - "${MAGI_WORKSPACE_DIR:?MAGI_WORKSPACE_DIR must be set to an absolute path in deploy/.env}/Adam:/workspace"

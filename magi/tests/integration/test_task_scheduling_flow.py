@@ -32,9 +32,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- fixtures ---------------------------------------------------------------
-
 
 @pytest.fixture
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -44,8 +42,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -73,7 +70,6 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         db.refresh(admin)
     return {"state": sd, "admin": admin}
 
-
 @pytest.fixture
 def client(state):
     """TestClient with Alice's signed cookie.
@@ -95,9 +91,7 @@ def client(state):
     c.cookies.set("magi_session", _sign_uid(state["admin"].id))
     return c
 
-
 from contextlib import contextmanager
-
 
 @contextmanager
 def _fake_handle_message_patch():
@@ -118,9 +112,7 @@ def _fake_handle_message_patch():
     finally:
         runner_mod.handle_message = real
 
-
 # -- the happy path --------------------------------------------------------
-
 
 def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     state, client,
@@ -206,9 +198,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     assert run["trigger"] == "manual"
     assert run["reply_excerpt"] == "fake reply"
 
-
 # -- CRUD chain ------------------------------------------------------------
-
 
 def test_task_crud_chain_create_update_disable_delete(state, client):
     """Create → patch prompt → patch enabled=false (so the
@@ -269,9 +259,7 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
     gone = client.get(f"/api/tasks/{task_id}")
     assert gone.status_code == 404
 
-
 # -- cross-flow: TG task uses operator's bound telegram_id -----------------
-
 
 def test_create_tg_task_uses_operator_telegram_id_as_delivery_to(
     state, client,
@@ -300,7 +288,6 @@ def test_create_tg_task_uses_operator_telegram_id_as_delivery_to(
     assert body["target_channel"] == "tg"
     # Server-derived from operator.telegram_id (9101).
     assert body["delivery_to"] == "9101"
-
 
 def test_create_tg_task_without_telegram_binding_returns_400(state):
     """Operator without a bound ``telegram_id`` cannot create

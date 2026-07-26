@@ -55,8 +55,8 @@ def read_soul(state_dir: str) -> str:
     """Load the persona text from the workspace's ``SOUL.md``.
 
     Path resolution goes through :func:`magi.agent.workspace.workspace_root`
-    so a deployer that sets ``MAGI_WORKSPACE_DIR`` (state lives
-    outside the workspace tree) still gets the right file.
+    which derives the workspace from ``MAGI_STATE_DIR`` (always
+    ``/workspace`` inside the container).
 
     This is a **read** function — it does not bootstrap or write
     to disk. :func:`magi.agent.workspace.bootstrap_workspace`

@@ -17,9 +17,9 @@ Two roots are scanned, in this order:
     source. Acts as the default catalog the deployer
     can customise away.
   - ``<workspace>/skills/`` — the **operator** directory.
-    Derived from ``MAGI_WORKSPACE_DIR`` (or the default
-    ``<state_dir>/..``). Operator-edited SKILL.md files
-    here override bundle entries with the same name
+    Derived from ``MAGI_STATE_DIR`` (workspace =
+    ``<state_dir>/..`` — always ``/workspace`` inside the
+    container). Operator-edited SKILL.md files here override bundle entries with the same name
     without warning — that is the normal "I want to
     customise this skill" flow.
 
@@ -81,8 +81,8 @@ _SKILL_FILENAME = "SKILL.md"
 # lives at ``magi/agent/tools/skill_loader.py``; the bundle sits
 # at ``magi/skills/`` — one level up from the package, one
 # level further up from the package's parent. Resolved at
-# import time so the path is stable across ``MAGI_WORKSPACE_DIR``
-# overrides.
+# import time so the path is stable regardless of where the
+# operator mounts the workspace.
 _BUNDLE_SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills"
 # 1-2 sentence description is the sweet spot — fits the
 # system-prompt block without bloating, tells the LLM
@@ -126,13 +126,11 @@ def _workspace_root() -> Path:
     inline the implementation to avoid a circular import path
     at module load time (agent → skills loader → workspace).
 
-    Both ``MAGI_WORKSPACE_DIR`` override and the default
-    (``<state_dir>/..`` — typically ``/workspace``) are
-    honoured.
+    Workspace is always ``<state_dir>/..`` — inside the container
+    this resolves to ``/workspace``.  There is no env-var override
+    (the host-side mount path is a docker-compose concern, not a
+    runtime concern).
     """
-    override = os.environ.get("MAGI_WORKSPACE_DIR")
-    if override:
-        return Path(override)
     state_dir = require_state_dir()
     return Path(state_dir).parent
 
@@ -601,11 +599,10 @@ _skill_loader_lock = __import__("threading").RLock()
 def get_skill_loader() -> SkillLoader:
     """Build (or return) the module singleton.
 
-    Honours ``MAGI_WORKSPACE_DIR`` (or the default derived
-    from ``MAGI_STATE_DIR``) for the root path — same
-    rule the rest of the runtime uses, so a deployer
-    pointing ``MAGI_WORKSPACE_DIR`` at a different tree
-    has their skills land in the right place.
+    The root path is always ``<MAGI_STATE_DIR>/..`` (i.e.
+    ``/workspace`` inside the container).  There is no
+    override — the host-side mount path is a docker-compose
+    concern.
     """
     global _skill_loader
     with _skill_loader_lock:

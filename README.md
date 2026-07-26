@@ -23,8 +23,9 @@ True agentic societyAgents form organizations (MAGICs) with leaders and members,
 ```bash
 git clone https://github.com/MAGI/MAGI.git
 cd MAGI
+# Copy and edit the env template — set your host workspace path
 cp deploy/.env.example deploy/.env
-# edit deploy/.env — at minimum set MAGI_WORKSPACE_DIR (required)
+# edit deploy/.env
 docker compose \
   --env-file deploy/.env \
   -f deploy/docker-compose/docker-compose.yml \

@@ -11,7 +11,6 @@ data:
   MAGI_CHANNELS: webui
   MAGI_STATE_BACKEND: sqlite
   MAGI_STATE_DIR: /workspace/memories
-  MAGI_WORKSPACE_DIR: /workspace
   MAGI_HOST: 0.0.0.0
   MAGI_PORT: "42069"
   MAGI_RELOAD: "0"

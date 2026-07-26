@@ -43,9 +43,7 @@ from magi.agent.memory.session import (
     utcnow_iso,
 )
 
-
 # -- helpers / fixtures --------------------------------------------------
-
 
 @pytest.fixture(autouse=True)
 def _reset_orm_engine() -> None:
@@ -60,7 +58,6 @@ def _reset_orm_engine() -> None:
     _orm_mod._SessionLocal = None
     yield
 
-
 @pytest.fixture
 def state(tmp_path: Path, monkeypatch) -> Path:
     sd = tmp_path / "state"
@@ -68,11 +65,10 @@ def state(tmp_path: Path, monkeypatch) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
+    
     init_sqlite(str(sd))
     init_orm(str(sd))
     return sd
-
 
 @pytest.fixture
 def admin(state) -> Contact:
@@ -90,7 +86,6 @@ def admin(state) -> Contact:
         s.refresh(emp)
         return emp
 
-
 def _make_session(
     state: Path, channel: str, delivery_address: str = "9001",
     uid: int = 1,
@@ -107,11 +102,9 @@ def _make_session(
     )
     return sess.session_id
 
-
 # ────────────────────────────────────────────────────────────────── #
 # SessionStore.append_messages — channel guard
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_append_with_matching_channel_succeeds(state: Path) -> None:
     """Same channel as the session owner → write goes
@@ -128,7 +121,6 @@ def test_append_with_matching_channel_succeeds(state: Path) -> None:
         1, sid, [msg], channel="tg",
     )
     assert any(m.text == "hi" for m in sess.messages)
-
 
 def test_append_with_mismatched_channel_raises(state: Path) -> None:
     """A WebUI caller trying to append to a TG-owned
@@ -148,7 +140,6 @@ def test_append_with_mismatched_channel_raises(state: Path) -> None:
     assert ei.value.caller_channel == "webui"
     assert ei.value.session_id == sid
 
-
 def test_append_with_omitted_channel_skips_check(state: Path) -> None:
     """``channel=None`` (the default) bypasses the guard —
     useful for back-fill tooling that operates on
@@ -163,7 +154,6 @@ def test_append_with_omitted_channel_skips_check(state: Path) -> None:
     # No ``channel=`` kwarg → no guard.
     sess = store.append_messages(1, sid, [msg])
     assert any(m.text == "backfill" for m in sess.messages)
-
 
 def test_append_to_legacy_session_with_empty_channel_skips_check(
     state: Path,
@@ -186,7 +176,6 @@ def test_append_to_legacy_session_with_empty_channel_skips_check(
         "unreachable via public SessionStore.create — covered "
         "by the unit-level guard test above."
     )
-
 
 def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
     """The mismatch raises BEFORE any INSERT runs — the
@@ -216,7 +205,6 @@ def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
     user_texts = [m.text for m in sess.messages if m.role == "user"]
     assert user_texts == ["legit tg msg"]
 
-
 def test_get_does_not_check_channel(state: Path) -> None:
     """Reads are cross-channel by design — the same
     contact may browse their TG history from WebUI."""
@@ -234,11 +222,9 @@ def test_get_does_not_check_channel(state: Path) -> None:
     assert sess is not None
     assert any(m.text == "hi" for m in sess.messages)
 
-
 # ────────────────────────────────────────────────────────────────── #
 # WebUI chat API — 403 chat.session_channel_mismatch
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.fixture
 def client(state: Path, admin: Contact):
@@ -271,7 +257,6 @@ def client(state: Path, admin: Contact):
     yield test_client
     monkeypatch_obj.undo()
 
-
 def _post_send(
     client: TestClient, admin: Contact, text: str, session_id: str,
 ):
@@ -280,7 +265,6 @@ def _post_send(
         json={"text": text, "session_id": session_id},
         cookies={"magi_session": str(admin.id)},
     )
-
 
 def test_webui_send_to_tg_owned_session_is_403(
     client: TestClient, admin: Contact, state: Path,
@@ -309,7 +293,6 @@ def test_webui_send_to_tg_owned_session_is_403(
     user_texts = [m.text for m in sess.messages if m.role == "user"]
     assert user_texts == []
 
-
 def test_webui_send_to_webui_owned_session_is_200(
     client: TestClient, admin: Contact, state: Path,
 ) -> None:
@@ -333,7 +316,6 @@ def test_webui_send_to_webui_owned_session_is_200(
     assert sess.messages[0].text == "hello"
     assert sess.messages[1].text == "never-called"
 
-
 def test_webui_send_to_scheduled_owned_session_is_403(
     client: TestClient, admin: Contact, state: Path,
 ) -> None:
@@ -348,7 +330,6 @@ def test_webui_send_to_scheduled_owned_session_is_403(
     assert r.json()["code"] == "chat.session_channel_mismatch"
     assert "scheduled" in r.json()["detail"]
     client._fake_handle.assert_not_called()  # type: ignore[attr-defined]
-
 
 def test_webui_list_includes_cross_channel_sessions(
     client: TestClient, admin: Contact, state: Path,

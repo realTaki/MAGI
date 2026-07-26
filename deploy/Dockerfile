@@ -10,8 +10,9 @@
 # separate static host, no "is webui available on this role?" question.
 #
 # Role (Adam / EVE) is selected at runtime via MAGI_NODE_ROLE; channel
-# selection (webui / telegram) is via MAGI_CHANNELS. SQLite lives at
-# /workspace/state (bind-mounted to the host).
+# selection (webui / telegram) is read from settings.channels.enabled at
+# boot (seeded to [webui] on first boot, toggled via Settings → Channels).
+# SQLite lives at /workspace/state (bind-mounted to the host).
 
 # -----------------------------------------------------------------------------
 # Stage 1: build the React SPA

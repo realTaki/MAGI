@@ -59,10 +59,10 @@ if [ "$mode" = "prod" ]; then
     echo "aborted"
     exit 0
   fi
-  # ``MAGI_WORKSPACE_DIR`` is required (``:?`` interpolation in
-  # the compose file) — we always load ``deploy/.env`` so the
-  # mount path is the operator's explicit choice, not the
-  # relative-path fallback that would shadow real data.
+  # ``MAGI_WORKSPACE_DIR`` is provided by ``--env-file deploy/.env``.
+  # It is used ONLY for the volume bind-mount interpolation;
+  # it is NOT used by the container code — the workspace inside
+  # the container is always at the hardcoded ``/workspace``.
   echo ">>> rebuilding adam image"
   docker compose \
     --env-file deploy/.env \

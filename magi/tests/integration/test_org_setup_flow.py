@@ -42,9 +42,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -61,8 +59,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -92,7 +89,6 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         root = db.query(MAGIC).filter(MAGIC.name == "Genesis").one()
     return {"state": sd, "admin": admin, "root": root}
 
-
 @pytest.fixture
 def client(state):
     """TestClient signed in as the seeded admin."""
@@ -104,16 +100,13 @@ def client(state):
     c.cookies.set("magi_session", _sign_uid(state["admin"].id))
     return c
 
-
 def _seed_root_id(client) -> int:
     """The auto-seeded Genesis root is the only row with ``parent_id
     is None`` — every user-created team must hang under it."""
     rows = client.get("/api/magics").json()
     return next(r["id"] for r in rows if r["parent_id"] is None)
 
-
 # -- the happy path --------------------------------------------------------
-
 
 def test_full_org_setup_flow_add_contact_create_team_add_adam(
     state, client,
@@ -207,7 +200,6 @@ def test_full_org_setup_flow_add_contact_create_team_add_adam(
     assert len(eng_magis) == 1
     assert eng_magis[0]["id"] == adam_id
 
-
 def test_create_magic_requires_parent(client):
     """A user-created team MUST name a parent (the seeded Genesis
     root). Omitting ``parent_id`` is rejected with 422 so the UI
@@ -216,9 +208,7 @@ def test_create_magic_requires_parent(client):
     r = client.post("/api/magics", json={"name": "Lonely"})
     assert r.status_code == 422
 
-
 # -- cross-flow: org surfaces visible to chat-sessions and contacts ---------
-
 
 def test_newly_added_contact_visible_in_chat_session_owner_resolution(
     state, client,
@@ -265,9 +255,7 @@ def test_newly_added_contact_visible_in_chat_session_owner_resolution(
     # is immediately usable as a session owner).
     assert listing["uid"] == bob_id
 
-
 # -- the delete-tree scenario ---------------------------------------------
-
 
 def test_delete_parent_team_reparents_child_and_unbinds_adam(
     state, client,
@@ -342,9 +330,7 @@ def test_delete_parent_team_reparents_child_and_unbinds_adam(
     # the reparent intact.
     assert root_detail["adam_id"] is not None
 
-
 # -- duplicate-name validation -------------------------------------------
-
 
 def test_duplicate_team_name_returns_400(state, client):
     """Two teams with the same name → the second POST
@@ -361,9 +347,7 @@ def test_duplicate_team_name_returns_400(state, client):
     assert dup.status_code == 400
     assert dup.json()["code"] == "validation.magic_name_duplicate"
 
-
 # -- adam-already-assigned: only one adam per team ----------------------
-
 
 def test_adding_second_adam_to_team_returns_409(state, client):
     """Each MAGIC team has exactly one adam. A second POST

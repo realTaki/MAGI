@@ -48,9 +48,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- shared fixtures --------------------------------------------------------
-
 
 @pytest.fixture
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -66,8 +64,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -76,7 +73,6 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     init_sqlite(str(sd))
     init_orm(str(sd))
     return sd
-
 
 @pytest.fixture
 def mocked_telegram(monkeypatch):
@@ -111,7 +107,6 @@ def mocked_telegram(monkeypatch):
     monkeypatch.setattr(tg_bot, "start_bot", lambda *_a, **_kw: None)
     return tg_bot
 
-
 @pytest.fixture
 def client(state, mocked_telegram):
     """TestClient with no auth cookie — onboarding is pre-auth."""
@@ -121,9 +116,7 @@ def client(state, mocked_telegram):
     with TestClient(app) as c:
         yield c
 
-
 # -- the happy path --------------------------------------------------------
-
 
 def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     state, client, mocked_telegram,
@@ -282,9 +275,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     assert mocked_telegram.send_text_raw.await_count == 2
     assert mocked_telegram.get_chat_name_raw.await_count == 4
 
-
 # -- mid-flow restart ------------------------------------------------------
-
 
 def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
     state, client, mocked_telegram,
@@ -350,9 +341,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
     assert post["super_admins_count"] == 1
     assert post["onboarding_complete"] is False
 
-
 # -- cross-flow: onboarding-created admins appear in /api/contacts ---------
-
 
 def test_onboarded_admins_show_up_in_contacts_directory(
     state, client, mocked_telegram,

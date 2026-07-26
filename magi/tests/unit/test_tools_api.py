@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from magi.agent.tools import registry as registry_mod
 from magi.agent.tools.base import Tool, ToolContext, ToolResult
 
-
 class _FakeTool(Tool):
     name = "fake__demo"
     description = "Demo tool for /api/tools coverage. Takes a name."
@@ -33,7 +32,6 @@ class _FakeTool(Tool):
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
 
-
 class _LongTool(Tool):
     name = "fake__long"
     description = "x" * 500
@@ -41,7 +39,6 @@ class _LongTool(Tool):
 
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
-
 
 class _McpTool(Tool):
     name = "github__create_issue"
@@ -51,7 +48,6 @@ class _McpTool(Tool):
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
 
-
 class _AardvarkTool(Tool):
     name = "fake__aardvark"
     description = "x"
@@ -60,7 +56,6 @@ class _AardvarkTool(Tool):
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
 
-
 class _ZebraTool(Tool):
     name = "fake__zebra"
     description = "y"
@@ -68,7 +63,6 @@ class _ZebraTool(Tool):
 
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
-
 
 @pytest.fixture
 def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -83,8 +77,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     from magi.agent.db import init_sqlite
     from magi.agent.db import Contact, init_orm, open_session
     import magi.agent.db.engine as _orm_mod
@@ -110,7 +103,6 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         s.commit()
     return sd
 
-
 @pytest.fixture
 def client(state) -> TestClient:
     # Each test starts with a clean tool cache and may
@@ -122,7 +114,6 @@ def client(state) -> TestClient:
     c = TestClient(app)
     c.cookies.set("magi_session", "1")
     return c
-
 
 @pytest.fixture(autouse=True)
 def _reset_tool_cache() -> None:
@@ -144,7 +135,6 @@ def _reset_tool_cache() -> None:
     registry_mod._tools_cache = None
     registry_mod._mcp_tools_cache = None
 
-
 def test_tools_lists_builtin_schemas(client: TestClient) -> None:
     """Round-trip: GET /api/tools returns the fake tool."""
     r = client.get("/api/tools")
@@ -157,7 +147,6 @@ def test_tools_lists_builtin_schemas(client: TestClient) -> None:
     # ``prop_count`` counts the input_schema's properties dict.
     assert body["items"][0]["prop_count"] == 2
 
-
 def test_tools_description_truncated_at_200_chars(client: TestClient) -> None:
     """Long descriptions get a ``...`` suffix at 200 chars."""
     registry_mod._tools_cache = [_LongTool()]
@@ -168,7 +157,6 @@ def test_tools_description_truncated_at_200_chars(client: TestClient) -> None:
     desc = body["items"][0]["description"]
     assert len(desc) == 200
     assert desc.endswith("...")
-
 
 def test_tools_includes_mcp_cache_too(client: TestClient) -> None:
     """``get_tool_schemas`` glues built-in + MCP into one
@@ -185,7 +173,6 @@ def test_tools_includes_mcp_cache_too(client: TestClient) -> None:
     assert "fake__demo" in names
     assert "github__create_issue" in names
 
-
 def test_tools_response_is_sorted_by_name(client: TestClient) -> None:
     """Stable lexicographic order so the dashboard's table
     renders deterministically across refreshes."""
@@ -196,8 +183,6 @@ def test_tools_response_is_sorted_by_name(client: TestClient) -> None:
     body = r.json()
     names = [it["name"] for it in body["items"]]
     assert names == sorted(names) == ["fake__aardvark", "fake__zebra"]
-
-
 
 class _GatedTool(Tool):
     """Tool with a non-empty :attr:`ALLOWED_ROLES` for the
@@ -215,7 +200,6 @@ class _GatedTool(Tool):
     async def run(self, ctx: ToolContext, **kwargs):  # pragma: no cover
         return ToolResult(content="")
 
-
 def test_tools_response_includes_allowed_roles(client: TestClient) -> None:
     """``GET /api/tools`` surfaces each tool's
     :attr:`ALLOWED_ROLES` as a sorted list — the
@@ -229,7 +213,6 @@ def test_tools_response_includes_allowed_roles(client: TestClient) -> None:
     # Sorted: roles render in a stable order regardless of
     # frozenset ordering.
     assert body["items"][0]["allowed_roles"] == ["admin", "assigned"]
-
 
 def test_tools_response_returns_empty_list_for_unrestricted(
     client: TestClient,
@@ -246,7 +229,6 @@ def test_tools_response_returns_empty_list_for_unrestricted(
     body = r.json()
     assert body["items"][0]["name"] == "fake__demo"
     assert body["items"][0]["allowed_roles"] == []
-
 
 def test_tools_response_keeps_role_order_alphabetical(
     client: TestClient,
@@ -272,7 +254,6 @@ def test_tools_response_keeps_role_order_alphabetical(
     assert r.status_code == 200
     body = r.json()
     assert body["items"][0]["allowed_roles"] == ["admin", "middle", "zzz"]
-
 
 def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
@@ -304,8 +285,6 @@ def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
         "strip admin-only tools from the operator's view"
     )
 
-
-
 def test_tools_response_tags_builtins_as_builtin(
     client: TestClient,
 ) -> None:
@@ -318,7 +297,6 @@ def test_tools_response_tags_builtins_as_builtin(
     body = r.json()
     assert body["items"][0]["source"] == "builtin"
 
-
 def test_tools_response_tags_mcp_tools_as_mcp(
     client: TestClient,
 ) -> None:
@@ -330,7 +308,6 @@ def test_tools_response_tags_mcp_tools_as_mcp(
     body = r.json()
     assert body["items"][0]["source"] == "mcp"
     assert body["items"][0]["name"] == "github__create_issue"
-
 
 def test_tools_response_partitions_by_source(
     client: TestClient,
@@ -353,7 +330,6 @@ def test_tools_response_partitions_by_source(
         ("builtin", "fake__demo"),
         ("mcp",     "github__create_issue"),
     ]
-
 
 def test_tools_response_default_source_field_present(client: TestClient) -> None:
     """Regression guard for the ``source`` field — older

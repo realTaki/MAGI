@@ -4,7 +4,7 @@ Mounts the real FastAPI app, drives ``/api/chat/sessions``
 CRUD + ``/api/chat/send`` with a seed admin + mocked LLM.
 
 The session file persistence lives in a per-test temp
-workspace (``MAGI_WORKSPACE_DIR``), so every test gets a
+workspace (the workspace root), so every test gets a
 clean on-disk layout and pytest tears it down.
 """
 
@@ -22,16 +22,13 @@ from magi.agent.memory.session import SessionStore
 from magi.agent.db import init_sqlite
 from magi.agent.db import Contact, init_orm, open_session
 
-
 # A fake LLM reply used when we monkey-patch ``handle_message``
 # for the duration of a test that exercises ``/api/chat/send``.
 _FAKE_REPLY = "stubbed-from-mock"
 
-
 # ────────────────────────────────────────────────────────────────── #
 # fixtures
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.fixture
 def state(tmp_path, monkeypatch) -> Path:
@@ -49,9 +46,8 @@ def state(tmp_path, monkeypatch) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
-    # Reset the orm module's engine singleton so each test
+    
+# Reset the orm module's engine singleton so each test
     # points at its own fresh sqlite file. Without this,
     # every test after the first inserts into a path that
     # no longer exists → IntegrityError on duplicate key
@@ -63,7 +59,6 @@ def state(tmp_path, monkeypatch) -> Path:
     init_sqlite(str(sd))
     init_orm(str(sd))
     return sd
-
 
 @pytest.fixture
 def admin(state) -> Contact:
@@ -91,7 +86,6 @@ def admin(state) -> Contact:
         s.refresh(emp)
         return emp
 
-
 @pytest.fixture
 def client(state, admin, monkeypatch) -> TestClient:
     """The app with ``handle_message`` stubbed so /chat/send doesn't
@@ -113,7 +107,6 @@ def client(state, admin, monkeypatch) -> TestClient:
     from magi.channels.webui.app import app
     return TestClient(app)
 
-
 @pytest.fixture(autouse=True)
 def _reset_orm_engine():
     """Auto-reset the global SQLAlchemy engine before each test.
@@ -130,16 +123,13 @@ def _reset_orm_engine():
     _orm_mod._SessionLocal = None
     yield
 
-
 def _admin_cookie(admin: Contact) -> dict:
     """Cookie payload for the admin route."""
     return {"magi_session": str(admin.id)}
 
-
 # ────────────────────────────────────────────────────────────────── #
 # CRUD: /chat/sessions
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_list_requires_auth(state):
     from magi.channels.webui.app import app
@@ -147,7 +137,6 @@ def test_list_requires_auth(state):
     r = c.get("/api/chat/sessions")
     assert r.status_code == 401
     assert r.json()["code"] == "auth.not_signed_in"
-
 
 def test_create_returns_session_id_and_persists(client, admin, state, monkeypatch):
     r = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
@@ -164,7 +153,6 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     assert row.delivery_address == str(admin.telegram_id)
     assert row.uid == admin.id
 
-
 def test_list_returns_created_session(client, admin):
     client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
     client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
@@ -180,7 +168,6 @@ def test_list_returns_created_session(client, admin):
         "message_count", "preview",
     }.issubset(item)
 
-
 def test_get_returns_full_session(client, admin):
     create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
     sid = create.json()["session_id"]
@@ -194,7 +181,6 @@ def test_get_returns_full_session(client, admin):
     assert body["messages"] == []
     assert body["schema_version"] == 1
 
-
 def test_get_unknown_session_404(client, admin):
     # ULID-shaped (Crockford base32, 26 chars) but no file written.
     # All chars must be from the Crockford alphabet — I/L/O/U
@@ -207,7 +193,6 @@ def test_get_unknown_session_404(client, admin):
     assert r.status_code == 404
     assert r.json()["code"] == "not_found.session"
 
-
 def test_get_malformed_session_id_400(client, admin):
     """A non-ULID id (length wrong) is a 400."""
     r = client.get(
@@ -215,7 +200,6 @@ def test_get_malformed_session_id_400(client, admin):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.session_id_invalid"
-
 
 def test_delete_idempotent(client, admin):
     """DELETE removes; calling DELETE again on the same id is a
@@ -231,11 +215,9 @@ def test_delete_idempotent(client, admin):
     r3 = client.get(f"/api/chat/sessions/{sid}", cookies=_admin_cookie(admin))
     assert r3.status_code == 404
 
-
 # ────────────────────────────────────────────────────────────────── #
 # /api/chat/send with session_id
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_send_without_session_id_autocreates(client, admin):
     """Sending without session_id returns a fresh id and persists
@@ -271,7 +253,6 @@ def test_send_without_session_id_autocreates(client, admin):
         roles = [m.role for m in s.messages]
         assert "user" in roles
 
-
 def test_send_with_existing_session_id_appends(client, admin):
     """Sending with a known session_id appends to that session."""
     create = client.post("/api/chat/sessions", cookies=_admin_cookie(admin))
@@ -302,7 +283,6 @@ def test_send_with_existing_session_id_appends(client, admin):
     assert listing["total"] == 1
     assert listing["items"][0]["message_count"] >= 2
 
-
 def test_send_with_unknown_session_id_autocreates(client, admin):
     """An unknown session_id is treated the same as None —
     backend creates a fresh one and returns its id."""
@@ -325,7 +305,6 @@ def test_send_with_unknown_session_id_autocreates(client, admin):
         item["session_id"] == body["session_id"]
         for item in listing["items"]
     )
-
 
 def test_tgids_isolated(client, state):
     """Two admins signing in see distinct session lists."""
@@ -382,12 +361,10 @@ def test_tgids_isolated(client, state):
     # invariant.
     assert r.status_code == 404
 
-
 def test_send_requires_admin_gate(client, admin):
     """No cookie → 401 from AdminGate, not a session write."""
     r = client.post("/api/chat/send", json={"text": "hi"})
     assert r.status_code == 401
-
 
 def test_send_with_malformed_session_id_400(client, admin):
     """The shape check catches non-ULID ids before store writes."""
@@ -398,7 +375,6 @@ def test_send_with_malformed_session_id_400(client, admin):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.session_id_invalid"
-
 
 def test_session_persistence_across_calls(client, admin, state):
     """Full round-trip: create session → send → list shows the new
@@ -418,7 +394,6 @@ def test_session_persistence_across_calls(client, admin, state):
     assert sess["session_id"] == sid
     # At least one user message persisted.
     assert any(m["role"] == "user" for m in sess["messages"])
-
 
 def test_list_pagination(client, admin):
     """?limit=2&offset=0 paginates."""
@@ -440,7 +415,6 @@ def test_list_pagination(client, admin):
         it["session_id"] for it in r2["items"]
     }
 
-
 def test_delete_unauth_state_no_leak(state, admin):
     """Deleting files under the workspace doesn't break the next
     request. Sanity check that there are no path-leak issues
@@ -458,11 +432,9 @@ def test_delete_unauth_state_no_leak(state, admin):
         it["session_id"] for it in listing["items"]
     ])
 
-
 # ────────────────────────────────────────────────────────────────── #
 # D.7 — PATCH /api/chat/sessions/{id} (manual rename)
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_patch_session_renames(client, admin):
     """``PATCH {title: "..."}`` renames the session on disk and
@@ -484,7 +456,6 @@ def test_patch_session_renames(client, admin):
         f"/api/chat/sessions/{sid}", cookies=_admin_cookie(admin)
     )
     assert get.json()["title"] == "Acme 会议 明天 3 点"
-
 
 def test_patch_session_clears_title(client, admin):
     """``null`` and ``""`` both clear the title."""
@@ -518,7 +489,6 @@ def test_patch_session_clears_title(client, admin):
     assert r2.status_code == 200
     assert r2.json()["title"] is None
 
-
 def test_patch_session_absent_title_is_noop(client, admin):
     """``PATCH {}`` (no title field at all) leaves the session
     untouched and returns its current state.
@@ -546,7 +516,6 @@ def test_patch_session_absent_title_is_noop(client, admin):
     assert body["session_id"] == sid
     assert body["updated_at"] == initial_updated_at  # unchanged
 
-
 def test_patch_session_clamps_too_long_title(client, admin):
     """Pydantic ``max_length=80`` rejects 81 chars before the
     handler even runs (422)."""
@@ -559,7 +528,6 @@ def test_patch_session_clamps_too_long_title(client, admin):
         json={"title": "x" * 81},
     )
     assert r.status_code == 422
-
 
 def test_patch_session_trims_whitespace(client, admin):
     """The store re-trims even when Pydantic passes a long-but-
@@ -574,7 +542,6 @@ def test_patch_session_trims_whitespace(client, admin):
     assert r.status_code == 200
     assert r.json()["title"] == "hello world"
 
-
 def test_patch_unknown_session_404(client, admin):
     """ULID-shaped but no file → 404."""
     fake_sid = "01ABCDEFGHJKMNPQRSTVWXYZAB"
@@ -585,7 +552,6 @@ def test_patch_unknown_session_404(client, admin):
     )
     assert r.status_code == 404
     assert r.json()["code"] == "not_found.session"
-
 
 def test_patch_malformed_session_id_400(client, admin):
     """Non-ULID id → 400 ``validation.session_id_invalid``.
@@ -598,7 +564,6 @@ def test_patch_malformed_session_id_400(client, admin):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.session_id_invalid"
-
 
 def test_patch_requires_admin(client):
     """No cookie → 401 (AdminGate). Independent of any

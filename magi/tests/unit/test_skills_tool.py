@@ -12,20 +12,20 @@ from magi.agent.tools.skill_loader import _reset_for_tests
 from magi.agent.tools.skill_loader_tool import SkillLoaderTool
 from magi.agent.tools.base import ToolContext, ToolResult
 
-
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
     ws = tmp_path / "ws"
     (ws / "skills").mkdir(parents=True)
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
+    (ws / "state").mkdir()
+    monkeypatch.setenv("MAGI_STATE_DIR", str(ws / "state"))
+
     _reset_for_tests()
     yield ws
     _reset_for_tests()
 
-
 def _ctx(workspace_root: Path) -> ToolContext:
     # ``ctx.workspace`` is only inspected for ``safe_resolve``
-    # in some tools; our skill loader uses ``MAGI_WORKSPACE_DIR``
+    # in some tools; our skill loader uses the workspace root
     # directly via the singleton, so we don't care that this
     # is a stub value.
     return ToolContext(
@@ -35,7 +35,6 @@ def _ctx(workspace_root: Path) -> ToolContext:
         uid=0,
         channel="webui",
     )
-
 
 def _write_skill(
     workspace_root: Path,
@@ -51,7 +50,6 @@ def _write_skill(
         encoding="utf-8",
     )
 
-
 def test_load_skill_returns_body(workspace):
     _write_skill(workspace, "alpha", "alpha body — should be returned")
     tool = SkillLoaderTool()
@@ -59,7 +57,6 @@ def test_load_skill_returns_body(workspace):
     assert isinstance(result, ToolResult)
     assert "alpha body — should be returned" in result.content
     assert result.is_error is False
-
 
 def test_load_skill_unknown_name_returns_friendly_message(workspace):
     """A missing skill is NOT an error — the LLM should
@@ -71,12 +68,10 @@ def test_load_skill_unknown_name_returns_friendly_message(workspace):
     assert result.is_error is False
     assert "does-not-exist" in result.content
 
-
 def test_load_skill_blank_name_is_error(workspace):
     tool = SkillLoaderTool()
     result = asyncio_run(tool.run(_ctx(workspace), name=""))
     assert result.is_error is True
-
 
 def test_load_skill_rejects_unsafe_name(workspace):
     """Path-traversal is rejected — we don't want the LLM
@@ -84,7 +79,6 @@ def test_load_skill_rejects_unsafe_name(workspace):
     tool = SkillLoaderTool()
     result = asyncio_run(tool.run(_ctx(workspace), name="../../etc/passwd"))
     assert result.is_error is True
-
 
 def test_load_skill_truncates_oversized_body(workspace):
     """Bodies larger than the cap (32 KB) are truncated
@@ -97,7 +91,6 @@ def test_load_skill_truncates_oversized_body(workspace):
     assert len(result.content) < 40 * 1024
     assert "truncated" in result.content
 
-
 def test_load_skill_uses_magisolated_singleton(workspace):
     """The tool reads the SkillLoader singleton at
     construction. After a singleton reset, the new
@@ -107,11 +100,9 @@ def test_load_skill_uses_magisolated_singleton(workspace):
     res_a = asyncio_run(tool_a.run(_ctx(workspace), name="alpha"))
     assert "alpha" in res_a.content
 
-
 # Minimal async runner for sync test execution (no pytest-asyncio
 # ceremony; tests stay readable as documentation).
 import asyncio
-
 
 def asyncio_run(coro):
     """Drive an async coroutine to completion. Each test

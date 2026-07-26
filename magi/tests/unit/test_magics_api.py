@@ -21,11 +21,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- fixtures --------------------------------------------------------------
 
 _MAGIC_POSITIONS: tuple[str, ...] = ("adam", "eve")
-
 
 def _signed_session_cookie(uid: int) -> str:
     """Mint an HMAC-signed ``magi_session`` cookie value
@@ -33,7 +31,6 @@ def _signed_session_cookie(uid: int) -> str:
     from magi.channels.webui.api.auth import _sign_uid
 
     return _sign_uid(uid)
-
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
@@ -43,8 +40,7 @@ def env(monkeypatch, tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -87,7 +83,6 @@ def env(monkeypatch, tmp_path):
         "adam": adam,
     }
 
-
 @pytest.fixture
 def client(env):
     """TestClient with signed admin cookie."""
@@ -97,7 +92,6 @@ def client(env):
     c = TestClient(app)
     c.cookies.set("magi_session", _signed_session_cookie(env["admin"].id))
     return c
-
 
 @pytest.fixture
 def non_admin_client(env):
@@ -122,9 +116,7 @@ def non_admin_client(env):
     c.cookies.set("magi_session", _signed_session_cookie(uid))
     return c
 
-
 # -- tests -----------------------------------------------------------------
-
 
 def test_list_magics_returns_seeded_root(client, env):
     """The default seed stamps one ``MAGIC`` row; list
@@ -139,7 +131,6 @@ def test_list_magics_returns_seeded_root(client, env):
     assert root["parent_id"] is None
     assert root["adam_id"] == env["adam"].id
 
-
 def test_create_magic_top_level(client, env):
     r = client.post(
         "/api/magics",
@@ -152,7 +143,6 @@ def test_create_magic_top_level(client, env):
     assert body["adam_id"] is None
     assert body["child_count"] == 0
 
-
 def test_create_magic_duplicate_name_rejected(client, env):
     """Two rows with the same name -> 400 (duplicate-name
     check; the unique index would also kick in)."""
@@ -163,7 +153,6 @@ def test_create_magic_duplicate_name_rejected(client, env):
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_name_duplicate"
 
-
 def test_create_magic_invalid_parent_rejected(client):
     r = client.post(
         "/api/magics",
@@ -171,7 +160,6 @@ def test_create_magic_invalid_parent_rejected(client):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.parent_magic_not_found"
-
 
 def test_get_magic_returns_child_count(client, env):
     """``GET /api/magics/{id}`` includes child_count (set
@@ -194,12 +182,10 @@ def test_get_magic_returns_child_count(client, env):
     r = client.get(f"/api/magics/{child_id}")
     assert r.json()["child_count"] == 0
 
-
 def test_get_magic_404_for_missing(client):
     r = client.get("/api/magics/9999")
     assert r.status_code == 404
     assert r.json()["code"] == "not_found.magic"
-
 
 def test_update_magic_renames(client, env):
     """``PATCH name`` updates, blank rejected, duplicate rejected."""
@@ -223,7 +209,6 @@ def test_update_magic_renames(client, env):
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_name_duplicate"
 
-
 def test_update_magic_self_parent_rejected(client, env):
     """``PATCH parent_id=self_id`` raises — a MAGIC can't
     be its own parent."""
@@ -236,7 +221,6 @@ def test_update_magic_self_parent_rejected(client, env):
     r = client.patch(f"/api/magics/{mid}", json={"parent_id": mid})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_self_parent"
-
 
 def test_update_magic_reparents_cycle_rejected(client, env):
     """Reparent a subtree under a descendant — refused."""
@@ -256,7 +240,6 @@ def test_update_magic_reparents_cycle_rejected(client, env):
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_cycle"
 
-
 def test_update_magic_sets_adam(client, env):
     """``PATCH adam_id`` binds an existing adam Magi."""
     mid = env["root"].id
@@ -266,7 +249,6 @@ def test_update_magic_sets_adam(client, env):
     assert r.status_code == 200
     assert r.json()["adam_id"] == env["adam"].id
 
-
 def test_update_magic_invalid_adam_id_rejected(client, env):
     r = client.patch(
         f"/api/magics/{env['root'].id}",
@@ -274,7 +256,6 @@ def test_update_magic_invalid_adam_id_rejected(client, env):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "validation.adam_magi_not_found"
-
 
 def test_delete_magic_reparents_children(client, env):
     """Deleting a non-leaf MAGIC re-parents its direct
@@ -306,11 +287,9 @@ def test_delete_magic_reparents_children(client, env):
     assert r1.json()["parent_id"] == env["root"].id
     assert r2.json()["parent_id"] == env["root"].id
 
-
 def test_delete_magic_404_for_missing(client):
     r = client.delete("/api/magics/9999")
     assert r.status_code == 404
-
 
 def test_all_endpoints_require_admin(non_admin_client):
     """``non_admin_client`` (role='contact') is rejected at
@@ -323,7 +302,6 @@ def test_all_endpoints_require_admin(non_admin_client):
     assert r.status_code == 401
     r = non_admin_client.delete("/api/magics/1")
     assert r.status_code == 401
-
 
 def test_endpoints_require_signed_cookie(client):
     """An obviously-broken cookie (junk string) is rejected

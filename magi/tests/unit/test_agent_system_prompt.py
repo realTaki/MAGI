@@ -27,11 +27,9 @@ from pathlib import Path
 
 import pytest
 
-
 # ────────────────────────────────────────────────────────────────── #
 # fixtures
 # ────────────────────────────────────────────────────────────────── #
-
 
 @pytest.fixture(autouse=True)
 def _reset_orm_engine() -> None:
@@ -43,7 +41,6 @@ def _reset_orm_engine() -> None:
     _orm_mod._SessionLocal = None
     yield
 
-
 @pytest.fixture
 def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Per-test isolated state dir + bootstrap ORM."""
@@ -52,13 +49,11 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
 
     from magi.agent.db import init_orm, init_sqlite
     init_sqlite(str(state))
     init_orm(str(state))
     return state
-
 
 @pytest.fixture
 def seed_contacts(state_dir: Path):
@@ -86,11 +81,9 @@ def seed_contacts(state_dir: Path):
         db.commit()
     return {"alice": alice, "bob": bob}
 
-
 # ────────────────────────────────────────────────────────────────── #
 # SOUL is always present
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_always_starts_with_soul(state_dir, seed_contacts):
     """The persona file is the foundation of every prompt;
@@ -111,7 +104,6 @@ def test_prompt_always_starts_with_soul(state_dir, seed_contacts):
     assert soul_text in rendered
     # The soul text opens the block (no whitespace prefix).
     assert rendered.startswith(soul_text)
-
 
 def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
     """No memory rows, no contact for this chat — the
@@ -137,11 +129,9 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
     assert "Long-term memory" not in rendered
     assert "Current chatter" not in rendered
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Memory block
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_includes_memory_block_when_rows_exist(
     state_dir, seed_contacts,
@@ -183,7 +173,6 @@ def test_prompt_includes_memory_block_when_rows_exist(
     assert "December 15" in rendered
     # Soul is still at the top.
     assert rendered.startswith("SOUL")
-
 
 def test_prompt_memory_block_scoped_to_caller_contact(
     state_dir, seed_contacts,
@@ -231,7 +220,6 @@ def test_prompt_memory_block_scoped_to_caller_contact(
     # there's at least one row; with Bob owning nothing,
     # the memory block is empty (just SOUL + skills).
     assert "Long-term memory" not in bob_prompt
-
 
 def test_prompt_excludes_completed_ongoing_rows(
     state_dir, seed_contacts,
@@ -283,11 +271,9 @@ def test_prompt_excludes_completed_ongoing_rows(
     assert "In-flight task" in rendered
     assert "Already done" not in rendered
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Contact block (per-chat)
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_includes_contact_block_for_self(
     state_dir, seed_contacts,
@@ -318,7 +304,6 @@ def test_prompt_includes_contact_block_for_self(
 
     assert "Current chatter" in rendered
     assert "Alice runs the dev team" in rendered
-
 
 def test_prompt_contact_block_uses_display_name_not_raw_id(
     state_dir, seed_contacts,
@@ -351,7 +336,6 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     # The raw integer FK must NOT appear as the header.
     assert "**1**" not in rendered
 
-
 def test_prompt_skips_contact_block_when_no_record(
     state_dir, seed_contacts,
 ):
@@ -372,7 +356,6 @@ def test_prompt_skips_contact_block_when_no_record(
     )
     assert "Current chatter" not in rendered
     assert rendered.startswith("SOUL")
-
 
 def test_prompt_contact_block_only_for_self(
     state_dir, seed_contacts,
@@ -405,7 +388,6 @@ def test_prompt_contact_block_only_for_self(
     # Bob's notes are NOT in Alice's prompt.
     assert "bob-other-notes" not in rendered
 
-
 def test_prompt_skips_contact_block_for_other_user(
     state_dir, seed_contacts,
 ):
@@ -429,11 +411,9 @@ def test_prompt_skips_contact_block_for_other_user(
     assert "alice-own-notes" in rendered
     assert "should-not-render" not in rendered
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Skills block
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_includes_skills_block_when_registered(
     state_dir, seed_contacts, monkeypatch,
@@ -461,11 +441,9 @@ def test_prompt_includes_skills_block_when_registered(
     # Soul is still at the top.
     assert rendered.startswith("SOUL")
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Block ordering
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_block_order_is_soul_memory_contact_skills(
     state_dir, seed_contacts,
@@ -512,11 +490,9 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
 
     assert soul_idx < memory_idx < contact_idx
 
-
 # ────────────────────────────────────────────────────────────────── #
 # Resilience
 # ────────────────────────────────────────────────────────────────── #
-
 
 def test_prompt_continues_when_memory_load_fails(
     state_dir, seed_contacts, monkeypatch,
@@ -542,7 +518,6 @@ def test_prompt_continues_when_memory_load_fails(
     # Memory block is silently dropped; SOUL still renders.
     assert "Long-term memory" not in rendered
     assert "SOUL_TEXT" in rendered
-
 
 def test_prompt_continues_when_contact_load_fails(
     state_dir, seed_contacts, monkeypatch,

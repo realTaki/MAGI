@@ -50,9 +50,7 @@ from magi.channels.webui.api.tasks import (
     _resolve_delivery_to,
 )
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -71,8 +69,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -100,7 +97,6 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         # removes the file itself, so a wipe failure here
         # doesn't leak state into another test process.
         pass
-
 
 @pytest.fixture
 def seeded(fresh_db: Path) -> dict[str, Contact]:
@@ -142,9 +138,7 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
         db.refresh(bob)
     return {"alice": alice, "bob": bob}
 
-
 # -- webui channel ---------------------------------------------------------
-
 
 def test_webui_channel_without_explicit_infers_new(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -161,7 +155,6 @@ def test_webui_channel_without_explicit_infers_new(
     )
     assert result == "new"
 
-
 def test_webui_channel_with_explicit_session_id_honours_it(
     fresh_db: Path, seeded: dict[str, Contact],
 ) -> None:
@@ -177,9 +170,7 @@ def test_webui_channel_with_explicit_session_id_honours_it(
     )
     assert result == "01HABCDEFGHJKMNPQRSTVWXY"
 
-
 # -- tg channel: operator has telegram_id --------------------------------
-
 
 def test_tg_channel_uses_operator_telegram_id(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -196,7 +187,6 @@ def test_tg_channel_uses_operator_telegram_id(
         explicit="bogus-ignored",
     )
     assert result == "9101"
-
 
 def test_tg_channel_without_telegram_id_raises_400(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -219,9 +209,7 @@ def test_tg_channel_without_telegram_id_raises_400(
         seeded["bob"].id
     ) in exc_info.value.detail
 
-
 # -- PATCH re-derives on every patch --------------------------------------
-
 
 def test_update_task_tg_channel_re_derives_delivery_to(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -254,9 +242,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     )
     assert re_derived_webui == "new"
 
-
 # -- schema surface -------------------------------------------------------
-
 
 def test_task_in_schema_still_carries_delivery_to_field() -> None:
     """The Pydantic model still accepts ``delivery_to`` —
@@ -286,7 +272,6 @@ def test_task_in_schema_still_carries_delivery_to_field() -> None:
     )
     assert payload2.delivery_to == "new"
 
-
 def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
     """A PATCH that explicitly clears ``delivery_to`` (the
     field stays in the model) goes through the helper,
@@ -302,9 +287,7 @@ def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
     assert patch.target_channel == "tg"
     assert patch.delivery_to is None
 
-
 # -- smoke: a full Task row through the helper ----------------------------
-
 
 def test_task_row_carries_derived_delivery_to(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -341,9 +324,7 @@ def test_task_row_carries_derived_delivery_to(
         db.refresh(t)
     assert t.delivery_to == "9101"
 
-
 # -- past-time run_at rejection --------------------------------------------
-
 
 def test_create_task_once_with_past_run_at_rejected_at_helper(
     fresh_db: Path, seeded: dict[str, Contact],
@@ -384,7 +365,6 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "validation.run_at_in_past"
     assert "in the future" in exc_info.value.detail
-
 
 def test_create_task_once_with_future_run_at_passes_helper(
     fresh_db: Path, seeded: dict[str, Contact],

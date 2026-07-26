@@ -4,7 +4,7 @@ Pattern matches the rest of the suite
 (``test_soul_api``, ``test_actions_items_api``, etc.):
 seed an admin contact, build the real FastAPI app via
 ``create_app``, drive the endpoints. The singleton
-``SkillLoader`` reads ``MAGI_WORKSPACE_DIR`` per request,
+``SkillLoader`` reads the workspace root per request,
 so we set that env before building the app.
 """
 
@@ -21,7 +21,6 @@ from magi.agent.tools.skill_loader import _reset_for_tests
 from magi.agent.db import init_sqlite
 from magi.agent.db import Contact, init_orm, open_session
 
-
 @pytest.fixture
 def workspace(tmp_path):
     """Workspace + skills directory skeleton.
@@ -34,15 +33,18 @@ def workspace(tmp_path):
     _reset_for_tests()
     return ws
 
-
 @pytest.fixture
 def env(monkeypatch, tmp_path, workspace):
-    """MAGI_STATE_DIR + workspace + admin contact row."""
-    state = tmp_path / "state"
+    """MAGI_STATE_DIR + workspace + admin contact row.
+
+    ``MAGI_STATE_DIR`` is placed *under* ``workspace`` so
+    that ``workspace_root(state_dir)`` naturally resolves
+    to the same ``workspace`` where the test creates skills.
+    """
+    state = workspace / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(workspace))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -61,14 +63,12 @@ def env(monkeypatch, tmp_path, workspace):
         )
         s.commit()
 
-
 @pytest.fixture
 def client(env, workspace):
     app = create_app()
     c = TestClient(app)
     c.cookies.set("magi_session", "1")
     return c
-
 
 def _write(workspace: Path, name: str, description: str = "test desc", body: str = "正文"):
     skill_dir = workspace / "skills" / name
@@ -77,7 +77,6 @@ def _write(workspace: Path, name: str, description: str = "test desc", body: str
         f"---\nname: {name}\ndescription: {description}\nversion: 1.0\n---\n\n{body}\n",
         encoding="utf-8",
     )
-
 
 def test_list_skills_round_trip(client, workspace):
     """Three operator skills + three bundled examples
@@ -110,7 +109,6 @@ def test_list_skills_round_trip(client, workspace):
     }
     assert all(v == "1.0" for v in op_versions.values())
 
-
 def test_list_skills_empty_when_no_skills(client):
     """No operator SKILL.md on disk → the bundled
     examples still show up. The surface is never truly
@@ -123,7 +121,6 @@ def test_list_skills_empty_when_no_skills(client):
     names = {s["name"] for s in r.json()}
     assert {"codebase_search", "reminder_template", "web_lookup"} <= names
 
-
 def test_list_skills_requires_admin(env, workspace):
     """No cookie → 401 (AdminGate)."""
     from magi.channels.webui.app import create_app as _ca
@@ -131,7 +128,6 @@ def test_list_skills_requires_admin(env, workspace):
     c = TestClient(app)
     r = c.get("/api/skills")
     assert r.status_code == 401
-
 
 def test_get_skill_body_happy_path(client, workspace):
     _write(workspace, "alpha", description="alpha desc", body="alpha body")
@@ -143,11 +139,9 @@ def test_get_skill_body_happy_path(client, workspace):
     assert body["truncated"] is False
     assert "T" in body["modified_at"]  # ISO timestamp
 
-
 def test_get_skill_body_404_when_missing(client):
     r = client.get("/api/skills/no-such-skill/raw")
     assert r.status_code == 404
-
 
 def test_get_skill_body_400_on_invalid_name(client):
     r = client.get("/api/skills/%2E%2E%2Fetc%2Fpasswd/raw")
@@ -155,7 +149,6 @@ def test_get_skill_body_400_on_invalid_name(client):
     # depending on routing precedence. 400 is the spec'd
     # answer.
     assert r.status_code in (400, 404)
-
 
 def test_get_skill_body_truncates_oversized(client, workspace):
     """The 32 KB cap matches the ``load_skill`` tool's

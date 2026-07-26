@@ -13,29 +13,36 @@ fit a single-process host where ``async`` work runs in one
 Configuration
 -------------
 
-The deployer drops an ``mcp.json`` next to ``memories/`` (or
-sets ``MAGI_MCP_CONFIG`` to any other absolute path). Schema::
+The single source of truth is the ``mcp_servers`` table
+(:class:`magi.agent.db.models_mcp_server.McpServer`).
+Operators add / edit / toggle / delete rows from the
+WebUI Settings → MCP card. The loader reads the table on
+demand — no JSON file, no env var, no deploy manifest.
 
-    {
-      "mcpServers": {
-        "fetch":  {"command": "uvx", "args": ["mcp-server-fetch"]},
-        "github": {
-          "url": "https://api.example.com/mcp",
-          "type": "streamable_http",
-          "headers": {"Authorization": "Bearer …"}
-        }
-      }
-    }
+The legacy ``mcp.json`` + ``MAGI_MCP_CONFIG`` flow is
+gone. Operators upgrading from an older release re-create
+their servers in the UI; the deployer does not need to
+ship any secret-bearing env vars in ``deploy/...``.
 
-A missing file just means "no MCP tools"; the boot never
-fails on this layer. ``mcp-example.json`` ships as a
-deployer-starter template (mirrors the upstream convention).
+Env semantics
+-------------
+
+For stdio servers, the loader always passes
+``os.environ | operator.env`` to the subprocess. The
+container's ``PATH`` / ``HOME`` / ``LANG`` etc. are
+preserved so a stdio server that relies on a binary in
+``PATH`` keeps working; the operator's ``env`` keys
+override the container's for any key the operator sets
+to a non-empty value. An operator who leaves a key blank
+sends ``""`` and the subprocess sees ``KEY=""`` —
+explicit, never silently inherited.
 
 Lifecycle
 ---------
 
-1. :func:`load_mcp_tools_async` connects to each server (one
-   :class:`MCPServerConnection` per entry) and gathers tools.
+1. :func:`load_mcp_tools_async` reads the ``mcp_servers``
+   table and connects to each enabled server (one
+   :class:`MCPServerConnection` per row).
 2. Each tool is wrapped as an :class:`MCPTool` (a
    :class:`Tool` subclass); the wrappers share the server's
    long-lived ``ClientSession``.
@@ -46,6 +53,11 @@ The registry calls :func:`load_mcp_tools_async` once at
 boot — ``registry.load_mcp_tools_into_registry`` blocks
 exactly one event loop on it. The hot path (every chat turn
 calling ``tool.run``) only ever touches the cached wrapper.
+The agent loop also calls
+:func:`magi.agent.tools.registry.maybe_reload_mcp_tools` on
+each chat turn so a freshly-edited server row takes effect
+on the next user message (lazy reload — no live reconnect
+mid-conversation).
 """
 
 from __future__ import annotations
@@ -57,7 +69,6 @@ import os
 import time
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -393,15 +404,26 @@ class MCPServerConnection:
             return False
 
     async def _open_streams(self, defaults: MCPTimeoutConfig) -> Any:
-        """Open the MCP transport appropriate for ``connection_type``."""
+        """Open the MCP transport appropriate for ``connection_type``.
+
+        For stdio servers the subprocess env is always
+        ``os.environ | self.env`` — the container's ``PATH``,
+        ``HOME`` and friends are preserved so a stdio server
+        that relies on a binary in ``PATH`` keeps working;
+        the operator's ``env`` keys override the container's
+        for any key the operator sets. See the module
+        docstring for the rationale (operator-controlled env,
+        not "whatever the container happens to have").
+        """
         if self.connection_type == "stdio":
             from mcp import StdioServerParameters
             from mcp.client.stdio import stdio_client
 
+            merged_env = {**os.environ, **self.env}
             params = StdioServerParameters(
                 command=self.command or "",
                 args=list(self.args),
-                env=self.env if self.env else None,
+                env=merged_env,
             )
             return await self.exit_stack.enter_async_context(stdio_client(params))
         if self.connection_type == "sse":
@@ -447,97 +469,78 @@ class MCPServerConnection:
 
 
 # ────────────────────────────────────────────────────────────────── #
-# Public API — file loading + connection registry.
+# Public API — DB-backed loading + connection registry.
 # ────────────────────────────────────────────────────────────────── #
 
 
-def resolve_config_path(config_path: str) -> Path | None:
-    """Resolve the config path with the ``mcp-example.json``
-    fallback.
+def _load_servers_from_db() -> list[MCPServerConnection]:
+    """Read the ``mcp_servers`` table and return one
+    :class:`MCPServerConnection` per enabled row.
 
-    Priority:
-      1. The path the caller passed in.
-      2. If the path didn't exist AND it was ``mcp.json``,
-         try ``mcp-example.json`` next to it (deployer-starter).
-      3. ``None`` — caller treats this as "no MCP servers
-         configured, skip silently".
+    The table is the canonical source of truth. Disabled
+    rows are skipped (the operator toggled them off in the
+    UI). JSON columns are parsed defensively — a single
+    malformed row logs a warning and is skipped rather
+    than crashing the whole load.
+
+    Returns ``[]`` if the table is empty (no operators
+    have added servers yet) or the DB read fails.
     """
-    p = Path(config_path)
-    if p.exists():
-        return p
-    if p.name == "mcp.json":
-        example = p.parent / "mcp-example.json"
-        if example.exists():
-            logger.info("mcp.json not found; falling back to %s", example)
-            return example
-    return None
+    from magi.agent.db import McpServer, open_session
 
-
-def _determine_connection_type(server_config: dict[str, Any]) -> ConnectionType:
-    explicit = str(server_config.get("type", "")).lower()
-    if explicit in ("stdio", "sse", "http", "streamable_http"):
-        # ``http`` is the legacy alias for ``streamable_http``.
-        return "streamable_http" if explicit == "http" else explicit  # type: ignore[return-value]
-    url = server_config.get("url")
-    if isinstance(url, str) and url.strip():
-        return "streamable_http"
-    return "stdio"
-
-
-def _load_servers_from_config(
-    config_file: Path,
-) -> list[MCPServerConnection]:
-    raw = json.loads(config_file.read_text(encoding="utf-8"))
-    servers = raw.get("mcpServers", {}) or {}
-    if not isinstance(servers, dict):
-        logger.warning("mcpServers must be an object; got %s", type(servers).__name__)
+    try:
+        with open_session() as session:
+            rows = (
+                session.query(McpServer)
+                .filter(McpServer.enabled.is_(True))
+                .all()
+            )
+    except Exception:
+        # Defensive: a missing table (pre-init) or a busy
+        # DB on a parallel thread should not crash the
+        # whole load. Log + return empty so the rest of
+        # the boot completes.
+        logger.exception("mcp_servers table not readable; no MCP tools")
         return []
 
     connections: list[MCPServerConnection] = []
-    for server_name, cfg in servers.items():
-        if not isinstance(cfg, dict):
-            logger.warning("server %r: config must be an object", server_name)
+    for r in rows:
+        connection_type = r.connection_type
+        if connection_type not in ("stdio", "sse", "streamable_http"):
+            logger.warning(
+                "MCP server %r: unknown connection_type %r; skipping",
+                r.name, connection_type,
+            )
             continue
-        if cfg.get("disabled"):
-            logger.info("server %r: disabled in config; skipping", server_name)
-            continue
-
-        conn_type = _determine_connection_type(cfg)
-        if conn_type == "stdio":
-            cmd = cfg.get("command")
-            if not (isinstance(cmd, str) and cmd.strip()):
-                logger.warning("server %r: STDIO requires 'command'", server_name)
+        if connection_type == "stdio":
+            if not (r.command and r.command.strip()):
+                logger.warning(
+                    "MCP server %r: STDIO requires 'command'; skipping", r.name,
+                )
                 continue
         else:  # sse / streamable_http
-            url = cfg.get("url")
-            if not (isinstance(url, str) and url.strip()):
-                logger.warning("server %r: %s requires 'url'", server_name, conn_type)
+            if not (r.url and r.url.strip()):
+                logger.warning(
+                    "MCP server %r: %s requires 'url'; skipping",
+                    r.name, connection_type,
+                )
                 continue
 
         connections.append(
             MCPServerConnection(
-                name=server_name,
-                connection_type=conn_type,
-                command=cfg.get("command"),
-                args=list(cfg.get("args") or []),
-                env=dict(cfg.get("env") or {}),
-                url=cfg.get("url"),
-                headers=dict(cfg.get("headers") or {}),
-                connect_timeout=_as_float_or_none(cfg.get("connect_timeout")),
-                execute_timeout=_as_float_or_none(cfg.get("execute_timeout")),
-                sse_read_timeout=_as_float_or_none(cfg.get("sse_read_timeout")),
+                name=r.name,
+                connection_type=connection_type,
+                command=r.command,
+                args=r.to_args_list(),
+                env=r.to_env_dict(),
+                url=r.url,
+                headers=r.to_headers_dict(),
+                connect_timeout=r.connect_timeout,
+                execute_timeout=r.execute_timeout,
+                sse_read_timeout=r.sse_read_timeout,
             )
         )
     return connections
-
-
-def _as_float_or_none(v: Any) -> float | None:
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 # Module-level handle so :func:`cleanup_mcp_connections` has
@@ -546,40 +549,35 @@ _connections: list[MCPServerConnection] = []
 
 
 async def load_mcp_tools_async(
-    config_path: str | os.PathLike[str] | None = None,
     *,
     timeouts: MCPTimeoutConfig | None = None,
 ) -> list[MCPTool]:
-    """Connect to every enabled server listed in the config and
-    return the union of their tools.
+    """Connect to every enabled server in the ``mcp_servers`` table
+    and return the union of their tools.
 
-    ``config_path`` resolution order:
-      1. Explicit argument.
-      2. ``MAGI_MCP_CONFIG`` env var (typical: absolute path
-         like ``/workspace/memories/mcp.json``).
-      3. ``./mcp.json`` next to the CWD.
+    Reads the table on every call — there is no in-memory
+    cache at the loader level. The agent loop's
+    :func:`magi.agent.tools.registry.maybe_reload_mcp_tools`
+    decides when to re-invoke this function (currently
+    once per chat turn, when the table's max
+    ``updated_at`` is newer than the last successful
+    load).
 
-    If nothing resolves, returns ``[]`` and logs at INFO level
-    so the boot continues without an MCP wedge.
+    If the table is empty (no operators have added
+    servers yet) or the DB read fails, returns ``[]`` and
+    logs at INFO level so the boot / chat turn completes
+    without an MCP wedge.
     """
     if timeouts is None:
         timeouts = _defaults()
 
-    # Resolve config path.
-    if config_path is None:
-        env = os.environ.get("MAGI_MCP_CONFIG")
-        config_path = env if env else "mcp.json"
-    cfg_path = resolve_config_path(str(config_path))
-    if cfg_path is None:
-        logger.info("no MCP config (tried %r); no MCP tools loaded", str(config_path))
-        return []
-
     # Clean any prior connections from a previous load (e.g.
-    # a test sequence that reuses this module).
+    # a test sequence that reuses this module, or a
+    # maybe_reload_mcp_tools trigger that fired mid-turn).
     if _connections:
         await cleanup_mcp_connections()
 
-    servers = _load_servers_from_config(cfg_path)
+    servers = _load_servers_from_db()
     if not servers:
         return []
 
@@ -637,7 +635,6 @@ def active_connections() -> list[MCPServerConnection]:
 
 
 def load_mcp_tools_blocking(
-    config_path: str | os.PathLike[str] | None = None,
     *,
     timeouts: MCPTimeoutConfig | None = None,
 ) -> list[MCPTool]:
@@ -650,14 +647,14 @@ def load_mcp_tools_blocking(
     scheduler.
     """
     try:
-        asyncio.run(load_mcp_tools_async(config_path, timeouts=timeouts))
+        asyncio.run(load_mcp_tools_async(timeouts=timeouts))
     except RuntimeError as e:
         # Nested loop — fall back to the ``_nest`` pattern.
         if "asyncio.run() cannot be called" not in str(e):
             raise
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(load_mcp_tools_async(config_path, timeouts=timeouts))
+            return loop.run_until_complete(load_mcp_tools_async(timeouts=timeouts))
         finally:
             loop.close()
     # Return the cached list (load_mcp_tools_async populates

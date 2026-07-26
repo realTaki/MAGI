@@ -37,7 +37,6 @@ import pytest
 
 from magi.channels import Channel
 
-
 @pytest.fixture
 def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Real state + workspace dirs, real ORM + sqlite, one
@@ -49,8 +48,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -78,7 +76,6 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
         s.refresh(emp)
 
     return state
-
 
 @pytest.mark.asyncio
 async def test_tg_handler_injects_tg_send_callback(

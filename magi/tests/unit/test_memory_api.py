@@ -37,9 +37,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
@@ -49,8 +47,7 @@ def env(monkeypatch, tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
-
+    
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -94,7 +91,6 @@ def env(monkeypatch, tmp_path):
 
     return {"state": state, "alice": alice, "bob": bob, "charlie": charlie}
 
-
 @pytest.fixture
 def client(env):
     """TestClient with Alice's cookie (admin)."""
@@ -105,7 +101,6 @@ def client(env):
     # D.24: cookie is the uid (int), not a delivery_address.
     c.cookies.set("magi_session", str(env["alice"].id))
     return c
-
 
 @pytest.fixture
 def bob_client(env):
@@ -118,7 +113,6 @@ def bob_client(env):
     c.cookies.set("magi_session", str(env["bob"].id))
     return c
 
-
 @pytest.fixture
 def charlie_client(env):
     """TestClient with Charlie's cookie (role=contact, not
@@ -130,7 +124,6 @@ def charlie_client(env):
     c = TestClient(app)
     c.cookies.set("magi_session", str(env["charlie"].id))
     return c
-
 
 def _seed_memory(
     env,
@@ -176,9 +169,7 @@ def _seed_memory(
         db.refresh(row)
         return row.id
 
-
 # -- tests -----------------------------------------------------------------
-
 
 def test_list_memory_returns_empty_when_no_rows(client):
     """Happy-path empty state. The endpoint never errors
@@ -188,7 +179,6 @@ def test_list_memory_returns_empty_when_no_rows(client):
     assert r.status_code == 200
     body = r.json()
     assert body == {"items": [], "total": 0}
-
 
 def test_list_memory_requires_admin(env):
     """No cookie → 401 (``AdminGate``). The auth check
@@ -200,14 +190,12 @@ def test_list_memory_requires_admin(env):
     r = bare.get("/api/memory")
     assert r.status_code == 401
 
-
 def test_list_memory_403_for_non_admin(charlie_client):
     """``magi_session=<charlie.id>`` (role=contact) →
     401. ``AdminGate`` checks ``Contact.role == 'admin'``;
     any other role bounces at the dependency."""
     r = charlie_client.get("/api/memory")
     assert r.status_code == 401
-
 
 def test_list_memory_scopes_to_caller_contact(
     env, client, bob_client,
@@ -234,7 +222,6 @@ def test_list_memory_scopes_to_caller_contact(
     body_b = r.json()
     assert body_b["total"] == 0
     assert body_b["items"] == []
-
 
 def test_list_memory_returns_both_kinds_and_completed_rows(
     env, client,
@@ -283,7 +270,6 @@ def test_list_memory_returns_both_kinds_and_completed_rows(
     assert by_subject["Done yesterday"]["kind"] == "ongoing"
     assert by_subject["Done yesterday"]["completed_at"] is not None
 
-
 def test_list_memory_orders_by_importance_then_updated(
     env, client,
 ):
@@ -326,7 +312,6 @@ def test_list_memory_orders_by_importance_then_updated(
         "Low recent",    # importance=1
     ]
 
-
 def test_list_memory_returns_full_body_for_tooltip(
     env, client,
 ):
@@ -351,7 +336,6 @@ def test_list_memory_returns_full_body_for_tooltip(
     # Full body — no truncation in the API response; the
     # WebUI does the preview clipping.
     assert row["body"] == long_body
-
 
 def test_list_memory_caps_at_200(env, client):
     """The endpoint caps at 200 rows; ``total`` reports

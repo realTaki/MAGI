@@ -32,9 +32,7 @@ from pathlib import Path
 
 import pytest
 
-
 # -- fixtures --------------------------------------------------------------
-
 
 @pytest.fixture
 def tmp_prompts_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -51,12 +49,10 @@ def tmp_prompts_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     yield tmp_path
     prompts.reset_cache()
 
-
 def _write(path: Path, content: str) -> None:
     """Write a file. Sets mtime explicitly so the
     fast-path's stat() comparison is unambiguous."""
     path.write_text(content, encoding="utf-8")
-
 
 def _bump_mtime(path: Path) -> None:
     """Touch ``path`` so its mtime strictly increases —
@@ -73,9 +69,7 @@ def _bump_mtime(path: Path) -> None:
     new_mtime = stat.st_mtime + 1.0
     os.utime(path, (new_mtime, new_mtime))
 
-
 # -- cold-start + cache hit ------------------------------------------------
-
 
 def test_first_load_reads_file(tmp_prompts_dir: Path):
     """The very first ``_load`` reads from disk."""
@@ -85,7 +79,6 @@ def test_first_load_reads_file(tmp_prompts_dir: Path):
     out = prompts._load("test")
     assert out == "version 1"
     assert "test" in prompts._cache
-
 
 def test_second_load_returns_cached(tmp_prompts_dir: Path):
     """Unchanged file → cached text, no re-read."""
@@ -104,9 +97,7 @@ def test_second_load_returns_cached(tmp_prompts_dir: Path):
     # Identity: same tuple, not a fresh re-read.
     assert prompts._cache["test"] is cached
 
-
 # -- hot-reload by mtime change ------------------------------------------
-
 
 def test_mtime_change_triggers_reread(tmp_prompts_dir: Path):
     """Operator edits ``test.md`` → next ``_load`` sees
@@ -123,7 +114,6 @@ def test_mtime_change_triggers_reread(tmp_prompts_dir: Path):
 
     assert prompts._load("test") == "v2"
 
-
 def test_size_change_triggers_reread(tmp_prompts_dir: Path):
     """An edit that changes the file size also triggers
     a reload (mtime alone is not enough — a copy that
@@ -139,9 +129,7 @@ def test_size_change_triggers_reread(tmp_prompts_dir: Path):
     (tmp_prompts_dir / "test.md").write_text("v2 — longer", encoding="utf-8")
     assert prompts._load("test") == "v2 — longer"
 
-
 # -- manual reset ----------------------------------------------------------
-
 
 def test_reset_cache_evicts(tmp_prompts_dir: Path):
     """``reset_cache()`` drops the in-memory cache. The
@@ -154,7 +142,6 @@ def test_reset_cache_evicts(tmp_prompts_dir: Path):
 
     prompts.reset_cache()
     assert prompts._cache == {}
-
 
 def test_reset_cache_then_load_returns_current_content(
     tmp_prompts_dir: Path,
@@ -171,9 +158,7 @@ def test_reset_cache_then_load_returns_current_content(
     prompts.reset_cache()
     assert prompts._load("test") == "v2"
 
-
 # -- YAML variant ----------------------------------------------------------
-
 
 def test_yaml_file_loads_as_raw_text(tmp_prompts_dir: Path):
     """YAML files come back as the raw text — the caller
@@ -186,7 +171,6 @@ def test_yaml_file_loads_as_raw_text(tmp_prompts_dir: Path):
     assert "key: value" in out
     assert "list: [1, 2]" in out
 
-
 def test_missing_file_raises(tmp_prompts_dir: Path):
     """Asking for a non-existent prompt is a programming
     error → ``FileNotFoundError`` (not a silent empty
@@ -195,7 +179,6 @@ def test_missing_file_raises(tmp_prompts_dir: Path):
 
     with pytest.raises(FileNotFoundError):
         prompts._load("does-not-exist")
-
 
 def test_prefers_md_over_yaml(tmp_prompts_dir: Path):
     """When both ``.md`` and ``.yaml`` exist for the
@@ -208,9 +191,7 @@ def test_prefers_md_over_yaml(tmp_prompts_dir: Path):
     _write(tmp_prompts_dir / "test.yaml", "from yaml: ignore")
     assert prompts._load("test") == "from md"
 
-
 # -- admin endpoint -------------------------------------------------------
-
 
 def test_admin_reload_endpoint_clears_cache(
     tmp_prompts_dir: Path, monkeypatch,
@@ -229,9 +210,6 @@ def test_admin_reload_endpoint_clears_cache(
     state = tmp_prompts_dir / "state"
     state.mkdir(exist_ok=True)
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR",
-                      str(tmp_prompts_dir / "ws"))
-
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -261,7 +239,6 @@ def test_admin_reload_endpoint_clears_cache(
     assert body["cleared"] >= 1
     assert prompts._cache == {}
 
-
 def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     """No cookie → ``AdminGate`` 401. Pinning this so a
     future refactor that loosens the gate (e.g. to
@@ -276,8 +253,6 @@ def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     state = tmp_prompts_dir / "state"
     state.mkdir(exist_ok=True)
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR",
-                      str(tmp_prompts_dir / "ws"))
     import magi.agent.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None

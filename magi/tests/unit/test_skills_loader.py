@@ -34,13 +34,19 @@ from magi.agent.tools.skill_loader import (
 def workspace(tmp_path, monkeypatch):
     """Each test gets a fresh workspace + state dir pair.
 
+    State dir is placed *under* workspace so
+    ``_workspace_root()`` (``Path(state_dir).parent``)
+    naturally resolves to ``ws``.
+
     Reset the module singleton at teardown so the next
     test doesn't pick up our scan.
     """
     ws = tmp_path / "ws"
+    state = ws / "state"
+    state.mkdir(parents=True)
+    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     skills_dir = ws / "skills"
     skills_dir.mkdir(parents=True)
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(ws))
     _reset_for_tests()
     yield ws
     _reset_for_tests()
@@ -114,7 +120,8 @@ def test_loader_skips_skill_with_no_description(workspace, caplog):
 
 
 def test_loader_handles_missing_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "nope"))
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "nope" / "state"))
+    (tmp_path / "nope" / "state").mkdir(parents=True)
     # ``nope/skills/`` does not exist. Pass a non-existent
     # bundle_dir so the loader is exercised single-source;
     # the dual-source contract is pinned by the new tests

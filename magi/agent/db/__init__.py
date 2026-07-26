@@ -19,6 +19,10 @@ Layout:
                                   teams / councils)
   - :mod:`.models_magi`         — :class:`Magi` (MAGI runtime
                                   agent rows bound to a ``MAGIC``)
+  - :mod:`.models_mcp_server`   — :class:`McpServer` (operator-
+                                  configured MCP server rows; the
+                                  loader reads these in place of
+                                  the legacy ``mcp.json`` file)
   - :mod:`.models_dashboard`    — :class:`ActionItem`, :class:`TokenUsage`
   - :mod:`.alembic`            — versioned schema migrations
   - :mod:`.alembic_runner`     — startup ``upgrade head`` integration
@@ -63,6 +67,7 @@ from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_contact import Contact
 from magi.agent.db.models_magi import Magi
 from magi.agent.db.models_magic import MAGIC
+from magi.agent.db.models_mcp_server import McpServer
 from magi.agent.db.models_setting import Setting
 from magi.agent.db.models_token_usage import TokenUsage
 
@@ -84,6 +89,7 @@ __all__ = [
     "Contact",
     "MAGIC",
     "Magi",
+    "McpServer",
     # dashboard
     "ActionItem",
     "TokenUsage",

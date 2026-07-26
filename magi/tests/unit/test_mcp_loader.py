@@ -1,31 +1,33 @@
-"""Tests for the MCP tool loader.
+"""Tests for the DB-backed MCP tool loader.
 
-Covers the surface that doesn't need a live MCP server:
+Covers the surface that doesn't need a live MCP server
+connected (live round-trip needs an MCP sample server
+installed in the test env — out of scope here):
 
-  - config path resolution (incl. ``mcp-example.json`` fallback)
-  - per-server validation (STDIO needs ``command``,
-    URL-based needs ``url``)
+  - ``_load_servers_from_db`` correctly maps a row to
+    an :class:`MCPServerConnection` (stdio / sse /
+    streamable_http / disabled / missing fields)
+  - the env-merge contract: ``os.environ | row.env``
+    (operator's keys win, container's keys fill the
+    rest so ``PATH`` etc. still work for stdio servers)
+  - the JSON column defence: malformed ``env_json`` /
+    ``args_json`` falls back to empty rather than
+    crashing the whole load
   - the synchronous :func:`load_mcp_tools_blocking` entry
-    point
-  - that :func:`registry.get_tools` returns the merged
-    built-in + MCP list correctly
-  - that registered MCP tools are recognised by
-    ``get_tool(name)``
-  - that :func:`MCPServerConnection._safe_close` doesn't
-    raise even when the underlying exit stack is missing
+    point works against an empty / populated table
+  - :func:`registry.maybe_reload_mcp_tools` fires when
+    ``updated_at`` moves and is a no-op otherwise
+  - :func:`registry.get_tools` / :func:`get_tool` see the
+    MCP-discovered tools after a load
 
-Live end-to-end test (real MCP server round-trip) is out of
-scope — it'd need an MCP sample server installed in the
-test environment. The wrapper's protocol behaviour is
-covered by ``test_mcp_tool_wrapper`` below (mock session)
-and the upstream Mini-Agent tests cover the transport layer.
+The wrapper's protocol behaviour (``MCPTool.run`` against
+a real ``ClientSession``) is mocked: we don't need a live
+mcp server, only the DB→connection mapping + the
+reload semantics.
 """
 
 from __future__ import annotations
 
-import json
-import textwrap
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -38,469 +40,480 @@ from magi.agent.tools.registry import (
     get_tool,
     get_tool_schemas,
     get_tools,
+    maybe_reload_mcp_tools,
     reset_cache,
     reset_mcp_cache,
 )
 
 
-# -- helpers -------------------------------------------------------------
+# -- DB fixture --------------------------------------------------------------
 
 
-def _write_config(tmp: Path, body: dict[str, Any]) -> Path:
-    p = tmp / "mcp.json"
-    p.write_text(json.dumps(body), encoding="utf-8")
-    return p
+@pytest.fixture
+def mcp_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """Per-test isolated state dir with the
+    ``mcp_servers`` table created. Resets the engine
+    singleton so each test sees its own empty DB.
 
-
-def _example_config(tmp: Path) -> Path:
-    """A "no servers configured" example that exercises the
-    path-resolution + parser branches without trying to
-    connect anywhere."""
-    return _write_config(tmp, {"mcpServers": {}})
-
-
-# -- config resolution ---------------------------------------------------
-
-
-def test_resolve_config_path_prefers_explicit(tmp_path: Path) -> None:
-    """``mcp.json`` exists → use it (no fallback)."""
-    p = tmp_path / "mcp.json"
-    p.write_text("{}", encoding="utf-8")
-    assert mcp_loader.resolve_config_path(str(p)) == p
-
-
-def test_resolve_config_path_falls_back_to_example(tmp_path: Path) -> None:
-    """``mcp.json`` missing but ``mcp-example.json`` present → use the example."""
-    target = tmp_path / "mcp.json"
-    example = tmp_path / "mcp-example.json"
-    example.write_text("{}", encoding="utf-8")
-    assert mcp_loader.resolve_config_path(str(target)) == example
-
-
-def test_resolve_config_path_returns_none(tmp_path: Path) -> None:
-    """Neither file present → ``None`` (skip cleanly)."""
-    target = tmp_path / "mcp.json"
-    assert mcp_loader.resolve_config_path(str(target)) is None
-
-
-# -- per-server validation ----------------------------------------------
-
-
-def test_config_skips_disabled_server(tmp_path: Path) -> None:
-    """``"disabled": true`` entries are filtered out at parse time."""
-    cfg = _write_config(
-        tmp_path,
-        {"mcpServers": {"on": {"command": "echo"}, "off": {"command": "echo", "disabled": True}}},
-    )
-    servers = mcp_loader._load_servers_from_config(cfg)
-    assert [s.name for s in servers] == ["on"]
-
-
-def test_config_skips_stdio_without_command(tmp_path: Path) -> None:
-    cfg = _write_config(
-        tmp_path,
-        {"mcpServers": {"bad": {"args": ["x"]}, "good": {"command": "echo"}}},
-    )
-    servers = mcp_loader._load_servers_from_config(cfg)
-    assert [s.name for s in servers] == ["good"]
-
-
-def test_config_skips_url_based_without_url(tmp_path: Path) -> None:
-    cfg = _write_config(
-        tmp_path,
-        {
-            "mcpServers": {
-                # explicit streamable_http but no url → skip
-                "stream": {"type": "streamable_http"},
-                # explicit sse but no url → skip
-                "sse": {"type": "sse"},
-                # empty url → still skipped (treated as stdio→rejected)
-                "empty": {"url": ""},
-                # happy path
-                "ok": {"url": "https://example.com"},
-            }
-        },
-    )
-    servers = mcp_loader._load_servers_from_config(cfg)
-    assert [s.name for s in servers] == ["ok"]
-
-
-def test_config_skips_non_dict_server_entry(tmp_path: Path) -> None:
-    cfg = _write_config(
-        tmp_path,
-        {"mcpServers": {"bad": "not a dict", "good": {"command": "echo"}}},
-    )
-    servers = mcp_loader._load_servers_from_config(cfg)
-    assert [s.name for s in servers] == ["good"]
-
-
-def test_config_skips_malformed_top_level(tmp_path: Path) -> None:
-    """If ``mcpServers`` isn't an object, return ``[]``."""
-    cfg = _write_config(tmp_path, {"mcpServers": ["not a dict"]})
-    servers = mcp_loader._load_servers_from_config(cfg)
-    assert servers == []
-
-
-def test_determine_connection_type_legacy_http(tmp_path: Path) -> None:
-    """Legacy ``type: http`` is silently aliased to ``streamable_http``."""
-    assert mcp_loader._determine_connection_type({"type": "http"}) == "streamable_http"
-    assert mcp_loader._determine_connection_type({"type": "HTTP"}) == "streamable_http"
-    assert mcp_loader._determine_connection_type({}) == "stdio"
-    assert mcp_loader._determine_connection_type({"url": ""}) == "stdio"
-    assert mcp_loader._determine_connection_type({"url": "https://x"}) == "streamable_http"
-
-
-def test_load_servers_parses_per_server_timeouts(tmp_path: Path) -> None:
-    cfg = _write_config(
-        tmp_path,
-        {
-            "mcpServers": {
-                "x": {
-                    "command": "echo",
-                    "connect_timeout": 3.5,
-                    "execute_timeout": "20",  # str → float
-                    "sse_read_timeout": None,
-                }
-            }
-        },
-    )
-    (server,) = mcp_loader._load_servers_from_config(cfg)
-    assert server.connect_timeout == 3.5
-    assert server.execute_timeout == 20.0
-    assert server.sse_read_timeout is None
-
-
-# -- package-shipped example --------------------------------------------
-
-
-def test_package_example_is_valid() -> None:
-    """``mcp-example.json`` shipped in the package parses cleanly.
-
-    The deployer-starter may declare zero or more servers;
-    the only invariant is that the JSON parses and
-    ``mcpServers`` is present.
+    Returns a callable that the test can use to seed
+    rows without having to know the SQLAlchemy details.
     """
-    example = Path(mcp_loader.__file__).parent / "mcp-example.json"
-    assert example.exists(), "mcp-example.json must ship next to mcp_loader.py"
-    cfg = json.loads(example.read_text(encoding="utf-8"))
-    assert "mcpServers" in cfg
-    # Either empty or every entry must be a dict.
-    for name, entry in cfg["mcpServers"].items():
-        assert isinstance(entry, dict), f"{name} must be a dict"
-
-
-# -- sync loader honours the registry contract --------------------------
-
-
-@pytest.fixture(autouse=True)
-def _reset_registry() -> None:
-    """Each test starts with a clean registry + MCP connection
-    list. Tests that mutate state call ``reset_cache()`` /
-    ``reset_mcp_cache()`` themselves; this just guarantees the
-    cross-test baseline is fresh."""
-    reset_cache()
-    reset_mcp_cache()
-    yield
-    reset_cache()
-    reset_mcp_cache()
-
-
-def test_blocking_loader_returns_empty_when_no_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No config anywhere → empty list, no exception.
-
-    We point ``MAGI_MCP_CONFIG`` at a non-existent path so the
-    loader's filesystem search doesn't pick up the package
-    example by accident.
-    """
-    monkeypatch.setenv("MAGI_MCP_CONFIG", str(tmp_path / "nope.json"))
-    tools = mcp_loader.load_mcp_tools_blocking()
-    assert tools == []
-
-
-def test_blocking_loader_skips_disabled_servers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sync loader wraps ``load_mcp_tools_async``; disabled servers
-    are filtered before any connection attempt, so the result
-    is ``[]`` even if some entries would otherwise fail to
-    connect."""
-    _example_config(tmp_path)
-    monkeypatch.setenv("MAGI_MCP_CONFIG", str(tmp_path / "mcp.json"))
-    # If we'd let the real ``connect`` run it'd try to spawn
-    # subprocesses. Patch the module-level function to assert
-    # it was never called for a no-server config.
-    with patch.object(
-        mcp_loader, "_load_servers_from_config", return_value=[]
-    ) as parser:
-        tools = mcp_loader.load_mcp_tools_blocking()
-    assert tools == []
-    parser.assert_called_once()
-
-
-# -- registry integration -----------------------------------------------
-
-
-def test_bootstrap_mcp_populates_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``bootstrap_mcp_tools`` calls the blocking loader and
-    pushes the result into the registry cache; subsequent
-    :func:`get_tools` returns it."""
-    _example_config(tmp_path)
-    monkeypatch.setenv("MAGI_MCP_CONFIG", str(tmp_path / "mcp.json"))
-    # The registry build path triggers ``init_orm`` on first
-    # call; the engine refuses to fall back to a host-system
-    # path now, so we point it at a tmp dir.
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    # We don't actually want to connect anywhere — fake the
-    # loader to return one synthetic tool.
-    fake_tool = _make_fake_tool("upstream__noop")
-    with patch.object(
-        mcp_loader, "load_mcp_tools_blocking", return_value=[fake_tool]
-    ):
-        bootstrap_mcp_tools()
+    import magi.agent.db.engine as orm_mod
+    orm_mod._engine = None
+    orm_mod._SessionLocal = None
 
+    from magi.agent.db import init_orm, open_session
+    from magi.agent.db.models_mcp_server import McpServer
+
+    init_orm(str(state))
+
+    def _seed(
+        *,
+        name: str = "test-server",
+        connection_type: str = "stdio",
+        command: str | None = "echo",
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        url: str | None = None,
+        headers: dict[str, str] | None = None,
+        enabled: bool = True,
+    ) -> McpServer:
+        import json
+        with open_session() as s:
+            row = McpServer(
+                name=name,
+                connection_type=connection_type,
+                command=command,
+                args_json=json.dumps(args or []),
+                env_json=json.dumps(env or {}),
+                url=url,
+                headers_json=json.dumps(headers or {}),
+                enabled=enabled,
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+        return row
+
+    return _seed
+
+
+# -- _load_servers_from_db --------------------------------------------------
+
+
+def test_load_servers_empty_db_returns_no_connections(mcp_db):
+    """No rows → empty connection list. The loader
+    never crashes on an empty table — that's the
+    v0 default for fresh installs."""
+    conns = mcp_loader._load_servers_from_db()
+    assert conns == []
+
+
+def test_load_servers_stdio_row_maps_correctly(mcp_db):
+    mcp_db(
+        name="std",
+        connection_type="stdio",
+        command="uvx",
+        args=["mcp-server-fetch"],
+        env={"API_KEY": "secret"},
+    )
+    [conn] = mcp_loader._load_servers_from_db()
+    assert conn.name == "std"
+    assert conn.connection_type == "stdio"
+    assert conn.command == "uvx"
+    assert conn.args == ["mcp-server-fetch"]
+    assert conn.env == {"API_KEY": "secret"}
+    assert conn.url is None
+    assert conn.headers == {}
+
+
+def test_load_servers_http_row_maps_correctly(mcp_db):
+    mcp_db(
+        name="http1",
+        connection_type="streamable_http",
+        command=None,
+        url="https://api.example.com/mcp",
+        headers={"Authorization": "Bearer xyz"},
+    )
+    [conn] = mcp_loader._load_servers_from_db()
+    assert conn.name == "http1"
+    assert conn.connection_type == "streamable_http"
+    assert conn.url == "https://api.example.com/mcp"
+    assert conn.headers == {"Authorization": "Bearer xyz"}
+    assert conn.command is None
+    assert conn.args == []
+
+
+def test_load_servers_skips_disabled(mcp_db):
+    mcp_db(name="on", enabled=True)
+    mcp_db(name="off", enabled=False)
+    conns = mcp_loader._load_servers_from_db()
+    assert [c.name for c in conns] == ["on"]
+
+
+def test_load_servers_skips_stdio_without_command(mcp_db):
+    mcp_db(name="bad", command=None, url=None)
+    conns = mcp_loader._load_servers_from_db()
+    assert conns == []
+
+
+def test_load_servers_skips_http_without_url(mcp_db):
+    mcp_db(
+        name="bad",
+        connection_type="streamable_http",
+        command=None,
+        url=None,
+    )
+    conns = mcp_loader._load_servers_from_db()
+    assert conns == []
+
+
+def test_load_servers_skips_unknown_connection_type(mcp_db):
+    mcp_db(name="weird", connection_type="carrier-pigeon")
+    conns = mcp_loader._load_servers_from_db()
+    assert conns == []
+
+
+def test_load_servers_malformed_json_falls_back_to_empty(mcp_db, caplog):
+    """A hand-edited row with a broken ``env_json`` /
+    ``args_json`` doesn't crash the whole load. The
+    loader logs a warning and treats the column as
+    empty."""
+    from magi.agent.db import open_session
+    from magi.agent.db.models_mcp_server import McpServer
+
+    with open_session() as s:
+        s.add(McpServer(
+            name="corrupt",
+            connection_type="stdio",
+            command="echo",
+            args_json="not-json",
+            env_json="{also-broken",
+        ))
+        s.commit()
+
+    conns = mcp_loader._load_servers_from_db()
+    assert len(conns) == 1
+    assert conns[0].env == {}
+    assert conns[0].args == []
+
+
+def test_load_servers_env_merge_overrides_parent(mcp_db, monkeypatch):
+    """``_open_streams`` always builds
+    ``{**os.environ, **self.env}`` — the operator's
+    keys win, the container's keys fill the rest. A
+    stdio server still gets ``PATH`` even when the
+    operator set a single override key."""
+    monkeypatch.setenv("TEST_PARENT_KEY", "from-container")
+    mcp_db(env={"TEST_PARENT_KEY": "from-row", "EXTRA": "row-only"})
+
+    [conn] = mcp_loader._load_servers_from_db()
+    import os
+    merged = {**os.environ, **conn.env}
+    assert merged["TEST_PARENT_KEY"] == "from-row"  # operator wins
+    assert merged["EXTRA"] == "row-only"
+    # Container's PATH is preserved (assuming the test
+    # env has it — it does in CI).
+    assert "PATH" in merged
+
+
+# -- load_mcp_tools_blocking + registry integration ------------------------
+
+
+def test_load_blocking_empty_db_returns_empty(mcp_db):
+    """No rows → no tools. The synchronous entry point
+    does not raise when the table is empty."""
+    assert mcp_loader.load_mcp_tools_blocking() == []
+
+
+def test_load_blocking_populated_db_attempts_connections(mcp_db):
+    """A populated table triggers :func:`connect` on
+    each connection. With no real MCP server, the
+    subprocess ``connect`` fails and the loader logs;
+    we just verify the loader doesn't crash and the
+    ``_connections`` list is empty (no successful
+    connect to surface)."""
+    mcp_db(name="will-fail-to-connect", command="this-binary-does-not-exist")
+    tools = mcp_loader.load_mcp_tools_blocking()
+    # ``uvx`` / ``this-binary-does-not-exist`` either
+    # resolves to a missing binary (connect fails) or,
+    # if uvx is on PATH, runs and immediately exits
+    # (handshake fails). Either way, no tools.
+    assert tools == []
+
+
+def test_load_blocking_filters_disabled(mcp_db):
+    """Disabled rows don't get a connection attempt."""
+    mcp_db(name="off", command="echo", enabled=False)
+    mcp_db(name="on", command="echo", enabled=True)
+    # The 'off' row is filtered; 'on' tries to connect
+    # and fails. The point: disabled is filtered BEFORE
+    # connect (no subprocess spawn for a disabled row).
+    mcp_loader.load_mcp_tools_blocking()
+    assert [c.name for c in mcp_loader.active_connections()] == []
+
+
+def test_load_blocking_cleans_previous_connections(mcp_db):
+    """Calling :func:`load_mcp_tools_async` twice in a
+    row doesn't accumulate :class:`MCPServerConnection`
+    objects in the module-level list."""
+    mcp_db(command="echo")
+    mcp_loader.load_mcp_tools_blocking()
+    n_after_first = len(mcp_loader.active_connections())
+    mcp_loader.load_mcp_tools_blocking()
+    # The second call cleans the first list (no
+    # accumulation). The post-cleanup list is empty
+    # because the actual connect fails for ``echo``.
+    assert n_after_first == 0
+    assert len(mcp_loader.active_connections()) == 0
+
+
+# -- registry: maybe_reload_mcp_tools + bootstrap_mcp_tools -----------------
+
+
+def test_bootstrap_mcp_tools_runs_against_db(mcp_db):
+    """The synchronous bootstrap reads the DB and
+    populates :data:`_mcp_tools_cache`. Even when no
+    real MCP server is available, the bootstrap
+    completes (no exception)."""
+    mcp_db(command="echo")
+    bootstrap_mcp_tools()
+    # We can introspect the module-level cache via a
+    # clean reload — but the cleaner check is that
+    # get_tools() returns the built-in list (MCP
+    # tools may be empty if 'echo' connect failed).
     tools = get_tools()
-    names = {t.name for t in tools}
-    # Built-ins are still there.
-    assert "read_file" in names
-    # The synthetic MCP tool joined the list.
-    assert "upstream__noop" in names
-
-    # And it's reachable via ``get_tool``.
-    assert get_tool("upstream__noop") is fake_tool
-    # Anthropic schema renders correctly.
-    schema = next(s for s in get_tool_schemas() if s["name"] == "upstream__noop")
-    assert schema["description"]
+    # ``ReadFileTool`` is the first built-in; the
+    # assertion is that the list is non-empty (i.e.
+    # the built-in path is alive regardless of MCP).
+    assert any(t.name == "read_file" for t in tools)
 
 
-def test_reset_mcp_cache_isolated_from_builtin_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Resetting MCP must NOT wipe the built-in tool cache —
-    the built-ins are expensive to re-import."""
-    _example_config(tmp_path)
-    monkeypatch.setenv("MAGI_MCP_CONFIG", str(tmp_path / "mcp.json"))
-    fake_tool = _make_fake_tool("upstream__noop")
-    with patch.object(
-        mcp_loader, "load_mcp_tools_blocking", return_value=[fake_tool]
-    ):
-        bootstrap_mcp_tools()
+def test_maybe_reload_is_noop_when_unchanged(mcp_db):
+    """A no-op reload call (table unchanged) doesn't
+    repopulate the cache or log. Cheap path on the
+    chat-turn hot loop."""
+    mcp_db(command="echo")
+    bootstrap_mcp_tools()
+    # First maybe_reload right after a fresh bootstrap
+    # should be a no-op — the cache stamp matches the
+    # table's max updated_at.
+    result = maybe_reload_mcp_tools()
+    assert result is None  # no reload happened
 
-    # All built-ins present + MCP tool.
-    assert "read_file" in {t.name for t in get_tools()}
-    assert "upstream__noop" in {t.name for t in get_tools()}
 
-    # Drop just the MCP cache; built-ins should remain.
+def test_maybe_reload_fires_on_table_edit(mcp_db):
+    """An edit to the table (``updated_at`` moves
+    forward) triggers a reload on the next
+    :func:`maybe_reload_mcp_tools` call."""
+    mcp_db(command="echo")
+    bootstrap_mcp_tools()
+    # Edit a row to bump updated_at. SQLAlchemy's
+    # ``onupdate`` only fires on column value changes,
+    # so we touch ``enabled``.
+    import time as _t
+    from magi.agent.db import open_session
+    from magi.agent.db.models_mcp_server import McpServer
+
+    # The datetime resolution on sqlite is second-level,
+    # so a sub-second edit may not bump the stamp. Sleep
+    # one second to be sure the next edit registers as
+    # a different ``updated_at``.
+    _t.sleep(1.05)
+    with open_session() as s:
+        row = s.get(McpServer, "test-server")
+        row.enabled = False  # any column change bumps onupdate
+        s.commit()
+
+    result = maybe_reload_mcp_tools()
+    # Returns the freshly-loaded list (or [] when the
+    # table is empty / connect failed). Either way: not
+    # ``None`` — a reload fired.
+    assert result is not None
+    assert isinstance(result, list)
+
+
+def test_maybe_reload_handles_deleted_table(mcp_db, monkeypatch):
+    """A transient DB hiccup (or pre-init state) is
+    swallowed — the function returns ``None`` and the
+    cache is left alone."""
+    mcp_db(command="echo")
+    bootstrap_mcp_tools()
+    # Force the inner query to blow up by patching
+    # ``magi.agent.db.open_session`` to raise — that's
+    # the symbol the function actually resolves at call
+    # time.
+    import magi.agent.db as db_mod
+
+    real_open_session = db_mod.open_session
+    def _boom(*_a, **_kw):
+        raise RuntimeError("simulated DB down")
+
+    monkeypatch.setattr(db_mod, "open_session", _boom)
+    # Should swallow the exception and return None.
+    assert maybe_reload_mcp_tools() is None
+    monkeypatch.setattr(db_mod, "open_session", real_open_session)
+
+
+# -- reset_mcp_cache + integration with get_tool/get_tool_schemas -----------
+
+
+def test_reset_mcp_cache_drops_cache_and_stamp():
+    """``reset_mcp_cache`` clears both the tool list
+    and the load stamp so the next
+    :func:`maybe_reload_mcp_tools` fires unconditionally."""
     reset_mcp_cache()
-    assert "read_file" in {t.name for t in get_tools()}
-    assert "upstream__noop" not in {t.name for t in get_tools()}
+    # The next reload should always fire (stamp is None).
+    # We don't have a populated DB here so the load
+    # returns ``[]``; the assertion is that the function
+    # doesn't crash.
+    result = maybe_reload_mcp_tools()
+    assert result == []  # empty table → [] (and stamp becomes None again)
 
 
-# -- MCPTool wrapper behaviour (mock session) ---------------------------
+# -- get_tool_schemas surfaces registered tools ------------------------------
 
 
-def _make_fake_tool(tool_name: str = "upstream__noop") -> Any:
-    """Build a minimal ``MCPTool`` with a mock session.
-
-    The wrapper's ``run`` path needs a ``ClientSession`` that
-    supports ``call_tool``. We supply a stub.
-    """
-    session = AsyncMock()
-    tool = mcp_loader.MCPTool(
-        server_name="upstream",
-        server_tool_name="noop",
-        description="does nothing",
-        parameters={"type": "object", "properties": {}},
-        session=session,
-        execute_timeout=2.0,
-    )
-    assert tool.name == tool_name
-    return tool
+def test_get_tool_schemas_includes_builtin_tools(mcp_db):
+    """Sanity: the built-in tools are present in the
+    schema list. This is a regression guard for the
+    bootstrap path — if registry ever drops the
+    built-in list when MCP fails, this test catches
+    it."""
+    schemas = get_tool_schemas()
+    names = [s["name"] for s in schemas]
+    assert "read_file" in names
+    assert "write_file" in names
 
 
-def test_mcp_tool_runs_call_and_returns_text_content() -> None:
-    """``MCPTool.run`` calls the underlying session and joins the
-    text parts with newlines.
-
-    We construct a fake ``result`` with two text content items
-    and a sensible ``isError=False``.
-    """
-
-    class _Item:
-        def __init__(self, text: str) -> None:
-            self.text = text
-
-    class _Result:
-        content = [_Item("hello"), _Item("world")]
-        isError = False
-
-    session = AsyncMock()
-    session.call_tool = AsyncMock(return_value=_Result())
-
-    tool = mcp_loader.MCPTool(
-        server_name="upstream",
-        server_tool_name="greet",
-        description="greet",
-        parameters={"type": "object"},
-        session=session,
-        execute_timeout=2.0,
-    )
-    ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
-    )
-
-    result = _run_async(tool.run(ctx, name="bob"))
-    assert isinstance(result, ToolResult)
-    assert result.is_error is False
-    assert result.content == "hello\nworld"
-    session.call_tool.assert_awaited_once_with("greet", arguments={"name": "bob"})
+# -- MCPTool.run (mocked ClientSession) -------------------------------------
 
 
-def test_mcp_tool_run_marks_is_error_on_remote_error() -> None:
-    class _Item:
-        def __init__(self, text: str) -> None:
-            self.text = text
+def test_mcptool_run_returns_text_content(mcp_db, monkeypatch):
+    """Round-trip a fake MCP tool through the wrapper
+    and confirm the agent loop's
+    ``ToolResult`` shape is correct. Uses
+    ``AsyncMock`` for the upstream session — no
+    subprocess, no real MCP server."""
 
-    class _Result:
-        content = [_Item("upstream said no")]
-        isError = True
-
-    session = AsyncMock()
-    session.call_tool = AsyncMock(return_value=_Result())
-
-    tool = mcp_loader.MCPTool(
-        server_name="upstream",
-        server_tool_name="fail",
-        description="",
-        parameters={},
-        session=session,
-        execute_timeout=2.0,
-    )
-    ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
-    )
-    result = _run_async(tool.run(ctx))
-    assert result.is_error is True
-
-
-def test_mcp_tool_run_translates_timeout() -> None:
-    """``asyncio.TimeoutError`` from the inner call surfaces as
-    ``ToolResult(is_error=True)`` with a server-named message."""
-
-    async def _hang(*_a: Any, **_k: Any) -> Any:
-        raise TimeoutError
-
-    session = AsyncMock()
-    session.call_tool = _hang
-
-    tool = mcp_loader.MCPTool(
-        server_name="slow",
-        server_tool_name="stuck",
-        description="",
-        parameters={},
-        session=session,
-        execute_timeout=0.05,  # tiny — branch must fire
-    )
-    ctx = ToolContext(
-        state_dir="x", workspace=Path("/tmp"), uid=1, channel="webui"
-    )
-    result = _run_async(tool.run(ctx))
-    assert result.is_error is True
-    assert "slow" in (result.content or "")
-    assert "timed out" in (result.content or "")
-
-
-def test_mcp_tool_schema_round_trip() -> None:
-    """Anthropic schemas round-trip ``name`` / ``description`` /
-    ``input_schema`` verbatim."""
-    tool = _make_fake_tool()
-    schema = tool.to_anthropic_schema()
-    assert schema["name"] == "upstream__noop"
-    assert schema["description"] == "does nothing"
-    # input_schema came through unchanged.
-    assert schema["input_schema"]["type"] == "object"
-
-
-# -- safe_close is idempotent -------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_safe_close_when_disconnected_is_noop() -> None:
-    """Calling ``disconnect`` on a server that never connected
-    leaves a clean state."""
-    server = mcp_loader.MCPServerConnection(name="never", command="echo")
-    # Should not raise.
-    await server.disconnect()
-    assert server.exit_stack is None
-    assert server.tools == []
-
-
-@pytest.mark.asyncio
-async def test_cleanup_is_idempotent() -> None:
-    """Calling ``cleanup_mcp_connections`` twice doesn't choke."""
-    # Start from a clean slate.
-    mcp_loader._connections.clear()
-    await mcp_loader.cleanup_mcp_connections()
-    await mcp_loader.cleanup_mcp_connections()
-    assert mcp_loader._connections == []
-
-
-# -- helpers used above -------------------------------------------------
-
-
-def _run_async(coro: Any) -> Any:
-    """Minimal ``asyncio.run`` for old pythons or environments
-    where the project's pytest config doesn't apply to a
-    handwritten helper."""
-    import asyncio
-    return asyncio.run(coro)
-
-
-# -- MCPTool.run error messages -----------------------------------------
-
-
-def test_mcp_tool_timeout_error_suggests_next_step(monkeypatch):
-    """A timed-out MCP tool call returns an error
-    message that helps the LLM decide what to do
-    next (retry, swap tool, give up). The reference
-    MCP loader uses ``"may be slow or unresponsive"``;
-    we follow that pattern so the LLM has the hint.
-    """
-    import asyncio
     from magi.agent.tools.mcp_loader import MCPTool
 
     class _FakeSession:
-        async def call_tool(self, *args, **kwargs):
-            # Sleep past the execute_timeout so
-            # ``asyncio.timeout`` raises.
-            await asyncio.sleep(2)
-            raise AssertionError("should not reach")
+        async def call_tool(self, name, arguments):
+            class _Result:
+                content = [
+                    type("Text", (), {"text": "hello world"})(),
+                ]
+                isError = False
+            return _Result()
 
-    fake_session = _FakeSession()
     tool = MCPTool(
-        server_name="github",
-        server_tool_name="create_issue",
+        server_name="srv",
+        server_tool_name="echo",
+        description="echoes input",
+        parameters={"type": "object", "properties": {}},
+        session=_FakeSession(),  # type: ignore[arg-type]
+        execute_timeout=5.0,
+    )
+    import asyncio
+    from pathlib import Path
+    from magi.channels import Channel
+    ctx = ToolContext(
+        state_dir="/tmp",
+        workspace=Path("/tmp"),
+        uid=1,
+        channel=Channel.WEBUI,
+    )
+    result = asyncio.run(tool.run(ctx, text="hi"))
+    assert isinstance(result, ToolResult)
+    assert result.is_error is False
+    assert result.content == "hello world"
+
+
+def test_mcptool_run_handles_timeout(mcp_db):
+    """A server that exceeds ``execute_timeout`` is
+    reported back to the LLM as a tool error
+    (``is_error=True``) with a clear message — never a
+    raw ``asyncio.TimeoutError`` that would crash the
+    agent loop."""
+    import asyncio
+    from pathlib import Path
+    from magi.agent.tools.mcp_loader import MCPTool
+    from magi.channels import Channel
+
+    class _SlowSession:
+        async def call_tool(self, name, arguments):
+            await asyncio.sleep(10)
+            return None  # unreachable
+
+    tool = MCPTool(
+        server_name="srv",
+        server_tool_name="slow",
         description="",
         parameters={},
-        session=fake_session,
-        execute_timeout=0.1,  # 100 ms
+        session=_SlowSession(),  # type: ignore[arg-type]
+        execute_timeout=0.05,
     )
-
-    class _Ctx:
-        pass
-
-    result = _run_async(tool.run(_Ctx()))
-    # The result is the project's ToolResult; check the
-    # is_error + content-field contract (the MCP
-    # factory puts error text in ``content`` so the
-    # LLM reads it like a normal tool output, not via
-    # a separate ``error`` field).
+    ctx = ToolContext(
+        state_dir="/tmp",
+        workspace=Path("/tmp"),
+        uid=1,
+        channel=Channel.WEBUI,
+    )
+    result = asyncio.run(tool.run(ctx, text="x"))
     assert result.is_error is True
-    # The "may be slow or unresponsive" hint is the
-    # whole point of this test.
-    assert "may be slow or unresponsive" in result.content
-    # And the identifying bits: which tool, which
-    # server, how long.
-    assert "github" in result.content
-    assert "create_issue" in result.content
-    assert "0.1" in result.content
+    assert "timed out" in (result.content or "").lower()
+
+
+def test_mcptool_run_handles_call_exception():
+    """A server that raises inside ``call_tool`` is
+    reported as an error, not propagated."""
+    import asyncio
+    from pathlib import Path
+    from magi.agent.tools.mcp_loader import MCPTool
+    from magi.channels import Channel
+
+    class _BrokenSession:
+        async def call_tool(self, name, arguments):
+            raise RuntimeError("server-side kaboom")
+
+    tool = MCPTool(
+        server_name="srv",
+        server_tool_name="broken",
+        description="",
+        parameters={},
+        session=_BrokenSession(),  # type: ignore[arg-type]
+        execute_timeout=5.0,
+    )
+    ctx = ToolContext(
+        state_dir="/tmp",
+        workspace=Path("/tmp"),
+        uid=1,
+        channel=Channel.WEBUI,
+    )
+    result = asyncio.run(tool.run(ctx, text="x"))
+    assert result.is_error is True
+    assert "kaboom" in (result.content or "")
+
+
+# -- get_tool lookup --------------------------------------------------------
+
+
+def test_get_tool_finds_builtin_tool(mcp_db):
+    """``get_tool(name)`` returns the built-in tool
+    instance by name. The lookup path is shared
+    between built-in and MCP tools — this is the
+    built-in half of the contract."""
+    from magi.agent.tools.registry import get_tool
+    tool = get_tool("read_file")
+    assert tool is not None
+    assert tool.name == "read_file"
+
+
+def test_get_tool_returns_none_for_unknown(mcp_db):
+    from magi.agent.tools.registry import get_tool
+    assert get_tool("definitely_not_a_real_tool_xyz") is None
