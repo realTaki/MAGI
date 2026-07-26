@@ -4,11 +4,14 @@
  * Tree of councils, each with a leader (ADAM) and members (EVEs).
  * Full CRUD with inline editing.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+
+import { useQuery } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
+import { apiFetch, qk } from "../../lib/queryClient";
 
 // -- types --------------------------------------------------------------------
 
@@ -53,6 +56,10 @@ export function MagicsPane() {
   const [magics, setMagics] = useState<MAGICRow[] | null>(null);
   const [magis, setMagis] = useState<MagiBrief[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const magicsQuery = useMagics();
+  const magisQuery = useMagis();
+  const magics = magicsQuery.data ?? null;
+  const magis = magisQuery.data ?? null;
 
   const [createName, setCreateName] = useState("");
   const [createParent, setCreateParent] = useState("");
@@ -66,19 +73,7 @@ export function MagicsPane() {
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  const reload = async () => {
-    setLoadError(null);
-    try {
-      const [mr, gr] = await Promise.all([
-        fetch("/api/magics", { credentials: "include" }),
-        fetch("/api/magis", { credentials: "include" }),
-      ]);
-      if (!mr.ok || !gr.ok) { setLoadError(`load failed (magics=${mr.status}, magis=${gr.status})`); return; }
-      setMagics((await mr.json()) as MAGICRow[]);
-      setMagis((await gr.json()) as MagiBrief[]);
-    } catch (e) { setLoadError(`network error: ${(e as Error).message}`); }
-  };
-  useEffect(() => { void reload(); }, []);
+
 
   const flat = useMemo(() => (magics ? flattenTree(magics) : []), [magics]);
   const adams = useMemo(() => (magis ?? []).filter((m) => m.magic_position === "adam"), [magis]);
@@ -111,7 +106,7 @@ export function MagicsPane() {
       if (Number.isFinite(pid) && pid > 0) body.parent_id = pid;
       const res = await fetch("/api/magics", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       if (!res.ok) { setCreateError(`create failed: ${res.status} ${await res.text()}`); return; }
-      setCreateName(""); setCreateParent(""); setCreateOpen(false); await reload();
+      setCreateName(""); setCreateParent(""); setCreateOpen(false); await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]);
     } catch (e) { setCreateError(`network error: ${(e as Error).message}`); }
     finally { setCreating(false); }
   };
@@ -134,7 +129,7 @@ export function MagicsPane() {
     try {
       const res = await fetch(`/api/magics/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       if (!res.ok) { setEditError(`save failed: ${res.status} ${await res.text()}`); return; }
-      setEditingId(null); await reload();
+      setEditingId(null); await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]);
     } catch (e) { setEditError(`network error: ${(e as Error).message}`); }
     finally { setSaving(false); }
   };
@@ -142,7 +137,7 @@ export function MagicsPane() {
   const del = async (id: number, name: string) => {
     if (!confirm(t("magics.deleteConfirm"))) return;
     const res = await fetch(`/api/magics/${id}`, { method: "DELETE", credentials: "include" });
-    if (res.ok) await reload(); else alert(`delete failed: ${res.status}`);
+    if (res.ok) await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]); else alert(`delete failed: ${res.status}`);
   };
 
   return (
@@ -245,4 +240,19 @@ export function MagicsPane() {
       </ConsoleCard>
     </div>
   );
+}
+
+
+function useMagics() {
+  return useQuery({
+    queryKey: qk.magics(),
+    queryFn: () => apiFetch<MAGICRow[]>("/api/magics"),
+  });
+}
+
+function useMagis() {
+  return useQuery({
+    queryKey: qk.magis(),
+    queryFn: () => apiFetch<MagiBrief[]>("/api/magis"),
+  });
 }

@@ -715,13 +715,13 @@ def _resolve_creator_id(request: Request, _payload, session: Session) -> int:
     # only.
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
-    emp = session.get(Contact, eid)
+    emp = session.get(Contact, uid)
     if emp is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
             detail=(
                 f"no contact row bound to this session "
-                f"(uid={eid}); sign in first"
+                f"(uid={uid}); sign in first"
             ),
         )
     _enforce_creator_role(emp.role)

@@ -1,13 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import ConsoleCard from '../../components/ConsoleCard';
 import { InfoTip } from '../../components/InfoTip';
 import { useT } from '../../i18n/index';
+import { useContacts } from '../../lib/queries';
 
-//
-// Shows every contact MAGI has recorded notes about.
-// Click a row to expand the full notes card.
-//
 const NOTES_PREVIEW_CHARS = 80;
 
 function truncateNotes(s: string): string {
@@ -22,39 +19,17 @@ function formatTimestamp(iso: string): string {
 }
 
 export function KnowledgeContactsPane() {
-  type ContactRow = {
-    id: number;
-    name: string;
-    display_name: string | null;
-    role: string | null;
-    notes: string;
-    source: string;
-    last_seen_at: string;
-    created_at: string;
-    updated_at: string;
-  };
-  type ContactListResponse = { items: ContactRow[]; total: number };
-
   const t = useT();
-  const [contacts, setContacts] = useState<ContactRow[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const contactsQuery = useContacts();
+  const contacts = contactsQuery.data ?? [];
+  const loadError =
+    contactsQuery.error instanceof Error
+      ? contactsQuery.error.message
+      : contactsQuery.isError
+        ? t("settings.knowledgeContactsLoadFailed")
+        : null;
   const [expandedId, setExpandedId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch("/api/contacts", { credentials: "include" });
-        if (!r.ok) { setLoadError(`${t("settings.knowledgeContactsLoadFailed")} (${r.status})`); return; }
-        const body = (await r.json()) as ContactListResponse;
-        if (!cancelled) setContacts(body.items ?? []);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Network error");
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const isLoading = contactsQuery.isLoading && contacts.length === 0;
 
   return (
     <div className="space-y-4">
@@ -64,8 +39,8 @@ export function KnowledgeContactsPane() {
       </div>
       <ConsoleCard title={t("settings.knowledgeContactsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {contacts === null && !loadError && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
-        {contacts !== null && contacts.length === 0 && !loadError && (
+        {isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {!isLoading && contacts.length === 0 && !loadError && (
           <p className="text-sm text-ink-soft">{t("settings.knowledgeContactsEmpty")}</p>
         )}
         {contacts !== null && contacts.length > 0 && (

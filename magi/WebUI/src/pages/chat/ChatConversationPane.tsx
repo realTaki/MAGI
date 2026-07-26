@@ -28,6 +28,7 @@ export function ChatConversationPane(props: {
   loadedCount: number;
   onLoadOlder: () => void;
   loadingOlder: boolean;
+  onNewChat: () => void;
 }) {
   const t = useT();
   const scrollerRef = useRef<HTMLDivElement>(null);
