@@ -3,7 +3,7 @@
  *
  * Receives all state via props from ChatTab.
  */
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { useT } from "../../i18n/index";
 
@@ -35,6 +35,29 @@ export function ChatConversationPane(props: {
   const t = useT();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const shouldAutoScroll = useRef(true);
+
+  // Detect manual scroll-up so we don't force-scroll while
+  // the user is reading history.
+  const onScroll = () => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    shouldAutoScroll.current = atBottom;
+  };
+
+  // Auto-scroll on new messages (initial load + user send + reply).
+  const prevLen = useRef(0);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const isInitial = prevLen.current === 0 && props.messages.length > 0;
+    const isNew = props.messages.length > prevLen.current && !isInitial;
+    prevLen.current = props.messages.length;
+    if (isInitial || (isNew && shouldAutoScroll.current)) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [props.messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const headerLabel =
     props.title
@@ -60,6 +83,7 @@ export function ChatConversationPane(props: {
       {/* Messages area */}
       <div
         ref={scrollerRef}
+        onScroll={onScroll}
         className="flex-1 min-h-0 overflow-y-auto px-1 py-3 space-y-3"
       >
         {/* Load older messages affordance */}
@@ -157,7 +181,7 @@ export function ChatConversationPane(props: {
             />
             <button
               type="button"
-              onClick={props.onSend}
+              onClick={() => { shouldAutoScroll.current = true; props.onSend(); }}
               disabled={props.sending || !props.input.trim()}
               className="btn btn-primary text-sm py-2 px-4 shrink-0 self-end"
             >
