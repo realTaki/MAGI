@@ -161,6 +161,8 @@ export default {
     statusDisconnected: "未接続",
     statusComingSoon: "近日公開",
     btnReSet: "再設定",
+    btnConfigure: "設定",
+    channelsPlanned: "予定 ({count})",
     btnRestartOnboarding: "再初期化",
     notConfigured: "(未設定)",
     youLabel: "あなた",

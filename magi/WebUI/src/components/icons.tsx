@@ -174,3 +174,34 @@ export const IconHelp = ({ className }: IconProps) => (
     <circle cx="12.5" cy="16.5" r="0.6" fill="currentColor" stroke="none" />
   </Icon>
 );
+
+// Pencil — row-level "edit" affordance in data tables.
+export const IconEdit = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M16 3l5 5L8 21H3v-5L16 3z" />
+  </Icon>
+);
+
+// Trash — row-level "delete" affordance in data tables.
+export const IconDelete = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M3 6h18" />
+    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+    <path d="M10 11v5M14 11v5" />
+    <path d="M6 6l1 14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-14" />
+  </Icon>
+);
+
+// Checkmark — "save / confirm" affordance.
+export const IconCheck = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M5 13l4 4L19 7" />
+  </Icon>
+);
+
+// X — "close / cancel" affordance.
+export const IconX = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M18 6L6 18M6 6l12 12" />
+  </Icon>
+);

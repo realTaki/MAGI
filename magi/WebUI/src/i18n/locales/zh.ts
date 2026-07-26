@@ -183,6 +183,8 @@ export default {
     statusDisconnected: "未连接",
     statusComingSoon: "即将推出",
     btnReSet: "重设",
+    btnConfigure: "配置",
+    channelsPlanned: "计划中 ({count})",
     btnRestartOnboarding: "初始化重新配置",
     notConfigured: "(未配置)",
     youLabel: "你",

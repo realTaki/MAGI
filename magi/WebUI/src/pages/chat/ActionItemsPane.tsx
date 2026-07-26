@@ -185,7 +185,7 @@ export default function ActionItemsPane() {
   if (error && data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
+        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
           <InfoTip text={t("actionItems.description")} />
         </div>
@@ -199,7 +199,7 @@ export default function ActionItemsPane() {
   if (data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
+        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
           <InfoTip text={t("actionItems.description")} />
         </div>
@@ -212,7 +212,7 @@ export default function ActionItemsPane() {
 
   return (
     <div className="flex flex-col h-[560px]">
-      <div className="px-6 py-3 border-b border-sky-light/40 flex items-center justify-between">
+      <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
         <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
         <InfoTip text={t("actionItems.description")} />
       </div>

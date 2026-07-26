@@ -59,6 +59,7 @@ class MAGICOut(BaseModel):
     parent_id: int | None
     adam_id: int | None
     child_count: int = 0
+    member_count: int = 0
     created_at: str
     updated_at: str
 
@@ -74,13 +75,14 @@ class MAGICUpdate(BaseModel):
     adam_id: int | None = Field(default=None, ge=1)
 
 
-def _serialize_magic(m: MAGIC) -> MAGICOut:
+def _serialize_magic(m: MAGIC, member_count: int = 0) -> MAGICOut:
     return MAGICOut(
         id=m.id,
         name=m.name,
         parent_id=m.parent_id,
         adam_id=m.adam_id,
         child_count=len(m.children),
+        member_count=member_count,
         created_at=m.created_at.isoformat() if m.created_at else "",
         updated_at=m.updated_at.isoformat() if m.updated_at else "",
     )
@@ -104,7 +106,19 @@ def list_magics(
         .options(selectinload(MAGIC.children))
         .order_by(MAGIC.name.asc())
     ).all()
-    return [_serialize_magic(m) for m in magics]
+
+    # Pre-compute member counts (Magi rows per magic_id).
+    member_counts: dict[int, int] = {}
+    if magics:
+        from magi.agent.db import Magi
+        counts = session.execute(
+            select(Magi.magic_id, func.count())
+            .where(Magi.magic_id.in_([m.id for m in magics]))
+            .group_by(Magi.magic_id)
+        ).all()
+        member_counts = {mid: cnt for mid, cnt in counts}
+
+    return [_serialize_magic(m, member_counts.get(m.id, 0)) for m in magics]
 
 
 @router.post("/magics", response_model=MAGICOut, status_code=201)
@@ -149,7 +163,16 @@ def create_magic(
     session.commit()
     session.refresh(magic)
     logger.info("created MAGIC id=%d name=%r parent_id=%s", magic.id, magic.name, magic.parent_id)
-    return _serialize_magic(magic)
+    # New MAGIC starts with 0 members.
+    return _serialize_magic(magic, member_count=0)
+
+
+def _count_members(session: Session, magic_id: int) -> int:
+    """Return the number of Magi rows in this MAGIC."""
+    from magi.agent.db import Magi
+    return session.scalar(
+        select(func.count()).select_from(Magi).where(Magi.magic_id == magic_id)
+    ) or 0
 
 
 @router.get("/magics/{magic_id}", response_model=MAGICOut)
@@ -167,7 +190,7 @@ def get_magic(
         )
     # Load children for child_count.
     session.refresh(magic, ["children"])
-    return _serialize_magic(magic)
+    return _serialize_magic(magic, member_count=_count_members(session, magic_id))
 
 
 @router.patch("/magics/{magic_id}", response_model=MAGICOut)
@@ -263,7 +286,7 @@ def update_magic(
 
     session.commit()
     session.refresh(magic, ["children"])
-    return _serialize_magic(magic)
+    return _serialize_magic(magic, member_count=_count_members(session, magic_id))
 
 
 @router.delete("/magics/{magic_id}", status_code=204)

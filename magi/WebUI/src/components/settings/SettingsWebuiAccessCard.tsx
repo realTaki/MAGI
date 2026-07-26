@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
+import { IconDelete } from "../icons";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
@@ -79,8 +80,8 @@ export function SettingsWebuiAccessCard(props: {
                       ) : (
                         <button type="button" onClick={() => handleRemoveAdmin(emp)}
                           title={t("settings.adminRemoveTitle")}
-                          className="btn btn-secondary text-xs py-1 px-2">
-                          {t("settings.adminRemove")}
+                          className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                          <IconDelete className="h-4 w-4" />
                         </button>
                       )}
                     </td>

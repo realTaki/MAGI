@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
+import { IconCheck, IconDelete, IconEdit, IconX } from "../../components/icons";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
@@ -108,14 +109,12 @@ export function MagicsPane() {
     <div className="space-y-4">
       <ConsoleCard
         title={t("magics.paneTitle")}
-        headerRight={
-          <>
-            <InfoTip text={t("magics.paneDesc")} />
-            <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
-              onClick={() => { setCreateOpen((o) => !o); setCreateError(null); }}>
-              {createOpen ? t("common.cancel") : `+ ${t("magics.createHeading")}`}
-            </button>
-          </>
+        headerRight={<InfoTip text={t("magics.paneDesc")} />}
+        headerAction={
+          <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
+            onClick={() => { setCreateOpen((o) => !o); setCreateError(null); }}>
+            {createOpen ? t("common.cancel") : `+ ${t("magics.createHeading")}`}
+          </button>
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}
@@ -140,19 +139,20 @@ export function MagicsPane() {
           <p className="text-sm text-ink-soft">{t("magics.empty")}</p>
         )}
         {magics.length > 0 && (
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {tree.map((r) => {
               const isEdit = editingId === r.id;
               const adam = adamByMagic.get(r.id);
               const indent = r.depth * INDENT;
               const prefix = r.depth === 0 ? "" : "├─".padStart(r.depth * 2, " ");
+              const hasMeta = adam || r.member_count > 0 || r.child_count > 0;
               return (
                 <div key={r.id}
-                  className={`flex items-center gap-2 px-2 py-1 rounded transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}
+                  className={`rounded transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}
                   style={{ paddingLeft: 8 + indent }}
                 >
                   {isEdit ? (
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
                       <input className="form-input text-sm py-1 px-2 w-40" value={editName} onChange={(e) => setEditName(e.target.value)} />
                       <select className="form-input text-sm py-1 px-2" value={editParentId} onChange={(e) => setEditParentId(e.target.value)}>
                         {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
@@ -163,18 +163,31 @@ export function MagicsPane() {
                       {editError && <span className="text-xs text-rose-600">{editError}</span>}
                     </div>
                   ) : (
-                    <>
-                      <span className="text-ocean/30 font-mono text-[11px] shrink-0">{prefix}</span>
-                      <span className="text-sm font-medium text-ink truncate">{r.name}</span>
-                      <span className="font-mono text-[11px] text-ink-soft/40">#{r.id}</span>
-                      {adam && <span className="status-pill status-pill--connected text-[10px]">ADAM</span>}
-                      {r.child_count > 0 && <span className="text-[11px] text-ink-soft">{r.child_count} sub</span>}
-                      <div className="flex items-center gap-1 ml-auto">
-                        <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
-                        <button type="button" onClick={() => { void del(r.id, r.name); }}
-                          className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
+                    <div className="px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-ocean/30 font-mono text-[11px] shrink-0">{prefix}</span>
+                          <span className="text-sm font-medium text-ink truncate">{r.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button type="button" onClick={() => startEdit(r)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
+                          <button type="button" onClick={() => { void del(r.id, r.name); }}
+                            className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
+                        </div>
                       </div>
-                    </>
+                      {hasMeta && (
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-ink-soft">
+                          <span className="font-mono text-ink-soft/40">#{r.id}</span>
+                          {adam && (
+                            <span className="status-pill status-pill--connected text-[10px]">
+                              ADAM: {adam.name || `#${adam.id}`}
+                            </span>
+                          )}
+                          {r.member_count > 0 && <span>{r.member_count} 成员</span>}
+                          {r.child_count > 0 && <span>{r.child_count} sub</span>}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );

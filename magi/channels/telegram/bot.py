@@ -909,13 +909,6 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
         )
         return None
 
-    token = state_get(state_dir, "telegram.bot_token")
-    if not token:
-        logger.info(
-            "telegram: no bot token saved yet — channel idle until onboarding completes"
-        )
-        return None
-
     username = state_get(state_dir, "telegram.bot_username")
     # ``concurrent_updates=True`` lets a follow-up TG message
     # for the same chat enter ``_on_message`` **while** the

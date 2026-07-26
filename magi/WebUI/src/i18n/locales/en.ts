@@ -161,6 +161,8 @@ export default {
     statusDisconnected: "disconnected",
     statusComingSoon: "coming soon",
     btnReSet: "Re-set",
+    btnConfigure: "Configure",
+    channelsPlanned: "Planned ({count})",
     btnRestartOnboarding: "Restart onboarding",
     notConfigured: "(not configured)",
     youLabel: "you",

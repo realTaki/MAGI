@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
+import { IconDelete, IconEdit } from "../../components/icons";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
@@ -46,7 +47,6 @@ export function MagisPane() {
   const [saving, setSaving] = useState(false);
 
   const teamName = useMemo(() => { const m = new Map<number, string>(); magics.forEach((c) => m.set(c.id, c.name)); return m; }, [magics]);
-  const magisByMagic = useMemo(() => { const out = new Map<number, MagiRow[]>(); magis.forEach((m) => { const l = out.get(m.magic_id) ?? []; l.push(m); out.set(m.magic_id, l); }); return out; }, [magis]);
 
   const submitCreate = async () => {
     setAddError(null);
@@ -89,14 +89,12 @@ export function MagisPane() {
     <div className="space-y-4">
       <ConsoleCard
         title={t("magis.paneTitle")}
-        headerRight={
-          <>
-            <InfoTip text={t("magis.paneDesc")} />
-            <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
-              onClick={() => { setAddOpen((o) => !o); setAddError(null); }}>
-              {addOpen ? t("common.cancel") : `+ ${t("magis.createHeading")}`}
-            </button>
-          </>
+        headerRight={<InfoTip text={t("magis.paneDesc")} />}
+        headerAction={
+          <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
+            onClick={() => { setAddOpen((o) => !o); setAddError(null); }}>
+            {addOpen ? t("common.cancel") : `+ ${t("magis.createHeading")}`}
+          </button>
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}
@@ -201,10 +199,17 @@ export function MagisPane() {
                     )}
                     <td className="py-2 pr-3 text-right">
                       {isEdit ? null : (
-                        <div className="flex items-center justify-end gap-1">
-                          <button type="button" onClick={() => startEdit(m)} className="btn btn-secondary text-xs py-0.5 px-1.5">{t("common.edit")}</button>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button type="button" onClick={() => startEdit(m)}
+                            title={t("common.edit")}
+                            className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                            <IconEdit className="h-4 w-4" />
+                          </button>
                           <button type="button" onClick={() => { void del(m.id); }}
-                            className="btn btn-secondary text-xs py-0.5 px-1.5 text-rose-600 hover:text-rose-800">{t("common.delete")}</button>
+                            title={t("common.delete")}
+                            className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                            <IconDelete className="h-4 w-4" />
+                          </button>
                         </div>
                       )}
                     </td>
@@ -218,27 +223,6 @@ export function MagisPane() {
           </table>
         </div>
 
-        {magisByMagic.size > 0 && (
-          <div className="mt-6 pt-4 border-t border-sky-light/40">
-            <h3 className="text-sm font-medium text-ink mb-3">{t("magis.breakdownHeading")}</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {Array.from(magisByMagic.entries()).map(([mid, list]) => {
-                const adams = list.filter((x) => x.magic_position === "adam").length;
-                const eves = list.filter((x) => x.magic_position === "eve").length;
-                return (
-                  <div key={mid} className="rounded-lg border border-sky-light/30 bg-white/50 p-3">
-                    <div className="text-sm font-medium text-ink">{teamName.get(mid) ?? `#${mid}`}</div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-ink-soft">
-                      <span>{list.length} agent{list.length !== 1 ? "s" : ""}</span>
-                      {adams > 0 && <span className="text-amber-600">{adams} ADAM</span>}
-                      {eves > 0 && <span className="text-sky-600">{eves} EVE</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </ConsoleCard>
     </div>
   );
