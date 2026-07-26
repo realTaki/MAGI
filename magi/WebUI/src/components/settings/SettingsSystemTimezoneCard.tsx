@@ -46,14 +46,14 @@ export function SettingsSystemTimezoneCard() {
         credentials: "include",
       });
       if (!r.ok) {
-        setLoadError(`Failed to load (${r.status})`);
+        setLoadError(`${t("settings.loadFailed")} (${r.status})`);
         return;
       }
       const body = (await r.json()) as TzOut;
       setData(body);
       setPicked(body.current);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Network error");
+      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -79,17 +79,17 @@ export function SettingsSystemTimezoneCard() {
           code?: string;
           detail?: string;
         };
-        setSaveError(body.detail ?? `Save failed (${r.status})`);
+        setSaveError(body.detail ?? `${t("common.save")} failed (${r.status})`);
         return;
       }
       const body = (await r.json()) as TzOut;
       setData(body);
       setPicked(body.current);
-      setSavedNotice("已保存。下次 token 用量查询就用新时区。");
+      setSavedNotice(t("settings.timezoneSavedNotice"));
       // (saved notice remains in zh for v0; localized copy
       // lands when we extract a setting-specific notice key.)
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     } finally {
       setSaving(false);
     }
@@ -118,7 +118,7 @@ export function SettingsSystemTimezoneCard() {
           </select>
           {data.default !== data.current && (
             <p className="text-xs text-ink-soft">
-              未设置时用默认 <span className="font-mono">{data.default}</span>。
+              {t("settings.timezoneNotSetHint").replace("{tz}", data.default)}
             </p>
           )}
         </div>
@@ -133,9 +133,9 @@ export function SettingsSystemTimezoneCard() {
           onClick={save}
           disabled={saving || !dirty}
           className="btn btn-primary text-sm py-1.5 px-4"
-          title={!dirty ? "没有改动" : "保存"}
+          title={!dirty ? t("settings.noChanges") : t("common.save")}
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? t("settings.agentSaving") : t("common.save")}
         </button>
         {dirty && (
           <button
@@ -148,7 +148,7 @@ export function SettingsSystemTimezoneCard() {
             disabled={saving}
             className="btn btn-ghost text-sm py-1.5 px-3"
           >
-            放弃改动
+            {t("settings.discardChanges")}
           </button>
         )}
       </div>

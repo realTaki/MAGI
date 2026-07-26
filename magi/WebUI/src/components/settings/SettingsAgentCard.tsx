@@ -80,7 +80,7 @@ function ToolLoopSection() {
       setData(body);
       setPicked(String(body.current));
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Network error");
+      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -96,7 +96,7 @@ function ToolLoopSection() {
     setSavedNotice(null);
     const value = Number(picked);
     if (!Number.isInteger(value)) {
-      setSaveError("必须是整数");
+      setSaveError(t("settings.agentMustBeInteger"));
       return;
     }
     if (data !== null && (value < data.min || value > data.max)) {
@@ -125,10 +125,10 @@ function ToolLoopSection() {
       setData(body);
       setPicked(String(body.current));
       setSavedNotice(
-        "已保存。下一条消息生效（正在进行的 tool loop 用旧值）。",
+        t("settings.agentToolLoopSaved"),
       );
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     } finally {
       setSaving(false);
     }
@@ -180,9 +180,9 @@ function ToolLoopSection() {
           onClick={save}
           disabled={saving || !dirty}
           className="btn btn-primary text-sm py-1.5 px-4"
-          title={!dirty ? "没有改动" : "保存"}
+          title={!dirty ? t("settings.noChanges") : t("common.save")}
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? t("settings.agentSaving") : t("common.save")}
         </button>
         {dirty && (
           <button
@@ -242,7 +242,7 @@ function CompactSection() {
       setThresholdPct(String(body.threshold_pct));
       setKeepRecent(String(body.keep_recent));
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Network error");
+      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -263,7 +263,7 @@ function CompactSection() {
     const tp = Number(thresholdPct);
     const kr = Number(keepRecent);
     if (!Number.isInteger(cw) || !Number.isInteger(tp) || !Number.isInteger(kr)) {
-      setSaveError("三个值必须是整数");
+      setSaveError(t("settings.agentAllMustBeInteger"));
       return;
     }
     if (data !== null) {
@@ -305,10 +305,10 @@ function CompactSection() {
       setThresholdPct(String(body.threshold_pct));
       setKeepRecent(String(body.keep_recent));
       setSavedNotice(
-        "已保存。下一条消息生效（正在进行的 chat 用旧值）。",
+        t("settings.agentCompactSaved"),
       );
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     } finally {
       setSaving(false);
     }
@@ -398,9 +398,9 @@ function CompactSection() {
           onClick={save}
           disabled={saving || !dirty}
           className="btn btn-primary text-sm py-1.5 px-4"
-          title={!dirty ? "没有改动" : "保存"}
+          title={!dirty ? t("settings.noChanges") : t("common.save")}
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? t("settings.agentSaving") : t("common.save")}
         </button>
         {dirty && (
           <button

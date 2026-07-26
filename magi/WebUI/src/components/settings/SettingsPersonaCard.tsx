@@ -83,7 +83,7 @@ export function SettingsPersonaCard() {
       setModifiedAt(data.modified_at);
       setIsFallback(data.is_bundled_fallback);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Network error");
+      setLoadError(err instanceof Error ? err.message : t("settings.networkError"));
     }
   }
 
@@ -129,7 +129,7 @@ export function SettingsPersonaCard() {
       setIsFallback(false);
       setSavedNotice(t("persona.savedNotice"));
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     } finally {
       setSaving(false);
     }
@@ -160,7 +160,7 @@ export function SettingsPersonaCard() {
       await load();
       setSavedNotice(t("persona.resetNotice"));
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Network error");
+      setSaveError(err instanceof Error ? err.message : t("settings.networkError"));
     } finally {
       setResetting(false);
     }

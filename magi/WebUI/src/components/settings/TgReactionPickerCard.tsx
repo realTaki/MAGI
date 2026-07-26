@@ -141,7 +141,7 @@ export function TgReactionPickerCard() {
       set((s) => ({
         ...s,
         picked: previous,
-        error: err instanceof Error ? err.message : "Network error",
+        error: err instanceof Error ? err.message : t("settings.networkError"),
       }));
     }
   }

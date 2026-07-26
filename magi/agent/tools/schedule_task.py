@@ -356,6 +356,13 @@ class ScheduleTaskTool(Tool):
         # ── Idempotent upsert by name ──────────────────────────────────
         is_update = False
         task_id = new_session_id()
+        # Resolve system tz *before* opening the outer
+        # ``open_session()`` block — ``state_get`` opens
+        # its own ORM session, and a nested session
+        # inside an outer ``open_session()`` would
+        # ``BEGIN IMMEDIATE``-deadlock on the shared
+        # SQLite handle.
+        resolved_tz = _resolve_system_tz()
         with open_session() as db:
             existing = db.execute(
                 select(Task).where(Task.name == name)
@@ -406,7 +413,7 @@ class ScheduleTaskTool(Tool):
                     run_at=run_at_iso,
                     delivery_to=delivery_to,
                     session_id=new_session_id_str,
-                    tz=_resolve_system_tz(),
+                    tz=resolved_tz,
                     channel=channel,
                     uid=operator_id,
                     enabled=1,

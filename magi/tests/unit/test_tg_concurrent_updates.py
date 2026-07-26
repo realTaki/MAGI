@@ -62,6 +62,16 @@ def test_start_bot_enables_concurrent_updates(_saved_token) -> None:
             captured["concurrent_updates"] = flag
             return self
 
+        # ``start_bot`` configures explicit PTB HTTP
+        # timeouts so a Telegram API outage doesn't hang
+        # the bot thread forever. Mirror the full chain
+        # so the stub doesn't trip ``AttributeError`` on
+        # a new chain method.
+        def connect_timeout(self, _seconds): return self
+        def read_timeout(self, _seconds): return self
+        def write_timeout(self, _seconds): return self
+        def pool_timeout(self, _seconds): return self
+
         def build(self):
             return _FakeApplication()
 

@@ -57,20 +57,26 @@ happens entirely inside :func:`handle_message`.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 
-from magi.agent.llm import ChatMessage, LLMError, get_provider
+from magi.agent.compaction import maybe_compact
+from magi.agent.llm import (
+    ChatMessage,
+    ChatResult,
+    LLMError,
+    LLMProvider,
+    get_provider,
+)
+from magi.agent.memory.session import SessionStore
+from magi.agent.system_prompt import build_system_prompt, read_soul
+from magi.agent.token_usage import record_token_usage
+
 # Note: prompt-block helpers (memory / contacts / skills)
 # live in :mod:`magi.agent.system_prompt` — not imported
 # here so this module stays focused on the chat loop.
 from magi.agent.tools.base import ToolContext
-from magi.agent.compaction import call_llm_for_summary, maybe_compact
-from magi.agent.system_prompt import build_system_prompt, read_soul
-from magi.agent.token_usage import record_token_usage
 from magi.agent.tools.registry import get_tool, get_tool_schemas
-from magi.agent.llm.tokens import estimate_messages_tokens
-from magi.agent.memory.session import SessionStore
 
 logger = logging.getLogger("magi.agent.agent")
 
@@ -93,7 +99,7 @@ from magi.agent.prompts import load_bot_replies  # noqa: E402
 _FALLBACK_REPLY_CACHE: dict[str, str] = {}
 
 
-def _truncate_at_safe_boundary(messages: list["ChatMessage"]) -> None:
+def _truncate_at_safe_boundary(messages: list[ChatMessage]) -> None:
     """Truncate ``messages`` so the last entry is a plain
     text message (no ``content_blocks``).
 
@@ -124,7 +130,7 @@ def _build_messages_from_session(
     uid: int,
     session_id: str | None,
     new_user_text: str,
-) -> tuple[list["ChatMessage"], set[str]]:
+) -> tuple[list[ChatMessage], set[str]]:
     """Load the prior-turn history into the LLM-facing
     message list (D.17). Returns ``(messages, seen_ids)``
     where ``messages`` is the existing ``sess.messages``
@@ -147,7 +153,7 @@ def _build_messages_from_session(
     sess = SessionStore(state_dir).get(uid, session_id)
     if sess is None:
         return [ChatMessage(role="user", content=new_user_text)], set()
-    out: list["ChatMessage"] = []
+    out: list[ChatMessage] = []
     seen: set[str] = set()
     for m in sess.messages:
         llm_role = "user" if m.role in ("user", "system") else "assistant"
@@ -165,7 +171,7 @@ def _drain_pending_user_messages(
     state_dir: str,
     uid: int,
     session_id: str | None,
-    messages: list["ChatMessage"],
+    messages: list[ChatMessage],
     seen_message_ids: set[str],
 ) -> bool:
     """Pull fresh user messages from the session store into
@@ -266,141 +272,92 @@ def _fallback_reply(key: str = "agent_fallback") -> str:
 # the single workspace file at startup.
 _SOUL_FILENAME = "SOUL.md"
 
-async def handle_message(
+@dataclass
+class _AgentContext:
+    """All immutable and mutable state needed for one agent turn."""
+
+    provider: LLMProvider
+    soul: str
+    tool_ctx: ToolContext
+    tool_schemas: list[dict]
+    messages: list[ChatMessage]
+    seen_message_ids: set[str]
+    max_iter: int
+
+
+@dataclass
+class _ToolLoopOutcome:
+    """The last provider result plus the reply-loop counters."""
+
+    final_text: str
+    result: ChatResult | None
+    iterations_run: int
+
+
+def _validate_credentials(
+    *,
+    contact_provider: str | None,
+    contact_api_key: str | None,
+    uid: int | None,
+    channel: str,
+) -> tuple[str, str] | None:
+    """Validate strict per-contact LLM credentials.
+
+    Returns the provider/key pair for the happy path and ``None`` when the
+    caller should receive the no-credentials fallback. Keeping this gate
+    separate makes the billing invariant independently testable.
+    """
+    if contact_provider and contact_api_key:
+        return contact_provider, contact_api_key
+
+    reason = (
+        "no per-contact credentials configured"
+        if contact_provider is None and contact_api_key is None
+        else "per-contact credentials partially configured "
+             "(provider or key missing)"
+    )
+    logger.warning(
+        "chat rejected (contact=%s channel=%s): %s",
+        uid, channel, reason,
+    )
+    return None
+
+
+def _build_context(
     state_dir: str,
     *,
     text: str,
     channel: str,
-    uid: int | None = None,
-    # D.6: optional session id. Persisted alongside the
-    # message in the ``chat_sessions`` row; v0 also echoes
-    # it into the ``token_usage`` row so the audit-style
-    # question "which session burned these tokens?" can be
-    # answered later.
-    session_id: str | None = None,
-    # Per-contact credentials — the chat path is strict by
-    # default (no fall-back to a system default) so every LLM
-    # call can be billed to a specific contact. Both must be
-    # set together or the call is rejected with the
-    # ``agent_fallback`` friendly reply.
-    contact_provider: str | None = None,
-    contact_api_key: str | None = None,
-    contact_model: str | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    # D.16: optional override for the agent loop's
-    # tool-iteration cap. ``None`` (the default) means
-    # "read from settings / fall back to default". Tests
-    # pass an explicit small number to keep the suite fast.
-    max_tool_iterations: int | None = None,
-    # D.28: ``tg_send_callback`` is gone. The agent's
-    # ``send_message`` tool now routes through the channel
-    # dispatcher; the tool body calls
-    # ``dispatcher.send_to_session(session_id, text)`` and
-    # never sees a TG client reference. Channels own their
-    # own IM-client wiring; the agent loop stays
-    # channel-agnostic.
-    # Calling operator's role. Used to filter which tools
-    # the LLM sees (see ``get_tool_schemas(caller_role=...)``
-    # in :mod:`magi.agent.tools.registry`): admin-only tools
-    # like ``schedule_task`` and the action-item trio
-    # (``add_todo`` / ``complete_todo`` / ``list_todo``) are
-    # stripped from the menu when the caller isn't
-    # ``admin`` or ``assigned``. ``None`` skips the filter —
-    # tests, headless callers, or contexts where the role
-    # hasn't been plumbed yet. Chat handlers always pass an
-    # explicit role.
-    caller_role: str | None = None,
-) -> str:
-    """One chat turn. Returns the LLM's reply text.
-
-    On any LLM failure (including missing per-contact
-    credentials), returns the ``agent_fallback`` template
-    (see ``magi/agent/prompts/bot_replies.yaml``) and
-    audits the real error. The caller (TG bot / WebUI chat)
-    is responsible for delivering the string; we don't raise
-    into the transport layer because the user already pressed
-    send, and a transport-level exception would just confuse
-    the UI.
-
-    No default-LLM fallback. Every LLM call must carry the
-    contact credentials that pay for it — the design is
-    "every message is billed to a person", so silent fall-back
-    to a house-LLM (which would mis-route the reply and hide
-    the configuration mistake) is deliberately not supported.
-    The pre-flight rejection is loud enough that the user
-    can fix it from the dashboard / config panel.
-
-    Parameters
-    ----------
-    state_dir
-        The on-disk state directory (``MAGI_STATE_DIR``).
-    text
-        The inbound message text.
-    channel
-        Tag for the ``token_usage`` row (``"tg"`` / ``"webui"`` /
-        ``"scheduled"``). Free-form string; no enum yet.
-    uid
-        Optional contact id, for the ``token_usage`` row.
-        ``None`` is accepted (FK NOT NULL on the SQL column
-        will surface any caller that drops the ball), but
-        v0 never sends ``None`` — both channel paths
-        resolve the caller to a known Contact row before
-        this function runs.
-    session_id
-        D.6: optional chat session id. Echoed into the
-        ``token_usage`` row so the question "which session
-        burned these tokens?" can be answered later by
-        joining against ``chat_sessions`` on the same id.
-    contact_provider / contact_api_key / contact_model
-        Per-call LLM credentials. Either all three are set
-        (contact chooses model optionally) or the call is
-        rejected. The TG channel fetches these from the
-        contact row; the WebUI chat API does the same via
-        the ``magi_session`` admin cookie.
-    """
-
-    # Strict-mode pre-flight: per-contact credentials must
-    # be present in full. We treat empty strings as "not set"
-    # so a half-cleared row doesn't accidentally route to
-    # a broken provider. The user-friendly reply points the
-    # user at the panel that fixes the config (TG users will
-    # see this; WebUI users hit a 403 one layer up before
-    # getting here).
-    if not contact_provider or not contact_api_key:
-        reason = (
-            "no per-contact credentials configured"
-            if contact_provider is None and contact_api_key is None
-            else "per-contact credentials partially configured "
-                 "(provider or key missing)"
+    uid: int | None,
+    session_id: str | None,
+    contact_provider: str,
+    contact_api_key: str,
+    contact_model: str | None,
+    caller_role: str | None,
+    max_tool_iterations: int | None,
+) -> _AgentContext | None:
+    """Build the provider, tool context, and LLM-facing message state."""
+    try:
+        provider = get_provider(
+            contact_provider,
+            contact_api_key,
+            contact_model,
         )
+    except Exception as e:
+        # ``get_provider`` can fail for an unknown provider or malformed key;
+        # treat it like an LLM failure rather than leaking into the channel.
         logger.warning(
-            "chat rejected (contact=%s channel=%s): %s",
-            uid, channel, reason,
+            "agent: get_provider failed (contact=%s provider=%s): %s",
+            uid, contact_provider, e,
         )
-        return _fallback_reply("agent_no_credentials")
+        return None
 
-    provider_name = contact_provider
-    api_key = contact_api_key
-    model = contact_model
-
-    soul = read_soul(state_dir)
-
-    # D.16: agent tool-use loop. The runtime now sends every
-    # registered tool's schema to the LLM, runs the loop
-    # until the model produces a text reply (stop_reason
-    # ``end_turn``) or hits the iteration cap. See
-    # ``magi/agent/agent.py:handle_message`` docstring
-    # for the failure-mode rationale; the loop continues
-    # to swallow LLMError as before — the user already
-    # pressed send, and a transport-level exception would
-    # only confuse the UI.
     from magi.agent.workspace import workspace_root
 
     workspace = Path(workspace_root(state_dir))
     if max_tool_iterations is None:
-        # Lazy import to avoid pulling settings.py at agent
-        # module load (keeps unit tests that mock the
-        # provider from triggering the SQLAlchemy path).
+        # Lazy import keeps provider-only unit tests from importing the
+        # settings API and its ORM stack at module load time.
         from magi.channels.webui.api.system_settings import (
             get_tool_max_iterations,
         )
@@ -413,216 +370,181 @@ async def handle_message(
         workspace=workspace,
         uid=uid if uid is not None else 0,
         channel=channel,
-        # Populate ``session_id`` so tools (notably
-        # ``schedule_task``) can default ``delivery_to`` to
-        # the current chat when called mid-conversation.
-        # ``""`` means there's no chat session to anchor to
-        # — fine for cron-driven rows or admin tool calls
-        # that don't have a chat thread.
         session_id=session_id or "",
     )
-    tool_schemas = get_tool_schemas(caller_role=caller_role)
-
-    try:
-        provider = get_provider(provider_name, api_key, model)
-    except Exception as e:
-        # ``get_provider`` itself can fail (unknown provider
-        # name, malformed key) — those don't come through as
-        # LLMError. Treat the same as an LLMError: log +
-        # return fallback, no exception to the caller.
-        logger.warning(
-            "agent: get_provider failed (contact=%s provider=%s): %s",
-            uid, provider_name, e,
-        )
-        return _fallback_reply()
-
-    # D.17 — load session history. ``_build_messages_from_session``
-    # returns ``(messages, seen_ids)``: the prior-turn messages
-    # (in ``sess.messages``, which is exactly the LLM-facing
-    # view: summary at index 0 if a compaction has happened,
-    # else the most recent K verbatim turns) plus the brand-
-    # new user text, and the set of message_ids the loop has
-    # already seen so subsequent interrupt polls don't re-read
-    # them. ``archive`` is NOT included — it's the forensic
-    # record only.
     messages, seen_message_ids = _build_messages_from_session(
-        state_dir, uid, session_id, text,
+        state_dir,
+        uid,
+        session_id,
+        text,
+    )
+    return _AgentContext(
+        provider=provider,
+        soul=read_soul(state_dir),
+        tool_ctx=tool_ctx,
+        tool_schemas=get_tool_schemas(caller_role=caller_role),
+        messages=messages,
+        seen_message_ids=seen_message_ids,
+        max_iter=max_iter,
     )
 
+
+async def _run_tool_calls(
+    result: ChatResult,
+    *,
+    tool_ctx: ToolContext,
+    uid: int | None,
+    session_id: str | None,
+) -> list[dict]:
+    """Execute one provider turn's tool calls and serialize their results."""
+    tool_results: list[dict] = []
+    for tool_use in result.tool_uses:
+        tool = get_tool(tool_use["name"])
+        if tool is None:
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_use["id"],
+                "content": f"unknown tool: {tool_use['name']!r}",
+                "is_error": True,
+            })
+            continue
+
+        try:
+            # The tool itself owns channel dispatch; the loop remains
+            # independent of Telegram or any other transport client.
+            tool_result = await tool.run(
+                tool_ctx,
+                **dict(tool_use.get("input") or {}),
+            )
+        except Exception as e:
+            logger.exception(
+                "agent: tool %s crashed (contact=%s, session=%s)",
+                tool_use["name"], uid, session_id,
+            )
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_use["id"],
+                "content": f"tool {tool_use['name']!r} crashed: {e}"[:8000],
+                "is_error": True,
+            })
+            continue
+
+        content = tool_result.content
+        if len(content) > 8000:
+            content = content[:8000] + "\n…[truncated at 8000 chars]"
+        tool_results.append({
+            "type": "tool_result",
+            "tool_use_id": tool_use["id"],
+            "content": content,
+            "is_error": tool_result.is_error,
+        })
+    return tool_results
+
+
+async def _run_tool_loop(
+    state_dir: str,
+    *,
+    context: _AgentContext,
+    uid: int | None,
+    session_id: str | None,
+    contact_provider: str,
+    contact_api_key: str,
+    contact_model: str | None,
+    max_tokens: int,
+) -> _ToolLoopOutcome:
+    """Run compaction, provider calls, interrupts, and tool execution."""
     final_text = ""
+    last_result: ChatResult | None = None
     iterations_run = 0
-    try:
-        # ``while ... else``: ``else`` fires when the
-        # condition becomes False without a ``break`` —
-        # i.e. the model kept requesting tools past
-        # ``max_iter``. A plain ``for _iteration in
-        # range(max_iter)`` would have the same shape,
-        # but we need the loop body to be able to
-        # **reset** ``iterations_run`` (D.21 interrupt
-        # path) without leaving the loop body. A
-        # ``while`` lets us track the iteration count
-        # explicitly; ``max_iter`` is still the hard cap.
-        while iterations_run < max_iter:
-            iterations_run += 1
-            # D.21 — interrupt poll. Runs **before** compaction
-            # so the user's fresh input lands in ``messages``
-            # and is included in the next LLM call (and, on
-            # compaction, in the next compaction pass too).
-            # Returns ``True`` when new user messages were
-            # spliced in; we reset ``iterations_run`` so the
-            # model gets a fresh ``max_iter`` budget to react
-            # to the new input rather than dying on the budget
-            # of the previous turn.
-            if _drain_pending_user_messages(
-                state_dir, uid, session_id,
-                messages, seen_message_ids,
-            ):
-                iterations_run = 0
-                continue  # re-enter the loop with the new input
-            # D.17 — compact the in-memory message list if it
-            # has grown past the configured threshold. Runs
-            # before EVERY LLM call so a long tool chain
-            # can't push the next request over the model's
-            # context window. ``_maybe_compact`` mutates
-            # ``messages`` in-place; on failure (no summary
-            # produced, persistence error) the list is left
-            # unchanged and the next call sees the full
-            # history.
-            await maybe_compact(
-                state_dir,
-                uid,
-                session_id,
-                messages,
-                contact_provider=contact_provider or "",
-                contact_api_key=contact_api_key or "",
-                contact_model=contact_model,
-            )
 
-            result = await provider.chat(
-                # System prompt = SOUL + MAGI's long-term
-                # memory + current chatter contact +
-                # available skills. Each block short-circuits
-                # when empty (no memory rows / no contact
-                # for this chat / no SKILL.md), so a fresh
-                # deploy still gets a sensible prompt.
-                # Built once per turn (not cached) so the
-                # operator can drop a SKILL.md or add a
-                # memory row and the next inbound sees it
-                # without a restart.
-                system=build_system_prompt(
-                    state_dir,
-                    uid=uid,
-                    soul=soul,
-                ),
-                messages=messages,
-                max_tokens=max_tokens,
-                tools=tool_schemas,
-            )
-            final_text = result.text
+    while iterations_run < context.max_iter:
+        iterations_run += 1
+        if _drain_pending_user_messages(
+            state_dir,
+            uid,
+            session_id,
+            context.messages,
+            context.seen_message_ids,
+        ):
+            iterations_run = 0
+            continue
 
-            # Append the assistant turn (text + raw_blocks).
-            # ``content_blocks`` carries the full assistant
-            # content-block dump so tool_use IDs round-trip
-            # when we send the next tool_result block.
-            messages.append(ChatMessage(
-                role="assistant",
-                content=result.text or "",
-                content_blocks=result.raw_blocks or None,
-            ))
-
-            # No tool calls → done. ``stop_reason`` is the
-            # canonical signal but a model that returns a
-            # plain text reply without ``end_turn`` still
-            # terminates the loop (defensive — some
-            # Anthropic-compatible providers omit it).
-            if not result.tool_uses or result.stop_reason == "end_turn":
-                break
-
-            # Execute every tool_use in this turn. The SDK
-            # allows multiple tool_use blocks in one
-            # assistant message; we run them all and feed
-            # the results back as a single ``user`` message
-            # with one ``tool_result`` block per tool id.
-            tool_results: list[dict] = []
-            for tu in result.tool_uses:
-                tool = get_tool(tu["name"])
-                if tool is None:
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu["id"],
-                        "content": f"unknown tool: {tu['name']!r}",
-                        "is_error": True,
-                    })
-                    continue
-                try:
-                    # ``_safe_path`` already validates; if
-                    # the tool raises any unexpected
-                    # exception we still want the LLM to
-                    # see the failure, not the caller.
-                    kwargs = dict(tu.get("input") or {})
-                    # D.28: ``send_message`` no longer needs
-                    # a callback injection — the tool body
-                    # routes through ``dispatcher.send_to_session``
-                    # itself. No special-case here.
-                    tr = await tool.run(tool_ctx, **kwargs)
-                except Exception as e:
-                    logger.exception(
-                        "agent: tool %s crashed (contact=%s, "
-                        "session=%s)", tu["name"], uid, session_id,
-                    )
-                    tr_content = f"tool {tu['name']!r} crashed: {e}"
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu["id"],
-                        "content": tr_content[:8000],
-                        "is_error": True,
-                    })
-                    continue
-
-                # Truncate tool result content so a 50 MB
-                # log file or shell output can't blow up
-                # the next LLM call. The model gets a
-                # notice appended when truncation kicks in.
-                truncated = tr.content
-                if len(truncated) > 8000:
-                    truncated = truncated[:8000] + "\n…[truncated at 8000 chars]"
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tu["id"],
-                    "content": truncated,
-                    "is_error": tr.is_error,
-                })
-
-            messages.append(ChatMessage(
-                role="user",
-                content="",
-                content_blocks=tool_results,
-            ))
-
-        else:
-            # ``for ... else`` fires when we exit the loop
-            # without ``break`` — i.e. the model kept
-            # requesting tools past ``max_iter``. Log a
-            # warning and return whatever text was
-            # produced on the last iteration (may be empty).
-            logger.warning(
-                "agent: tool loop hit max_iter=%d for session=%s "
-                "(contact=%s); model still wanted tools",
-                max_iter, session_id, uid,
-            )
-    except LLMError as e:
-        logger.warning(
-            "llm call failed (contact=%s provider=%s): %s",
-            uid, provider_name, e,
+        await maybe_compact(
+            state_dir,
+            uid,
+            session_id,
+            context.messages,
+            contact_provider=contact_provider,
+            contact_api_key=contact_api_key,
+            contact_model=contact_model,
         )
+
+        result = await context.provider.chat(
+            system=build_system_prompt(
+                state_dir,
+                uid=uid,
+                soul=context.soul,
+            ),
+            messages=context.messages,
+            max_tokens=max_tokens,
+            tools=context.tool_schemas,
+        )
+        last_result = result
+        final_text = result.text
+        context.messages.append(ChatMessage(
+            role="assistant",
+            content=result.text or "",
+            content_blocks=result.raw_blocks or None,
+        ))
+
+        if not result.tool_uses or result.stop_reason == "end_turn":
+            break
+
+        tool_results = await _run_tool_calls(
+            result,
+            tool_ctx=context.tool_ctx,
+            uid=uid,
+            session_id=session_id,
+        )
+        context.messages.append(ChatMessage(
+            role="user",
+            content="",
+            content_blocks=tool_results,
+        ))
+    else:
+        logger.warning(
+            "agent: tool loop hit max_iter=%d for session=%s "
+            "(contact=%s); model still wanted tools",
+            context.max_iter,
+            session_id,
+            uid,
+        )
+
+    return _ToolLoopOutcome(
+        final_text=final_text,
+        result=last_result,
+        iterations_run=iterations_run,
+    )
+
+
+def _audit_and_return(
+    state_dir: str,
+    *,
+    outcome: _ToolLoopOutcome,
+    provider: LLMProvider,
+    uid: int | None,
+    channel: str,
+    session_id: str | None,
+    messages: list[ChatMessage],
+) -> str:
+    """Record usage, emit the reply log, and return a safe reply string."""
+    result = outcome.result
+    if result is None:
         return _fallback_reply()
 
-    # D.15 — per-contact token accounting. We don't have
-    # # usage per-iteration in v0 (only the last response
-    # is preserved); v0 records the last call's usage as a
-    # proxy. Aggregating across iterations is a future
-    # improvement once the provider layer supports it.
     try:
+        # v0 records the last provider call as the token-cost proxy. The
+        # provider layer can expose per-iteration usage in a future revision.
         record_token_usage(
             state_dir,
             uid=uid,
@@ -633,10 +555,12 @@ async def handle_message(
         )
     except Exception:
         logger.exception(
-            "agent: token_usage insert failed (contact=%s, "
-            "channel=%s); chat reply already succeeded",
-            uid, channel,
+            "agent: token_usage insert failed (contact=%s, channel=%s); "
+            "chat reply already succeeded",
+            uid,
+            channel,
         )
+
     logger.info(
         "llm reply",
         extra={
@@ -644,13 +568,86 @@ async def handle_message(
             "channel": channel,
             "provider": provider.name,
             "model": result.model,
-            "text_len": len(final_text),
+            "text_len": len(outcome.final_text),
             "thinking_len": len(result.thinking) if result.thinking else 0,
-            "iterations": iterations_run,
+            "iterations": outcome.iterations_run,
             "tool_calls": sum(
-                len(m.content_blocks) for m in messages
-                if m.role == "assistant" and m.content_blocks
+                len(message.content_blocks)
+                for message in messages
+                if message.role == "assistant" and message.content_blocks
             ),
+            "session": session_id,
         },
     )
-    return final_text or _fallback_reply()
+    return outcome.final_text or _fallback_reply()
+
+
+async def handle_message(
+    state_dir: str,
+    *,
+    text: str,
+    channel: str,
+    uid: int | None = None,
+    session_id: str | None = None,
+    contact_provider: str | None = None,
+    contact_api_key: str | None = None,
+    contact_model: str | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tool_iterations: int | None = None,
+    caller_role: str | None = None,
+) -> str:
+    """Handle one channel message through validation, context, tools, and audit."""
+    credentials = _validate_credentials(
+        contact_provider=contact_provider,
+        contact_api_key=contact_api_key,
+        uid=uid,
+        channel=channel,
+    )
+    if credentials is None:
+        return _fallback_reply("agent_no_credentials")
+    provider_name, api_key = credentials
+
+    context = _build_context(
+        state_dir,
+        text=text,
+        channel=channel,
+        uid=uid,
+        session_id=session_id,
+        contact_provider=provider_name,
+        contact_api_key=api_key,
+        contact_model=contact_model,
+        caller_role=caller_role,
+        max_tool_iterations=max_tool_iterations,
+    )
+    if context is None:
+        return _fallback_reply()
+
+    try:
+        outcome = await _run_tool_loop(
+            state_dir,
+            context=context,
+            uid=uid,
+            session_id=session_id,
+            contact_provider=provider_name,
+            contact_api_key=api_key,
+            contact_model=contact_model,
+            max_tokens=max_tokens,
+        )
+    except LLMError as e:
+        logger.warning(
+            "llm call failed (contact=%s provider=%s): %s",
+            uid,
+            provider_name,
+            e,
+        )
+        return _fallback_reply()
+
+    return _audit_and_return(
+        state_dir,
+        outcome=outcome,
+        provider=context.provider,
+        uid=uid,
+        channel=channel,
+        session_id=session_id,
+        messages=context.messages,
+    )
