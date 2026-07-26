@@ -1,4 +1,4 @@
-"""End-to-end tests for ``/api/magics`` — the "MAGI 团队"
+"""End-to-end tests for ``/api/magics`` — the "MAGI 团体"
 CRUD surface introduced by the post-refactor reframe.
 
 A ``MAGIC`` row is the org container: a tree of MAGI teams,

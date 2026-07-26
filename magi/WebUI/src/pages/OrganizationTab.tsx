@@ -4,7 +4,7 @@
  * 智群 (Swarm) is Adam-only — EVE doesn't see this tab.
  *
  * Two sidebar sections:
- *   - MAGI 团队 (Magics) — MAGIC tree of teams (councils).
+ *   - MAGI Council (Magics) — MAGIC tree of teams (councils).
  *   - 智能体管理 (Magis) — flat list of every Magi agent row.
  *
  * Contacts live in the Knowledge → Contacts pane; the unified

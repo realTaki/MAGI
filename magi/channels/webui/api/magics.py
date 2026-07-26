@@ -1,4 +1,4 @@
-"""MAGIC CRUD API — the "MAGI 团队 / MAGIC (MAGI Council)" surface.
+"""MAGIC CRUD API — the "MAGI 团体 / MAGIC (MAGI Council)" surface.
 
 Each row is a :class:`MAGIC` (a MAGI team / council) that forms
 a tree-structured org. Each team has exactly one ``adam``

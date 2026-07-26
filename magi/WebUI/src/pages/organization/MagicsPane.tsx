@@ -1,5 +1,5 @@
 /**
- * MagicsPane — "MAGI 团队 / MAGIC (MAGI Council)" management pane.
+ * MagicsPane — "MAGI 团体 / MAGIC (MAGI Council)" management pane.
  *
  * Full CRUD for the MAGIC team tree. Features:
  *   - Tree view with expand/collapse (DFS flatten, depth-indented rows).

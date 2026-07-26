@@ -111,7 +111,7 @@ def create_app() -> FastAPI:
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
     app.include_router(contacts.router, prefix="/api")
-    # Magics router — the "MAGI 团队 / MAGIC (MAGI Council)"
+    # Magics router — the "MAGI 团体 / MAGIC (MAGI Council)"
     # surface for the MAGI team tree (replaces the old
     # ``/api/departments`` routes (dropped in the post-refactor reframe)
     # dept sub-tree concept went away in the post-refactor
