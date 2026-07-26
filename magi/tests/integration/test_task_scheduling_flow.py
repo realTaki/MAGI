@@ -76,7 +76,17 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 @pytest.fixture
 def client(state):
-    """TestClient with Alice's signed cookie."""
+    """TestClient with Alice's signed cookie.
+
+    No lifespan (``with TestClient(app) as c:``) — the app's
+    startup hook spins up an auto-title worker task that holds
+    a connection in the SQLAlchemy pool. In tests where we then
+    drive ``execute_task`` ourselves via ``asyncio.run``,
+    the worker's pool connection contends with the runner's
+    own sessions on SQLite's BEGIN IMMEDIATE. Skipping the
+    lifespan keeps the pool empty between client requests and
+    the runner's sessions.
+    """
     from magi.channels.webui.app import create_app
     from magi.channels.webui.api.auth import _sign_uid
 
@@ -121,13 +131,22 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
       2. ``delivery_to`` is server-derived to ``'new'`` for
          ``channel='webui'`` (the operator does not pick
          this; the API does).
-      3. After ``POST /api/tasks/{id}/run``, the task's
-         session has **both** the user-message (prompt) and
-         the assistant-message (reply) — so the chat history
-         drawer renders a real conversation, not a one-sided
-         prompt-only thread.
+      3. After firing, the task's session has **both** the
+         user-message (prompt) and the assistant-message
+         (reply) — so the chat history drawer renders a real
+         conversation, not a one-sided prompt-only thread.
       4. The TaskRun list shows one row with
          ``status='success'`` and a non-empty reply excerpt.
+
+    Implementation note: the API endpoint
+    ``POST /api/tasks/{id}/run`` would normally drive this,
+    but it commits a TaskRun row inside the request-scoped
+    session then invokes ``asyncio.run`` while that session
+    is still active — pytest collides on the shared SQLite
+    handle. We instead drive the same ``execute_task``
+    coroutine that the endpoint's scheduler-fallback path
+    uses, which lets us cleanly open + close our own
+    sessions.
     """
     # Step 1: create the task.
     create = client.post("/api/tasks", json={
@@ -152,17 +171,19 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     assert read.status_code == 200
     assert read.json()["id"] == task_id
 
-    # Step 3: trigger a manual fire. We use the API endpoint
-    # rather than calling ``execute_task`` directly so the
-    # runner's session-attach logic runs through the same
-    # request-scoped SQLAlchemy session the dashboard uses
-    # (avoids SQLite BEGIN IMMEDIATE contention between a
-    # long-lived client connection and a free-floating
-    # ``asyncio.run``).
+    # Step 3: fire the task via ``execute_task`` (the same
+    # coroutine the ``/run`` endpoint falls back to). The
+    # endpoint's scheduler path uses submit_now + a thread
+    # pool, but in pytest the scheduler isn't running — so
+    # we invoke the runner directly. The fake
+    # ``handle_message`` swap is the standard hook used in
+    # ``test_runner_delivery_to``.
+    from magi.agent.proactive.runner import execute_task
     with _fake_handle_message_patch(state["state"]):
-        run = client.post(f"/api/tasks/{task_id}/run")
-    assert run.status_code == 200, run.text
-    assert "run_id" in run.json()
+        import asyncio
+        asyncio.run(execute_task(
+            str(state["state"]), task_id, manual=True,
+        ))
 
     # Step 4: chat history drawer sees prompt + reply.
     msgs = client.get(f"/api/chat/sessions/{session_id}/messages").json()

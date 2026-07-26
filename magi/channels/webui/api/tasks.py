@@ -386,6 +386,27 @@ def create_task(
                 ) from exc
 
     operator_id = _resolve_creator_id(request, payload, session)
+    cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
+    # D.28: resolve the per-channel delivery address via
+    # the channel dispatcher BEFORE we open the
+    # FastAPI-managed ``session`` transaction. The
+    # dispatcher opens its own SQLite session
+    # internally — a nested BEGIN IMMEDIATE inside the
+    # outer route-scoped txn would deadlock SQLite (the
+    # outer txn holds the reserved lock; the inner one
+    # can't acquire it). Resolve the address up-front
+    # here while the FastAPI session is still in its
+    # implicit-begin phase (the ``session.query``
+    # below is what triggers the actual BEGIN IMMEDIATE).
+    # For ``channel='tg'`` the dispatcher raises a
+    # friendly 400 when the operator has no TG binding;
+    # for ``channel='webui'`` it returns ``""`` (the
+    # session has no IM target — channel="webui"
+    # disables outbound send_message).
+    from magi.channels import dispatcher as channel_dispatcher
+    task_session_delivery_address = (
+        channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
+    )
     existing = (
         session.query(Task).filter(Task.name == payload.name).one_or_none()
     )
@@ -395,19 +416,6 @@ def create_task(
             code="task.name_conflict",
             detail=f"a task with name {payload.name!r} already exists",
         )
-    cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
-    # D.28: resolve the per-channel delivery address via
-    # the channel dispatcher OUTSIDE this open session
-    # (the dispatcher opens its own SQLite session —
-    # nested BEGIN IMMEDIATE inside the outer txn would
-    # deadlock). For ``channel='tg'`` the dispatcher
-    # raises a friendly 400 when the operator has no TG
-    # binding; for ``channel='webui'`` it returns the
-    # caller's explicit ``ctx.session_id`` or ``"new"``.
-    from magi.channels import dispatcher as channel_dispatcher
-    task_session_delivery_address = (
-        channel_dispatcher.lookup_im_id(operator_id, "tg") or ""
-    )
     delivery_to = _resolve_delivery_to(
         channel=payload.channel,
         uid=operator_id,

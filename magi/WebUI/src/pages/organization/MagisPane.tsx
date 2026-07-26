@@ -3,11 +3,13 @@
  *
  * Flat table of all agents with inline editing and a per-council breakdown.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch, qk } from "../../lib/queryClient";
 import type { MAGICRow } from "./MagicsPane";
 
 // -- types --------------------------------------------------------------------
@@ -31,8 +33,10 @@ const PROVIDER_OPTIONS = [
 
 export function MagisPane() {
   const t = useT();
-  const [magics, setMagics] = useState<MAGICRow[] | null>(null);
-  const [magis, setMagis] = useState<MagiRow[] | null>(null);
+  const magicsQuery = useMagicsQuery();
+  const magisQuery = useMagisQuery();
+  const magics = magicsQuery.data ?? null;
+  const magis = magisQuery.data ?? null;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [addForm, setAddForm] = useState({ magic_id: "", name: "", magic_position: "eve" as "adam"|"eve", provider: "", api_key: "" });
@@ -44,20 +48,6 @@ export function MagisPane() {
   const [editDraft, setEditDraft] = useState<EditDraft>({ name: "", provider: "", api_key: "" });
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const reload = async () => {
-    setLoadError(null);
-    try {
-      const [mr, gr] = await Promise.all([
-        fetch("/api/magics", { credentials: "include" }),
-        fetch("/api/magis", { credentials: "include" }),
-      ]);
-      if (!mr.ok || !gr.ok) { setLoadError(`load failed (magics=${mr.status}, magis=${gr.status})`); return; }
-      setMagics((await mr.json()) as MAGICRow[]);
-      setMagis((await gr.json()) as MagiRow[]);
-    } catch (e) { setLoadError(`network error: ${(e as Error).message}`); }
-  };
-  useEffect(() => { void reload(); }, []);
 
   const teamName = useMemo(() => { const m = new Map<number, string>(); (magics ?? []).forEach((c) => m.set(c.id, c.name)); return m; }, [magics]);
   const magisByMagic = useMemo(() => {
@@ -74,7 +64,7 @@ export function MagisPane() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: addForm.name.trim() || null, magic_id: mid, magic_position: addForm.magic_position, provider: addForm.provider || null, api_key: addForm.api_key || null }) });
       if (!res.ok) { setAddError(`create failed: ${res.status} ${await res.text()}`); return; }
-      setAddForm({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" }); setAddOpen(false); await reload();
+      setAddForm({ magic_id: "", name: "", magic_position: "eve", provider: "", api_key: "" }); setAddOpen(false); await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]);
     } catch (e) { setAddError(`network error: ${(e as Error).message}`); }
     finally { setAdding(false); }
   };
@@ -89,7 +79,7 @@ export function MagisPane() {
     try {
       const res = await fetch(`/api/magis/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       if (!res.ok) { setEditError(`save failed: ${res.status} ${await res.text()}`); return; }
-      setEditingId(null); await reload();
+      setEditingId(null); await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]);
     } catch (e) { setEditError(`network error: ${(e as Error).message}`); }
     finally { setSaving(false); }
   };
@@ -98,7 +88,7 @@ export function MagisPane() {
     const name = magis?.find((m) => m.id === id)?.name ?? `#${id}`;
     if (!confirm(t("magis.deleteConfirm"))) return;
     const res = await fetch(`/api/magis/${id}`, { method: "DELETE", credentials: "include" });
-    if (res.ok) await reload();
+    if (res.ok) await Promise.all([magicsQuery.refetch(), magisQuery.refetch()]);
   };
 
   // -- render ------------------------------------------------------------------
@@ -262,4 +252,18 @@ export function MagisPane() {
       </ConsoleCard>
     </div>
   );
+}
+
+function useMagicsQuery() {
+  return useQuery({
+    queryKey: qk.magics(),
+    queryFn: () => apiFetch<MAGICRow[]>("/api/magics"),
+  });
+}
+
+function useMagisQuery() {
+  return useQuery({
+    queryKey: qk.magis(),
+    queryFn: () => apiFetch<MagiRow[]>("/api/magis"),
+  });
 }

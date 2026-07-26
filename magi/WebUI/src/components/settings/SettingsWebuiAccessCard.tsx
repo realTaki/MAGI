@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
-import { useAdminContacts } from "../../lib/queries";
 import type { ContactRow } from "../../pages/OrganizationTab";
 
 export function SettingsWebuiAccessCard(props: {
