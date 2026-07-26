@@ -4,301 +4,125 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#)
 
-A **group-intelligence system** built from autonomous, independently-deployable
-agents we call **MAGIs**. Every agent in the system — the control plane,
-the personal assistants, the future coordinators — is a MAGI. The system
-emerges from how those MAGIs are wired together.
+**An Agentic Society.**
+MAGI is infrastructure for groups of autonomous agents that self-organize into teams,
+coordinate among themselves, and act as a collective. A MAGI is not a chatbot — it is a
+member of a society. When you deploy one, you are not installing software; you are adding
+a citizen to a group intelligence.
 
-This is not a 2B chat product, not a SaaS chatbot, and not a code-writing
-tool. MAGI is **infrastructure for groups of agents**: one image, one
-runtime, configured into the archetype each position needs. Today we ship
-two archetypes — **Adam** and **EVE** — but the architecture is built so
-that new archetypes can land without a fork.
-
-> **⚠️ This project is entirely written and maintained by AI.** It is in an
-> early experimental stage and may contain bugs, incomplete features, or
-> incorrect behaviours. Use at your own risk in production or production-like
-> environments. Contributions and bug reports are welcome.
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the long-term plan (C0–C8).
+Not a single-agent tool. Not a multi-turn chat wrapper. This is **group intelligence as a runtime**.
 
 ---
 
-## Why "Group Intelligence"
-
-A single agent, however capable, is one perspective. MAGI's bet is that the
-useful shape is **a group of agents coordinating** — a manager-style MAGI
-that holds shared state and orchestrates the others, plus a fleet of
-worker-style MAGIs each bound to one **User** and tuned to that User's
-context. Adam and EVE are the two archetypes shipped today; nothing in the
-runtime hardcodes that there will only ever be two.
-
-A workspace can run:
-
-- **one Adam** as the manager / control-plane MAGI (default channel:
-  WebUI), and
-- **many EVEs**, each an Enhanced Virtual Expert bound to one assigned
-  User (default channel: Telegram).
-
-A workspace can also choose to run *only* Adam (operations console), *only*
-an EVE (single-User pilot), or eventually *only* a future third archetype —
-the runtime doesn't care.
+True agentic societyAgents form organizations (MAGICs) with leaders and members, collaborate on complex tasks, and persist shared state across sessions. Each agent has a position in its society — who it leads, who it follows, what it knows. Self-organizing teams leaderless task distribution, delegated subtasks, coordinated execution. A group of agents working together is fundamentally more capable than any single one. Every agent is first-classEach MAGI runs in its own container, has its own memory, its own tools, its own LLM credentials — and its own identity. Not threads. Not sessions. Citizens. Persistent collective memoryThe society remembers. Conversation history, long-term facts, contact knowledge, task results — all searchable, all durable. The group gets smarter over time. Runs anywhere, scales with needOne container per agent. SQLite for a laptop; Postgres for a fleet. Docker Compose for one team; Kubernetes for many. The runtime is the same at every scale. BYO intelligence providerAnthropic, Minimax, OpenAI, or your own endpoint. Every agent configures its own LLM — billed to its own budget. No vendor lock-in. No house account. Open by designMIT licensed. Extensible tool system. MCP-compatible. Built-in skills framework. Every part of the society can be customized.
 
 ---
 
-## Naming and architecture
+## Quick Start
 
-| Name | Archetype | Role |
-|---|---|---|
-| **MAGI** | — | The whole system: a group of MAGIs coordinating. |
-| **Adam** | **manager** (*Adaptive Distributed Agent Matrix*) | The control-plane MAGI. Provides the **Web frontend** for the operator, holds the system of record (directory, settings, audit, skills), and can **dispatch / create / recall** worker MAGIs. Default channel: **WebUI**. |
-| **EVE** | **worker** (*Enhanced Virtual Expert*) | A worker-archetype MAGI bound to one **assigned User**. Default channel: **Telegram**. Pulls workspace-wide data (directory, settings, workspace skills) from its Adam and caches locally. |
-| *operator* | user role | The human who uses Adam's Web UI to operate the workspace. Lowercase on purpose; replaces the old "admin" / "HR / IT" wording. |
-
-### Each agent is a MAGI
-
-Adam and EVE run the **same MAGI runtime** (agent loop, dynamic context,
-skill runner, proactive engine, LLM provider, audit, channel dispatcher).
-There is one process image; the archetype is set at boot. Every
-architectural choice is an independent config axis — no axis is hardcoded
-by archetype:
-
-| Axis | Env var | Default by archetype | Notes |
-|---|---|---|---|
-| Archetype / permission scope | `MAGI_NODE_ROLE` | `adam` = manager, `eve` = worker | The **only** thing the role selects. Affects the policy gate inside the runtime. |
-| Channels | `MAGI_CHANNELS` | `adam` → `webui`, `eve` → `telegram` | Comma-separated list. An Adam can mount Telegram too; an EVE can mount WebUI too. |
-| State backend | `MAGI_STATE_BACKEND` | `auto` (postgres if `DATABASE_URL` set, else sqlite) | Independent of archetype. Any MAGI can use Postgres or SQLite. |
-| Adam peer | `MAGI_ADAM_URL` | `http://adam:42069` | Always read. Any MAGI that needs Adam's RPC (audit, config pull) sets this. |
-| LLM provider | `ANTHROPIC_API_KEY` etc. | unset | Per-node or global. |
-
-The archetype just sets permission scope and a couple of default fields;
-every underlying axis is overridable. `magi.node.run()` does not branch on
-`MAGI_NODE_ROLE` — it iterates the channel list and hands off to each
-channel's launcher.
-
-> Full architecture, deployment topology, RPC contract and Phase 1 build
-> order live in the planning notes referenced from
-> [docs/ROADMAP.md](docs/ROADMAP.md). This README only covers what you
-> need to run the code.
-
----
-
-## Scope (explicit constraints)
-
-- **No CLI.** All operator / management work is done in Adam's Web UI. The
-  Docker orchestration behind dispatch / recall is invisible to operators.
-- **Worker MAGIs do not call each other by default.** Coordination between
-  EVEs goes through the manager MAGI (today: Adam). A worker only talks
-  to its Adam and to its own assigned User. **Future archetypes may relax
-  this** — e.g. a project-MAGI that brokers peer workers — without
-  changing the runtime.
-- **WebUI is just another channel.** It's the `channels/webui/` adapter;
-  Telegram is the `channels/telegram/` adapter. Both implement the same
-  `Channel` interface and deliver messages into the same runtime agent loop.
-
----
-
-## Repository layout
-
-Every MAGI container ships both the Python backend and the Web frontend
-together, so the layout reflects that — frontend lives **inside**
-`magi/` as a sibling sub-tree.
-
-```
-magi/                          # Every MAGI node (Adam or EVE) — agent + WebUI in one
-├── __init__.py                # Python package marker (the "agent")
-├── __main__.py                # Single entry point. Validates MAGI_NODE_ROLE, dispatches to magi.node.
-├── runtime/                   # Shared core: agent loop, context, skills, proactive, LLM, audit.
-│                              # Adam and EVE run the same runtime; only channel + scope + state differ.
-├── channels/                  # Pluggable channel adapters. Any archetype can mount any subset.
-│   ├── base.py                # Channel Protocol — both adapters implement this.
-│   ├── telegram/              # python-telegram-bot v21+ (C3+).
-│   └── webui/                 # FastAPI app; lazily mounted when the `webui` channel is enabled.
-├── node/                      # Node assembly: one NodeConfig, one check(), one run().
-│   └── __init__.py            # No archetype-based code paths. Iterates MAGI_CHANNELS, launches each.
-└── WebUI/                     # React SPA (single Vite app, lives inside the magi/ folder)
-    ├── package.json
-    ├── tsconfig.json
-    ├── .nvmrc
-    ├── index.html
-    ├── vite.config.ts
-    └── src/
-
-tests/                         # unit / integration / e2e (one e2e file per checkpoint)
-```
-
-### Frontend stack (lands in C1.0b)
-
-React 19 + TypeScript 5 + Vite 5 + Tailwind CSS v4 + shadcn/ui.
-Routing: **React Router v6** (no TanStack Router — keep deps minimal).
-Server state: **TanStack Query**. Forms: **react-hook-form + zod**.
-Types over the wire: **openapi-typescript** regenerates `magi/WebUI/src/api/types.gen.ts`
-from FastAPI's `/openapi.json` (`npm run generate-types`). Tests: **Vitest**.
-
-Adam and the console share one React tree (admin lives at `/admin/*`,
-console at `/console/*` once C7 lands). Built artifact
-(`magi/WebUI/dist/`) is baked into the Adam image via a multi-stage
-Dockerfile in **C1.4**.
-
-One console script:
-
-| Script  | Role                                                                                                                       |
-|---------|----------------------------------------------------------------------------------------------------------------------------|
-| `magi`  | Boots a MAGI node. `MAGI_NODE_ROLE` chooses the archetype preset (`adam` = manager, `eve` = worker); `MAGI_CHANNELS`, `MAGI_STATE_BACKEND` etc. override per-axis defaults. |
-
----
-
-## Quick start (local dev, Phase C0)
-
-Phase C0 only validates that the project structure, the single entry
-point and Adam's `/health` endpoint work. Real features (User registry,
-TG bots, LLM calls, audit, dispatch UI) land in subsequent checkpoints.
-
-### Prerequisites
-- Python ≥ 3.12
-- [`uv`](https://docs.astral.sh/uv/) ≥ 0.11
-
-### Install
 ```bash
-uv sync --extra adam --extra eve
+git clone https://github.com/MAGI/MAGI.git
+cd MAGI
+cp deploy/.env.example deploy/.env
+docker compose -f deploy/docker-compose.yml up --build
+# → http://localhost:42069
 ```
 
-### Run a node (choose the archetype at runtime)
-```bash
-# EVE (stub) — print resolved config and exit
-MAGI_NODE_ROLE=eve uv run magi --check
+Walk through the first-time setup wizard — save a Telegram bot token, verify administrator identities, and your first MAGI society is live.
 
-# Adam — boot FastAPI on :42069
-MAGI_NODE_ROLE=adam uv run magi
-# in another shell:
-curl http://127.0.0.1:42069/health
-# → {"status":"ok","service":"magi","version":"0.1.0"}
-```
-
-### Run with Docker Compose (Adam only, C0)
-```bash
-cp .env.example .env
-# edit MAGI_SHARED_SECRET (only required var)
-docker compose up --build
-# Adam at http://localhost:42069/health
-```
-
-The compose file currently runs **just the Adam container** — no
-Postgres, no EVE. Postgres is added back in **C1** (when the ORM
-lands); per-User EVE containers are wired up in **C6** via Adam's
-Web UI dispatch button.
+📖 [Documentation →](docs/) &nbsp;|&nbsp; 🗺 [Roadmap →](docs/ROADMAP.md)
 
 ---
 
-## Phase 1 roadmap
+## The Society Model
 
-Nine demoable checkpoints (≈ four weeks for a small team):
+| Entity | Role in the society |
+|---|---|
+| **MAGI** | The society itself — a collective of agents coordinating, learning, and acting together |
+| **MAGIC** | An organization (council). One leader, many members. Councils can contain sub-councils |
+| **Adam** | A leader agent. Manages its council, dispatches work, holds shared state |
+| **EVE** | A member agent. Executes tasks, collaborates with peers, reports to its Adam |
+| **Contact** | A participant known to the society. Operates the council or receives its output |
 
-| #  | Checkpoint                                            | Demo                                |
-|----|-------------------------------------------------------|-------------------------------------|
-| C0 | Skeleton — uv project, single entry point            | `curl /health` → 200                |
-| C1 | User / EVE / Skill registry on Adam WebUI             | create / edit / delete in browser   |
-| C2 | Telegram ID binding via one-time code                 | send code from a real TG account    |
-| C3 | Channel abstraction + TG channel + config pull        | real chat round-trip                |
-| C4 | Skill loader + 4 MVP skills (scope-aware)             | "remind me at 3pm", "search KB"     |
-| C5 | Proactive reminders (APScheduler + engine)            | reminder fires + audit              |
-| C6 | Dispatch / recall via Adam Web UI (docker SDK)        | bring up / tear down an EVE         |
-| C7 | Control console (chat-style SPA via WebUI channel)    | live event stream                   |
-| C8 | Hardening — hash chain, snapshot, outbox cap          | kill Adam, EVE keeps going          |
-
-See the plan file for the full checklist per checkpoint.
+Agents form a **tree of councils** — each MAGIC has one Adam at its root, coordinating a
+set of EVEs. Councils can delegate to child councils. The society scales by adding agents,
+not by complicating the architecture.
 
 ---
 
-## Governance notes
+## Capabilities
 
-MAGI treats audit as a first-class concern: every channel message in/out
-(regardless of which channel — WebUI or Telegram), every skill call and
-every operator action lands in `audit_log` (immutable, hash-chained) or
-`event_log` (high-cardinality, TTL'd). The skill execution boundary is
-JSON-in / JSON-out from day one so sandboxing can be tightened in later
-phases without a refactor. EVE containers cache their config locally and
-run in degraded mode when Adam is unreachable — local deployment means
-Adam reboots are common, not exceptional.
+**Coordination & Delegation**
+Agents distribute tasks among themselves. An Adam breaks down complex work, assigns
+subtasks to its EVEs, and synthesizes results. EVEs can spawn sub-agents for parallel
+workstreams. The society handles the routing — you describe the outcome.
+
+**Persistent Memory Across the Collective**
+Three-layer memory architecture: conversation history (what was said), contact knowledge
+(who is in the society and what we know about them), and self-memory (what the society
+has learned). Full-text search across all layers. The group remembers, so you don't have
+to repeat yourself.
+
+**Proactive Intelligence**
+Agents don't just respond — they anticipate. Scheduled tasks, periodic reports, automated
+follow-ups. An Adam can be configured to check in on its EVEs, compile status summaries,
+and surface issues before they become problems. The society runs unattended.
+
+**Multi-Channel Presence**
+Every agent is reachable. WebUI for the operator console. Telegram for real-time
+interaction. The channel dispatcher routes messages to the right agent regardless
+of which surface the message arrived on. A single agent can be present on multiple
+channels simultaneously.
+
+**Tool Ecosystem**
+20+ built-in tools cover file operations, shell execution, web search, memory
+management, scheduling, and more. MCP-compatible for external tool servers.
+Agents can create and refine skills — procedural knowledge that improves with use.
+The society's tool repertoire grows with it.
+
+**Identity & Access**
+Every agent has its own identity, credentials, and permissions. Every action is
+attributed — audit trails track who did what, when, through which channel. The
+society's governance is transparent by default.
 
 ---
 
-## Glossary (new terms)
+## Architecture at a Glance
 
-- **MAGI** — Modular Agentic Group Intelligence. The system; also the
-  unit of autonomy. *Each agent is a MAGI.*
-- **MAGIC** — Modular Agentic Group Intelligence Council. An
-  organization (table: `magics`). One MAGI belongs to exactly one
-  MAGIC.
-- **Magi** — A MAGI agent (table: `magis`). Each Magi holds exactly
-  one **position** in its MAGIC: `adam` (the leader; exactly one per
-  MAGIC) or `eve` (a member; N per MAGIC). The position is a fact
-  about org structure, **not** about service relationships.
-- **Position** — `adam` / `eve`. Lives on `magis.position`. This is
-  what the runtime reads to decide "what can I do?" (ADAM: manage the
-  MAGIC; EVE: serve its assigned User). It is **independent** of who
-  is logged in.
-- **Workspace** — the operational boundary that contains one Adam +
-  its fleet of EVEs + their Users + shared skills + audit log.
-  Replaces the older "company" / "enterprise" framing.
-- **User** — A person the MAGI knows about (table: `users`, renamed
-  from `contact_entries`). Holds one **role**:
-  `admin` / `assigned` / `user` / `guest`. This is a fact about the
-  person's service relationship to a specific MAGI; it is
-  **independent** of the MAGI's `position`.
-- **Role** — `admin` / `assigned` / `user` / `guest`. Lives on
-  `users.role`. `admin` = the operator (can use Adam's Web UI);
-  `assigned` = the person being served (the EVE serves them);
-  `user` = unbound org member; `guest` = external.
+```
+                    ┌─────────────────────────────┐
+                    │         Operator (WebUI)     │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │       Adam (Leader Agent)    │
+                    │   Council: "Engineering"     │
+                    └──┬───────────┬───────────┬──┘
+                       │           │           │
+              ┌────────▼──┐  ┌─────▼─────┐  ┌──▼────────┐
+              │  EVE α    │  │  EVE β    │  │  EVE γ    │
+              │  Telegram │  │  Telegram  │  │  Telegram  │
+              └───────────┘  └───────────┘  └───────────┘
 
-### Schema shape (post-refactor)
+        Each agent = one container. Each council = one leader + many members.
+        Councils form trees. The society is the whole graph.
+```
 
-The schema collapses to **three tables** + one IM-binding table. The
-"agent-centered" framing stays: **MAGI agents** are first-class rows;
-**people** are leaves attached to agents; **MAGICs** are the orgs
-the agents belong to.
+Detailed architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-| Table | Holds | Key column | Values |
-|---|---|---|---|
-| `magics` | organizations (the councils) | n/a | — |
-| `magis` | agents (MAGI runtime processes) | `position` | `adam` / `eve` |
-| `users` | people (formerly the `contact_entries` directory) | `role` | `admin` / `assigned` / `user` / `guest` |
-| `magi_im_bindings` | per-MAGI per-channel IM identities | n/a | — |
-
-**Two orthogonal axes** — do not conflate:
-
-- **`magis.position`** is intrinsic to the agent's role in the
-  MAGIC's structure. **Each MAGIC has exactly 1 ADAM + N EVE**,
-  enforced by a partial UNIQUE index. This is a fact about the org
-  chart, **not** derived from which User logs in.
-- **`users.role`** describes the person's service relationship to a
-  specific MAGI. `admin` = the operator; `assigned` = the person
-  being served; `user` / `guest` = unbound org members or external.
-  v0 binds a User to at most one Magi via `users.magi_id`; for
-  multi-MAGI assignments, add a `user_magi_bindings` junction later.
-
-The migration from the old schema unified three tables into one:
-`employees` + `contact_entries` + `user_im_bindings` → `contacts`.
-The `departments` table was replaced by `magics` (MAGI teams).
-See "Post-refactor follow-ups" in [docs/ROADMAP.md](docs/ROADMAP.md).
-
-The full backlog of doc-level vs code-level follow-ups to this
-reframing lives in [docs/ROADMAP.md](docs/ROADMAP.md) under
-"Post-refactor follow-ups".
+---
 
 ## Contributing
 
-MAGI is experimental and welcomes contributions. To get started:
+MAGI is written and maintained by AI in collaboration with humans. Contributions welcome.
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md)
-2. Open an Issue before writing code — let's talk
-3. Pick a `good first issue` or suggest your own
+2. Open an Issue before writing code
+3. Pick a `good first issue` or propose your own
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, commit style,
-and PR checklist. All contributors are expected to follow the
-[Code of Conduct](CODE_OF_CONDUCT.md).
+Security → [SECURITY.md](SECURITY.md).
 
-Report security issues privately — see [SECURITY.md](SECURITY.md).
+---
 
 ## License
 
