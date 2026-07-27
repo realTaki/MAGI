@@ -77,9 +77,7 @@ def admin(state) -> Contact:
         contact = Contact(
             name="Test Admin",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-for-tests",
+            admin=True, role="assigned"
         )
         s.add(contact)
         s.commit()
@@ -225,8 +223,7 @@ def test_send_without_session_id_autocreates(client, admin):
     r = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "hello LLM"},
-    )
+        json={"text": "hello LLM"})
     # The mocked handle_message returns "" because we haven't
     # configured credentials to actually flow through. Either
     # way, the response shape and persistence are what we're
@@ -261,16 +258,14 @@ def test_send_with_existing_session_id_appends(client, admin):
     r = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "first", "session_id": sid},
-    )
+        json={"text": "first", "session_id": sid})
     assert r.status_code == 200
     assert r.json()["session_id"] == sid
 
     r2 = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "second", "session_id": sid},
-    )
+        json={"text": "second", "session_id": sid})
     assert r2.status_code == 200
     assert r2.json()["session_id"] == sid
 
@@ -291,8 +286,7 @@ def test_send_with_unknown_session_id_autocreates(client, admin):
     r = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "hi", "session_id": fake_sid},
-    )
+        json={"text": "hi", "session_id": fake_sid})
     assert r.status_code == 200
     body = r.json()
     # New id is different from the supplied stale one.
@@ -310,12 +304,10 @@ def test_tgids_isolated(client, state):
     """Two admins signing in see distinct session lists."""
     with open_session() as s:
         a = Contact(
-            name="Alice", telegram_id=9101, admin=True, role="assigned",
-            provider="minimax", api_key="x",
+            name="Alice", telegram_id=9101, admin=True, role="assigned"
         )
         b = Contact(
-            name="Bob",   telegram_id=9102, admin=True, role="assigned",
-            provider="minimax", api_key="y",
+            name="Bob",   telegram_id=9102, admin=True, role="assigned"
         )
         s.add_all([a, b])
         s.commit()
@@ -330,12 +322,10 @@ def test_tgids_isolated(client, state):
     for _ in range(2):
         client.post(
             "/api/chat/sessions",
-            cookies={"magi_session": str(alice_id)},
-        )
+            cookies={"magi_session": str(alice_id)})
     client.post(
         "/api/chat/sessions",
-        cookies={"magi_session": str(bob_id)},
-    )
+        cookies={"magi_session": str(bob_id)})
 
     a_list = client.get(
         "/api/chat/sessions", cookies={"magi_session": str(alice_id)}
@@ -371,8 +361,7 @@ def test_send_with_malformed_session_id_400(client, admin):
     r = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "hi", "session_id": "definitely-not-ulid"},
-    )
+        json={"text": "hi", "session_id": "definitely-not-ulid"})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.session_id_invalid"
 
@@ -384,8 +373,7 @@ def test_session_persistence_across_calls(client, admin, state):
     client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
-        json={"text": "hi", "session_id": sid},
-    )
+        json={"text": "hi", "session_id": sid})
 
     # New client (still same TestClient/app instance) hits get.
     r = client.get(f"/api/chat/sessions/{sid}", cookies=_admin_cookie(admin))
@@ -445,8 +433,7 @@ def test_patch_session_renames(client, admin):
     r = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "Acme 会议 明天 3 点"},
-    )
+        json={"title": "Acme 会议 明天 3 点"})
     assert r.status_code == 200
     body = r.json()
     assert body["session_id"] == sid
@@ -465,27 +452,23 @@ def test_patch_session_clears_title(client, admin):
     client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "temp"},
-    )
+        json={"title": "temp"})
     # Clear via empty string
     r1 = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": ""},
-    )
+        json={"title": ""})
     assert r1.status_code == 200
     assert r1.json()["title"] is None
     # Set again, then clear via null
     client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "temp"},
-    )
+        json={"title": "temp"})
     r2 = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": None},
-    )
+        json={"title": None})
     assert r2.status_code == 200
     assert r2.json()["title"] is None
 
@@ -509,8 +492,7 @@ def test_patch_session_absent_title_is_noop(client, admin):
     r = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={},
-    )
+        json={})
     assert r.status_code == 200
     body = r.json()
     assert body["session_id"] == sid
@@ -525,8 +507,7 @@ def test_patch_session_clamps_too_long_title(client, admin):
     r = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "x" * 81},
-    )
+        json={"title": "x" * 81})
     assert r.status_code == 422
 
 def test_patch_session_trims_whitespace(client, admin):
@@ -537,8 +518,7 @@ def test_patch_session_trims_whitespace(client, admin):
     r = client.patch(
         f"/api/chat/sessions/{sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "   hello world   "},
-    )
+        json={"title": "   hello world   "})
     assert r.status_code == 200
     assert r.json()["title"] == "hello world"
 
@@ -548,8 +528,7 @@ def test_patch_unknown_session_404(client, admin):
     r = client.patch(
         f"/api/chat/sessions/{fake_sid}",
         cookies=_admin_cookie(admin),
-        json={"title": "x"},
-    )
+        json={"title": "x"})
     assert r.status_code == 404
     assert r.json()["code"] == "not_found.session"
 
@@ -560,8 +539,7 @@ def test_patch_malformed_session_id_400(client, admin):
     r = client.patch(
         "/api/chat/sessions/short",
         cookies=_admin_cookie(admin),
-        json={"title": "x"},
-    )
+        json={"title": "x"})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.session_id_invalid"
 
@@ -571,7 +549,6 @@ def test_patch_requires_admin(client):
     r = client.patch(
         "/api/chat/sessions/01ABCDEFGHJKMNPQRSTVWXYZAB",
         cookies={},
-        json={"title": "x"},
-    )
+        json={"title": "x"})
     assert r.status_code == 401
     assert r.json()["code"] == "auth.not_signed_in"

@@ -30,13 +30,11 @@ import pytest
 
 from magi.agent.proactive.cron_utils import (
     validate_run_at,
-    validate_run_at_future,
-)
+    validate_run_at_future)
 from magi.agent.proactive.scheduler import (
     TaskScheduler,
     _reset_for_tests,
-    stop_scheduler,
-)
+    stop_scheduler)
 from magi.agent.db import init_orm, init_sqlite, open_session
 from magi.agent.proactive.orm_models import Task
 
@@ -125,9 +123,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
                 contact = Contact(
                     name="tester",
                     telegram_id=90001,
-                    admin=True, role="assigned",
-                    provider="minimax",
-                    api_key="fake-key",
+                    admin=True, role="assigned"
                 )
                 db.add(contact)
                 db.commit()
@@ -136,8 +132,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
         row = Task(
             id=task_id,
             name=name,
-            **row_kwargs,
-        )
+            **row_kwargs)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -164,8 +159,7 @@ def test_register_with_run_at_uses_date_trigger(state_db: Path) -> None:
     # DateTrigger computes the next-fire instant from the
     # run_at string; apscheduler tz-aware.
     next_fire = job.trigger.get_next_fire_time(
-        None, dt.datetime.now(dt.timezone.utc),
-    )
+        None, dt.datetime.now(dt.timezone.utc))
     assert next_fire is not None
     assert next_fire.year == 2099
 
@@ -181,8 +175,7 @@ def test_register_with_cron_only_uses_cron_trigger(state_db: Path) -> None:
         state_db,
         name="daily-row",
         cron="0 9 * * *",
-        run_at=None,
-    )
+        run_at=None)
     sch.register(row)
     job = sch._sched.get_job(row.id)
     assert job is not None
@@ -205,8 +198,7 @@ def test_register_with_both_cron_and_run_at_prefers_run_at(state_db: Path) -> No
         state_db,
         name="both-set",
         cron="0 9 * * *",
-        run_at=fire_at,
-    )
+        run_at=fire_at)
     sch.register(row)
     job = sch._sched.get_job(row.id)
     assert job is not None
@@ -218,8 +210,7 @@ def test_register_with_both_cron_and_run_at_prefers_run_at(state_db: Path) -> No
 
 @pytest.mark.asyncio
 async def test_schedule_task_tool_once_writes_run_at_row(
-    state_db: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    state_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """End-to-end through the tool: calling
     ``schedule_task(frequency="once", run_at=...)`` writes
     a Task row with ``cron=""`` and ``run_at`` set.
@@ -246,9 +237,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         db.add(Contact(
             name="tester",
             telegram_id=90002,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key",
+            admin=True, role="assigned"
         ))
         db.commit()
 
@@ -257,16 +246,14 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         workspace=state_db.parent,
 
         uid=1,
-        channel="webui",
-    )
+        channel="webui")
     res = await ScheduleTaskTool().run(
         ctx,
         name="remind-me-lunch",
         prompt="tell me what you know about Italian food",
         frequency="once",
         run_at="2099-01-01T12:00:00+00:00",
-        channel="webui",
-    )
+        channel="webui")
     assert res.is_error is False, res.content
 
     with open_session() as db:
@@ -280,8 +267,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
 
 @pytest.mark.asyncio
 async def test_schedule_task_tool_once_rejects_bad_run_at(
-    state_db: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    state_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """``run_at`` validation surfaces as ``is_error=True`` —
     the LLM gets a precise message back, not a server-side
     traceback."""
@@ -296,9 +282,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         db.add(Contact(
             name="tester",
             telegram_id=90003,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key",
+            admin=True, role="assigned"
         ))
         db.commit()
 
@@ -307,16 +291,14 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         workspace=state_db.parent,
         
         uid=1,
-        channel="webui",
-    )
+        channel="webui")
     res = await ScheduleTaskTool().run(
         ctx,
         name="bad-run-at",
         prompt="anything",
         frequency="once",
         run_at="not-a-timestamp",
-        channel="webui",
-    )
+        channel="webui")
     assert res.is_error is True
     # LLM-facing phrasing: includes the offending input
     # so the model can fix the next attempt.

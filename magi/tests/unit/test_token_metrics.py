@@ -53,8 +53,7 @@ def env(monkeypatch, tmp_path):
         TokenUsage,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -73,16 +72,12 @@ def env(monkeypatch, tmp_path):
         admin = Contact(
             name="Alice",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         target = Contact(
             name="Bob",
             telegram_id=9002,
-            role="assigned",
-            provider="minimax",
-            api_key="fake",
+            role="assigned"
         )
         db.add_all([admin, target])
         db.commit()
@@ -120,10 +115,8 @@ def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
                 ts=ts.replace(tzinfo=None),
                 input_tokens=in_tok,
                 output_tokens=out_tok,
-                channel="webui",
-                provider="anthropic",
-                model="claude-test",
-            )
+                channel="webui"
+                model="claude-test")
         )
         db.commit()
 
@@ -191,9 +184,7 @@ def test_scope_to_one_uid(client, env):
         other = Contact(
             name="Other",
             telegram_id=9003,
-            role="assigned",
-            provider="minimax",
-            api_key="fake",
+            role="assigned"
         )
         db.add(other)
         db.commit()

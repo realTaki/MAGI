@@ -52,11 +52,11 @@ def admin_env(monkeypatch, tmp_path):
     with open_session() as db:
         db.add(Contact(
             name="TA-pagination", telegram_id=9001,
-            admin=True, role="assigned", provider="minimax", api_key="fake",
+            admin=True, role="assigned"
         ))
         db.add(Contact(
             name="TB-other", telegram_id=9002,
-            admin=True, role="assigned", provider="minimax", api_key="fake",
+            admin=True, role="assigned"
         ))
         db.commit()
 
@@ -73,13 +73,12 @@ def _seed_messages(store, delivery_address: str, count: int) -> str:
 
     # D.23: store key is uid (int); delivery_address is the
     # per-channel delivery address stamped on the row.
-    sess = store.create(1, )
+    sess = store.create(1)
     msgs = [
         SessionMessage(
             role="user", text=f"msg-{i}",
             ts="2026-07-03T00:00:00Z",
-            message_id=new_session_id(),
-        )
+            message_id=new_session_id())
         for i in range(count)
     ]
     store.append_messages(1, sess.session_id, msgs)
@@ -100,8 +99,7 @@ def test_get_messages_page_returns_tail_slice(admin_env):
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, total_all = store.get_messages_page(
-        1, sid, limit=2, offset=0,
-    )
+        1, sid, limit=2, offset=0)
     assert total_active == 5
     assert total_all == 5
     assert len(msgs) == 2
@@ -119,8 +117,7 @@ def test_get_messages_page_offset_skips_newest(admin_env):
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, _ = store.get_messages_page(
-        1, sid, limit=2, offset=2,
-    )
+        1, sid, limit=2, offset=2)
     assert total_active == 5
     assert [m.text for m in msgs] == ["msg-1", "msg-2"]
 
@@ -138,8 +135,7 @@ def test_get_messages_page_offset_zero_size_limit(admin_env):
     seen = []
     for off in range(5):
         msgs, _, _ = store.get_messages_page(
-            1, sid, limit=1, offset=off,
-        )
+            1, sid, limit=1, offset=off)
         assert len(msgs) == 1, f"offset {off} should have 1 row"
         seen.append(msgs[0].text)
     assert seen == ["msg-4", "msg-3", "msg-2", "msg-1", "msg-0"]
@@ -155,8 +151,7 @@ def test_get_messages_page_past_end_returns_empty(admin_env):
     sid = _seed_messages(store, "9001", 3)
 
     msgs, total_active, total_all = store.get_messages_page(
-        1, sid, limit=10, offset=99,
-    )
+        1, sid, limit=10, offset=99)
     assert msgs == []
     assert total_active == 3
     assert total_all == 3
@@ -180,13 +175,11 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
                 session_id=sid,
                 message_id=new_session_id(),
                 role="user", text=f"archive-{i}",
-                ts="2026-07-01T00:00:00Z", archived=1,
-            ))
+                ts="2026-07-01T00:00:00Z", archived=1))
         db.commit()
 
     msgs, total_active, total_all = store.get_messages_page(
-        1, sid, limit=10, offset=0,
-    )
+        1, sid, limit=10, offset=0)
     assert len(msgs) == 3  # active only
     assert total_active == 3
     assert total_all == 5
@@ -208,13 +201,11 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
             session_id=sid,
             message_id=new_session_id(),
             role="user", text="archive-0",
-            ts="2026-07-01T00:00:00Z", archived=1,
-        ))
+            ts="2026-07-01T00:00:00Z", archived=1))
         db.commit()
 
     msgs, total_active, total_all = store.get_messages_page(
-        1, sid, limit=10, offset=0, include_archived=True,
-    )
+        1, sid, limit=10, offset=0, include_archived=True)
     # 2 active + 1 archive = 3 total.
     assert total_active == 2
     assert total_all == 3
@@ -233,8 +224,7 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
 
     store = SessionStore(str(admin_env))
     msgs, total_active, total_all = store.get_messages_page(
-        "9001", "01ABCDEFGHJKMNPQRSTVWXYZAB", limit=10, offset=0,
-    )
+        "9001", "01ABCDEFGHJKMNPQRSTVWXYZAB", limit=10, offset=0)
     assert msgs == []
     assert total_active == 0
     assert total_all == 0
@@ -262,8 +252,7 @@ def test_get_messages_page_respects_uid_scope(admin_env):
     # nothing.
 
     msgs, total_active, _ = store.get_messages_page(
-        2, sid, limit=10, offset=0,
-    )
+        2, sid, limit=10, offset=0)
     assert msgs == []
     assert total_active == 0
 

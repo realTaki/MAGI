@@ -29,6 +29,17 @@ class LLMError(Exception):
     failure uniformly."""
 
 
+class LLMNotConfiguredError(LLMError):
+    """The MAGI runtime has no provider / API key configured.
+
+    The factory reads the credentials from the seeded adam
+    ``Magi`` row; if that row's ``provider`` / ``api_key`` is
+    unset, the factory raises this. Distinct from
+    :class:`LLMAuthError` (key rejected by the vendor) — this
+    one means the operator hasn't configured the runtime yet.
+    """
+
+
 class LLMAuthError(LLMError):
     """Upstream rejected the API key. Non-retryable."""
 

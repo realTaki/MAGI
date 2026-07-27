@@ -69,13 +69,11 @@ def seed_contacts(state_dir: Path):
     with open_session() as db:
         alice = Contact(
             id=1, name="Alice",
-            telegram_id=9001, admin=True, role="assigned",
-            provider="minimax", api_key="fake",
+            telegram_id=9001, admin=True, role="assigned"
         )
         bob = Contact(
             id=2, name="Bob",
-            telegram_id=9002, admin=True, role="assigned",
-            provider="minimax", api_key="fake",
+            telegram_id=9002, admin=True, role="assigned"
         )
         db.add_all([alice, bob])
         db.commit()
@@ -98,8 +96,7 @@ def test_prompt_always_starts_with_soul(state_dir, seed_contacts):
         str(state_dir),
         uid=1,
         
-        soul=soul_text,
-    )
+        soul=soul_text)
 
     assert soul_text in rendered
     # The soul text opens the block (no whitespace prefix).
@@ -121,8 +118,7 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
         str(state_dir),
         uid=99,  # no Contact(id=99) row → contact block omitted
 
-        soul="SOUL_TEXT",
-    )
+        soul="SOUL_TEXT")
     # Soul is always at the top.
     assert rendered.startswith("SOUL_TEXT")
     # No memory / contact blocks rendered.
@@ -134,8 +130,7 @@ def test_prompt_soul_present_when_no_blocks_present(state_dir, seed_contacts):
 # ────────────────────────────────────────────────────────────────── #
 
 def test_prompt_includes_memory_block_when_rows_exist(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """A seeded ``important`` row renders into the prompt as
     a markdown bullet under the "Long-term memory" section.
     Pinning this catches a future "memory block silently
@@ -144,8 +139,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
     from magi.agent.memory.magi.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
-        MemoryEntry,
-    )
+        MemoryEntry)
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -155,16 +149,14 @@ def test_prompt_includes_memory_block_when_rows_exist(
             subject="Q4 budget deadline",
             body="December 15 — every team must submit.",
             importance=5,
-            source=SOURCE_MANUAL,
-        ))
+            source=SOURCE_MANUAL))
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
         
-        soul="SOUL",
-    )
+        soul="SOUL")
 
     # The block header is rendered by format_memory_block.
     assert "Long-term memory" in rendered
@@ -175,8 +167,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
     assert rendered.startswith("SOUL")
 
 def test_prompt_memory_block_scoped_to_caller_contact(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """The memory block must NOT bleed across admins. Bob
     (uid=2) gets Alice's (uid=1) memory
     when Bob's loop is the caller."""
@@ -184,8 +175,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
     from magi.agent.memory.magi.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
-        MemoryEntry,
-    )
+        MemoryEntry)
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -195,8 +185,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
             subject="Alice's private fact",
             body="for alice only",
             importance=5,
-            source=SOURCE_MANUAL,
-        ))
+            source=SOURCE_MANUAL))
         db.commit()
 
     # Alice's view sees her fact.
@@ -204,8 +193,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
         str(state_dir),
         uid=1,
         
-        soul="SOUL",
-    )
+        soul="SOUL")
     assert "Alice's private fact" in alice_prompt
 
     # Bob's view sees nothing from Alice.
@@ -213,8 +201,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
         str(state_dir),
         uid=2,
         
-        soul="SOUL",
-    )
+        soul="SOUL")
     assert "Alice's private fact" not in bob_prompt
     # The "Long-term memory" header is only rendered when
     # there's at least one row; with Bob owning nothing,
@@ -222,8 +209,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
     assert "Long-term memory" not in bob_prompt
 
 def test_prompt_excludes_completed_ongoing_rows(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """``completed_at`` ongoing rows are the audit trail,
     not the LLM's working set — the system-prompt block
     mirrors the formatter's default
@@ -235,8 +221,7 @@ def test_prompt_excludes_completed_ongoing_rows(
     from magi.agent.memory.magi.models import (
         KIND_ONGOING,
         SOURCE_MANUAL,
-        MemoryEntry,
-    )
+        MemoryEntry)
     from magi.agent.system_prompt import build_system_prompt
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -248,8 +233,7 @@ def test_prompt_excludes_completed_ongoing_rows(
             body="still working",
             importance=3,
             source=SOURCE_MANUAL,
-            completed_at=None,
-        ))
+            completed_at=None))
         db.add(MemoryEntry(
             uid=1,
             kind=KIND_ONGOING,
@@ -257,16 +241,14 @@ def test_prompt_excludes_completed_ongoing_rows(
             body="closed last week",
             importance=3,
             source=SOURCE_MANUAL,
-            completed_at=now,
-        ))
+            completed_at=now))
         db.commit()
 
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
         
-        soul="SOUL",
-    )
+        soul="SOUL")
 
     assert "In-flight task" in rendered
     assert "Already done" not in rendered
@@ -276,8 +258,7 @@ def test_prompt_excludes_completed_ongoing_rows(
 # ────────────────────────────────────────────────────────────────── #
 
 def test_prompt_includes_contact_block_for_self(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """The contact block is the chatter's own ``Contact``
     row (``id = uid``). With Alice (id=1) as the caller and
     a ``notes`` blob on her own row, the block renders
@@ -299,15 +280,13 @@ def test_prompt_includes_contact_block_for_self(
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
-        soul="SOUL",
-    )
+        soul="SOUL")
 
     assert "Current chatter" in rendered
     assert "Alice runs the dev team" in rendered
 
 def test_prompt_contact_block_uses_display_name_not_raw_id(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """The header must render the chatter's ``display_name``
     (or ``name``), NOT the raw ``id`` integer.
 
@@ -327,8 +306,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
-        soul="SOUL",
-    )
+        soul="SOUL")
 
     # The header must use Alice's name (her row's
     # ``name`` is "Alice" — fixture-set).
@@ -337,8 +315,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     assert "**1**" not in rendered
 
 def test_prompt_skips_contact_block_when_no_record(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """No Contact row for ``uid`` → the contact block is
     silently dropped. We use a uid that has no Contact
     row (the fixture only seeds Alice (id=1) and Bob
@@ -352,14 +329,12 @@ def test_prompt_skips_contact_block_when_no_record(
     rendered = build_system_prompt(
         str(state_dir),
         uid=99,  # no Contact(id=99) → block silently dropped
-        soul="SOUL",
-    )
+        soul="SOUL")
     assert "Current chatter" not in rendered
     assert rendered.startswith("SOUL")
 
 def test_prompt_contact_block_only_for_self(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """Alice's own row renders her own ``notes`` field.
     (Pre-refactor this verified that ``(uid=1, person_id=1)``
     rendered but ``(uid=1, person_id=3)`` did not — under
@@ -382,15 +357,13 @@ def test_prompt_contact_block_only_for_self(
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,  # Alice's prompt
-        soul="SOUL",
-    )
+        soul="SOUL")
     assert "alice-self-notes" in rendered
     # Bob's notes are NOT in Alice's prompt.
     assert "bob-other-notes" not in rendered
 
 def test_prompt_skips_contact_block_for_other_user(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """When uid=1 (Alice), only Alice's row renders —
     Bob's row (id=2) is not pulled into her prompt."""
     from magi.agent.db import Contact, open_session
@@ -406,8 +379,7 @@ def test_prompt_skips_contact_block_for_other_user(
     rendered = build_system_prompt(
         str(state_dir),
         uid=1,
-        soul="SOUL",
-    )
+        soul="SOUL")
     assert "alice-own-notes" in rendered
     assert "should-not-render" not in rendered
 
@@ -416,8 +388,7 @@ def test_prompt_skips_contact_block_for_other_user(
 # ────────────────────────────────────────────────────────────────── #
 
 def test_prompt_includes_skills_block_when_registered(
-    state_dir, seed_contacts, monkeypatch,
-):
+    state_dir, seed_contacts, monkeypatch):
     """``format_skills_block`` returns a non-empty block
     when the skill loader has any SKILL.md registered.
     The bundled 3 example skills ship with the image, so
@@ -432,8 +403,7 @@ def test_prompt_includes_skills_block_when_registered(
         str(state_dir),
         uid=1,
         
-        soul="SOUL",
-    )
+        soul="SOUL")
     # ``format_skills_block`` renders a section header —
     # assert by presence, not exact wording (the formatter
     # is i18n-keyed).
@@ -446,8 +416,7 @@ def test_prompt_includes_skills_block_when_registered(
 # ────────────────────────────────────────────────────────────────── #
 
 def test_prompt_block_order_is_soul_memory_contact_skills(
-    state_dir, seed_contacts,
-):
+    state_dir, seed_contacts):
     """The four blocks must render in fixed order: SOUL →
     Long-term memory → Current chatter → Available skills.
     Reordering would change what the LLM reads first when
@@ -461,8 +430,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     from magi.agent.memory.magi.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
-        MemoryEntry,
-    )
+        MemoryEntry)
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -470,8 +438,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
         db.add(MemoryEntry(
             uid=1, kind=KIND_IMPORTANT,
             subject="memory-marker",
-            body="x", importance=3, source=SOURCE_MANUAL,
-        ))
+            body="x", importance=3, source=SOURCE_MANUAL))
         # Contact block: mark Alice's row so it renders.
         alice = db.get(Contact, 1)
         alice.notes = "contact-marker"
@@ -481,8 +448,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
         str(state_dir),
         uid=1,
 
-        soul="SOUL_MARKER",
-    )
+        soul="SOUL_MARKER")
 
     soul_idx = rendered.index("SOUL_MARKER")
     memory_idx = rendered.index("memory-marker")
@@ -495,8 +461,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
 # ────────────────────────────────────────────────────────────────── #
 
 def test_prompt_continues_when_memory_load_fails(
-    state_dir, seed_contacts, monkeypatch,
-):
+    state_dir, seed_contacts, monkeypatch):
     """A transient ORM error in the memory-store call must
     not crash the inbound path — the prompt falls back to
     the soul alone rather than 500-ing the request."""
@@ -512,16 +477,14 @@ def test_prompt_continues_when_memory_load_fails(
         str(state_dir),
         uid=1,
         
-        soul="SOUL_TEXT",
-    )
+        soul="SOUL_TEXT")
 
     # Memory block is silently dropped; SOUL still renders.
     assert "Long-term memory" not in rendered
     assert "SOUL_TEXT" in rendered
 
 def test_prompt_continues_when_contact_load_fails(
-    state_dir, seed_contacts, monkeypatch,
-):
+    state_dir, seed_contacts, monkeypatch):
     """Same resilience contract for the contact lookup.
 
     The ``ContactStore.get`` call must catch exceptions
@@ -541,8 +504,7 @@ def test_prompt_continues_when_contact_load_fails(
         str(state_dir),
         uid=1,
 
-        soul="SOUL_TEXT",
-    )
+        soul="SOUL_TEXT")
 
     assert "Current chatter" not in rendered
     assert "SOUL_TEXT" in rendered

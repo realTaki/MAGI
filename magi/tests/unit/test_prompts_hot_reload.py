@@ -144,8 +144,7 @@ def test_reset_cache_evicts(tmp_prompts_dir: Path):
     assert prompts._cache == {}
 
 def test_reset_cache_then_load_returns_current_content(
-    tmp_prompts_dir: Path,
-):
+    tmp_prompts_dir: Path):
     """Edit the file, reset, then load — picks up the
     new content (the mtime fast-path would also pick
     it up, but reset_cache is the manual override an
@@ -194,8 +193,7 @@ def test_prefers_md_over_yaml(tmp_prompts_dir: Path):
 # -- admin endpoint -------------------------------------------------------
 
 def test_admin_reload_endpoint_clears_cache(
-    tmp_prompts_dir: Path, monkeypatch,
-):
+    tmp_prompts_dir: Path, monkeypatch):
     """``POST /api/prompts/reload`` returns ``cleared: N``
     and drops the in-memory cache."""
     from magi.agent import prompts
@@ -218,8 +216,7 @@ def test_admin_reload_endpoint_clears_cache(
     with open_session() as db:
         db.add(Contact(
             id=1, name="alice",
-            telegram_id=9001, admin=True, role="assigned",
-            provider="minimax", api_key="fake",
+            telegram_id=9001, admin=True, role="assigned"
         ))
         db.commit()
 

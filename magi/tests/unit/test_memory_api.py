@@ -56,8 +56,7 @@ def env(monkeypatch, tmp_path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -65,23 +64,17 @@ def env(monkeypatch, tmp_path):
         alice = Contact(
             name="Alice",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         bob = Contact(
             name="Bob",
             telegram_id=9002,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="contact",
-            provider="minimax",
-            api_key="fake",
+            role="contact"
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -134,8 +127,7 @@ def _seed_memory(
     body: str,
     importance: int = 3,
     completed_at: datetime | None = None,
-    updated_at: datetime | None = None,
-):
+    updated_at: datetime | None = None):
     """Insert one MemoryEntry with the given fields.
 
     Bypasses ``MemoryStore.add`` so the test can stamp
@@ -148,8 +140,7 @@ def _seed_memory(
     from magi.agent.db import open_session
     from magi.agent.memory.magi.models import (
         SOURCE_MANUAL,
-        MemoryEntry,
-    )
+        MemoryEntry)
 
     when = updated_at or datetime.now(timezone.utc).replace(tzinfo=None)
     with open_session() as db:
@@ -162,8 +153,7 @@ def _seed_memory(
             source=SOURCE_MANUAL,
             completed_at=completed_at,
             created_at=when,
-            updated_at=when,
-        )
+            updated_at=when)
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -198,16 +188,14 @@ def test_list_memory_403_for_non_admin(charlie_client):
     assert r.status_code == 401
 
 def test_list_memory_scopes_to_caller_contact(
-    env, client, bob_client,
-):
+    env, client, bob_client):
     """Admin A's memory must NOT appear in admin B's list.
     The endpoint derives the uid from the cookie;
     there's no URL knob that could let B request A's rows."""
     _seed_memory(
         env, uid=env["alice"].id,
         kind="important", subject="Alice's policy",
-        body="Confidential.", importance=5,
-    )
+        body="Confidential.", importance=5)
 
     # Alice's view sees her row.
     r = client.get("/api/memory")
@@ -224,8 +212,7 @@ def test_list_memory_scopes_to_caller_contact(
     assert body_b["items"] == []
 
 def test_list_memory_returns_both_kinds_and_completed_rows(
-    env, client,
-):
+    env, client):
     """Both kinds (``important`` + ``ongoing``) appear.
     Both completion states (in-flight + completed) for
     ``ongoing`` rows appear too — the operator view is
@@ -236,21 +223,18 @@ def test_list_memory_returns_both_kinds_and_completed_rows(
         env, uid=env["alice"].id,
         kind="important", subject="Important fact",
         body="Long-lived.", importance=5,
-        updated_at=now - timedelta(days=3),
-    )
+        updated_at=now - timedelta(days=3))
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="In-flight task",
         body="Still working.", importance=3,
-        updated_at=now - timedelta(days=2),
-    )
+        updated_at=now - timedelta(days=2))
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="Done yesterday",
         body="Closed.", importance=4,
         updated_at=now - timedelta(days=1),
-        completed_at=now - timedelta(days=1),
-    )
+        completed_at=now - timedelta(days=1))
 
     r = client.get("/api/memory")
     assert r.status_code == 200
@@ -271,8 +255,7 @@ def test_list_memory_returns_both_kinds_and_completed_rows(
     assert by_subject["Done yesterday"]["completed_at"] is not None
 
 def test_list_memory_orders_by_importance_then_updated(
-    env, client,
-):
+    env, client):
     """Three rows with different importance + recency.
     Higher importance comes first; ties break on
     ``updated_at DESC`` (most recent first)."""
@@ -282,25 +265,21 @@ def test_list_memory_orders_by_importance_then_updated(
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="Low recent",
-        body="x", importance=1, updated_at=now,
-    )
+        body="x", importance=1, updated_at=now)
     # High importance, older.
     _seed_memory(
         env, uid=env["alice"].id,
         kind="important", subject="High older",
-        body="x", importance=5, updated_at=now - timedelta(days=10),
-    )
+        body="x", importance=5, updated_at=now - timedelta(days=10))
     # Two with importance=3; newer should win.
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="Mid older",
-        body="x", importance=3, updated_at=now - timedelta(days=5),
-    )
+        body="x", importance=3, updated_at=now - timedelta(days=5))
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="Mid newer",
-        body="x", importance=3, updated_at=now - timedelta(days=1),
-    )
+        body="x", importance=3, updated_at=now - timedelta(days=1))
 
     r = client.get("/api/memory")
     assert r.status_code == 200
@@ -313,8 +292,7 @@ def test_list_memory_orders_by_importance_then_updated(
     ]
 
 def test_list_memory_returns_full_body_for_tooltip(
-    env, client,
-):
+    env, client):
     """The endpoint ships the full body in the response;
     the WebUI truncates to 200 chars for the preview
     cell with ``title=`` hover. The store caps body at
@@ -327,8 +305,7 @@ def test_list_memory_returns_full_body_for_tooltip(
     _seed_memory(
         env, uid=env["alice"].id,
         kind="ongoing", subject="Friday reminder",
-        body=long_body, importance=4,
-    )
+        body=long_body, importance=4)
 
     r = client.get("/api/memory")
     assert r.status_code == 200
@@ -345,8 +322,7 @@ def test_list_memory_caps_at_200(env, client):
         _seed_memory(
             env, uid=env["alice"].id,
             kind="ongoing", subject=f"task {i}",
-            body=f"body {i}", importance=3,
-        )
+            body=f"body {i}", importance=3)
     r = client.get("/api/memory")
     assert r.status_code == 200
     body = r.json()

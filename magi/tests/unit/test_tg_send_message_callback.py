@@ -57,8 +57,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -67,9 +66,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
             id=1,
             name="Taki",
             telegram_id=6240201712,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-for-tests",
+            admin=True, role="assigned"
         )
         s.add(contact)
         s.commit()
@@ -79,8 +76,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_tg_handler_injects_tg_send_callback(
-    monkeypatch: pytest.MonkeyPatch, tg_state_dir,
-) -> None:
+    monkeypatch: pytest.MonkeyPatch, tg_state_dir) -> None:
     """``_handle_contact_message`` must pass a callable
     ``tg_send_callback`` to ``handle_message`` — otherwise
     the LLM's ``send_message`` tool returns the
@@ -104,13 +100,11 @@ async def test_tg_handler_injects_tg_send_callback(
         return None
 
     monkeypatch.setattr(
-        bot_mod, "_typing_indicator_loop", _fake_typing_loop,
-    )
+        bot_mod, "_typing_indicator_loop", _fake_typing_loop)
 
     # 3. Stub the auto-title enqueue (real one spawns a worker).
     monkeypatch.setattr(
-        at_mod, "enqueue_title_job", AsyncMock(return_value=None),
-    )
+        at_mod, "enqueue_title_job", AsyncMock(return_value=None))
 
     # 4. Build a fake update + bot.
     bot = MagicMock()
@@ -124,11 +118,9 @@ async def test_tg_handler_injects_tg_send_callback(
         effective_message=SimpleNamespace(
             text="hi",
             message_id=1,
-            reply_text=AsyncMock(),
-        ),
+            reply_text=AsyncMock()),
         message=SimpleNamespace(text="hi"),
-        get_bot=lambda: bot,
-    )
+        get_bot=lambda: bot)
 
     # 5. Call the real handler.
     await bot_mod._handle_contact_message(
@@ -140,8 +132,8 @@ async def test_tg_handler_injects_tg_send_callback(
         display_name=None,
         contact_separated=False,
         contact_role="assigned",
-        contact_provider="minimax",
-        contact_api_key="fake-key-for-tests",
+        contact_
+        contact_
     )
 
     # 6. Post-D.28 contract: ``handle_message`` is called with

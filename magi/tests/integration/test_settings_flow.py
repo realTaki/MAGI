@@ -55,8 +55,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(sd))
     init_orm(str(sd))
     with open_session() as db:
@@ -64,9 +63,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Alice",
             display_name="Alice",
             telegram_id=9101,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-admin",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.commit()
@@ -112,8 +109,7 @@ def test_soul_load_save_reset_round_trip(state, client):
     new_persona = "You are an expert contract negotiator. Always speak in English."
     save = client.put(
         "/api/soul",
-        json={"content": new_persona},
-    )
+        json={"content": new_persona})
     assert save.status_code == 200, save.text
     saved = save.json()
     assert "modified_at" in saved and saved["modified_at"]
@@ -164,8 +160,7 @@ def test_timezone_load_save_reread_round_trip(state, client):
     new_tz = "Asia/Tokyo"
     save = client.put(
         "/api/system-settings/timezone",
-        json={"timezone": new_tz},
-    )
+        json={"timezone": new_tz})
     assert save.status_code == 200, save.text
     assert save.json()["current"] == new_tz
 
@@ -179,8 +174,7 @@ def test_timezone_load_save_reread_round_trip(state, client):
     # back to UTC).
     bad = client.put(
         "/api/system-settings/timezone",
-        json={"timezone": "Atlantis/Avalon"},
-    )
+        json={"timezone": "Atlantis/Avalon"})
     assert bad.status_code == 400
     assert bad.json()["code"] == "validation.unknown_timezone"
 
@@ -193,8 +187,7 @@ def test_timezone_load_save_reread_round_trip(state, client):
 # -- cross-flow: tz change is reflected in a new task ---------------------
 
 def test_timezone_change_propagates_to_newly_created_task(
-    state, client,
-):
+    state, client):
     """After the operator changes the system timezone, the
     next task they create stores the new ``tz`` — NOT the
     cached value from a previous request.
@@ -213,8 +206,7 @@ def test_timezone_change_propagates_to_newly_created_task(
     target_tz = "Europe/Berlin"
     client.put(
         "/api/system-settings/timezone",
-        json={"timezone": target_tz},
-    )
+        json={"timezone": target_tz})
 
     # 2. Create a task. The server-stamped ``tz`` on the
     # row must reflect the new value, not the cached

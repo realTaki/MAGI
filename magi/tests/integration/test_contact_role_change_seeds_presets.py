@@ -57,8 +57,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(sd))
     init_orm(str(sd))
 
@@ -67,9 +66,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Operator",
             display_name="Operator",
             telegram_id=9101,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-admin",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.commit()
@@ -125,8 +122,7 @@ def _preset_task_count(contact_id: int) -> int:
     with open_session() as db:
         return db.query(Task).filter(
             Task.uid == contact_id,
-            Task.preset_key.is_not(None),
-        ).count()
+            Task.preset_key.is_not(None)).count()
 
 
 def _all_task_count(contact_id: int) -> int:
@@ -205,8 +201,7 @@ def test_patch_to_assigned_seeds_presets(state, client):
     assert _all_task_count(bob_id) == 0
 
     promote = client.patch(
-        f"/api/contacts/{bob_id}", json={"role": "assigned"},
-    )
+        f"/api/contacts/{bob_id}", json={"role": "assigned"})
     assert promote.status_code == 200, promote.text
     assert promote.json()["role"] == "assigned"
 
@@ -235,8 +230,7 @@ def test_patch_admin_to_assigned_seeds_presets(state, client):
     assert _all_task_count(charlie_id) == 0
 
     promote = client.patch(
-        f"/api/contacts/{charlie_id}", json={"role": "assigned"},
-    )
+        f"/api/contacts/{charlie_id}", json={"role": "assigned"})
     assert promote.status_code == 200, promote.text
     assert promote.json()["role"] == "assigned"
 
@@ -265,8 +259,7 @@ def test_repeat_assigned_patch_does_not_duplicate(state, client):
     # be a no-op (the prev_role == "assigned" guard means
     # the helper isn't even called).
     repeat = client.patch(
-        f"/api/contacts/{dora_id}", json={"role": "assigned"},
-    )
+        f"/api/contacts/{dora_id}", json={"role": "assigned"})
     assert repeat.status_code == 200
     assert _preset_task_count(dora_id) == first_count
 
@@ -288,16 +281,14 @@ def test_assigned_to_admin_to_assigned_does_not_duplicate(state, client):
     # Down to admin — tasks persist (we don't delete on
     # transition-away).
     demote = client.patch(
-        f"/api/contacts/{eve_id}", json={"admin": True, "role": "assigned"},
-    )
+        f"/api/contacts/{eve_id}", json={"admin": True, "role": "assigned"})
     assert demote.status_code == 200
     assert _preset_task_count(eve_id) == state["preset_count"]
 
     # Back to assigned — second seed attempt; helper sees
     # existing rows and skips.
     repromote = client.patch(
-        f"/api/contacts/{eve_id}", json={"role": "assigned"},
-    )
+        f"/api/contacts/{eve_id}", json={"role": "assigned"})
     assert repromote.status_code == 200
     assert _preset_task_count(eve_id) == state["preset_count"]
 
@@ -319,8 +310,7 @@ def test_non_role_patch_does_not_seed(state, client):
 
     rename = client.patch(
         f"/api/contacts/{frank_id}",
-        json={"display_name": "Frank Renamed"},
-    )
+        json={"display_name": "Frank Renamed"})
     assert rename.status_code == 200
     assert _all_task_count(frank_id) == 0
 
@@ -357,17 +347,14 @@ def test_list_tasks_kind_filter_splits_preset_and_custom(state, client):
             "minute": 0,
             "day_of_week": 0,
             "target_channel": "webui",
-        },
-    )
+        })
     assert custom.status_code == 201, custom.text
     assert custom.json()["uid"] == gina_id
 
     preset_list = client.get(
-        f"/api/tasks?kind=preset&uid={gina_id}",
-    ).json()
+        f"/api/tasks?kind=preset&uid={gina_id}").json()
     custom_list = client.get(
-        f"/api/tasks?kind=custom&uid={gina_id}",
-    ).json()
+        f"/api/tasks?kind=custom&uid={gina_id}").json()
 
     assert len(preset_list) == state["preset_count"]
     assert len(custom_list) == 1

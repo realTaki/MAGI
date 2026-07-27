@@ -50,17 +50,14 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(sd))
     init_orm(str(sd))
 
     admin = Contact(
         name="Operator",
         telegram_id=9101,
-        admin=True, role="assigned",
-        provider="minimax",
-        api_key="sk-admin",
+        admin=True, role="assigned"
     )
     with open_session() as db:
         db.add(admin)
@@ -233,8 +230,7 @@ def test_seed_snapshot_semantics_edits_preset_after_seed(state):
     with open_session() as db:
         row = db.query(Task).filter(
             Task.uid == alice.id,
-            Task.preset_key == "daily_standup_brief",
-        ).one()
+            Task.preset_key == "daily_standup_brief").one()
         assert row.prompt == original
         assert "EDITED" not in row.prompt
 

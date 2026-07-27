@@ -54,8 +54,7 @@ def token_env(monkeypatch, tmp_path):
     from magi.agent.db import (
         Contact,
         init_orm,
-        open_session,
-    )
+        open_session)
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -66,18 +65,14 @@ def token_env(monkeypatch, tmp_path):
             Contact(
                 name="TA-admin",
                 telegram_id=9001,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake",
+                admin=True, role="assigned"
             )
         )
         s.add(
             Contact(
                 name="TA-target",
                 telegram_id=9002,
-                role="assigned",
-                provider="minimax",
-                api_key="fake",
+                role="assigned"
             )
         )
         s.commit()
@@ -107,16 +102,14 @@ def test_record_token_usage_happy_path(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=1,
-        channel="webui",
-        provider="minimax-cn",
+        channel="webui"
         model="MiniMax-M2.7",
         usage={
             "input_tokens": 100,
             "output_tokens": 50,
             "cache_creation_input_tokens": 10,
             "cache_read_input_tokens": 5,
-        },
-    )
+        })
 
     with open_session() as s:
         rows = s.query(TokenUsage).all()
@@ -144,11 +137,9 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=2,
-        channel="tg",
-        provider="minimax-cn",
+        channel="tg"
         model=None,
-        usage={},
-    )
+        usage={})
 
     with open_session() as s:
         rows = s.query(TokenUsage).all()
@@ -169,11 +160,9 @@ def test_record_token_usage_partial_dict(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=1,
-        channel="webui",
-        provider="minimax-cn",
+        channel="webui"
         model="MiniMax-M2.7",
-        usage={"input_tokens": 200, "output_tokens": 80},
-    )
+        usage={"input_tokens": 200, "output_tokens": 80})
 
     with open_session() as s:
         rows = s.query(TokenUsage).all()
@@ -222,8 +211,7 @@ def test_timezone_get_defaults_to_server_local(token_env, client):
 def test_timezone_put_round_trip(token_env, client):
     r = client.put(
         "/api/system-settings/timezone",
-        json={"timezone": "Asia/Shanghai"},
-    )
+        json={"timezone": "Asia/Shanghai"})
     assert r.status_code == 200
     assert r.json()["current"] == "Asia/Shanghai"
 
@@ -235,8 +223,7 @@ def test_timezone_put_round_trip(token_env, client):
 def test_timezone_put_rejects_unknown_tz(token_env, client):
     r = client.put(
         "/api/system-settings/timezone",
-        json={"timezone": "Atlantis/Mu"},
-    )
+        json={"timezone": "Atlantis/Mu"})
     assert r.status_code == 400
     body = r.json()
     assert body["code"] == "validation.unknown_timezone"
@@ -245,8 +232,7 @@ def test_timezone_put_empty_rejected_by_pydantic(token_env, client):
     """Empty string is below the Pydantic min_length=1."""
     r = client.put(
         "/api/system-settings/timezone",
-        json={"timezone": ""},
-    )
+        json={"timezone": ""})
     assert r.status_code == 422
 
 def test_timezone_get_requires_admin(token_env):
@@ -273,15 +259,13 @@ def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
     with open_session() as s:
         s.add(TokenUsage(
             uid=uid,
-            channel=channel,
-            provider="minimax-cn",
+            channel=channel
             model="MiniMax-M2.7",
             input_tokens=in_t,
             output_tokens=out_t,
             cache_creation_tokens=0,
             cache_read_tokens=0,
-            ts=when_utc,
-        ))
+            ts=when_utc))
         s.commit()
 
 def test_token_usage_returns_three_periods(token_env, client):

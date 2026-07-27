@@ -56,9 +56,7 @@ def env(monkeypatch, tmp_path, workspace):
             Contact(
                 name="TA-skills",
                 telegram_id=9001,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake-key",
+                admin=True, role="assigned"
             )
         )
         s.commit()
@@ -75,8 +73,7 @@ def _write(workspace: Path, name: str, description: str = "test desc", body: str
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_dir.joinpath("SKILL.md").write_text(
         f"---\nname: {name}\ndescription: {description}\nversion: 1.0\n---\n\n{body}\n",
-        encoding="utf-8",
-    )
+        encoding="utf-8")
 
 def test_list_skills_round_trip(client, workspace):
     """Three operator skills + three bundled examples

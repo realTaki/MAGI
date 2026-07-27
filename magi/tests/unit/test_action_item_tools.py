@@ -31,8 +31,7 @@ from magi.agent.db import ActionItem, Contact, init_orm, open_session
 from magi.agent.tools.action_item import (
     AddActionItemTool,
     CompleteActionItemTool,
-    ListActionItemTool,
-)
+    ListActionItemTool)
 from magi.agent.tools.base import ToolContext
 
 
@@ -57,23 +56,17 @@ def seed_contacts(fresh_db):
         alice = Contact(
             name="Alice",
             telegram_id=7001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-alice",
+            admin=True, role="assigned"
         )
         bob = Contact(
             name="Bob",
             telegram_id=7002,
-            role="assigned",
-            provider="minimax",
-            api_key="fake-key-bob",
+            role="assigned"
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=7003,
-            role="contact",
-            provider="minimax",
-            api_key="fake-key-charlie",
+            role="contact"
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -88,8 +81,7 @@ def _ctx(state: Path, contact: Contact) -> ToolContext:
         state_dir=str(state),
         workspace=state.parent,
         uid=contact.id,
-        channel="webui",
-    )
+        channel="webui")
 
 
 def _parse(content: str) -> dict:
@@ -134,8 +126,7 @@ async def test_add_action_item_creates_row_for_assigned(fresh_db, seed_contacts)
 
 @pytest.mark.asyncio
 async def test_add_action_item_returns_error_for_contact_role(
-    fresh_db, seed_contacts,
-):
+    fresh_db, seed_contacts):
     tool = AddActionItemTool()
     charlie = seed_contacts["charlie"]
     res = await tool.run(_ctx(fresh_db, charlie), title="should fail")
@@ -166,8 +157,7 @@ async def test_add_action_item_high_priority(fresh_db, seed_contacts):
     tool = AddActionItemTool()
     alice = seed_contacts["alice"]
     res = await tool.run(
-        _ctx(fresh_db, alice), title="urgent", priority="high",
-    )
+        _ctx(fresh_db, alice), title="urgent", priority="high")
     body = _parse(res.content)
     assert body["created"]["priority"] == "high"
 
@@ -177,8 +167,7 @@ async def test_add_action_item_rejects_bad_priority(fresh_db, seed_contacts):
     tool = AddActionItemTool()
     alice = seed_contacts["alice"]
     res = await tool.run(
-        _ctx(fresh_db, alice), title="x", priority="URGENT",
-    )
+        _ctx(fresh_db, alice), title="x", priority="URGENT")
     assert res.is_error is True
     assert "priority" in res.content
 
@@ -220,8 +209,7 @@ async def test_complete_action_item_is_idempotent(fresh_db, seed_contacts):
 
 @pytest.mark.asyncio
 async def test_complete_action_item_cannot_close_other_contacts_row(
-    fresh_db, seed_contacts,
-):
+    fresh_db, seed_contacts):
     add_tool = AddActionItemTool()
     complete_tool = CompleteActionItemTool()
     alice = seed_contacts["alice"]
@@ -252,16 +240,14 @@ async def test_complete_action_item_rejects_non_int_id(fresh_db, seed_contacts):
     complete_tool = CompleteActionItemTool()
     alice = seed_contacts["alice"]
     res = await complete_tool.run(
-        _ctx(fresh_db, alice), item_id="notanint",
-    )
+        _ctx(fresh_db, alice), item_id="notanint")
     assert res.is_error is True
     assert "must be an integer" in res.content
 
 
 @pytest.mark.asyncio
 async def test_complete_action_item_rejects_for_contact_role(
-    fresh_db, seed_contacts,
-):
+    fresh_db, seed_contacts):
     complete_tool = CompleteActionItemTool()
     charlie = seed_contacts["charlie"]
     res = await complete_tool.run(_ctx(fresh_db, charlie), item_id=1)
@@ -320,8 +306,7 @@ async def test_list_action_item_omits_completed_by_default(fresh_db, seed_contac
 
 @pytest.mark.asyncio
 async def test_list_action_item_include_completed_returns_both(
-    fresh_db, seed_contacts,
-):
+    fresh_db, seed_contacts):
     add_tool = AddActionItemTool()
     complete_tool = CompleteActionItemTool()
     list_tool = ListActionItemTool()

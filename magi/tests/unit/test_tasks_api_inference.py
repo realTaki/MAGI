@@ -40,15 +40,13 @@ from magi.agent.db import (
     Contact,
     init_orm,
     init_sqlite,
-    open_session,
-)
+    open_session)
 from magi.agent.proactive.orm_models import Task
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.api.tasks import (
     TaskIn,
     TaskPatch,
-    _resolve_delivery_to,
-)
+    _resolve_delivery_to)
 
 # -- fixtures --------------------------------------------------------------
 
@@ -121,16 +119,12 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
         alice = Contact(
             name="alice",
             telegram_id=9101,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-alice",
+            admin=True, role="assigned"
         )
         bob = Contact(
             name="bob",
             telegram_id=None,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-bob",
+            admin=True, role="assigned"
         )
         db.add_all([alice, bob])
         db.commit()
@@ -141,8 +135,7 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
 # -- webui channel ---------------------------------------------------------
 
 def test_webui_channel_without_explicit_infers_new(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """The WebUI form's default: ``channel='webui'`` with no
     explicit ``delivery_to`` → ``"new"``. Every cron fire
     spawns a fresh ``ChatSession`` row, matching the
@@ -151,13 +144,11 @@ def test_webui_channel_without_explicit_infers_new(
     result = _resolve_delivery_to(
         target_channel="webui",
         uid=seeded["alice"].id,
-        explicit=None,
-    )
+        explicit=None)
     assert result == "new"
 
 def test_webui_channel_with_explicit_session_id_honours_it(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """The LLM-in-chat path passes an explicit ULID through
     ``TaskIn.delivery_to``. The API still honours it for
     ``channel='webui'`` — the cron reply joins the
@@ -166,15 +157,13 @@ def test_webui_channel_with_explicit_session_id_honours_it(
     result = _resolve_delivery_to(
         target_channel="webui",
         uid=seeded["alice"].id,
-        explicit="01HABCDEFGHJKMNPQRSTVWXY",
-    )
+        explicit="01HABCDEFGHJKMNPQRSTVWXY")
     assert result == "01HABCDEFGHJKMNPQRSTVWXY"
 
 # -- tg channel: operator has telegram_id --------------------------------
 
 def test_tg_channel_uses_operator_telegram_id(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """The WebUI form's TG branch: ``channel='tg'`` →
     ``str(contact.telegram_id)``. The caller cannot
     override this — the server returns the operator's
@@ -184,13 +173,11 @@ def test_tg_channel_uses_operator_telegram_id(
     result = _resolve_delivery_to(
         target_channel="tg",
         uid=seeded["alice"].id,
-        explicit="bogus-ignored",
-    )
+        explicit="bogus-ignored")
     assert result == "9101"
 
 def test_tg_channel_without_telegram_id_raises_400(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """``channel='tg'`` requires the operator to have a
     ``telegram_id`` bound — a missing binding is a config
     mistake. Surface as 400 ``tasks.telegram_not_bound``
@@ -200,8 +187,7 @@ def test_tg_channel_without_telegram_id_raises_400(
         _resolve_delivery_to(
             target_channel="tg",
             uid=seeded["bob"].id,
-            explicit=None,
-        )
+            explicit=None)
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "tasks.telegram_not_bound"
     assert "9101" not in exc_info.value.detail
@@ -212,8 +198,7 @@ def test_tg_channel_without_telegram_id_raises_400(
 # -- PATCH re-derives on every patch --------------------------------------
 
 def test_update_task_tg_channel_re_derives_delivery_to(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """PATCH semantics: any patch that touches ``channel``
     (or that keeps the same channel) still re-derives
     ``delivery_to``. This way the row tracks any later
@@ -228,8 +213,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     re_derived = _resolve_delivery_to(
         target_channel="tg",
         uid=alice_id,
-        explicit=None,
-    )
+        explicit=None)
     assert re_derived == "9101"
     # 2. A TG row that we PATCH to a different channel
     #    re-derives from the new channel. WebUI is the
@@ -238,8 +222,7 @@ def test_update_task_tg_channel_re_derives_delivery_to(
     re_derived_webui = _resolve_delivery_to(
         target_channel="webui",
         uid=alice_id,
-        explicit=None,
-    )
+        explicit=None)
     assert re_derived_webui == "new"
 
 # -- schema surface -------------------------------------------------------
@@ -256,8 +239,7 @@ def test_task_in_schema_still_carries_delivery_to_field() -> None:
         frequency="daily",
         hour=9,
         minute=0,
-        delivery_to=None,
-    )
+        delivery_to=None)
     assert payload.delivery_to is None
     # ``"new"`` survives too — legacy callers passing the
     # explicit magic token get honoured as a fresh-session
@@ -268,8 +250,7 @@ def test_task_in_schema_still_carries_delivery_to_field() -> None:
         frequency="daily",
         hour=9,
         minute=0,
-        delivery_to="new",
-    )
+        delivery_to="new")
     assert payload2.delivery_to == "new"
 
 def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
@@ -282,16 +263,14 @@ def test_task_patch_schema_allows_unsetting_delivery_to() -> None:
     a column that's part of the dispatch contract)."""
     patch = TaskPatch(
         target_channel="tg",
-        delivery_to=None,
-    )
+        delivery_to=None)
     assert patch.target_channel == "tg"
     assert patch.delivery_to is None
 
 # -- smoke: a full Task row through the helper ----------------------------
 
 def test_task_row_carries_derived_delivery_to(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """A complete Task row with ``delivery_to`` derived
     by the helper matches what the WebUI API will write.
     We don't write the row through the route (TypeAdapter
@@ -301,8 +280,7 @@ def test_task_row_carries_derived_delivery_to(
     derived = _resolve_delivery_to(
         target_channel="tg",
         uid=alice_id,
-        explicit=None,
-    )
+        explicit=None)
     with open_session() as db:
         t = Task(
             id="T" + "0" * 25,
@@ -317,8 +295,7 @@ def test_task_row_carries_derived_delivery_to(
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",
-            updated_at="2026-07-20T12:00:00Z",
-        )
+            updated_at="2026-07-20T12:00:00Z")
         db.add(t)
         db.commit()
         db.refresh(t)
@@ -327,8 +304,7 @@ def test_task_row_carries_derived_delivery_to(
 # -- past-time run_at rejection --------------------------------------------
 
 def test_create_task_once_with_past_run_at_rejected_at_helper(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """The route boundary rejects past ``run_at`` so the
     operator sees a clear 400 instead of silently shipping
     a row that apscheduler's ``DateTrigger`` would never
@@ -342,8 +318,7 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
     """
     from magi.agent.proactive.cron_utils import (
         validate_run_at,
-        validate_run_at_future,
-    )
+        validate_run_at_future)
     from magi.channels.webui.api.errors import MagiHTTPException
 
     # 1 hour in the past — clearly outside the grace window.
@@ -360,21 +335,18 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.run_at_in_past",
-                detail=str(exc),
-            ) from exc
+                detail=str(exc)) from exc
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "validation.run_at_in_past"
     assert "in the future" in exc_info.value.detail
 
 def test_create_task_once_with_future_run_at_passes_helper(
-    fresh_db: Path, seeded: dict[str, Contact],
-) -> None:
+    fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """Symmetric sanity: a future ``run_at`` clears the
     check and reaches the rest of the create flow."""
     from magi.agent.proactive.cron_utils import (
         validate_run_at,
-        validate_run_at_future,
-    )
+        validate_run_at_future)
     future_iso = (
         datetime.now(timezone.utc) + timedelta(hours=1)
     ).isoformat(timespec="seconds")

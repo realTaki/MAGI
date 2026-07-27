@@ -31,8 +31,7 @@ import pytest
 from magi.agent.db import Contact, init_orm, open_session
 from magi.agent.tools.base import (
     ToolContext,
-    caller_role_denied_reason,
-)
+    caller_role_denied_reason)
 
 # -- fixtures ---------------------------------------------------------------
 
@@ -57,16 +56,12 @@ def seed_contacts(fresh_db):
         alice = Contact(
             name="Alice",
             telegram_id=8501,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-alice",
+            admin=True, role="assigned"
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=8503,
-            role="contact",
-            provider="minimax",
-            api_key="fake-key-charlie",
+            role="contact"
         )
         db.add_all([alice, charlie])
         db.commit()
@@ -84,8 +79,7 @@ def _ctx(state: Path, uid: object) -> ToolContext:
         workspace=state.parent,
         
         uid=uid,  # type: ignore[arg-type]
-        channel="webui",
-    )
+        channel="webui")
 
 
 # -- tests ------------------------------------------------------------------
@@ -105,8 +99,7 @@ def test_rejects_non_int_uid(fresh_db):
     """
     msg = caller_role_denied_reason(
         _ctx(fresh_db, "not-a-number"),
-        frozenset({"admin"}),
-    )
+        frozenset({"admin"}))
     assert msg is not None
     assert "is not a valid id" in msg
     assert "'not-a-number'" in msg
@@ -118,8 +111,7 @@ def test_rejects_zero_uid(fresh_db):
     the lookup silently match an unintended row."""
     msg = caller_role_denied_reason(
         _ctx(fresh_db, 0),
-        frozenset({"admin", "assigned"}),
-    )
+        frozenset({"admin", "assigned"}))
     assert msg is not None
     assert "got 0" in msg
     assert "not authenticate" in msg
@@ -131,8 +123,7 @@ def test_rejects_nonexistent_contact(fresh_db):
     role-mismatch case (no leakage about why)."""
     msg = caller_role_denied_reason(
         _ctx(fresh_db, 99999),
-        frozenset({"admin", "assigned"}),
-    )
+        frozenset({"admin", "assigned"}))
     assert msg is not None
     assert "99999" in msg
     assert "not found" in msg
@@ -145,8 +136,7 @@ def test_rejects_wrong_role(fresh_db, seed_contacts):
     charlie = seed_contacts["charlie"]
     msg = caller_role_denied_reason(
         _ctx(fresh_db, charlie.id),
-        frozenset({"admin", "assigned"}),
-    )
+        frozenset({"admin", "assigned"}))
     assert msg is not None
     assert "role 'contact'" in msg
     # The allowed list surfaces in the message so the
@@ -163,8 +153,6 @@ def test_permits_each_role_independently(fresh_db, seed_contacts):
     # Charlie is ``contact`` role — should pass an
     # ``{contact}`` gate, fail an ``{admin}`` gate.
     assert caller_role_denied_reason(
-        _ctx(fresh_db, charlie.id), frozenset({"contact"}),
-    ) is None
+        _ctx(fresh_db, charlie.id), frozenset({"contact"})) is None
     assert caller_role_denied_reason(
-        _ctx(fresh_db, charlie.id), frozenset({"admin"}),
-    ) is not None
+        _ctx(fresh_db, charlie.id), frozenset({"admin"})) is not None

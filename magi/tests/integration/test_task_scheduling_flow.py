@@ -51,8 +51,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         Contact,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(sd))
     init_orm(str(sd))
 
@@ -61,9 +60,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Alice",
             display_name="Alice",
             telegram_id=9101,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-fake",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.commit()
@@ -115,8 +112,7 @@ def _fake_handle_message_patch():
 # -- the happy path --------------------------------------------------------
 
 def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
-    state, client,
-):
+    state, client):
     """Create a daily task, trigger it manually, and confirm
     the prompt + reply land in the task's own chat session.
 
@@ -178,8 +174,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     with _fake_handle_message_patch():
         import asyncio
         asyncio.run(execute_task(
-            str(state["state"]), task_id, manual=True,
-        ))
+            str(state["state"]), task_id, manual=True))
 
     # Step 4: chat history drawer sees prompt + reply.
     msgs = client.get(f"/api/chat/sessions/{session_id}/messages").json()
@@ -235,8 +230,7 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
         json={
             "prompt": "Updated reminder copy.",
             "enabled": False,
-        },
-    )
+        })
     assert patch.status_code == 200
     patched = patch.json()
     assert patched["prompt"] == "Updated reminder copy."
@@ -262,8 +256,7 @@ def test_task_crud_chain_create_update_disable_delete(state, client):
 # -- cross-flow: TG task uses operator's bound telegram_id -----------------
 
 def test_create_tg_task_uses_operator_telegram_id_as_delivery_to(
-    state, client,
-):
+    state, client):
     """A ``channel='tg'`` task created via the WebUI gets its
     ``delivery_to`` set to the operator's bound
     ``telegram_id`` — server-derived, not operator-supplied.
@@ -307,9 +300,7 @@ def test_create_tg_task_without_telegram_binding_returns_400(state):
         unbound = Contact(
             name="Bob",
             telegram_id=None,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-bob",
+            admin=True, role="assigned"
         )
         db.add(unbound)
         db.commit()

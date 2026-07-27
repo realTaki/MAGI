@@ -40,9 +40,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path):
         admin = Contact(
             name="MCP-admin",
             telegram_id=8801,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-fake",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.commit()
@@ -117,15 +115,12 @@ def test_endpoints_require_admin(bare_client):
     arbitrarily extend the LLM's tool menu."""
     assert bare_client.get("/api/mcp-servers").status_code == 401
     assert bare_client.post(
-        "/api/mcp-servers", json=_seed_stdio(),
-    ).status_code == 401
+        "/api/mcp-servers", json=_seed_stdio()).status_code == 401
     assert bare_client.patch(
-        "/api/mcp-servers/std", json=_seed_stdio(),
-    ).status_code == 401
+        "/api/mcp-servers/std", json=_seed_stdio()).status_code == 401
     assert bare_client.delete("/api/mcp-servers/std").status_code == 401
     assert bare_client.post(
-        "/api/mcp-servers/std/toggle",
-    ).status_code == 401
+        "/api/mcp-servers/std/toggle").status_code == 401
 
 
 # -- create + list ----------------------------------------------------------
@@ -162,8 +157,7 @@ def test_create_invalid_name_pattern_returns_422(state, client):
     punctuation get a 422 from the Pydantic validator."""
     r = client.post(
         "/api/mcp-servers",
-        json=_seed_stdio(name="bad name!"),
-    )
+        json=_seed_stdio(name="bad name!"))
     assert r.status_code == 422
 
 
@@ -201,8 +195,7 @@ def test_list_masks_env_set_keys(state, client):
     only for unset keys."""
     client.post(
         "/api/mcp-servers",
-        json=_seed_stdio(name="std", env={"SECRET": "value", "EMPTY": ""}),
-    )
+        json=_seed_stdio(name="std", env={"SECRET": "value", "EMPTY": ""}))
     body = client.get("/api/mcp-servers").json()
     assert len(body) == 1
     row = body[0]
@@ -259,8 +252,7 @@ def test_patch_refuses_rename(state, client):
     client.post("/api/mcp-servers", json=_seed_stdio(name="old"))
     r = client.patch(
         "/api/mcp-servers/old",
-        json=_seed_stdio(name="new"),
-    )
+        json=_seed_stdio(name="new"))
     assert r.status_code == 400
     assert r.json()["code"] == "validation.mcp_name_immutable"
 
@@ -272,12 +264,10 @@ def test_patch_clear_env_sends_empty_string(state, client):
     parent env"."""
     client.post(
         "/api/mcp-servers",
-        json=_seed_stdio(name="x", env={"API_KEY": "value"}),
-    )
+        json=_seed_stdio(name="x", env={"API_KEY": "value"}))
     client.patch(
         "/api/mcp-servers/x",
-        json=_seed_stdio(name="x", env={"API_KEY": ""}),
-    )
+        json=_seed_stdio(name="x", env={"API_KEY": ""}))
     row = client.get("/api/mcp-servers/x").json()
     assert row["env_set"]["API_KEY"] is False
 

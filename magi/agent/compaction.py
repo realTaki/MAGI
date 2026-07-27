@@ -51,10 +51,6 @@ async def maybe_compact(
     uid: int,
     session_id: str | None,
     messages: list["ChatMessage"],
-    *,
-    contact_provider: str,
-    contact_api_key: str,
-    contact_model: str | None,
 ) -> None:
     """Estimate token cost of ``messages``. If over the
     configured threshold, run one compaction pass: move
@@ -65,6 +61,11 @@ async def maybe_compact(
 
     No-op when there's no session yet (first turn of a
     brand-new conversation; nothing to compact).
+
+    LLM credentials are resolved inside the factory
+    (:func:`magi.agent.llm.factory.get_provider`) — the
+    agent loop / task runner / chat handlers don't thread
+    provider / api_key / model through their signatures.
     """
     if not session_id:
         return
@@ -103,9 +104,6 @@ async def maybe_compact(
     # the full context this turn at least).
     summary_text = await call_llm_for_summary(
         state_dir=state_dir,
-        contact_provider=contact_provider,
-        contact_api_key=contact_api_key,
-        contact_model=contact_model,
         to_compress=to_archive,
     )
     if not summary_text:
@@ -159,14 +157,11 @@ async def maybe_compact(
 async def call_llm_for_summary(
     *,
     state_dir: str,
-    contact_provider: str,
-    contact_api_key: str,
-    contact_model: str | None,
     to_compress: list["ChatMessage"],
 ) -> str | None:
     """One LLM call to compress ``to_compress`` into a
-    structured summary. Uses the same provider + creds
-    as the main chat (the contact is paying for it).
+    structured summary. Uses the MAGI runtime's configured
+    provider (resolved inside :func:`get_provider`).
     Returns the summary text, or ``None`` on any failure
     so the caller can fall back to "no compaction
     happened".
@@ -189,7 +184,7 @@ async def call_llm_for_summary(
         # to make sense for v0. Skip and log.
         return None
     try:
-        provider = get_provider(contact_provider, contact_api_key, contact_model)
+        provider = get_provider()
         result = await provider.chat(
             system=system,
             messages=[ChatMessage(role="user", content=user_content)],

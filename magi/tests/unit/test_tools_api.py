@@ -95,9 +95,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             Contact(
                 name="Test Admin (tools)",
                 telegram_id=9001,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake-key-for-tests",
+                admin=True, role="assigned"
             )
         )
         s.commit()
@@ -215,8 +213,7 @@ def test_tools_response_includes_allowed_roles(client: TestClient) -> None:
     assert body["items"][0]["allowed_roles"] == ["admin", "assigned"]
 
 def test_tools_response_returns_empty_list_for_unrestricted(
-    client: TestClient,
-) -> None:
+    client: TestClient) -> None:
     """Tools that declare no role restriction (the default
     ``ALLOWED_ROLES = frozenset()``) come back with an
     empty list — the dashboard renders "all roles" for
@@ -231,8 +228,7 @@ def test_tools_response_returns_empty_list_for_unrestricted(
     assert body["items"][0]["allowed_roles"] == []
 
 def test_tools_response_keeps_role_order_alphabetical(
-    client: TestClient,
-) -> None:
+    client: TestClient) -> None:
     """``ALLOWED_ROLES`` is a set — without an explicit
     sort, two servers could render the same set in
     different orders. The endpoint sorts so the dashboard
@@ -256,8 +252,7 @@ def test_tools_response_keeps_role_order_alphabetical(
     assert body["items"][0]["allowed_roles"] == ["admin", "middle", "zzz"]
 
 def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """The dashboard view is informational, not gated. The
     endpoint explicitly passes ``caller_role=None`` so the
     full registry surfaces — even tools whose
@@ -286,8 +281,7 @@ def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
     )
 
 def test_tools_response_tags_builtins_as_builtin(
-    client: TestClient,
-) -> None:
+    client: TestClient) -> None:
     """Built-in tools come back with ``source="builtin"`` —
     the dashboard renders them in the dedicated card."""
     registry_mod._tools_cache = [_FakeTool()]
@@ -298,8 +292,7 @@ def test_tools_response_tags_builtins_as_builtin(
     assert body["items"][0]["source"] == "builtin"
 
 def test_tools_response_tags_mcp_tools_as_mcp(
-    client: TestClient,
-) -> None:
+    client: TestClient) -> None:
     """MCP tools come back with ``source="mcp"``."""
     registry_mod._tools_cache = []
     registry_mod._mcp_tools_cache = [_McpTool()]
@@ -310,8 +303,7 @@ def test_tools_response_tags_mcp_tools_as_mcp(
     assert body["items"][0]["name"] == "github__create_issue"
 
 def test_tools_response_partitions_by_source(
-    client: TestClient,
-) -> None:
+    client: TestClient) -> None:
     """Mixed registry — built-in first, MCP second,
     each correctly tagged. The dashboard's filter groups
     client-side by ``source``; this pins the wire shape."""

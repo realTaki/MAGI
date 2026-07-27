@@ -94,16 +94,13 @@ def mocked_telegram(monkeypatch):
 
     monkeypatch.setattr(
         tg_bot, "verify_token",
-        AsyncMock(return_value="magi_test_bot"),
-    )
+        AsyncMock(return_value="magi_test_bot"))
     monkeypatch.setattr(
         tg_bot, "send_text_raw",
-        AsyncMock(return_value=None),
-    )
+        AsyncMock(return_value=None))
     monkeypatch.setattr(
         tg_bot, "get_chat_name_raw",
-        AsyncMock(return_value="Alice"),
-    )
+        AsyncMock(return_value="Alice"))
     monkeypatch.setattr(tg_bot, "start_bot", lambda *_a, **_kw: None)
     return tg_bot
 
@@ -119,8 +116,7 @@ def client(state, mocked_telegram):
 # -- the happy path --------------------------------------------------------
 
 def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
-    state, client, mocked_telegram,
-):
+    state, client, mocked_telegram):
     """A complete first-time wizard lands the operator at the
     dashboard with:
 
@@ -150,15 +146,13 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # Step 1: verify + save the bot token.
     verify = client.post(
         "/api/onboarding/verify-bot",
-        json={"token": "fake:bot-token"},
-    )
+        json={"token": "fake:bot-token"})
     assert verify.status_code == 200
     assert verify.json() == {"ok": True, "username": "magi_test_bot", "error": None}
 
     save = client.post(
         "/api/onboarding/save-bot",
-        json={"token": "fake:bot-token", "username": "magi_test_bot"},
-    )
+        json={"token": "fake:bot-token", "username": "magi_test_bot"})
     assert save.status_code == 200
     assert save.json()["ok"] is True
 
@@ -177,8 +171,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # carrying the 6-digit code we then verify.
     send_a = client.post(
         "/api/onboarding/send-admin-code",
-        json={"tgid": "91001"},
-    )
+        json={"tgid": "91001"})
     assert send_a.status_code == 200
     body_a = send_a.json()
     assert body_a["ok"] is True
@@ -196,8 +189,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # Repeat for the second admin.
     send_b = client.post(
         "/api/onboarding/send-admin-code",
-        json={"tgid": "91002"},
-    )
+        json={"tgid": "91002"})
     assert send_b.status_code == 200
     code_b = json.loads(state_get(state, "telegram.verify_code.91002"))["code"]
 
@@ -205,8 +197,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # gets past expiry so a wrong-guess attacker can't grind.
     verify_a = client.post(
         "/api/onboarding/verify-admin-code",
-        json={"tgid": "91001", "code": code_a},
-    )
+        json={"tgid": "91001", "code": code_a})
     assert verify_a.status_code == 200
     assert verify_a.json()["ok"] is True
     assert verify_a.json()["display_name"] == "Alice"
@@ -216,8 +207,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
 
     verify_b = client.post(
         "/api/onboarding/verify-admin-code",
-        json={"tgid": "91002", "code": code_b},
-    )
+        json={"tgid": "91002", "code": code_b})
     assert verify_b.status_code == 200
     assert verify_b.json()["ok"] is True
 
@@ -226,8 +216,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # dispatcher (which writes the legacy read-cache column).
     save_admin = client.post(
         "/api/onboarding/save-admin",
-        json={"tgids": ["91001", "91002"]},
-    )
+        json={"tgids": ["91001", "91002"]})
     assert save_admin.status_code == 200
     body = save_admin.json()
     assert body["ok"] is True
@@ -254,8 +243,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     # One llm_credentials_missing row per current admin.
     with open_session() as db:
         items = db.query(ActionItem).filter_by(
-            kind="llm_credentials_missing",
-        ).all()
+            kind="llm_credentials_missing").all()
         assert len(items) == 2
         assert {i.uid for i in items} == {a.id for a in admins}
 
@@ -278,8 +266,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
 # -- mid-flow restart ------------------------------------------------------
 
 def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
-    state, client, mocked_telegram,
-):
+    state, client, mocked_telegram):
     """After a full onboarding, ``POST /restart`` clears the
     ``onboarding.complete`` flag (so the wizard re-opens on
     next boot) but leaves the saved bot token + admin list
@@ -305,9 +292,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
             name="Alice",
             display_name="Alice",
             telegram_id=91001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-fake",
+            admin=True, role="assigned"
         ))
         db.commit()
 
@@ -344,8 +329,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
 # -- cross-flow: onboarding-created admins appear in /api/contacts ---------
 
 def test_onboarded_admins_show_up_in_contacts_directory(
-    state, client, mocked_telegram,
-):
+    state, client, mocked_telegram):
     """A wizard-saved admin is visible in the unified contacts
     directory (the same list the dashboard renders). This pins
     the "onboarding writes to the same source-of-truth as the
@@ -361,12 +345,10 @@ def test_onboarded_admins_show_up_in_contacts_directory(
     # Walk through onboarding with one chat id (91001).
     client.post(
         "/api/onboarding/verify-bot",
-        json={"token": "fake:bot-token"},
-    )
+        json={"token": "fake:bot-token"})
     client.post(
         "/api/onboarding/save-bot",
-        json={"token": "fake:bot-token", "username": "magi_test_bot"},
-    )
+        json={"token": "fake:bot-token", "username": "magi_test_bot"})
     client.post("/api/onboarding/send-admin-code", json={"tgid": "91001"})
     raw = client.get("/api/onboarding/status")  # warm cache
     code = json.loads(__import__(
@@ -374,12 +356,10 @@ def test_onboarded_admins_show_up_in_contacts_directory(
     ).state_get(state, "telegram.verify_code.91001"))["code"]
     client.post(
         "/api/onboarding/verify-admin-code",
-        json={"tgid": "91001", "code": code},
-    )
+        json={"tgid": "91001", "code": code})
     client.post(
         "/api/onboarding/save-admin",
-        json={"tgids": ["91001"]},
-    )
+        json={"tgids": ["91001"]})
     # Mint a signed cookie for the just-created admin so we
     # can hit /api/contacts as them.
     from magi.agent.db import Contact, open_session

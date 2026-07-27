@@ -51,8 +51,7 @@ def env(monkeypatch, tmp_path):
         Magi,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -60,9 +59,7 @@ def env(monkeypatch, tmp_path):
         admin = Contact(
             name="Alice",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.flush()
@@ -104,8 +101,7 @@ def non_admin_client(env):
         u = Contact(
             name="User2",
             telegram_id=9002,
-            role="contact",
-        )
+            role="contact")
         db.add(u)
         db.commit()
         db.refresh(u)
@@ -134,8 +130,7 @@ def test_list_magics_returns_seeded_root(client, env):
 def test_create_magic_top_level(client, env):
     r = client.post(
         "/api/magics",
-        json={"name": "Marketing", "parent_id": env["root"].id},
-    )
+        json={"name": "Marketing", "parent_id": env["root"].id})
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "Marketing"
@@ -148,16 +143,14 @@ def test_create_magic_duplicate_name_rejected(client, env):
     check; the unique index would also kick in)."""
     r = client.post(
         "/api/magics",
-        json={"name": env["root"].name, "parent_id": env["root"].id},
-    )
+        json={"name": env["root"].name, "parent_id": env["root"].id})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_name_duplicate"
 
 def test_create_magic_invalid_parent_rejected(client):
     r = client.post(
         "/api/magics",
-        json={"name": "Orphan", "parent_id": 9999},
-    )
+        json={"name": "Orphan", "parent_id": 9999})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.parent_magic_not_found"
 
@@ -167,8 +160,7 @@ def test_get_magic_returns_child_count(client, env):
     # Create a child so the root has at least one.
     cr = client.post(
         "/api/magics",
-        json={"name": "Eng", "parent_id": env["root"].id},
-    )
+        json={"name": "Eng", "parent_id": env["root"].id})
     assert cr.status_code == 201
     child_id = cr.json()["id"]
 
@@ -191,8 +183,7 @@ def test_update_magic_renames(client, env):
     """``PATCH name`` updates, blank rejected, duplicate rejected."""
     cr = client.post(
         "/api/magics",
-        json={"name": "OldName", "parent_id": env["root"].id},
-    )
+        json={"name": "OldName", "parent_id": env["root"].id})
     mid = cr.json()["id"]
 
     r = client.patch(f"/api/magics/{mid}", json={"name": "NewName"})
@@ -202,8 +193,7 @@ def test_update_magic_renames(client, env):
     # Duplicate — should 400.
     cr2 = client.post(
         "/api/magics",
-        json={"name": "Other", "parent_id": env["root"].id},
-    )
+        json={"name": "Other", "parent_id": env["root"].id})
     other_id = cr2.json()["id"]
     r = client.patch(f"/api/magics/{mid}", json={"name": "Other"})
     assert r.status_code == 400
@@ -214,8 +204,7 @@ def test_update_magic_self_parent_rejected(client, env):
     be its own parent."""
     cr = client.post(
         "/api/magics",
-        json={"name": "Cycle1", "parent_id": env["root"].id},
-    )
+        json={"name": "Cycle1", "parent_id": env["root"].id})
     mid = cr.json()["id"]
 
     r = client.patch(f"/api/magics/{mid}", json={"parent_id": mid})
@@ -226,13 +215,11 @@ def test_update_magic_reparents_cycle_rejected(client, env):
     """Reparent a subtree under a descendant — refused."""
     cr1 = client.post(
         "/api/magics",
-        json={"name": "A", "parent_id": env["root"].id},
-    )
+        json={"name": "A", "parent_id": env["root"].id})
     a = cr1.json()["id"]
     cr2 = client.post(
         "/api/magics",
-        json={"name": "A.b", "parent_id": a},
-    )
+        json={"name": "A.b", "parent_id": a})
     ab = cr2.json()["id"]
 
     # Now try to make ``a`` a child of ``A.b`` — cycle.
@@ -252,8 +239,7 @@ def test_update_magic_sets_adam(client, env):
 def test_update_magic_invalid_adam_id_rejected(client, env):
     r = client.patch(
         f"/api/magics/{env['root'].id}",
-        json={"adam_id": 9999},
-    )
+        json={"adam_id": 9999})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.adam_magi_not_found"
 
@@ -263,18 +249,15 @@ def test_delete_magic_reparents_children(client, env):
     become orphans with a NULL parent_id reference)."""
     cr = client.post(
         "/api/magics",
-        json={"name": "ParentA", "parent_id": env["root"].id},
-    )
+        json={"name": "ParentA", "parent_id": env["root"].id})
     parent_a = cr.json()["id"]
     cr = client.post(
         "/api/magics",
-        json={"name": "ParentA.1", "parent_id": parent_a},
-    )
+        json={"name": "ParentA.1", "parent_id": parent_a})
     child1 = cr.json()["id"]
     cr = client.post(
         "/api/magics",
-        json={"name": "ParentA.2", "parent_id": parent_a},
-    )
+        json={"name": "ParentA.2", "parent_id": parent_a})
     child2 = cr.json()["id"]
 
     r = client.delete(f"/api/magics/{parent_a}")

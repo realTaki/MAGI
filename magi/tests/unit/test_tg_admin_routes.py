@@ -41,9 +41,7 @@ def _seed_contact(state_dir: str, *, delivery_address: int, role: str, admin: bo
                 name=f"TA-{role}",
                 telegram_id=delivery_address,
                 role=role,
-                admin=admin,
-                provider="minimax",
-                api_key="fake-key",
+                admin=admin
             )
         )
         s.commit()
@@ -64,8 +62,7 @@ def _make_update(*, delivery_address: int, message_id: int, text: str):
     update.effective_message.text = text
     update.effective_message.reply_text = AsyncMock()
     update.get_bot = MagicMock(return_value=MagicMock(
-        set_message_reaction=AsyncMock(return_value=True),
-    ))
+        set_message_reaction=AsyncMock(return_value=True)))
     return update
 
 @pytest.mark.asyncio

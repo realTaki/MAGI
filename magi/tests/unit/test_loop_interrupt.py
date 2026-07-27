@@ -36,14 +36,12 @@ from magi.agent import loop as loop_mod
 from magi.agent.loop import (
     _drain_pending_user_messages,
     _truncate_at_safe_boundary,
-    handle_message,
-)
+    handle_message)
 from magi.agent.memory.session import (
     SessionMessage,
     SessionStore,
     new_session_id,
-    utcnow_iso,
-)
+    utcnow_iso)
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -71,12 +69,10 @@ def test_truncate_at_safe_boundary_drops_trailing_blocks() -> None:
         ChatMessage(role="user", content="search for python"),
         ChatMessage(
             role="assistant", content="",
-            content_blocks=[{"type": "tool_use", "id": "t1", "name": "x", "input": {}}],
-        ),
+            content_blocks=[{"type": "tool_use", "id": "t1", "name": "x", "input": {}}]),
         ChatMessage(
             role="user", content="",
-            content_blocks=[{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
-        ),
+            content_blocks=[{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]),
     ]
     _truncate_at_safe_boundary(msgs)
     assert [m.content for m in msgs] == ["search for python"]
@@ -91,16 +87,13 @@ def test_truncate_at_safe_boundary_drops_multiple_trailing_blocked() -> None:
         ChatMessage(role="user", content="a"),
         ChatMessage(
             role="assistant", content="",
-            content_blocks=[{"type": "tool_use", "id": "t1", "name": "x", "input": {}}],
-        ),
+            content_blocks=[{"type": "tool_use", "id": "t1", "name": "x", "input": {}}]),
         ChatMessage(
             role="user", content="",
-            content_blocks=[{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}],
-        ),
+            content_blocks=[{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]),
         ChatMessage(
             role="user", content="",
-            content_blocks=[{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}],
-        ),
+            content_blocks=[{"type": "tool_result", "tool_use_id": "t2", "content": "ok"}]),
     ]
     _truncate_at_safe_boundary(msgs)
     assert [m.content for m in msgs] == ["a"]
@@ -162,9 +155,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             Contact(
                 name="TA-loop-interrupt",
                 telegram_id=tmp_path.stat().st_uid ^ 90000,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake",
+                admin=True, role="assigned"
             )
         )
         s.commit()
@@ -177,34 +168,29 @@ def test_drain_no_session_id_is_noop(state_dir: Path) -> None:
     msgs: list[ChatMessage] = []
     seen: set[str] = set()
     drained = _drain_pending_user_messages(
-        str(state_dir), 0, None, msgs, seen,
-    )
+        str(state_dir), 0, None, msgs, seen)
     assert drained is False
     assert msgs == []
     assert seen == set()
 
 
 def test_drain_returns_false_when_store_unchanged(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """The store has one user message — the one already in
     ``seen`` — so the poll returns ``False`` and ``msgs``
     is untouched."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="hi", ts=utcnow_iso(),
-            message_id=new_session_id(),
-        )],
-    )
+            message_id=new_session_id())])
     msgs = [ChatMessage(role="user", content="hi")]
     seen = set()  # pretend we never saw it — drain should pick it up
 
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     # The store's message wasn't in ``seen`` so it was
     # picked up; not the "no change" path.
     assert drained is True
@@ -212,51 +198,43 @@ def test_drain_returns_false_when_store_unchanged(
 
 
 def test_drain_returns_false_when_seen_covers_everything(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """The poll is a no-op when ``seen`` covers every id in
     the store — i.e. the loop has already processed all
     user messages."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     mid = new_session_id()
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="hi", ts=utcnow_iso(),
-            message_id=mid,
-        )],
-    )
+            message_id=mid)])
     msgs = [ChatMessage(role="user", content="hi")]
     seen = {mid}
 
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     assert drained is False
     assert msgs == [ChatMessage(role="user", content="hi")]
 
 
 def test_drain_splices_new_user_messages_in_order(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Two new user messages arrive between iterations;
     both land in the in-memory list, in store order."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="first", ts=utcnow_iso(),
-            message_id=new_session_id(),
-        )],
-    )
+            message_id=new_session_id())])
     msgs = [ChatMessage(role="user", content="first")]
     seen = set()  # first poll, no ids seen yet
 
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     assert drained is True
     assert [m.content for m in msgs] == ["first", "first"]
 
@@ -266,17 +244,13 @@ def test_drain_splices_new_user_messages_in_order(
         [
             SessionMessage(
                 role="user", text="second", ts=utcnow_iso(),
-                message_id=new_session_id(),
-            ),
+                message_id=new_session_id()),
             SessionMessage(
                 role="user", text="third", ts=utcnow_iso(),
-                message_id=new_session_id(),
-            ),
-        ],
-    )
+                message_id=new_session_id()),
+        ])
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     assert drained is True
     assert [m.content for m in msgs] == [
         "first", "first", "second", "third",
@@ -284,36 +258,31 @@ def test_drain_splices_new_user_messages_in_order(
 
 
 def test_drain_truncates_trailing_tool_blocks(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Mid-tool-chain interrupt: the in-memory list ends
     on an assistant(tool_use) / user(tool_result) pair. The
     new user message must land AFTER the truncation — the
     API rejects a plain ``user`` text message interleaved
     with tool blocks."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="search", ts=utcnow_iso(),
-            message_id=new_session_id(),
-        )],
-    )
+            message_id=new_session_id())])
     msgs = [
         ChatMessage(role="user", content="search"),
         ChatMessage(
             role="assistant", content="",
             content_blocks=[{
                 "type": "tool_use", "id": "t1", "name": "x", "input": {},
-            }],
-        ),
+            }]),
         ChatMessage(
             role="user", content="",
             content_blocks=[{
                 "type": "tool_result", "tool_use_id": "t1", "content": "ok",
-            }],
-        ),
+            }]),
     ]
     seen: set[str] = set()  # pretend no prior polling happened
 
@@ -321,8 +290,7 @@ def test_drain_truncates_trailing_tool_blocks(
     # will pick it up and the trailing tool blocks must
     # be truncated.
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     assert drained is True
     # Trailing tool blocks dropped; new user message lands
     # at a clean boundary.
@@ -331,33 +299,28 @@ def test_drain_truncates_trailing_tool_blocks(
 
 
 def test_drain_skips_new_assistant_rows(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """A new ``assistant`` row in the store (e.g. from a
     concurrent writer) is tracked in ``seen`` but never
     spliced into the in-memory list — that's the loop's
     own job, not the poller's."""
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [
             SessionMessage(
                 role="user", text="hi", ts=utcnow_iso(),
-                message_id=new_session_id(),
-            ),
+                message_id=new_session_id()),
             SessionMessage(
                 role="assistant", text="hello", ts=utcnow_iso(),
-                message_id=new_session_id(),
-            ),
-        ],
-    )
+                message_id=new_session_id()),
+        ])
     msgs: list[ChatMessage] = []
     seen: set[str] = set()
 
     drained = _drain_pending_user_messages(
-        str(state_dir), 1, sess.session_id, msgs, seen,
-    )
+        str(state_dir), 1, sess.session_id, msgs, seen)
     # Both rows are new; only the user one is spliced.
     assert drained is True
     assert [m.role for m in msgs] == ["user"]
@@ -367,8 +330,7 @@ def test_drain_skips_new_assistant_rows(
 
 
 def test_drain_swallows_store_read_errors(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A ``SessionStore.get`` failure must not crash the
     in-flight agent loop — return ``False`` so the loop
     treats it as "no new messages" and continues."""
@@ -382,12 +344,10 @@ def test_drain_swallows_store_read_errors(
         raise RuntimeError("simulated store failure")
 
     monkeypatch.setattr(
-        _memory_pkg.session.store.SessionStore, "get", _boom,
-    )
+        _memory_pkg.session.store.SessionStore, "get", _boom)
 
     drained = _drain_pending_user_messages(
-        str(state_dir), "any-chat", sess_id, msgs, seen,
-    )
+        str(state_dir), "any-chat", sess_id, msgs, seen)
     assert drained is False
     assert msgs == []
 
@@ -398,8 +358,7 @@ def test_drain_swallows_store_read_errors(
 
 
 def _fake_provider_factory(
-    responses: list[ChatResult],
-) -> tuple[Any, Any]:
+    responses: list[ChatResult]) -> tuple[Any, Any]:
     """Build a fake provider + get_provider for monkeypatching.
 
     Each call to ``provider.chat`` pops the next ``ChatResult``
@@ -432,8 +391,7 @@ def _fake_provider_factory(
 def _text_result(text: str) -> ChatResult:
     return ChatResult(
         text=text, model="minimax-x", stop_reason="end_turn",
-        tool_uses=[], raw_blocks=None, thinking=None, usage={},
-    )
+        tool_uses=[], raw_blocks=None, thinking=None, usage={})
 
 
 def _tool_use_result(tool_id: str, tool_name: str, input: dict) -> ChatResult:
@@ -446,14 +404,12 @@ def _tool_use_result(tool_id: str, tool_name: str, input: dict) -> ChatResult:
             "type": "tool_use", "id": tool_id,
             "name": tool_name, "input": input,
         }],
-        thinking=None, usage={},
-    )
+        thinking=None, usage={})
 
 
 @pytest.mark.asyncio
 async def test_handle_message_picks_up_interrupting_user_message(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The headline D.21 scenario:
 
       1. User sends "search for python". Loop iteration 1
@@ -484,14 +440,12 @@ async def test_handle_message_picks_up_interrupting_user_message(
     # handle_message).
     delivery_address = "interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="search for python",
-            ts=utcnow_iso(), message_id=new_session_id(),
-        )],
-    )
+            ts=utcnow_iso(), message_id=new_session_id())])
 
     # Append the interrupting message — the channel-side
     # writer would do this AFTER handle_message starts
@@ -516,9 +470,7 @@ async def test_handle_message_picks_up_interrupting_user_message(
                     uid, s,
                     [SessionMessage(
                         role="user", text="actually search for rust",
-                        ts=utcnow_iso(), message_id=new_session_id(),
-                    )],
-                )
+                        ts=utcnow_iso(), message_id=new_session_id())])
                 result = real_get(self, uid, s)
         return result
 
@@ -534,10 +486,9 @@ async def test_handle_message_picks_up_interrupting_user_message(
         
         uid=1,
         session_id=sess.session_id,
-        contact_provider="minimax",
-        contact_api_key="fake",
-        max_tool_iterations=3,
-    )
+        contact_
+        contact_
+        max_tool_iterations=3)
 
     assert reply == "Searching for rust instead."
 
@@ -558,8 +509,7 @@ async def test_handle_message_picks_up_interrupting_user_message(
 
 @pytest.mark.asyncio
 async def test_handle_message_no_interrupt_works_normally(
-    state_dir: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Negative case: no interrupting message arrives. The
     loop runs two iterations (tool_use → text reply) and
     returns the final text. Sanity check that D.21 didn't
@@ -572,14 +522,12 @@ async def test_handle_message_no_interrupt_works_normally(
 
     delivery_address = "no-interrupt-chat"
     store = SessionStore(str(state_dir))
-    sess = store.create(1, channel="webui", )
+    sess = store.create(1, channel="webui")
     store.append_messages(
         1, sess.session_id,
         [SessionMessage(
             role="user", text="list stuff",
-            ts=utcnow_iso(), message_id=new_session_id(),
-        )],
-    )
+            ts=utcnow_iso(), message_id=new_session_id())])
 
     reply = await handle_message(
         str(state_dir),
@@ -588,9 +536,8 @@ async def test_handle_message_no_interrupt_works_normally(
         
         uid=1,
         session_id=sess.session_id,
-        contact_provider="minimax",
-        contact_api_key="fake",
-        max_tool_iterations=3,
-    )
+        contact_
+        contact_
+        max_tool_iterations=3)
 
     assert reply == "Here's what I found."

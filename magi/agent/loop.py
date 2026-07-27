@@ -9,11 +9,16 @@ later checkpoints build on.
 
 Why this is a function and not a class: the agent loop
 doesn't have per-instance state in v0. Channels call
-``handle_message`` with everything the call needs
-(credentials + text) and get a string back. C4 will move
-per-conversation state (history, scratchpad) onto a class so
-multi-turn calls can pass it in; the function signature will
-gain a ``conversation_id`` arg without breaking callers.
+``handle_message`` with the message + session metadata
+and get a string back. The LLM credentials are resolved
+internally by :func:`magi.agent.llm.factory.get_provider`
+— every chat / task / compaction call reads the seeded
+adam ``Magi`` row through that helper, so callers never
+thread ``provider`` / ``api_key`` / ``model`` through
+their own signatures. C4 will move per-conversation state
+(history, scratchpad) onto a class so multi-turn calls
+can pass it in; the function signature will gain a
+``conversation_id`` arg without breaking callers.
 
 Persistence side: ``handle_message`` records one row per
 successful LLM call in the ``token_usage`` table (D.15).
@@ -301,31 +306,30 @@ class _ToolLoopOutcome:
 
 def _validate_credentials(
     *,
-    contact_provider: str | None,
-    contact_api_key: str | None,
     uid: int | None,
     channel: Channel | str,
-) -> tuple[str, str] | None:
-    """Validate strict per-contact LLM credentials.
+) -> bool:
+    """Verify the MAGI runtime has provider / API key configured.
 
-    Returns the provider/key pair for the happy path and ``None`` when the
-    caller should receive the no-credentials fallback. Keeping this gate
-    separate makes the billing invariant independently testable.
+    Reads the adam Magi row through :func:`get_provider` —
+    a missing-config error surfaces as :class:`LLMNotConfiguredError`,
+    caught by the route handlers and mapped to a 503 with a
+    friendly "set them in 智能体管理" message.
+
+    Returns ``True`` when the credentials are usable, ``False``
+    when the chat should fall back to the agent_no_credentials
+    reply. Kept as a separate gate so the fallback path is
+    independently testable.
     """
-    if contact_provider and contact_api_key:
-        return contact_provider, contact_api_key
-
-    reason = (
-        "no per-contact credentials configured"
-        if contact_provider is None and contact_api_key is None
-        else "per-contact credentials partially configured "
-             "(provider or key missing)"
-    )
-    logger.warning(
-        "chat rejected (contact=%s channel=%s): %s",
-        uid, channel, reason,
-    )
-    return None
+    try:
+        get_provider()
+    except LLMNotConfiguredError as e:
+        logger.warning(
+            "chat rejected (contact=%s channel=%s): %s",
+            uid, channel, e,
+        )
+        return False
+    return True
 
 
 def _build_context(
@@ -335,25 +339,22 @@ def _build_context(
     channel: Channel | str,
     uid: int | None,
     session_id: str | None,
-    contact_provider: str,
-    contact_api_key: str,
-    contact_model: str | None,
     caller_role: str | None,
     max_tool_iterations: int | None,
 ) -> _AgentContext | None:
     """Build the provider, tool context, and LLM-facing message state."""
     try:
-        provider = get_provider(
-            contact_provider,
-            contact_api_key,
-            contact_model,
-        )
+        provider = get_provider()
+    except LLMNotConfiguredError as e:
+        # Reraise so the route handler maps this to 503.
+        raise
     except Exception as e:
-        # ``get_provider`` can fail for an unknown provider or malformed key;
-        # treat it like an LLM failure rather than leaking into the channel.
+        # ``get_provider`` can fail for an unknown provider or
+        # malformed key; treat it like an LLM failure rather
+        # than leaking into the channel.
         logger.warning(
-            "agent: get_provider failed (contact=%s provider=%s): %s",
-            uid, contact_provider, e,
+            "agent: get_provider failed (contact=%s): %s",
+            uid, e,
         )
         return None
 
@@ -452,9 +453,6 @@ async def _run_tool_loop(
     context: _AgentContext,
     uid: int | None,
     session_id: str | None,
-    contact_provider: str,
-    contact_api_key: str,
-    contact_model: str | None,
     max_tokens: int,
 ) -> _ToolLoopOutcome:
     """Run compaction, provider calls, interrupts, and tool execution."""
@@ -479,9 +477,6 @@ async def _run_tool_loop(
             uid,
             session_id,
             context.messages,
-            contact_provider=contact_provider,
-            contact_api_key=contact_api_key,
-            contact_model=contact_model,
         )
 
         result = await context.provider.chat(
@@ -594,14 +589,17 @@ async def handle_message(
     channel: Channel | str,
     uid: int | None = None,
     session_id: str | None = None,
-    contact_provider: str | None = None,
-    contact_api_key: str | None = None,
-    contact_model: str | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     max_tool_iterations: int | None = None,
     caller_role: str | None = None,
 ) -> str:
-    """Handle one channel message through validation, context, tools, and audit."""
+    """Handle one channel message through validation, context, tools, and audit.
+
+    Provider / API key are NOT parameters — the LLM factory reads
+    them from the seeded adam ``Magi`` row, so every channel path
+    that reaches here uses the same runtime credentials without
+    having to know they exist.
+    """
     # Lazy MCP reload — fires only when the operator has
     # edited the ``mcp_servers`` table since the last
     # chat turn. Cheap when the table is untouched (one
@@ -614,15 +612,8 @@ async def handle_message(
     # existing cache in place.
     maybe_reload_mcp_tools()
 
-    credentials = _validate_credentials(
-        contact_provider=contact_provider,
-        contact_api_key=contact_api_key,
-        uid=uid,
-        channel=channel,
-    )
-    if credentials is None:
+    if not _validate_credentials(uid=uid, channel=channel):
         return _fallback_reply("agent_no_credentials")
-    provider_name, api_key = credentials
 
     context = _build_context(
         state_dir,
@@ -630,9 +621,6 @@ async def handle_message(
         channel=channel,
         uid=uid,
         session_id=session_id,
-        contact_provider=provider_name,
-        contact_api_key=api_key,
-        contact_model=contact_model,
         caller_role=caller_role,
         max_tool_iterations=max_tool_iterations,
     )
@@ -645,16 +633,13 @@ async def handle_message(
             context=context,
             uid=uid,
             session_id=session_id,
-            contact_provider=provider_name,
-            contact_api_key=api_key,
-            contact_model=contact_model,
             max_tokens=max_tokens,
         )
     except LLMError as e:
         logger.warning(
             "llm call failed (contact=%s provider=%s): %s",
             uid,
-            provider_name,
+            context.provider.name,
             e,
         )
         return _fallback_reply()

@@ -613,11 +613,11 @@ async def _handle_contact_message(
         new_session_id,
         utcnow_iso,
     )
-    from magi.agent.db.models_magi import resolve_magi_credentials
 
-    # Resolve LLM credentials from the EVE Magi row
-    # (the agent owns the key, not the Contact).
-    contact_provider, contact_api_key = resolve_magi_credentials("eve")
+    # LLM credentials come from the seeded adam Magi row,
+    # resolved inside :func:`handle_message` via
+    # :func:`magi.agent.llm.factory.get_provider` — we don't
+    # read them here, and we don't pass them down.
 
     if contact_separated:
         # Separated contacts can't chat with their EVE —
@@ -734,8 +734,6 @@ async def _handle_contact_message(
                 delivery_address=delivery_address,
                 session_id=session_id,
                 uid=uid,
-                contact_provider=contact_provider or "",
-                contact_api_key=contact_api_key or "",
             )
         except Exception:
             logger.exception(
@@ -775,8 +773,6 @@ async def _handle_contact_message(
             channel=Channel.TG,
             session_id=session_id,
             uid=uid,
-            contact_provider=contact_provider,
-            contact_api_key=contact_api_key,
             # The bound operator's role — required by the
             # agent loop to filter admin-only tools
             # (``schedule_task`` + action-item trio) out

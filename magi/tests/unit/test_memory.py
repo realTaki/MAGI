@@ -35,15 +35,13 @@ from magi.agent.memory.magi import (
     KIND_IMPORTANT,
     KIND_ONGOING,
     MemoryStore,
-    format_memory_block,
-)
+    format_memory_block)
 from magi.agent.memory.magi.store import MemoryView
 from magi.agent.memory.magi.tools import (
     AddMemoryTool,
     CompleteMemoryTool,
     DeleteMemoryTool,
-    UpdateMemoryTool,
-)
+    UpdateMemoryTool)
 from magi.agent.tools.base import ToolContext
 
 
@@ -76,23 +74,17 @@ def seed_contacts(fresh_db):
         alice = Contact(
             name="Alice",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-alice",
+            admin=True, role="assigned"
         )
         bob = Contact(
             name="Bob",
             telegram_id=9002,
-            role="assigned",
-            provider="minimax",
-            api_key="fake-key-bob",
+            role="assigned"
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="contact",
-            provider="minimax",
-            api_key="fake-key-charlie",
+            role="contact"
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -108,8 +100,7 @@ def _ctx(state: Path, contact: Contact) -> ToolContext:
         state_dir=str(state),
         workspace=state.parent,
         uid=contact.id,
-        channel="webui",
-    )
+        channel="webui")
 
 
 # -- MemoryStore -----------------------------------------------------------
@@ -121,8 +112,7 @@ def test_store_adds_important_row(fresh_db, seed_contacts):
         seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
         subject="Q3 expense policy",
-        body="All reimbursements need CFO sign-off.",
-    )
+        body="All reimbursements need CFO sign-off.")
     assert view.id > 0
     assert view.kind == KIND_IMPORTANT
     assert view.subject == "Q3 expense policy"
@@ -142,13 +132,11 @@ def test_store_update_patches_mutable_fields(fresh_db, seed_contacts):
         kind=KIND_ONGOING,
         subject="Follow up with Acme",
         body="Initial outreach last Tuesday.",
-        importance=2,
-    )
+        importance=2)
     updated = store.update(
         view.id,
         body="Acme replied — pushing for a meeting next week.",
-        importance=4,
-    )
+        importance=4)
     assert updated.id == view.id
     assert updated.body.startswith("Acme replied")
     assert updated.importance == 4
@@ -161,8 +149,7 @@ def test_store_complete_marks_ongoing_done(fresh_db, seed_contacts):
         seed_contacts["alice"].id,
         kind=KIND_ONGOING,
         subject="Q3 report",
-        body="Due Monday.",
-    )
+        body="Due Monday.")
     completed = store.complete(view.id)
     assert completed.completed_at is not None
     # Filtered out of the default list.
@@ -181,8 +168,7 @@ def test_store_delete_is_idempotent(fresh_db, seed_contacts):
         seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
         subject="Temp note",
-        body="Will be removed.",
-    )
+        body="Will be removed.")
     assert store.delete(view.id) is True
     assert store.delete(view.id) is False  # second call is a no-op
     assert store.get(view.id) is None
@@ -214,13 +200,11 @@ def test_format_memory_block_groups_by_kind(fresh_db, seed_contacts):
     store.add(
         owner, kind=KIND_IMPORTANT,
         subject="Q3 expense policy",
-        body="All reimbursements need CFO sign-off.",
-    )
+        body="All reimbursements need CFO sign-off.")
     store.add(
         owner, kind=KIND_ONGOING,
         subject="Follow up with Acme",
-        body="Initial outreach last Tuesday.",
-    )
+        body="Initial outreach last Tuesday.")
 
     rows = store.list_for_owner(owner)
     block = format_memory_block(rows)
@@ -244,8 +228,7 @@ def test_add_memory_tool_admin_succeeds(fresh_db, seed_contacts):
         kind=KIND_IMPORTANT,
         subject="Q3 expense policy",
         body="All reimbursements need CFO sign-off.",
-        importance=5,
-    ))
+        importance=5))
     assert not result.is_error
     assert "Q3 expense policy" in result.content
 
@@ -257,8 +240,7 @@ def test_add_memory_tool_assigned_succeeds(fresh_db, seed_contacts):
         ctx,
         kind=KIND_ONGOING,
         subject="Migrate SOUL.md",
-        body="Move to per-contact in C4.",
-    ))
+        body="Move to per-contact in C4."))
     assert not result.is_error
     assert "Migrate SOUL.md" in result.content
 
@@ -277,8 +259,7 @@ def test_add_memory_tool_contact_role_blocked(fresh_db, seed_contacts):
         ctx,
         kind=KIND_IMPORTANT,
         subject="Sneaky",
-        body="Should not land.",
-    ))
+        body="Should not land."))
     assert result.is_error
     assert "role" in result.content
     # No row written.
@@ -293,8 +274,7 @@ def test_add_memory_tool_bad_kind_returns_error(fresh_db, seed_contacts):
         ctx,
         kind="bogus",
         subject="x",
-        body="y",
-    ))
+        body="y"))
     assert result.is_error
 
 
@@ -307,8 +287,7 @@ def test_update_memory_tool_patches_existing_row(fresh_db, seed_contacts):
         ctx,
         kind=KIND_ONGOING,
         subject="Migrate",
-        body="Initial draft.",
-    ))
+        body="Initial draft."))
     assert not add_result.is_error
     # Pull the id from the JSON the tool returned.
     new_id = _extract_id(add_result.content)
@@ -317,8 +296,7 @@ def test_update_memory_tool_patches_existing_row(fresh_db, seed_contacts):
         ctx,
         memory_id=new_id,
         body="Final draft, ready to ship.",
-        importance=4,
-    ))
+        importance=4))
     assert not update_result.is_error
     assert "Final draft" in update_result.content
 

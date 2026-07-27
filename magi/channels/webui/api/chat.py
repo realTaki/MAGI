@@ -10,14 +10,13 @@ arrive; v0 just blocks until the full reply is ready.
 LLM credentials
 ===============
 
-LLM credentials come from the ``magis`` table's Adam Magi
-row (:func:`magi.agent.db.models_magi.resolve_magi_credentials`),
-NOT from the operator's Contact row. The Adam Magi owns
-the provider + API key; token usage is still recorded per-
+Credentials are resolved inside :func:`magi.agent.llm.factory
+.get_provider` — the chat handler doesn't take them as
+parameters. The seeded adam ``Magi`` row owns the
+provider + API key; the chat handler only reads the
+operator's ``role`` (for the tool-menu filter) and ``uid``
+(for the session). Token usage is still recorded per-
 operator via ``token_usage.uid``.
-    it can ("silently fall back") would mean the operator
-    can't tell the difference between a healthy chat and
-    one that can't find who they are.
 
 The cookie / uid / row-exists checks are NOT done here
 because the auth gate (``AdminGate``) has already done them
@@ -44,6 +43,7 @@ from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
 from magi.agent.loop import handle_message
+from magi.agent.llm.errors import LLMNotConfiguredError
 from magi.agent.memory.session import (
     ChannelMismatchError,
     SessionMessage,
@@ -73,16 +73,18 @@ def _state_dir() -> str:
 
 def _resolve_caller_credentials(
     state_dir: str, uid: int
-) -> tuple[int, str, str, str]:
+) -> tuple[int, str]:
     """Look up the operator's Contact row by their
-    ``uid`` (the cookie value post-D.24), read LLM
-    credentials from the Adam Magi row, and
-    return ``(uid, provider, api_key, role)``.
+    ``uid`` (the cookie value post-D.24) and return
+    ``(uid, role)``.
 
     LLM credentials live on ``magis`` (the Adam Magi
-    owns the provider + key), not on ``contacts``.
-    Token-usage recording is still per-Contact
-    (``token_usage.uid``).
+    owns the provider + key), not on ``contacts`` — and
+    the chat handler doesn't carry them anymore.
+    :func:`magi.agent.loop.handle_message` reads them
+    internally through :func:`magi.agent.llm.factory
+    .get_provider`. Token-usage recording is still per-
+    Contact (``token_usage.uid``).
 
     The ``role`` field is included so the chat handler
     can pass it down to :func:`magi.agent.loop.handle_message`
@@ -95,8 +97,6 @@ def _resolve_caller_credentials(
 
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
-      - ``403 chat.llm_credentials_required`` if the
-        Adam Magi has no provider or api_key configured.
     """
     try:
         with open_session() as session:
@@ -118,23 +118,7 @@ def _resolve_caller_credentials(
             detail="no Contact row bound to this cookie",
         )
 
-    # Credentials from the Adam Magi row, not the Contact.
-    from magi.agent.db.models_magi import resolve_magi_credentials
-    provider, api_key = resolve_magi_credentials("adam")
-    if not provider or not api_key:
-        logger.info(
-            "chat: adam Magi has no LLM credentials; "
-            "asking operator to configure them first",
-        )
-        raise MagiHTTPException(
-            status_code=403,
-            code="chat.llm_credentials_required",
-            detail=(
-                "configure the Adam MAGI's LLM provider "
-                "and API key before chatting"
-            ),
-        )
-    return contact.id, provider, api_key, contact.role
+    return contact.id, contact.role
 
 
 class ChatSendRequest(BaseModel):
@@ -207,12 +191,14 @@ async def send_chat(
     # D.24: the cookie's value IS the uid. The
     # auth gate already proved it's a live admin session;
     # ``_resolve_caller_credentials`` re-checks the row
-    # exists and surfaces the LLM credentials. The cookie
-    # is the cross-channel identity; the per-channel
-    # delivery address (TG chat id) is looked up
-    # separately by the channel dispatcher (D.28)
-    # below — WebUI doesn't need it for send / read but
-    # we stamp it on the session row for cross-channel
+    # exists and surfaces the operator's role for the
+    # agent-loop tool menu filter. LLM credentials are
+    # resolved inside :func:`handle_message` via the
+    # factory. The cookie is the cross-channel identity;
+    # the per-channel delivery address (TG chat id) is
+    # looked up separately by the channel dispatcher
+    # (D.28) below — WebUI doesn't need it for send / read
+    # but we stamp it on the session row for cross-channel
     # tooling.
     from magi.channels.webui.api.auth import _verify_signed_uid
     cookie_raw = request.cookies.get("magi_session", "")
@@ -223,8 +209,8 @@ async def send_chat(
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    uid, contact_provider, contact_api_key, contact_role = (
-        _resolve_caller_credentials(_state_dir(), cookie_uid)
+    uid, contact_role = _resolve_caller_credentials(
+        _state_dir(), cookie_uid
     )
     # D.24: per-channel delivery address stamped on the
     # session row's ``delivery_address`` column (renamed
@@ -352,18 +338,13 @@ async def send_chat(
     # (``len(messages) >= 3`` — user, assistant, user) don't
     # re-enqueue. ``enqueue_title_job`` is fire-and-forget;
     # no slow work happens on the request path here.
-    # ``contact_model`` stays None today (chat-send doesn't
-    # accept a model override); the auto-title worker is
-    # already structured to accept one when chat-send grows
-    # to thread it through.
+    # LLM credentials are resolved inside the worker.
     if len(post.messages) == 1:
         from magi.agent.memory.session.auto_title import enqueue_title_job
         await enqueue_title_job(
             delivery_address=delivery_address,
             session_id=session_id,
             uid=uid,
-            contact_provider=contact_provider,
-            contact_api_key=contact_api_key,
         )
 
     try:
@@ -373,9 +354,24 @@ async def send_chat(
             channel=Channel.WEBUI,
             session_id=session_id,
             uid=uid,
-            contact_provider=contact_provider,
-            contact_api_key=contact_api_key,
             caller_role=contact_role,
+        )
+    except LLMNotConfiguredError as e:
+        # The MAGI runtime has no provider / API key
+        # configured. Surface this as 503 (system-side
+        # misconfiguration) so the frontend can show a
+        # "configure in 智能体管理" banner.
+        logger.warning(
+            "chat: adam Magi has no LLM credentials: %s", e,
+        )
+        raise MagiHTTPException(
+            status_code=503,
+            code="magi.llm_credentials_required",
+            detail=(
+                "MAGI runtime has no LLM provider / API key "
+                "configured; set them via PATCH "
+                "/api/magis/{adam_id}"
+            ),
         )
     except Exception as e:
         # The agent loop only catches LLMError internally.

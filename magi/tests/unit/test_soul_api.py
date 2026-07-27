@@ -59,8 +59,7 @@ def client(soul_env):
     from magi.agent.db import (
         Contact,
         init_orm,
-        open_session,
-    )
+        open_session)
 
     init_orm(str(state_dir))
     with open_session() as s:
@@ -69,9 +68,7 @@ def client(soul_env):
             Contact(
                 name="TA-soul",
                 telegram_id=8001,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake",
+                admin=True, role="assigned"
             )
         )
         s.commit()
@@ -134,8 +131,7 @@ def test_put_soul_persists(client, soul_env):
 
     r = client.put(
         "/api/soul",
-        json={"content": "# Saved\n\nThis is a test persona."},
-    )
+        json={"content": "# Saved\n\nThis is a test persona."})
     assert r.status_code == 200
     data = r.json()
     assert "modified_at" in data
@@ -162,8 +158,7 @@ def test_put_soul_too_long_rejected(client):
     """> 8 KB → 422 (Pydantic max_length)."""
     r = client.put(
         "/api/soul",
-        json={"content": "x" * 8001},
-    )
+        json={"content": "x" * 8001})
     assert r.status_code == 422
 
 def test_put_soul_atomic_no_leftover_tmp(client, soul_env):
@@ -171,8 +166,7 @@ def test_put_soul_atomic_no_leftover_tmp(client, soul_env):
     _, workspace = soul_env
     r = client.put(
         "/api/soul",
-        json={"content": "# atomic\n\ntest"},
-    )
+        json={"content": "# atomic\n\ntest"})
     assert r.status_code == 200
     leftovers = list(workspace.glob(".SOUL.md.*.tmp"))
     assert leftovers == []
@@ -247,8 +241,7 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
     from magi.agent.db import (
         Contact,
         init_orm,
-        open_session,
-    )
+        open_session)
 
     init_orm(str(state_dir))
     with open_session() as s:
@@ -256,9 +249,7 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
         contact = Contact(
             name=f"TA-{role}",
             telegram_id=delivery_address,
-            role=role,
-            provider="minimax",
-            api_key="fake",
+            role=role
         )
         s.add(contact)
         s.commit()
@@ -274,32 +265,32 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
     return c
 
 def test_assigned_role_can_read_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned")
     r = c.get("/api/soul")
     assert r.status_code == 200
 
 def test_assigned_role_can_write_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned")
     r = c.put("/api/soul", json={"content": "assigned contact persona"})
     assert r.status_code == 200
 
 def test_assigned_role_can_reset_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="assigned", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="assigned")
     r = c.post("/api/soul/reset")
     assert r.status_code == 200
 
 def test_contact_role_cannot_read_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="contact")
     r = c.get("/api/soul")
     assert r.status_code == 403
 
 def test_contact_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="contact", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="contact")
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 
 def test_guest_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="guest", )
+    c = _client_with_role(soul_env, delivery_address=9001, role="guest")
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 
@@ -327,9 +318,7 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
             id=7,                          # explicit PK
             name="TA-mismatch",
             telegram_id=6240201712,        # ≠ PK
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         s.add(contact)
         s.commit()

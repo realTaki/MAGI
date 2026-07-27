@@ -187,7 +187,7 @@ TelegramAdapter.send(uid, text):
 
 ---
 
-## 5. 定时任务 — 创建与执行
+## 6. 定时任务 — 创建与执行
 
 ### 创建 (schedule_task 工具 / WebUI API)
 ```
@@ -218,7 +218,7 @@ TelegramAdapter.send(uid, text):
 
 ---
 
-## 6. Onboarding 三步骤流程
+## 7. Onboarding 三步骤流程
 
 **入口**: `magi/channels/webui/api/onboarding.py`
 
@@ -265,9 +265,7 @@ POST /save-admin { tgids: list[str] }
 - 验证码一次性使用：任何校验路径（成功/不匹配/过期）都必须 state_delete
 - save_admin 是唯一写入 admin Contact 的地方，必须幂等
 
----
-
-## 7. 登录与 Cookie 身份
+## 8. 登录与 Cookie 身份
 
 **入口**: `magi/channels/webui/api/auth.py`
 
@@ -301,9 +299,7 @@ _super_admins():
 - `_super_admins()` 的 ORM 读取失败必须回退到 legacy meta（极早期启动场景）
 - 旧 cookie （pre-D.24，值为 tgid）在升级后失效，需重新登录
 
----
-
-## 8. Memory 工具 — 角色门
+## 9. Memory 工具 — 角色门
 
 **入口**: `magi/agent/memory/magi/tools.py`
 
@@ -325,9 +321,7 @@ _super_admins():
 - contact/guest 角色绝不能写 memory
 - 当前无 search_memory 工具 — 读路径仅 system prompt block
 
----
-
-## 9. Contact 工具 — Upsert 逻辑
+## 10. Contact 工具 — Upsert 逻辑
 
 **入口**: `magi/agent/memory/contacts/tools.py`
 
@@ -357,9 +351,7 @@ format_contact_block:
 - add_contact 必须是 upsert 语义（累积更新，不创建重复行）
 - contact block 渲染必须用真实 display_name，绝不显示原始 person_id
 
----
-
-## 10. MCP 工具加载
+## 11. MCP 工具加载
 
 **入口**: `magi/agent/tools/mcp_client.py` + `loop.py::maybe_reload_mcp_tools()`
 
@@ -384,9 +376,7 @@ format_contact_block:
 - 运行时重载失败不崩溃 — 保留现有缓存
 - MCP 工具通过 registry 统一注册，不在 loop 中特殊处理
 
----
-
-## 11. 压缩 (Compaction)
+## 12. 压缩 (Compaction)
 
 **入口**: `magi/agent/compaction.py::maybe_compact()`
 
@@ -420,6 +410,7 @@ FTS5 搜索:
 - [ ] 写操作的角色门禁未被绕过
 - [ ] D.22 通道守卫未被移除
 - [ ] Credential 严格模式未被回退
+- [ ] LLM 凭证只从 Magi 表读取，不从 Contact 表
 - [ ] Cookie 值仍为 uid (int)，非 tgid
 - [ ] Onboarding 验证码一次性使用
 - [ ] TG adapter send 走原始 HTTP，不走 bot.send_message

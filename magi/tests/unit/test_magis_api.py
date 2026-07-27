@@ -49,8 +49,7 @@ def env(monkeypatch, tmp_path):
         Magi,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     import sqlalchemy as sa
 
     init_sqlite(str(state))
@@ -60,9 +59,7 @@ def env(monkeypatch, tmp_path):
         admin = Contact(
             name="Alice",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.flush()
@@ -122,8 +119,7 @@ def test_create_magi_eve(client, env):
             "magic_position": "eve",
             "provider": "anthropic",
             "api_key": "sk-eve1",
-        },
-    )
+        })
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "Eve1"
@@ -139,8 +135,7 @@ def test_create_magi_invalid_position(client, env):
         json={
             "magic_id": env["root"].id,
             "magic_position": "minion",
-        },
-    )
+        })
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_position_unknown"
 
@@ -148,8 +143,7 @@ def test_create_magi_unknown_magic_id(client):
     """``magic_id`` pointing at no row -> 400."""
     r = client.post(
         "/api/magis",
-        json={"magic_id": 9999, "magic_position": "eve"},
-    )
+        json={"magic_id": 9999, "magic_position": "eve"})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.magic_id_not_found"
 
@@ -165,8 +159,7 @@ def test_create_magi_adam_when_already_bound_returns_409(client, env):
             "magic_id": env["root"].id,
             "magic_position": "adam",
             "name": "Adam2",
-        },
-    )
+        })
     assert r.status_code == 409
     assert r.json()["code"] == "validation.adam_already_assigned"
 
@@ -176,8 +169,7 @@ def test_create_magi_adam_when_unbound_succeeds(client, env):
     # Make a fresh child MAGIC under root — seed only created one root.
     cr = client.post(
         "/api/magics",
-        json={"name": "Branch", "parent_id": env["root"].id},
-    )
+        json={"name": "Branch", "parent_id": env["root"].id})
     branch_id = cr.json()["id"]
     assert cr.json()["adam_id"] is None
 
@@ -188,8 +180,7 @@ def test_create_magi_adam_when_unbound_succeeds(client, env):
             "magic_id": branch_id,
             "magic_position": "adam",
             "name": "BranchAdam",
-        },
-    )
+        })
     assert r.status_code == 201, r.text
     new_adam_id = r.json()["id"]
 
@@ -201,8 +192,7 @@ def test_create_magi_minimal_payload(client, env):
     """name is optional; defaults to None. Position required."""
     r = client.post(
         "/api/magis",
-        json={"magic_id": env["root"].id, "magic_position": "eve"},
-    )
+        json={"magic_id": env["root"].id, "magic_position": "eve"})
     assert r.status_code == 201
     assert r.json()["name"] is None
 
@@ -263,8 +253,7 @@ def test_delete_magi_eve(client, env):
             "magic_id": env["root"].id,
             "magic_position": "eve",
             "name": "Doomed",
-        },
-    )
+        })
     eid = cr.json()["id"]
     r = client.delete(f"/api/magis/{eid}")
     assert r.status_code == 204
@@ -295,8 +284,7 @@ def test_list_magis_requires_admin(client, env):
         u = Contact(
             name="User2",
             telegram_id=9002,
-            role="contact",
-        )
+            role="contact")
         db.add(u)
         db.commit()
         db.refresh(u)

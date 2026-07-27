@@ -50,12 +50,10 @@ def search_env(monkeypatch, tmp_path):
 
     with open_session() as s:
         s.add(Contact(
-            name="A", telegram_id=9001, admin=True, role="assigned",
-            provider="minimax", api_key="fake",
+            name="A", telegram_id=9001, admin=True, role="assigned"
         ))
         s.add(Contact(
-            name="B", telegram_id=9002, admin=True, role="assigned",
-            provider="minimax", api_key="fake",
+            name="B", telegram_id=9002, admin=True, role="assigned"
         ))
         s.commit()
 
@@ -88,7 +86,7 @@ def seed_messages(search_env):
         store = SessionStore(str(search_env))
         # D.23: first arg is uid, delivery_address is the
         # per-channel delivery address stamped on the row.
-        sess = store.create(uid, )
+        sess = store.create(uid)
         with open_session() as db:
             db.add(ChatMessage(
                 session_id=sess.session_id,
@@ -96,8 +94,7 @@ def seed_messages(search_env):
                 role="user",
                 text=text,
                 ts="2026-07-03T00:00:00Z",
-                archived=0,
-            ))
+                archived=0))
             db.commit()
         return sess.session_id
 

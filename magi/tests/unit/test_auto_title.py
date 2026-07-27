@@ -42,8 +42,7 @@ def _seed_admin():
     constraint on ``telegram_id``.
     """
     from magi.agent.db import (
-        Contact, init_orm, open_session,
-    )
+        Contact, init_orm, open_session)
     init_orm(os.environ["MAGI_STATE_DIR"])
     with open_session() as s:
         # Clean slate (cheap; we never need cross-test
@@ -52,9 +51,7 @@ def _seed_admin():
         admin = Contact(
             name="TA-test",
             telegram_id=9001,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key",
+            admin=True, role="assigned"
         )
         s.add(admin)
         s.commit()
@@ -99,8 +96,7 @@ class FakeProvider:
             thinking="",
             model="fake-1",
             usage=None,
-            raw_blocks=[],
-        )
+            raw_blocks=[])
 
 def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled chat"):
     """Patch ``magi.agent.memory.session.auto_title.get_provider`` to return a
@@ -177,8 +173,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     from magi.agent.memory.session import (
         SessionMessage,
         SessionStore,
-        new_session_id as _mk_id,
-    )
+        new_session_id as _mk_id)
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(
@@ -186,7 +181,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     )
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
     msg_id = _mk_id()
     store.append_messages(
@@ -196,9 +191,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
             role="user",
             text="Help me write a Python CSV parser",
             ts="2026-07-03T10:00:00Z",
-            message_id=msg_id,
-        )],
-    )
+            message_id=msg_id)])
 
     from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
 
@@ -208,8 +201,8 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
             delivery_address="9001",
 session_id=sid,
             uid=admin.id,
-            contact_provider="minimax",
-            contact_api_key="fake-key",
+            contact_
+            contact_
         )
     )
 
@@ -235,22 +228,20 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
 
     store.append_messages(
         admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
-            message_id=_mk_id(),
-        )],
-    )
+            message_id=_mk_id())])
 
     from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
     job = TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_provider="minimax", contact_api_key="fake-key",
+        contact_ contact_
     )
 
     await _summarize_to_title(job)  # first run → title set
@@ -277,12 +268,12 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     # should see no first-user-message and bail without
     # calling the provider. (Match the real id from
     # ``create``.)
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
 
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sess.session_id, uid=admin.id,
-        contact_provider="minimax", contact_api_key="fake-key",
+        contact_ contact_
     ))
     assert store.get(admin.id, sess.session_id).title is None
     assert sum(len(p.calls) for p in providers) == 0
@@ -303,8 +294,8 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
         delivery_address="9001",
         session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=admin.id,
-        contact_provider="minimax",
-        contact_api_key="fake-key",
+        contact_
+        contact_
     ))
     assert sum(len(p.calls) for p in providers) == 0
 
@@ -331,21 +322,19 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     monkeypatch.setattr(at_mod, "get_provider", _raising_factory)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
-            message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
-        )],
-    )
+            message_id="01ABCDEFGHJKMNPQRSTVWXYZB")])
 
     # Should not raise.
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_provider="minimax", contact_api_key="bad",
+        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None  # title wasn't set
 
@@ -365,21 +354,19 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     monkeypatch.setattr(at_mod, "get_provider", _boom)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
-            message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
-        )],
-    )
+            message_id="01ABCDEFGHJKMNPQRSTVWXYZB")])
 
     # Must not raise.
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_provider="minimax", contact_api_key="fake",
+        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -392,20 +379,18 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="x" * 200)
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
-            message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
-        )],
-    )
+            message_id="01ABCDEFGHJKMNPQRSTVWXYZB")])
 
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_provider="minimax", contact_api_key="fake",
+        contact_ contact_
     ))
     assert len(store.get(admin.id, sid).title) == 80
 
@@ -419,20 +404,18 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     _install_fake_provider(monkeypatch, title_text="")
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    sess = store.create(admin.id, )
+    sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
         admin.id, sid,
         [SessionMessage(
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
-            message_id="01ABCDEFGHJKMNPQRSTVWXYZB",
-        )],
-    )
+            message_id="01ABCDEFGHJKMNPQRSTVWXYZB")])
 
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_provider="minimax", contact_api_key="fake",
+        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -448,8 +431,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
         TitleJob,
         enqueue_title_job,
         start_title_worker,
-        stop_title_worker,
-    )
+        stop_title_worker)
 
     admin = _seed_admin()
     instances, _ = _install_fake_provider(monkeypatch)
@@ -459,22 +441,20 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
     from magi.agent.memory.session import new_session_id as _mk_id
     for _ in range(2):
-        sess = store.create(admin.id, )
+        sess = store.create(admin.id)
         sid = sess.session_id
         store.append_messages(
             admin.id, sid,
             [SessionMessage(
                 role="user", text="hi", ts="2026-07-03T10:00:00Z",
-                message_id=_mk_id(),
-            )],
-        )
+                message_id=_mk_id())])
         await enqueue_title_job(
 
             delivery_address="9001",
             session_id=sid,
             uid=admin.id,
-            contact_provider="minimax",
-            contact_api_key="fake",
+            contact_
+            contact_
         )
 
     # Wait for the two jobs to land — each takes essentially
@@ -485,8 +465,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
         # Both sessions titled?
         with open_session() as db:
             count = db.query(ChatSession).filter_by(
-                delivery_address="9001",
-            ).filter(ChatSession.title.isnot(None)).count()
+                delivery_address="9001").filter(ChatSession.title.isnot(None)).count()
         if count >= 2:
             break
 
@@ -530,8 +509,8 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
         
         delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=1,
-        contact_provider="minimax",
-        contact_api_key="k",
+        contact_
+        contact_
     )
     assert _title_jobs.qsize() == 1
 
@@ -548,8 +527,8 @@ async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch
         
         delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=42,
-        contact_provider="minimax-cn",
-        contact_api_key="captured-key-xyz",
+        contact_
+        contact_
     )
     job: TitleJob = _title_jobs.get_nowait()
     assert job.contact_provider == "minimax-cn"

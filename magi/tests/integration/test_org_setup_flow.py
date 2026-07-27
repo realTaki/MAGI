@@ -69,8 +69,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         MAGIC,
         init_orm,
         init_sqlite,
-        open_session,
-    )
+        open_session)
     init_sqlite(str(sd))
     init_orm(str(sd))
     with open_session() as db:
@@ -78,9 +77,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Operator",
             display_name="Operator",
             telegram_id=9101,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-admin",
+            admin=True, role="assigned"
         )
         db.add(admin)
         db.commit()
@@ -109,8 +106,7 @@ def _seed_root_id(client) -> int:
 # -- the happy path --------------------------------------------------------
 
 def test_full_org_setup_flow_add_contact_create_team_add_adam(
-    state, client,
-):
+    state, client):
     """Walk the dashboard's "set up the org" flow end-to-end:
 
       1. Add a new contact "Bob" via ``POST /api/contacts``.
@@ -143,8 +139,7 @@ def test_full_org_setup_flow_add_contact_create_team_add_adam(
     # 2. Promote to assigned.
     promote = client.patch(
         f"/api/contacts/{bob_id}",
-        json={"role": "assigned"},
-    )
+        json={"role": "assigned"})
     assert promote.status_code == 200
     assert promote.json()["role"] == "assigned"
 
@@ -211,8 +206,7 @@ def test_create_magic_requires_parent(client):
 # -- cross-flow: org surfaces visible to chat-sessions and contacts ---------
 
 def test_newly_added_contact_visible_in_chat_session_owner_resolution(
-    state, client,
-):
+    state, client):
     """A Contact created via the org API is immediately usable
     as the owner of a chat session. This pins the "single
     source of truth" contract — a refactor that splits the
@@ -258,8 +252,7 @@ def test_newly_added_contact_visible_in_chat_session_owner_resolution(
 # -- the delete-tree scenario ---------------------------------------------
 
 def test_delete_parent_team_reparents_child_and_unbinds_adam(
-    state, client,
-):
+    state, client):
     """Deleting a parent MAGIC reparents its children to the
     deleted row's parent (or NULL at root), and SET NULL
     the adam FK on the deleted row (no CASCADE delete of

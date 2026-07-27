@@ -75,9 +75,11 @@ class TitleJob:
     delivery_address: str
     session_id: str
     uid: int
-    contact_provider: str
-    contact_api_key: str
-    contact_model: Optional[str] = None
+    # Provider / api_key / model are NOT on the job —
+    # the worker resolves them via ``get_provider()``
+    # from the seeded adam ``Magi`` row at call time.
+    # A key rotation between send and worker pickup is
+    # therefore picked up on the very next job.
 
 
 # The queue is intentionally unbounded. v0's per-operator
@@ -100,9 +102,6 @@ async def enqueue_title_job(
     delivery_address: str,
     session_id: str,
     uid: int,
-    contact_provider: str,
-    contact_api_key: str,
-    contact_model: Optional[str] = None,
 ) -> None:
     """Enqueue a title job.
 
@@ -115,14 +114,14 @@ async def enqueue_title_job(
     ``delivery_address`` column (per-channel delivery
     address); kept on the job for log diagnostics only —
     see ``TitleJob`` docstring.
+
+    LLM credentials are NOT parameters — the worker
+    resolves them via :func:`get_provider` at call time.
     """
     job = TitleJob(
         delivery_address=delivery_address,
         session_id=session_id,
         uid=uid,
-        contact_provider=contact_provider,
-        contact_api_key=contact_api_key,
-        contact_model=contact_model,
     )
     await _title_jobs.put(job)
     logger.info(
@@ -267,17 +266,13 @@ async def _summarize_to_title(job: TitleJob) -> None:
             return
 
         try:
-            provider = get_provider(
-                job.contact_provider,
-                job.contact_api_key,
-                job.contact_model,
-            )
+            provider = get_provider()
         except Exception as e:
-            # ``get_provider`` raises ``LLMAuthError`` (or
-            # similar) on bad credentials. The chat-send
-            # endpoint already gated this case earlier (403
-            # ``chat.llm_credentials_required``), so reaching
-            # here is unexpected — log and bail.
+            # ``get_provider`` raises ``LLMNotConfiguredError``
+            # (or similar) when the MAGI runtime isn't
+            # configured. The chat-send endpoint already gated
+            # this case earlier (503 ``magi.llm_credentials_required``),
+            # so reaching here is unexpected — log and bail.
             logger.warning(
                 "title skipped: provider construction failed: %s",
                 e,

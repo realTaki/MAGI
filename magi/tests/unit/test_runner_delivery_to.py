@@ -49,8 +49,7 @@ from magi.agent.proactive.runner import execute_task
 from magi.agent.memory.session import new_session_id
 from magi.agent.proactive.scheduler import (
     _reset_for_tests,
-    stop_scheduler,
-)
+    stop_scheduler)
 from magi.agent.proactive.orm_models import Task, TaskRun
 
 # -- fixtures --------------------------------------------------------------
@@ -77,9 +76,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
                 # ``id`` auto, so we look it up later.
                 name="runner-delivery-test",
                 telegram_id=9101,
-                admin=True, role="assigned",
-                provider="minimax",
-                api_key="fake-key-for-tests",
+                admin=True, role="assigned"
             )
         )
         s.commit()
@@ -97,8 +94,7 @@ def _seed_task(
     *,
     target_channel: str = "webui",
     delivery_to: str | None = None,
-    with_session: bool = True,
-) -> tuple[str, str | None]:
+    with_session: bool = True) -> tuple[str, str | None]:
     """Insert a Task row + return ``(task_id, session_id)``.
 
     Mirrors what the API + schedule_task tool do: at
@@ -125,8 +121,7 @@ def _seed_task(
                 channel="task",
                 title=f"[定时] {name}",
                 created_at="2026-07-20T12:00:00Z",
-                updated_at="2026-07-20T12:00:00Z",
-            ))
+                updated_at="2026-07-20T12:00:00Z"))
             db.flush()
         t = Task(
             id=task_id_seed,
@@ -142,8 +137,7 @@ def _seed_task(
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",
-            updated_at="2026-07-20T12:00:00Z",
-        )
+            updated_at="2026-07-20T12:00:00Z")
         db.add(t)
         db.commit()
         db.refresh(t)
@@ -152,8 +146,7 @@ def _seed_task(
 # -- single session per task (channel="task") ----------------------------
 
 async def test_fire_appends_prompt_and_reply_to_task_session(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """The runner loads ``task.session_id`` (allocated
     at task creation) and persists BOTH the prompt and
     the agent's reply via ``SessionStore.append_messages``
@@ -166,8 +159,7 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
     construction.
     """
     task_id, session_id = _seed_task(
-        state_dir, "fresh-every-fire", delivery_to=None,
-    )
+        state_dir, "fresh-every-fire", delivery_to=None)
     assert session_id is not None
     await _fake_fire(task_id, state_dir)
 
@@ -200,8 +192,7 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
         assert assistant_msgs[0].text == "fake reply"
 
 async def test_two_tasks_have_independent_sessions(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Two tasks → two sessions. The runner never
     touches another task's session, so the two
     agents never see each other's history. This is
@@ -235,8 +226,7 @@ async def test_two_tasks_have_independent_sessions(
         assert not any("task-aaaa" in m.text for m in sess_b_msgs)
 
 async def test_multiple_fires_accumulate_in_same_session(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Two fires of the same task → both prompts and
     both replies land in the same session (NOT two new
     sessions). The agent's "this is a continuing
@@ -248,8 +238,7 @@ async def test_multiple_fires_accumulate_in_same_session(
     the runs drawer renders 4 bubbles (prompt/reply,
     prompt/reply)."""
     task_id, session_id = _seed_task(
-        state_dir, "recurring", delivery_to=None,
-    )
+        state_dir, "recurring", delivery_to=None)
     await _fake_fire(task_id, state_dir)
     await _fake_fire(task_id, state_dir)
 
@@ -279,8 +268,7 @@ async def test_multiple_fires_accumulate_in_same_session(
 # -- legacy rows: session_id None at fire time ---------------------------
 
 async def test_legacy_task_without_session_id_backfills_on_first_fire(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Legacy rows that pre-date the ``session_id``
     column ship with ``task.session_id = None``. The
     runner allocates a fresh channel="task" session
@@ -290,8 +278,7 @@ async def test_legacy_task_without_session_id_backfills_on_first_fire(
     it."""
     task_id, _ = _seed_task(
         state_dir, "legacy-row", delivery_to=None,
-        with_session=False,
-    )
+        with_session=False)
     with open_session() as db:
         t = db.get(Task, task_id)
         assert t.session_id is None
@@ -315,8 +302,7 @@ async def test_legacy_task_without_session_id_backfills_on_first_fire(
 # -- delivery_to=ULID: obsolete, runner ignores it ---------------------
 
 async def test_legacy_delivery_to_ulid_is_ignored(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Legacy rows with ``delivery_to="<ULID>"`` (the
     pre-refactor "join my chat" semantic) are now
     inert — the runner ignores the value and uses
@@ -332,8 +318,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
             channel="webui",
             title="operator's ongoing chat",
             created_at="2026-07-20T09:00:00Z",
-            updated_at="2026-07-20T11:00:00Z",
-        )
+            updated_at="2026-07-20T11:00:00Z")
         db.add(legacy)
         db.flush()
         db.add(ChatMessage(
@@ -341,8 +326,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
             message_id="m_prior",
             role="user",
             text="earlier question",
-            ts="2026-07-20T10:00:00Z",
-        ))
+            ts="2026-07-20T10:00:00Z"))
         db.commit()
 
     task_id, task_session_id = _seed_task(
@@ -372,8 +356,7 @@ async def test_legacy_delivery_to_ulid_is_ignored(
 # -- cross-contact: delivery_to=None / task.session_id is task-owned ------
 
 async def test_cross_contact_does_not_inject_into_other(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """Task A's session is owned by contact A; the
     runner never writes to a session belonging to a
     different contact. With the new model this is
@@ -385,9 +368,7 @@ async def test_cross_contact_does_not_inject_into_other(
         contact_b = Contact(
             name="Other Operator",
             telegram_id=9202,
-            admin=True, role="assigned",
-            provider="minimax",
-            api_key="fake-key-other",
+            admin=True, role="assigned"
         )
         db.add(contact_b)
         db.commit()
@@ -396,8 +377,7 @@ async def test_cross_contact_does_not_inject_into_other(
     # Task owned by contact_a; the runner's session is
     # stamped to contact_a only.
     task_id, session_id = _seed_task(
-        state_dir, "a-owns", delivery_to=None,
-    )
+        state_dir, "a-owns", delivery_to=None)
     with open_session() as db:
         sess = db.get(ChatSession, session_id)
         assert sess is not None
@@ -418,8 +398,7 @@ async def test_cross_contact_does_not_inject_into_other(
 # -- TG delivery_to: wires callback --------------------------------------
 
 async def test_tg_delivery_to_dispatches_via_channel_adapter(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """When ``task.target_channel='tg'`` and the user has a
     ``user_im_bindings`` row, the agent's reply is
     pushed to TG via the channel dispatcher + TG adapter.
@@ -450,8 +429,7 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
         task_id, _ = _seed_task(
             state_dir, "tg-callback",
             target_channel="tg",
-            delivery_to="9101",
-        )
+            delivery_to="9101")
         # Post-refactor: there is no separate
         # ``user_im_bindings`` table; the dispatcher reads
         # ``Contact.telegram_id`` directly as the per-channel
@@ -493,8 +471,7 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
         _tg.bot.clear_telegram_bot()
 
 async def test_tg_session_is_not_modified_by_task_fire(
-    state_dir: Path,
-) -> None:
+    state_dir: Path) -> None:
     """The runner never touches the TG chat session
     (``channel='tg'``) — task fires accumulate into
     the task's own ``channel='task'`` session. The
@@ -509,8 +486,7 @@ async def test_tg_session_is_not_modified_by_task_fire(
             channel="tg",
             title="operator's TG chat",
             created_at="2026-07-20T09:00:00Z",
-            updated_at="2026-07-20T11:00:00Z",
-        )
+            updated_at="2026-07-20T11:00:00Z")
         db.add(tg_chat)
         db.flush()
         db.add(ChatMessage(
@@ -518,15 +494,13 @@ async def test_tg_session_is_not_modified_by_task_fire(
             message_id="m_tg_prior",
             role="user",
             text="hi bot",
-            ts="2026-07-20T10:00:00Z",
-        ))
+            ts="2026-07-20T10:00:00Z"))
         db.commit()
 
     task_id, task_session_id = _seed_task(
         state_dir, "tg-keeps-clean",
         target_channel="tg",
-        delivery_to="9101",
-    )
+        delivery_to="9101")
 
     await _fake_fire(task_id, state_dir)
 

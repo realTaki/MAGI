@@ -45,8 +45,7 @@ from magi.agent.tools.list_files import ListFilesTool
 from magi.agent.tools.read_file import ReadFileTool
 from magi.agent.tools.registry import (
     get_tool,
-    get_tool_schemas,
-)
+    get_tool_schemas)
 from magi.agent.tools.send_message import SendMessageTool
 from magi.agent.tools.write_file import WriteFileTool
 
@@ -66,8 +65,7 @@ def test_chat_message_accepts_content_blocks():
         content_blocks=[
             {"type": "tool_result", "tool_use_id": "abc",
              "content": "ok", "is_error": False},
-        ],
-    )
+        ])
     assert msg.content_blocks is not None
     assert msg.content_blocks[0]["tool_use_id"] == "abc"
 
@@ -82,8 +80,7 @@ def test_chat_result_carries_stop_reason_and_tool_uses():
         raw_blocks=[
             {"type": "tool_use", "id": "x", "name": "read_file",
              "input": {"path": "SOUL.md"}},
-        ],
-    )
+        ])
     assert result.stop_reason == "tool_use"
     assert result.tool_uses[0]["name"] == "read_file"
 
@@ -224,8 +221,7 @@ def workspace_ctx(tmp_path, monkeypatch):
         state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
         uid=42,
-        channel="webui",
-    )
+        channel="webui")
 
 @pytest.mark.asyncio
 async def test_read_file_returns_content(workspace_ctx):
@@ -262,8 +258,7 @@ async def test_read_file_truncates_large_files(workspace_ctx):
 @pytest.mark.asyncio
 async def test_write_file_creates_file_and_parent_dirs(workspace_ctx):
     result = await WriteFileTool().run(
-        workspace_ctx, path="notes/today.md", content="hi",
-    )
+        workspace_ctx, path="notes/today.md", content="hi")
     assert result.is_error is False
     target = workspace_ctx.workspace / "notes" / "today.md"
     assert target.read_text(encoding="utf-8") == "hi"
@@ -284,8 +279,7 @@ async def test_write_file_overwrites_atomically(workspace_ctx):
 @pytest.mark.asyncio
 async def test_write_file_rejects_traversal(workspace_ctx):
     result = await WriteFileTool().run(
-        workspace_ctx, path="../escape.txt", content="x",
-    )
+        workspace_ctx, path="../escape.txt", content="x")
     assert result.is_error is True
     assert "escapes workspace" in result.content
     # Verify nothing leaked to disk outside the workspace.
@@ -296,8 +290,7 @@ async def test_write_file_rejects_oversized_content(workspace_ctx):
     """The 256 KB cap is a guard against runaway LLM
     output."""
     result = await WriteFileTool().run(
-        workspace_ctx, path="big.txt", content="x" * (300 * 1024),
-    )
+        workspace_ctx, path="big.txt", content="x" * (300 * 1024))
     assert result.is_error is True
     assert "limit" in result.content
 
@@ -352,8 +345,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     """
     from magi.agent.db import (
         ChatSession,
-        open_session,
-    )
+        open_session)
     from magi.channels import dispatcher
     from magi.channels.telegram import bot as tg_bot
 
@@ -371,8 +363,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
             db.add(Contact(
                 id=42, name="Tool-loop test",
                 telegram_id=9001,
-                admin=True, role="assigned", provider="minimax",
-                api_key="fake",
+                admin=True, role="assigned"
             ))
             db.commit()
         sess = ChatSession(
@@ -383,8 +374,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
             title=None,
             active_tail_count=20,
             created_at="2026-07-22T00:00:00Z",
-            updated_at="2026-07-22T00:00:00Z",
-        )
+            updated_at="2026-07-22T00:00:00Z")
         db.add(sess)
         db.commit()
 
@@ -393,8 +383,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
         workspace=workspace_ctx.workspace,
         uid=42,
         channel="tg",
-        session_id=sess.session_id,
-    )
+        session_id=sess.session_id)
     result = await SendMessageTool().run(ctx, text="hi there")
     assert result.is_error is False, result.content
     # ``send_text_auto`` is called with the resolved
@@ -419,8 +408,7 @@ async def test_send_message_tg_no_callback_returns_error():
     failure."""
     ctx = ToolContext(
         state_dir="/tmp/x", workspace=Path("/tmp/x"),
-        uid=42, channel="tg",
-    )
+        uid=42, channel="tg")
     result = await SendMessageTool().run(ctx, text="hi")
     assert result.is_error is True
 
@@ -428,8 +416,7 @@ async def test_send_message_tg_no_callback_returns_error():
 async def test_send_message_rejects_oversized_text(workspace_ctx):
     """4000-char cap matches the TG API limit."""
     result = await SendMessageTool().run(
-        workspace_ctx, text="x" * 5000,
-    )
+        workspace_ctx, text="x" * 5000)
     assert result.is_error is True
     assert "limit" in result.content
 
@@ -452,11 +439,9 @@ async def test_read_file_windowed_returns_line_numbers(workspace_ctx):
     """
     (workspace_ctx.workspace / "script.py").write_text(
         "alpha\nbravo\ncharlie\ndelta\n",
-        encoding="utf-8",
-    )
+        encoding="utf-8")
     result = await ReadFileTool().run(
-        workspace_ctx, path="script.py", offset=2, limit=2,
-    )
+        workspace_ctx, path="script.py", offset=2, limit=2)
     assert result.is_error is False
     # Lines 2-3 (1-indexed) of the file.
     assert "     2|bravo" in result.content
@@ -474,11 +459,9 @@ async def test_read_file_windowed_offset_past_end_errors(workspace_ctx):
     """``offset`` past EOF is a clean error, not a
     silent empty result."""
     (workspace_ctx.workspace / "short.txt").write_text(
-        "one\ntwo\n", encoding="utf-8",
-    )
+        "one\ntwo\n", encoding="utf-8")
     result = await ReadFileTool().run(
-        workspace_ctx, path="short.txt", offset=100,
-    )
+        workspace_ctx, path="short.txt", offset=100)
     assert result.is_error is True
     assert "past the end" in result.content
 
@@ -489,11 +472,9 @@ async def test_read_file_windowed_no_more_pages_omits_suffix(workspace_ctx):
     doesn't get a useless prompt to keep paging).
     """
     (workspace_ctx.workspace / "tiny.txt").write_text(
-        "one\ntwo\n", encoding="utf-8",
-    )
+        "one\ntwo\n", encoding="utf-8")
     result = await ReadFileTool().run(
-        workspace_ctx, path="tiny.txt", offset=1, limit=10,
-    )
+        workspace_ctx, path="tiny.txt", offset=1, limit=10)
     assert result.is_error is False
     # All 2 lines returned, no continuation hint.
     assert "one" in result.content
@@ -509,8 +490,7 @@ async def test_read_full_file_still_no_line_numbers(workspace_ctx):
     noisy prefixes.
     """
     (workspace_ctx.workspace / "raw.txt").write_text(
-        "first\nsecond\n", encoding="utf-8",
-    )
+        "first\nsecond\n", encoding="utf-8")
     result = await ReadFileTool().run(workspace_ctx, path="raw.txt")
     assert result.is_error is False
     # Plain text — no ``N|`` prefix.
@@ -531,15 +511,13 @@ async def test_edit_file_replaces_unique_match(workspace_ctx):
     target = workspace_ctx.workspace / "config.yaml"
     target.write_text(
         "name: app\nversion: 1\nport: 8080\n",
-        encoding="utf-8",
-    )
+        encoding="utf-8")
     tool = EditFileTool()
     result = await tool.run(
         workspace_ctx,
         path="config.yaml",
         old_str="port: 8080",
-        new_str="port: 9090",
-    )
+        new_str="port: 9090")
     assert result.is_error is False
     assert "replaced" in result.content.lower()
     # Disk reflects the change; the rest of the
@@ -563,8 +541,7 @@ async def test_edit_file_rejects_non_unique_match(workspace_ctx):
         workspace_ctx,
         path="dupe.txt",
         old_str="foo",
-        new_str="baz",
-    )
+        new_str="baz")
     assert result.is_error is True
     assert "2 times" in result.content
     # File unchanged.
@@ -583,8 +560,7 @@ async def test_edit_file_rejects_missing_match(workspace_ctx):
         workspace_ctx,
         path="f.txt",
         old_str="goodbye",
-        new_str="anything",
-    )
+        new_str="anything")
     assert result.is_error is True
     assert "not found" in result.content
 
@@ -597,15 +573,13 @@ async def test_edit_file_supports_empty_new_str(workspace_ctx):
     target = workspace_ctx.workspace / "code.py"
     target.write_text(
         "def f():\n    print('debug')\n    return 1\n",
-        encoding="utf-8",
-    )
+        encoding="utf-8")
     tool = EditFileTool()
     result = await tool.run(
         workspace_ctx,
         path="code.py",
         old_str="    print('debug')\n",
-        new_str="",
-    )
+        new_str="")
     assert result.is_error is False
     assert target.read_text(encoding="utf-8") == (
         "def f():\n    return 1\n"
@@ -623,8 +597,7 @@ async def test_edit_file_rejects_traversal(workspace_ctx):
         workspace_ctx,
         path="../etc/passwd",
         old_str="root",
-        new_str="nobody",
-    )
+        new_str="nobody")
     assert result.is_error is True
     assert "escapes workspace" in result.content
 
@@ -640,8 +613,7 @@ async def test_edit_file_rejects_non_utf8(workspace_ctx):
         workspace_ctx,
         path="binary.bin",
         old_str="not-utf-8",
-        new_str="anything",
-    )
+        new_str="anything")
     assert result.is_error is True
     assert "not valid UTF-8" in result.content
 
@@ -659,15 +631,13 @@ async def test_edit_file_rejects_oversized_old_str(workspace_ctx):
         workspace_ctx,
         path="big.txt",
         old_str="x" * (70 * 1024),
-        new_str="y",
-    )
+        new_str="y")
     assert result.is_error is True
     assert "smaller chunk" in result.content
 
 @pytest.mark.asyncio
 async def test_edit_file_atomicity_preserves_previous_on_failure(
-    workspace_ctx, monkeypatch,
-):
+    workspace_ctx, monkeypatch):
     """A failed write must NOT leave the file
     half-written. We simulate a failure by
     monkey-patching ``os.replace`` to raise and
@@ -690,8 +660,7 @@ async def test_edit_file_atomicity_preserves_previous_on_failure(
             workspace_ctx,
             path="atomic.txt",
             old_str="line2",
-            new_str="NEW",
-        )
+            new_str="NEW")
     finally:
         monkeypatch.setattr(edit_file.os, "replace", real_replace)
 
