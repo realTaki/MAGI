@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import ConsoleCard from '../../components/ConsoleCard';
@@ -103,8 +103,8 @@ export function KnowledgeContactsPane() {
             </thead>
             <tbody>
               {contacts.map((c: ContactRow) => (
-                <>
-                  <tr key={c.id} className="border-b border-sky-light/20 hover:bg-sky-pale/10 transition-colors">
+                <Fragment key={c.id}>
+                  <tr className="border-b border-sky-light/20 hover:bg-sky-pale/10 transition-colors">
                     <td className="py-2.5 pr-3">
                       <span className="font-medium text-ink">{c.display_name || c.name}</span>
                       <span className="text-ink-soft/40 font-mono text-[11px] ml-1.5">#{c.id}</span>
@@ -161,7 +161,7 @@ export function KnowledgeContactsPane() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>

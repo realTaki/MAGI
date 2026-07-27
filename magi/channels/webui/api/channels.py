@@ -100,7 +100,7 @@ class ChannelsUpdateRequest(BaseModel):
 # -- endpoints ------------------------------------------------------------
 
 
-@router.get("/api/channels", response_model=ChannelsResponse)
+@router.get("/channels", response_model=ChannelsResponse)
 def list_channels(
     _admin: AdminGate,
     request: Request,
@@ -121,7 +121,7 @@ def list_channels(
     return ChannelsResponse(enabled=enabled, available=available)
 
 
-@router.post("/api/channels", response_model=ChannelsResponse)
+@router.post("/channels", response_model=ChannelsResponse)
 def update_channels(
     payload: ChannelsUpdateRequest,
     _admin: AdminGate,

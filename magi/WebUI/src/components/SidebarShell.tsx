@@ -3,7 +3,7 @@
  * content pane" layout used by every tab that needs a
  * second-level navigation: Chat (6 EVE-output categories +
  * 新对话/搜索对话 + history list), Knowledge (Skills /
- * Connectors / Contacts), Organization (MAGI Council / 智能体管理).
+ * Connectors / Contacts), MAGI Council (智群管理 / 智能体管理).
  *
  * The shell owns the outer container, the sky-tinted sidebar
  * column, and the light content pane. The caller owns:

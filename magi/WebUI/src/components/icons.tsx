@@ -109,12 +109,11 @@ export const IconContacts = ({ className }: IconProps) => (
   </Icon>
 );
 
-// -- organization sidebar sections (MAGI Council / 智能体管理) ------------------
+// -- MAGI Council sidebar sections (智群管理 / 智能体管理) ------------------
 
 // "MAGI team" — a tree/council structure. Three connected
 // nodes in a hierarchy: the top node is the ADAM, the two
-// below are EVEs. Reads as "organization chart" without
-// looking like the generic folder-tree icon.
+// below are EVEs.
 export const IconMagic = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="12" cy="5" r="2.2" />

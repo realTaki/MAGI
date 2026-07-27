@@ -9,7 +9,7 @@
  *
  * SidebarItem.label convention in this file: dotted
  * i18n keys (`sidebar.actionItems`, `sidebar.meetings`).
- * The shell passes them through verbatim. (Org /
+ * The shell passes them through verbatim. (MAGI Council /
  * Knowledge use raw Chinese; Settings resolves keys in
  * the renderer — see plan TODO.)
  */
@@ -249,7 +249,7 @@ export default function ChatTab() {
   // ``chatError`` carries the stable backend error ``code`` so
   // the renderer can pick a friendlier message than the English
   // ``detail`` for known cases (e.g. ``chat.llm_credentials_required``
-  // points the operator at the Organization tab where their
+  // points the operator at the MAGI Council tab where their
   // per-contact LLM is configured). Unknown codes fall through
   // to ``detail`` so a missing translation never blanks the UI.
   const [chatError, setChatError] = useState<

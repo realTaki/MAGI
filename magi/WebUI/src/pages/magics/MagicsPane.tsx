@@ -154,11 +154,11 @@ export function MagicsPane() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
-                <th className="py-2 pr-3 font-medium">{t("magics.columnName")}</th>
+                <th className="py-2 pr-3 font-medium w-2/5">{t("magics.columnName")}</th>
                 <th className="py-2 pr-3 font-medium w-16">ID</th>
-                <th className="py-2 pr-3 font-medium w-28">Adam</th>
-                <th className="py-2 pr-3 font-medium w-16 text-right">成员</th>
-                <th className="py-2 pr-3 font-medium w-10">{t("magics.columnActions")}</th>
+                <th className="py-2 pr-3 font-medium w-1/5">Adam</th>
+                <th className="py-2 pr-3 font-medium w-20 text-right">成员</th>
+                <th className="py-2 pr-3 font-medium w-20">{t("magics.columnActions")}</th>
               </tr>
             </thead>
             <tbody>

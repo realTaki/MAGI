@@ -64,6 +64,9 @@ export function SettingsChannelsCard(props: {
   });
 
   const data = query.data;
+  const loadError = query.error
+    ? (query.error as Error).message
+    : null;
 
   async function toggle(ch: ChannelInfo) {
     if (!data) return;
@@ -90,7 +93,13 @@ export function SettingsChannelsCard(props: {
       title={t("settings.channels")}
       headerRight={<InfoTip text={t("settings.channelsDesc")} />}
     >
-      {!data && <p className="text-sm text-ink-soft">{t("common.loading")}</p>}
+      {loadError && (
+        <p className="form-error mb-3">✗ {loadError}</p>
+      )}
+
+      {!data && !loadError && (
+        <p className="text-sm text-ink-soft">{t("common.loading")}</p>
+      )}
 
       {data && (
         <table className="w-full text-sm">
