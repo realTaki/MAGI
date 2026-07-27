@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from magi.agent.memory.contacts.store import ContactView
+from magi.agent.memory.contacts.store import ContactView, NoteView
 from magi.agent.prompts import load_contact_block_template
 
 
@@ -43,45 +43,34 @@ def format_contact_block(
     contact: Optional[ContactView],
     *,
     display_name: Optional[str] = None,
+    notes: Optional[list[NoteView]] = None,
 ) -> str:
     """Render a Markdown block for the current chatter.
 
-    Returns "" when the MAGI has no contact record
-    for this person. The agent loop short-circuits
-    and the system prompt stays lean.
-
-    The block is intentionally tiny (one contact)
-    so the cap is rarely hit; it exists only as a
-    safety net for a misbehaving tool that wrote a
-    100 KB ``notes`` blob.
-
-    ``display_name`` overrides the header's literal
-    ``{person_id}`` rendering. The LLM should see the
-    chatter's real name (or display_name) in the
-    prompt, not the database row's integer FK —
-    passing the raw id would force the model to look
-    up the name via a tool call on every turn. The
-    caller (the agent loop) is responsible for
-    resolving the name from the Contact table; the
-    formatter stays free of ORM coupling so the
-    ``ContactView`` dataclass + prompt formatter
-    remain testable without a database.
+    ``notes`` are individual ``contact_notes`` rows
+    (newest first).  If not provided, falls back to
+    ``contact.notes`` (legacy text column).
     """
     if contact is None:
         return ""
 
     lines: list[str] = ["", *load_contact_block_template().splitlines(), ""]
-    # ``display_name ?? person_id`` — the caller passes
-    # the resolved Contact display name when they have
-    # it; fall back to the raw int FK only if not.
-    header_label = display_name or contact.display_name or contact.name or f"contact #{contact.id}"
+    header_label = (
+        display_name or contact.display_name
+        or contact.name or f"contact #{contact.id}"
+    )
     header = f"**{header_label}**"
     if contact.role:
         lines.append(f"- {header} — role: {contact.role}")
     else:
         lines.append(f"- {header}")
-    if contact.notes:
+
+    if notes:
+        for n in notes:
+            lines.append(f"  - {n.note}")
+    elif contact.notes:
         lines.append(f"  - {contact.notes}")
+
     lines.append("")
 
     rendered = "\n".join(lines).rstrip() + "\n"

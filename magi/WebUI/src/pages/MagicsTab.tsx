@@ -46,6 +46,7 @@ export type ContactRow = {
   admin: boolean;
   telegram_id: number | null;
   notes: string;
+  notes_count: number;
   source: string;
   last_seen_at: string;
   created_at: string;

@@ -181,11 +181,11 @@ async def get_status() -> OnboardingStatus:
     admins: list[str] = []
     try:
         with open_session() as session:
-            for emp in session.scalars(
+            for ct in session.scalars(
                 select(Contact).where(Contact.role == "admin")
             ).all():
-                if emp.telegram_id is not None:
-                    admins.append(str(emp.telegram_id))
+                if ct.telegram_id is not None:
+                    admins.append(str(ct.telegram_id))
     except Exception:
         # If the table is unreachable (very early boot) the
         # wizard still loads; admins stays empty until the
@@ -722,7 +722,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 display_names[cid] = name
 
     try:
-        new_emp_ids: list[int] = []
+        new_ct_ids: list[int] = []
         with open_session() as session:
             # 1) Existing admin rows not in the new list → delete
             #    (these are onboarding-created shells; no
@@ -764,7 +764,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 emp = session.scalar(
                     select(Contact).where(Contact.telegram_id == cid)
                 )
-                if emp is None:
+                if ct is None:
                     emp = Contact(
                         name=display_names[cid] or f"Admin {cid}",
                         display_name=display_names[cid],
@@ -774,7 +774,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     session.add(emp)
                     session.flush()
                 else:
-                    emp.admin = True
+                    ct.admin = True
                     # If the row was previously not the
                     # served user (role='contact' / 'guest'),
                     # also flip it to 'assigned' — the
@@ -782,13 +782,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     # IS the served user. Multi-operator
                     # installs can manually re-set role
                     # afterwards if needed.
-                    if emp.role in ("contact", "guest"):
-                        emp.role = "assigned"
+                    if ct.role in ("contact", "guest"):
+                        ct.role = "assigned"
                     if display_names[cid]:
-                        emp.name = display_names[cid]
-                        if not emp.display_name:
-                            emp.display_name = display_names[cid]
-                new_emp_ids.append(emp.id)
+                        ct.name = display_names[cid]
+                        if not ct.display_name:
+                            ct.display_name = display_names[cid]
+                new_ct_ids.append(ct.id)
             session.commit()
     except Exception as exc:
         logger.exception("failed to write admin contacts")
@@ -803,9 +803,9 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     # IMMEDIATE inside an outer transaction would deadlock
     # SQLite).
     from magi.channels import dispatcher as channel_dispatcher
-    for emp_id, cid in zip(new_emp_ids, parsed_ids):
+    for ct_id, cid in zip(new_ct_ids, parsed_ids):
         try:
-            channel_dispatcher.bind_im_id(emp_id, Channel.TG, str(cid))
+            channel_dispatcher.bind_im_id(ct_id, Channel.TG, str(cid))
         except Exception:
             # Best-effort: the Contact row is already
             # created with role=admin. If the binding
@@ -813,8 +813,8 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             # admin can re-bind via the API later.
             logger.exception(
                 "save_admin: dispatcher.bind_im_id failed "
-                "for emp_id=%s cid=%s",
-                emp_id, cid,
+                "for ct_id=%s cid=%s",
+                ct_id, cid,
             )
 
     logger.info("admins saved", extra={"count": len(cleaned)})

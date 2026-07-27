@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import Contact, get_session
+from magi.agent.db import Contact, ContactNote, get_session
 from magi.agent.db.base import utcnow_naive
 from magi.channels.webui.api.auth_gates import admin_gate, AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
@@ -78,6 +78,7 @@ class ContactOut(BaseModel):
     separated_at: str | None = None
     telegram_id: int | None = None
     notes: str = ""
+    notes_count: int = 0
     source: str = ""
     last_seen_at: str = ""
     created_at: str = ""
@@ -125,7 +126,10 @@ class ContactUpdate(BaseModel):
     separated: Optional[bool] = None
 
 
-def _serialize(c: Contact) -> ContactOut:
+def _serialize(
+    c: Contact,
+    notes_count: int = 0,
+) -> ContactOut:
     is_set, last4 = _mask_key(c.api_key)
     return ContactOut(
         id=c.id,
@@ -139,6 +143,7 @@ def _serialize(c: Contact) -> ContactOut:
         separated_at=c.separated_at.isoformat() if c.separated_at else None,
         telegram_id=c.telegram_id,
         notes=c.notes,
+        notes_count=notes_count,
         source=c.source,
         last_seen_at=_iso(c.last_seen_at),
         created_at=_iso(c.created_at),
@@ -178,7 +183,12 @@ def list_contacts(
     base = select(Contact)
 
     if with_notes:
-        base = base.where(Contact.notes != "")
+        # Contacts that have at least one note in ``contact_notes``.
+        from magi.agent.db.models_contact import ContactNote
+        note_ids = session.scalars(
+            select(ContactNote.contact_id).distinct()
+        ).all()
+        base = base.where(Contact.id.in_(note_ids) if note_ids else False)
     elif separated:
         base = base.where(Contact.separated_at.is_not(None))
     elif not include_separated:
@@ -203,8 +213,19 @@ def list_contacts(
     if with_notes:
         base = base.order_by(Contact.last_seen_at.desc()).limit(_MAX_ROWS)
         rows = session.scalars(base).all()
+        # Preload notes counts in one query
+        from magi.agent.db.models_contact import ContactNote
+        note_counts: dict[int, int] = {}
+        if rows:
+            cids = [r.id for r in rows]
+            counts = session.execute(
+                select(ContactNote.contact_id, func.count())
+                .where(ContactNote.contact_id.in_(cids))
+                .group_by(ContactNote.contact_id)
+            ).all()
+            note_counts = {c: int(n) for c, n in counts}
         return ContactListOut(
-            items=[_serialize(r) for r in rows],
+            items=[_serialize(r, notes_count=note_counts.get(r.id, 0)) for r in rows],
             total=len(rows),
             page=1,
             page_size=len(rows),
@@ -304,6 +325,54 @@ def create_contact(
     return _serialize(contact)
 
 
+# -- notes sub-resource ---------------------------------------------------
+
+class NoteOut(BaseModel):
+    id: int
+    contact_id: int
+    note: str
+    source: str
+    created_at: str
+    updated_at: str
+
+
+class NoteListOut(BaseModel):
+    items: list[NoteOut]
+    total: int
+
+
+@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
+def list_contact_notes(
+    contact_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> NoteListOut:
+    from magi.agent.db.models_contact import Contact, ContactNote
+    ct = session.get(Contact, contact_id)
+    if ct is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.contact",
+            detail="contact not found",
+        )
+    rows = session.scalars(
+        select(ContactNote)
+        .where(ContactNote.contact_id == contact_id)
+        .order_by(ContactNote.created_at.desc())
+    ).all()
+    items = [
+        NoteOut(
+            id=r.id,
+            contact_id=r.contact_id,
+            note=r.note,
+            source=r.source,
+            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
+            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
+        )
+        for r in rows
+    ]
+    return NoteListOut(items=items, total=len(items))
+
+
 @router.get("/contacts/{contact_id}", response_model=ContactOut)
 def get_contact(
     contact_id: int,
@@ -317,6 +386,54 @@ def get_contact(
             detail="contact not found",
         )
     return _serialize(contact)
+
+
+# -- notes sub-resource ---------------------------------------------------
+
+class NoteOut(BaseModel):
+    id: int
+    contact_id: int
+    note: str
+    source: str
+    created_at: str
+    updated_at: str
+
+
+class NoteListOut(BaseModel):
+    items: list[NoteOut]
+    total: int
+
+
+@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
+def list_contact_notes(
+    contact_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> NoteListOut:
+    from magi.agent.db.models_contact import Contact, ContactNote
+    ct = session.get(Contact, contact_id)
+    if ct is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.contact",
+            detail="contact not found",
+        )
+    rows = session.scalars(
+        select(ContactNote)
+        .where(ContactNote.contact_id == contact_id)
+        .order_by(ContactNote.created_at.desc())
+    ).all()
+    items = [
+        NoteOut(
+            id=r.id,
+            contact_id=r.contact_id,
+            note=r.note,
+            source=r.source,
+            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
+            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
+        )
+        for r in rows
+    ]
+    return NoteListOut(items=items, total=len(items))
 
 
 @router.patch("/contacts/{contact_id}", response_model=ContactOut)
@@ -415,3 +532,99 @@ def update_contact(
             )
 
     return _serialize(contact)
+
+
+# -- notes sub-resource ---------------------------------------------------
+
+class NoteOut(BaseModel):
+    id: int
+    contact_id: int
+    note: str
+    source: str
+    created_at: str
+    updated_at: str
+
+
+class NoteListOut(BaseModel):
+    items: list[NoteOut]
+    total: int
+
+
+@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
+def list_contact_notes(
+    contact_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> NoteListOut:
+    from magi.agent.db.models_contact import Contact, ContactNote
+    ct = session.get(Contact, contact_id)
+    if ct is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.contact",
+            detail="contact not found",
+        )
+    rows = session.scalars(
+        select(ContactNote)
+        .where(ContactNote.contact_id == contact_id)
+        .order_by(ContactNote.created_at.desc())
+    ).all()
+    items = [
+        NoteOut(
+            id=r.id,
+            contact_id=r.contact_id,
+            note=r.note,
+            source=r.source,
+            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
+            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
+        )
+        for r in rows
+    ]
+    return NoteListOut(items=items, total=len(items))
+
+
+# -- notes sub-resource ---------------------------------------------------
+
+class NoteOut(BaseModel):
+    id: int
+    contact_id: int
+    note: str
+    source: str
+    created_at: str
+    updated_at: str
+
+
+class NoteListOut(BaseModel):
+    items: list[NoteOut]
+    total: int
+
+
+@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
+def list_contact_notes(
+    contact_id: int,
+    _admin: AdminGate,
+    session: Annotated[Session, Depends(get_session)],
+) -> NoteListOut:
+    from magi.agent.db.models_contact import Contact, ContactNote
+    ct = session.get(Contact, contact_id)
+    if ct is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.contact",
+            detail="contact not found",
+        )
+    rows = session.scalars(
+        select(ContactNote)
+        .where(ContactNote.contact_id == contact_id)
+        .order_by(ContactNote.created_at.desc())
+    ).all()
+    items = [
+        NoteOut(
+            id=r.id,
+            contact_id=r.contact_id,
+            note=r.note,
+            source=r.source,
+            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
+            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
+        )
+        for r in rows
+    ]
+    return NoteListOut(items=items, total=len(items))

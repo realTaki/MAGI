@@ -81,6 +81,13 @@ export function KnowledgeContactsPane() {
         : null;
   const isLoading = contactsQuery.isLoading && contacts.length === 0;
   const [detailId, setDetailId] = useState<number | null>(null);
+  const notesQuery = useQuery({
+    queryKey: ["contactNotes", detailId] as const,
+    queryFn: () => apiFetch<{ items: { id: number; note: string; source: string; created_at: string }[] }>(`/api/contacts/${detailId}/notes`),
+    enabled: detailId !== null,
+    staleTime: 30_000,
+  });
+  const notes = notesQuery.data?.items ?? [];
 
   return (
     <div className="space-y-4">
@@ -147,10 +154,14 @@ export function KnowledgeContactsPane() {
                             <span>·</span>
                             <span>{formatTimestamp(c.last_seen_at)}</span>
                           </div>
-                          {c.notes ? (
-                            <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">
-                              {c.notes}
-                            </p>
+                          {notes.length > 0 ? (
+                            <div className="space-y-2">
+                              {notes.map((n) => (
+                                <div key={n.id} className="text-sm text-ink leading-relaxed border-l-2 border-sky-light/40 pl-3">
+                                  {n.note}
+                                </div>
+                              ))}
+                            </div>
                           ) : (
                             <p className="text-sm text-ink-soft italic">
                               {t("settings.knowledgeContactsEmpty")}

@@ -337,7 +337,7 @@ class ScheduleTaskTool(Tool):
         # authority.
         with open_session() as db:
             emp = db.get(Contact, ctx.uid)
-            if emp is None:
+            if ct is None:
                 return ToolResult(content="caller not found", is_error=True)
             # Author gate: ``admin=True`` (WebUI operator)
             # OR ``role='assigned'`` (the served user).
@@ -347,17 +347,17 @@ class ScheduleTaskTool(Tool):
             # author a scheduled task. Re-read from the DB
             # (not ``ctx.uid``-trust) so a mis-wired caller
             # can't punch above its authority.
-            if not (bool(emp.admin) or emp.role == "assigned"):
+            if not (bool(ct.admin) or ct.role == "assigned"):
                 return ToolResult(
                     content=(
                         f"schedule_task requires admin or "
                         f"assigned-contact scope; "
-                        f"admin={bool(emp.admin)}, role={emp.role!r} "
+                        f"admin={bool(ct.admin)}, role={ct.role!r} "
                         f"is not permitted."
                     ),
                     is_error=True,
                 )
-            operator_id = emp.id
+            operator_id = ct.id
         # Session closed — now safe to open nested ones
         # (the dispatcher adapter's ``with open_session()``
         # would otherwise deadlock against SQLite's

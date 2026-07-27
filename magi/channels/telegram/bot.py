@@ -328,8 +328,22 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     #                    ask your admin to invite you").
     bound = _find_contact_by_telegram_id(state_dir, tgid)
     if bound is not None:
-        emp_id, emp_role, emp_name, emp_separated, emp_provider, emp_key = bound
-        if emp_role not in ("admin", "assigned"):
+        contact_id, contact_role, contact_name, contact_separated, contact_provider, contact_key, contact_admin = bound
+        # After the 2024 role/admin split, ``admin`` is a
+        # boolean (WebUI sign-in) rather than a role value.
+        # Dispatch accepts the caller if EITHER:
+        #   - ``contact_admin=True`` (a WebUI operator — any role)
+        #   - ``contact_role == 'assigned'`` (the served user —
+        #     the EVE they're chatting with is theirs).
+        # ``role='guest'`` is NOT accepted here — a soft-
+        # auto-created stranger still has to ask their
+        # admin for promotion (handled in the "no contact
+        # bound" path above; the auto-create we do there
+        # only stamps the directory row, the chat is still
+        # politely refused until the operator promotes).
+        # ``role='contact'`` is refused (another company's
+        # contact — should be served by their own MAGI).
+        if not (contact_admin or contact_role == "assigned"):
             # ``contact`` / ``guest`` — refuse politely
             # without burning the LLM. The hint about
             # the tgid is the same one the unknown-
@@ -338,12 +352,12 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             # MAGI to get added.
             logger.info(
                 "telegram: %s role not served by this MAGI; refusing",
-                emp_role,
-                extra={"tgid": tgid, "uid": emp_id},
+                contact_role,
+                extra={"tgid": tgid, "uid": contact_id},
             )
             await update.effective_message.reply_text(
                 _replies()["cross_company_refusal"].format(
-                    emp_name=emp_name, delivery_address=tgid,
+                    contact_name=contact_name, delivery_address=tgid,
                 ),
             )
             return
@@ -358,30 +372,56 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             update,
             state_dir,
             tgid,
-            emp_id,
-            emp_name,
+            contact_id,
+            contact_name,
             display_name,
-            emp_separated,
-            emp_role,
-            emp_provider,
-            emp_key,
+            contact_separated,
+            contact_role,
+            contact_provider,
+            contact_key,
         )
         return
 
-    # 3. No contact bound — treat as GUEST.
+    # 3. No contact bound — auto-create a Contact row, then
+    # politely ask the stranger to talk to their admin.
     #
-    # The tgid discovery reply goes out to anyone not
-    # bound to an Contact row; the ``Contact.telegram_id``
-    # is the only source of truth for who's been "claimed".
-    # There's nothing else to track here — historically we
-    # wrote ``telegram.user.<tgid>.{role,display_name}``
-    # to settings, but those duplicated columns on the
-    # Contact row are deprecated in favour of the unified
-    # table and the operator has cleared them from settings.
-    logger.info(
-        "telegram: no contact bound, sending tgid discovery",
-        extra={"tgid": tgid, "display_name": display_name},
-    )
+    # Pre-2024 the chat just sent a tgid-discovery reply
+    # without leaving a directory row. The downside was
+    # the operator had no idea who was trying to reach
+    # them until the stranger manually forwarded their
+    # tgid. The new policy is "soft auto-create": every
+    # first-time chatter lands a row in the contacts
+    # table (role='guest', no provider/api_key) so the
+    # operator sees them in the dashboard; the chat still
+    # returns the polite tgid-discovery reply asking the
+    # stranger to ask their admin to grant them
+    # chat access. The operator promotes them via
+    # ``PATCH /api/contacts/{id}`` with ``{"role": "assigned"}``
+    # or ``{"admin": true}`` after which the next
+    # inbound message from this tgid will pass the dispatch
+    # gate and route through the agent loop.
+    bound = _auto_create_stranger_contact(state_dir, tgid, display_name)
+    if bound is not None:
+        contact_id, contact_role, _, _, _, _, _ = bound
+        logger.info(
+            "telegram: auto-created stranger contact on first message",
+            extra={
+                "tgid": tgid,
+                "display_name": display_name,
+                "uid": contact_id,
+                "role": contact_role,
+            },
+        )
+    else:
+        logger.warning(
+            "telegram: auto-create stranger contact failed; "
+            "still sending tgid discovery",
+            extra={"tgid": tgid, "display_name": display_name},
+        )
+    # Either way (created or not), the chat still responds
+    # with the tgid-discovery reply. The stranger gets the
+    # same handoff they've always gotten; the operator
+    # additionally gets a Contact row they can promote.
     await update.effective_message.reply_text(
         _replies()["unknown_sender"].format(delivery_address=tgid),
         parse_mode="HTML",
@@ -389,19 +429,91 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     return
 
 
+def _auto_create_stranger_contact(
+    state_dir: str, tgid: str, display_name: Optional[str],
+) -> tuple[int, str, str, bool, str | None, str | None] | None:
+    """Create a Contact row for an unknown tgid on first message.
+
+    Idempotent on the unique ``telegram_id`` constraint — if
+    another thread / restart already inserted the row
+    between the lookup and the insert, the IntegrityError
+    is caught and the lookup re-runs.
+
+    Returns the same tuple shape as
+    :func:`_find_contact_by_telegram_id` (so the caller's
+    fall-through dispatch is identical to the bound path).
+    ``None`` on hard failure (DB locked, import error,
+    IntegrityError race that we couldn't recover from).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from magi.agent.db import Contact, open_session, require_state_dir
+    from magi.agent.db.base import utcnow_naive
+    from magi.agent.db.models_contact import SOURCE_SYSTEM
+
+    try:
+        cid_int = int(tgid)
+    except (TypeError, ValueError):
+        return None
+
+    # Display-name heuristic: prefer ``display_name`` (TG
+    # first_name / username / chat title); fall back to a
+    # placeholder like ``stranger-<last 5 of tgid>`` so the
+    # row has a non-empty name without the LLM needing to
+    # fill it in immediately. The operator can rename via
+    # the dashboard later.
+    name = (display_name or "").strip() or f"stranger-{tgid[-5:]}"
+    display_name = (display_name or "").strip() or None
+
+    try:
+        with open_session() as db:
+            try:
+                row = Contact(
+                    name=name,
+                    display_name=display_name,
+                    role="guest",
+                    telegram_id=cid_int,
+                    source=SOURCE_SYSTEM,
+                    last_seen_at=utcnow_naive(),
+                )
+                db.add(row)
+                db.commit()
+                db.refresh(row)
+            except IntegrityError:
+                # Race — another worker already created
+                # the row. Roll back and look it up.
+                db.rollback()
+                row = db.scalar(
+                    select(Contact).where(Contact.telegram_id == cid_int)
+                )
+                if row is None:
+                    return None
+    except Exception:
+        logger.exception(
+            "telegram: auto-create stranger contact failed",
+            extra={"tgid": tgid},
+        )
+        return None
+
+    return _find_contact_by_telegram_id(state_dir, tgid)
+
+
 def _find_contact_by_telegram_id(
     state_dir: str, tgid: str
-) -> tuple[int, str, str, bool, str | None, str | None] | None:
+) -> tuple[int, str, str, bool, str | None, str | None, bool] | None:
     """Resolve a TG tgid to its bound contact.
 
     Single ORM read on ``Contact.telegram_id``; returns
-    ``(uid, role, name, separated, provider, api_key)``
+    ``(uid, role, name, separated, provider, api_key, admin)``
     on hit, ``None`` when no row has the tgid bound.
-    The role is what the dispatcher uses to decide
-    between admin / contact / GUEST handling — see
-    :func:`_on_message`. ``provider`` / ``api_key`` are
-    pre-resolved so :func:`_handle_contact_message` can
-    dispatch to the LLM without a second round-trip.
+    The dispatch in :func:`_on_message` uses ``admin`` (WebUI
+    sign-in bit) and ``role`` (the served-by relationship)
+    independently — ``admin=True`` is the canonical
+    operator flag since the 2024 split (see
+    :mod:`magi.agent.db.models_contact`). ``provider`` /
+    ``api_key`` are pre-resolved so
+    :func:`_handle_contact_message` can dispatch to the LLM
+    without a second round-trip.
 
     Falls back to the legacy ``telegram.user.<tgid>.uid``
     meta key for state files written before the unified
@@ -419,7 +531,7 @@ def _find_contact_by_telegram_id(
     except (TypeError, ValueError):
         return None
 
-    def _fields(e: Contact) -> tuple[int, str, str, bool, str | None, str | None]:
+    def _fields(e: Contact) -> tuple[int, str, str, bool, str | None, str | None, bool]:
         return (
             e.id,
             e.role,
@@ -427,6 +539,7 @@ def _find_contact_by_telegram_id(
             e.separated_at is not None,
             e.provider,
             e.api_key,
+            bool(e.admin),
         )
 
     try:
@@ -450,18 +563,18 @@ def _find_contact_by_telegram_id(
     if not raw:
         return None
     try:
-        legacy_emp_id = int(raw)
+        legacy_uid = int(raw)
     except (TypeError, ValueError):
         return None
     try:
         with open_session() as session:
-            emp = session.get(Contact, legacy_emp_id)
+            emp = session.get(Contact, legacy_uid)
             if emp is None:
                 return None
             return _fields(emp)
     except Exception:
         logger.exception(
-            "telegram: legacy-meta ORM read failed for emp %s", legacy_emp_id,
+            "telegram: legacy-meta ORM read failed for contact %s", legacy_uid,
         )
         return None
 

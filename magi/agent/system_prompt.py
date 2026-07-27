@@ -127,7 +127,6 @@ def build_system_prompt(
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.agent.db import Contact, open_session
     from magi.agent.memory.contacts.store import ContactStore
     from magi.agent.memory.contacts.prompt import format_contact_block
     from magi.agent.memory.magi.prompt import format_memory_block
@@ -157,20 +156,18 @@ def build_system_prompt(
 
     # Current-chatter block — the User's self-contact
     # entry (the directory the LLM writes to via
-    # ``add_contact`` / ``update_contact``). When no
+    # ``add_contact_note`` / ``update_contact_note``). When no
     # record exists yet, the block is silently dropped
     # so a fresh deploy doesn't carry an empty
     # "Current chatter" header.
     contact_block = ""
     try:
-        contact = ContactStore(state_dir).get(uid)
-        display_name = None
-        with open_session() as db:
-            c = db.get(Contact, uid)
-            if c is not None:
-                display_name = c.display_name or c.name
+        store = ContactStore(state_dir)
+        contact = store.get(uid)
+        display_name = contact.display_name or contact.name if contact else None
+        notes = store.list_notes(uid) if contact else None
         contact_block = format_contact_block(
-            contact, display_name=display_name,
+            contact, display_name=display_name, notes=notes,
         )
     except Exception:
         logger.exception(

@@ -150,10 +150,10 @@ def _super_admins() -> set[int]:
     result: set[int] = set()
     try:
         with open_session() as session:
-            for emp in session.scalars(
+            for ct in session.scalars(
                 select(Contact).where(Contact.admin == 1)
             ).all():
-                result.add(emp.id)
+                result.add(ct.id)
         if result:
             return result
     except Exception:
@@ -190,7 +190,7 @@ def _super_admins() -> set[int]:
                     Contact.telegram_id.in_(legacy_chat_ids)
                 )
             ).all()
-            return {emp.id for emp in rows}
+            return {ct.id for ct in rows}
     except Exception:
         logger.exception("super_admins: legacy meta lookup failed")
         return set()
@@ -381,12 +381,12 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     admin_rows: list[tuple[int, int, str | None]] = []  # (uid, telegram_id, name)
     if admin_uids:
         with open_session() as session:
-            for emp in session.scalars(
+            for ct in session.scalars(
                 select(Contact).where(Contact.id.in_(admin_uids))
             ).all():
-                if emp.telegram_id is not None:
+                if ct.telegram_id is not None:
                     admin_rows.append(
-                        (emp.id, emp.telegram_id, emp.display_name or emp.name)
+                        (ct.id, ct.telegram_id, ct.display_name or ct.name)
                     )
 
     candidates: dict[int, tuple[int, str | None]] = {
@@ -644,7 +644,7 @@ async def me(
     try:
         with open_session() as session:
             emp = session.get(Contact, uid)
-        if emp is None:
+        if ct is None:
             return MeResponse(
                 uid=uid,
                 telegram_id=None,
@@ -652,10 +652,10 @@ async def me(
                 admin=False,
             )
         return MeResponse(
-            uid=emp.id,
-            telegram_id=emp.telegram_id,
-            display_name=emp.name,
-            admin=bool(emp.admin),
+            uid=ct.id,
+            telegram_id=ct.telegram_id,
+            display_name=ct.name,
+            admin=bool(ct.admin),
         )
     except Exception:
         logger.exception("me: contact lookup failed for cookie value")

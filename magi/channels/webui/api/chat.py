@@ -130,16 +130,16 @@ def _resolve_caller_credentials(
             detail="could not load operator's Contact record",
         )
 
-    if emp is None:
+    if ct is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no Contact row bound to this cookie",
         )
-    if not emp.provider or not emp.api_key:
+    if not ct.provider or not ct.api_key:
         logger.info(
             "chat: operator %s has no per-contact LLM credentials; "
-            "asking them to configure first", emp.id,
+            "asking them to configure first", ct.id,
         )
         raise MagiHTTPException(
             status_code=403,
@@ -149,7 +149,7 @@ def _resolve_caller_credentials(
                 "profile before chatting"
             ),
         )
-    return emp.id, emp.provider, emp.api_key, emp.role
+    return ct.id, ct.provider, ct.api_key, ct.role
 
 
 class ChatSendRequest(BaseModel):

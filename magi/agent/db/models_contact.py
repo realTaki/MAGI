@@ -57,6 +57,8 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    ForeignKey,
+    Index,
     String,
     Text,
 )
@@ -127,8 +129,9 @@ class Contact(Base):
     # Soft-delete. NULL = active.
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    # Free-form markdown about this person.
-    # LLM-managed via add_contact_note / update_contact tools.
+    # Deprecated — use ``contact_notes`` table instead.
+    # Kept for backward compat.  Tools write to
+    # ``contact_notes``, not here.
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # Where the notes came from.
@@ -152,4 +155,39 @@ class Contact(Base):
         return (
             f"Contact(id={self.id}, name={self.name!r}, "
             f"role={self.role!r}, admin={self.admin})"
+        )
+
+
+class ContactNote(Base):
+    """One fact/memory about a contact.
+
+    Each row is an individual note — the LLM adds a new row
+    for every \"记住 Lily 在财务部\" call.  The old single
+    ``contacts.notes`` text column is deprecated; the
+    ``format_contact_block`` formatter aggregates from here.
+    """
+
+    __tablename__ = "contact_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=SOURCE_EVE,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        preview = self.note[:40].replace("\n", " ") if self.note else ""
+        return (
+            f"ContactNote(id={self.id}, contact_id={self.contact_id}, "
+            f"note={preview!r}...)"
         )

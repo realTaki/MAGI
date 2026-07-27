@@ -205,15 +205,16 @@ def test_list_contacts_include_separated(client, env):
     assert r.json()["total"] == 3
 
 def test_list_contacts_with_notes_returns_only_noted(env, client):
-    """``?with_notes=true`` returns contacts that have a
-    non-empty ``notes`` field (LLM-recorded directory).
-
-    Seed a non-empty notes row on Bob; Charlie stays empty."""
-    from magi.agent.db import Contact as ContactModel, open_session
+    """``?with_notes=true`` returns contacts that have at
+    least one row in the ``contact_notes`` table (the
+    LLM-recorded directory). Charlie stays empty."""
+    from magi.agent.db import ContactNote, open_session
 
     with open_session() as db:
-        bob = db.get(ContactModel, env["bob"].id)
-        bob.notes = "Met at Q1 review."
+        db.add(ContactNote(
+            contact_id=env["bob"].id,
+            note="Met at Q1 review.",
+        ))
         db.commit()
 
     r = client.get("/api/contacts?with_notes=true")
@@ -221,7 +222,6 @@ def test_list_contacts_with_notes_returns_only_noted(env, client):
     body = r.json()
     assert body["total"] == 1
     assert body["items"][0]["name"] == "Bob"
-    assert body["items"][0]["notes"] == "Met at Q1 review."
 
 def test_get_contact_returns_full_row(client, env):
     """Single-row GET returns the masked-key + full shape."""

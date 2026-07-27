@@ -186,7 +186,7 @@ def test_session_invalid_archive_role_rejected():
         "title": None,
         "messages": [],
         "archive": [
-            {"admin": true, "role": "assigned", "text": "x", "ts": "t",
+            {"role": "admin", "text": "x", "ts": "t",
              "message_id": "a1"},
         ],
     }

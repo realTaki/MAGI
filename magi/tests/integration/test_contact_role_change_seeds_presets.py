@@ -180,7 +180,7 @@ def test_post_with_admin_true_role_contact_does_not_seed(state, client):
     r = client.post("/api/contacts", json={
         "name": "Backend Admin",
         "telegram_id": 9203,
-        "admin": true,
+        "admin": True,
         "role": "contact",
     })
     assert r.status_code == 201, r.text
@@ -215,11 +215,20 @@ def test_patch_to_assigned_seeds_presets(state, client):
 
 
 def test_patch_admin_to_assigned_seeds_presets(state, client):
-    """Admin → assigned transition triggers seeding too."""
+    """``admin=True, role='contact'`` is NOT seeded.
+
+    After the 2024 role/admin split, ``admin`` is a
+    separate boolean (WebUI sign-in) and the seed hook
+    triggers on ``role='assigned'`` (the served user).
+    A backend operator (``role='contact', admin=True``)
+    who later gets promoted to the served user
+    (``role='assigned'``) should now trigger seeding —
+    this is the new edge of the transition matrix.
+    """
     r = client.post("/api/contacts", json={
         "name": "Charlie",
         "telegram_id": 9205,
-        "admin": true, "role": "assigned",
+        "admin": True, "role": "contact",
     })
     assert r.status_code == 201, r.text
     charlie_id = r.json()["id"]
@@ -229,6 +238,8 @@ def test_patch_admin_to_assigned_seeds_presets(state, client):
         f"/api/contacts/{charlie_id}", json={"role": "assigned"},
     )
     assert promote.status_code == 200, promote.text
+    assert promote.json()["role"] == "assigned"
+
     assert _preset_task_count(charlie_id) == state["preset_count"]
     assert _all_task_count(charlie_id) == state["preset_count"]
 
@@ -277,7 +288,7 @@ def test_assigned_to_admin_to_assigned_does_not_duplicate(state, client):
     # Down to admin — tasks persist (we don't delete on
     # transition-away).
     demote = client.patch(
-        f"/api/contacts/{eve_id}", json={"admin": true, "role": "assigned"},
+        f"/api/contacts/{eve_id}", json={"admin": True, "role": "assigned"},
     )
     assert demote.status_code == 200
     assert _preset_task_count(eve_id) == state["preset_count"]

@@ -221,10 +221,10 @@ def caller_role_denied_reason(
     the DB stack at module load.
     """
     try:
-        emp_id = int(ctx.uid)
+        ct_id = int(ctx.uid)
     except (TypeError, ValueError):
         return f"uid {ctx.uid!r} is not a valid id"
-    if emp_id == 0:
+    if ct_id == 0:
         # The chat / TG handlers always set a real id;
         # ``0`` is the loop's placeholder for "no caller
         # resolved yet". Refuse rather than silently
@@ -236,12 +236,12 @@ def caller_role_denied_reason(
         )
     from magi.agent.db import Contact, open_session
     with open_session() as db:
-        emp = db.get(Contact, emp_id)
-    if emp is None:
-        return f"contact {emp_id!r} not found"
-    if emp.role not in allowed_roles:
+        ct = db.get(Contact, ct_id)
+    if ct is None:
+        return f"contact {ct_id!r} not found"
+    if ct.role not in allowed_roles:
         return (
-            f"role {emp.role!r} is not permitted for this "
+            f"role {ct.role!r} is not permitted for this "
             f"tool (allowed: {', '.join(sorted(allowed_roles))})"
         )
     return None

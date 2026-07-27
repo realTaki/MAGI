@@ -21,10 +21,11 @@ from magi.agent.db.models_contact import (
 from magi.agent.memory.contacts.prompt import format_contact_block
 from magi.agent.memory.contacts.store import ContactStore, ContactView
 from magi.agent.memory.contacts.tools import (
-    AddContactTool,
     AddContactNoteTool,
+    AddContactTool,
+    DeleteContactNoteTool,
     SearchContactsTool,
-    UpdateContactTool,
+    UpdateContactNoteTool,
 )
 
 
@@ -37,6 +38,7 @@ __all__ = [
     "format_contact_block",
     "AddContactTool",
     "AddContactNoteTool",
-    "UpdateContactTool",
+    "UpdateContactNoteTool",
+    "DeleteContactNoteTool",
     "SearchContactsTool",
 ]

@@ -131,10 +131,11 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "update_memory",
         "complete_memory",
         "delete_memory",
-        # Contact directory — add contacts, record notes.
+        # Contact directory — add contacts, manage notes.
         "add_contact",
         "add_contact_note",
-        "update_contact",
+        "update_contact_note",
+        "delete_contact_note",
         "search_contacts",
         # Todo / action-item — per-contact (admin /
         # assigned only). Registry filters them out of

@@ -375,7 +375,7 @@ class CompleteActionItemTool(Tool):
         if note is not None and len(note) > 500:
             return _err(f"note is too long ({len(note)} > 500)")
 
-        emp_id = int(ctx.uid)
+        ct_id = int(ctx.uid)
         with open_session() as db:
             row = db.get(ActionItem, item_id)
             if row is None:
@@ -388,11 +388,11 @@ class CompleteActionItemTool(Tool):
                     f"action item {item_id} not found or not "
                     f"owned by the calling operator"
                 )
-            if row.uid != emp_id:
+            if row.uid != ct_id:
                 logger.warning(
                     "complete_action_item denied: emp=%s tried to "
                     "complete item %s owned by %s",
-                    emp_id, item_id, row.uid,
+                    ct_id, item_id, row.uid,
                 )
                 return _err(
                     f"action item {item_id} not found or "
@@ -402,14 +402,14 @@ class CompleteActionItemTool(Tool):
                 row.completed_at = datetime.now(timezone.utc).replace(
                     tzinfo=None
                 )
-                row.completed_by_uid = emp_id
+                row.completed_by_uid = ct_id
                 if note is not None:
                     row.completion_note = note
                 db.commit()
                 db.refresh(row)
                 logger.info(
                     "complete_action_item: item %s completed by %s",
-                    item_id, emp_id,
+                    item_id, ct_id,
                 )
             # else: idempotent — return the existing
             # row unchanged.
@@ -462,7 +462,7 @@ class ListActionItemTool(Tool):
         if denied is not None:
             return _err(denied)
 
-        emp_id = int(ctx.uid)
+        ct_id = int(ctx.uid)
         include_completed = bool(kwargs.get("include_completed"))
 
         with open_session() as db:
@@ -475,7 +475,7 @@ class ListActionItemTool(Tool):
             # unique suffix matches the prefix (see
             # ``AddActionItemTool``).
             stmt = select(ActionItem).where(
-                ActionItem.uid == emp_id,
+                ActionItem.uid == ct_id,
                 ActionItem.kind.like(f"{_LLM_ACTION_ITEM_KIND_PREFIX}_%"),
             )
             if not include_completed:

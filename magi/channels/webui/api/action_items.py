@@ -237,7 +237,7 @@ def _current_admin_id(
             detail="no admin contact row bound to this session",
         )
     emp = session.get(Contact, uid)
-    if emp is None or emp.role != "admin":
+    if emp is None or not bool(emp.admin):
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
