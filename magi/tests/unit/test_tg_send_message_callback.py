@@ -63,7 +63,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     init_orm(str(state))
 
     with open_session() as s:
-        emp = Contact(
+        contact = Contact(
             id=1,
             name="Taki",
             telegram_id=6240201712,
@@ -71,9 +71,9 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
             provider="minimax",
             api_key="fake-key-for-tests",
         )
-        s.add(emp)
+        s.add(contact)
         s.commit()
-        s.refresh(emp)
+        s.refresh(contact)
 
     return state
 
@@ -139,13 +139,7 @@ async def test_tg_handler_injects_tg_send_callback(
         contact_name="Taki",
         display_name=None,
         contact_separated=False,
-        # Required since the call-site enum that runs
-        # the handler adopted ``contact_role`` to thread
-        # the TG user's role through to
-        # ``handle_message(caller_role=...)``. The fake
-        # bind in this test is always admin (the seeded
-        # Contact in the chat handler's earlier branch).
-        contact_admin=True, role="assigned",
+        contact_role="assigned",
         contact_provider="minimax",
         contact_api_key="fake-key-for-tests",
     )

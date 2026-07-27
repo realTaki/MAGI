@@ -120,19 +120,19 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
 
     with open_session() as db:
         if "uid" not in row_kwargs:
-            emp = db.query(Contact).first()
-            if emp is None:
-                emp = Contact(
+            contact = db.query(Contact).first()
+            if contact is None:
+                contact = Contact(
                     name="tester",
                     telegram_id=90001,
                     admin=True, role="assigned",
                     provider="minimax",
                     api_key="fake-key",
                 )
-                db.add(emp)
+                db.add(contact)
                 db.commit()
-                db.refresh(emp)
-            row_kwargs["uid"] = emp.id
+                db.refresh(contact)
+            row_kwargs["uid"] = contact.id
         row = Task(
             id=task_id,
             name=name,

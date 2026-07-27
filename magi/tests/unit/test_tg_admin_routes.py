@@ -31,7 +31,7 @@ def tg_admin_env(monkeypatch, tmp_path):
     init_orm(str(state))
     return state
 
-def _seed_contact(state_dir: str, *, delivery_address: int, role: str):
+def _seed_contact(state_dir: str, *, delivery_address: int, role: str, admin: bool = False):
     from magi.agent.db import Contact, open_session
 
     with open_session() as s:
@@ -41,6 +41,7 @@ def _seed_contact(state_dir: str, *, delivery_address: int, role: str):
                 name=f"TA-{role}",
                 telegram_id=delivery_address,
                 role=role,
+                admin=admin,
                 provider="minimax",
                 api_key="fake-key",
             )

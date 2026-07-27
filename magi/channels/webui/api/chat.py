@@ -119,7 +119,7 @@ def _resolve_caller_credentials(
     """
     try:
         with open_session() as session:
-            emp = session.get(Contact, uid)
+            contact = session.get(Contact, uid)
     except Exception:
         logger.exception(
             "chat: ORM lookup failed for uid %s", uid,
@@ -130,16 +130,16 @@ def _resolve_caller_credentials(
             detail="could not load operator's Contact record",
         )
 
-    if ct is None:
+    if contact is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no Contact row bound to this cookie",
         )
-    if not ct.provider or not ct.api_key:
+    if not contact.provider or not contact.api_key:
         logger.info(
             "chat: operator %s has no per-contact LLM credentials; "
-            "asking them to configure first", ct.id,
+            "asking them to configure first", contact.id,
         )
         raise MagiHTTPException(
             status_code=403,
@@ -149,7 +149,7 @@ def _resolve_caller_credentials(
                 "profile before chatting"
             ),
         )
-    return ct.id, ct.provider, ct.api_key, ct.role
+    return contact.id, contact.provider, contact.api_key, contact.role
 
 
 class ChatSendRequest(BaseModel):

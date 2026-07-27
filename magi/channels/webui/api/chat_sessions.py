@@ -268,19 +268,19 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
     Reads ``role`` and ``id`` inside the ``with`` block
     so we never touch the ORM row outside its session —
     a future lazy-load or engine reset would otherwise
-    turn the trailing ``return ct.id`` into a
+    turn the trailing ``return contact.id`` into a
     ``DetachedInstanceError``.
     """
     uid = _resolve_uid(request)
     with open_session() as session:
-        emp = session.get(Contact, uid)
-        if ct is None or ct.role != "admin":
+        contact = session.get(Contact, uid)
+        if contact is None or not bool(contact.admin):
             raise MagiHTTPException(
                 status_code=401,
                 code="chat.unknown_sender",
                 detail="no admin contact row bound to this session",
             )
-        return ct.id
+        return contact.id
 
 
 @router.post(

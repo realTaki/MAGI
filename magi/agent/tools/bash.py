@@ -271,7 +271,7 @@ class BashRunTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     def _build_description(self) -> str:
         """OS-specific description block.
@@ -577,7 +577,7 @@ class BashOutputTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     description = (
         "Retrieve new output from a background bash shell. "
@@ -682,7 +682,7 @@ class BashKillTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     description = (
         "Terminate a background bash shell by id. "

@@ -368,7 +368,7 @@ def _tool_names(schemas):
 
 def test_admin_role_sees_all_tools(seed_contacts):
     from magi.agent.tools.registry import get_tool_schemas
-    names = _tool_names(get_tool_schemas(caller_admin=True, role="assigned"))
+    names = _tool_names(get_tool_schemas(caller_admin=True, caller_role="assigned"))
     assert "schedule_task" in names
     assert "add_action_item" in names
     assert "complete_action_item" in names
@@ -434,5 +434,5 @@ def test_get_tool_single_lookup_respects_role(seed_contacts):
     assert get_tool("bash", caller_role="contact") is None
     assert get_tool("read_file", caller_role="guest") is None
     # Admin can.
-    assert get_tool("schedule_task", caller_admin=True, role="assigned") is not None
-    assert get_tool("bash", caller_admin=True, role="assigned") is not None
+    assert get_tool("schedule_task", caller_admin=True, caller_role="assigned") is not None
+    assert get_tool("bash", caller_admin=True, caller_role="assigned") is not None

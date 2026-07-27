@@ -195,7 +195,7 @@ class ContactStore:
                 source=source,
             )
             db.add(row)
-            ct.last_seen_at = utcnow_naive()
+            contact.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
         logger.info("contact note added", extra={"note_id": row.id, "contact_id": contact_id})

@@ -253,17 +253,17 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
     init_orm(str(state_dir))
     with open_session() as s:
         s.query(Contact).delete()
-        emp = Contact(
+        contact = Contact(
             name=f"TA-{role}",
             telegram_id=delivery_address,
             role=role,
             provider="minimax",
             api_key="fake",
         )
-        s.add(emp)
+        s.add(contact)
         s.commit()
-        s.refresh(emp)
-        uid = emp.id
+        s.refresh(contact)
+        uid = contact.id
 
     from magi.channels.webui.app import create_app
     from fastapi.testclient import TestClient
@@ -323,7 +323,7 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
     # Reset + seed a deliberately mismatched pair.
     with open_session() as s:
         s.query(Contact).delete()
-        emp = Contact(
+        contact = Contact(
             id=7,                          # explicit PK
             name="TA-mismatch",
             telegram_id=6240201712,        # ≠ PK
@@ -331,7 +331,7 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
             provider="minimax",
             api_key="fake",
         )
-        s.add(emp)
+        s.add(contact)
         s.commit()
 
     from magi.channels.webui.app import create_app

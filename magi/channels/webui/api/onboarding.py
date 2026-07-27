@@ -181,11 +181,11 @@ async def get_status() -> OnboardingStatus:
     admins: list[str] = []
     try:
         with open_session() as session:
-            for ct in session.scalars(
-                select(Contact).where(Contact.role == "admin")
+            for admin in session.scalars(
+                select(Contact).where(Contact.admin == 1)
             ).all():
-                if ct.telegram_id is not None:
-                    admins.append(str(ct.telegram_id))
+                if admin.telegram_id is not None:
+                    admins.append(str(admin.telegram_id))
     except Exception:
         # If the table is unreachable (very early boot) the
         # wizard still loads; admins stays empty until the
@@ -283,7 +283,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
         with open_session() as session:
             admins = list(
                 session.scalars(
-                    select(Contact).where(Contact.role == "admin")
+                    select(Contact).where(Contact.admin == 1)
                 ).all()
             )
             inserted = 0
@@ -761,20 +761,20 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             # ``user_im_bindings`` (canonical) and sync
             # ``Contact.telegram_id`` (legacy read-cache).
             for cid in parsed_ids:
-                emp = session.scalar(
+                contact = session.scalar(
                     select(Contact).where(Contact.telegram_id == cid)
                 )
-                if ct is None:
-                    emp = Contact(
+                if contact is None:
+                    contact = Contact(
                         name=display_names[cid] or f"Admin {cid}",
                         display_name=display_names[cid],
                         role="assigned",
                         admin=True,
                     )
-                    session.add(emp)
+                    session.add(contact)
                     session.flush()
                 else:
-                    ct.admin = True
+                    contact.admin = True
                     # If the row was previously not the
                     # served user (role='contact' / 'guest'),
                     # also flip it to 'assigned' — the
@@ -782,13 +782,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     # IS the served user. Multi-operator
                     # installs can manually re-set role
                     # afterwards if needed.
-                    if ct.role in ("contact", "guest"):
-                        ct.role = "assigned"
+                    if contact.role in ("contact", "guest"):
+                        contact.role = "assigned"
                     if display_names[cid]:
-                        ct.name = display_names[cid]
-                        if not ct.display_name:
-                            ct.display_name = display_names[cid]
-                new_ct_ids.append(ct.id)
+                        contact.name = display_names[cid]
+                        if not contact.display_name:
+                            contact.display_name = display_names[cid]
+                new_ct_ids.append(contact.id)
             session.commit()
     except Exception as exc:
         logger.exception("failed to write admin contacts")

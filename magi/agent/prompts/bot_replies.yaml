@@ -13,12 +13,12 @@
 #   3. Re-run the smoke test (Telegram bot → reply text).
 
 # Sent when a delivery_address is bound to a contact
-# with role ``contact`` or ``guest`` — i.e. someone this
+# with role ``contact`` or ``guest`` — someone this
 # MAGI does NOT serve. We tell them the ID so they can
-# pass it to their company's admin.
-cross_company_refusal: |
-  你的账号（{emp_name}）不属于本 MAGI 服务范围。
-  请联系你公司的管理员，或把你的 ID ({delivery_address}）告诉他们以加入。
+# pass it to the MAGI admin for promotion.
+unprivileged_contact: |
+  你的账号（{contact_name}）不属于本 MAGI 服务范围。
+  请联系 MAGI 管理员，或把你的 ID ({delivery_address}) 告诉他们以加入。
 
 # Sent when a bound contact is marked separated (离职).
 # Admin can restore via the dashboard; the EVE itself stays

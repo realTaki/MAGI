@@ -75,19 +75,19 @@ def bind_telegram(
         )
 
     with open_session() as session:
-        emp = session.get(Contact, payload.uid)
+        contact = session.get(Contact, payload.uid)
         if ct is None:
             raise MagiHTTPException(
                 status_code=404,
                 code="not_found.contact",
                 detail=f"contact {payload.uid} not found",
             )
-        if ct.separated_at is not None:
+        if contact.separated_at is not None:
             raise MagiHTTPException(
                 status_code=409,
                 code="conflict.contact_separated",
                 detail=(
-                    f"contact {ct.name!r} is marked separated; "
+                    f"contact {contact.name!r} is marked separated; "
                     "restore them before binding a TG chat"
                 ),
             )
@@ -99,7 +99,7 @@ def bind_telegram(
         existing = session.scalar(
             select(Contact).where(Contact.telegram_id == telegram_id_int)
         )
-        if existing is not None and existing.id != ct.id:
+        if existing is not None and existing.id != contact.id:
             existing.telegram_id = None
             session.flush()
 
@@ -107,8 +107,8 @@ def bind_telegram(
         # (D.28). The adapter writes ``user_im_bindings``
         # AND syncs ``Contact.telegram_id`` (the read-
         # cache the bot's inbound handler still uses).
-        channel_dispatcher.bind_im_id(ct.id, Channel.TG, str(telegram_id_int))
-        session.refresh(emp)  # pick up the legacy column write-back
+        channel_dispatcher.bind_im_id(contact.id, Channel.TG, str(telegram_id_int))
+        session.refresh(contact)  # pick up the legacy column write-back
         session.commit()
 
     return TGBindResponse(
@@ -200,12 +200,12 @@ def get_telegram_binding(
     bound_uid = None
     bound_name = None
     with open_session() as session:
-        emp = session.scalar(
+        contact = session.scalar(
             select(Contact).where(Contact.telegram_id == telegram_id_int)
         )
         if ct is not None:
-            bound_uid = ct.id
-            bound_name = ct.name
+            bound_uid = contact.id
+            bound_name = contact.name
     return TGBindStatus(
         telegram_id=telegram_id,
         bound_uid=bound_uid,

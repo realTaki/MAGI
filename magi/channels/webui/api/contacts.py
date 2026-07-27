@@ -348,8 +348,8 @@ def list_contact_notes(
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
     from magi.agent.db.models_contact import Contact, ContactNote
-    ct = session.get(Contact, contact_id)
-    if ct is None:
+    contact = session.get(Contact, contact_id)
+    if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
@@ -411,8 +411,8 @@ def list_contact_notes(
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
     from magi.agent.db.models_contact import Contact, ContactNote
-    ct = session.get(Contact, contact_id)
-    if ct is None:
+    contact = session.get(Contact, contact_id)
+    if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
@@ -557,8 +557,8 @@ def list_contact_notes(
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
     from magi.agent.db.models_contact import Contact, ContactNote
-    ct = session.get(Contact, contact_id)
-    if ct is None:
+    contact = session.get(Contact, contact_id)
+    if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
@@ -605,8 +605,8 @@ def list_contact_notes(
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
     from magi.agent.db.models_contact import Contact, ContactNote
-    ct = session.get(Contact, contact_id)
-    if ct is None:
+    contact = session.get(Contact, contact_id)
+    if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",

@@ -764,14 +764,14 @@ def _resolve_creator_id(request: Request, _payload) -> int:
         # outer txn).
         from magi.agent.db import open_session as _open
         with _open() as db:
-            emp = db.get(Contact, cand)
-        if ct is None:
+            contact = db.get(Contact, cand)
+        if contact is None:
             raise MagiHTTPException(
                 status_code=404, code="not_found.contact",
                 detail=f"contact {cand} not found",
             )
-        _enforce_creator_can_create(admin=bool(ct.admin), role=ct.role)
-        return ct.id
+        _enforce_creator_can_create(admin=bool(contact.admin), role=contact.role)
+        return contact.id
     # Fall back to the cookie: D.24 made ``magi_session``
     # carry the uid directly, so the lookup is
     # ``db.get(Contact, uid)`` — no telegram_id
@@ -785,8 +785,8 @@ def _resolve_creator_id(request: Request, _payload) -> int:
     uid = _resolve_uid(request)
     from magi.agent.db import open_session as _open
     with _open() as db:
-        emp = db.get(Contact, uid)
-    if ct is None:
+        contact = db.get(Contact, uid)
+    if contact is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
             detail=(
@@ -794,8 +794,8 @@ def _resolve_creator_id(request: Request, _payload) -> int:
                 f"(uid={uid}); sign in first"
             ),
         )
-    _enforce_creator_can_create(admin=bool(ct.admin), role=ct.role)
-    return ct.id
+    _enforce_creator_can_create(admin=bool(contact.admin), role=contact.role)
+    return contact.id
 
 
 def _enforce_creator_can_create(*, admin: bool, role: str) -> None:

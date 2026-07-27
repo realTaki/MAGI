@@ -89,7 +89,7 @@ class SearchSessionsTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Search the operator's past conversations with EVE "
         "for messages containing a query string. Returns each "

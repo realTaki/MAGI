@@ -138,7 +138,10 @@ def _build_tools() -> list["Tool"]:
     ]
 
 
-def get_tools(caller_role: str | None = None) -> list["Tool"]:
+def get_tools(
+    caller_role: str | None = None,
+    caller_admin: bool = False,
+) -> list["Tool"]:
     """Return all registered tools (cached after first call).
 
     Built-in tools are appended first; MCP tools (loaded at
@@ -153,15 +156,27 @@ def get_tools(caller_role: str | None = None) -> list["Tool"]:
     returns tools with no role restriction; role-restricted
     tools are stripped (better than silently exposing
     admin-only tools to unidentified callers).
+
+    ``caller_admin=True`` is the post-2024 split shortcut:
+    a WebUI-signed-in operator sees the full menu regardless
+    of their ``role`` enum value. Mirrors the API's
+    ``_enforce_creator_can_create`` helper.
     """
     global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
     all_tools = _tools_cache + (_mcp_tools_cache or [])
-    return [t for t in all_tools if t.is_allowed_for_role(caller_role)]
+    return [
+        t for t in all_tools
+        if t.is_allowed_for_role(caller_role, admin=caller_admin)
+    ]
 
 
-def get_tool(name: str, caller_role: str | None = None) -> "Tool | None":
+def get_tool(
+    name: str,
+    caller_role: str | None = None,
+    caller_admin: bool = False,
+) -> "Tool | None":
     """Look up a single tool by name. ``None`` if no such
     tool is registered — the agent loop turns that into
     an ``is_error=true`` ``tool_result`` for the LLM.
@@ -171,7 +186,7 @@ def get_tool(name: str, caller_role: str | None = None) -> "Tool | None":
     a different role (matches the menu-filter behaviour
     of :func:`get_tools`).
     """
-    for t in get_tools(caller_role=caller_role):
+    for t in get_tools(caller_role=caller_role, caller_admin=caller_admin):
         if t.name == name:
             return t
     return None
@@ -179,6 +194,7 @@ def get_tool(name: str, caller_role: str | None = None) -> "Tool | None":
 
 def get_tools_grouped(
     caller_role: str | None = None,
+    caller_admin: bool = False,
 ) -> tuple[list["Tool"], list["Tool"]]:
     """Return ``(built_in, mcp)`` lists, both filtered
     through :meth:`Tool.is_allowed_for_role` with
@@ -197,16 +213,20 @@ def get_tools_grouped(
     if _tools_cache is None:
         _tools_cache = _build_tools()
     built_in = [
-        t for t in _tools_cache if t.is_allowed_for_role(caller_role)
+        t for t in _tools_cache
+        if t.is_allowed_for_role(caller_role, admin=caller_admin)
     ]
     mcp = [
         t for t in (_mcp_tools_cache or [])
-        if t.is_allowed_for_role(caller_role)
+        if t.is_allowed_for_role(caller_role, admin=caller_admin)
     ]
     return built_in, mcp
 
 
-def get_tool_schemas(caller_role: str | None = None) -> list[dict]:
+def get_tool_schemas(
+    caller_role: str | None = None,
+    caller_admin: bool = False,
+) -> list[dict]:
     """Schemas (Anthropic-shaped) for every registered
     tool — passed straight to ``provider.chat(tools=...)``.
 
@@ -214,7 +234,10 @@ def get_tool_schemas(caller_role: str | None = None) -> list[dict]:
     :func:`_build_tools` constructs), so the LLM sees the
     same menu every turn.
     """
-    return [t.to_anthropic_schema() for t in get_tools(caller_role=caller_role)]
+    return [
+        t.to_anthropic_schema() for t in
+        get_tools(caller_role=caller_role, caller_admin=caller_admin)
+    ]
 
 
 def reset_cache() -> None:

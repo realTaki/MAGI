@@ -6,13 +6,13 @@
  *   ┌────────────────────────────────────────────────────┐
  *   │ Header: 定时任务 + tz line                         │
  *   ├────────────────────────────────────────────────────┤
- *   │ 预设任务 (preset tasks, auto-seeded)               │
- *   │   - read-only + "预设" badge inline                │
- *   │   - rows: name / channel / last status / actions   │
- *   ├────────────────────────────────────────────────────┤
  *   │ 自定义任务 (operator-authored)            [+ 新建] │
  *   │   - identical row shape, no badge                  │
  *   │   - "+ 新建任务" button lives here                 │
+ *   ├────────────────────────────────────────────────────┤
+ *   │ 预设任务 (preset tasks, auto-seeded)               │
+ *   │   - read-only + "预设" badge inline                │
+ *   │   - rows: name / channel / last status / actions   │
  *   └────────────────────────────────────────────────────┘
  *
  * The two lists come from independent ``useTasks({ kind })``
@@ -313,24 +313,9 @@ export default function TaskListPane() {
 
       {loadError && <p className="form-error">✗ {loadError.message}</p>}
 
-      {/* Preset section — auto-seeded rows from
-          ``task_presets`` templates. Read-only in the
-          sense that there's no "+ 新建" button here
-          (operators don't create preset tasks; they
-          configure templates in Settings → 任务预设 which
-          seed new assigned users). Each row is still
-          individually editable / toggleable / deletable. */}
-      <TaskSection
-        title="预设任务"
-        hint="系统按预设模板自动生成。编辑模板去 设置 → 任务预设。"
-        rows={presetRows}
-        loading={presetQuery.isLoading}
-        emptyMessage="还没有预设任务。新增 assigned 用户时会自动 seed。"
-        showPresetBadge
-        handlers={rowHandlers}
-      />
-
-      {/* Custom section — operator-authored. The
+      {/* Custom section — operator-authored. Rendered
+          FIRST (above the preset section) so the
+          operator's own tasks are front-and-center; the
           "+ 新建任务" button lives here (and only here)
           because operators create their own tasks; preset
           rows are seeded automatically. */}
@@ -350,6 +335,25 @@ export default function TaskListPane() {
             + 新建任务
           </button>
         }
+        handlers={rowHandlers}
+      />
+
+      {/* Preset section — auto-seeded rows from
+          ``task_presets`` templates. Rendered AFTER the
+          custom section (operator-authored tasks rank
+          above system-seeded ones). Read-only in the
+          sense that there's no "+ 新建" button here
+          (operators don't create preset tasks; they
+          configure templates in Settings → 任务预设 which
+          seed new assigned users). Each row is still
+          individually editable / toggleable / deletable. */}
+      <TaskSection
+        title="预设任务"
+        hint="系统按预设模板自动生成。编辑模板去 设置 → 任务预设。"
+        rows={presetRows}
+        loading={presetQuery.isLoading}
+        emptyMessage="还没有预设任务。新增 assigned 用户时会自动 seed。"
+        showPresetBadge
         handlers={rowHandlers}
       />
 

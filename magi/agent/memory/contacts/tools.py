@@ -81,7 +81,7 @@ class AddContactTool(Tool):
     """Create a new contact."""
 
     name = "add_contact"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Create a new contact (person) in the directory. "
         "Name is required. display_name, telegram_id, and "
@@ -129,7 +129,7 @@ class AddContactNoteTool(Tool):
     """Add a note about an existing contact."""
 
     name = "add_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Add a note (one fact) about an existing contact. "
         "Each call creates a new note row — use for "
@@ -169,7 +169,7 @@ class UpdateContactNoteTool(Tool):
     """Update a specific note by id."""
 
     name = "update_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Update a specific contact note by note_id. "
         "Use when the operator says 'Lily 现在不负责这个了' — "
@@ -207,7 +207,7 @@ class DeleteContactNoteTool(Tool):
     """Delete a specific note by id. Idempotent."""
 
     name = "delete_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Delete a specific contact note by note_id. "
         "Idempotent — deleting a non-existent id returns success. "
@@ -240,7 +240,7 @@ class SearchContactsTool(Tool):
     """Search contacts by name or note content."""
 
     name = "search_contacts"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Search contacts by name or note content "
         "(case-insensitive substring). Returns contacts "

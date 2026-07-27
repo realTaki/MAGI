@@ -70,7 +70,7 @@ logger = logging.getLogger("magi.agent.tools.action_item")
 # on their own action items. ``contact`` and ``guest``
 # have no MAGI-node session and aren't expected to chat
 # via the dashboard.
-_ALLOWED_ROLES = frozenset({"admin", "assigned"})
+_ALLOWED_ROLES = frozenset({"assigned"})
 
 # Stable kind prefix for LLM-driven action items. Each row
 # gets a unique per-row suffix (``_<8-hex>``) so multiple
@@ -230,7 +230,7 @@ class AddActionItemTool(Tool):
         "required": ["title"],
     }
 
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     async def run(
         self,
@@ -356,7 +356,7 @@ class CompleteActionItemTool(Tool):
         "required": ["item_id"],
     }
 
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     async def run(
         self,
@@ -390,7 +390,7 @@ class CompleteActionItemTool(Tool):
                 )
             if row.uid != ct_id:
                 logger.warning(
-                    "complete_action_item denied: emp=%s tried to "
+                    "complete_action_item denied: contact=%s tried to "
                     "complete item %s owned by %s",
                     ct_id, item_id, row.uid,
                 )
@@ -451,7 +451,7 @@ class ListActionItemTool(Tool):
         },
     }
 
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    ALLOWED_ROLES = frozenset({"assigned"})
 
     async def run(
         self,

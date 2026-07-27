@@ -74,17 +74,17 @@ def admin(state) -> Contact:
     to resolve the TG chat id via the admin row.
     """
     with open_session() as s:
-        emp = Contact(
+        contact = Contact(
             name="Test Admin",
             telegram_id=9001,
             admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-for-tests",
         )
-        s.add(emp)
+        s.add(contact)
         s.commit()
-        s.refresh(emp)
-        return emp
+        s.refresh(contact)
+        return contact
 
 @pytest.fixture
 def client(state, admin, monkeypatch) -> TestClient:

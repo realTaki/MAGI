@@ -236,14 +236,14 @@ def _current_admin_id(
             code="chat.unknown_sender",
             detail="no admin contact row bound to this session",
         )
-    emp = session.get(Contact, uid)
-    if emp is None or not bool(emp.admin):
+    contact = session.get(Contact, uid)
+    if contact is None or not bool(contact.admin):
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no admin contact row bound to this session",
         )
-    return emp.id
+    return contact.id
 
 
 @router.get("/action_items", response_model=ActionItemListOut)

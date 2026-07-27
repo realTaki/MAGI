@@ -235,8 +235,8 @@ def load_bot_replies() -> dict[str, str]:
 
         replies = load_bot_replies()
         await update.effective_message.reply_text(
-            replies["cross_company_refusal"].format(
-                contact_name=ct.name, delivery_address=chat_id,
+            replies["unprivileged_contact"].format(
+                contact_name=contact.name, delivery_address=chat_id,
             ),
         )
 

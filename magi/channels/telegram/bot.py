@@ -356,7 +356,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 extra={"tgid": tgid, "uid": contact_id},
             )
             await update.effective_message.reply_text(
-                _replies()["cross_company_refusal"].format(
+                _replies()["unprivileged_contact"].format(
                     contact_name=contact_name, delivery_address=tgid,
                 ),
             )
@@ -544,11 +544,11 @@ def _find_contact_by_telegram_id(
 
     try:
         with open_session() as session:
-            emp = session.scalar(
+            contact = session.scalar(
                 select(Contact).where(Contact.telegram_id == cid_int)
             )
-            if emp is not None:
-                return _fields(emp)
+            if contact is not None:
+                return _fields(contact)
     except Exception:
         logger.exception(
             "telegram: ORM read failed resolving chat %s", tgid,
@@ -568,10 +568,10 @@ def _find_contact_by_telegram_id(
         return None
     try:
         with open_session() as session:
-            emp = session.get(Contact, legacy_uid)
-            if emp is None:
+            contact = session.get(Contact, legacy_uid)
+            if contact is None:
                 return None
-            return _fields(emp)
+            return _fields(contact)
     except Exception:
         logger.exception(
             "telegram: legacy-meta ORM read failed for contact %s", legacy_uid,

@@ -153,7 +153,7 @@ def _super_admins() -> set[int]:
             for ct in session.scalars(
                 select(Contact).where(Contact.admin == 1)
             ).all():
-                result.add(ct.id)
+                result.add(contact.id)
         if result:
             return result
     except Exception:
@@ -190,7 +190,7 @@ def _super_admins() -> set[int]:
                     Contact.telegram_id.in_(legacy_chat_ids)
                 )
             ).all()
-            return {ct.id for ct in rows}
+            return {contact.id for ct in rows}
     except Exception:
         logger.exception("super_admins: legacy meta lookup failed")
         return set()
@@ -384,9 +384,9 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
             for ct in session.scalars(
                 select(Contact).where(Contact.id.in_(admin_uids))
             ).all():
-                if ct.telegram_id is not None:
+                if contact.telegram_id is not None:
                     admin_rows.append(
-                        (ct.id, ct.telegram_id, ct.display_name or ct.name)
+                        (contact.id, contact.telegram_id, contact.display_name or contact.name)
                     )
 
     candidates: dict[int, tuple[int, str | None]] = {
@@ -643,7 +643,7 @@ async def me(
     # with.
     try:
         with open_session() as session:
-            emp = session.get(Contact, uid)
+            contact = session.get(Contact, uid)
         if ct is None:
             return MeResponse(
                 uid=uid,
@@ -652,10 +652,10 @@ async def me(
                 admin=False,
             )
         return MeResponse(
-            uid=ct.id,
-            telegram_id=ct.telegram_id,
-            display_name=ct.name,
-            admin=bool(ct.admin),
+            uid=contact.id,
+            telegram_id=contact.telegram_id,
+            display_name=contact.name,
+            admin=bool(contact.admin),
         )
     except Exception:
         logger.exception("me: contact lookup failed for cookie value")

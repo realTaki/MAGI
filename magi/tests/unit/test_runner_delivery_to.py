@@ -114,14 +114,14 @@ def _seed_task(
         "T" + name[:24].ljust(24, "0")
     )
     with open_session() as db:
-        emp = db.query(Contact).filter_by(telegram_id=9101).one()
+        contact = db.query(Contact).filter_by(telegram_id=9101).one()
         session_id: str | None = None
         if with_session:
             session_id = new_session_id()
             db.add(ChatSession(
                 session_id=session_id,
-                delivery_address=str(emp.telegram_id or ""),
-                uid=emp.id,
+                delivery_address=str(contact.telegram_id or ""),
+                uid=contact.id,
                 channel="task",
                 title=f"[定时] {name}",
                 created_at="2026-07-20T12:00:00Z",
@@ -138,7 +138,7 @@ def _seed_task(
             session_id=session_id,
             tz="UTC",
             target_channel=target_channel,
-            uid=emp.id,
+            uid=contact.id,
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",
@@ -324,11 +324,11 @@ async def test_legacy_delivery_to_ulid_is_ignored(
     chat is untouched (no cross-contact injection).
     """
     with open_session() as db:
-        emp = db.query(Contact).filter_by(telegram_id=9101).one()
+        contact = db.query(Contact).filter_by(telegram_id=9101).one()
         legacy = ChatSession(
             session_id="01HABCDEFGHJKMNPQRSTVWXY",
-            delivery_address=str(emp.telegram_id),
-            uid=emp.id,
+            delivery_address=str(contact.telegram_id),
+            uid=contact.id,
             channel="webui",
             title="operator's ongoing chat",
             created_at="2026-07-20T09:00:00Z",
@@ -381,36 +381,36 @@ async def test_cross_contact_does_not_inject_into_other(
     contact), so we just verify the session
     ownership holds."""
     with open_session() as db:
-        emp_a = db.query(Contact).filter_by(telegram_id=9101).one()
-        emp_b = Contact(
+        contact_a = db.query(Contact).filter_by(telegram_id=9101).one()
+        contact_b = Contact(
             name="Other Operator",
             telegram_id=9202,
             admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-other",
         )
-        db.add(emp_b)
+        db.add(contact_b)
         db.commit()
-        db.refresh(emp_b)
+        db.refresh(contact_b)
 
-    # Task owned by emp_a; the runner's session is
-    # stamped to emp_a only.
+    # Task owned by contact_a; the runner's session is
+    # stamped to contact_a only.
     task_id, session_id = _seed_task(
         state_dir, "a-owns", delivery_to=None,
     )
     with open_session() as db:
         sess = db.get(ChatSession, session_id)
         assert sess is not None
-        assert sess.uid != emp_b.id
+        assert sess.uid != contact_b.id
 
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
-        # Only emp_b's seeded rows + emp_a's task
-        # session exist; no spill into emp_b's rows.
+        # Only contact_b's seeded rows + contact_a's task
+        # session exist; no spill into contact_b's rows.
         other_sessions = (
             db.query(ChatSession)
-            .filter_by(uid=emp_b.id)
+            .filter_by(uid=contact_b.id)
             .all()
         )
         assert len(other_sessions) == 0
@@ -501,11 +501,11 @@ async def test_tg_session_is_not_modified_by_task_fire(
     TG session is for the operator's TG chat with
     the bot; task fires are a separate thread."""
     with open_session() as db:
-        emp = db.query(Contact).filter_by(telegram_id=9101).one()
+        contact = db.query(Contact).filter_by(telegram_id=9101).one()
         tg_chat = ChatSession(
             session_id="01HTGCHATSESSIONXXXXXXXXX",
             delivery_address="9101",
-            uid=emp.id,
+            uid=contact.id,
             channel="tg",
             title="operator's TG chat",
             created_at="2026-07-20T09:00:00Z",

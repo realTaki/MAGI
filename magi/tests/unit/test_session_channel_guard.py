@@ -74,17 +74,17 @@ def state(tmp_path: Path, monkeypatch) -> Path:
 def admin(state) -> Contact:
     """Seed an admin whose telegram_id is the WebUI delivery_address."""
     with open_session() as s:
-        emp = Contact(
+        contact = Contact(
             name="Test Admin",
             telegram_id=9001,
             admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-for-tests",
         )
-        s.add(emp)
+        s.add(contact)
         s.commit()
-        s.refresh(emp)
-        return emp
+        s.refresh(contact)
+        return contact
 
 def _make_session(
     state: Path, channel: str, delivery_address: str = "9001",

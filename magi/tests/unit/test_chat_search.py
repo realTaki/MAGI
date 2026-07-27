@@ -210,7 +210,7 @@ def test_search_scoped_to_caller_contact(client, search_env, seed_messages):
     even though both are in the same SQLite DB.
 
     Scope is the calling Contact row (D.18+1 cross-platform
-    scope: ``WHERE chat_sessions.uid = :emp``). We
+    scope: ``WHERE chat_sessions.uid = :contact_id``). We
     seed for admin A (uid=1) and admin B
     (uid=2) using the same ``delivery_address`` so the scope
     is what discriminates — not the chat identifier.

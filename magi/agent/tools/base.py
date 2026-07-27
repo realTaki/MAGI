@@ -149,8 +149,12 @@ class Tool(ABC):
             the loop's bookkeeping is uniform
         """
 
-    def is_allowed_for_role(self, role: str | None) -> bool:
-        """Whether ``role`` should see this tool in the menu.
+    def is_allowed_for_role(
+        self,
+        role: str | None,
+        admin: bool = False,
+    ) -> bool:
+        """Whether the caller should see this tool in the menu.
 
         ``role=None`` means "caller didn't supply a role" —
         typically a test or a boot-time probe. v0 defaults
@@ -164,7 +168,22 @@ class Tool(ABC):
         — and the right fix for that bug is to wire the
         caller_role through, not to add a layer of refusal
         that hides the tool from legitimate test code.
+
+        ``admin=True`` is a separate opt-in that grants
+        access to operators who are WebUI-signed-in but
+        aren't on the served user's role list. After the
+        2024 role/admin split, ``admin`` lives on its own
+        boolean column (``Contact.admin``); ``role='admin'``
+        is no longer reachable from the enum. Tools that
+        previously keyed ``ALLOWED_ROLES`` on
+        ``{"admin", "assigned"}`` now use an empty
+        ``ALLOWED_ROLES`` and rely on the in-run gate.
         """
+        if admin:
+            # WebUI operator — bypasses the role-enum
+            # filter. Matches the API's
+            # ``_enforce_creator_can_create`` semantic.
+            return True
         if not self.ALLOWED_ROLES:
             # No restrictions declared: any caller, including
             # the ``role=None`` test / boot path, sees the tool.
@@ -236,12 +255,12 @@ def caller_role_denied_reason(
         )
     from magi.agent.db import Contact, open_session
     with open_session() as db:
-        ct = db.get(Contact, ct_id)
-    if ct is None:
+        contact = db.get(Contact, ct_id)
+    if contact is None:
         return f"contact {ct_id!r} not found"
-    if ct.role not in allowed_roles:
+    if contact.role not in allowed_roles:
         return (
-            f"role {ct.role!r} is not permitted for this "
+            f"role {contact.role!r} is not permitted for this "
             f"tool (allowed: {', '.join(sorted(allowed_roles))})"
         )
     return None
