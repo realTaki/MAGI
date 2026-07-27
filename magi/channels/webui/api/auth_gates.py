@@ -27,7 +27,13 @@ def _is_admin_uid(uid: int) -> bool:
     try:
         with open_session() as session:
             c = session.get(Contact, uid)
-            return c is not None and c.role == "admin"
+            # ``admin`` is the WebUI sign-in bit. Independent
+            # of ``role`` — an assigned user with admin=True
+            # is their own operator; a contact with admin=True
+            # is the classic operator role. The split
+            # replaces the pre-2024 ``role == 'admin'``
+            # check.
+            return c is not None and bool(c.admin)
     except Exception:
         logger.exception("admin_gate: ORM read failed; denying access")
         return False
@@ -54,7 +60,21 @@ AdminGate = Annotated[str, Depends(admin_gate)]
 
 
 def admin_or_assigned_gate(request: Request) -> str:
-    """FastAPI dependency — admin or assigned contact."""
+    """FastAPI dependency — admin or assigned contact.
+
+    Accepts the caller if EITHER:
+      - the ``admin`` bit is True (WebUI operator), OR
+      - the ``role`` is ``'assigned'`` (the served user —
+        who may not have backend access but can still edit
+        their own SOUL.md).
+
+    The old check (``role in ("admin", "assigned")``) is
+    replaced because admin is now a separate boolean — a
+    contact with ``role='contact', admin=True`` is a valid
+    operator who should pass this gate; a contact with
+    ``role='assigned', admin=False`` is the served user who
+    should also pass.
+    """
     from magi.agent.db import Contact, open_session
 
     raw = request.cookies.get("magi_session") or ""
@@ -75,7 +95,7 @@ def admin_or_assigned_gate(request: Request) -> str:
             code="auth.soul_edit_forbidden",
             detail="internal error verifying role",
         )
-    if c is None or c.role not in ("admin", "assigned"):
+    if c is None or not (bool(c.admin) or c.role == "assigned"):
         raise MagiHTTPException(
             status_code=403,
             code="auth.soul_edit_forbidden",

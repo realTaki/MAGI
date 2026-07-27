@@ -23,10 +23,17 @@ knowledge about them lives in ``notes``.
 
 ``role`` is the service role relative to MAGI:
 
-  - ``"admin"``    — operator, can sign in to the WebUI.
   - ``"assigned"`` — the person this MAGI serves.
   - ``"contact"``  — org member, not directly served.
   - ``"guest"``    — external / unknown.
+
+WebUI sign-in rights are carried by the separate
+``admin`` boolean (``True`` ↔ can sign into the operator
+console). The two fields are intentionally independent —
+a person can be ``role='assigned', admin=False`` (the
+served user who never logs in), ``role='contact',
+admin=True`` (a colleague with backend access but no
+served role), or any combination.
 
 ``telegram_id`` is the bound TG chat id (NULL until the
 /start binding flow). Unique across non-NULL values.
@@ -48,6 +55,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     String,
     Text,
@@ -77,12 +85,34 @@ class Contact(Base):
     display_name: Mapped[str | None] = mapped_column(String(120))
 
     # Service role — how this person relates to MAGI.
-    #   "admin"    — operator (can sign into WebUI).
-    #   "assigned" — served by this MAGI.
+    #   "assigned" — served by this MAGI (gets preset tasks
+    #                seeded, may have their own LLM creds).
     #   "contact"  — org member, not directly served.
     #   "guest"    — external / unknown.
+    #
+    # WebUI sign-in rights are NOT encoded here — see the
+    # ``admin`` boolean below. A contact can be any
+    # combination of role + admin (e.g. the served user
+    # who also runs the operator console is
+    # ``role='assigned', admin=True``).
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="contact"
+    )
+
+    # WebUI sign-in rights. ``True`` if this contact can
+    # authenticate to the operator console
+    # (``/api/auth/me`` accepts the session cookie). The
+    # tasks creator-role gate also checks this — an admin
+    # can create scheduled tasks regardless of role,
+    # mirroring the pre-split semantic where "admin"
+    # meant "operator who could drive the system".
+    #
+    # Independent of ``role`` on purpose: an assigned user
+    # can also be their own operator (``admin=True``), and
+    # a backend operator doesn't have to be the person
+    # being served (``role='contact', admin=True``).
+    admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0",
     )
 
     # LLM provider credentials. F1 follow-up moves these
@@ -121,5 +151,5 @@ class Contact(Base):
     def __repr__(self) -> str:
         return (
             f"Contact(id={self.id}, name={self.name!r}, "
-            f"role={self.role!r})"
+            f"role={self.role!r}, admin={self.admin})"
         )

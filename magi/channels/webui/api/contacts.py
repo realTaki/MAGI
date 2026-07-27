@@ -34,7 +34,14 @@ _MAX_ROWS = 200
 _PAGE_SIZE_DEFAULT = 20
 _PAGE_SIZE_MAX = 100
 
-_CONTACT_ROLES: tuple[str, ...] = ("admin", "assigned", "contact", "guest")
+# Valid ``role`` values — the relationship this contact
+# has to MAGI. ``admin`` is intentionally NOT in this set:
+# WebUI sign-in rights are carried by the separate
+# ``admin`` boolean on the same row (see ``ContactOut.admin``
+# and the ``/api/auth/me`` route). Splitting the two
+# fields lets one contact be both ``role='assigned'`` (the
+# person MAGI serves) AND ``admin=True`` (the operator).
+_CONTACT_ROLES: tuple[str, ...] = ("assigned", "contact", "guest")
 
 
 # -- helpers ----------------------------------------------------------------
@@ -58,6 +65,13 @@ class ContactOut(BaseModel):
     name: str
     display_name: str | None = None
     role: str | None = None
+    # WebUI sign-in rights — independent of ``role``. True
+    # if the contact can authenticate to the operator
+    # console (``/api/auth/me`` accepts the cookie; tasks
+    # creator gate allows them). The split lets a contact
+    # be ``role='assigned'`` (the person MAGI serves) AND
+    # ``admin=True`` (the operator) at the same time.
+    admin: bool = False
     provider: str | None = None
     api_key_set: bool = False
     api_key_last4: str | None = None
@@ -84,6 +98,13 @@ class ContactCreate(BaseModel):
     provider: str | None = Field(default=None, max_length=32)
     api_key: str | None = Field(default=None, max_length=512)
     role: str = Field(default="contact", max_length=16)
+    # Defaults to ``False`` — a freshly-created contact is
+    # not a WebUI operator until the operator explicitly
+    # promotes them via ``PATCH /api/contacts/{id}`` with
+    # ``{"admin": true}``. Pre-2024 schema conflated this
+    # with ``role='admin'``; the split keeps the two
+    # concerns independent.
+    admin: bool = False
     telegram_id: int | None = None
 
 
@@ -93,6 +114,13 @@ class ContactUpdate(BaseModel):
     api_key: Optional[str] = Field(default=None, max_length=512)
     name: Optional[str] = Field(default=None, max_length=120)
     role: Optional[str] = Field(default=None, max_length=16)
+    # ``None`` (omitted from the PATCH body) means "leave
+    # admin unchanged"; ``True`` / ``False`` flips the bit.
+    # The ``model_fields_set`` check on the route side
+    # distinguishes the two cases — critical because
+    # ``False`` is a meaningful value (we want to be able
+    # to revoke admin).
+    admin: Optional[bool] = None
     telegram_id: Optional[int] = None
     separated: Optional[bool] = None
 
@@ -104,6 +132,7 @@ def _serialize(c: Contact) -> ContactOut:
         name=c.name,
         display_name=c.display_name,
         role=c.role,
+        admin=bool(c.admin),
         provider=c.provider,
         api_key_set=is_set,
         api_key_last4=last4,
@@ -127,6 +156,7 @@ def list_contacts(
     separated: bool = False,
     include_separated: bool = False,
     role: str | None = None,
+    admin: Optional[bool] = None,
     page: int = 1,
     page_size: int = _PAGE_SIZE_DEFAULT,
 ) -> ContactListOut:
@@ -162,6 +192,13 @@ def list_contacts(
                 detail=f"Unknown role {role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
             )
         base = base.where(Contact.role == role)
+
+    if admin is not None and not with_notes:
+        # ``admin=true`` ↔ WebUI operators. The Settings →
+        # WebUI access card queries this filter to render
+        # the admin list. Independent of ``role`` — see the
+        # notes on ``ContactOut.admin``.
+        base = base.where(Contact.admin == (1 if admin else 0))
 
     if with_notes:
         base = base.order_by(Contact.last_seen_at.desc()).limit(_MAX_ROWS)
@@ -229,6 +266,7 @@ def create_contact(
         provider=payload.provider,
         api_key=payload.api_key,
         role=payload.role,
+        admin=payload.admin,
         telegram_id=payload.telegram_id,
     )
     session.add(contact)
@@ -334,6 +372,12 @@ def update_contact(
         newly_assigned = (
             payload.role == "assigned" and prev_role != "assigned"
         )
+
+    # ``admin`` toggle — independent of ``role`` (the role
+    # transition above has its own seed-hook trigger; the
+    # admin bit doesn't affect seeding).
+    if "admin" in payload.model_fields_set and payload.admin is not None:
+        contact.admin = bool(payload.admin)
 
     if "telegram_id" in payload.model_fields_set:
         new_tg = payload.telegram_id

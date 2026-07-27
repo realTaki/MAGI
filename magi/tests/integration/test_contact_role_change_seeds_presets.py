@@ -102,7 +102,13 @@ def client(state):
 
 def _count_tasks_for(client: TestClient, contact_id: int) -> int:
     """Helper: count tasks owned by ``contact_id`` via the
-    tasks API."""
+    tasks API. (We don't use this everywhere — the test
+    client shares a connection pool with the route
+    handler that just committed the seed, and ``BEGIN
+    IMMEDIATE`` on the follow-up request can trip a
+    spurious "database is locked" on some SQLite
+    configurations. Direct DB checks via
+    ``_preset_task_count`` are the more reliable form.)"""
     r = client.get(f"/api/tasks?uid={contact_id}")
     assert r.status_code == 200, r.text
     return len(r.json())
@@ -111,7 +117,8 @@ def _count_tasks_for(client: TestClient, contact_id: int) -> int:
 def _preset_task_count(contact_id: int) -> int:
     """Helper: count preset-derived tasks for a contact
     directly via the DB (the API's ``kind`` filter is what
-    the dashboard uses; this matches that exactly)."""
+    the dashboard uses; this matches that exactly). The
+    dashboard's two-list layout depends on this."""
     from magi.agent.db import open_session
     from magi.agent.proactive.orm_models import Task
 
@@ -120,6 +127,16 @@ def _preset_task_count(contact_id: int) -> int:
             Task.uid == contact_id,
             Task.preset_key.is_not(None),
         ).count()
+
+
+def _all_task_count(contact_id: int) -> int:
+    """Helper: count ALL tasks owned by ``contact_id``
+    (preset + custom), directly via the DB."""
+    from magi.agent.db import open_session
+    from magi.agent.proactive.orm_models import Task
+
+    with open_session() as db:
+        return db.query(Task).filter(Task.uid == contact_id).count()
 
 
 # -- scenario A -----------------------------------------------------------
@@ -138,8 +155,8 @@ def test_post_with_role_assigned_seeds_presets(state, client):
     assert r.status_code == 201, r.text
     alice_id = r.json()["id"]
 
-    assert _count_tasks_for(client, alice_id) == state["preset_count"]
     assert _preset_task_count(alice_id) == state["preset_count"]
+    assert _all_task_count(alice_id) == state["preset_count"]
 
 
 def test_post_with_role_admin_does_not_seed(state, client):
@@ -152,7 +169,8 @@ def test_post_with_role_admin_does_not_seed(state, client):
     })
     assert r.status_code == 201, r.text
     admin_id = r.json()["id"]
-    assert _count_tasks_for(client, admin_id) == 0
+    assert _all_task_count(admin_id) == 0
+    assert _preset_task_count(admin_id) == 0
 
 
 # -- scenario B -----------------------------------------------------------
@@ -168,7 +186,7 @@ def test_patch_to_assigned_seeds_presets(state, client):
     })
     assert r.status_code == 201, r.text
     bob_id = r.json()["id"]
-    assert _count_tasks_for(client, bob_id) == 0
+    assert _all_task_count(bob_id) == 0
 
     promote = client.patch(
         f"/api/contacts/{bob_id}", json={"role": "assigned"},
@@ -176,8 +194,8 @@ def test_patch_to_assigned_seeds_presets(state, client):
     assert promote.status_code == 200, promote.text
     assert promote.json()["role"] == "assigned"
 
-    assert _count_tasks_for(client, bob_id) == state["preset_count"]
     assert _preset_task_count(bob_id) == state["preset_count"]
+    assert _all_task_count(bob_id) == state["preset_count"]
 
 
 def test_patch_admin_to_assigned_seeds_presets(state, client):
@@ -189,13 +207,14 @@ def test_patch_admin_to_assigned_seeds_presets(state, client):
     })
     assert r.status_code == 201, r.text
     charlie_id = r.json()["id"]
-    assert _count_tasks_for(client, charlie_id) == 0
+    assert _all_task_count(charlie_id) == 0
 
     promote = client.patch(
         f"/api/contacts/{charlie_id}", json={"role": "assigned"},
     )
     assert promote.status_code == 200, promote.text
-    assert _count_tasks_for(client, charlie_id) == state["preset_count"]
+    assert _preset_task_count(charlie_id) == state["preset_count"]
+    assert _all_task_count(charlie_id) == state["preset_count"]
 
 
 # -- scenario C: idempotency on repeat transition -----------------------
@@ -276,7 +295,7 @@ def test_non_role_patch_does_not_seed(state, client):
         json={"display_name": "Frank Renamed"},
     )
     assert rename.status_code == 200
-    assert _count_tasks_for(client, frank_id) == 0
+    assert _all_task_count(frank_id) == 0
 
 
 # -- scenario E: list filter splits preset vs custom --------------------
@@ -295,18 +314,26 @@ def test_list_tasks_kind_filter_splits_preset_and_custom(state, client):
     assert r.status_code == 201, r.text
     gina_id = r.json()["id"]
 
-    # Add a custom task for Gina via the standard create
-    # endpoint (operator-authored).
-    custom = client.post("/api/tasks", json={
-        "name": f"Gina weekly review (custom)",
-        "prompt": "Custom prompt.",
-        "frequency": "weekly",
-        "hour": 10,
-        "minute": 0,
-        "day_of_week": 0,
-        "target_channel": "webui",
-    })
+    # Add a custom task for Gina. The ``X-Contact-Id``
+    # header tells the route to stamp ``uid=gina_id`` on
+    # the new row instead of the cookie's admin (the
+    # creator-role gate also accepts ``assigned`` per
+    # ``_ROLE_MAY_CREATE``).
+    custom = client.post(
+        "/api/tasks",
+        headers={"X-Contact-Id": str(gina_id)},
+        json={
+            "name": "Gina weekly review (custom)",
+            "prompt": "Custom prompt.",
+            "frequency": "weekly",
+            "hour": 10,
+            "minute": 0,
+            "day_of_week": 0,
+            "target_channel": "webui",
+        },
+    )
     assert custom.status_code == 201, custom.text
+    assert custom.json()["uid"] == gina_id
 
     preset_list = client.get(
         f"/api/tasks?kind=preset&uid={gina_id}",
