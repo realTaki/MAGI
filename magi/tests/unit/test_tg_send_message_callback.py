@@ -67,7 +67,7 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
             id=1,
             name="Taki",
             telegram_id=6240201712,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-for-tests",
         )
@@ -145,7 +145,7 @@ async def test_tg_handler_injects_tg_send_callback(
         # ``handle_message(caller_role=...)``. The fake
         # bind in this test is always admin (the seeded
         # Contact in the chat handler's earlier branch).
-        contact_role="admin",
+        contact_admin=True, role="assigned",
         contact_provider="minimax",
         contact_api_key="fake-key-for-tests",
     )

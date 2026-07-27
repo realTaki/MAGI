@@ -101,7 +101,7 @@ def build_system_prompt(
       3. **Current chatter** — :func:`format_contact_block`
          renders the :class:`ContactEntry` row scoped to
          ``(uid, uid)``: the User's own self-record, the
-         same lookup the user's ``add_contact`` /
+         same lookup the user's ``add_contact_note`` /
          ``search_contacts`` tools maintain. Pre-D.26 the
          block was keyed off a per-channel chat id; that
          field is gone now. The User is uniquely

@@ -54,7 +54,7 @@ def client(tg_settings_env):
             Contact(
                 name="TA-tg-settings",
                 telegram_id=9001,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake",
             )

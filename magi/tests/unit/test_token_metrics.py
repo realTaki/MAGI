@@ -63,7 +63,7 @@ def env(monkeypatch, tmp_path):
         admin = Contact(
             name="Alice",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake",
         )

@@ -162,7 +162,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             Contact(
                 name="TA-loop-interrupt",
                 telegram_id=tmp_path.stat().st_uid ^ 90000,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake",
             )

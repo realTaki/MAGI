@@ -61,7 +61,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Alice",
             display_name="Alice",
             telegram_id=9101,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-fake",
         )
@@ -307,7 +307,7 @@ def test_create_tg_task_without_telegram_binding_returns_400(state):
         unbound = Contact(
             name="Bob",
             telegram_id=None,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-bob",
         )

@@ -1,5 +1,23 @@
 /**
- * SettingsWebuiAccessCard — admin list + AddAdminForm.
+ * SettingsWebuiAccessCard — list of WebUI operators +
+ * TG-code based "add admin" wizard.
+ *
+ * "Admin" is no longer a ``Contact.role`` value; it's the
+ * separate ``admin: boolean`` column (see
+ * ``ContactRow`` / ``useAdminContacts``). The card here:
+ *   - reads ``useAdminContacts()`` which queries
+ *     ``?admin=true`` on the backend
+ *   - renders a per-row "Admin" toggle that PATCHes
+ *     ``/api/contacts/{id}`` with ``{admin: false|true}``
+ *     — a one-click revoke/restore
+ *   - falls back to the TG-code "save-admin" wizard for
+ *     the initial add (TG binding still requires the
+ *     code-verification handshake)
+ *
+ * The wizard path (`AddAdminForm`) is unchanged: it sends
+ * a code to a TG chat, the candidate enters the 6-digit
+ * code, and ``save_admin`` flips ``admin=True`` on the
+ * contact row.
  */
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,18 +47,35 @@ export function SettingsWebuiAccessCard(props: {
   const refresh = () => { void qc.invalidateQueries({ queryKey: qk.contacts() }); };
 
   async function handleRemoveAdmin(emp: ContactRow) {
+    // Self-protection: the signed-in operator can't lock
+    // themselves out of the WebUI by revoking their own
+    // admin bit. The backend's auth gate would refuse the
+    // next /api/auth/me anyway, but fail-closed client-side
+    // is friendlier.
     if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) return;
     if (!confirm(t("settings.adminRemoveConfirm").replace("{name}", emp.name))) return;
-    const remaining = admins
-      .filter((c) => c.id !== emp.id && c.telegram_id !== null)
-      .map((c) => String(c.telegram_id));
-    const r = await fetch("/api/onboarding/save-admin", {
-      method: "POST",
+    // Direct PATCH — no wizard. Replaces the pre-2024
+    // "save-admin with remaining TG ids" diff step which
+    // couldn't be a one-click action and required the
+    // operator to first hit "save-admin" before removing.
+    const r = await fetch(`/api/contacts/${emp.id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tgids: remaining }),
+      body: JSON.stringify({ admin: false }),
       credentials: "include",
     });
     if (r.ok) { refresh(); } else { alert(t("settings.adminRemoveFailed")); }
+  }
+
+  async function handleRestoreAdmin(emp: ContactRow) {
+    const r = await fetch(`/api/contacts/${emp.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin: true }),
+      credentials: "include",
+    });
+    if (!r.ok) { alert(t("settings.adminRemoveFailed")); }
+    else { refresh(); }
   }
 
   return (
@@ -59,9 +94,9 @@ export function SettingsWebuiAccessCard(props: {
             <thead>
               <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
                 <th className="py-2 pr-4 font-medium">{t("settings.tableHeaderName")}</th>
-                <th className="py-2 pr-4 font-medium w-44">{t("settings.tableHeaderRole")}</th>
+                <th className="py-2 pr-4 font-medium w-32">{t("settings.tableHeaderRole")}</th>
                 <th className="py-2 pr-4 font-medium">{t("settings.tableHeaderTgId")}</th>
-                <th className="py-2 font-medium w-28 text-right" />
+                <th className="py-2 font-medium w-40 text-right" />
               </tr>
             </thead>
             <tbody>
@@ -70,7 +105,9 @@ export function SettingsWebuiAccessCard(props: {
                 return (
                   <tr key={emp.id}>
                     <td className="py-2 pr-4 text-ink">{emp.display_name ?? emp.name}</td>
-                    <td className="py-2 pr-4"><RoleBadge role={emp.role} /></td>
+                    <td className="py-2 pr-4">
+                      <RoleBadge role={emp.role} />
+                    </td>
                     <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
                       {emp.telegram_id ?? <span className="text-ink-soft">—</span>}
                     </td>
@@ -78,11 +115,18 @@ export function SettingsWebuiAccessCard(props: {
                       {isSelf ? (
                         <span className="status-pill status-pill--connected">{t("settings.youLabel")}</span>
                       ) : (
-                        <button type="button" onClick={() => handleRemoveAdmin(emp)}
-                          title={t("settings.adminRemoveTitle")}
-                          className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
-                          <IconDelete className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button type="button" onClick={() => handleRestoreAdmin(emp)}
+                            title={t("settings.adminRestoreTitle")}
+                            className="p-1 rounded text-ink-soft hover:text-emerald-600 hover:bg-white/60 transition-colors">
+                            ↺
+                          </button>
+                          <button type="button" onClick={() => handleRemoveAdmin(emp)}
+                            title={t("settings.adminRemoveTitle")}
+                            className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                            <IconDelete className="h-4 w-4" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -112,9 +156,13 @@ export function SettingsWebuiAccessCard(props: {
 
 function RoleBadge(props: { role: ContactRow["role"] }) {
   const t = useT();
+  // ``role`` enum dropped ``"admin"`` when the boolean
+  // split landed — the badge map only carries the three
+  // remaining values.
   const map: Record<string, string> = {
-    admin: t("settings.roleAdmin"), assigned: t("settings.roleAssigned"),
-    contact: t("settings.roleContact"), guest: t("settings.roleGuest"),
+    assigned: t("settings.roleAssigned"),
+    contact: t("settings.roleContact"),
+    guest: t("settings.roleGuest"),
   };
   return (
     <span className="text-xs text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">
@@ -142,7 +190,7 @@ export function AddAdminForm(props: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tgid: cid }), credentials: "include",
       });
-      const data = await r.json() as { ok: boolean; error?: string };
+      const data = (await r.json()) as { ok: boolean; error?: string };
       if (data.ok) { setState("code-sent"); } else { setState("error"); setError(data.error ?? "send failed"); }
     } catch (err) {
       setState("error"); setError(err instanceof Error ? err.message : t("settings.networkError"));
@@ -158,7 +206,7 @@ export function AddAdminForm(props: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tgid: telegramId.trim(), code: c }), credentials: "include",
       });
-      const data = await r.json() as { ok: boolean; display_name?: string | null; error?: string };
+      const data = (await r.json()) as { ok: boolean; display_name?: string | null; error?: string };
       if (data.ok) { props.onAdded(telegramId.trim(), data.display_name ?? null); }
       else { setState("error"); setError(data.error ?? t("settings.addAdminCodeMismatch")); }
     } catch (err) {

@@ -153,7 +153,7 @@ def test_append_validates_role(store):
     """Bad role values are rejected before any DB write."""
     from magi.agent.memory.session import SessionCorruptError
     s = store.create(7, )
-    bad = SessionMessage(role="admin", text="x", ts="t", message_id=new_session_id())
+    bad = SessionMessage(admin=True, role="assigned", text="x", ts="t", message_id=new_session_id())
     with pytest.raises(SessionCorruptError):
         store.append_messages(7, s.session_id, [bad])
 

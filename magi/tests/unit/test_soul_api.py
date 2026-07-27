@@ -69,7 +69,7 @@ def client(soul_env):
             Contact(
                 name="TA-soul",
                 telegram_id=8001,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake",
             )
@@ -327,7 +327,7 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
             id=7,                          # explicit PK
             name="TA-mismatch",
             telegram_id=6240201712,        # ≠ PK
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake",
         )

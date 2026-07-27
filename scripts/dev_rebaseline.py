@@ -105,7 +105,17 @@ def _dump_one_db(path: Path) -> dict[str, list[dict]]:
     Tables in :data:`SKIP_TABLES` are excluded. Datetimes
     are serialised as ISO strings (SQLAlchemy's default
     for ``datetime`` columns; the new baseline's INSERT
-    accepts the same form)."""
+    accepts the same form).
+
+    Per-row transforms applied before serialisation:
+      - ``contacts`` rows with the legacy
+        ``role='admin'`` value are rewritten to
+        ``role='assigned', admin=True`` to match the
+        0002_admin_role_split migration. The restored
+        rows land in the post-baseline schema with the
+        admin bit set, so the auth gate lets the operator
+        sign back in.
+    """
     if not path.exists():
         return {}
     eng = sa.create_engine(f"sqlite:///{path}")
@@ -123,8 +133,34 @@ def _dump_one_db(path: Path) -> dict[str, list[dict]]:
             rows = conn.execute(
                 sa.text(f"SELECT * FROM {table}")
             ).mappings().all()
-            out[table] = [dict(r) for r in rows]
+            rows = [dict(r) for r in rows]
+            if table == "contacts":
+                rows = [_transform_contact_role_split(r) for r in rows]
+            out[table] = rows
     return out
+
+
+def _transform_contact_role_split(row: dict) -> dict:
+    """Apply the ``role='admin'`` → ``role='assigned', admin=True``
+    data migration to a single contacts-table row.
+
+    Pre-2024 contacts schema carried operator status in
+    the ``role`` enum (``role='admin'`` meant "WebUI
+    sign-in"). After the split those rows become
+    ``role='assigned', admin=True``. We rewrite at dump
+    time so the restored rows land in the new schema with
+    the admin bit set — without this, an operator who
+    ran ``dev_rebaseline.py all`` on a pre-split DB would
+    end up with no admins (the auth gate filters on
+    ``admin=True``).
+
+    Idempotent: if the row already has ``role='assigned'``
+    or ``admin=True``, it's left alone.
+    """
+    if row.get("role") == "admin":
+        row["role"] = "assigned"
+        row["admin"] = True
+    return row
 
 
 def cmd_dump(args: argparse.Namespace) -> int:

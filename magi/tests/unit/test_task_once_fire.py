@@ -125,7 +125,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
                 emp = Contact(
                     name="tester",
                     telegram_id=90001,
-                    role="admin",
+                    admin=True, role="assigned",
                     provider="minimax",
                     api_key="fake-key",
                 )
@@ -246,7 +246,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         db.add(Contact(
             name="tester",
             telegram_id=90002,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key",
         ))
@@ -296,7 +296,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         db.add(Contact(
             name="tester",
             telegram_id=90003,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key",
         ))

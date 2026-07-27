@@ -76,7 +76,7 @@ def seed_contacts(fresh_db):
         alice = Contact(
             name="Alice",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-alice",
         )

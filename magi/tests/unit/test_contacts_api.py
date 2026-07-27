@@ -62,7 +62,7 @@ def env(monkeypatch, tmp_path):
             name="Alice",
             display_name="ali",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-fake",
         )
@@ -147,14 +147,21 @@ def test_list_contacts_returns_empty_when_no_rows(client):
     assert names == sorted(names)
     assert names[0] == "Alice"
 
-def test_list_contacts_filters_by_role(client, env):
-    """``?role=admin`` returns only admins (Alice)."""
-    r = client.get("/api/contacts?role=admin")
+def test_list_contacts_filters_by_admin(client, env):
+    """``?admin=true`` returns only WebUI operators (Alice).
+
+    After the role/admin split (2024), ``role='admin'`` is
+    no longer a valid value — WebUI sign-in rights are
+    carried by the separate ``admin`` boolean. The
+    ``/api/contacts?admin=true`` filter is the canonical
+    way to list operators; the old ``?role=admin`` query
+    now returns 400 ``validation.role_unknown``."""
+    r = client.get("/api/contacts?admin=true")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 1
     assert body["items"][0]["name"] == "Alice"
-    assert body["items"][0]["role"] == "admin"
+    assert body["items"][0]["admin"] is True
 
 def test_list_contacts_role_validation(client):
     """Unknown role -> 400."""

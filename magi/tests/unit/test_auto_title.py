@@ -52,7 +52,7 @@ def _seed_admin():
         admin = Contact(
             name="TA-test",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key",
         )

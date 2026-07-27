@@ -64,7 +64,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Alice",
             display_name="Alice",
             telegram_id=9101,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-admin",
         )

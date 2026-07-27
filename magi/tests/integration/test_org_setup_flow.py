@@ -78,7 +78,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Operator",
             display_name="Operator",
             telegram_id=9101,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-admin",
         )
@@ -229,7 +229,7 @@ def test_newly_added_contact_visible_in_chat_session_owner_resolution(
     bob = client.post("/api/contacts", json={
         "name": "Bob",
         "telegram_id": 9202,
-        "role": "admin",
+        "admin": true, "role": "assigned",
         "provider": "minimax",
         "api_key": "sk-bob",
     })

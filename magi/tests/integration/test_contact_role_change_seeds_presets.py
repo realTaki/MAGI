@@ -19,7 +19,7 @@ Each scenario:
   A. POST  /api/contacts  role="assigned"   → 2 presets
   B. POST  /api/contacts  role="contact"    → 0 presets
      then PATCH role="assigned"               → 2 presets
-  C. POST  /api/contacts  role="admin"      → 0 presets
+  C. POST  /api/contacts  admin=true, role="contact"     → 0 presets
      then PATCH role="assigned"               → 2 presets
   D. POST  /api/contacts  role="contact"    → 0 presets
      then PATCH role="contact" (no-op)       → 0 presets
@@ -67,7 +67,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             name="Operator",
             display_name="Operator",
             telegram_id=9101,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-admin",
         )
@@ -159,13 +159,29 @@ def test_post_with_role_assigned_seeds_presets(state, client):
     assert _all_task_count(alice_id) == state["preset_count"]
 
 
-def test_post_with_role_admin_does_not_seed(state, client):
-    """POST /api/contacts with ``role='admin'`` is a no-op
-    (admin operators don't need auto-seeded daily briefings)."""
+def test_post_with_admin_true_role_contact_does_not_seed(state, client):
+    """POST with ``admin=true, role='contact'`` is a no-op
+    for the preset seed hook.
+
+    After the role/admin split (2024), WebUI sign-in
+    rights are carried by ``admin`` (boolean), not by
+    ``role='admin'`` (which is no longer in the enum).
+    A contact with ``admin=True`` but ``role='contact'``
+    is a pure backend operator — they're NOT the served
+    user, so the preset seed hook correctly skips them.
+
+    The previous test in this slot (``test_post_with_role_admin_does_not_seed``)
+    relied on the old ``role='admin'`` semantic which
+    conflated "operator" with "not served". In the new
+    model the analogue is admin=True + role≠'assigned'
+    (operator but not the served user) — that's what this
+    test now covers.
+    """
     r = client.post("/api/contacts", json={
-        "name": "Admin",
+        "name": "Backend Admin",
         "telegram_id": 9203,
-        "role": "admin",
+        "admin": true,
+        "role": "contact",
     })
     assert r.status_code == 201, r.text
     admin_id = r.json()["id"]
@@ -203,7 +219,7 @@ def test_patch_admin_to_assigned_seeds_presets(state, client):
     r = client.post("/api/contacts", json={
         "name": "Charlie",
         "telegram_id": 9205,
-        "role": "admin",
+        "admin": true, "role": "assigned",
     })
     assert r.status_code == 201, r.text
     charlie_id = r.json()["id"]
@@ -261,7 +277,7 @@ def test_assigned_to_admin_to_assigned_does_not_duplicate(state, client):
     # Down to admin — tasks persist (we don't delete on
     # transition-away).
     demote = client.patch(
-        f"/api/contacts/{eve_id}", json={"role": "admin"},
+        f"/api/contacts/{eve_id}", json={"admin": true, "role": "assigned"},
     )
     assert demote.status_code == 200
     assert _preset_task_count(eve_id) == state["preset_count"]

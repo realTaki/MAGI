@@ -770,18 +770,17 @@ def _resolve_creator_id(request: Request, _payload) -> int:
                 status_code=404, code="not_found.contact",
                 detail=f"contact {cand} not found",
             )
-        _enforce_creator_role(emp.role)
+        _enforce_creator_can_create(admin=bool(emp.admin), role=emp.role)
         return emp.id
     # Fall back to the cookie: D.24 made ``magi_session``
     # carry the uid directly, so the lookup is
     # ``db.get(Contact, uid)`` — no telegram_id
-    # detour. The role gate is duplicated inline (instead
-    # of reusing :func:`_admin_uid`) because
-    # ``assigned`` is also welcome here, and
-    # ``_admin_uid`` enforces ``role == "admin"``
-    # only. Same ``open_session`` rationale as above —
-    # we don't want to begin a transaction on the route's
-    # session before the dispatcher lookup fires.
+    # detour. The creator gate passes ``admin=True`` OR
+    # ``role='assigned'`` (replaces the pre-2024
+    # ``role in {"admin", "assigned"}`` check). Same
+    # ``open_session`` rationale as above — we don't want
+    # to begin a transaction on the route's session before
+    # the dispatcher lookup fires.
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
     from magi.agent.db import open_session as _open
@@ -795,20 +794,34 @@ def _resolve_creator_id(request: Request, _payload) -> int:
                 f"(uid={uid}); sign in first"
             ),
         )
-    _enforce_creator_role(emp.role)
+    _enforce_creator_can_create(admin=bool(emp.admin), role=emp.role)
     return emp.id
 
 
-def _enforce_creator_role(role: str) -> None:
-    if role not in _ROLE_MAY_CREATE:
-        raise MagiHTTPException(
-            status_code=403,
-            code="tasks.creator_forbidden",
-            detail=(
-                f"role {role!r} cannot create tasks; "
-                f"allowed: {sorted(_ROLE_MAY_CREATE)}"
-            ),
-        )
+def _enforce_creator_can_create(*, admin: bool, role: str) -> None:
+    """Gate who can author a scheduled task.
+
+    Accepts the caller if either:
+      - ``admin=True`` — WebUI operator (any role).
+      - ``role='assigned'`` — the served user, regardless of
+        admin status.
+
+    Replaces the pre-2024 ``role in {"admin", "assigned"}``
+    check. The old enum-driven gate can't express "the
+    served user who is also their own operator" or "a
+    colleague with backend access who isn't the served
+    user". Both are now legitimate authors.
+    """
+    if admin or role == "assigned":
+        return
+    raise MagiHTTPException(
+        status_code=403,
+        code="tasks.creator_forbidden",
+        detail=(
+            f"admin={admin}, role={role!r} cannot create tasks; "
+            f"required: admin=True or role='assigned'"
+        ),
+    )
 
 
 def _register_with_scheduler(task: Task) -> None:
@@ -841,13 +854,14 @@ def _state_dir() -> str:
     return require_state_dir()
 
 
-# Constants for the creator-role gate. ``admin`` and
-# ``assigned`` contacts may create tasks (charged to their
-# own credentials); ``contact`` and ``guest`` don't sign
-# in to a MAGI node and so have no use for scheduled
-# tasks. Mirrors the gate in ``schedule_task`` so the
-# API and the LLM tool are consistent.
-_ROLE_MAY_CREATE = {"admin", "assigned"}
+# The creator-role gate moved from a constant to a helper
+# (``_enforce_creator_can_create``) when ``role='admin'``
+# was retired in favour of the ``admin`` boolean. The
+# helper takes both fields so the LLM tool side
+# (``magi/agent/tools/schedule_task.py``) and this API
+# agree on the policy: ``admin=True OR role='assigned'``.
+# ``contact`` and ``guest`` rows can't sign in to a MAGI
+# node and so have no use for scheduled tasks.
 
 
 def _resolve_system_tz() -> str:

@@ -121,14 +121,14 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
         alice = Contact(
             name="alice",
             telegram_id=9101,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-alice",
         )
         bob = Contact(
             name="bob",
             telegram_id=None,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-bob",
         )

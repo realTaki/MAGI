@@ -1,29 +1,15 @@
 """LLM-callable contact tools.
 
-The contact directory is LLM-managed, not auto-managed.
-The LLM hears "Lily 在财务部" and calls
-``add_contact`` to record it; later the operator says
-"对了 Lily 现在不负责这块了" and the LLM calls
-``update_contact`` to fix it.
+Two write tools, one read:
 
-Four tools mirror the magi-memory shape:
+  - :class:`AddContactTool` — create a new contact row
+    (name, optional display_name, telegram_id, notes).
+  - :class:`AddContactNoteTool` — record notes about an
+    existing contact.
+  - :class:`UpdateContactTool` — patch ``notes`` / ``role``.
+  - :class:`SearchContactsTool` — search contact directory.
 
-  - :class:`AddContactTool` — upsert by (owner, person).
-    Idempotent: re-call with the same ``person_id``
-    patches the existing row.
-  - :class:`UpdateContactTool` — patch ``notes`` /
-    ``role`` by contact id.
-  - :class:`DeleteContactTool` — remove by id.
-  - :class:`SearchContactsTool` — read path. Returns
-    contacts whose ``notes`` match a substring
-    (case-insensitive). The LLM uses this when the
-    operator says "记得 Mark 在哪吗" — the LLM
-    searches and finds them.
-
-Admin gate: same as the API and the magi-memory
-tools — only ``admin`` and ``assigned`` may write
-to their own directory. ``contact`` and ``guest``
-get ``is_error=True``.
+Contacts are never deleted via LLM tools.
 """
 
 from __future__ import annotations
@@ -32,9 +18,6 @@ import json
 import logging
 from typing import Any, Optional
 
-from sqlalchemy import select
-
-from magi.agent.db import Contact, open_session
 from magi.agent.memory.contacts.store import ContactStore
 from magi.agent.tools.base import (
     Tool,
@@ -50,13 +33,6 @@ _WRITE_ROLES = frozenset({"admin", "assigned"})
 
 
 def _gate(ctx: ToolContext) -> str | None:
-    """Thin wrapper around
-    :func:`magi.agent.tools.base.caller_role_denied_reason`
-    — the canonical in-run gate lives there so contacts,
-    memory, and action-item tools share one check. The
-    per-tool wrapper exists only so the call sites read
-    ``denied = _gate(ctx)`` without referring to
-    ``self.ALLOWED_ROLES``."""
     return caller_role_denied_reason(ctx, _WRITE_ROLES)
 
 
@@ -71,47 +47,103 @@ def _ok(payload: Any) -> ToolResult:
     return ToolResult(content=body, is_error=False)
 
 
-class AddContactTool(Tool):
-    """Record notes about a contact.
+# -- AddContactTool -----------------------------------------------------------
 
-    Idempotent: re-call with the same contact_id
-    patches the existing notes. The LLM learns about
-    people over multiple turns; we want one cumulative
-    record, not a journal.
-    """
+
+class AddContactTool(Tool):
+    """Create a new contact in the directory."""
 
     name = "add_contact"
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Record what the MAGI knows about a contact. "
+        "Create a new contact (person) in the directory. "
+        "Use when the operator says '添加 Lily 到团队' / "
+        "'把 Mark 加进来'. Name is required. "
+        "display_name, telegram_id, and notes are optional. "
+        "To add notes about an existing contact, use "
+        "add_contact_note instead."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Contact name (required, unique).",
+            },
+            "display_name": {
+                "type": "string",
+                "description": "Display name (optional).",
+            },
+            "telegram_id": {
+                "type": "integer",
+                "description": "Telegram user id (optional).",
+            },
+            "notes": {
+                "type": "string",
+                "description": "Initial notes (optional).",
+            },
+            "role": {
+                "type": "string",
+                "description": "Role: admin, assigned, contact, or guest. Default 'contact'.",
+            },
+        },
+        "required": ["name"],
+    }
+
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        gate = _gate(ctx)
+        if gate is not None:
+            return _err(gate)
+        name = kwargs.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return _err("name is required (non-empty string)")
+        try:
+            store = ContactStore(ctx.state_dir)
+            view = store.create_contact(
+                name=name,
+                display_name=kwargs.get("display_name"),
+                role=kwargs.get("role") or "contact",
+                telegram_id=kwargs.get("telegram_id"),
+                notes=kwargs.get("notes") or "",
+            )
+        except ValueError as e:
+            return _err(str(e))
+        return _ok(view.to_dict())
+
+
+# -- AddContactNoteTool -------------------------------------------------------
+
+
+class AddContactNoteTool(Tool):
+    """Record notes about an existing contact."""
+
+    name = "add_contact_note"
+
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    description = (
+        "Record what the MAGI knows about an existing contact. "
         "Use when the operator says '记住 Lily 在财务部' / "
-        "'Mark 是我们 CTO' / '记得 Bob prefer Slack over email'."
+        "'Mark 是我们 CTO' / '记得 Bob prefer Slack over email'. "
+        "The contact must already exist (use add_contact first "
+        "if needed). Idempotent — re-calling patches notes."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "contact_id": {
                 "type": "integer",
-                "description": "contacts.id of the person being described.",
+                "description": "contacts.id of the person.",
             },
             "notes": {
                 "type": "string",
-                "description": "Free-form markdown. <=8 KB.",
-            },
-            "role": {
-                "type": "string",
-                "description": "Optional snapshot of the person's role.",
+                "description": "Free-form markdown notes. <=8 KB.",
             },
         },
         "required": ["contact_id", "notes"],
     }
 
-    async def run(
-        self,
-        ctx: ToolContext,
-        **kwargs: Any,
-    ) -> ToolResult:
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         gate = _gate(ctx)
         if gate is not None:
             return _err(gate)
@@ -120,64 +152,43 @@ class AddContactTool(Tool):
             return _err(f"contact_id must be int, got {type(contact_id).__name__}")
         try:
             store = ContactStore(ctx.state_dir)
-            view = store.add_note(
-                contact_id,
-                notes=kwargs["notes"],
-                role=kwargs.get("role"),
-            )
+            view = store.add_note(contact_id, notes=kwargs["notes"])
         except ValueError as e:
-            return _err(f"add_contact failed: {e}")
+            return _err(str(e))
         return _ok(view.to_dict())
 
 
+# -- UpdateContactTool --------------------------------------------------------
+
+
 class UpdateContactTool(Tool):
-    """Patch an existing contact record by id."""
+    """Patch an existing contact's notes or role."""
 
     name = "update_contact"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The chat path always passes the operator's role
-    # through to ``handle_message(caller_role=...)`` so
-    # non-eligible callers never see these tools in the
-    # LLM's menu. ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Patch an existing contact record by id. Use when "
-        "the operator says '对了 Lily 现在不负责这块了' / "
-        "'Mark 的 role 改了'. Mutable: notes, role. "
-        "Immutable: person_id, owner_id (delete + re-add if "
-        "you really need to change those)."
+        "Patch an existing contact's notes or role by id. "
+        "Use when the operator says 'Lily 现在不负责这块了' / "
+        "'Mark 的 role 改了'. Contact must already exist."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "contact_id": {
-                "type": "integer",
-                "description": "id of the contact row (from add_contact result).",
-            },
+            "contact_id": {"type": "integer", "description": "id of the contact row."},
             "notes": {"type": "string"},
             "role": {"type": "string"},
         },
         "required": ["contact_id"],
     }
 
-    async def run(
-        self,
-        ctx: ToolContext,
-        **kwargs: Any,
-    ) -> ToolResult:
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         gate = _gate(ctx)
         if gate is not None:
             return _err(gate)
-
         contact_id = kwargs.get("contact_id")
         if not isinstance(contact_id, int):
-            return _err(
-                f"contact_id must be int, got {type(contact_id).__name__}"
-            )
+            return _err(f"contact_id must be int, got {type(contact_id).__name__}")
         try:
             store = ContactStore(ctx.state_dir)
             view = store.update_notes(
@@ -190,96 +201,26 @@ class UpdateContactTool(Tool):
         return _ok(view.to_dict())
 
 
-class DeleteContactTool(Tool):
-    """Remove a contact record by id.
-
-    Idempotent — deleting a non-existent id is a
-    successful no-op.
-    """
-
-    name = "delete_contact"
-
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The chat path always passes the operator's role
-    # through to ``handle_message(caller_role=...)`` so
-    # non-eligible callers never see these tools in the
-    # LLM's menu. ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-    description = (
-        "Delete a contact record by id. Idempotent — "
-        "deleting a non-existent id returns success. "
-        "Use when the operator says '忘了 Lily 吧' / "
-        "'删掉那条 Mark 的记录'."
-    )
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "contact_id": {
-                "type": "integer",
-                "description": "id of the contact row to remove.",
-            },
-        },
-        "required": ["contact_id"],
-    }
-
-    async def run(
-        self,
-        ctx: ToolContext,
-        **kwargs: Any,
-    ) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
-
-        contact_id = kwargs.get("contact_id")
-        if not isinstance(contact_id, int):
-            return _err(
-                f"contact_id must be int, got {type(contact_id).__name__}"
-            )
-        store = ContactStore(ctx.state_dir)
-        existed = store.delete_notes(contact_id)
-        return _ok({"contact_id": contact_id, "existed": existed})
+# -- SearchContactsTool -------------------------------------------------------
 
 
 class SearchContactsTool(Tool):
-    """Read path: search the operator's contact
-    directory.
-
-    Returns all of the operator's contacts whose
-    ``notes`` contain the query substring (case-
-    insensitive). The LLM uses this when the
-    operator says "记得 Mark 在哪吗" / "谁在负责
-    Q3 报销" — the LLM searches and answers from
-    the result.
-    """
+    """Search the contact directory."""
 
     name = "search_contacts"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The chat path always passes the operator's role
-    # through to ``handle_message(caller_role=...)`` so
-    # non-eligible callers never see these tools in the
-    # LLM's menu. ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Search the contact directory. Returns all of the "
-        "operator's contacts whose notes contain the query "
-        "substring (case-insensitive). Use when the operator "
-        "says '记得 Mark 在哪吗' / '谁在负责 Q3 报销' / "
-        "'Lily 干啥的来着'."
+        "Search the contact directory by name or notes "
+        "(case-insensitive substring). Use when the operator "
+        "says '记得 Mark 在哪吗' / '谁在负责 Q3 报销'."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Substring to search for in contact notes. Case-insensitive.",
+                "description": "Substring to search for.",
             },
             "limit": {
                 "type": "integer",
@@ -291,19 +232,11 @@ class SearchContactsTool(Tool):
         "required": ["query"],
     }
 
-    async def run(
-        self,
-        ctx: ToolContext,
-        **kwargs: Any,
-    ) -> ToolResult:
-        # Read path — no role gate. Any signed-in
-        # contact can search (the WebUI exposes this
-        # to admin + assigned anyway).
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         query = (kwargs.get("query") or "").strip()
         if not query:
             return _err("query is required")
         limit = int(kwargs.get("limit") or 20)
-
         store = ContactStore(ctx.state_dir)
         results = store.search(query, limit=limit)
         return _ok({
@@ -314,7 +247,7 @@ class SearchContactsTool(Tool):
 
 __all__ = [
     "AddContactTool",
+    "AddContactNoteTool",
     "UpdateContactTool",
-    "DeleteContactTool",
     "SearchContactsTool",
 ]

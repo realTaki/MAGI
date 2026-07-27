@@ -40,7 +40,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path):
         admin = Contact(
             name="MCP-admin",
             telegram_id=8801,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-fake",
         )

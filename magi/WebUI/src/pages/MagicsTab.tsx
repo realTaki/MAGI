@@ -32,7 +32,18 @@ export type ContactRow = {
   api_key_set: boolean;
   api_key_last4: string | null;
   separated_at: string | null;
-  role: "admin" | "assigned" | "contact" | "guest";
+  // ``role`` is the relationship to MAGI (assigned /
+  // contact / guest). WebUI sign-in rights are NOT in
+  // the role enum — they're a separate boolean below.
+  // Pre-2024 this enum had ``"admin"``; that value moved
+  // out to ``admin: boolean`` so a contact can be both
+  // ``role='assigned'`` AND ``admin=True``.
+  role: "assigned" | "contact" | "guest";
+  // WebUI sign-in rights — independent of ``role``.
+  // ``true`` means this contact can authenticate to the
+  // operator console (``/api/auth/me`` accepts the
+  // session cookie; tasks creator gate allows them).
+  admin: boolean;
   telegram_id: number | null;
   notes: string;
   source: string;

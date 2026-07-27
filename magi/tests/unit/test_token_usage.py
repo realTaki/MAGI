@@ -66,7 +66,7 @@ def token_env(monkeypatch, tmp_path):
             Contact(
                 name="TA-admin",
                 telegram_id=9001,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake",
             )

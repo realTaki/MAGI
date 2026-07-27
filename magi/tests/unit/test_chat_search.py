@@ -50,11 +50,11 @@ def search_env(monkeypatch, tmp_path):
 
     with open_session() as s:
         s.add(Contact(
-            name="A", telegram_id=9001, role="admin",
+            name="A", telegram_id=9001, admin=True, role="assigned",
             provider="minimax", api_key="fake",
         ))
         s.add(Contact(
-            name="B", telegram_id=9002, role="admin",
+            name="B", telegram_id=9002, admin=True, role="assigned",
             provider="minimax", api_key="fake",
         ))
         s.commit()

@@ -130,27 +130,28 @@ def _state_dir() -> str:
 
 
 def _super_admins() -> set[int]:
-    """Read the super-admin allowlist as a set of contact ids.
+    """Read the WebUI-admin allowlist as a set of contact ids.
 
-    The identity is now the **contact (uid), not the
-    per-channel delivery address — a contact with a
-    bound TG chat is the same identity as that same
-    contact signing in via WebUI. The legacy
-    ``telegram.super_admins`` meta key (pre-D.24) stores
-    raw TG chat ids; the fallback path resolves each legacy
-    chat id to its current ``Contact.id`` so old state
-    files keep working.
+    The identity is the **contact (uid), not the per-channel
+    delivery address — a contact with a bound TG chat is the
+    same identity as that same contact signing in via
+    WebUI. The legacy ``telegram.super_admins`` meta key
+    (pre-D.24) stores raw TG chat ids; the fallback path
+    resolves each legacy chat id to its current ``Contact.id``
+    so old state files keep working.
 
-    Source of truth is the ``contacts`` table (rows with
-    ``role='admin'``). The fallback path is retired in C8
-    once no production state still carries the legacy key.
+    Source of truth is the ``contacts`` table — the
+    ``admin=True`` boolean. Replaces the pre-2024
+    ``role='admin'`` filter (admin was split from role when
+    the two concepts collided on the served user who is
+    also an operator).
     """
     state_dir = _state_dir()
     result: set[int] = set()
     try:
         with open_session() as session:
             for emp in session.scalars(
-                select(Contact).where(Contact.role == "admin")
+                select(Contact).where(Contact.admin == 1)
             ).all():
                 result.add(emp.id)
         if result:
@@ -255,7 +256,7 @@ class MeResponse(BaseModel):
     uid: int
     telegram_id: int | None = None
     display_name: str | None = None
-    is_super_admin: bool = True  # for C0: the only kind of logged-in user
+    admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
 
     # D.24: the cookie is keyed by ``uid``, not
     # the per-channel delivery address. The response
@@ -648,12 +649,14 @@ async def me(
                 uid=uid,
                 telegram_id=None,
                 display_name=None,
+                admin=False,
             )
         return MeResponse(
             uid=emp.id,
             telegram_id=emp.telegram_id,
             display_name=emp.name,
+            admin=bool(emp.admin),
         )
     except Exception:
         logger.exception("me: contact lookup failed for cookie value")
-        return MeResponse(uid=uid)
+        return MeResponse(uid=uid, admin=False)

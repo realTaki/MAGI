@@ -58,7 +58,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     admin = Contact(
         name="Operator",
         telegram_id=9101,
-        role="admin",
+        admin=True, role="assigned",
         provider="minimax",
         api_key="sk-admin",
     )
@@ -152,7 +152,7 @@ def test_seed_skips_admin_contacts(state):
     from magi.agent.proactive.orm_models import Task
 
     with open_session() as db:
-        admin2 = Contact(name="Admin2", role="admin", telegram_id=9203)
+        admin2 = Contact(name="Admin2", admin=True, role="assigned", telegram_id=9203)
         db.add(admin2); db.flush()
         n = seed_presets_for_contact(db, admin2.id)
         db.commit()

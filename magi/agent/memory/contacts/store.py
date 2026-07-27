@@ -82,6 +82,49 @@ class ContactStore:
 
     # -- public -----------------------------------------------------------
 
+    def create_contact(
+        self,
+        name: str,
+        *,
+        display_name: Optional[str] = None,
+        role: str = "contact",
+        telegram_id: Optional[int] = None,
+        notes: str = "",
+        source: str = SOURCE_EVE,
+    ) -> ContactView:
+        """Create a new contact row.  Returns the created row.
+
+        Raises ``ValueError`` if ``name`` already exists.
+        """
+        name = name.strip()
+        if not name:
+            raise ValueError("name is required")
+        if display_name is not None:
+            display_name = display_name.strip() or None
+        role = role.strip() or "contact"
+        notes = notes.strip()[:_NOTES_MAX]
+
+        with open_session() as db:
+            existing = db.scalar(
+                select(Contact).where(Contact.name == name)
+            )
+            if existing is not None:
+                raise ValueError(f"contact name {name!r} already exists (id={existing.id})")
+            row = Contact(
+                name=name,
+                display_name=display_name,
+                role=role,
+                telegram_id=telegram_id,
+                notes=notes,
+                source=source,
+                last_seen_at=utcnow_naive(),
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+        logger.info("contact created", extra={"id": row.id, "name": row.name})
+        return ContactView.from_row(row)
+
     def add_note(
         self,
         contact_id: int,
@@ -90,7 +133,11 @@ class ContactStore:
         role: Optional[str] = None,
         source: str = SOURCE_EVE,
     ) -> ContactView:
-        """Append/add notes about a contact."""
+        """Record notes about an **existing** contact.
+
+        Raises ``ValueError`` if the contact doesn't exist.
+        Use ``create_contact`` to create a new contact first.
+        """
         notes = notes.strip()[:_NOTES_MAX]
         if not notes:
             raise ValueError("notes is required")
@@ -100,21 +147,15 @@ class ContactStore:
         with open_session() as db:
             row = db.get(Contact, contact_id)
             if row is None:
-                # Create a new contact entry on the fly.
-                row = Contact(
-                    name=f"contact-{contact_id}",
-                    role=role or "contact",
-                    notes=notes,
-                    source=source,
-                    last_seen_at=utcnow_naive(),
+                raise ValueError(
+                    f"contact {contact_id!r} not found. "
+                    "Create the contact in the WebUI admin panel first."
                 )
-                db.add(row)
-            else:
-                row.notes = notes
-                if role is not None:
-                    row.role = role
-                row.source = source
-                row.last_seen_at = utcnow_naive()
+            row.notes = notes
+            if role is not None:
+                row.role = role
+            row.source = source
+            row.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
         logger.info("contact note updated", extra={"contact_id": row.id})

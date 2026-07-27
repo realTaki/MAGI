@@ -77,7 +77,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
                 # ``id`` auto, so we look it up later.
                 name="runner-delivery-test",
                 telegram_id=9101,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake-key-for-tests",
             )
@@ -385,7 +385,7 @@ async def test_cross_contact_does_not_inject_into_other(
         emp_b = Contact(
             name="Other Operator",
             telegram_id=9202,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-other",
         )

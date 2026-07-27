@@ -52,11 +52,11 @@ def admin_env(monkeypatch, tmp_path):
     with open_session() as db:
         db.add(Contact(
             name="TA-pagination", telegram_id=9001,
-            role="admin", provider="minimax", api_key="fake",
+            admin=True, role="assigned", provider="minimax", api_key="fake",
         ))
         db.add(Contact(
             name="TB-other", telegram_id=9002,
-            role="admin", provider="minimax", api_key="fake",
+            admin=True, role="assigned", provider="minimax", api_key="fake",
         ))
         db.commit()
 

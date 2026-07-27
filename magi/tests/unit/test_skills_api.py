@@ -56,7 +56,7 @@ def env(monkeypatch, tmp_path, workspace):
             Contact(
                 name="TA-skills",
                 telegram_id=9001,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake-key",
             )

@@ -218,7 +218,7 @@ def test_admin_reload_endpoint_clears_cache(
     with open_session() as db:
         db.add(Contact(
             id=1, name="alice",
-            telegram_id=9001, role="admin",
+            telegram_id=9001, admin=True, role="assigned",
             provider="minimax", api_key="fake",
         ))
         db.commit()

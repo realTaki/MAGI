@@ -60,25 +60,36 @@ logger = logging.getLogger("magi.agent.tools.schedule_task")
 _NAME_MAX = 120
 _PROMPT_MAX = 8000
 
-# Same gate as the API: only ``admin`` and ``assigned``
-# may create a task. ``contact`` and ``guest`` get
-# ``is_error=True``.
-_ROLE_MAY_CREATE = {"admin", "assigned"}
+# ``admin`` and ``assigned`` may create a task. ``contact``
+# and ``guest`` get ``is_error=True`` (the in-run check
+# below enforces this — the registry's role-based
+# ``ALLOWED_ROLES`` filter only sees the role enum, not
+# the separate ``admin`` boolean, so we widen
+# ``ALLOWED_ROLES`` to an empty frozenset and lean on the
+# in-run check). Mirrors the API's
+# ``_enforce_creator_can_create(admin, role)`` helper.
+_ROLE_MAY_CREATE = frozenset()  # all roles visible; in-run gate enforces the real rule
 
 
 class ScheduleTaskTool(Tool):
     name = "schedule_task"
 
-    # Visible only to ``admin`` and ``assigned`` operators.
-    # Registry: ``get_tools(caller_role=...)`` strips this
-    # tool out of the menu for everyone else, so the model
-    # never learns it exists when it can't be invoked. The
-    # in-run re-check below (``_ROLE_MAY_CREATE``) is a
-    # defense-in-depth safeguard for the (currently
-    # dormant) path that bypasses ``get_tools`` — better to
-    # fail closed twice than to leak the tool's existence to
-    # a caller who's not signed in to this MAGI node.
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
+    # Visible to anyone; the in-run re-check below
+    # (``_ROLE_MAY_CREATE``) is the real gate. We can't
+    # filter on the registry's ``ALLOWED_ROLES`` because
+    # that field is keyed on the ``role`` enum only —
+    # the separate ``admin`` boolean (WebUI sign-in
+    # rights, which moved out of the role enum in 2024)
+    # is not plumbed through to the registry. Widening
+    # the menu filter and leaning on the in-run check is
+    # the same defense-in-depth shape the rest of the
+    # codebase uses for this category of tool: the model
+    # learns the tool exists, the run-time guard rejects
+    # non-authors with ``is_error=True``.
+    ALLOWED_ROLES = frozenset()
+    # In-run author gate: ``admin=True OR role='assigned'``.
+    # Mirrors the API's
+    # ``_enforce_creator_can_create(admin, role)`` helper.
     description = (
         "Create or update a recurring scheduled task. Requires "
         "admin or assigned-contact scope (i.e. the calling "
@@ -328,12 +339,21 @@ class ScheduleTaskTool(Tool):
             emp = db.get(Contact, ctx.uid)
             if emp is None:
                 return ToolResult(content="caller not found", is_error=True)
-            if emp.role not in _ROLE_MAY_CREATE:
+            # Author gate: ``admin=True`` (WebUI operator)
+            # OR ``role='assigned'`` (the served user).
+            # Mirrors ``magi.channels.webui.api.tasks.
+            # _enforce_creator_can_create`` so the API
+            # and the LLM-side tool agree on who can
+            # author a scheduled task. Re-read from the DB
+            # (not ``ctx.uid``-trust) so a mis-wired caller
+            # can't punch above its authority.
+            if not (bool(emp.admin) or emp.role == "assigned"):
                 return ToolResult(
                     content=(
                         f"schedule_task requires admin or "
                         f"assigned-contact scope; "
-                        f"role {emp.role!r} is not permitted."
+                        f"admin={bool(emp.admin)}, role={emp.role!r} "
+                        f"is not permitted."
                     ),
                     is_error=True,
                 )

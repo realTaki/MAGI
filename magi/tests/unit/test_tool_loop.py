@@ -131,11 +131,10 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "update_memory",
         "complete_memory",
         "delete_memory",
-        # Contact directory — the LLM calls these
-        # when the operator says "记住 Lily 在财务部".
+        # Contact directory — add contacts, record notes.
         "add_contact",
+        "add_contact_note",
         "update_contact",
-        "delete_contact",
         "search_contacts",
         # Todo / action-item — per-contact (admin /
         # assigned only). Registry filters them out of
@@ -371,7 +370,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
             db.add(Contact(
                 id=42, name="Tool-loop test",
                 telegram_id=9001,
-                role="admin", provider="minimax",
+                admin=True, role="assigned", provider="minimax",
                 api_key="fake",
             ))
             db.commit()

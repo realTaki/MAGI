@@ -95,7 +95,7 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             Contact(
                 name="Test Admin (tools)",
                 telegram_id=9001,
-                role="admin",
+                admin=True, role="assigned",
                 provider="minimax",
                 api_key="fake-key-for-tests",
             )

@@ -65,14 +65,14 @@ def env(monkeypatch, tmp_path):
         alice = Contact(
             name="Alice",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake",
         )
         bob = Contact(
             name="Bob",
             telegram_id=9002,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake",
         )

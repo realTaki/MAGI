@@ -77,7 +77,7 @@ def admin(state) -> Contact:
         emp = Contact(
             name="Test Admin",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-for-tests",
         )
@@ -310,11 +310,11 @@ def test_tgids_isolated(client, state):
     """Two admins signing in see distinct session lists."""
     with open_session() as s:
         a = Contact(
-            name="Alice", telegram_id=9101, role="admin",
+            name="Alice", telegram_id=9101, admin=True, role="assigned",
             provider="minimax", api_key="x",
         )
         b = Contact(
-            name="Bob",   telegram_id=9102, role="admin",
+            name="Bob",   telegram_id=9102, admin=True, role="assigned",
             provider="minimax", api_key="y",
         )
         s.add_all([a, b])

@@ -75,7 +75,7 @@ async def test_admin_message_reaches_handler(tg_admin_env):
     success path) and ``set_message_reaction`` is called
     (the read-receipt).
     """
-    _seed_contact(str(tg_admin_env), delivery_address=9001, role="admin")
+    _seed_contact(str(tg_admin_env), delivery_address=9001, admin=True, role="assigned")
 
     from magi.channels.telegram.bot import _on_message
     update = _make_update(message_id=42, delivery_address=9001, text="在吗")

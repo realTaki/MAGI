@@ -236,7 +236,7 @@ export default {
     registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 SOUL.md 决定启用哪些。",
     directoryDesc: "联系人列表：成员与 admin，可管理角色、Provider 和 API Key。",
     channelsDesc: "各 IM 通道的启用/停用开关。切换即时生效，无需重启。",
-    webuiAccessDesc: "谁能登录 WebUI 控制台 — 按 admin / assigned / guest 控制。",
+    webuiAccessDesc: "拥有 WebUI 登录权限的操作员。每个联系人的 admin 标志独立于角色 (assigned / contact / guest)。新操作员通过 Telegram 验证码握手流程添加。",
     onboardingDesc: "重新跑一次初始化向导（会重置已保存的 bot token + admin 列表）。",
     toolLoopDesc: "agent 循环在一次 /send 内最多调工具的次数。超过会强制结束当前轮。",
     autoCompactDesc: "agent 上下文累积到阈值后自动把老消息压缩为 summary，避免 LLM 上下文窗口溢出。",
@@ -290,6 +290,7 @@ export default {
     adminNoAccess: "还没有管理员。跑一遍首次配置向导来添加。",
     adminLoadFailed: "加载管理员列表失败",
     adminRemoveFailed: "移除管理员失败",
+    adminRestoreTitle: "恢复此联系人的 WebUI 管理员权限",
     adminRemoveConfirm: "确定移除管理员「{name}」？",
     // -- add admin form -----------------------------------------------------
     addAdminTgPlaceholder: "TG chat ID",

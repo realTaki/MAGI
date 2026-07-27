@@ -234,7 +234,7 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     assert body["count"] == 2
 
     with open_session() as db:
-        admins = db.query(Contact).filter_by(role="admin").order_by(Contact.telegram_id).all()
+        admins = db.query(Contact).filter_by(admin=True, role="assigned").order_by(Contact.telegram_id).all()
         assert len(admins) == 2
         assert [a.telegram_id for a in admins] == [91001, 91002]
         # Display name resolved via the mocked get_chat.
@@ -305,7 +305,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
             name="Alice",
             display_name="Alice",
             telegram_id=91001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="sk-fake",
         ))
@@ -331,7 +331,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
     assert state_get(state, "telegram.bot_token") == "fake:bot-token"
     assert state_get(state, "telegram.bot_username") == "magi_test_bot"
     with open_session() as db:
-        assert db.query(Contact).filter_by(role="admin").count() == 1
+        assert db.query(Contact).filter_by(admin=True, role="assigned").count() == 1
 
     # /status reflects the cleared flag (but keeps bot_saved +
     # super_admins_count so the wizard can render the resume

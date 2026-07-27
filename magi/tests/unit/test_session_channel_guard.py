@@ -77,7 +77,7 @@ def admin(state) -> Contact:
         emp = Contact(
             name="Test Admin",
             telegram_id=9001,
-            role="admin",
+            admin=True, role="assigned",
             provider="minimax",
             api_key="fake-key-for-tests",
         )

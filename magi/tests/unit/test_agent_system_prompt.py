@@ -69,12 +69,12 @@ def seed_contacts(state_dir: Path):
     with open_session() as db:
         alice = Contact(
             id=1, name="Alice",
-            telegram_id=9001, role="admin",
+            telegram_id=9001, admin=True, role="assigned",
             provider="minimax", api_key="fake",
         )
         bob = Contact(
             id=2, name="Bob",
-            telegram_id=9002, role="admin",
+            telegram_id=9002, admin=True, role="assigned",
             provider="minimax", api_key="fake",
         )
         db.add_all([alice, bob])

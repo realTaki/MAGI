@@ -80,7 +80,7 @@ def _build_tools() -> list["Tool"]:
     from magi.agent.tools.write_file import WriteFileTool
     from magi.agent.memory.contacts.tools import (
         AddContactTool,
-        DeleteContactTool,
+        AddContactNoteTool,
         SearchContactsTool,
         UpdateContactTool,
     )
@@ -118,8 +118,8 @@ def _build_tools() -> list["Tool"]:
         # Contact directory — what the MAGI knows
         # about people. Operator-driven, not auto.
         AddContactTool(),
+        AddContactNoteTool(),
         UpdateContactTool(),
-        DeleteContactTool(),
         SearchContactsTool(),
         # Action item — per-contact, scoped to the
         # caller. ALLOWED_ROLES = {admin, assigned}

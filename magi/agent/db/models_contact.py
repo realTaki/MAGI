@@ -127,8 +127,8 @@ class Contact(Base):
     # Soft-delete. NULL = active.
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    # From contact_entries — free-form markdown about this
-    # person. LLM-managed via add_contact/update_contact tools.
+    # Free-form markdown about this person.
+    # LLM-managed via add_contact_note / update_contact tools.
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     # Where the notes came from.

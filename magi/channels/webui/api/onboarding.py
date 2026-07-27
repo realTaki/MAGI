@@ -733,23 +733,33 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             #    ever have been put here by onboarding, but
             #    we tolerate them for parity with the API
             #    surface.
+            # Identify existing operators by the new
+            # ``admin=True`` boolean (replaces the pre-2024
+            # ``role='admin'`` query — admin was split from
+            # role when the two concepts collided on the
+            # served user who is also an operator).
             existing_admins = session.scalars(
-                select(Contact).where(Contact.role == "admin")
+                select(Contact).where(Contact.admin == 1)
             ).all()
             new_id_set = set(parsed_ids)
             for old in existing_admins:
                 if old.telegram_id is None or old.telegram_id not in new_id_set:
                     session.delete(old)
 
-            # 2) Each new chat → ensure an Contact row
-            #    exists with role=admin, no team. The
-            #    actual IM binding is the channel adapter's
-            #    job (D.28): we call ``dispatcher.bind_im_id``
-            #    AFTER the with block to write
-            #    ``user_im_bindings`` (canonical) and sync
-            #    ``Contact.telegram_id`` (legacy read-cache).
-            # Promote existing regular contacts in the rare
-            # case the chat was already bound.
+            # 2) Each new chat → ensure a Contact row
+            #    exists with admin=True. New operators are
+            #    stamped ``role='assigned'`` (matches the
+            #    migration's data semantics: a fresh operator
+            #    is the served user of this single-operator
+            #    install). Promote existing regular contacts
+            #    in the rare case the chat was already
+            #    bound.
+            #
+            # The actual IM binding is the channel adapter's
+            # job (D.28): we call ``dispatcher.bind_im_id``
+            # AFTER the with block to write
+            # ``user_im_bindings`` (canonical) and sync
+            # ``Contact.telegram_id`` (legacy read-cache).
             for cid in parsed_ids:
                 emp = session.scalar(
                     select(Contact).where(Contact.telegram_id == cid)
@@ -758,12 +768,22 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                     emp = Contact(
                         name=display_names[cid] or f"Admin {cid}",
                         display_name=display_names[cid],
-                        role="admin",
+                        role="assigned",
+                        admin=True,
                     )
                     session.add(emp)
                     session.flush()
                 else:
-                    emp.role = "admin"
+                    emp.admin = True
+                    # If the row was previously not the
+                    # served user (role='contact' / 'guest'),
+                    # also flip it to 'assigned' — the
+                    # operator of a single-operator install
+                    # IS the served user. Multi-operator
+                    # installs can manually re-set role
+                    # afterwards if needed.
+                    if emp.role in ("contact", "guest"):
+                        emp.role = "assigned"
                     if display_names[cid]:
                         emp.name = display_names[cid]
                         if not emp.display_name:
