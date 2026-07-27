@@ -166,6 +166,7 @@ export default {
     mcpEmpty: "MCP サーバーが未設定です。追加すると LLM が外部ツールを利用できます。",
     mcpShowTools: "ツールを表示",
     mcpNoTools: "ツールなし",
+    mcpToolsHeader: "ツール",
     mcpNameInvalid: "名前は英数字・ハイフン・アンダースコアのみ使えます。",
     mcpStdio: "stdio (ローカルコマンド)",
     mcpSse: "SSE (Server-Sent Events)",

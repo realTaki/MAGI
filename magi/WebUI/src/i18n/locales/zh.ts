@@ -187,6 +187,7 @@ export default {
     mcpEmpty: "暂无 MCP 服务器。添加一个即可让 LLM 看到外部工具。",
     mcpShowTools: "查看工具",
     mcpNoTools: "暂无工具",
+    mcpToolsHeader: "工具",
     mcpNameInvalid: "名称只能包含字母、数字、横线与下划线。",
     mcpStdio: "stdio (本地命令)",
     mcpSse: "SSE (服务器推送)",

@@ -166,6 +166,7 @@ export default {
     mcpEmpty: "No MCP servers configured. Add one to surface external tools in the LLM.",
     mcpShowTools: "View tools",
     mcpNoTools: "No tools",
+    mcpToolsHeader: "Tools",
     mcpNameInvalid: "Name must be alphanumeric, dashes, or underscores only.",
     mcpStdio: "stdio (local command)",
     mcpSse: "SSE (server-sent events)",

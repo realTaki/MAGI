@@ -365,6 +365,17 @@ function McpServerManager() {
                     <tr key={`${s.name}-tools`} className="border-b border-sky-light/20 bg-sky-pale/10">
                       <td colSpan={5} className="p-0">
                         <div className="px-4 py-2 text-xs">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-[10px] uppercase tracking-wider text-ink-soft font-medium">
+                              {t("settings.mcpToolsHeader")}
+                            </span>
+                            {!serverToolsLoading && !serverToolsQuery.error && (
+                              <span className="inline-block rounded bg-sky-pale/60 text-ink-soft text-[10px] font-mono px-1.5 py-px">
+                                {serverTools.length}
+                              </span>
+                            )}
+                            <span className="flex-1 border-t border-sky-light/40" />
+                          </div>
                           {serverToolsLoading ? (
                             <span className="text-ink-soft italic">{t("common.loading")}</span>
                           ) : serverToolsQuery.error ? (
