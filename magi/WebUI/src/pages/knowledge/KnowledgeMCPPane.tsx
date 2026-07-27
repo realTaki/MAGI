@@ -4,12 +4,14 @@
  * One card: server CRUD (add / edit / delete / toggle) above
  * the tools table for each configured MCP server.
  */
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { IconDelete, IconEdit, IconEye } from "../../components/icons";
 import { useT } from "../../i18n/index";
+import { apiFetch, qk } from "../../lib/queryClient";
 import {
   useCreateMcpServer,
   useDeleteMcpServer,
@@ -84,6 +86,7 @@ type EditDraft = McpServerIn & { originalName: string };
 
 function McpServerManager() {
   const t = useT();
+  const qc = useQueryClient();
   const serversQuery = useMcpServers();
   const createMut = useCreateMcpServer();
   const updateMut = useUpdateMcpServer();
@@ -94,6 +97,31 @@ function McpServerManager() {
   const loadError = serversQuery.error
     ? (serversQuery.error as Error).message
     : null;
+
+  // Warm the per-server tool caches as soon as we know
+  // the server list. The first expand-the-detail
+  // round-trip is the slow one (subprocess connect +
+  // tools/list + disconnect on the loader side); once
+  // cached, the same expand is a 0-ms hit. Warming on
+  // mount means the operator's first click on a server
+  // already hits cache. Servers added/edited later
+  // fire the normal mutation → ``invalidateQueries``
+  // path; this prefetch only runs against the
+  // current server list so it can't go stale.
+  useEffect(() => {
+    if (!serversQuery.data) return;
+    for (const s of servers) {
+      void qc.prefetchQuery({
+        queryKey: [...qk.mcpServers, s.name, "tools"],
+        queryFn: () =>
+          apiFetch<{ name: string; items: unknown[]; total: number }>(
+            `/api/mcp-servers/${encodeURIComponent(s.name)}/tools`,
+          ),
+        staleTime: 5 * 60 * 1000,
+        gcTime: 30 * 60 * 1000,
+      });
+    }
+  }, [qc, serversQuery.data, servers]);
 
   // Tool list for the expanded server. Enabled only
   // when the operator has opened the detail — so the

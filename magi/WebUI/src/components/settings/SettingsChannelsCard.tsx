@@ -83,7 +83,7 @@ export function SettingsChannelsCard(props: {
     });
     await apiFetch<ChannelsResponse>("/api/channels", {
       method: "POST",
-      body: JSON.stringify({ enabled: next }),
+      body: { enabled: next },
     });
     void qc.invalidateQueries({ queryKey: ["channels"] });
   }

@@ -66,14 +66,20 @@ def create_app() -> FastAPI:
     # Bootstrap MCP tools synchronously inside the uvicorn
     # child process.  The node-level ``run()`` call bootstraps
     # in the reloader process; uvicorn's ``reload=True`` spawns
-    # a fresh child that needs its own cache.  ``load_mcp_tools_blocking``
-    # spins a private event loop — safe to call before the
-    # lifespan starts.
+    # a fresh child that needs its own cache.
     try:
         from magi.agent.tools.registry import bootstrap_mcp_tools
         bootstrap_mcp_tools()
     except Exception:
         pass
+
+    # Start TG bot in the uvicorn child process.
+    import logging as _log
+    _log.getLogger(__name__).info("create_app: starting TG bot")
+    from magi.channels.telegram.bot import start_bot
+    from magi.constants import STATE_DIR
+    t = start_bot(STATE_DIR)
+    _log.getLogger(__name__).info("create_app: TG bot result=%s", t)
 
     # D.7: lifespan hook starts the auto-title background
     # worker. Kept lazy (inside ``create_app``) so it runs
