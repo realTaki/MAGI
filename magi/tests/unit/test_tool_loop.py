@@ -335,17 +335,14 @@ async def test_send_message_webui_returns_error(workspace_ctx):
 @pytest.mark.asyncio
 async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     """When the channel is ``tg`` and the user has a
-    ``user_im_bindings`` row, the tool routes through the
-    dispatcher → TG adapter → registered bot's
-    ``send_message``.
+    ``Contact.telegram_id``, the tool routes through the
+    dispatcher → TG adapter → ``send_text_auto`` (raw HTTP).
 
-    D.28: the tool no longer accepts ``_tg_send_callback``
-    as a kwarg (that hand-rolled injection is gone). The
-    dispatcher is the single dispatch point. This test
-    registers a fake bot, seeds a ``user_im_bindings``
-    row for the test user, and asserts the bot's
-    ``send_message`` was called with the right chat id
-    and text.
+    We monkeypatch ``send_text_auto`` rather than the bot's
+    ``send_message``: the production path now goes through
+    raw HTTP because cross-loop ``bot.send_message`` from
+    the webui handler was silently dropping messages. The
+    test follows the production code path.
     """
     from magi.agent.db import (
         ChatSession,
@@ -354,16 +351,13 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     from magi.channels import dispatcher
     from magi.channels.telegram import bot as tg_bot
 
-    fake_bot = MagicMock()
-    fake_bot.send_message = AsyncMock()
-    monkeypatch.setattr(tg_bot, "get_telegram_bot", lambda: fake_bot)
+    fake_send = AsyncMock()
+    monkeypatch.setattr(tg_bot, "send_text_auto", fake_send)
 
-    # Seed: (1) a Contact row the dispatcher reads, and
-    # (2) the session row the tool's ``ctx.session_id``
-    # points at. (Post-refactor: there is no separate
-    # ``user_im_bindings`` table — the post-refactor
-    # dispatcher reads ``Contact.telegram_id`` directly as
-    # the per-channel IM identifier.)
+    # Seed: a Contact row the dispatcher reads + a session
+    # row the tool's ``ctx.session_id`` points at. The
+    # post-refactor dispatcher reads ``Contact.telegram_id``
+    # directly as the per-channel IM identifier.
     from magi.agent.db import Contact
     with open_session() as db:
         existing = db.get(Contact, 42)
@@ -397,16 +391,17 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     )
     result = await SendMessageTool().run(ctx, text="hi there")
     assert result.is_error is False, result.content
-    # D.28: bot.send_message uses the python-telegram-bot
-    # vendor kwarg ``chat_id=``. The value resolves to the
-    # bound ``user_im_bindings.im_id``.
-    fake_bot.send_message.assert_awaited_once_with(
-        chat_id=9001, text="hi there",
-    )
-    # Defensive: no module-level state leak (the dispatcher's
-    # adapter registry is process-global; if the test
-    # ordering ever changed, ``_AUTO_REGISTER_DONE`` would
-    # already be True and the adapter already in place).
+    # ``send_text_auto`` is called with the resolved
+    # ``chat_id`` (int — the adapter parses
+    # ``Contact.telegram_id``) and the text. The function
+    # is the raw-HTTP fallback and is the production
+    # entry point for cross-thread sends.
+    fake_send.assert_awaited_once_with(9001, "hi there")
+    # Defensive: no module-level state leak (the
+    # dispatcher's adapter registry is process-global; if
+    # the test ordering ever changed,
+    # ``_AUTO_REGISTER_DONE`` would already be True and
+    # the adapter already in place).
     assert dispatcher.get_adapter("tg") is not None
 
 @pytest.mark.asyncio

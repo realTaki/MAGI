@@ -36,7 +36,7 @@ import { useT } from "../i18n/index";
 import type { OnboardingData } from "./onboardingTypes";
 import ChatTab from "./ChatTab";
 import KnowledgeTab from "./KnowledgeTab";
-import OrganizationTab from "./OrganizationTab";
+import MagicsTab from "./MagicsTab";
 import SettingsTab from "./SettingsTab";
 
 export default function DashboardPage(props: {
@@ -92,7 +92,7 @@ function PostLoginLayout(props: {
   // D.18+3 — default to the chat tab. The chat pane is the
   // primary surface of the dashboard (where the operator's
   // day-to-day work happens); the previously-default
-  // "organization" tab made the chat UI feel hidden on first
+  // MAGI Council tab made the chat UI feel hidden on first
   // load. ``ChatTab`` already routes to its own "new chat"
   // view, so landing on chat is the right entry point.
   const [tab, setTab] = useState<TabKey>("chat");
@@ -145,7 +145,7 @@ function PostLoginLayout(props: {
       <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
         <div className="space-y-4">
           {tab === "chat" && <ChatTab />}
-          {tab === "organization" && <OrganizationTab />}
+          {tab === "magic" && <MagicsTab />}
           {tab === "knowledge" && <KnowledgeTab />}
           {tab === "settings" && (
             <SettingsTab
@@ -173,7 +173,7 @@ function InlineTabBar(props: {
   const t = useT();
   const tabs: Array<{ key: TabKey; labelKey: string }> = [
     { key: "chat", labelKey: "sidebar.tabChat" },
-    { key: "organization", labelKey: "sidebar.tabOrg" },
+    { key: "magic", labelKey: "sidebar.tabMagic" },
     { key: "knowledge", labelKey: "sidebar.tabKnowledge" },
     { key: "settings", labelKey: "sidebar.tabSettings" },
   ];
@@ -197,7 +197,7 @@ function InlineTabBar(props: {
   );
 }
 
-type TabKey = "chat" | "organization" | "knowledge" | "settings";
+type TabKey = "chat" | "magic" | "knowledge" | "settings";
 
 /** Topbar identity pill — "Signed in as <name>" with the
  *  i18n label. Extracted so the JSX in PostLoginLayout

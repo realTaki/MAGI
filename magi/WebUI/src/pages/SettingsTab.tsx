@@ -31,11 +31,9 @@ import {
   IconReminders,
   IconScheduledTasks,
   IconSkills,
-  IconTools,
 } from "../components/icons";
 import { SettingsAgentCard } from "../components/settings/SettingsAgentCard";
 import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCard";
-import { SettingsMcpCard } from "../components/settings/SettingsMcpCard";
 import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
@@ -51,7 +49,6 @@ export type SettingSection =
   | "tz"
   | "agent"
   | "webui-access"
-  | "mcp"
   | "onboarding";
 
 export const SETTINGS_SECTIONS: SidebarItem[] = [
@@ -61,7 +58,6 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
-  { id: "mcp", label: "settings.navMcp", icon: <IconTools /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
 
@@ -111,7 +107,6 @@ export default function SettingsTab(props: SettingsTabProps) {
             onAdminsChanged={props.onAdminsChanged}
           />
         )}
-        {section === "mcp" && <SettingsMcpCard />}
         {section === "onboarding" && (
           <SettingsOnboardingCard onRestart={props.onRestart} />
         )}

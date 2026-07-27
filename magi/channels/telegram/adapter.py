@@ -75,15 +75,26 @@ class TelegramAdapter:
                 f"telegram adapter: uid={uid} binding "
                 f"is not numeric ({im_id!r})"
             ) from e
-        # Production path is the raw HTTP ``send_text_auto``
-        # (avoids cross-thread event-loop issues from the
-        # bot's daemon). Tests set a fake global bot via
-        # ``tg_bot.set_telegram_bot(...)`` — in that case the
-        # bot's ``send_message`` is awaited directly.
-        bot = tg_bot_module.get_telegram_bot()
-        if bot is not None:
-            await bot.send_message(chat_id=chat_id_int, text=text)
-            return
+        # Always go through ``send_text_auto`` (raw HTTP).
+        #
+        # Why not ``bot.send_message``: the bot instance
+        # lives on the daemon thread's asyncio loop. Calling
+        # it from the webui's loop (or any non-daemon loop)
+        # silently drops the call — the python-telegram-bot
+        # ``Bot.send_message`` is bound to the loop that
+        # built it, and the HTTP request goes through a
+        # session that the daemon loop owns. The dispatcher
+        # tests faked the global bot and so masked the bug;
+        # in production the call goes to the daemon-bound
+        # bot and the request vanishes.
+        #
+        # The raw HTTP path (``send_text_auto``) reads the
+        # token from settings and posts straight to
+        # ``api.telegram.org`` via a fresh httpx client —
+        # loop-agnostic, and the log line at the bottom of
+        # ``_send_via_raw_http`` records the TG-assigned
+        # ``message_id`` so the operator can verify delivery
+        # against Telegram's server logs.
         await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:

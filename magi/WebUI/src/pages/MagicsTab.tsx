@@ -1,15 +1,11 @@
 /**
- * OrganizationTab — Magics + Magis panes.
+ * MagicsTab — 智群管理 + 智能体管理 panes.
  *
- * 智群 (Swarm) is Adam-only — EVE doesn't see this tab.
+ * Adam-only — EVE doesn't see this tab.
  *
  * Two sidebar sections:
- *   - MAGI Council (Magics) — MAGIC tree of teams (councils).
+ *   - 智群管理 (Magics) — MAGIC tree.
  *   - 智能体管理 (Magis) — flat list of every Magi agent row.
- *
- * Contacts live in the Knowledge → Contacts pane; the unified
- * ``contacts`` table serves both the admin directory and
- * LLM-managed contact notes.
  */
 
 import { useState } from "react";
@@ -17,14 +13,14 @@ import { useState } from "react";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import { IconMagic, IconMagis } from "../components/icons";
 import { useT } from "../i18n/index";
-import { MagicsPane } from "./organization/MagicsPane";
-import { MagisPane } from "./organization/MagisPane";
+import { MagicsPane } from "./magics/MagicsPane";
+import { MagisPane } from "./magics/MagisPane";
 
-type OrgSection = "magics" | "magis";
+type MagicsSection = "magics" | "magis";
 
-const ORG_SECTIONS: SidebarItem[] = [
-  { id: "magics", label: "sidebar.orgMagics", icon: <IconMagic /> },
-  { id: "magis", label: "sidebar.orgMagis", icon: <IconMagis /> },
+const MAGICS_SECTIONS: SidebarItem[] = [
+  { id: "magics", label: "sidebar.magicMagics", icon: <IconMagic /> },
+  { id: "magis", label: "sidebar.magicMagis", icon: <IconMagis /> },
 ];
 
 /** Backend response shape for ``GET /api/contacts``. */
@@ -45,16 +41,16 @@ export type ContactRow = {
   updated_at: string;
 };
 
-export default function OrganizationTab() {
+export default function MagicsTab() {
   const t = useT();
-  const [section, setSection] = useState<OrgSection>("magics");
+  const [section, setSection] = useState<MagicsSection>("magics");
 
   return (
     <SidebarShell
-      items={ORG_SECTIONS}
+      items={MAGICS_SECTIONS}
       selectedId={section}
-      onSelect={(id) => setSection(id as OrgSection)}
-      ariaLabel={t("sidebar.orgNavAria")}
+      onSelect={(id) => setSection(id as MagicsSection)}
+      ariaLabel={t("sidebar.magicNavAria")}
     >
       {section === "magics" && <MagicsPane />}
       {section === "magis" && <MagisPane />}

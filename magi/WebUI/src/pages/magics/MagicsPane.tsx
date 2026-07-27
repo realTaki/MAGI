@@ -1,7 +1,7 @@
 /**
  * MagicsPane — MAGI Council management.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
@@ -158,7 +158,7 @@ export function MagicsPane() {
                 <th className="py-2 pr-3 font-medium w-16">ID</th>
                 <th className="py-2 pr-3 font-medium w-28">Adam</th>
                 <th className="py-2 pr-3 font-medium w-16 text-right">成员</th>
-                <th className="py-2 font-medium w-10" />
+                <th className="py-2 pr-3 font-medium w-10">{t("magics.columnActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -167,8 +167,8 @@ export function MagicsPane() {
                 const adam = adamByMagic.get(r.id);
                 const prefix = r.depth > 0 ? "└ ".padStart(r.depth * 2 + 1, " ") : "";
                 return (
-                  <>
-                    <tr key={r.id} className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
+                  <Fragment key={r.id}>
+                    <tr className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
                     {isEdit ? (
                       <td className="py-2 pr-3" colSpan={5}>
                         <div className="flex items-center gap-2">
@@ -244,7 +244,7 @@ export function MagicsPane() {
                       </td>
                     </tr>
                   )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
