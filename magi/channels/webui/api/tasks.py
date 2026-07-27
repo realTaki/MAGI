@@ -205,6 +205,18 @@ class TaskOut(BaseModel):
     # the drawer doesn't have to do a second lookup just
     # to find which session belongs to which task.
     session_id: Optional[str] = None
+    # Preset back-pointers (see TaskPreset model +
+    # ``magi/agent/proactive/presets.py``). Non-null iff
+    # the row was auto-seeded from a template; the
+    # WebUI's Tasks pane uses ``preset_key IS NULL`` /
+    # ``IS NOT NULL`` to split the list into "preset
+    # tasks" and "custom tasks". ``preset_key`` stays
+    # populated even if the source template is deleted
+    # (FK ``SET NULL`` on ``preset_id``), so the UI
+    # grouping doesn't silently shift on template
+    # removal.
+    preset_id: Optional[str] = None
+    preset_key: Optional[str] = None
 
 
 class TaskRunOut(BaseModel):
@@ -250,6 +262,8 @@ def _task_to_out(t: Task) -> TaskOut:
         created_at=t.created_at,
         updated_at=t.updated_at,
         session_id=t.session_id,
+        preset_id=t.preset_id,
+        preset_key=t.preset_key,
     )
 
 
@@ -281,18 +295,32 @@ def list_tasks(
     session: Annotated[Session, Depends(get_session)],
     enabled: Optional[bool] = None,
     uid: Optional[int] = None,
+    kind: Optional[Literal["preset", "custom"]] = Query(
+        None,
+        description=(
+            "Drives the WebUI's preset-vs-custom split. "
+            "'preset' returns rows with preset_key IS NOT NULL; "
+            "'custom' returns rows with preset_key IS NULL. "
+            "Omit to return all rows regardless of source."
+        ),
+    ),
 ) -> list[TaskOut]:
     """List tasks. v0: all tasks visible to the admin.
 
-    ``enabled`` filters by the column; ``uid``
-    scopes to one owner (admin can still see every
-    contact's tasks — useful for the audit pane).
+    ``enabled`` filters by the column; ``uid`` scopes to
+    one owner (admin can still see every contact's tasks
+    — useful for the audit pane); ``kind`` filters by
+    preset-derived vs operator-authored.
     """
     q = session.query(Task).order_by(Task.created_at.desc())
     if enabled is not None:
         q = q.filter(Task.enabled == (1 if enabled else 0))
     if uid is not None:
         q = q.filter(Task.uid == uid)
+    if kind == "preset":
+        q = q.filter(Task.preset_key.is_not(None))
+    elif kind == "custom":
+        q = q.filter(Task.preset_key.is_(None))
     return [_task_to_out(t) for t in q.all()]
 
 

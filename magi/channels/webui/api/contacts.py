@@ -234,6 +234,35 @@ def create_contact(
     session.add(contact)
     session.commit()
     session.refresh(contact)
+
+    # Preset seed hook — fires only when the contact was
+    # *created* as ``assigned`` from the start. The
+    # helper is idempotent (skips per-(uid, preset_id)
+    # pairs that already have a row), so a repeat
+    # ``POST /api/contacts`` with the same name is
+    # still 409 before we get here; this branch only
+    # runs for the freshly-inserted contact.
+    #
+    # Wrapped in try/except so a preset-seeding failure
+    # doesn't roll back the contact creation — the
+    # contact row is more valuable than the preset rows.
+    # The operator can re-trigger by editing the contact
+    # (role stays assigned; an explicit
+    # assigned→assigned PATCH below would also re-run
+    # the helper, but the per-preset existence check
+    # would short-circuit since the rows are already
+    # there).
+    if contact.role == "assigned":
+        try:
+            from magi.agent.proactive.presets import seed_presets_for_contact
+            seed_presets_for_contact(session, contact.id)
+            session.commit()
+        except Exception as exc:
+            logger.warning(
+                "preset seeding failed for newly-created contact %d: %s",
+                contact.id, exc,
+            )
+
     return _serialize(contact)
 
 
@@ -266,6 +295,12 @@ def update_contact(
             detail="contact not found",
         )
 
+    # Set inside the role branch; read after the commit
+    # to decide whether to fire the preset-seed hook.
+    # Initialised to False so a PATCH that doesn't touch
+    # ``role`` is a clean no-op.
+    newly_assigned = False
+
     if "name" in payload.model_fields_set and payload.name:
         contact.name = payload.name.strip()
 
@@ -287,7 +322,18 @@ def update_contact(
                 status_code=400, code="validation.role_unknown",
                 detail=f"Unknown role {payload.role!r}",
             )
+        # Capture the *prior* role so the post-commit
+        # hook can detect a transition INTO assigned (vs.
+        # an idempotent assigned→assigned PATCH that
+        # shouldn't trigger a fresh seed round).
+        prev_role = contact.role
         contact.role = payload.role
+        # Tag the local variable for the post-commit
+        # branch. We need this outside the ``if`` so it
+        # survives the conditional execution.
+        newly_assigned = (
+            payload.role == "assigned" and prev_role != "assigned"
+        )
 
     if "telegram_id" in payload.model_fields_set:
         new_tg = payload.telegram_id
@@ -304,4 +350,24 @@ def update_contact(
 
     session.commit()
     session.refresh(contact)
+
+    # Preset seed hook — fires only on a TRUE transition
+    # into ``assigned``. assigned→admin→assigned would
+    # also qualify (the prev_role at this commit is
+    # ``admin``), which matches the intent: "this
+    # contact just became assigned; seed them". The
+    # helper's per-(uid, preset_id) existence check
+    # short-circuits when rows already exist, so a
+    # double-seed is a no-op rather than a duplicate.
+    if newly_assigned:
+        try:
+            from magi.agent.proactive.presets import seed_presets_for_contact
+            seed_presets_for_contact(session, contact.id)
+            session.commit()
+        except Exception as exc:
+            logger.warning(
+                "preset seeding failed for contact %d (role → assigned): %s",
+                contact.id, exc,
+            )
+
     return _serialize(contact)

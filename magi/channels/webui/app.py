@@ -199,6 +199,15 @@ def create_app() -> FastAPI:
     # talks to the registry directly.
     from magi.channels.webui.api import tasks
     app.include_router(tasks.router, prefix="/api")
+    # Task presets — operator-facing CRUD for the
+    # ``task_presets`` template table. Each template
+    # auto-seeds a per-user ``Task`` row when a new
+    # ``assigned`` contact is created (see
+    # ``magi/agent/proactive/presets.py``). Settings → 任务
+    # 预设 drives this router; the per-user tasks end up
+    # in the Knowledge → Tasks pane's "preset" section.
+    from magi.channels.webui.api import task_presets
+    app.include_router(task_presets.router, prefix="/api")
     # Tools — read-only list of every tool the LLM can call
     # (built-ins + MCP-loaded). The Knowledge tab uses it to
     # render an operator-facing "what can my MAGI do?" view.

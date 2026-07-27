@@ -82,41 +82,62 @@ def upgrade() -> None:
     #    DB without the new fields stays valid (existing
     #    rows have NULL preset_id / preset_key and live
     #    exactly like before).
+    #
+    # SQLite can't ALTER TABLE to add an FK constraint in
+    # place — Alembic's batch mode handles it via the
+    # copy-and-move strategy (CREATE new table → INSERT
+    # SELECT → DROP old → RENAME new). The batch block
+    #    is also the cleanest place to add the new
+    #    columns and the new index, so we fold all three
+    #    into one batch op.
     task_cols = {c["name"] for c in insp.get_columns("tasks")}
-    if "preset_id" not in task_cols:
-        op.add_column(
-            "tasks",
-            sa.Column("preset_id", sa.String(length=26), nullable=True),
-        )
-    if "preset_key" not in task_cols:
-        op.add_column(
-            "tasks",
-            sa.Column("preset_key", sa.String(length=64), nullable=True),
-        )
-
-    # 3) FK + index. Both are idempotent via the inspector
-    #    so re-running on a DB that's already up-to-date is
-    #    a no-op (rather than the migration blowing up on
-    #    a "constraint already exists" error from SQLite).
-    fk_names = {fk["name"] for fk in insp.get_foreign_keys("tasks")}
-    if "fk_tasks_preset" not in fk_names:
-        op.create_foreign_key(
-            "fk_tasks_preset",
-            "tasks",
-            "task_presets",
-            ["preset_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
-
     task_indexes = {ix["name"] for ix in insp.get_indexes("tasks")}
-    if "ix_tasks_preset_key" not in task_indexes:
-        op.create_index(
-            "ix_tasks_preset_key",
-            "tasks",
-            ["preset_key"],
-            unique=False,
-        )
+    needs_batch = (
+        "preset_id" not in task_cols
+        or "preset_key" not in task_cols
+        or "ix_tasks_preset_key" not in task_indexes
+    )
+    if needs_batch:
+        with op.batch_alter_table("tasks") as batch_op:
+            if "preset_id" not in task_cols:
+                batch_op.add_column(
+                    sa.Column(
+                        "preset_id",
+                        sa.String(length=26),
+                        nullable=True,
+                    ),
+                )
+            if "preset_key" not in task_cols:
+                batch_op.add_column(
+                    sa.Column(
+                        "preset_key",
+                        sa.String(length=64),
+                        nullable=True,
+                    ),
+                )
+            if "ix_tasks_preset_key" not in task_indexes:
+                batch_op.create_index(
+                    "ix_tasks_preset_key",
+                    ["preset_key"],
+                    unique=False,
+                )
+            # Always (re-)create the FK in the same batch.
+            # The inspector doesn't see inside batch-
+            # managed shadow tables, so we can't gate on
+            # the existing-FK check here — instead the
+            # whole batch op only runs when at least one
+            # of the new pieces needs to be created, which
+            # is the only state where the FK would be
+            # missing. Re-running on an already-up-to-date
+            # DB skips the batch entirely (the needs_batch
+            # gate).
+            batch_op.create_foreign_key(
+                "fk_tasks_preset",
+                "task_presets",
+                ["preset_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
 
     # 4) Seed the two default presets. The row's ``id`` is
     #    a fixed ULID-style string so re-running the
@@ -149,41 +170,17 @@ def upgrade() -> None:
                  run_at, channel, enabled,
                  created_at, updated_at)
             VALUES
-                (:id, :key, :name, :description, :prompt,
-                 :frequency, :hour, :minute, :dow, :dom,
-                 :run_at, :channel, :enabled,
-                 :ts, :ts)
+                ('01J9HZ0000DAILYSTAND000UPBR',
+                 'daily_standup_brief',
+                 '每日晨报',
+                 '每个工作日 09:00 推送当日待办摘要 + 昨日完成情况。',
+                 'You are generating a brief morning summary for the assigned user. Today''s open tasks: {tasks_open}. Yesterday''s completed tasks: {tasks_done}. Urgent action items: {action_items}. Write a concise (under 120 words) stand-up brief in the user''s preferred language. Highlight anything due today, any blockers, and a single suggested focus for the morning.',
+                 'daily', 9, 0, NULL, NULL, NULL, 'tg', 1,
+                 '2026-01-01T00:00:00+00:00',
+                 '2026-01-01T00:00:00+00:00')
             ON CONFLICT (key) DO NOTHING
             """
-        ),
-        params={
-            "id": "01J9HZ0000DAILYSTAND000UPBR",
-            "key": "daily_standup_brief",
-            "name": "每日晨报",
-            "description": (
-                "每个工作日 09:00 推送当日待办摘要 + 昨日完成情况。"
-            ),
-            "prompt": (
-                "You are generating a brief morning summary for the "
-                "assigned user.\n\n"
-                "Today's open tasks:\n{tasks_open}\n\n"
-                "Yesterday's completed tasks:\n{tasks_done}\n\n"
-                "Urgent action items:\n{action_items}\n\n"
-                "Write a concise (≤120 words) stand-up brief in the "
-                "user's preferred language. Highlight anything due "
-                "today, any blockers, and a single suggested focus "
-                "for the morning."
-            ),
-            "frequency": "daily",
-            "hour": 9,
-            "minute": 0,
-            "dow": None,
-            "dom": None,
-            "run_at": None,
-            "channel": "tg",
-            "enabled": 1,
-            "ts": "2026-01-01T00:00:00+00:00",
-        },
+        )
     )
     op.execute(
         sa.text(
@@ -194,45 +191,17 @@ def upgrade() -> None:
                  run_at, channel, enabled,
                  created_at, updated_at)
             VALUES
-                (:id, :key, :name, :description, :prompt,
-                 :frequency, :hour, :minute, :dow, :dom,
-                 :run_at, :channel, :enabled,
-                 :ts, :ts)
+                ('01J9HZ0000WEEKLYREVIE0W000',
+                 'weekly_review',
+                 '周回顾',
+                 '每周五 17:00 推送本周完成情况 + 下周建议。',
+                 'You are generating a Friday-evening weekly review for the assigned user. Tasks completed this week: {tasks_done_week}. Tasks still pending: {tasks_open_week}. Action items created or completed this week: {action_items_week}. Write a concise (under 180 words) review covering: what got done, what carried over, what blocked progress, and three suggested focus areas for next week. Reply in the user''s preferred language.',
+                 'weekly', 17, 0, 4, NULL, NULL, 'tg', 1,
+                 '2026-01-01T00:00:00+00:00',
+                 '2026-01-01T00:00:00+00:00')
             ON CONFLICT (key) DO NOTHING
             """
-        ),
-        params={
-            "id": "01J9HZ0000WEEKLYREVIE0W000",
-            "key": "weekly_review",
-            "name": "周回顾",
-            "description": (
-                "每周五 17:00 推送本周完成情况 + 下周建议。"
-            ),
-            "prompt": (
-                "You are generating a Friday-evening weekly review "
-                "for the assigned user.\n\n"
-                "Tasks completed this week:\n{tasks_done_week}\n\n"
-                "Tasks still pending:\n{tasks_open_week}\n\n"
-                "Action items created or completed this week:\n"
-                "{action_items_week}\n\n"
-                "Write a concise (≤180 words) review covering: what "
-                "got done, what carried over, what blocked progress, "
-                "and three suggested focus areas for next week. "
-                "Reply in the user's preferred language."
-            ),
-            "frequency": "weekly",
-            "hour": 17,
-            "minute": 0,
-            # Python's weekday(): Mon=0..Sun=6. The
-            # downstream ``preset_to_cron`` translates to
-            # cron's Sun=0..Sat=6 — so we send 4 (Fri) here.
-            "dow": 4,
-            "dom": None,
-            "run_at": None,
-            "channel": "tg",
-            "enabled": 1,
-            "ts": "2026-01-01T00:00:00+00:00",
-        },
+        )
     )
 
 
@@ -248,8 +217,13 @@ def downgrade() -> None:
             "('daily_standup_brief', 'weekly_review')"
         )
     )
-    op.drop_index("ix_tasks_preset_key", table_name="tasks")
-    op.drop_constraint("fk_tasks_preset", "tasks", type_="foreignkey")
-    op.drop_column("tasks", "preset_key")
-    op.drop_column("tasks", "preset_id")
+    # SQLite can't drop a column or a constraint in place
+    # — same batch-mode story as the upgrade. All the
+    # tasks-table changes (drop index + drop FK + drop
+    # columns) fold into one batch op.
+    with op.batch_alter_table("tasks") as batch_op:
+        batch_op.drop_index("ix_tasks_preset_key")
+        batch_op.drop_constraint("fk_tasks_preset", type_="foreignkey")
+        batch_op.drop_column("preset_key")
+        batch_op.drop_column("preset_id")
     op.drop_table("task_presets")

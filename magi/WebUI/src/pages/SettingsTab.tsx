@@ -37,6 +37,7 @@ import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCar
 import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
+import { SettingsTaskPresetsCard } from "../components/settings/SettingsTaskPresetsCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
 import { SettingsWebuiAccessCard } from "../components/settings/SettingsWebuiAccessCard";
 import { useT } from "../i18n/index";
@@ -48,6 +49,7 @@ export type SettingSection =
   | "tg-read"
   | "tz"
   | "agent"
+  | "task-presets"
   | "webui-access"
   | "onboarding";
 
@@ -57,6 +59,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
+  { id: "task-presets", label: "settings.navTaskPresets", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
@@ -101,6 +104,7 @@ export default function SettingsTab(props: SettingsTabProps) {
         {section === "tg-read" && <SettingsTgReadReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
         {section === "agent" && <SettingsAgentCard />}
+        {section === "task-presets" && <SettingsTaskPresetsCard />}
         {section === "webui-access" && (
           <SettingsWebuiAccessCard
             signedInUser={props.signedInUser}
