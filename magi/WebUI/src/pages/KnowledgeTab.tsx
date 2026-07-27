@@ -19,6 +19,7 @@ import { KnowledgeContactsPane } from "./knowledge/KnowledgeContactsPane";
 import { KnowledgeMemoryPane } from "./knowledge/KnowledgeMemoryPane";
 import { KnowledgeSkillsPane } from "./knowledge/KnowledgeSkillsPane";
 import { KnowledgeToolsPane } from "./knowledge/KnowledgeToolsPane";
+import { KnowledgeMCPPane } from "./knowledge/KnowledgeMCPPane";
 
 type KnowledgeSection = "skills" | "connectors" | "contacts" | "memory" | "tools" | "mcp";
 
@@ -45,8 +46,8 @@ export default function KnowledgeTab() {
       {section === "connectors" && <KnowledgeConnectorsPane />}
       {section === "contacts" && <KnowledgeContactsPane />}
       {section === "memory" && <KnowledgeMemoryPane />}
-      {section === "tools" && <KnowledgeToolsPane source="builtin" />}
-      {section === "mcp" && <KnowledgeToolsPane source="mcp" />}
+      {section === "tools" && <KnowledgeToolsPane />}
+      {section === "mcp" && <KnowledgeMCPPane />}
     </SidebarShell>
   );
 }

@@ -67,6 +67,11 @@ def _build_tools() -> list["Tool"]:
     )
     from magi.agent.tools.edit_file import EditFileTool
     from magi.agent.tools.list_files import ListFilesTool
+    from magi.agent.tools.mcp_manage import (
+        AddMcpServerTool,
+        DeleteMcpServerTool,
+        ListMcpServersTool,
+    )
     from magi.agent.tools.read_file import ReadFileTool
     from magi.agent.tools.schedule_task import ScheduleTaskTool
     from magi.agent.tools.skill_loader_tool import SkillLoaderTool
@@ -124,6 +129,10 @@ def _build_tools() -> list["Tool"]:
         AddActionItemTool(),
         CompleteActionItemTool(),
         ListActionItemTool(),
+        # MCP server management — admin-only.
+        AddMcpServerTool(),
+        ListMcpServersTool(),
+        DeleteMcpServerTool(),
     ]
 
 

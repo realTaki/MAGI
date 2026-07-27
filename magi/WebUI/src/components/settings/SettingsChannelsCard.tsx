@@ -7,6 +7,7 @@
  * - TG: toggleable; disabled when no bot token is saved.
  * - WeChat / Lark / Teams: disabled, "coming soon".
  */
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
@@ -14,7 +15,6 @@ import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 import { apiFetch } from "../../lib/queryClient";
 import { BotTokenField } from "./BotTokenField";
-import { useState } from "react";
 
 // -- types ----------------------------------------------------------------
 
@@ -109,7 +109,7 @@ export function SettingsChannelsCard(props: {
               const showTokenField = ch.name === "tg" && ch.enabled && !ch.has_credentials;
 
               return (
-                <>
+                <Fragment key={ch.name}>
                   <tr key={ch.name} className="border-b border-sky-light/20 last:border-0">
                     <td className="py-2.5 pr-3">
                       <span className="font-medium text-ink">{ch.label}</span>
@@ -183,7 +183,7 @@ export function SettingsChannelsCard(props: {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
