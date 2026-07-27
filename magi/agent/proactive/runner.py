@@ -127,21 +127,39 @@ async def execute_task(
     started = datetime.now(timezone.utc).isoformat()
     run_id = pre_created_run_id or new_session_id()
 
-    # ── 1. Read task + operator credentials + load home session ──
+    # ── 1. Read task + operator + load home session ──
+    from magi.agent.db.models_magi import resolve_magi_credentials
+
+    provider, api_key = resolve_magi_credentials("eve")
+    if not provider or not api_key:
+        with open_session() as db:
+            task = db.get(Task, task_id)
+            if task is None:
+                return None
+            _finalise_run_failure(
+                db, run_id=run_id, task_id=task_id, uid=task.uid,
+                task_name=task.name, error="magi_missing_credentials",
+                started_iso=started,
+            )
+            _bump_failure(db, task, "magi_missing_credentials")
+            _maybe_disable_and_alert(db, task, "magi_missing_credentials")
+            db.commit()
+        return run_id
+
     with open_session() as db:
         task = db.get(Task, task_id)
         if task is None:
             logger.info("execute_task: task %s vanished mid-flight", task_id)
             return None
         contact = db.get(Contact, task.uid)
-        if contact is None or not contact.api_key or not contact.provider:
+        if contact is None:
             _finalise_run_failure(
                 db, run_id=run_id, task_id=task_id, uid=task.uid,
-                task_name=task.name, error="contact_missing_credentials",
+                task_name=task.name, error="contact_missing",
                 started_iso=started,
             )
-            _bump_failure(db, task, "contact_missing_credentials")
-            _maybe_disable_and_alert(db, task, "contact_missing_credentials")
+            _bump_failure(db, task, "contact_missing")
+            _maybe_disable_and_alert(db, task, "contact_missing")
             db.commit()
             return run_id
 
@@ -263,8 +281,8 @@ async def execute_task(
         # the agent sees the wrapped text.
         prompt = contextual_prompt
         delivery_target = task.delivery_to
-        provider = contact.provider
-        api_key = contact.api_key
+        # provider + api_key were resolved from the EVE Magi
+        # row above (before entering the session block).
         # Stash the new session id + uid so the post-with
         # patch can update delivery_address without
         # re-opening the outer session.
@@ -532,7 +550,7 @@ def _finalise_run_failure(
         uid=uid,
         kind="task_disabled",
         title=f"定时任务无法执行：{task_name}",
-        description=f"任务 \"{task_name}\" 配置引用的联系人没有设置 provider/api_key。",
+        description=f"任务 \"{task_name}\" 对应的 EVE MAGI 没有设置 provider/api_key。",
         target_url=f"/chat/scheduled-tasks?task={task_id}",
         priority="high",
         source="system",

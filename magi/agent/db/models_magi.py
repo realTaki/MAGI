@@ -7,8 +7,10 @@ is one of ``"adam"`` (the manager, exactly one per MAGIC) /
 ``"eve"`` (a worker, N per MAGIC).
 
 The provider / api_key columns carry the LLM provider and key
-for the MAGI runtime that boots for this row. They are
-read by :func:`magi.agent.loop.handle_message` on each call.
+for the MAGI runtime. They are the **single source of truth**
+for LLM credentials — the ``contacts`` table does NOT hold
+provider/api_key (removed in the D.30 credential refactor).
+Read via :func:`resolve_magi_credentials`.
 
 Forward references to ``MAGIC`` resolve at mapper-config time
 via the standard ``TYPE_CHECKING`` + ``from __future__ import
@@ -78,3 +80,32 @@ class Magi(Base):
             f"Magi(id={self.id}, magic_id={self.magic_id}, "
             f"magic_position={self.magic_position!r})"
         )
+
+
+def resolve_magi_credentials(
+    position: str,
+) -> tuple[str | None, str | None]:
+    """Return ``(provider, api_key)`` from the first Magi
+    row with ``magic_position == position``, or
+    ``(None, None)`` when no matching Magi exists.
+
+    This is the single read path for LLM credentials.
+    Token-usage recording still writes to the
+    ``token_usage`` table keyed by the Contact's ``uid``
+    — the billing identity is the person, not the agent.
+
+    Callers pass ``"adam"`` (WebUI chat) or ``"eve"``
+    (TG bot / task runner). In v0 there is typically one
+    Magi row per position; multi-magi dispatch is a
+    future concern.
+    """
+    from sqlalchemy import select
+    from magi.agent.db import open_session
+
+    with open_session() as db:
+        row = db.scalar(
+            select(Magi).where(Magi.magic_position == position).limit(1)
+        )
+    if row is None:
+        return None, None
+    return row.provider, row.api_key

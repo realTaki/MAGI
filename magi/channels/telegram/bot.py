@@ -328,7 +328,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     #                    ask your admin to invite you").
     bound = _find_contact_by_telegram_id(state_dir, tgid)
     if bound is not None:
-        contact_id, contact_role, contact_name, contact_separated, contact_provider, contact_key, contact_admin = bound
+        contact_id, contact_role, contact_name, contact_separated, contact_admin = bound
         # After the 2024 role/admin split, ``admin`` is a
         # boolean (WebUI sign-in) rather than a role value.
         # Dispatch accepts the caller if EITHER:
@@ -362,12 +362,8 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             return
         # ``admin`` and ``assigned`` both flow through the
-        # same handler. The earlier "admin → no-op" branch
-        # was a v0 guard against burning the admin's API key
-        # on TG chitchat; once the admin has set per-contact
-        # credentials (D.4+) they own that decision, and TG
-        # chat-with-EVE is a real affordance for mobile
-        # operators who don't want to open the WebUI.
+        # same handler. Good — TG chat-with-EVE is a real
+        # affordance for mobile operators too.
         await _handle_contact_message(
             update,
             state_dir,
@@ -377,8 +373,6 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             display_name,
             contact_separated,
             contact_role,
-            contact_provider,
-            contact_key,
         )
         return
 
@@ -500,20 +494,22 @@ def _auto_create_stranger_contact(
 
 def _find_contact_by_telegram_id(
     state_dir: str, tgid: str
-) -> tuple[int, str, str, bool, str | None, str | None, bool] | None:
+) -> tuple[int, str, str, bool, bool] | None:
     """Resolve a TG tgid to its bound contact.
 
     Single ORM read on ``Contact.telegram_id``; returns
-    ``(uid, role, name, separated, provider, api_key, admin)``
+    ``(uid, role, name, separated, admin)``
     on hit, ``None`` when no row has the tgid bound.
     The dispatch in :func:`_on_message` uses ``admin`` (WebUI
     sign-in bit) and ``role`` (the served-by relationship)
     independently — ``admin=True`` is the canonical
     operator flag since the 2024 split (see
-    :mod:`magi.agent.db.models_contact`). ``provider`` /
-    ``api_key`` are pre-resolved so
-    :func:`_handle_contact_message` can dispatch to the LLM
-    without a second round-trip.
+    :mod:`magi.agent.db.models_contact`).
+
+    LLM credentials come from the ``magis`` table
+    (:func:`magi.agent.db.models_magi.resolve_magi_credentials`),
+    not from ``contacts``. The caller resolves the EVE Magi's
+    provider/api_key before dispatching to the agent loop.
 
     Falls back to the legacy ``telegram.user.<tgid>.uid``
     meta key for state files written before the unified
@@ -531,14 +527,12 @@ def _find_contact_by_telegram_id(
     except (TypeError, ValueError):
         return None
 
-    def _fields(e: Contact) -> tuple[int, str, str, bool, str | None, str | None, bool]:
+    def _fields(e: Contact) -> tuple[int, str, str, bool, bool]:
         return (
             e.id,
             e.role,
             e.name,
             e.separated_at is not None,
-            e.provider,
-            e.api_key,
             bool(e.admin),
         )
 
@@ -588,16 +582,16 @@ async def _handle_contact_message(
     display_name: str | None,
     contact_separated: bool,
     contact_role: str,
-    contact_provider: str | None,
-    contact_api_key: str | None,
 ) -> None:
     """Route a message from a bound contact through the agent loop.
 
-    All the LLM credentials are pre-resolved by
-    :func:`_find_contact_by_telegram_id` so this function
-    is pure dispatch: text in, reply out, with the agent
-    loop doing the audit + fallback. A separated contact
-    gets a polite "you're 离职" reply and no LLM call.
+    LLM credentials are resolved from the EVE Magi row
+    (:func:`magi.agent.db.models_magi.resolve_magi_credentials`)
+    rather than the Contact row — the EVE agent owns the
+    credentials, not the person.
+
+    A separated contact gets a polite "you're 离职"
+    reply and no LLM call.
 
     Session lifecycle (D.10): TG now persists chat history
     the same way WebUI does — ``SessionStore`` writes
@@ -619,6 +613,11 @@ async def _handle_contact_message(
         new_session_id,
         utcnow_iso,
     )
+    from magi.agent.db.models_magi import resolve_magi_credentials
+
+    # Resolve LLM credentials from the EVE Magi row
+    # (the agent owns the key, not the Contact).
+    contact_provider, contact_api_key = resolve_magi_credentials("eve")
 
     if contact_separated:
         # Separated contacts can't chat with their EVE —

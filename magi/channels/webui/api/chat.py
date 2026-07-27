@@ -7,27 +7,14 @@ return the reply string. C7 replaces this with a streaming
 endpoint (SSE or WebSocket) so the user sees tokens as they
 arrive; v0 just blocks until the full reply is ready.
 
-Per-contact LLM credentials
-==========================
+LLM credentials
+===============
 
-The endpoint reads the session cookie and looks up the
-Contact row whose ``telegram_id`` matches. If that row has
-``provider`` + ``api_key`` configured, those are forwarded
-to the agent — so an admin who set their own Minimax key
-uses that key instead of the system default. Two failure
-modes are treated differently on purpose:
-
-  - **Operator has no per-contact credentials configured**
-    → return ``403 chat.llm_credentials_required``. The
-    frontend uses this to surface a "set your LLM provider
-    first" prompt. We do NOT silently fall back to the
-    system default because the operator's intent ("chat as
-    *me*, not as the house bot") is the whole point of the
-    per-contact credentials feature.
-
-  - **ORM read fails (DB not initialised, etc.)**
-    → return ``500 chat.lookup_failed``. The chat endpoint
-    can't fulfill its job without the row, and pretending
+LLM credentials come from the ``magis`` table's Adam Magi
+row (:func:`magi.agent.db.models_magi.resolve_magi_credentials`),
+NOT from the operator's Contact row. The Adam Magi owns
+the provider + API key; token usage is still recorded per-
+operator via ``token_usage.uid``.
     it can ("silently fall back") would mean the operator
     can't tell the difference between a healthy chat and
     one that can't find who they are.
@@ -88,8 +75,14 @@ def _resolve_caller_credentials(
     state_dir: str, uid: int
 ) -> tuple[int, str, str, str]:
     """Look up the operator's Contact row by their
-    ``uid`` (the cookie value post-D.24) and
+    ``uid`` (the cookie value post-D.24), read LLM
+    credentials from the Adam Magi row, and
     return ``(uid, provider, api_key, role)``.
+
+    LLM credentials live on ``magis`` (the Adam Magi
+    owns the provider + key), not on ``contacts``.
+    Token-usage recording is still per-Contact
+    (``token_usage.uid``).
 
     The ``role`` field is included so the chat handler
     can pass it down to :func:`magi.agent.loop.handle_message`
@@ -98,24 +91,12 @@ def _resolve_caller_credentials(
     only, and the agent loop needs to strip them out of
     other roles' tool menus.
 
-    Raises ``MagiHTTPException`` rather than returning a
-    sentinel:
+    Raises ``MagiHTTPException``:
 
       - ``401 chat.unknown_sender`` if the contact id
-        doesn't resolve to a row. The auth gate should
-        have caught this first, but we re-check
-        defensively so a future code path that skips the
-        gate still fails closed.
-      - ``403 chat.llm_credentials_required`` if the row
-        exists but ``provider`` or ``api_key`` is unset.
-        The frontend uses this code to render a "please
-        configure your LLM provider first" prompt instead
-        of silently using someone else's credentials.
-
-    ORM read failures propagate as ``500 chat.lookup_failed``
-    rather than being swallowed — the operator needs to
-    know the chat path is broken, not silently get a
-    different LLM's reply.
+        doesn't resolve to a row.
+      - ``403 chat.llm_credentials_required`` if the
+        Adam Magi has no provider or api_key configured.
     """
     try:
         with open_session() as session:
@@ -136,20 +117,24 @@ def _resolve_caller_credentials(
             code="chat.unknown_sender",
             detail="no Contact row bound to this cookie",
         )
-    if not contact.provider or not contact.api_key:
+
+    # Credentials from the Adam Magi row, not the Contact.
+    from magi.agent.db.models_magi import resolve_magi_credentials
+    provider, api_key = resolve_magi_credentials("adam")
+    if not provider or not api_key:
         logger.info(
-            "chat: operator %s has no per-contact LLM credentials; "
-            "asking them to configure first", contact.id,
+            "chat: adam Magi has no LLM credentials; "
+            "asking operator to configure them first",
         )
         raise MagiHTTPException(
             status_code=403,
             code="chat.llm_credentials_required",
             detail=(
-                "set your LLM provider and API key in your Contact "
-                "profile before chatting"
+                "configure the Adam MAGI's LLM provider "
+                "and API key before chatting"
             ),
         )
-    return contact.id, contact.provider, contact.api_key, contact.role
+    return contact.id, provider, api_key, contact.role
 
 
 class ChatSendRequest(BaseModel):

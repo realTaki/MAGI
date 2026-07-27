@@ -6,24 +6,15 @@ that the post-refactor reframe collapsed everything into. This
 test pins the *current* ``GET / POST / PATCH`` contract:
 
   1. **Auth gate** — ``AdminGate`` (cookie admin or 401).
-     The endpoint must refuse to render another admin's
-     contacts under any circumstance (no URL knob that
-     could bypass the caller-derived scope).
-  2. **CRUD shape** — name/role/provider/api_key/telegram_id
-     reads round-trip through PATCH; secrets are masked
-     on read.
+  2. **CRUD shape** — name/role/admin/telegram_id
+     reads round-trip through PATCH.
   3. **Scopes** — ``role``, ``with_notes``, ``separated``,
      ``include_separated`` filters work without false
      positives between them.
   4. **Soft delete** — ``PATCH separated=true`` stamps
-     ``separated_at`` and the contact stops appearing in
-     the default listing; ``PATCH separated=false`` restores.
+     ``separated_at``; ``PATCH separated=false`` restores.
   5. **Validation** — name required, role enum, telegram_id
      uniqueness.
-
-The fixture mirrors the other per-API test modules:
-fresh state dir, fresh ORM engine, seeded admin Contact,
-``TestClient`` with ``magi_session`` cookie set.
 """
 
 from __future__ import annotations
@@ -63,22 +54,16 @@ def env(monkeypatch, tmp_path):
             display_name="ali",
             telegram_id=9001,
             admin=True, role="assigned",
-            provider="minimax",
-            api_key="sk-fake",
         )
         bob = Contact(
             name="Bob",
             telegram_id=9002,
             role="assigned",
-            provider="minimax",
-            api_key="sk-bob",
         )
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
             role="contact",
-            provider="minimax",
-            api_key="sk-charlie",
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -224,7 +209,7 @@ def test_list_contacts_with_notes_returns_only_noted(env, client):
     assert body["items"][0]["name"] == "Bob"
 
 def test_get_contact_returns_full_row(client, env):
-    """Single-row GET returns the masked-key + full shape."""
+    """Single-row GET returns the full contact shape."""
     pid = env["bob"].id
     r = client.get(f"/api/contacts/{pid}")
     assert r.status_code == 200
@@ -233,10 +218,6 @@ def test_get_contact_returns_full_row(client, env):
     assert body["name"] == "Bob"
     assert body["display_name"] is None
     assert body["role"] == "assigned"
-    assert body["provider"] == "minimax"
-    assert body["api_key_set"] is True
-    # Last 4 chars of ``sk-bob``.
-    assert body["api_key_last4"] == "-bob"
     assert body["telegram_id"] == 9002
 
 def test_get_contact_404_for_missing_id(client):
@@ -254,27 +235,21 @@ def test_create_contact_minimal(client):
     body = r.json()
     assert body["name"] == "Dana"
     assert body["role"] == "contact"
-    assert body["api_key_set"] is False
-    assert body["api_key_last4"] is None
 
 def test_create_contact_full(client):
-    """POST with provider / api_key / telegram_id round-trips."""
+    """POST with display_name / telegram_id round-trips."""
     r = client.post(
         "/api/contacts",
         json={
             "name": "Eve",
             "display_name": "E",
             "role": "assigned",
-            "provider": "anthropic",
-            "api_key": "sk-eve",
             "telegram_id": 9004,
         },
     )
     assert r.status_code == 201
     body = r.json()
     assert body["display_name"] == "E"
-    assert body["api_key_set"] is True
-    assert body["api_key_last4"] == "-eve"
     assert body["telegram_id"] == 9004
 
 def test_create_contact_requires_name(client):
@@ -324,23 +299,6 @@ def test_patch_contact_renames(client, env):
     assert r.json()["name"] == "AliceNew"
     r2 = client.get(f"/api/contacts/{pid}")
     assert r2.json()["name"] == "AliceNew"
-
-def test_patch_contact_rotates_api_key(client, env):
-    """``PATCH api_key`` writes new value, last4 reflects it."""
-    pid = env["alice"].id
-    r = client.patch(
-        f"/api/contacts/{pid}",
-        json={"api_key": "sk-rotated"},
-    )
-    assert r.status_code == 200
-    assert r.json()["api_key_last4"] == "ated"
-    assert r.json()["api_key_set"] is True
-
-    # Empty string clears.
-    r = client.patch(f"/api/contacts/{pid}", json={"api_key": ""})
-    assert r.status_code == 200
-    assert r.json()["api_key_set"] is False
-    assert r.json()["api_key_last4"] is None
 
 def test_patch_contact_soft_deletes(client, env):
     """``separated=true`` stamps ``separated_at``;

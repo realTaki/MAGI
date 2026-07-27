@@ -72,8 +72,6 @@ def upgrade() -> None:
     sa.Column('display_name', sa.String(length=120), nullable=True),
     sa.Column('role', sa.String(length=16), nullable=False),
     sa.Column('admin', sa.Boolean(), nullable=False, server_default='0'),
-    sa.Column('provider', sa.String(length=32), nullable=True),
-    sa.Column('api_key', sa.String(length=512), nullable=True),
     sa.Column('telegram_id', sa.BigInteger(), nullable=True),
     sa.Column('separated_at', sa.DateTime(), nullable=True),
     sa.Column('notes', sa.Text(), nullable=False),

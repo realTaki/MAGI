@@ -131,7 +131,7 @@ discipline C0 deliberately punted on).
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
 | Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/agent/db/alembic/versions`; `init_orm` runs `upgrade head` |
 | Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/agent/db/migrations.py`, runs only for databases without `alembic_version` |
-| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | Alembic revision `0002_fts5`; trigram tokenizer for CJK-friendly substring search |
+| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | folded into Alembic `0001_baseline` (no separate `0002_fts5`); trigram tokenizer for CJK-friendly substring search |
 | Default-root seed ("MAGI") | **Done** | `engine._seed_default_root` |
 | Departments tree (parent_id self-FK + manager_id) | **Done** | Cycles prevented at API layer (out-of-scope for C1.1 per `departments.py` comment) |
 | `api_key` plain-text in User table (C0 → C8 hardening plan to encrypt) | **Done** | C8 encrypts at rest with `MAGI_SECRET` |
@@ -149,7 +149,7 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas |
+| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; full chain extends to `0006_contact_notes` (HEAD) — see [docs/database-migrations.md](database-migrations.md) |
 | All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
@@ -285,7 +285,7 @@ worst-day operational scenarios.
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline (replaces `_run_inline_migrations`) | **Done** | `0001_baseline` + `0002_fts5`; legacy runner is adoption-only |
+| First Alembic baseline (replaces `_run_inline_migrations`) | **Done** | chain `0001_baseline` → `0002_admin_role_split` → `0006_contact_notes` (HEAD); legacy runner is adoption-only — see [docs/database-migrations.md](database-migrations.md) |
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
 | `tokens.py` to `llm/` | **Done** | (in this refactor series) |
@@ -876,16 +876,65 @@ commit history.
   ordering all together — see
   [ROADMAP C1.3 Alembic baseline](file:///Users/.../ROADMAP.md#c13--alembic-baseline--webui-completion).
 
+### D.28 — Channel dispatcher (adapter pattern)
+
+Architecture: `magi/channels/dispatcher.py` is the ONE dispatch point for
+domain code. Each channel implements a `ChannelAdapter` Protocol (send /
+lookup_im_id / bind_im_id / unbind_im_id) and registers into a process-global
+registry. Domain code (tools, runner, webui api auth) talks only to the
+dispatcher; it never imports a channel adapter directly or knows about TG
+chat ids.
+
+```
+domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/...)
+               uid + channel + session_id                    owns per-channel IM id
+```
+
+**Completed:**
+
+- `channels/dispatcher.py` — `send_to_session`, `send_to_uid`, `lookup_im_id`,
+  `bind_im_id`, `list_bindings`, `list_channels`.
+- `channels/telegram/adapter.py` — `TelegramAdapter` implements
+  `ChannelAdapter`. `send()` goes through raw HTTP (`send_text_auto`) to avoid
+  the loop-bound `bot.send_message` bug. Auto-registers at import time.
+- `chat_sessions.tgid` → `delivery_address` column rename (migration entry in
+  `_RENAME_COLUMN_MIGRATIONS`, data survives — SQLite rename is metadata-only).
+- `agent/tools/send_message.py` → `dispatcher.send_to_session`.
+- `agent/tools/schedule_task.py` → reads `session.delivery_address`.
+- `agent/proactive/runner.py` → `_tg_send_callback` closure removed; calls
+  `dispatcher.send_to_session`.
+- `agent/loop.py` — zero `tgid` references.
+- `auto_title.py` — `delivery_address` instead of `tgid` in `TitleJob`.
+- `chat_sessions.py` / `chat_search.py` — schemas use `delivery_address`.
+- WebUI path: dispatcher appends directly to the session store (no adapter
+  needed for WebUI — the user sees the message inline).
+
+**Remaining stragglers** (tgid still appears outside `channels/telegram/`):
+
+- `channels/webui/api/onboarding.py` — Pydantic schemas still have `tgid`
+  field names; error messages say "tgid must be numeric".
+- `agent/memory/contacts/store.py` — `find_by_telegram_id(tgid)` parameter name.
+- `agent/memory/session/ids.py` — `_validate_tgid`, `session_lock(tgid, ...)`.
+- `agent/memory/session/migration.py` — legacy JSON migration uses `tgid` var.
+- `agent/memory/session/models.py` — `d["tgid"]` backward-compat deserialization.
+
+**D.29 follow-up** (``magi_im_bindings`` table): moves `Contact.telegram_id`
+into a proper `(magi_id, channel, im_id)` table and drops the denormalised
+column. Deferred to the F1 three-table migration.
+
 ## Open questions for the user
 
 These show up while reading the code but the code
 itself is silent on which direction to go. Worth
 asking before sinking more time:
 
-1. **C1.3 Alembic migration** — replace
-   `_run_inline_migrations` with a real Alembic
-   baseline, or keep the inline pass for one more
-   stage and migrate at end of C2?
+1. **C1.3 Alembic migration** — **Resolved.** A real Alembic
+   baseline (`0001_baseline`) shipped; the legacy inline pass
+   (`_run_inline_migrations`) now runs only as the one-time
+   adoption step for pre-Alembic DBs (stamped to `0001_baseline`,
+   then Alembic owns every change). Current chain:
+   `0001_baseline → 0002_admin_role_split → 0006_contact_notes`.
+   See [docs/database-migrations.md](database-migrations.md).
 2. **C2 self-serve `/start <code>`** — code-generated
    one-time codes (operator prints), or QR-coded
    deep link from the WebUI? Comment says "code
@@ -972,5 +1021,6 @@ asking before sinking more time:
   — what the per-package code looks like today
 - [bash-tool-evolution.md](memory/bash-tool-evolution.md)
   — deferred bash tool follow-ups
-- [docs/D.28-channel-dispatcher.md](D.28-channel-dispatcher.md)
-  — the per-channel IM binding dispatcher
+- [database-migrations.md](database-migrations.md) — the canonical
+  migration chain, startup behaviour, and the discipline for adding
+  new schema changes

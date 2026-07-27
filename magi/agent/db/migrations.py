@@ -32,12 +32,6 @@ logger = logging.getLogger("magi.agent.db.migrations")
 
 
 _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
-    # C1.1: added provider, api_key to employees.
-    # Post-refactor: table renamed to contacts; column refs
-    # now target ``contacts``. Pre-existing ``employees``
-    # rows are preserved by the table rename below.
-    ("contacts", "provider", "VARCHAR(32)"),
-    ("contacts", "api_key", "VARCHAR(512)"),
     # C1.1 (soft-delete): separated_at lets the dashboard mark
     # a contact as separated without losing the row.
     ("contacts", "separated_at", "DATETIME"),

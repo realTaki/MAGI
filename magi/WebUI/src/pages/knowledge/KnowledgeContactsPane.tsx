@@ -119,10 +119,13 @@ export function KnowledgeContactsPane() {
                     <td className="py-2.5 pr-3">
                       {c.role && (
                         <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${
-                          c.role === "admin" ? "bg-amber-100 text-amber-800" :
                           c.role === "assigned" ? "bg-sky-100 text-sky-800" :
+                          c.role === "contact" ? "bg-ink-soft/10 text-ink-soft" :
                           "bg-ink-soft/10 text-ink-soft"
                         }`}>{c.role}</span>
+                      )}
+                      {c.admin && (
+                        <span className="ml-1 text-[10px] rounded px-1.5 py-0.5 font-medium bg-amber-100 text-amber-800">admin</span>
                       )}
                     </td>
                     <td className="py-2.5 pr-3 hidden sm:table-cell">

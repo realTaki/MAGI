@@ -390,9 +390,13 @@ def test_onboarded_admins_show_up_in_contacts_directory(
 
     contacts_client = TestClient(client.app)
     contacts_client.cookies.set("magi_session", signed)
-    listing = contacts_client.get("/api/contacts?role=admin")
+    listing = contacts_client.get("/api/contacts?admin=true")
     assert listing.status_code == 200
     body = listing.json()
     assert body["total"] == 1
     assert body["items"][0]["telegram_id"] == 91001
-    assert body["items"][0]["role"] == "admin"
+    # 2024 role/admin split: ``admin`` is a boolean, the role
+    # enum no longer carries it. Save-admin stamps
+    # ``admin=true, role='assigned'`` on the operator row.
+    assert body["items"][0]["role"] == "assigned"
+    assert body["items"][0]["admin"] is True

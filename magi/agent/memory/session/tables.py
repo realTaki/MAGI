@@ -59,7 +59,7 @@ from magi.agent.db.base import Base
 # row — a TG chat id today, an opaque string from domain code's
 # perspective. The channel adapter
 # (:mod:`magi.channels.dispatcher`) is the only place that
-# interprets it. See ``docs/D.28-channel-dispatcher.md``.
+# interprets it. See ``docs/ROADMAP.md`` §D.28.
 # ────────────────────────────────────────────────────────────────── #
 
 

@@ -42,11 +42,10 @@ served role), or any combination.
 active, a timestamp means the contact was marked as
 separated (formerly "已离职").
 
-``provider`` / ``api_key`` carry the LLM credentials.
-``api_key`` is a secret — never returned in plain text by
-any endpoint. The F1 follow-up will move these to
-``Magi``; for now they stay on the contact row for v0
-compatibility.
+LLM credentials live on the ``magis`` table
+(:func:`magi.agent.db.models_magi.resolve_magi_credentials`),
+not on ``contacts``. Token usage is still recorded per-
+Contact via ``token_usage.uid``.
 """
 
 from __future__ import annotations
@@ -116,11 +115,6 @@ class Contact(Base):
     admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0",
     )
-
-    # LLM provider credentials. F1 follow-up moves these
-    # to ``Magi``; for v0 they live on the contact row.
-    provider: Mapped[str | None] = mapped_column(String(32))
-    api_key: Mapped[str | None] = mapped_column(String(512))
 
     # Bound TG chat id. Unique across non-NULL values
     # (enforced by the unique index in migrations).

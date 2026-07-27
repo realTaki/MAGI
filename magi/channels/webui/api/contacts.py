@@ -4,7 +4,10 @@ Serves two audiences:
   1. Knowledge → Contacts pane — ``GET /api/contacts?with_notes=true``
      returns contacts that have LLM-recorded notes.
   2. Admin CRUD — ``POST`` / ``GET/{id}`` / ``PATCH/{id}`` manage
-     the contact directory (name, role, provider, api_key, TG).
+     the contact directory (name, role, admin, TG binding).
+
+LLM credentials are managed separately via ``/api/magis``
+(the Magi row owns the provider + API key, not the Contact).
 
 The ``admin_gate`` is re-exported from :mod:`.auth_gates` so
 other routers can import it from here if needed.
@@ -52,12 +55,6 @@ def _iso(dt: datetime | None) -> str:
     return dt.isoformat().replace("+00:00", "Z")
 
 
-def _mask_key(raw: str | None) -> tuple[bool, str | None]:
-    if not raw:
-        return False, None
-    return True, (raw[-4:] if len(raw) >= 4 else raw)
-
-
 # -- response / payload shapes ----------------------------------------------
 
 class ContactOut(BaseModel):
@@ -72,9 +69,6 @@ class ContactOut(BaseModel):
     # be ``role='assigned'`` (the person MAGI serves) AND
     # ``admin=True`` (the operator) at the same time.
     admin: bool = False
-    provider: str | None = None
-    api_key_set: bool = False
-    api_key_last4: str | None = None
     separated_at: str | None = None
     telegram_id: int | None = None
     notes: str = ""
@@ -96,8 +90,6 @@ class ContactListOut(BaseModel):
 class ContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     display_name: str | None = Field(default=None, max_length=120)
-    provider: str | None = Field(default=None, max_length=32)
-    api_key: str | None = Field(default=None, max_length=512)
     role: str = Field(default="contact", max_length=16)
     # Defaults to ``False`` — a freshly-created contact is
     # not a WebUI operator until the operator explicitly
@@ -111,8 +103,6 @@ class ContactCreate(BaseModel):
 
 class ContactUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=120)
-    provider: Optional[str] = Field(default=None, max_length=32)
-    api_key: Optional[str] = Field(default=None, max_length=512)
     name: Optional[str] = Field(default=None, max_length=120)
     role: Optional[str] = Field(default=None, max_length=16)
     # ``None`` (omitted from the PATCH body) means "leave
@@ -130,16 +120,12 @@ def _serialize(
     c: Contact,
     notes_count: int = 0,
 ) -> ContactOut:
-    is_set, last4 = _mask_key(c.api_key)
     return ContactOut(
         id=c.id,
         name=c.name,
         display_name=c.display_name,
         role=c.role,
         admin=bool(c.admin),
-        provider=c.provider,
-        api_key_set=is_set,
-        api_key_last4=last4,
         separated_at=c.separated_at.isoformat() if c.separated_at else None,
         telegram_id=c.telegram_id,
         notes=c.notes,
@@ -284,8 +270,6 @@ def create_contact(
     contact = Contact(
         name=name,
         display_name=payload.display_name,
-        provider=payload.provider,
-        api_key=payload.api_key,
         role=payload.role,
         admin=payload.admin,
         telegram_id=payload.telegram_id,
@@ -461,12 +445,6 @@ def update_contact(
 
     if "display_name" in payload.model_fields_set:
         contact.display_name = payload.display_name
-
-    if "provider" in payload.model_fields_set:
-        contact.provider = payload.provider
-
-    if "api_key" in payload.model_fields_set:
-        contact.api_key = payload.api_key if payload.api_key else None
 
     if "separated" in payload.model_fields_set:
         contact.separated_at = utcnow_naive() if payload.separated else None

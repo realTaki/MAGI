@@ -59,6 +59,16 @@ def env(monkeypatch, tmp_path):
     init_sqlite(str(state))
     init_orm(str(state))
 
+    # Pin the system timezone to UTC so the aggregation
+    # endpoint's ``week`` / ``month`` window boundaries are
+    # deterministic regardless of the test host's local tz.
+    # Without this, a host running in a non-UTC zone (e.g.
+    # MDT or CST) shifts the Monday-00:00-local anchor and
+    # rows that the test thinks are "1 day ago in UTC"
+    # fall outside the configured window.
+    from magi.channels.webui.api.system_settings import set_system_timezone
+    set_system_timezone(str(state), "UTC")
+
     with open_session() as db:
         admin = Contact(
             name="Alice",
@@ -149,10 +159,19 @@ def test_total_aggregates_all_rows(client, env):
     assert body["total"]["call_count"] == 2
 
 def test_week_window_includes_recent(client, env):
-    """Rows inside the rolling 7-day window sum into ``week``;
-    older rows do not."""
+    """Rows inside the Monday-anchored week window sum into
+    ``week``; rows from last week do not.
+
+    The ``week`` window is "Monday 00:00 in the configured
+    timezone → now", so we seed two rows on opposite sides
+    of that boundary:
+
+      - 2 hours ago (always inside this week).
+      - 10 days ago (always outside — that's at least one
+        full week back, plus several days of buffer).
+    """
     now = datetime.now(timezone.utc)
-    _seed_usage(env["target"].id, now - timedelta(days=1), in_tok=10, out_tok=5)
+    _seed_usage(env["target"].id, now - timedelta(hours=2), in_tok=10, out_tok=5)
     _seed_usage(env["target"].id, now - timedelta(days=10), in_tok=99, out_tok=99)
 
     r = client.get(f"/api/contacts/{env['target'].id}/token-usage")

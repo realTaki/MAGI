@@ -6,7 +6,7 @@ code (tools, runner, webui api auth) talks to this dispatcher
 only; it never imports a specific channel adapter or knows
 about TG chat ids / Slack mids / etc.
 
-Architecture (see ``docs/D.28-channel-dispatcher.md``):
+Architecture (see ``docs/ROADMAP.md`` §D.28):
 
     ┌──────────────────────────────────────────────────────────┐
     │  domain code (tools, runner, webui api auth, chat send) │

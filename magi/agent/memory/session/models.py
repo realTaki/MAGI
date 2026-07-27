@@ -37,7 +37,7 @@ class Session:
     Today: the bound TG chat id. Domain code treats this as
     an opaque string; the channel adapter
     (:mod:`magi.channels.dispatcher`) is the only piece of
-    code that interprets it. See ``docs/D.28-channel-dispatcher.md``.
+    code that interprets it. See ``docs/ROADMAP.md`` §D.28.
     """
     uid: int
     channel: str
