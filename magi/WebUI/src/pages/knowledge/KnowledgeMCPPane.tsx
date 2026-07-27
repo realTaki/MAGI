@@ -5,9 +5,7 @@
  * the tools table for each configured MCP server.
  */
 import { Fragment, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 
-import { apiFetch } from "../../lib/queryClient";
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
 import { IconDelete, IconEdit, IconEye } from "../../components/icons";
@@ -15,20 +13,13 @@ import { useT } from "../../i18n/index";
 import {
   useCreateMcpServer,
   useDeleteMcpServer,
+  useMcpServerTools,
   useMcpServers,
   useToggleMcpServer,
   useUpdateMcpServer,
   type McpServerIn,
   type McpServerRow,
 } from "../../lib/queries";
-
-type ToolRow = {
-  name: string;
-  description: string;
-  source: "builtin" | "mcp";
-  server?: string | null;
-};
-type ToolListResponse = { items: ToolRow[]; total: number };
 
 type ConnectionType = McpServerIn["connection_type"];
 
@@ -77,13 +68,11 @@ const kvToDict = (rows: KvRow[]): Record<string, string> => {
 };
 
 export function KnowledgeMCPPane() {
-  const toolsQuery = useQuery({
-    queryKey: [...qk.contacts(), "tools"] as const,
-    queryFn: () => apiFetch<ToolListResponse>("/api/tools"),
-  });
-  const mcpTools = (toolsQuery.data?.items ?? []).filter((t) => t.source === "mcp");
-
-  return <McpServerManager mcpTools={mcpTools} />;
+  // The detail panel is the only thing that needs the
+  // tool list, and it gets that on demand per server
+  // (see ``useMcpServerTools`` below). No need to fetch
+  // the global tool registry here.
+  return <McpServerManager />;
 }
 
 
@@ -93,7 +82,7 @@ export function KnowledgeMCPPane() {
 
 type EditDraft = McpServerIn & { originalName: string };
 
-function McpServerManager({ mcpTools }: { mcpTools: ToolRow[] }) {
+function McpServerManager() {
   const t = useT();
   const serversQuery = useMcpServers();
   const createMut = useCreateMcpServer();
@@ -106,7 +95,12 @@ function McpServerManager({ mcpTools }: { mcpTools: ToolRow[] }) {
     ? (serversQuery.error as Error).message
     : null;
 
+  // Tool list for the expanded server. Enabled only
+  // when the operator has opened the detail — so the
+  // per-server round-trip fires once per click instead
+  // of on every table render.
   const [detailName, setDetailName] = useState<string | null>(null);
+  const serverToolsQuery = useMcpServerTools(detailName);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addDraft, setAddDraft] = useState<McpServerIn>(EMPTY_DRAFT);
@@ -260,7 +254,17 @@ function McpServerManager({ mcpTools }: { mcpTools: ToolRow[] }) {
           <tbody>
             {servers.map((s) => {
               const isEdit = editingName === s.name;
-              const serverTools = mcpTools.filter((t) => t.server === s.name);
+              // The per-server tool list is fetched on
+              // demand via ``useMcpServerTools`` — only
+              // the expanded server has data; the rest
+              // see ``[]`` until the operator clicks
+              // their detail.
+              const serverTools =
+                detailName === s.name
+                  ? (serverToolsQuery.data?.items ?? [])
+                  : [];
+              const serverToolsLoading =
+                detailName === s.name && serverToolsQuery.isFetching;
               if (isEdit && editDraft) {
                 return (
                   <tr key={s.name} className="border-b border-sky-light/30 bg-sky-pale/20">
@@ -333,7 +337,11 @@ function McpServerManager({ mcpTools }: { mcpTools: ToolRow[] }) {
                     <tr key={`${s.name}-tools`} className="border-b border-sky-light/20 bg-sky-pale/10">
                       <td colSpan={5} className="p-0">
                         <div className="px-4 py-2 text-xs">
-                          {serverTools.length === 0 ? (
+                          {serverToolsLoading ? (
+                            <span className="text-ink-soft italic">{t("common.loading")}</span>
+                          ) : serverToolsQuery.error ? (
+                            <span className="form-error">✗ {(serverToolsQuery.error as Error).message}</span>
+                          ) : serverTools.length === 0 ? (
                             <span className="text-ink-soft italic">{t("settings.mcpNoTools")}</span>
                           ) : (
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -473,5 +481,3 @@ function KvEditor({ label, rows, onChange, keyPlaceholder, valuePlaceholder }: K
     </div>
   );
 }
-
-import { qk } from "../../lib/queryClient";

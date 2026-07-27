@@ -631,6 +631,80 @@ def active_connections() -> list[MCPServerConnection]:
     return list(_connections)
 
 
+def list_tools_for_server(name: str) -> list["MCPTool"] | None:
+    """Return the live tool list for one MCP server.
+
+    Used by the WebUI's per-server tool list (Knowledge → MCP
+    detail expansion). The agent loop uses the process-wide
+    ``_mcp_tools_cache`` instead — that's a different code
+    path with different freshness semantics.
+
+    Freshness policy: prefer the active connection (cheap,
+    already-running subprocess). If the connection isn't
+    running, fall back to a one-shot connect → list →
+    disconnect (slow; only happens when the operator opens
+    a server detail before the next chat turn has triggered
+    ``maybe_reload_mcp_tools``).
+
+    Returns:
+      - ``None`` when the server name isn't in the table
+        (the operator deleted it under us). The endpoint
+        surfaces a 404.
+      - ``[]`` when the row exists but the subprocess
+        failed to connect or returned no tools. The
+        endpoint surfaces a 200 + empty list.
+      - ``list[MCPTool]`` on success.
+    """
+    from magi.agent.db import McpServer, open_session
+
+    # 1. Active connection? Use it.
+    for conn in _connections:
+        if conn.name == name:
+            return list(conn.tools)
+
+    # 2. Row still in the table? On-demand connect.
+    try:
+        with open_session() as session:
+            row = session.get(McpServer, name)
+    except Exception:
+        logger.exception(
+            "list_tools_for_server: db read failed for %r", name
+        )
+        return []
+    if row is None:
+        return None
+
+    conn = MCPServerConnection(
+        name=row.name,
+        connection_type=row.connection_type,  # type: ignore[arg-type]
+        command=row.command,
+        args=row.to_args_list(),
+        env=row.to_env_dict(),
+        url=row.url,
+        headers=row.to_headers_dict(),
+        connect_timeout=row.connect_timeout,
+        execute_timeout=row.execute_timeout,
+        sse_read_timeout=row.sse_read_timeout,
+    )
+    # ``connect`` is async. Run it in a one-shot loop so
+    # the sync endpoint can call us. The connection is
+    # NOT registered into ``_connections`` — that list is
+    # owned by ``bootstrap_mcp_tools`` and ``maybe_reload_mcp_tools``.
+    # We only borrow the subprocess for one tool-list
+    # round-trip; if the next chat turn's reload picks
+    # up this row it'll re-connect cleanly.
+    import asyncio
+    ok = asyncio.run(conn.connect(_defaults()))
+    if not ok:
+        return []
+    try:
+        return list(conn.tools)
+    finally:
+        # Detach so the next bootstrap cycle doesn't
+        # see a stale handle in ``active_connections()``.
+        asyncio.run(conn.disconnect())
+
+
 # ────────────────────────────────────────────────────────────────── #
 # Sync helpers — bridge to the project-local sync callers
 # (registry / boot) without forcing them into async.

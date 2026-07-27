@@ -94,7 +94,12 @@ class ChannelsResponse(BaseModel):
 
 
 class ChannelsUpdateRequest(BaseModel):
-    enabled: list[str] = Field(min_length=1)
+    # ``min_length=0`` so an operator who disables every
+    # non-required channel doesn't trip Pydantic V2's
+    # built-in body validator with a 422 — the view
+    # function re-adds ``WEBUI`` server-side so a 0-length
+    # list is functionally equivalent to ``["webui"]``.
+    enabled: list[str] = Field(min_length=0)
 
 
 # -- endpoints ------------------------------------------------------------
@@ -138,17 +143,21 @@ def update_channels(
             detail=f"unknown channel(s): {unknown!r}",
         )
 
-    # Required channels must stay enabled
+    # Required channels must stay enabled. We
+    # auto-insert any missing required channel (rather
+    # than 400-ing the operator) so a stale-dashboard
+    # toggle that drops ``webui`` from ``enabled`` can't
+    # accidentally disable the control plane. The
+    # required channels are always added server-side
+    # before persistence and are returned in the
+    # response so the operator sees the corrected list.
+    effective_enabled = list(payload.enabled)
     for req in _REQUIRED_CHANNELS:
-        if req not in payload.enabled:
-            raise MagiHTTPException(
-                status_code=400,
-                code="channels.required",
-                detail=f"channel {req!r} is required and cannot be disabled",
-            )
+        if req not in effective_enabled:
+            effective_enabled.append(req)
 
     # Persist
-    _write_enabled(state_dir, payload.enabled)
+    _write_enabled(state_dir, effective_enabled)
     enabled_list = _read_enabled(state_dir)
 
     # Start / stop channels to match the new enabled list.

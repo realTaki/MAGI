@@ -115,33 +115,14 @@ def _summarize_schema(schema: dict[str, Any]) -> int:
 def list_tools(_admin: AdminGate) -> ToolListOut:
     """Render the current tool registry as a flat list.
 
-    No filtering, no pagination — v0 ships a handful of tools
-    total (5 built-ins + a small MCP fan-out, if configured).
-    The flat list mirrors
-    :func:`magi.agent.tools.registry.get_tools_grouped`; if
-    that ever grows past ~50 entries, surface
-    ``?source=builtin|mcp`` and a paginated view here.
-
-    ``caller_role=None`` is intentional — we want every
-    tool visible to the dashboard (read-only audit view),
-    regardless of who's currently logged in. The dashboard
-    shows the registry truth; the agent loop still passes
-    the operator's ``contact.role`` to
-    ``get_tool_schemas(caller_role=...)`` for the LLM's
-    menu at chat time.
-
-    Builtins come back first in the response (the
-    dashboard groups them under their own card); MCP
-    tools follow. Within each group the items are
-    lexicographically sorted by name so refreshes
-    re-render the same layout.
+    Builtins are always available.  MCP tools are loaded
+    at boot and refreshed before each chat turn — the
+    listing endpoint reads whatever is currently cached.
+    If the MCP cache is empty (e.g. on first visit after
+    a uvicorn reload), the operator can trigger a reload
+    via the agent's chat turn or the :ref:`/api/tools/reload`
+    endpoint.
     """
-    # Trigger a lazy reload of MCP tools if the
-    # ``mcp_servers`` table changed since last load.
-    # Idempotent — only reloads when the version
-    # stamp differs.
-    from magi.agent.tools.registry import maybe_reload_mcp_tools
-    maybe_reload_mcp_tools()
     built_in, mcp = get_tools_grouped(caller_role=None)
     items: list[ToolOut] = [
         _serialize_tool(tool, "builtin") for tool in built_in

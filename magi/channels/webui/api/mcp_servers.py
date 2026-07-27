@@ -285,6 +285,104 @@ def get_mcp_server(
     return _serialize(row)
 
 
+# -- per-server live tool list ---------------------------------------------
+#
+# A separate endpoint from ``/api/tools`` because the two
+# views serve different operators: ``/api/tools`` is the
+# "what the LLM sees" aggregate (cached at process level);
+# this one is the "what does this specific server expose"
+# view, opened on demand from Knowledge → MCP detail.
+# Going through ``list_tools_for_server`` keeps the two
+# caches independent — the operator expanding a server
+# detail doesn't have to wait for the next chat-turn
+# reload to populate the global cache.
+
+
+class McpServerToolOut(BaseModel):
+    """One tool exposed by an MCP server.
+
+    Distinct from :class:`magi.channels.webui.api.tools.ToolOut`:
+    this shape doesn't carry ``source`` (always ``"mcp"``)
+    or ``server`` (the server name is the URL path), and
+    it returns the bare tool name without the
+    ``<server>__<tool>`` prefix the agent loop uses to
+    disambiguate same-named tools across servers.
+    """
+
+    name: str
+    description: str
+    prop_count: int
+
+
+class McpServerToolsOut(BaseModel):
+    name: str
+    items: list[McpServerToolOut]
+    total: int
+
+
+def _summarize_tool_for_server(tool) -> McpServerToolOut:
+    """Render one :class:`MCPTool` to the per-server wire
+    shape. Strips the ``<server>__`` prefix and the
+    allowed-roles gate (every MCP tool returns True from
+    ``is_allowed_for_role`` today, so the field carries no
+    signal)."""
+    schema = tool.to_anthropic_schema()
+    full_name = schema.get("name", "")
+    # ``MCPTool.name`` is ``f"{server_name}__{server_tool_name}"``.
+    # The server name in the URL is the prefix, so strip
+    # it so the operator sees the bare tool name they
+    # would invoke through Claude / the test harness.
+    server_prefix = f"{tool.name.split('__', 1)[0]}__"
+    bare_name = (
+        full_name[len(server_prefix):]
+        if full_name.startswith(server_prefix)
+        else full_name
+    )
+    props = (schema.get("input_schema") or {}).get("properties")
+    return McpServerToolOut(
+        name=bare_name,
+        description=" ".join((schema.get("description", "") or "").split())[:200],
+        prop_count=len(props) if isinstance(props, dict) else 0,
+    )
+
+
+@router.get("/mcp-servers/{name}/tools", response_model=McpServerToolsOut)
+def list_mcp_server_tools(
+    name: str,
+    _admin: AdminGate,
+) -> McpServerToolsOut:
+    """List the live tools exposed by a single MCP server.
+
+    Goes through the loader's
+    :func:`magi.agent.tools.mcp_loader.list_tools_for_server`
+    — which prefers the active subprocess connection
+    (fast) and falls back to a one-shot connect → list →
+    disconnect (slow) when the operator opens the detail
+    before the next chat turn has triggered
+    ``maybe_reload_mcp_tools``.
+
+    Returns:
+      - 404 when the server name isn't in the table.
+      - 200 + ``items=[]`` when the server exists but
+        the subprocess couldn't connect (the row is
+        misconfigured, or the binary is missing).
+    """
+    from magi.agent.tools import mcp_loader
+
+    tools = mcp_loader.list_tools_for_server(name)
+    if tools is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.mcp_server",
+            detail=f"mcp server {name!r} not found",
+        )
+    return McpServerToolsOut(
+        name=name,
+        items=[_summarize_tool_for_server(t) for t in tools],
+        total=len(tools),
+    )
+
+
 @router.post("/mcp-servers", response_model=McpServerOut, status_code=201)
 def create_mcp_server(
     payload: McpServerIn,

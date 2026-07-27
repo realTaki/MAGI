@@ -63,15 +63,24 @@ class HealthResponse(BaseModel):
 
 
 def create_app() -> FastAPI:
+    # Bootstrap MCP tools synchronously inside the uvicorn
+    # child process.  The node-level ``run()`` call bootstraps
+    # in the reloader process; uvicorn's ``reload=True`` spawns
+    # a fresh child that needs its own cache.  ``load_mcp_tools_blocking``
+    # spins a private event loop — safe to call before the
+    # lifespan starts.
+    try:
+        from magi.agent.tools.registry import bootstrap_mcp_tools
+        bootstrap_mcp_tools()
+    except Exception:
+        pass
+
     # D.7: lifespan hook starts the auto-title background
     # worker. Kept lazy (inside ``create_app``) so it runs
     # after ``init_orm`` / ``init_sqlite`` have prepared the
     # state — module-level startup would race those calls.
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        # Imported lazily because ``magi.agent.auto_title``
-        # also imports ``magi.agent.llm``, which is heavy and
-        # not needed for /health. Keeps cold-start tight.
         from magi.agent.memory.session.auto_title import (
             start_title_worker,
             stop_title_worker,
