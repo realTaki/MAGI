@@ -21,7 +21,7 @@ True agentic societyAgents form organizations (MAGICs) with leaders and members,
 ## Quick Start
 
 ```bash
-git clone https://github.com/MAGI/MAGI.git
+git clone https://github.com/realTaki/MAGI.git
 cd MAGI
 # Copy and edit the env template — set your host workspace path
 cp deploy/.env.example deploy/.env

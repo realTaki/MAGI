@@ -176,8 +176,8 @@ deploy/k8s/secrets/adam-magi-secrets.example.yaml
 - 删除 EVE 的 HTTP Service，因为 Telegram polling 不需要入站 HTTP；
 - 将 `MAGI_ADAM_URL` 指向 `adam-magi:42069`。
 
-EVE 的 `MAGI_CHANNELS` 不需要在启动时预设 —— role 默认值就是
-`("telegram",)`,启动后会自动拉起 daemon。
+EVE 的通道由 `settings.channels.enabled` 控制（telegram 在 onboarding 的
+save-bot 写入 bot token 后自动启用），无需在启动时预设 `MAGI_CHANNELS`。
 
 先复制目录：
 
@@ -199,7 +199,6 @@ cp -R deploy/k8s/overlays/eve-example \
    ```yaml
    data:
      MAGI_NODE_ROLE: eve
-     MAGI_UID: alice
      MAGI_ADAM_URL: http://adam-magi:42069
    ```
 

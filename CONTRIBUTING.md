@@ -5,7 +5,7 @@ Thanks for your interest in MAGI! This guide helps you get started.
 ## Quick start
 
 ```bash
-git clone https://github.com/takisecond/magi.git
+git clone https://github.com/realTaki/MAGI.git
 cd MAGI
 uv sync --group dev
 ```

@@ -38,7 +38,7 @@ Every architectural choice is an independent configuration axis:
 | Axis | Env var | Default by archetype |
 |---|---|---|
 | Position | `MAGI_NODE_ROLE` | `adam` = leader, `eve` = member |
-| Channels | `MAGI_CHANNELS` | `adam` → `webui`, `eve` → `telegram` |
+| Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
 | State backend | `MAGI_STATE_BACKEND` | `auto` (SQLite) |
 | Adam peer | `MAGI_ADAM_URL` | `http://adam:42069` |
 | LLM provider | `ANTHROPIC_API_KEY` etc. | per-agent configuration |
@@ -56,7 +56,7 @@ magi/
 │   ├── db/         # SQLAlchemy ORM + settings KV store
 │   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 │   ├── proactive/  # Scheduled task engine
-│   └── prompts/    # YAML prompt templates
+│   └── prompts/    # Markdown + YAML prompt templates (soul.md, memory_block.md, …; bot_replies.yaml)
 ├── channels/       # How agents connect to the outside world
 │   ├── dispatcher.py   # D.28 — domain code talks to this, never to adapters
 │   ├── telegram/       # TG bot adapter
@@ -99,7 +99,7 @@ adapter and registering it. Core code never changes.
 
 ---
 
-## Database (13 tables)
+## Database (14 tables)
 
 | Table | Holds |
 |---|---|
@@ -112,6 +112,7 @@ adapter and registering it. Core code never changes.
 | `chat_sessions` / `chat_messages` | Conversation history |
 | `chat_messages_fts` | FTS5 trigram full-text search |
 | `memory_entries` | MAGI's self-memory |
+| `mcp_servers` | Operator-configured MCP servers (name, type, endpoint, env, headers) |
 | `meta` / `settings` | KV runtime config |
 
 SQLite with WAL + `busy_timeout=5000` + `BEGIN IMMEDIATE`.

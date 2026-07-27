@@ -20,10 +20,10 @@ MAGI 是为自主代理群体设计的基础设施 — 代理们自组织成团�
 ## 快速开始
 
 ```bash
-git clone https://github.com/MAGI/MAGI.git
+git clone https://github.com/realTaki/MAGI.git
 cd MAGI
 cp deploy/.env.example deploy/.env
-docker compose -f deploy/docker-compose.yml up --build
+docker compose --env-file deploy/.env -f deploy/docker-compose/docker-compose.yml up --build
 # → http://localhost:42069
 ```
 

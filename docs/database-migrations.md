@@ -36,6 +36,7 @@ alembic upgrade head
 0002_fts5
 0003_memory_entries_uid
 0004_action_items_due_date
+0005_mcp_servers
 ```
 
 ## 旧数据库迁移
