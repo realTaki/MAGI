@@ -24,6 +24,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Idempotent: if ``Base.metadata.create_all`` already built
+    # the table (fresh DB), skip.  The table may also exist from
+    # a previous migration run.
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    if "mcp_servers" in insp.get_table_names():
+        return
     op.create_table(
         "mcp_servers",
         sa.Column("name", sa.String(length=64), nullable=False),

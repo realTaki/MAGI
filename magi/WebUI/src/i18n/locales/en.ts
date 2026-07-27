@@ -17,6 +17,7 @@ export default {
     add: "Add",
     remove: "Remove",
     confirmRemove: "Are you sure you want to remove this?",
+    actions: "Actions",
   },
   landing: {
     tagline: "Agent councils, defined by you.",
@@ -163,6 +164,8 @@ export default {
     mcpFieldHeadersKey: "Header name",
     mcpFieldHeadersValue: "Value",
     mcpEmpty: "No MCP servers configured. Add one to surface external tools in the LLM.",
+    mcpShowTools: "View tools",
+    mcpNoTools: "No tools",
     mcpNameInvalid: "Name must be alphanumeric, dashes, or underscores only.",
     mcpStdio: "stdio (local command)",
     mcpSse: "SSE (server-sent events)",

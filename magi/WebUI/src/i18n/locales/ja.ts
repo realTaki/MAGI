@@ -17,6 +17,7 @@ export default {
     add: "追加",
     remove: "削除",
     confirmRemove: "本当に削除しますか？",
+    actions: "操作",
   },
   landing: {
     tagline: "エージェントの群れ、あなたが定義する。",
@@ -163,6 +164,8 @@ export default {
     mcpFieldHeadersKey: "ヘッダー名",
     mcpFieldHeadersValue: "値",
     mcpEmpty: "MCP サーバーが未設定です。追加すると LLM が外部ツールを利用できます。",
+    mcpShowTools: "ツールを表示",
+    mcpNoTools: "ツールなし",
     mcpNameInvalid: "名前は英数字・ハイフン・アンダースコアのみ使えます。",
     mcpStdio: "stdio (ローカルコマンド)",
     mcpSse: "SSE (Server-Sent Events)",

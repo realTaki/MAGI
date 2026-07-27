@@ -73,6 +73,7 @@ class ToolOut(BaseModel):
     prop_count: int
     source: Literal["builtin", "mcp"] = "builtin"
     allowed_roles: list[str] = []    # sorted; [] = no role gate
+    server: str | None = None        # MCP server name this tool came from
 
 
 class ToolListOut(BaseModel):
@@ -135,6 +136,12 @@ def list_tools(_admin: AdminGate) -> ToolListOut:
     lexicographically sorted by name so refreshes
     re-render the same layout.
     """
+    # Trigger a lazy reload of MCP tools if the
+    # ``mcp_servers`` table changed since last load.
+    # Idempotent — only reloads when the version
+    # stamp differs.
+    from magi.agent.tools.registry import maybe_reload_mcp_tools
+    maybe_reload_mcp_tools()
     built_in, mcp = get_tools_grouped(caller_role=None)
     items: list[ToolOut] = [
         _serialize_tool(tool, "builtin") for tool in built_in
@@ -166,11 +173,17 @@ def _serialize_tool(
     Tool protocol via duck typing), so the route handler
     tells us which cache it pulled from."""
     schema = tool.to_anthropic_schema()
+    name = schema.get("name", "")
+    # MCP tools are prefixed ``<server>__<tool>`` by the loader
+    # (see magi/agent/tools/mcp_loader.MCPTool); recover the
+    # owning server so the dashboard can group tools per MCP server.
+    server = name.split("__", 1)[0] if source == "mcp" and "__" in name else None
     return ToolOut(
-        name=schema.get("name", ""),
+        name=name,
         description=_summarize(schema.get("description", "") or ""),
         prop_count=_summarize_schema(schema.get("input_schema") or {}),
         source=source,
+        server=server,
         # Sorted so the dashboard renders a stable,
         # human-readable order across reloads (frozensets
         # aren't stable-across-Python-versions by default).

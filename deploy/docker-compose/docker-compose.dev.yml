@@ -16,6 +16,9 @@ services:
     env_file: ../.env
     environment:
       MAGI_RELOAD: "1"
+      # Vite proxies /api/* → 127.0.0.1:8000 (magi internal).
+      # One port (42069) exposed to host.
+      MAGI_PORT: "8000"
       TZ: ${HOST_TZ:-UTC}
       PYTHONPATH: /app
       VITE_BACKEND_URL: "http://127.0.0.1:8000"

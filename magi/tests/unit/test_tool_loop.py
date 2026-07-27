@@ -144,6 +144,12 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "add_action_item",
         "complete_action_item",
         "list_action_item",
+        # MCP server management — admin-only tools
+        # for adding / listing / deleting configured
+        # Model-Context-Protocol servers.
+        "add_mcp_server",
+        "list_mcp_servers",
+        "delete_mcp_server",
     ]
 
 def test_get_tool_lookup_hits_and_misses(tmp_path, monkeypatch):

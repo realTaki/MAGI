@@ -68,11 +68,15 @@ class NodeConfig:
 
         reload = os.environ.get("MAGI_RELOAD", "0") == "1"
 
+        # Dev mode: Vite on 42069 proxies /api to uvicorn on 8000.
+        port_raw = os.environ.get("MAGI_PORT")
+        port = int(port_raw) if port_raw else WEBUI_PORT
+
         return cls(
             channels=(),
             state_dir=STATE_DIR,
             host=WEBUI_HOST,
-            port=WEBUI_PORT,
+            port=port,
             reload=reload,
             log_level=log_level,
         )

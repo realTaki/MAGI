@@ -4,13 +4,13 @@
  * One card: server CRUD (add / edit / delete / toggle) above
  * the tools table for each configured MCP server.
  */
-import { type ReactNode, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/queryClient";
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
-import { IconDelete, IconEdit } from "../../components/icons";
+import { IconDelete, IconEdit, IconEye } from "../../components/icons";
 import { useT } from "../../i18n/index";
 import {
   useCreateMcpServer,
@@ -26,6 +26,7 @@ type ToolRow = {
   name: string;
   description: string;
   source: "builtin" | "mcp";
+  server?: string | null;
 };
 type ToolListResponse = { items: ToolRow[]; total: number };
 
@@ -76,33 +77,13 @@ const kvToDict = (rows: KvRow[]): Record<string, string> => {
 };
 
 export function KnowledgeMCPPane() {
-  const t = useT();
-
   const toolsQuery = useQuery({
     queryKey: [...qk.contacts(), "tools"] as const,
     queryFn: () => apiFetch<ToolListResponse>("/api/tools"),
   });
   const mcpTools = (toolsQuery.data?.items ?? []).filter((t) => t.source === "mcp");
 
-  const toolsTable: ReactNode = mcpTools.length > 0 ? (
-    <div className="mt-4 pt-4 border-t border-sky-light/30">
-      <h3 className="text-sm font-semibold text-ink mb-2">{t("settings.toolsMcpHeading")}</h3>
-      <table className="data-table w-full">
-        <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
-          <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
-          <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
-        </tr></thead>
-        <tbody>{mcpTools.map((tool) => (
-          <tr key={tool.name} className="border-b border-sky-light/30 last:border-0">
-            <td className="py-2 pr-4 text-ink font-mono text-xs">{tool.name}</td>
-            <td className="py-2 pr-4 text-ink-soft text-xs">{tool.description}</td>
-          </tr>
-        ))}</tbody>
-      </table>
-    </div>
-  ) : null;
-
-  return <McpServerManager toolsTable={toolsTable} />;
+  return <McpServerManager mcpTools={mcpTools} />;
 }
 
 
@@ -112,7 +93,7 @@ export function KnowledgeMCPPane() {
 
 type EditDraft = McpServerIn & { originalName: string };
 
-function McpServerManager({ toolsTable }: { toolsTable: ReactNode }) {
+function McpServerManager({ mcpTools }: { mcpTools: ToolRow[] }) {
   const t = useT();
   const serversQuery = useMcpServers();
   const createMut = useCreateMcpServer();
@@ -124,6 +105,8 @@ function McpServerManager({ toolsTable }: { toolsTable: ReactNode }) {
   const loadError = serversQuery.error
     ? (serversQuery.error as Error).message
     : null;
+
+  const [detailName, setDetailName] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addDraft, setAddDraft] = useState<McpServerIn>(EMPTY_DRAFT);
@@ -271,18 +254,17 @@ function McpServerManager({ toolsTable }: { toolsTable: ReactNode }) {
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnType")}</th>
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnEndpoint")}</th>
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnStatus")}</th>
-              <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnEnv")}</th>
-              <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnHeaders")}</th>
-              <th className="py-2 pr-3 font-medium w-24 text-right" />
+              <th className="py-2 pr-3 font-medium w-24 text-right">{t("common.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {servers.map((s) => {
               const isEdit = editingName === s.name;
+              const serverTools = mcpTools.filter((t) => t.server === s.name);
               if (isEdit && editDraft) {
                 return (
                   <tr key={s.name} className="border-b border-sky-light/30 bg-sky-pale/20">
-                    <td colSpan={7} className="py-3 pr-3">
+                    <td colSpan={5} className="py-3 pr-3">
                       {editError && <p className="form-error mb-2">{editError}</p>}
                       <ServerFormFields
                         mode="edit" draft={editDraft}
@@ -307,51 +289,77 @@ function McpServerManager({ toolsTable }: { toolsTable: ReactNode }) {
                 );
               }
               return (
-                <tr key={s.name} className="border-b border-sky-light/30 hover:bg-sky-pale/10 transition-colors">
-                  <td className="py-2 pr-3 font-mono text-xs">{s.name}</td>
-                  <td className="py-2 pr-3 text-xs text-ink-soft">{s.connection_type}</td>
-                  <td className="py-2 pr-3 font-mono text-[11px] text-ink-soft">
-                    {s.connection_type === "stdio"
-                      ? `${s.command ?? "—"}${s.args.length ? " " + s.args.join(" ") : ""}`
-                      : s.url ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <span className={`status-pill ${s.enabled ? "status-pill--connected" : "status-pill--disconnected"}`}>
-                      {s.enabled ? t("settings.mcpStatusEnabled") : t("settings.mcpStatusDisabled")}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-xs text-ink-soft">{Object.keys(s.env).length}</td>
-                  <td className="py-2 pr-3 text-xs text-ink-soft">{Object.keys(s.headers).length}</td>
-                  <td className="py-2 pr-3 text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      <button type="button" onClick={() => startEdit(s)} title={t("common.edit")}
-                        className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
-                        <IconEdit className="h-4 w-4" />
-                      </button>
-                      <button type="button" onClick={() => { void onToggle(s); }}
-                        title={t("settings.mcpConfirmToggle")}
-                        className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors text-xs">
-                        {s.enabled ? "⏸" : "▶"}
-                      </button>
-                      <button type="button" onClick={() => { void onDelete(s.name); }}
-                        title={t("common.delete")}
-                        className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
-                        <IconDelete className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                <Fragment key={s.name}>
+                  <tr className="border-b border-sky-light/30 hover:bg-sky-pale/10 transition-colors">
+                    <td className="py-2 pr-3 font-mono text-xs">{s.name}</td>
+                    <td className="py-2 pr-3 text-xs text-ink-soft">{s.connection_type}</td>
+                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-soft">
+                      {s.connection_type === "stdio"
+                        ? `${s.command ?? "—"}${s.args.length ? " " + s.args.join(" ") : ""}`
+                        : s.url ?? "—"}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <label className={`relative inline-flex items-center ${toggleMut.isPending ? "cursor-wait opacity-50" : "cursor-pointer"}`}>
+                          <input type="checkbox" className="sr-only peer"
+                            checked={s.enabled}
+                            disabled={toggleMut.isPending}
+                            onChange={() => { void onToggle(s); }} />
+                          <div className="w-8 h-5 bg-ink-soft/20 rounded-full peer peer-checked:bg-ocean peer-focus:ring-2 peer-focus:ring-sky-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-3" />
+                        </label>
+                    </td>
+                    <td className="py-2 pr-3 text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button type="button"
+                          onClick={() => setDetailName(detailName === s.name ? null : s.name)}
+                          title={t("settings.mcpShowTools")}
+                          className={`p-1 rounded transition-colors ${
+                            detailName === s.name ? "text-ocean bg-sky-pale/30" : "text-ink-soft hover:text-ink hover:bg-white/60"
+                          }`}>
+                          <IconEye className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => startEdit(s)} title={t("common.edit")}
+                          className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                          <IconEdit className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => { void onDelete(s.name); }}
+                          title={t("common.delete")}
+                          className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                          <IconDelete className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {detailName === s.name && (
+                    <tr key={`${s.name}-tools`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                      <td colSpan={5} className="p-0">
+                        <div className="px-4 py-2 text-xs">
+                          {serverTools.length === 0 ? (
+                            <span className="text-ink-soft italic">{t("settings.mcpNoTools")}</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-x-4 gap-y-1">
+                              {serverTools.map((tool) => (
+                                <span key={tool.name} className="inline-flex items-center gap-1">
+                                  <span className="font-mono text-[11px] text-ink">{tool.name}</span>
+                                  <span className="text-ink-soft/60">{tool.description}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
             {servers.length === 0 && (
-              <tr><td colSpan={7} className="py-6 text-ink-soft text-sm text-center">
+              <tr><td colSpan={5} className="py-6 text-ink-soft text-sm text-center">
                 {t("settings.mcpEmpty")}
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
-      {toolsTable}
     </ConsoleCard>
   );
 }
