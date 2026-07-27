@@ -132,8 +132,6 @@ async def test_tg_handler_injects_tg_send_callback(
         display_name=None,
         contact_separated=False,
         contact_role="assigned",
-        contact_
-        contact_
     )
 
     # 6. Post-D.28 contract: ``handle_message`` is called with

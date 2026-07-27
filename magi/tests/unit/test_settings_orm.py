@@ -67,4 +67,4 @@ def test_init_orm_records_alembic_head(state_dir):
     with engine.connect() as db:
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
 
-    assert revision == "0006_contact_notes"
+    assert revision == "0002_drop_contact_provider_api_key"

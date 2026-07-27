@@ -102,7 +102,8 @@ def test_record_token_usage_happy_path(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=1,
-        channel="webui"
+        channel="webui",
+        provider="minimax-cn",
         model="MiniMax-M2.7",
         usage={
             "input_tokens": 100,
@@ -137,7 +138,8 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=2,
-        channel="tg"
+        channel="tg",
+        provider="minimax-cn",
         model=None,
         usage={})
 
@@ -160,7 +162,8 @@ def test_record_token_usage_partial_dict(token_env):
     record_token_usage(
         str(token_env[0]),
         uid=1,
-        channel="webui"
+        channel="webui",
+        provider="minimax-cn",
         model="MiniMax-M2.7",
         usage={"input_tokens": 200, "output_tokens": 80})
 
@@ -259,7 +262,8 @@ def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
     with open_session() as s:
         s.add(TokenUsage(
             uid=uid,
-            channel=channel
+            channel=channel,
+            provider="minimax-cn",
             model="MiniMax-M2.7",
             input_tokens=in_t,
             output_tokens=out_t,

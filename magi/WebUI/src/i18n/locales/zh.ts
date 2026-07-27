@@ -234,7 +234,7 @@ export default {
     timezone: "系统时区",
     // Card subtitles / descriptions.
     registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 SOUL.md 决定启用哪些。",
-    directoryDesc: "联系人列表：成员与 admin，可管理角色、Provider 和 API Key。",
+    directoryDesc: "联系人列表：成员与 admin，可管理角色和登录权限。",
     channelsDesc: "各 IM 通道的启用/停用开关。切换即时生效，无需重启。",
     webuiAccessDesc: "拥有 WebUI 登录权限的操作员。每个联系人的 admin 标志独立于角色 (assigned / contact / guest)。新操作员通过 Telegram 验证码握手流程添加。",
     onboardingDesc: "重新跑一次初始化向导（会重置已保存的 bot token + admin 列表）。",
@@ -371,7 +371,7 @@ export default {
     loadOlder: "加载更早消息",
     loadingOlder: "加载中…",
     loadedCount: "已加载 {loaded} / 共 {total} 条",
-    errorCredentials: "还没设置你的 LLM provider 和 API key。在 Contacts 里找到自己的档案，把 Provider 和 API Key 填上再发消息。",
+    errorCredentials: "MAGI 还没配置 LLM provider 和 API key。去 Settings → 智能体管理 → 选 adam → 填 Provider 和 API Key，再重试。",
     errorNetwork: "网络错误，请重试。",
     errorAuth: "登录失效了，重新登录一次再试试。",
     readonlyHint: "此会话来自 {channel} 通道，仅可查看。在 {channel} 端继续对话。",

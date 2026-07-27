@@ -382,7 +382,7 @@ def _fake_provider_factory(
 
     provider.chat = _chat
 
-    def _get_provider(name: str, key: str, model: Any = None) -> Any:
+    def _get_provider(model: Any = None) -> Any:
         return provider
 
     return provider, _get_provider
@@ -483,12 +483,10 @@ async def test_handle_message_picks_up_interrupting_user_message(
         str(state_dir),
         text="search for python",
         channel="webui",
-        
         uid=1,
         session_id=sess.session_id,
-        contact_
-        contact_
-        max_tool_iterations=3)
+        max_tool_iterations=3,
+    )
 
     assert reply == "Searching for rust instead."
 
@@ -533,11 +531,9 @@ async def test_handle_message_no_interrupt_works_normally(
         str(state_dir),
         text="list stuff",
         channel="webui",
-        
         uid=1,
         session_id=sess.session_id,
-        contact_
-        contact_
-        max_tool_iterations=3)
+        max_tool_iterations=3,
+    )
 
     assert reply == "Here's what I found."

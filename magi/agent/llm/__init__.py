@@ -34,6 +34,7 @@ from magi.agent.llm.errors import (
     LLMRateLimitError,
     LLMNetworkError,
     LLMContextLengthError,
+    LLMNotConfiguredError,
 )
 from magi.agent.llm.provider import (
     LLMProvider,
@@ -51,6 +52,7 @@ __all__ = [
     "LLMRateLimitError",
     "LLMNetworkError",
     "LLMContextLengthError",
+    "LLMNotConfiguredError",
     "get_provider",
     "is_known_provider",
     "known_providers",

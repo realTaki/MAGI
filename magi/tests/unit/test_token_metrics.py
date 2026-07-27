@@ -115,7 +115,8 @@ def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
                 ts=ts.replace(tzinfo=None),
                 input_tokens=in_tok,
                 output_tokens=out_tok,
-                channel="webui"
+                channel="webui",
+                provider="minimax-cn",
                 model="claude-test")
         )
         db.commit()

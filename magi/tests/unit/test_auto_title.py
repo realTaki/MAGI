@@ -110,8 +110,8 @@ def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled ch
 
     instances: list[FakeProvider] = []
 
-    def _factory(name, api_key, model=None):
-        inst = FakeProvider(api_key=api_key)
+    def _factory(model=None):
+        inst = FakeProvider(api_key="fake-key")
         inst._title_text = title_text
         instances.append(inst)
         return inst
@@ -197,12 +197,9 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
 
     await _summarize_to_title(
         TitleJob(
-            
             delivery_address="9001",
-session_id=sid,
+            session_id=sid,
             uid=admin.id,
-            contact_
-            contact_
         )
     )
 
@@ -240,8 +237,8 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
     job = TitleJob(
         delivery_address="9001",
-session_id=sid, uid=admin.id,
-        contact_ contact_
+        session_id=sid,
+        uid=admin.id,
     )
 
     await _summarize_to_title(job)  # first run → title set
@@ -273,7 +270,6 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sess.session_id, uid=admin.id,
-        contact_ contact_
     ))
     assert store.get(admin.id, sess.session_id).title is None
     assert sum(len(p.calls) for p in providers) == 0
@@ -294,8 +290,6 @@ async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
         delivery_address="9001",
         session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=admin.id,
-        contact_
-        contact_
     ))
     assert sum(len(p.calls) for p in providers) == 0
 
@@ -316,8 +310,8 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
         async def chat(self, system, messages, max_tokens=1024):
             raise LLMAuthError("simulated bad key")
 
-    def _raising_factory(name, api_key, model=None):
-        return Raising(api_key=api_key)
+    def _raising_factory(model=None):
+        return Raising(api_key="fake-key")
 
     monkeypatch.setattr(at_mod, "get_provider", _raising_factory)
 
@@ -334,7 +328,6 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None  # title wasn't set
 
@@ -348,7 +341,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
 
     admin = _seed_admin()
 
-    def _boom(name, api_key, model=None):
+    def _boom(model=None):
         raise RuntimeError("provider exploded")
 
     monkeypatch.setattr(at_mod, "get_provider", _boom)
@@ -366,7 +359,6 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -390,7 +382,6 @@ async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_ contact_
     ))
     assert len(store.get(admin.id, sid).title) == 80
 
@@ -415,7 +406,6 @@ async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     await _summarize_to_title(TitleJob(
         delivery_address="9001",
 session_id=sid, uid=admin.id,
-        contact_ contact_
     ))
     assert store.get(admin.id, sid).title is None
 
@@ -453,8 +443,6 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
             delivery_address="9001",
             session_id=sid,
             uid=admin.id,
-            contact_
-            contact_
         )
 
     # Wait for the two jobs to land — each takes essentially
@@ -509,28 +497,25 @@ async def test_enqueue_does_not_block(state_dir, monkeypatch):
         
         delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=1,
-        contact_
-        contact_
     )
     assert _title_jobs.qsize() == 1
 
 @pytest.mark.asyncio
-async def test_enqueue_with_provider_captures_credentials(state_dir, monkeypatch):
-    """The job struct carries the credentials verbatim so a
-    later key rotation doesn't affect the worker."""
+async def test_enqueue_captures_job_metadata(state_dir, monkeypatch):
+    """The job struct carries the metadata verbatim — uid +
+    session_id + delivery_address — so a later key rotation
+    doesn't affect the worker."""
     from magi.agent.memory.session.auto_title import enqueue_title_job, _title_jobs, TitleJob
 
     while not _title_jobs.empty():
         _title_jobs.get_nowait()
 
     await enqueue_title_job(
-        
-        delivery_address="9001", session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
+        delivery_address="9001",
+        session_id="01ABCDEFGHJKMNPQRSTVWXYZAB",
         uid=42,
-        contact_
-        contact_
     )
     job: TitleJob = _title_jobs.get_nowait()
-    assert job.contact_provider == "minimax-cn"
-    assert job.contact_api_key == "captured-key-xyz"
+    assert job.delivery_address == "9001"
+    assert job.session_id == "01ABCDEFGHJKMNPQRSTVWXYZAB"
     assert job.uid == 42

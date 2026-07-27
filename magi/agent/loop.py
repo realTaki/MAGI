@@ -71,6 +71,7 @@ from magi.agent.llm import (
     ChatMessage,
     ChatResult,
     LLMError,
+    LLMNotConfiguredError,
     LLMProvider,
     get_provider,
 )

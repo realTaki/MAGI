@@ -28,9 +28,9 @@ export type ContactRow = {
   id: number;
   name: string;
   display_name: string | null;
-  provider: string | null;
-  api_key_set: boolean;
-  api_key_last4: string | null;
+  // LLM credentials (``provider`` / ``api_key``) live on
+  // the ``magis`` table, not on Contact — see ``MagiRow``
+  // below and the ``/api/magis`` endpoints.
   separated_at: string | null;
   // ``role`` is the relationship to MAGI (assigned /
   // contact / guest). WebUI sign-in rights are NOT in

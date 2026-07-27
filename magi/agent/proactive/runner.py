@@ -128,23 +128,14 @@ async def execute_task(
     run_id = pre_created_run_id or new_session_id()
 
     # ── 1. Read task + operator + load home session ──
-    from magi.agent.db.models_magi import resolve_magi_credentials
-
-    provider, api_key = resolve_magi_credentials("eve")
-    if not provider or not api_key:
-        with open_session() as db:
-            task = db.get(Task, task_id)
-            if task is None:
-                return None
-            _finalise_run_failure(
-                db, run_id=run_id, task_id=task_id, uid=task.uid,
-                task_name=task.name, error="magi_missing_credentials",
-                started_iso=started,
-            )
-            _bump_failure(db, task, "magi_missing_credentials")
-            _maybe_disable_and_alert(db, task, "magi_missing_credentials")
-            db.commit()
-        return run_id
+    # LLM credentials are resolved inside
+    # :func:`magi.agent.loop.handle_message` via
+    # :func:`magi.agent.llm.factory.get_provider` — the
+    # runner never reads them and never passes them as
+    # kwargs. The agent loop raises ``LLMNotConfiguredError``
+    # when the MAGI runtime isn't configured, which the
+    # broad ``except Exception`` below logs as a
+    # ``magi_missing_credentials`` task failure.
 
     with open_session() as db:
         task = db.get(Task, task_id)
@@ -281,8 +272,6 @@ async def execute_task(
         # the agent sees the wrapped text.
         prompt = contextual_prompt
         delivery_target = task.delivery_to
-        # provider + api_key were resolved from the EVE Magi
-        # row above (before entering the session block).
         # Stash the new session id + uid so the post-with
         # patch can update delivery_address without
         # re-opening the outer session.
@@ -352,18 +341,13 @@ async def execute_task(
                 # disable the tool, so the agent's
                 # "deliver via send_message" directive
                 # in the user-message wouldn't reach TG.
-                # ``delivery_target`` is no longer passed as
-                # an extra arg here — the agent loop's tools
-                # read the per-channel delivery address
-                # directly from the session row's
-                # ``delivery_address`` column (via the
-                # channel dispatcher, D.28).
+                # LLM credentials are resolved inside
+                # ``handle_message`` via
+                # :func:`magi.agent.llm.factory.get_provider`
+                # — we don't pass them as kwargs.
                 channel="task",
                 uid=contact.id,
                 session_id=session_id,
-                contact_provider=provider,
-                contact_api_key=api_key,
-                contact_model=None,
                 caller_role=contact.role,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
