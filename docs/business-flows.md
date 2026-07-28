@@ -14,17 +14,18 @@
    └─ 仅当 mcp_servers 表 MAX(updated_at) 变化时才重建子进程
    └─ 失败吞掉，保留现有缓存
 
-2. 凭证校验 (_validate_credentials)
-   └─ contact_provider AND contact_api_key 缺一则返回 agent_no_credentials
-   └─ 凭证来自 Magi 表（resolve_magi_credentials），不是 Contact 表
+2. 凭证校验 (get_provider, _validate_credentials 已被删除)
+   └─ get_provider() 在 magi/agent/llm/factory.py 内自己读 seeded adam Magi 行
+   └─ 凭证来自 Magi 表，不是 Contact 表 — Contact 表根本没有 provider/api_key 列
+   └─ Magi 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
    └─ 严格模式，绝不回退系统默认凭证
 
 3. 构建上下文 (_build_context)
-   ├─ get_provider() — 未知 provider 抛异常
+   ├─ get_provider() — 未知 provider 抛 LLMError；Magi 未配置抛 LLMNotConfiguredError
    ├─ ToolContext(state_dir, workspace, uid, channel, session_id)
    ├─ _build_messages_from_session() — 从 SessionStore 加载历史 → (messages, seen_message_ids)
    ├─ read_soul(state_dir) — 读 SOUL.md
-   └─ get_tool_schemas(caller_role) — 按角色过滤工具列表
+   └─ get_tool_schemas(caller_role, caller_admin) — 按角色过滤工具列表
 
 4. 工具循环 (_run_tool_loop)
    while iterations_run < max_iter:
@@ -45,7 +46,7 @@
 
 **不可改的守卫**:
 
-- `_validate_credentials` 必须是 strict mode，缺凭证 = agent_no_credentials，**绝不**回退系统键
+- `get_provider()` 必须是 strict mode — Magi 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从 Magi 读
 - `_drain_pending_user_messages` 的 store 读取失败必须吞掉（不崩溃主循环）
 - `_truncate_at_safe_boundary` 在拼接新消息前必须调用（否则 Anthropic API 拒绝交错 tool 块）
 - `_run_tool_calls` 的结果必须截断到 8000 字符

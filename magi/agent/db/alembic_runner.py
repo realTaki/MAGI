@@ -13,12 +13,20 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
 
 def _find_alembic_ini() -> Path:
-    """Find the config in a source checkout and in the runtime image."""
+    """Find the config in a source checkout and in the runtime image.
+
+    Deliberately does NOT look in ``Path.cwd()`` — a bare
+    ``alembic upgrade head`` from a checkout root would find the
+    right file but the ``alembic.ini`` it reads has an empty
+    ``sqlalchemy.url`` (set on purpose; see alembic.ini), so the
+    default SQLite target would be cwd-relative ``./magi.db``.
+    Refusing the cwd lookup is the second line of defence; the
+    primary one is the empty URL above.
+    """
     package_root = Path(__file__).resolve().parents[2]  # ``.../magi``
     candidates = (
         package_root.parent / "alembic.ini",  # source checkout / /app
         Path("/app/alembic.ini"),  # production image runtime stage
-        Path.cwd() / "alembic.ini",  # explicit CLI invocation from a checkout
     )
     for candidate in candidates:
         if candidate.is_file():
