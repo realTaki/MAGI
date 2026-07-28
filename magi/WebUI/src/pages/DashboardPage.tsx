@@ -7,12 +7,12 @@
  * runtime and its own (much simpler) dashboard — only Chat and a
  * personal Knowledge view, no Admin tab, no Settings tab.
  *
- * C0 ships only Adam (deploy/docker-compose.yml has no eve
- * service yet), so the EVE-specific dashboard is a C6 deliverable.
- * For now the role distinction is documented in this header; the
- * frontend doesn't yet gate tabs by node role because the only
- * node is Adam. When EVE containers come online, the cleanest
- * split is:
+ * C0 ships only Adam (the k8s ``adam-magi`` Deployment is
+ * the first node; EVE is a C6 deliverable), so the EVE-specific
+ * dashboard is a C6 deliverable. For now the role distinction is
+ * documented in this header; the frontend doesn't yet gate tabs by
+ * node role because the only node is Adam. When EVE containers
+ * come online, the cleanest split is:
  *   - this file stays as `AdamDashboardPage.tsx` (rename at C6)
  *   - a new `EveDashboardPage.tsx` renders just Chat + a scoped
  *     Knowledge (the EVE's *own* personal knowledge, not the

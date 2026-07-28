@@ -1,0 +1,14 @@
+# Local runtime and development dependencies are mounted or installed by the
+# target image. Keeping them out of the context makes local Kind builds both
+# faster and substantially less disk-hungry.
+.git
+.venv
+workspace
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+magi/WebUI/node_modules
+magi/WebUI/dist
+*.log

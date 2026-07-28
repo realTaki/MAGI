@@ -65,8 +65,8 @@ def _system_default_timezone() -> str:
     hasn't been set explicitly.
 
     Resolution order:
-      1. ``TZ`` environment variable (set by deployer or
-         docker-compose).
+      1. ``TZ`` environment variable (set by the deployer in
+         the k8s manifest / ``ConfigMap``).
       2. ``get_localzone()`` from ``tzlocal`` (reads
          ``/etc/localtime``).
       3. ``Etc/UTC`` as a well-formed IANA fallback.

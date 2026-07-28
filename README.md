@@ -14,7 +14,7 @@ Not a single-agent tool. Not a multi-turn chat wrapper. This is **group intellig
 
 ---
 
-True agentic societyAgents form organizations (MAGICs) with leaders and members, collaborate on complex tasks, and persist shared state across sessions. Each agent has a position in its society — who it leads, who it follows, what it knows. Self-organizing teams leaderless task distribution, delegated subtasks, coordinated execution. A group of agents working together is fundamentally more capable than any single one. Every agent is first-classEach MAGI runs in its own container, has its own memory, its own tools, its own LLM credentials — and its own identity. Not threads. Not sessions. Citizens. Persistent collective memoryThe society remembers. Conversation history, long-term facts, contact knowledge, task results — all searchable, all durable. The group gets smarter over time. Runs anywhere, scales with needOne container per agent. SQLite for a laptop; Postgres for a fleet. Docker Compose for one team; Kubernetes for many. The runtime is the same at every scale. BYO intelligence providerAnthropic, Minimax, OpenAI, or your own endpoint. Every agent configures its own LLM — billed to its own budget. No vendor lock-in. No house account. Open by designMIT licensed. Extensible tool system. MCP-compatible. Built-in skills framework. Every part of the society can be customized.
+True agentic societyAgents form organizations (MAGICs) with leaders and members, collaborate on complex tasks, and persist shared state across sessions. Each agent has a position in its society — who it leads, who it follows, what it knows. Self-organizing teams leaderless task distribution, delegated subtasks, coordinated execution. A group of agents working together is fundamentally more capable than any single one. Every agent is first-classEach MAGI runs in its own Pod, has its own memory, its own tools, its own LLM credentials — and its own identity. Not threads. Not sessions. Citizens. Persistent collective memoryThe society remembers. Conversation history, long-term facts, contact knowledge, task results — all searchable, all durable. The group gets smarter over time. Kubernetes-native, scales with needOne Pod per agent. SQLite for a single-node install; Postgres for a fleet. The runtime is the same at every scale; the deployment story is Kubernetes + kustomize (see ``deploy/k8s/``). BYO intelligence providerAnthropic, Minimax, OpenAI, or your own endpoint. Every agent configures its own LLM — billed to its own budget. No vendor lock-in. No house account. Open by designMIT licensed. Extensible tool system. MCP-compatible. Built-in skills framework. Every part of the society can be customized.
 
 ---
 
@@ -23,15 +23,19 @@ True agentic societyAgents form organizations (MAGICs) with leaders and members,
 ```bash
 git clone https://github.com/realTaki/MAGI.git
 cd MAGI
-# Copy and edit the env template — set your host workspace path
-cp deploy/.env.example deploy/.env
-# edit deploy/.env
-docker compose \
-  --env-file deploy/.env \
-  -f deploy/docker-compose/docker-compose.yml \
-  up --build
+# 1. Build the image once (CI may already publish it; otherwise):
+#    docker build -t magi:0.1.0 -f deploy/Dockerfile.prod .
+# 2. Point bootstrap-k8s.sh at your cluster + image, then deploy:
+MAGI_IMAGE=magi:0.1.0 ./deploy/bootstrap-k8s.sh
+# 3. Forward the Adam WebUI to localhost:42069
+kubectl -n magi port-forward svc/adam-magi 42069:42069
 # → http://localhost:42069
 ```
+
+MAGI ships **Kubernetes-only** deployment manifests. Local dev uses
+``kind`` + the ``dev-alice`` overlay; production uses any real k8s
+cluster. See [`deploy/k8s/README.md`](deploy/k8s/README.md) for the
+overlay / ConfigMap / Secret layout.
 
 Walk through the first-time setup wizard — save a Telegram bot token, verify administrator identities, and your first MAGI society is live.
 

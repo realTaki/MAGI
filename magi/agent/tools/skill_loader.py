@@ -128,8 +128,8 @@ def _workspace_root() -> Path:
 
     Workspace is always ``<state_dir>/..`` — inside the container
     this resolves to ``/workspace``.  There is no env-var override
-    (the host-side mount path is a docker-compose concern, not a
-    runtime concern).
+    (the host-side mount path is a k8s PVC concern, not a runtime
+    concern).
     """
     state_dir = require_state_dir()
     return Path(state_dir).parent
@@ -601,7 +601,7 @@ def get_skill_loader() -> SkillLoader:
 
     The root path is always ``<MAGI_STATE_DIR>/..`` (i.e.
     ``/workspace`` inside the container).  There is no
-    override — the host-side mount path is a docker-compose
+    override — the host-side mount path is a k8s PVC
     concern.
     """
     global _skill_loader

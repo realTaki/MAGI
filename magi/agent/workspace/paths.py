@@ -14,10 +14,10 @@ settings DB:
                      loop\'s system-prompt prefix.
 
 There is no ``MAGI_WORKSPACE_DIR`` env-var override — the
-host-side mount path is a docker-compose concern, not a
-runtime concern. Future path resolution (e.g. per-tenant
-subdirs, encrypted volumes) lives here. The bootstrap that
-creates these directories is in :mod:`.bootstrap`.
+host-side mount path is a k8s PVC concern, not a runtime
+concern. Future path resolution (e.g. per-tenant subdirs,
+encrypted volumes) lives here. The bootstrap that creates
+these directories is in :mod:`.bootstrap`.
 """
 
 from __future__ import annotations
