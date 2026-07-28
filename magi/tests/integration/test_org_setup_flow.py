@@ -129,7 +129,7 @@ def test_full_org_setup_flow_add_contact_create_team_add_adam(
     bob = client.post("/api/contacts", json={
         "name": "Bob",
         "telegram_id": 9202,
-        "role": "contact",
+        "role": "guest",
         "provider": "minimax",
         "api_key": "sk-bob",
     })

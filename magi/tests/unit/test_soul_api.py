@@ -280,12 +280,12 @@ def test_assigned_role_can_reset_soul(soul_env):
     assert r.status_code == 200
 
 def test_contact_role_cannot_read_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="contact")
+    c = _client_with_role(soul_env, delivery_address=9001, role='guest')
     r = c.get("/api/soul")
     assert r.status_code == 403
 
 def test_contact_role_cannot_write_soul(soul_env):
-    c = _client_with_role(soul_env, delivery_address=9001, role="contact")
+    c = _client_with_role(soul_env, delivery_address=9001, role='guest')
     r = c.put("/api/soul", json={"content": "nope"})
     assert r.status_code == 403
 

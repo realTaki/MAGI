@@ -70,7 +70,7 @@ def admin_or_assigned_gate(request: Request) -> str:
 
     The old check (``role in ("admin", "assigned")``) is
     replaced because admin is now a separate boolean — a
-    contact with ``role='contact', admin=True`` is a valid
+    contact with ``role='assigned', admin=True`` is a valid
     operator who should pass this gate; a contact with
     ``role='assigned', admin=False`` is the served user who
     should also pass.

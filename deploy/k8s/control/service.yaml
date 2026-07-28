@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: magi-orchestrator
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: orchestrator
+spec:
+  selector:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: orchestrator
+  ports:
+    - name: http
+      port: 42100
+      targetPort: http

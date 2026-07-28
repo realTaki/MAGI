@@ -12,6 +12,14 @@
 - EVE 使用 Telegram 时不创建 HTTP Service；
 - SQLite 默认单副本运行，避免多个 Pod 同时写同一个数据库。
 
+本地开发另有 ``overlays/dev-alice``：它仅由 ``../bootstrap-local.sh`` 配合 kind
+extraMounts 使用，把宿主机 ``workspace/alice`` 映射为 `/workspace`，并把源码映射为
+`/app/magi`，以启用 Uvicorn reload 与 Vite HMR。不要将此 overlay 应用于远程/生产集群。
+
+此外，``../bootstrap-k8s.sh`` 会部署 ``magi-orchestrator``。它是唯一可创建 EVE
+Deployment、PVC 和 provider Secret 的组件；Adam 仅通过带 HMAC 的集群内 API 请求
+启动/停止。不要为 Adam 挂载 Docker socket 或 Kubernetes ServiceAccount token。
+
 ## 目录结构
 
 ```text

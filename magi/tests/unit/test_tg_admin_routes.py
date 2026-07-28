@@ -118,7 +118,7 @@ async def test_contact_role_is_refused(tg_admin_env):
     """``contact`` / ``guest`` stay refused — they're
     not served by this MAGI. The admin fix must not
     have widened the gate to include them."""
-    _seed_contact(str(tg_admin_env), delivery_address=9001, role="contact")
+    _seed_contact(str(tg_admin_env), delivery_address=9001, role='guest')
 
     from magi.channels.telegram.bot import _on_message
     update = _make_update(message_id=44, delivery_address=9001, text="hi")

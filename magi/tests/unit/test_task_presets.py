@@ -148,7 +148,7 @@ def test_seed_is_idempotent_on_repeat_call(state):
 
 
 def test_seed_skips_admin_contacts(state):
-    """``role='contact', admin=True`` is a no-op for the
+    """``role='guest', admin=True`` is a no-op for the
     preset seed hook — guards against the helper being
     called from a future code path that forgets the
     role-vs-admin distinction.
@@ -157,7 +157,7 @@ def test_seed_skips_admin_contacts(state):
     triggers on ``role='assigned'`` (the served user).
     ``admin=True`` (WebUI operator) does NOT trigger
     seeding by itself — a backend operator who isn't
-    the served user (``role='contact', admin=True``)
+    the served user (``role='guest', admin=True``)
     doesn't need auto-seeded daily briefings.
     """
     from magi.agent.db import open_session
@@ -165,7 +165,7 @@ def test_seed_skips_admin_contacts(state):
     from magi.agent.proactive.orm_models import Task
 
     with open_session() as db:
-        admin2 = Contact(name="Admin2", admin=True, role="contact", telegram_id=9203)
+        admin2 = Contact(name="Admin2", admin=True, role='guest', telegram_id=9203)
         db.add(admin2); db.flush()
         n = seed_presets_for_contact(db, admin2.id)
         db.commit()

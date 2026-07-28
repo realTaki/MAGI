@@ -23,13 +23,13 @@ Three surfaces pinned:
 
 Scope (per-contact, role-gated):
 
-  - Admin (``'admin'``) and assigned (``'assigned'``)
-    operators can use these tools for their own action
-    items only. Other roles (``'contact'``, ``'guest'``)
-    don't even see the tools in their menu: the
-    registry's :func:`get_tools(caller_role=...)`
-    filter (see ``magi/agent/tools/registry.py``)
-    strips them out before the LLM sees the schema.
+  - The assigned user (``'assigned'``) and any operator
+    (``admin=True``) can use these tools for their own
+    action items only. The ``guest`` role doesn't see
+    the tools in their menu: the registry's
+    :func:`get_tools(caller_role=...)` filter (see
+    ``magi/agent/tools/registry.py``) strips them out
+    before the LLM sees the schema.
   - Each tool also re-checks the caller's role inside
     ``run`` (belt-and-suspenders) — a future caller that
     bypasses ``get_tools`` (or calls the tool class

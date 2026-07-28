@@ -156,12 +156,12 @@ export function SettingsWebuiAccessCard(props: {
 
 function RoleBadge(props: { role: ContactRow["role"] }) {
   const t = useT();
-  // ``role`` enum dropped ``"admin"`` when the boolean
-  // split landed — the badge map only carries the three
-  // remaining values.
+  // The role enum dropped ``"admin"`` (boolean split) and
+  // ``"contact"`` (collapsed into ``"guest"`` since every
+  // gate refused both equally). The badge map only carries
+  // the two remaining values.
   const map: Record<string, string> = {
     assigned: t("settings.roleAssigned"),
-    contact: t("settings.roleContact"),
     guest: t("settings.roleGuest"),
   };
   return (

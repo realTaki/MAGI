@@ -65,6 +65,7 @@ from magi.agent.db.engine import (
 from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_contact import Contact, ContactNote
+from magi.agent.db.models_eve_runtime import EveRuntime
 from magi.agent.db.models_magi import Magi
 from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_mcp_server import McpServer
@@ -90,6 +91,7 @@ __all__ = [
     "ContactNote",
     "MAGIC",
     "Magi",
+    "EveRuntime",
     "McpServer",
     # dashboard
     "ActionItem",

@@ -17,12 +17,12 @@ dashboard.
 Each scenario:
 
   A. POST  /api/contacts  role="assigned"   → 2 presets
-  B. POST  /api/contacts  role="contact"    → 0 presets
+  B. POST  /api/contacts  role='guest'    → 0 presets
      then PATCH role="assigned"               → 2 presets
-  C. POST  /api/contacts  admin=true, role="contact"     → 0 presets
+  C. POST  /api/contacts  admin=true, role='guest'     → 0 presets
      then PATCH role="assigned"               → 2 presets
-  D. POST  /api/contacts  role="contact"    → 0 presets
-     then PATCH role="contact" (no-op)       → 0 presets
+  D. POST  /api/contacts  role='guest'    → 0 presets
+     then PATCH role='guest' (no-op)       → 0 presets
   E. POST  /api/contacts  role="assigned"   → 2 presets
      then PATCH role="assigned" again        → 0 NEW (idempotent)
 """
@@ -155,14 +155,14 @@ def test_post_with_role_assigned_seeds_presets(state, client):
     assert _all_task_count(alice_id) == state["preset_count"]
 
 
-def test_post_with_admin_true_role_contact_does_not_seed(state, client):
-    """POST with ``admin=true, role='contact'`` is a no-op
+def test_post_with_admin_true_role_guest_does_not_seed(state, client):
+    """POST with ``admin=true, role='guest'`` is a no-op
     for the preset seed hook.
 
     After the role/admin split (2024), WebUI sign-in
     rights are carried by ``admin`` (boolean), not by
     ``role='admin'`` (which is no longer in the enum).
-    A contact with ``admin=True`` but ``role='contact'``
+    A contact with ``admin=True`` but ``role='guest'``
     is a pure backend operator — they're NOT the served
     user, so the preset seed hook correctly skips them.
 
@@ -177,7 +177,7 @@ def test_post_with_admin_true_role_contact_does_not_seed(state, client):
         "name": "Backend Admin",
         "telegram_id": 9203,
         "admin": True,
-        "role": "contact",
+        "role": "guest",
     })
     assert r.status_code == 201, r.text
     admin_id = r.json()["id"]
@@ -189,12 +189,12 @@ def test_post_with_admin_true_role_contact_does_not_seed(state, client):
 
 
 def test_patch_to_assigned_seeds_presets(state, client):
-    """POST with ``role='contact'`` → 0 tasks.
+    """POST with ``role='guest'`` → 0 tasks.
     PATCH role → ``assigned`` → 2 tasks."""
     r = client.post("/api/contacts", json={
         "name": "Bob",
         "telegram_id": 9204,
-        "role": "contact",
+        "role": "guest",
     })
     assert r.status_code == 201, r.text
     bob_id = r.json()["id"]
@@ -210,12 +210,12 @@ def test_patch_to_assigned_seeds_presets(state, client):
 
 
 def test_patch_admin_to_assigned_seeds_presets(state, client):
-    """``admin=True, role='contact'`` is NOT seeded.
+    """``admin=True, role='guest'`` is NOT seeded.
 
     After the 2024 role/admin split, ``admin`` is a
     separate boolean (WebUI sign-in) and the seed hook
     triggers on ``role='assigned'`` (the served user).
-    A backend operator (``role='contact', admin=True``)
+    A backend operator (``role='guest', admin=True``)
     who later gets promoted to the served user
     (``role='assigned'``) should now trigger seeding —
     this is the new edge of the transition matrix.
@@ -223,7 +223,7 @@ def test_patch_admin_to_assigned_seeds_presets(state, client):
     r = client.post("/api/contacts", json={
         "name": "Charlie",
         "telegram_id": 9205,
-        "admin": True, "role": "contact",
+        "admin": True, "role": "guest",
     })
     assert r.status_code == 201, r.text
     charlie_id = r.json()["id"]
@@ -303,7 +303,7 @@ def test_non_role_patch_does_not_seed(state, client):
     r = client.post("/api/contacts", json={
         "name": "Frank",
         "telegram_id": 9208,
-        "role": "contact",
+        "role": "guest",
     })
     assert r.status_code == 201, r.text
     frank_id = r.json()["id"]

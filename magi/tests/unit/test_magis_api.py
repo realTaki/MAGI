@@ -127,6 +127,67 @@ def test_create_magi_eve(client, env):
     assert body["provider"] == "anthropic"
     assert body["api_key_set"] is True
     assert body["api_key_last4"] == "eve1"
+    assert body["runtime"]["desired_state"] == "draft"
+    assert body["runtime"]["observed_state"] == "draft"
+
+
+def test_eve_runtime_start_stop(client, env, monkeypatch):
+    """An EVE remains a draft until its lifecycle is explicitly started."""
+    from magi.orchestrator.contracts import EveOperationResult
+    import magi.orchestrator.client as orchestrator_client
+
+    created = client.post(
+        "/api/magis",
+        json={
+            "magic_id": env["root"].id,
+            "name": "Worker One",
+            "magic_position": "eve",
+            "provider": "claude",
+            "api_key": "sk-worker-one",
+        },
+    )
+    magi_id = created.json()["id"]
+    calls: list[str] = []
+
+    def fake_lifecycle(action, spec):
+        calls.append(action)
+        assert spec.magi_id == magi_id
+        return EveOperationResult(
+            observed_state="provisioning" if action == "start" else "stopped",
+            namespace="magi",
+            deployment_name="magi-eve-2-worker-one",
+            workspace_claim_name="magi-eve-2-worker-one-workspace",
+            credential_secret_name="magi-eve-2-worker-one-provider",
+        )
+
+    monkeypatch.setattr(orchestrator_client, "request_lifecycle", fake_lifecycle)
+    started = client.post(f"/api/magis/{magi_id}/runtime/start")
+    assert started.status_code == 200, started.text
+    assert started.json()["desired_state"] == "running"
+    assert started.json()["observed_state"] == "provisioning"
+    assert started.json()["deployment_name"] == "magi-eve-2-worker-one"
+
+    stopped = client.post(f"/api/magis/{magi_id}/runtime/stop")
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["desired_state"] == "stopped"
+    assert stopped.json()["observed_state"] == "stopped"
+    assert calls == ["start", "stop"]
+
+
+def test_eve_runtime_requires_provider_credentials(client, env):
+    created = client.post(
+        "/api/magis",
+        json={"magic_id": env["root"].id, "name": "Unconfigured", "magic_position": "eve"},
+    )
+    response = client.post(f"/api/magis/{created.json()['id']}/runtime/start")
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation.eve_provider_credentials_required"
+
+
+def test_adam_cannot_have_eve_runtime(client, env):
+    response = client.get(f"/api/magis/{env['adam'].id}/runtime")
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation.eve_runtime_requires_eve"
 
 def test_create_magi_invalid_position(client, env):
     """``magic_position='minion'`` rejected with 400 + structured error."""
@@ -277,14 +338,14 @@ def test_delete_magi_404(client):
     assert r.status_code == 404
 
 def test_list_magis_requires_admin(client, env):
-    """A non-admin (role='contact') gets 401 at the gate."""
+    """A non-admin (role='guest') gets 401 at the gate."""
     from magi.agent.db import Contact, open_session
 
     with open_session() as db:
         u = Contact(
             name="User2",
             telegram_id=9002,
-            role="contact")
+            role='guest')
         db.add(u)
         db.commit()
         db.refresh(u)

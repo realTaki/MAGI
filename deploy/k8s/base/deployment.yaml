@@ -43,6 +43,16 @@ spec:
           # the key when MAGI_CHANNELS includes telegram or when Adam/EVE
           # RPC authentication is enabled.
           env:
+            # The Adam image cannot call the Kubernetes API. It holds only an
+            # HMAC secret for the narrow internal orchestrator API.
+            - name: MAGI_ORCHESTRATOR_URL
+              value: http://magi-orchestrator:42100
+            - name: MAGI_CONTROL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: magi-control
+                  key: MAGI_CONTROL_SECRET
+                  optional: true
             - name: MAGI_BOT_TOKEN
               valueFrom:
                 secretKeyRef:

@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-node
+spec:
+  template:
+    spec:
+      # Dockerfile.dev runs as root so npm can initialise its emptyDir cache.
+      # This exception is confined to the local kind overlay.
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 0
+      containers:
+        - name: magi
+          image: magi:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/entrypoint.sh"]
+          env:
+            - name: MAGI_ORCHESTRATOR_URL
+              value: http://magi-orchestrator:42100
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: source
+              mountPath: /app/magi
+              readOnly: true
+            - name: web-node-modules
+              mountPath: /app/magi/WebUI/node_modules
+            - name: dev-entrypoint
+              mountPath: /usr/local/bin/entrypoint.sh
+              subPath: entrypoint.dev.sh
+              readOnly: true

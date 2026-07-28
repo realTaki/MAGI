@@ -49,7 +49,7 @@ the operator sees a 400 on a typo) and here (defensive
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+import os
 
 from magi.agent.llm.claude import ClaudeProvider
 from magi.agent.llm.errors import LLMError, LLMNotConfiguredError
@@ -104,30 +104,35 @@ def get_provider(model: str | None = None) -> LLMProvider:
         The configured provider id is not in
         :func:`known_providers` (typo, stale value).
     """
-    from magi.agent.db import Magi, open_session
-    from sqlalchemy import select
-
-    with open_session() as session:
-        magi = session.scalar(
-            select(Magi)
-            .where(Magi.magic_position == "adam")
-            .order_by(Magi.id)
-            .limit(1)
-        )
-        if magi is None or not magi.provider or not magi.api_key:
-            logger.warning(
-                "get_provider: no adam Magi with provider+api_key configured"
-            )
+    runtime_provider = os.environ.get("MAGI_LLM_PROVIDER")
+    runtime_api_key = os.environ.get("MAGI_LLM_API_KEY")
+    if runtime_provider or runtime_api_key:
+        if not runtime_provider or not runtime_api_key:
             raise LLMNotConfiguredError(
-                "MAGI runtime has no LLM provider / API key configured; "
-                "set them via PATCH /api/magis/{adam_id}"
+                "EVE runtime requires both MAGI_LLM_PROVIDER and MAGI_LLM_API_KEY"
             )
-        provider_name = magi.provider
-        api_key = magi.api_key
-        # Per-call override wins over the stored model.
-        effective_model = model if model is not None else getattr(
-            magi, "model", None
-        )
+        provider_name = runtime_provider
+        api_key = runtime_api_key
+        effective_model = model or os.environ.get("MAGI_LLM_MODEL") or None
+    else:
+        from sqlalchemy import select
+
+        from magi.agent.db import Magi, open_session
+
+        with open_session() as session:
+            magi = session.scalar(
+                select(Magi).where(Magi.magic_position == "adam").order_by(Magi.id).limit(1)
+            )
+            if magi is None or not magi.provider or not magi.api_key:
+                logger.warning("get_provider: no adam Magi with provider+api_key configured")
+                raise LLMNotConfiguredError(
+                    "MAGI runtime has no LLM provider / API key configured; "
+                    "set them via PATCH /api/magis/{adam_id}"
+                )
+            provider_name = magi.provider
+            api_key = magi.api_key
+            # Per-call override wins over the stored model.
+            effective_model = model if model is not None else getattr(magi, "model", None)
 
     if not provider_name:
         raise LLMError("provider name is required")
@@ -136,19 +141,14 @@ def get_provider(model: str | None = None) -> LLMProvider:
 
     name = provider_name.strip().lower()
     if name == "minimax" or name == "minimax-cn":
-        return MinimaxProvider.for_region(
-            "minimax-cn", api_key=api_key, model=effective_model
-        )
+        return MinimaxProvider.for_region("minimax-cn", api_key=api_key, model=effective_model)
     if name == "minimax-global":
-        return MinimaxProvider.for_region(
-            "minimax-global", api_key=api_key, model=effective_model
-        )
+        return MinimaxProvider.for_region("minimax-global", api_key=api_key, model=effective_model)
     if name == "claude":
         return ClaudeProvider(api_key=api_key, model=effective_model)
 
     raise LLMError(
-        f"Unknown LLM provider: {provider_name!r}. "
-        f"Known: {', '.join(known_providers())}"
+        f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(known_providers())}"
     )
 
 

@@ -74,7 +74,7 @@ def env(monkeypatch, tmp_path):
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="contact"
+            role='guest'
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -108,7 +108,7 @@ def bob_client(env):
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's cookie (role=contact, not
+    """TestClient with Charlie's cookie (role=guest, not
     admin). Used to verify the AdminGate rejects non-admin
     callers."""
     from magi.channels.webui.app import create_app
@@ -181,7 +181,7 @@ def test_list_memory_requires_admin(env):
     assert r.status_code == 401
 
 def test_list_memory_403_for_non_admin(charlie_client):
-    """``magi_session=<charlie.id>`` (role=contact) →
+    """``magi_session=<charlie.id>`` (role=guest) →
     401. ``AdminGate`` checks ``Contact.role == 'admin'``;
     any other role bounces at the dependency."""
     r = charlie_client.get("/api/memory")

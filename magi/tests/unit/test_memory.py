@@ -84,7 +84,7 @@ def seed_contacts(fresh_db):
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="contact"
+            role='guest'
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -246,7 +246,7 @@ def test_add_memory_tool_assigned_succeeds(fresh_db, seed_contacts):
 
 
 def test_add_memory_tool_contact_role_blocked(fresh_db, seed_contacts):
-    """``role=contact`` is NOT allowed to write to memory.
+    """``role=guest`` is NOT allowed to write to memory.
 
     Same gate as the WebUI API: only ``admin`` and
     ``assigned`` may mutate. The tool returns

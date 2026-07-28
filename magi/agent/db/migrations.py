@@ -36,9 +36,11 @@ _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [
     # a contact as separated without losing the row.
     ("contacts", "separated_at", "DATETIME"),
     # C1.x (role + TG binding). Existing rows default to
-    # role='contact' (the new default); telegram_id stays
-    # NULL until the /start binding flow runs.
-    ("contacts", "role", "VARCHAR(16) NOT NULL DEFAULT 'contact'"),
+    # role='guest' (the new default after the 2024
+    # collapse of the legacy ``"contact"`` role into
+    # ``"guest"``); telegram_id stays NULL until the
+    # /start binding flow runs.
+    ("contacts", "role", "VARCHAR(16) NOT NULL DEFAULT 'guest'"),
     ("contacts", "telegram_id", "BIGINT"),
     # Post-refactor contact_entries merge: notes, source,
     # last_seen_at moved from contact_entries into contacts.

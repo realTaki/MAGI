@@ -45,6 +45,8 @@ export function MagisPane() {
   const [editDraft, setEditDraft] = useState<EditDraft>({ name: "", provider: "", api_key: "" });
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [lifecycleId, setLifecycleId] = useState<number | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   const teamName = useMemo(() => { const m = new Map<number, string>(); magics.forEach((c) => m.set(c.id, c.name)); return m; }, [magics]);
 
@@ -85,6 +87,16 @@ export function MagisPane() {
     if (res.ok) refresh();
   };
 
+  const setLifecycle = async (id: number, action: "start" | "stop") => {
+    setLifecycleError(null); setLifecycleId(id);
+    try {
+      const res = await fetch(`/api/magis/${id}/runtime/${action}`, { method: "POST", credentials: "include" });
+      if (!res.ok) { setLifecycleError(`${action} failed: ${res.status} ${await res.text()}`); return; }
+      refresh();
+    } catch (e) { setLifecycleError(`network error: ${(e as Error).message}`); }
+    finally { setLifecycleId(null); }
+  };
+
   return (
     <div className="space-y-4">
       <ConsoleCard
@@ -98,6 +110,7 @@ export function MagisPane() {
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}
+        {lifecycleError && <p className="form-error mb-3">{lifecycleError}</p>}
 
         {addOpen && (
           <div className="mb-5 rounded-lg border border-sky-light/40 bg-sky-pale/10 p-3">
@@ -152,6 +165,7 @@ export function MagisPane() {
                 <th className="py-2 pr-3 font-medium">{t("magis.columnPosition")}</th>
                 <th className="py-2 pr-3 font-medium">{t("magis.columnProvider")}</th>
                 <th className="py-2 pr-3 font-medium">{t("magis.columnApiKey")}</th>
+                <th className="py-2 pr-3 font-medium">{t("magis.columnRuntime")}</th>
                 <th className="py-2 pr-3 font-medium w-24 text-right" />
               </tr>
             </thead>
@@ -162,7 +176,7 @@ export function MagisPane() {
                 return (
                   <tr key={m.id} className={`border-b border-sky-light/30 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
                     {isEdit ? (
-                      <td className="py-2 pr-3" colSpan={5}>
+                      <td className="py-2 pr-3" colSpan={6}>
                         <div className="flex items-center gap-2">
                           <input className="form-input text-sm py-1 px-2 w-28" placeholder={t("magis.createNamePlaceholder")}
                             value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
@@ -195,6 +209,13 @@ export function MagisPane() {
                         </td>
                         <td className="py-2 pr-3 text-xs text-ink-soft">{m.provider ?? "—"}</td>
                         <td className="py-2 pr-3 font-mono text-[11px] text-ink-soft">{m.api_key_set ? `••••${m.api_key_last4 ?? ""}` : t("magis.keyNotSet")}</td>
+                        <td className="py-2 pr-3 text-xs">
+                          {m.magic_position === "eve" ? (
+                            <span className={m.runtime?.observed_state === "failed" ? "text-rose-600" : "text-ink-soft"}>
+                              {m.runtime?.observed_state ?? "draft"}
+                            </span>
+                          ) : "—"}
+                        </td>
                       </>
                     )}
                     <td className="py-2 pr-3 text-right">
@@ -205,6 +226,14 @@ export function MagisPane() {
                             className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
                             <IconEdit className="h-4 w-4" />
                           </button>
+                          {m.magic_position === "eve" && (
+                            <button type="button" disabled={lifecycleId === m.id}
+                              onClick={() => { void setLifecycle(m.id, m.runtime?.desired_state === "running" ? "stop" : "start"); }}
+                              title={m.runtime?.desired_state === "running" ? t("magis.stopEve") : t("magis.startEve")}
+                              className="px-1.5 py-1 rounded text-[11px] text-sky-700 hover:bg-sky-pale transition-colors">
+                              {lifecycleId === m.id ? "…" : m.runtime?.desired_state === "running" ? t("magis.stopEve") : t("magis.startEve")}
+                            </button>
+                          )}
                           <button type="button" onClick={() => { void del(m.id); }}
                             title={t("common.delete")}
                             className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
@@ -217,7 +246,7 @@ export function MagisPane() {
                 );
               })}
               {magis.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-ink-soft text-sm text-center">{t("magis.empty")}</td></tr>
+                <tr><td colSpan={7} className="py-6 text-ink-soft text-sm text-center">{t("magis.empty")}</td></tr>
               )}
             </tbody>
           </table>

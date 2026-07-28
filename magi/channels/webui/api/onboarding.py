@@ -776,13 +776,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
                 else:
                     contact.admin = True
                     # If the row was previously not the
-                    # served user (role='contact' / 'guest'),
-                    # also flip it to 'assigned' — the
-                    # operator of a single-operator install
-                    # IS the served user. Multi-operator
-                    # installs can manually re-set role
-                    # afterwards if needed.
-                    if contact.role in ("contact", "guest"):
+                    # served user (role='guest'), also flip
+                    # it to 'assigned' — the operator of a
+                    # single-operator install IS the served
+                    # user. Multi-operator installs can
+                    # manually re-set role afterwards if
+                    # needed.
+                    if contact.role == "guest":
                         contact.role = "assigned"
                     if display_names[cid]:
                         contact.name = display_names[cid]

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: magi-config
+data:
+  MAGI_NODE_ROLE: adam
+  MAGI_RELOAD: "1"
+  MAGI_PORT: "8000"
+  PYTHONPATH: /app
+  VITE_BACKEND_URL: http://127.0.0.1:8000

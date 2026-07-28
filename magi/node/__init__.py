@@ -5,14 +5,14 @@ A MAGI process is a node. Configuration is read from the database
 paths live in :mod:`magi.constants`.  Everything else lives in
 the SQLite database under ``/workspace/memories/magi.db``.
 
-There is no ``MAGI_NODE_ROLE`` — the node derives its role from
-the ``magis`` table (Adam = Genesis MAGIC creator; Eve = assigned
-to a parent MAGIC). The **role** is a relationship in the MAGIC
-tree, not an env-var flag.
+``MAGI_NODE_ROLE`` and ``MAGI_RUNTIME_ID`` bind a running container to
+its deployment identity.  The organisational role remains a fact in the
+``magis`` table, but an isolated EVE workspace cannot query Adam's database
+at boot.  The orchestrator therefore injects this small, non-secret runtime
+identity into the EVE Deployment.
 
-Boot flow: if this MAGI doesn't know its parent MAGIC (no ``magics``
-row references it), it seeds the Genesis MAGIC and becomes Adam.
-C6 EVEs will receive their parent MAGIC IP at startup and register.
+Boot flow: the first Adam workspace seeds Genesis.  An EVE workspace never
+seeds a Council or a second Adam; it only initialises its local runtime state.
 """
 
 from __future__ import annotations
@@ -51,6 +51,8 @@ class NodeConfig:
     port: int = WEBUI_PORT
     reload: bool = False
     log_level: str = DEFAULT_LOG_LEVEL
+    role: str = "adam"
+    runtime_id: str | None = None
 
     # ------------------------------------------------------------------
     @classmethod
@@ -72,6 +74,13 @@ class NodeConfig:
         port_raw = os.environ.get("MAGI_PORT")
         port = int(port_raw) if port_raw else WEBUI_PORT
 
+        role = os.environ.get("MAGI_NODE_ROLE", "adam").strip().lower()
+        if role not in {"adam", "eve"}:
+            raise ValueError("MAGI_NODE_ROLE must be 'adam' or 'eve'")
+        runtime_id = os.environ.get("MAGI_RUNTIME_ID") or None
+        if role == "eve" and not runtime_id:
+            raise ValueError("MAGI_RUNTIME_ID is required for an EVE runtime")
+
         return cls(
             channels=(),
             state_dir=STATE_DIR,
@@ -79,6 +88,8 @@ class NodeConfig:
             port=port,
             reload=reload,
             log_level=log_level,
+            role=role,
+            runtime_id=runtime_id,
         )
 
 
@@ -116,7 +127,9 @@ def run() -> None:
 
     # Initialise the ORM tables. Idempotent.
     from magi.agent.db import init_orm
-    init_orm(state_dir)
+    # An EVE has a deliberately isolated workspace.  Seeding Genesis there
+    # would create a phantom local Adam and make provider lookup ambiguous.
+    init_orm(state_dir, seed_root=cfg.role == "adam")
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
     # session files. Idempotent.

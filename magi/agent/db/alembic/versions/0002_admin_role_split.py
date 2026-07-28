@@ -4,7 +4,7 @@ The pre-0002 schema conflated two orthogonal concepts on
 ``Contact.role``:
 
   1. MAGI's relationship to this person (``assigned`` /
-     ``contact`` / ``guest``).
+     ``guest``).
   2. WebUI sign-in rights (``role='admin'`` meant "can
      sign into the operator console").
 
@@ -17,21 +17,24 @@ After this revision:
 
   - ``role`` keeps the relationship semantic. The valid
     set shrinks from ``{admin, assigned, contact, guest}``
-    to ``{assigned, contact, guest}`` — ``'admin'`` is no
-    longer reachable from this column.
+    to ``{assigned, guest}`` — ``'admin'`` and
+    ``'contact'`` are no longer reachable from this
+    column. ``'contact'`` was always functionally identical
+    to ``'guest'`` (the gate logic refused both); the
+    split collapses the two.
   - New ``admin`` boolean column (NOT NULL, default 0)
     carries WebUI sign-in rights. Independent of ``role``.
 
-A contact can now be any combination:
+A contact can now be:
 
   - ``role=assigned, admin=False`` — pure served user.
   - ``role=assigned, admin=True``  — served user who is
-    also an operator.
-  - ``role=contact, admin=True``   — colleague with
-    backend access (typical operator).
-  - ``role=contact, admin=False``  — colleague without
-    backend access.
-  - ``role=guest,   admin=False``  — external.
+    also an operator (the typical single-MAGI install).
+  - ``role=guest,   admin=False``  — external (default
+    for ``POST /api/contacts`` with no role specified).
+  - ``role=guest,   admin=True``   — never happens in
+    practice (``guest`` is reserved for strangers), but
+    the schema doesn't reject the combo.
 
 Data migration semantics
 -------------------------
@@ -43,10 +46,18 @@ are the same — admins ARE the served user in a single-
 operator install). They become
 ``role='assigned', admin=True``.
 
-Rows where ``role`` was already ``'assigned'``, ``'contact'``,
-or ``'guest'`` get ``admin=False`` (the migration's column
-default applies because they weren't admins under the old
-schema either).
+Existing rows where ``role='contact'`` collapse to
+``role='guest'``. The role was never used as a distinct
+gate — every place that refused ``contact`` also refused
+``guest``, so collapsing is lossless for runtime behavior.
+The ``admin`` bit stays as it was (most pre-0002
+``contact`` rows had ``admin=False``; the operator
+``admin=True, role='contact'`` shape was uncommon).
+
+Rows where ``role`` was already ``'assigned'`` or ``'guest'``
+keep their value; ``admin=False`` applies (the column
+default) because they weren't admins under the old schema
+either.
 
 Downgrade
 ---------
@@ -56,7 +67,9 @@ goes back to ``role='admin'``; pure ``role='assigned'``
 served users (``admin=False``) keep ``role='assigned'``
 because there's no clean inverse — the operator has to
 pick a different value manually if they want to roll
-back.
+back. ``role='guest'`` is left as-is on rollback; the
+old enum value ``'contact'`` is not restored because no
+real distinction existed in the first place.
 """
 
 from __future__ import annotations
@@ -102,6 +115,22 @@ def upgrade() -> None:
         sa.text(
             "UPDATE contacts SET role='assigned', admin=1 "
             "WHERE role='admin'"
+        )
+    )
+
+    # 3. Collapse the ``role='contact'`` row to
+    #    ``role='guest'``. The two values were never
+    #    treated distinctly at the gate layer — every
+    #    tool / API branch that refused ``contact`` also
+    #    refused ``guest``. Collapsing is lossless at
+    #    runtime; the row's ``admin`` bit stays as it
+    #    was (the contact role's only real distinction
+    #    from guest was the row's source semantics, not
+    #    the gate).
+    op.execute(
+        sa.text(
+            "UPDATE contacts SET role='guest' "
+            "WHERE role='contact'"
         )
     )
 

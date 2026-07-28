@@ -252,7 +252,7 @@ def _seed_default_root(engine: Engine) -> None:
         session.commit()
 
 
-def init_orm(state_dir: str | None = None) -> Engine:
+def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     """Run versioned migrations and return the process-wide engine.
 
     A database without ``alembic_version`` is a legacy C0/C1 database. For
@@ -302,6 +302,7 @@ def init_orm(state_dir: str | None = None) -> Engine:
     # asks for a row from that table.
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
+    import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
     import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
     import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
@@ -327,7 +328,8 @@ def init_orm(state_dir: str | None = None) -> Engine:
         stamp_baseline(state_dir or require_state_dir())
 
     upgrade_head(state_dir or require_state_dir(), engine)
-    _seed_default_root(engine)
+    if seed_root:
+        _seed_default_root(engine)
     logger.info(
         "orm initialised",
         extra={"tables": sorted(Base.metadata.tables.keys())},

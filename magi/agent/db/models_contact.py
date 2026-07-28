@@ -23,17 +23,27 @@ knowledge about them lives in ``notes``.
 
 ``role`` is the service role relative to MAGI:
 
-  - ``"assigned"`` — the person this MAGI serves.
-  - ``"contact"``  — org member, not directly served.
-  - ``"guest"``    — external / unknown.
+  - ``"assigned"`` — the person this MAGI serves. Also
+    the typical operator in a single-MAGI install
+    (``role='assigned', admin=True``).
+  - ``"guest"``    — external / unknown. The default
+    for ``POST /api/contacts`` with no role specified.
+
+There is no longer a ``"contact"`` role — it was removed
+after a long period where it was functionally identical to
+``"guest"`` (every gate that refused ``contact`` also
+refused ``guest``, with no operator-only distinction
+between the two). The data migration
+``0002_admin_role_split`` collapses any legacy
+``role='contact'`` rows to ``role='guest'``.
 
 WebUI sign-in rights are carried by the separate
 ``admin`` boolean (``True`` ↔ can sign into the operator
 console). The two fields are intentionally independent —
 a person can be ``role='assigned', admin=False`` (the
-served user who never logs in), ``role='contact',
-admin=True`` (a colleague with backend access but no
-served role), or any combination.
+served user who never logs in) or ``role='assigned',
+admin=True`` (the served user who also drives the
+console).
 
 ``telegram_id`` is the bound TG chat id (NULL until the
 /start binding flow). Unique across non-NULL values.
@@ -86,18 +96,25 @@ class Contact(Base):
     display_name: Mapped[str | None] = mapped_column(String(120))
 
     # Service role — how this person relates to MAGI.
-    #   "assigned" — served by this MAGI (gets preset tasks
-    #                seeded, may have their own LLM creds).
-    #   "contact"  — org member, not directly served.
-    #   "guest"    — external / unknown.
+    #   "assigned" — the person this MAGI serves. The
+    #               typical operator in a single-MAGI
+    #               install is ``role='assigned', admin=True``.
+    #   "guest"    — external / unknown. The default for
+    #               ``POST /api/contacts`` with no role
+    #               specified.
     #
     # WebUI sign-in rights are NOT encoded here — see the
-    # ``admin`` boolean below. A contact can be any
-    # combination of role + admin (e.g. the served user
-    # who also runs the operator console is
-    # ``role='assigned', admin=True``).
+    # ``admin`` boolean below. The two fields are
+    # intentionally independent.
+    #
+    # The legacy ``"contact"`` value was functionally
+    # identical to ``"guest"`` (every gate refused both)
+    # and was removed in the 2024 role/admin split. The
+    # ``0002_admin_role_split`` migration collapses any
+    # legacy ``role='contact'`` rows to ``role='guest'`` so
+    # existing dev DBs land cleanly.
     role: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="contact"
+        String(16), nullable=False, default="guest"
     )
 
     # WebUI sign-in rights. ``True`` if this contact can

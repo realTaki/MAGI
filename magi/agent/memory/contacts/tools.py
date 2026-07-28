@@ -34,15 +34,15 @@ logger = logging.getLogger("magi.agent.memory.contacts.tools")
 # Tool author gate. After the 2024 role/admin split,
 # ``role='admin'`` is no longer a reachable value — the
 # ``admin`` boolean carries WebUI access rights instead.
-# An operator contact typically has ``role='contact'`` and
-# ``admin=True``; an assigned user may be their own
-# operator (``role='assigned', admin=True``). The gate
-# accepts either flavour; the registry's role filter
-# can't see the admin bool so we widen the role-only
-# filter to ``{'assigned'}`` and re-check the admin bool
-# in ``_gate``. ``contact`` + ``admin=True`` passes; pure
-# ``contact`` (no admin) is rejected here even though
-# the registry allows it (defense in depth).
+# An operator contact typically has ``role='assigned'`` and
+# ``admin=True`` (the served user who also runs the
+# console); a pure WebUI-only operator can also have that
+# shape. The gate accepts ``admin=True OR role='assigned'``
+# — the registry's role filter can't see the admin bool
+# so we widen the role-only filter to ``{'assigned'}`` and
+# re-check the admin bool in ``_gate``. ``guest`` (no
+# admin) is rejected here even though the registry allows
+# it (defense in depth).
 _WRITE_ROLES = frozenset({"assigned"})
 
 
@@ -51,9 +51,9 @@ def _gate(ctx: ToolContext) -> str | None:
 
     Mirrors :func:`magi.channels.webui.api.tasks._enforce_creator_can_create`
     so the LLM-side tool and the API-side task gate agree
-    on who can drive write operations. ``role='contact'``
+    on who can drive write operations. ``role='guest'``
     alone (no admin) is rejected; ``role='assigned'`` alone
-    is accepted (an assigned user can manage their own
+    is accepted (the served user can manage their own
     contact directory); ``admin=True`` overrides role.
     """
     if ctx.admin:
@@ -96,7 +96,7 @@ class AddContactTool(Tool):
             "display_name": {"type": "string", "description": "Display name (optional)."},
             "telegram_id": {"type": "integer", "description": "Telegram user id (optional)."},
             "notes": {"type": "string", "description": "Initial note (optional)."},
-            "role": {"type": "string", "description": "assigned/contact/guest. Default 'guest'."},
+            "role": {"type": "string", "description": "assigned/guest. Default 'guest'."},
         },
         "required": ["name"],
     }

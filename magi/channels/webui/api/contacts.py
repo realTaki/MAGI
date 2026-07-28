@@ -44,7 +44,7 @@ _PAGE_SIZE_MAX = 100
 # and the ``/api/auth/me`` route). Splitting the two
 # fields lets one contact be both ``role='assigned'`` (the
 # person MAGI serves) AND ``admin=True`` (the operator).
-_CONTACT_ROLES: tuple[str, ...] = ("assigned", "contact", "guest")
+_CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 
 # -- helpers ----------------------------------------------------------------

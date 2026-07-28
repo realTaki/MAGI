@@ -272,15 +272,14 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     Role resolution (in order):
       1. ``Contact.telegram_id == tgid`` and role is
-         ``"admin"`` — log only for v0; C6+ adds real admin
-         commands.
-      2. ``Contact.telegram_id == tgid`` and role is
-         ``"contact"`` / ``"assigned"`` — route through the
-         agent loop using that contact's LLM credentials
-         (falls back to system default if the contact has
-         none).
-      3. otherwise (no contact bound) — treat as GUEST and
-         send the tgid discovery reply. The role gate is
+         ``"assigned"`` — route through the agent loop
+         using that contact's LLM credentials. The
+         ``admin`` boolean (WebUI sign-in) doesn't change
+         this branch.
+      2. otherwise (no contact bound, OR a ``role='guest'``
+         row that someone soft-auto-created via the
+         fallback in step 3) — treat as GUEST and send
+         the tgid discovery reply. The role gate is
          decided per-MAGI-instance (the canonical state lives
          on the row, not in a meta key).
 
@@ -341,12 +340,10 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # bound" path above; the auto-create we do there
         # only stamps the directory row, the chat is still
         # politely refused until the operator promotes).
-        # ``role='contact'`` is refused (another company's
-        # contact — should be served by their own MAGI).
         if not (contact_admin or contact_role == "assigned"):
-            # ``contact`` / ``guest`` — refuse politely
-            # without burning the LLM. The hint about
-            # the tgid is the same one the unknown-
+            # ``guest`` — refuse politely without burning
+            # the LLM. The hint about the tgid is the same
+            # one the unknown-
             # chat path sends, so the user can pass
             # the id to whoever runs their company's
             # MAGI to get added.

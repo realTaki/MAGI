@@ -14,6 +14,7 @@ from sqlalchemy import engine_from_config, pool
 # `alembic upgrade head`.
 import magi.agent.db.models_action_item  # noqa: F401,E402
 import magi.agent.db.models_contact  # noqa: F401,E402
+import magi.agent.db.models_eve_runtime  # noqa: F401,E402
 import magi.agent.db.models_magi  # noqa: F401,E402
 import magi.agent.db.models_magic  # noqa: F401,E402
 import magi.agent.db.models_setting  # noqa: F401,E402

@@ -92,7 +92,7 @@ def client(env):
 
 @pytest.fixture
 def non_admin_client(env):
-    """A second Contact with role='contact' whose signed
+    """A second Contact with role='guest' whose signed
     cookie should be denied at the AdminGate."""
     from magi.agent.db import Contact, open_session
     from magi.channels.webui.app import create_app
@@ -101,7 +101,7 @@ def non_admin_client(env):
         u = Contact(
             name="User2",
             telegram_id=9002,
-            role="contact")
+            role='guest')
         db.add(u)
         db.commit()
         db.refresh(u)
@@ -275,7 +275,7 @@ def test_delete_magic_404_for_missing(client):
     assert r.status_code == 404
 
 def test_all_endpoints_require_admin(non_admin_client):
-    """``non_admin_client`` (role='contact') is rejected at
+    """``non_admin_client`` (role='guest') is rejected at
     the AdminGate for every verb on /api/magics."""
     r = non_admin_client.get("/api/magics")
     assert r.status_code == 401

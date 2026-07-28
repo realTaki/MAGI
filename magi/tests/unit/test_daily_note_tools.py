@@ -117,55 +117,55 @@ async def test_update_daily_note_rejects_bad_date_format(state_dir):
 
 @pytest.mark.asyncio
 async def test_update_daily_note_rejects_for_unassigned_contact(state_dir):
-    """The in-run ``_gate`` blocks ``role='contact'`` (no admin) —
+    """The in-run ``_gate`` blocks ``role='guest'`` (no admin) —
     same shape as the permanent-note tools. We mutate the
-    seeded contact's ``role`` to ``"contact"`` so the DB-
-    backed ``caller_role_denied_reason`` check sees a role
-    that isn't ``assigned`` and isn't admin."""
+    seeded contact's ``role`` to ``"guest"`` AND clear its
+    ``admin`` bit so the DB-backed
+    ``caller_role_denied_reason`` check sees a non-author."""
     from magi.agent.db import Contact, open_session
     from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
 
-    # Flip the seeded admin's role from "assigned" to "contact"
-    # so the in-run role check sees a non-author. Without
-    # ``admin=True`` in the ctx, the gate returns the
-    # permission-denied message.
+    # Flip the seeded admin's role from "assigned" to "guest"
+    # and clear ``admin`` so the in-run role check sees a
+    # non-author. The gate returns the permission-denied
+    # message.
     with open_session() as db:
         c = db.get(Contact, 1)
-        c.role = "contact"
+        c.role = "guest"
         c.admin = False
         db.commit()
 
     tool = UpdateDailyNoteTool()
     res = await tool.run(
-        _ctx(str(state_dir), uid=1, role="contact", admin=False),
+        _ctx(str(state_dir), uid=1, role='guest', admin=False),
         body_delta="x",
     )
     assert res.is_error is True
-    assert "role 'contact'" in res.content or "not permitted" in res.content.lower()
+    assert "role 'guest'" in res.content or "not permitted" in res.content.lower()
 
 
 @pytest.mark.asyncio
-async def test_update_daily_note_admits_admin_with_role_contact(state_dir):
+async def test_update_daily_note_admits_admin_with_role_guest(state_dir):
     """``admin=True`` overrides the role enum — a colleague
-    operator (``role='contact', admin=True``) can still write
+    operator (``role='guest', admin=True``) can still write
     their own daily notes."""
     from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
     from magi.agent.db import open_session
     from magi.agent.db.models_contact import ContactNote
 
-    # Need a contact row at uid=2 with role='contact' so the FK resolves.
+    # Need a contact row at uid=2 with role='guest' so the FK resolves.
     from magi.agent.db import Contact, open_session as _open
     with _open() as db:
         db.add(Contact(
             id=2, name="TA-colleague",
             telegram_id=91003,
-            admin=True, role="contact",
+            admin=True, role='guest',
         ))
         db.commit()
 
     tool = UpdateDailyNoteTool()
     res = await tool.run(
-        _ctx(str(state_dir), uid=2, role="contact", admin=True),
+        _ctx(str(state_dir), uid=2, role='guest', admin=True),
         body_delta="colleague note",
     )
     assert res.is_error is False

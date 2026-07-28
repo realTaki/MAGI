@@ -63,7 +63,7 @@ def env(monkeypatch, tmp_path):
         charlie = Contact(
             name="Charlie",
             telegram_id=9003,
-            role="contact",
+            role='guest',
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -103,7 +103,7 @@ def client(env):
 
 @pytest.fixture
 def charlie_client(env):
-    """TestClient with Charlie's signed cookie (role='contact',
+    """TestClient with Charlie's signed cookie (role='guest',
     not admin). Used to verify AdminGate rejects non-admin
     callers."""
     from magi.channels.webui.app import create_app
@@ -226,15 +226,15 @@ def test_get_contact_404_for_missing_id(client):
     assert r.json()["code"] == "not_found.contact"
 
 def test_create_contact_minimal(client):
-    """POST with just ``name`` + ``role`` default 'contact'."""
+    """POST with just ``name`` + ``role`` default 'guest'."""
     r = client.post(
         "/api/contacts",
-        json={"name": "Dana", "role": "contact"},
+        json={"name": "Dana", "role": "guest"},
     )
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "Dana"
-    assert body["role"] == "contact"
+    assert body["role"] == "guest"
 
 def test_create_contact_full(client):
     """POST with display_name / telegram_id round-trips."""
@@ -253,12 +253,12 @@ def test_create_contact_full(client):
     assert body["telegram_id"] == 9004
 
 def test_create_contact_requires_name(client):
-    r = client.post("/api/contacts", json={"role": "contact"})
+    r = client.post("/api/contacts", json={"role": "guest"})
     assert r.status_code == 422  # Pydantic validation (min_length=1)
 
 def test_create_contact_blank_name_rejected(client):
     """An all-whitespace name is rejected by the strip + empty check."""
-    r = client.post("/api/contacts", json={"name": "   ", "role": "contact"})
+    r = client.post("/api/contacts", json={"name": "   ", "role": "guest"})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.name_required"
 
@@ -268,7 +268,7 @@ def test_create_contact_duplicate_name(client, env):
     # Charlie already exists.
     r = client.post(
         "/api/contacts",
-        json={"name": "Charlie", "role": "contact"},
+        json={"name": "Charlie", "role": "guest"},
     )
     assert r.status_code == 409
     assert r.json()["code"] == "conflict.contact_name_exists"
@@ -286,7 +286,7 @@ def test_create_contact_duplicate_telegram_id(client, env):
     new row returns 409."""
     r = client.post(
         "/api/contacts",
-        json={"name": "NewB", "role": "contact", "telegram_id": 9002},
+        json={"name": "NewB", "role": "guest", "telegram_id": 9002},
     )
     assert r.status_code == 409
     assert r.json()["code"] == "conflict.telegram_id_already_bound"
@@ -356,7 +356,7 @@ def test_get_single_contact_requires_admin(charlie_client, env):
 
 def test_post_contacts_requires_admin(charlie_client):
     """POST refused at the gate."""
-    r = charlie_client.post("/api/contacts", json={"name": "X", "role": "contact"})
+    r = charlie_client.post("/api/contacts", json={"name": "X", "role": "guest"})
     assert r.status_code == 401
 
 def test_patch_contacts_requires_admin(charlie_client, env):

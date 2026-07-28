@@ -28,4 +28,6 @@ services:
     ports:
       - "42069:42069"
     volumes:
-      - "${MAGI_WORKSPACE_DIR:?MAGI_WORKSPACE_DIR must be set to an absolute path in deploy/.env}/Adam:/workspace"
+      # Genesis development node: its persisted workspace is deliberately
+      # named after the seeded first Adam (Alice), not after the service.
+      - "${MAGI_WORKSPACE_DIR:?MAGI_WORKSPACE_DIR must be set to an absolute path in deploy/.env}/alice:/workspace"

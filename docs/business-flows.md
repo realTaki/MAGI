@@ -131,7 +131,6 @@ resolve_magi_credentials("eve")  → TG bot / task runner 使用 EVE Magi 的 ke
 3. 角色分发:
    ├─ contact_admin=True OR role=="assigned" → 通过，走 agent loop
    │   └─ admin 和 assigned 共享同一处理器 (admin 可在 TG 上与 EVE 聊天)
-   ├─ role=="contact" → 拒绝，告知 "联系你的管理员"
    ├─ role=="guest" → 拒绝，发送 tgid 发现消息
    └─ 无绑定 → 软自动创建 Contact (role="guest"，admin=False)
        └─ 仍发送 tgid 发现消息，等待管理员提升角色
@@ -142,11 +141,16 @@ resolve_magi_credentials("eve")  → TG bot / task runner 使用 EVE Magi 的 ke
    └─ handle_message(uid, session_id, channel="tg", caller_role=contact_role)
 ```
 
+**Contact.role 枚举 (2024 collapse)**:
+- 有效值: `assigned` | `guest` (共 2 个)
+- 历史值 `admin` 已被迁移到独立 `admin` 布尔字段 (见第 1 节"凭证校验")
+- 历史值 `contact` 已被合并入 `guest` — 历史上两个 role 在所有门控路径上行为完全相同 (都被拒绝),所以合并是无损的。0002_admin_role_split migration 的 upgrade 会把所有 `role='contact'` 行改成 `role='guest'`
+
 **不可改的守卫**:
 
-- `contact` 角色必须被拒绝（不属于此 MAGI 服务范围）
+- `guest` 角色必须被拒绝 (不属于此 MAGI 服务范围,等待管理员提升)
 - `guest` 软自动创建时 admin 必须为 False
-- admin 必须能和 assigned 一样聊天（不能退化为 v0 的 no-op）
+- admin 必须能和 assigned 一样聊天 (不能退化为 v0 的 no-op)
 - 会话持久化必须在 `handle_message` 之前完成
 
 ---

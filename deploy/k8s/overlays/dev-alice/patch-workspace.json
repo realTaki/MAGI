@@ -1,0 +1,33 @@
+[
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/volumes",
+    "value": [
+      {
+        "name": "workspace",
+        "hostPath": {
+          "path": "/mnt/magi/workspace/alice",
+          "type": "DirectoryOrCreate"
+        }
+      },
+      {
+        "name": "source",
+        "hostPath": {
+          "path": "/mnt/magi/magi",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "web-node-modules",
+        "emptyDir": {}
+      },
+      {
+        "name": "dev-entrypoint",
+        "hostPath": {
+          "path": "/mnt/magi/deploy/entrypoint.dev.sh",
+          "type": "File"
+        }
+      }
+    ]
+  }
+]

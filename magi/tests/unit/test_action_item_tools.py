@@ -66,7 +66,7 @@ def seed_contacts(fresh_db):
         charlie = Contact(
             name="Charlie",
             telegram_id=7003,
-            role="contact"
+            role='guest'
         )
         db.add_all([alice, bob, charlie])
         db.commit()
@@ -125,13 +125,13 @@ async def test_add_action_item_creates_row_for_assigned(fresh_db, seed_contacts)
 
 
 @pytest.mark.asyncio
-async def test_add_action_item_returns_error_for_contact_role(
+async def test_add_action_item_returns_error_for_guest_role(
     fresh_db, seed_contacts):
     tool = AddActionItemTool()
     charlie = seed_contacts["charlie"]
     res = await tool.run(_ctx(fresh_db, charlie), title="should fail")
     assert res.is_error is True
-    assert "role 'contact'" in res.content
+    assert "role 'guest'" in res.content
 
 
 @pytest.mark.asyncio
@@ -246,13 +246,13 @@ async def test_complete_action_item_rejects_non_int_id(fresh_db, seed_contacts):
 
 
 @pytest.mark.asyncio
-async def test_complete_action_item_rejects_for_contact_role(
+async def test_complete_action_item_rejects_for_guest_role(
     fresh_db, seed_contacts):
     complete_tool = CompleteActionItemTool()
     charlie = seed_contacts["charlie"]
     res = await complete_tool.run(_ctx(fresh_db, charlie), item_id=1)
     assert res.is_error is True
-    assert "role 'contact'" in res.content
+    assert "role 'guest'" in res.content
 
 
 # -- ListActionItemTool -----------------------------------------------------------
@@ -336,12 +336,12 @@ async def test_list_action_item_empty_when_no_rows(fresh_db, seed_contacts):
 
 
 @pytest.mark.asyncio
-async def test_list_action_item_rejects_for_contact_role(fresh_db, seed_contacts):
+async def test_list_action_item_rejects_for_guest_role(fresh_db, seed_contacts):
     list_tool = ListActionItemTool()
     charlie = seed_contacts["charlie"]
     res = await list_tool.run(_ctx(fresh_db, charlie))
     assert res.is_error is True
-    assert "role 'contact'" in res.content
+    assert "role 'guest'" in res.content
 
 
 # -- registry role-filter behaviour -----------------------------------------
@@ -376,12 +376,15 @@ def test_assigned_role_sees_all_tools(seed_contacts):
 
 def test_contact_role_omits_all_built_in_tools(seed_contacts):
     """Universal role gate — every built-in tool is
-    ``admin``/``assigned`` only. ``contact`` sees an
+    ``admin``/``assigned`` only. ``guest`` sees an
     EMPTY tool menu (the chat path blocks them at the
     auth gate anyway; the registry filter is the
-    belt-and-suspenders)."""
+    belt-and-suspenders). The legacy ``contact`` role
+    collapsed into ``guest`` after the 2024 role/admin
+    split so the test now exercises the same gate with
+    the surviving enum value."""
     from magi.agent.tools.registry import get_tool_schemas
-    names = _tool_names(get_tool_schemas(caller_role="contact"))
+    names = _tool_names(get_tool_schemas(caller_role='guest'))
     # All built-ins are gone.
     assert "bash" not in names
     assert "read_file" not in names
@@ -415,8 +418,8 @@ def test_none_role_is_permissive_by_default(seed_contacts):
 def test_get_tool_single_lookup_respects_role(seed_contacts):
     from magi.agent.tools.registry import get_tool
     # Non-admin/non-assigned can't see anything built-in.
-    assert get_tool("schedule_task", caller_role="contact") is None
-    assert get_tool("bash", caller_role="contact") is None
+    assert get_tool("schedule_task", caller_role='guest') is None
+    assert get_tool("bash", caller_role='guest') is None
     assert get_tool("read_file", caller_role="guest") is None
     # Admin can.
     assert get_tool("schedule_task", caller_admin=True, caller_role="assigned") is not None

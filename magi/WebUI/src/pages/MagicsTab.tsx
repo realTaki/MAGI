@@ -33,12 +33,14 @@ export type ContactRow = {
   // below and the ``/api/magis`` endpoints.
   separated_at: string | null;
   // ``role`` is the relationship to MAGI (assigned /
-  // contact / guest). WebUI sign-in rights are NOT in
-  // the role enum — they're a separate boolean below.
-  // Pre-2024 this enum had ``"admin"``; that value moved
-  // out to ``admin: boolean`` so a contact can be both
-  // ``role='assigned'`` AND ``admin=True``.
-  role: "assigned" | "contact" | "guest";
+  // guest). WebUI sign-in rights are NOT in the role
+  // enum — they're a separate boolean below. Pre-2024
+  // this enum had ``"admin"`` (moved to ``admin:
+  // boolean``) and ``"contact"`` (collapsed into
+  // ``"guest"`` because every gate that refused
+  // ``contact`` also refused ``guest``, with no
+  // operator-only distinction between the two).
+  role: "assigned" | "guest";
   // WebUI sign-in rights — independent of ``role``.
   // ``true`` means this contact can authenticate to the
   // operator console (``/api/auth/me`` accepts the

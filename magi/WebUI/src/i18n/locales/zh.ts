@@ -236,7 +236,7 @@ export default {
     registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 SOUL.md 决定启用哪些。",
     directoryDesc: "联系人列表：成员与 admin，可管理角色和登录权限。",
     channelsDesc: "各 IM 通道的启用/停用开关。切换即时生效，无需重启。",
-    webuiAccessDesc: "拥有 WebUI 登录权限的操作员。每个联系人的 admin 标志独立于角色 (assigned / contact / guest)。新操作员通过 Telegram 验证码握手流程添加。",
+    webuiAccessDesc: "拥有 WebUI 登录权限的操作员。每个联系人的 admin 标志独立于角色 (assigned / guest)。新操作员通过 Telegram 验证码握手流程添加。",
     onboardingDesc: "重新跑一次初始化向导（会重置已保存的 bot token + admin 列表）。",
     toolLoopDesc: "agent 循环在一次 /send 内最多调工具的次数。超过会强制结束当前轮。",
     autoCompactDesc: "agent 上下文累积到阈值后自动把老消息压缩为 summary，避免 LLM 上下文窗口溢出。",
@@ -308,7 +308,6 @@ export default {
     // -- role badges --------------------------------------------------------
     roleAdmin: "管理员",
     roleAssigned: "已分配",
-    roleContact: "联系人",
     roleGuest: "访客",
     // -- agent card ---------------------------------------------------------
     agentSave: "保存",
@@ -466,6 +465,7 @@ export default {
     columnPosition: "位置",
     columnProvider: "Provider",
     columnApiKey: "API Key",
+    columnRuntime: "运行状态",
     columnActions: "操作",
     empty: "还没有智能体。创建一个开始吧。",
     positionAdam: "ADAM",
@@ -479,6 +479,8 @@ export default {
     deleteConfirm: "确定要删除这个智能体吗？",
     keyNotSet: "(未设置)",
     keyNewPlaceholder: "留空则不修改",
+    startEve: "启动",
+    stopEve: "停止",
     breakdownHeading: "各智群统计",
     breakdownEmpty: "(无)",
   },

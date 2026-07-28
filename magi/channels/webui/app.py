@@ -69,16 +69,27 @@ def create_app() -> FastAPI:
     # a fresh child that needs its own cache.
     try:
         from magi.agent.tools.registry import bootstrap_mcp_tools
+
         bootstrap_mcp_tools()
     except Exception:
         pass
 
     # Start TG bot in the uvicorn child process.
     import logging as _log
+
     _log.getLogger(__name__).info("create_app: starting TG bot")
+    from magi.agent.db import require_state_dir
     from magi.channels.telegram.bot import start_bot
-    from magi.constants import STATE_DIR
-    t = start_bot(STATE_DIR)
+
+    # Importing the ASGI module in a CLI/test process must not require the
+    # container-only ``/workspace`` mount to exist. Node.run() initialises the
+    # workspace before serving in production; a direct app import simply
+    # leaves Telegram idle until a valid state directory is available.
+    try:
+        t = start_bot(require_state_dir())
+    except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
+        t = None
+        _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)
     _log.getLogger(__name__).info("create_app: TG bot result=%s", t)
 
     # D.7: lifespan hook starts the auto-title background
@@ -112,6 +123,7 @@ def create_app() -> FastAPI:
     # anywhere in the app gets serialised as
     # ``{"code": ..., "detail": ...}``.
     from magi.channels.webui.api.errors import install_error_handler
+
     install_error_handler(app)
 
     @app.get("/health", response_model=HealthResponse, tags=["meta"])
@@ -139,11 +151,13 @@ def create_app() -> FastAPI:
     # C2 will replace with a /start <code> flow that uses the
     # same underlying meta key).
     from magi.channels.webui.api import tg_bindings
+
     app.include_router(tg_bindings.router, prefix="/api")
     # Adam → system LLM chat (operator types into the WebUI,
     # gets a synchronous reply). v0 non-streaming; C7 swaps
     # in SSE / WebSocket.
     from magi.channels.webui.api import chat
+
     app.include_router(chat.router, prefix="/api")
     # Chat session CRUD — file-backed per-user conversation
     # history (D.6). Each operator's sessions live under
@@ -151,17 +165,20 @@ def create_app() -> FastAPI:
     # cookie pins the operator. Mounted right after ``chat``
     # so its URL prefix aligns with the chat namespace.
     from magi.channels.webui.api import chat_sessions
+
     app.include_router(chat_sessions.router, prefix="/api")
     # D.18 — full-text search across sessions. Same uid
     # scope as ``chat_sessions``; the cookie-derived uid
     # is enforced in the SQL join.
     from magi.channels.webui.api import chat_search
+
     app.include_router(chat_search.router, prefix="/api")
     # Action Items — the "things to do" inbox the dashboard's
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``
     # from) are mounted first.
     from magi.channels.webui.api import action_items, memory, prompts
+
     app.include_router(action_items.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
     app.include_router(prompts.router, prefix="/api")
@@ -169,6 +186,7 @@ def create_app() -> FastAPI:
     # the system prompt. Read/write/reset the workspace
     # ``SOUL.md`` from the Settings tab.
     from magi.channels.webui.api import soul
+
     app.include_router(soul.router, prefix="/api")
     # Telegram channel settings — read-reaction emoji
     # (and future per-channel toggles) edited from the
@@ -176,10 +194,12 @@ def create_app() -> FastAPI:
     # inbound message so a Save here takes effect
     # immediately, no restart.
     from magi.channels.webui.api import tg_settings
+
     app.include_router(tg_settings.router, prefix="/api")
     # Channel management — list enabled channels, toggle them
     # on/off at runtime. Replaces the MAGI_CHANNELS env var.
     from magi.channels.webui.api import channels as channels_api
+
     app.include_router(channels_api.router, prefix="/api")
     # System settings — per-MAGI config (timezone today;
     # future defaults). The token-bill aggregation endpoint
@@ -187,17 +207,20 @@ def create_app() -> FastAPI:
     # immediately reflected in the next ``GET
     # ``/api/contacts/…/token-usage``.
     from magi.channels.webui.api import system_settings
+
     app.include_router(system_settings.router, prefix="/api")
     # Contact token metrics — token-usage aggregation. One
     # endpoint per contact, three periods (week / month /
     # total) in one response.
     from magi.channels.webui.api import token_metrics
+
     app.include_router(token_metrics.router, prefix="/api")
     # Scheduled tasks — operator-facing CRUD + manual
     # trigger. Routed at /api/tasks/*; the LLM-side
     # ``schedule_task`` tool bypasses this router and
     # talks to the registry directly.
     from magi.channels.webui.api import tasks
+
     app.include_router(tasks.router, prefix="/api")
     # Task presets — operator-facing CRUD for the
     # ``task_presets`` template table. Each template
@@ -207,11 +230,13 @@ def create_app() -> FastAPI:
     # 预设 drives this router; the per-user tasks end up
     # in the Knowledge → Tasks pane's "preset" section.
     from magi.channels.webui.api import task_presets
+
     app.include_router(task_presets.router, prefix="/api")
     # Tools — read-only list of every tool the LLM can call
     # (built-ins + MCP-loaded). The Knowledge tab uses it to
     # render an operator-facing "what can my MAGI do?" view.
     from magi.channels.webui.api import tools
+
     app.include_router(tools.router, prefix="/api")
     # MCP servers — operator-facing CRUD for the
     # ``mcp_servers`` table. The DB is the single source
@@ -221,12 +246,14 @@ def create_app() -> FastAPI:
     # Knowledge → MCP tab stays read-only and surfaces
     # the tool list as the loader caches it.
     from magi.channels.webui.api import mcp_servers
+
     app.include_router(mcp_servers.router, prefix="/api")
     # Skills — read-only catalog of SKILL.md files in
     # workspace/skills/. Knowledge → Skills is the operator-
     # facing surface; the LLM-side equivalent is the
     # ``load_skill`` tool (``magi.agent.skills.loader_tool``).
     from magi.channels.webui.api import skills
+
     app.include_router(skills.router, prefix="/api")
 
     # SPA. In Docker this is /app/magi/WebUI/dist (baked in by the web-builder

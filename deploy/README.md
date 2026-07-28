@@ -57,6 +57,32 @@ deploy/k8s/
 deploy/k8s/README.md
 ```
 
+### Genesis 一键启动
+
+本地 Kubernetes 开发体验（宿主机需要 Docker）使用：
+
+```bash
+./deploy/bootstrap-local.sh
+```
+
+脚本会在 ``deploy/.tools`` 下载锁定版本的 ``kind`` / ``kubectl``，创建本地
+集群、构建镜像，并启动 Genesis Alice 与受限的 ``magi-orchestrator``。不会写入
+系统路径或使用 sudo。Alice 使用 ``workspace/alice``，并将本仓库源码挂载到 Pod：
+Python 由 Uvicorn reload，WebUI 由 Vite HMR 热更新。该 overlay 只适用于本地 kind，
+不能用于远程或生产 Kubernetes 集群。
+
+已有 Kubernetes 集群时使用：
+
+```bash
+MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
+  ./deploy/bootstrap-k8s.sh
+```
+
+首次 Adam 启动会在自己的 workspace 中自举 Genesis Council 并绑定为其 Adam。
+完成 onboarding 后，管理员可在 WebUI 的「智能体管理」中创建 EVE、设置 provider
+和 API key，然后启动或停止 EVE。Adam 不会获得 Kubernetes API token；只有独立的
+``magi-orchestrator`` 持有 namespace 限定的最小 RBAC。
+
 两种模式共用 `deploy/Dockerfile` 生产镜像，但持久化方式不同：
 
 ```text

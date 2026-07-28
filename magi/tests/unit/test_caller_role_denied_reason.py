@@ -61,7 +61,7 @@ def seed_contacts(fresh_db):
         charlie = Contact(
             name="Charlie",
             telegram_id=8503,
-            role="contact"
+            role='guest'
         )
         db.add_all([alice, charlie])
         db.commit()
@@ -131,14 +131,14 @@ def test_rejects_nonexistent_contact(fresh_db):
 
 def test_rejects_wrong_role(fresh_db, seed_contacts):
     """Role-mismatch path: includes the role repr so
-    callers / tests that grep ``"role 'contact'"`` keep
+    callers / tests that grep ``"role 'guest'"`` keep
     finding it."""
     charlie = seed_contacts["charlie"]
     msg = caller_role_denied_reason(
         _ctx(fresh_db, charlie.id),
         frozenset({"admin", "assigned"}))
     assert msg is not None
-    assert "role 'contact'" in msg
+    assert "role 'guest'" in msg
     # The allowed list surfaces in the message so the
     # operator sees the policy without grepping docs.
     assert "admin" in msg
@@ -150,9 +150,9 @@ def test_permits_each_role_independently(fresh_db, seed_contacts):
     set returns ``None``. Mirrors the "registered Tools
     ALLOWED_ROLES allows the caller's role" path."""
     charlie = seed_contacts["charlie"]
-    # Charlie is ``contact`` role — should pass an
-    # ``{contact}`` gate, fail an ``{admin}`` gate.
+    # Charlie is ``guest`` role — should pass an
+    # ``{guest}`` gate, fail an ``{admin}`` gate.
     assert caller_role_denied_reason(
-        _ctx(fresh_db, charlie.id), frozenset({"contact"})) is None
+        _ctx(fresh_db, charlie.id), frozenset({"guest"})) is None
     assert caller_role_denied_reason(
         _ctx(fresh_db, charlie.id), frozenset({"admin"})) is not None

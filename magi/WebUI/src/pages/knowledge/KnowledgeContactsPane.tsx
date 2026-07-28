@@ -120,7 +120,6 @@ export function KnowledgeContactsPane() {
                       {c.role && (
                         <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${
                           c.role === "assigned" ? "bg-sky-100 text-sky-800" :
-                          c.role === "contact" ? "bg-ink-soft/10 text-ink-soft" :
                           "bg-ink-soft/10 text-ink-soft"
                         }`}>{c.role}</span>
                       )}
