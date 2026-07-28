@@ -122,6 +122,104 @@ class AddContactTool(Tool):
         return _ok(view.to_dict())
 
 
+# -- UpdateDailyNoteTool -----------------------------------------------------
+
+
+class UpdateDailyNoteTool(Tool):
+    """Append a delta to today's daily note for the caller.
+
+    The daily note is the running log the LLM appends to over
+    the course of a conversation — "I sent the Q3 invoice to
+    Lily", "Mark mentioned he's OOO Friday", "user prefers
+    shorter replies". The morning / night report reads
+    today's row verbatim; permanent ``add_contact_note``
+    rows stay separate.
+
+    Capture rules (full text lives in
+    ``prompts/daily_note.md`` — folded into the system prompt
+    only when the operator toggles ``system.show_daily_note_prompt``):
+
+    - Record from the user (tasks done, preferences, project
+      context). Don't record trivial external facts.
+    - Append only — never delete or rewrite prior deltas. The
+      upsert appends with a newline separator; concurrent
+      writes hit the partial unique index ``ux_contact_notes_daily``
+      and serialize on the row update.
+    """
+
+    name = "update_daily_note"
+    ALLOWED_ROLES = frozenset({"assigned"})
+    description = (
+        "Append a delta to today's daily note for the current "
+        "operator (or the uid you pass). One row per "
+        "(uid, day). Use when something meaningful happened — "
+        "task finished, email sent, user shared a preference, "
+        "project context changed. Don't write trivial external "
+        "facts. The morning / night report reads today's row "
+        "verbatim."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "body_delta": {
+                "type": "string",
+                "description": (
+                    "One short fact to append. <=8 KB. The tool "
+                    "strips whitespace and clamps to the per-row "
+                    "32 KB cap."
+                ),
+            },
+            "note_date": {
+                "type": "string",
+                "description": (
+                    "YYYY-MM-DD; defaults to today UTC. Pass "
+                    "explicit only for back-filling a missed day."
+                ),
+            },
+        },
+        "required": ["body_delta"],
+    }
+
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        gate = _gate(ctx)
+        if gate is not None:
+            return _err(gate)
+        body_delta = kwargs.get("body_delta")
+        if not isinstance(body_delta, str) or not body_delta.strip():
+            return _err("body_delta is required (non-empty string)")
+        # Default to the operator's own uid — the LLM never
+        # specifies a different uid here (no override on
+        # input_schema). Future cross-contact notes should go
+        # through a separate ``update_daily_note_for`` shape.
+        contact_id = ctx.uid
+        if contact_id is None or contact_id == 0:
+            return _err("no uid on the calling context")
+
+        from datetime import datetime as _dt
+        note_date: Any = None
+        raw_date = kwargs.get("note_date")
+        if isinstance(raw_date, str) and raw_date.strip():
+            try:
+                # Accept "YYYY-MM-DD" only — naive UTC midnight.
+                # A timezone-aware string would need parsing;
+                # for v0 we only need the local-date-as-UTC
+                # case the morning/night reports produce.
+                note_date = _dt.strptime(raw_date, "%Y-%m-%d")
+            except ValueError:
+                return _err(
+                    f"note_date must be YYYY-MM-DD, got {raw_date!r}"
+                )
+
+        try:
+            store = ContactStore(ctx.state_dir)
+            view = store.upsert_daily_note(
+                contact_id, body_delta=body_delta, note_date=note_date
+            )
+        except ValueError as e:
+            return _err(str(e))
+        return _ok(view.to_dict())
+
+
 # -- AddContactNoteTool -------------------------------------------------------
 
 

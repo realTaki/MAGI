@@ -18,7 +18,10 @@ from magi.agent.db.models_contact import (
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
 )
-from magi.agent.memory.contacts.prompt import format_contact_block
+from magi.agent.memory.contacts.prompt import (
+    format_contact_block,
+    format_daily_note_block,
+)
 from magi.agent.memory.contacts.store import ContactStore, ContactView
 from magi.agent.memory.contacts.tools import (
     AddContactNoteTool,
@@ -26,6 +29,7 @@ from magi.agent.memory.contacts.tools import (
     DeleteContactNoteTool,
     SearchContactsTool,
     UpdateContactNoteTool,
+    UpdateDailyNoteTool,
 )
 
 

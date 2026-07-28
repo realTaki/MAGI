@@ -155,10 +155,20 @@ class Contact(Base):
 class ContactNote(Base):
     """One fact/memory about a contact.
 
-    Each row is an individual note — the LLM adds a new row
-    for every \"记住 Lily 在财务部\" call.  The old single
-    ``contacts.notes`` text column is deprecated; the
-    ``format_contact_block`` formatter aggregates from here.
+    Two kinds live in this table:
+
+    - ``kind='permanent'`` — the long-arc fact stream the
+      LLM writes via ``add_contact_note`` (e.g. "Lily 在财务部",
+      "Mark prefer Slack"). Each call creates one row.
+    - ``kind='daily'`` — the short-arc daily log the LLM
+      writes via ``update_daily_note``. One row per
+      ``(contact_id, note_date)``; the tool appends to the
+      existing body. ``note_date`` is naive UTC midnight of
+      the day the row belongs to.
+
+    The old single ``contacts.notes`` text column is
+    deprecated; the ``format_contact_block`` /
+    ``format_daily_note_block`` formatters aggregate from here.
     """
 
     __tablename__ = "contact_notes"
@@ -172,6 +182,21 @@ class ContactNote(Base):
     source: Mapped[str] = mapped_column(
         String(16), nullable=False, default=SOURCE_EVE,
     )
+    # Memory kind. Permanent rows are individual facts; daily
+    # rows are the running log the agent loop appends to.
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="permanent",
+    )
+    # Naive UTC midnight of the day this row belongs to.
+    # NULL on permanent rows; non-null on daily rows so the
+    # morning/night report can do ``WHERE kind='daily' AND
+    # note_date=date('now')``. The local-timezone-aware
+    # "what day is it for the operator" question is solved
+    # at the *query* layer — the row key stays UTC for
+    # deterministic date arithmetic.
+    note_date: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, nullable=False,
     )
@@ -183,5 +208,5 @@ class ContactNote(Base):
         preview = self.note[:40].replace("\n", " ") if self.note else ""
         return (
             f"ContactNote(id={self.id}, contact_id={self.contact_id}, "
-            f"note={preview!r}...)"
+            f"kind={self.kind!r}, note={preview!r}...)"
         )

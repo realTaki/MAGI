@@ -80,7 +80,10 @@ def _now() -> str:
 
 def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
     """A fresh ``assigned`` contact gets one Task row per
-    enabled preset (2 by default — daily + weekly)."""
+    enabled preset. v0 ships 4 defaults (daily_standup_brief,
+    weekly_review, morning_brief, night_summary); the count
+    rides on ``state["preset_count"]`` so this test stays
+    in sync as new presets are added."""
     from magi.agent.db import open_session
     from magi.agent.proactive.presets import seed_presets_for_contact
     from magi.agent.proactive.orm_models import Task, TaskPreset
@@ -92,10 +95,14 @@ def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
         alice_id = alice.id
         inserted = seed_presets_for_contact(db, alice_id)
         db.commit()
-    assert inserted == state["preset_count"] == 2
-    assert sorted(state["preset_keys"]) == [
-        "daily_standup_brief", "weekly_review",
-    ]
+    assert inserted == state["preset_count"]
+    # All four defaults are seeded; verify by sorted key set.
+    assert sorted(state["preset_keys"]) == sorted([
+        "daily_standup_brief",
+        "weekly_review",
+        "morning_brief",
+        "night_summary",
+    ])
 
     # Verify: alice has one row per preset, each carrying
     # the back-pointer fields.
@@ -103,8 +110,8 @@ def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
         rows = db.query(Task).filter(Task.uid == alice_id).order_by(
             Task.preset_key
         ).all()
-        keys = [r.preset_key for r in rows]
-        assert keys == ["daily_standup_brief", "weekly_review"]
+        keys = sorted(r.preset_key for r in rows)
+        assert keys == sorted(state["preset_keys"])
         assert all(r.preset_id is not None for r in rows)
         assert all(r.preset_key is not None for r in rows)
         assert all(r.target_channel == "tg" for r in rows)
@@ -127,7 +134,7 @@ def test_seed_is_idempotent_on_repeat_call(state):
         db.add(alice); db.flush()
         first = seed_presets_for_contact(db, alice.id)
         db.commit()
-    assert first == 2
+    assert first == state["preset_count"]
 
     with open_session() as db:
         second = seed_presets_for_contact(db, alice.id)
@@ -181,10 +188,14 @@ def test_seed_skips_disabled_presets(state):
     from magi.agent.proactive.orm_models import Task, TaskPreset
 
     with open_session() as db:
-        wp = db.query(TaskPreset).filter(
-            TaskPreset.key == "weekly_review"
-        ).one()
-        wp.enabled = 0
+        # Disable everything except the daily preset so the
+        # "skipped" assertion is unambiguous regardless of
+        # how many presets are seeded at boot.
+        for key in ("weekly_review", "morning_brief", "night_summary"):
+            row = db.query(TaskPreset).filter(
+                TaskPreset.key == key
+            ).one()
+            row.enabled = 0
         db.commit()
 
     with open_session() as db:

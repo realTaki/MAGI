@@ -88,7 +88,7 @@ def build_system_prompt(
 ) -> str:
     """Assemble the full system prompt for one LLM turn.
 
-    Four blocks, concatenated in this fixed order:
+    Five blocks, concatenated in this fixed order:
 
       1. **SOUL** — the persona file (workspace-global).
       2. **Long-term memory** — :func:`format_memory_block`
@@ -109,7 +109,14 @@ def build_system_prompt(
          ``magi_session`` value IS the UID directly.
          There is no second "person on the other end" in
          this model — "admin 当前 在跟谁聊 根本不存在".
-      4. **Available skills** — :func:`format_skills_block`
+      4. **Daily note** — :func:`format_daily_note_block`
+         renders today's running log (``contact_notes``
+         where ``kind='daily'``). The LLM appends to it via
+         the ``update_daily_note`` tool. Operator-toggleable
+         via ``system.show_daily_note`` (default ON); the
+         capture-rules prompt fold-in is gated separately by
+         ``system.show_daily_note_prompt`` for noisy loops.
+      5. **Available skills** — :func:`format_skills_block`
          lists the frontmatter ``name`` + ``description``
          of every registered SKILL.md. Bodies load on
          demand via ``load_skill``.
@@ -128,12 +135,19 @@ def build_system_prompt(
     bounded; no N+1 risk.
     """
     from magi.agent.memory.contacts.store import ContactStore
-    from magi.agent.memory.contacts.prompt import format_contact_block
+    from magi.agent.memory.contacts.prompt import (
+        format_contact_block,
+        format_daily_note_block,
+    )
     from magi.agent.memory.magi.prompt import format_memory_block
     from magi.agent.memory.magi.store import MemoryStore
     from magi.agent.tools.skill_loader import (
         format_skills_block,
         get_skill_loader,
+    )
+    from magi.channels.webui.api.system_settings import (
+        get_show_daily_note,
+        get_show_daily_note_prompt,
     )
 
     # SOUL first — establishes the persona for the rest
@@ -177,6 +191,30 @@ def build_system_prompt(
         )
     if contact_block:
         parts.append(contact_block)
+
+    # Daily-note block — today's running log. Gated by
+    # ``system.show_daily_note`` (default ON); the capture
+    # rules only fold in when the operator explicitly opts
+    # in via ``system.show_daily_note_prompt`` (default
+    # OFF — the tool description already restates the
+    # core intent).
+    if get_show_daily_note(state_dir):
+        daily_block = ""
+        try:
+            store = ContactStore(state_dir)
+            note = store.read_daily_note(uid)
+            daily_block = format_daily_note_block(
+                note,
+                show_prompt_rules=get_show_daily_note_prompt(state_dir),
+            )
+        except Exception:
+            logger.exception(
+                "agent: daily note block load failed for uid=%s; "
+                "continuing without daily note block",
+                uid,
+            )
+        if daily_block:
+            parts.append(daily_block)
 
     # Skills block — last so it caps the prompt.
     skills_block = format_skills_block(get_skill_loader().list())

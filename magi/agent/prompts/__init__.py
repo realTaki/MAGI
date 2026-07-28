@@ -226,6 +226,22 @@ def load_skills_block_template() -> str:
     return _load("skills_block")
 
 
+def load_daily_note_prompt() -> str:
+    """The "Daily Note 记录指令" reference document.
+
+    Reads the bundled ``daily_note.md``. NOT auto-injected into
+    every chat turn's system prompt (would be noise). Instead
+    the operator toggles ``system.show_daily_note_prompt`` to
+    opt in — when on, :mod:`magi.agent.system_prompt` folds
+    the text into the daily-note block header so the LLM has
+    the capture rules in front of it; when off, the rules live
+    only in this file and the LLM learns them from the
+    ``update_daily_note`` tool description (which restates the
+    core "what to record / when" intent in a few lines).
+    """
+    return _load("daily_note")
+
+
 def load_bot_replies() -> dict[str, str]:
     """Return the Telegram bot reply templates as
     ``{template_id: text}``.

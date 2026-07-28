@@ -74,6 +74,10 @@ def _build_tools() -> list["Tool"]:
     )
     from magi.agent.tools.read_file import ReadFileTool
     from magi.agent.tools.schedule_task import ScheduleTaskTool
+    from magi.agent.tools.services_stub import (
+        ReadRecentEmailsTool,
+        ReadUpcomingMeetingsTool,
+    )
     from magi.agent.tools.skill_loader_tool import SkillLoaderTool
     from magi.agent.tools.search_sessions import SearchSessionsTool
     from magi.agent.tools.send_message import SendMessageTool
@@ -84,6 +88,7 @@ def _build_tools() -> list["Tool"]:
         DeleteContactNoteTool,
         SearchContactsTool,
         UpdateContactNoteTool,
+        UpdateDailyNoteTool,
     )
     from magi.agent.memory.magi.tools import (
         AddMemoryTool,
@@ -123,6 +128,15 @@ def _build_tools() -> list["Tool"]:
         UpdateContactNoteTool(),
         DeleteContactNoteTool(),
         SearchContactsTool(),
+        UpdateDailyNoteTool(),
+        # Stub external-service tools — read_recent_emails
+        # and read_upcoming_meetings return mock data
+        # today (real OAuth-backed Gmail / Calendar adapters
+        # land in C5). ``ALLOWED_ROLES = frozenset()`` makes
+        # them visible to every role so the LLM can quote
+        # the placeholder content in casual chat.
+        ReadRecentEmailsTool(),
+        ReadUpcomingMeetingsTool(),
         # Action item — per-contact, scoped to the
         # caller. ALLOWED_ROLES = {admin, assigned}
         # keeps these out of the menu for other roles;

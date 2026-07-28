@@ -24,8 +24,21 @@ from magi.agent.db.models_contact import SOURCE_EVE
 
 logger = logging.getLogger("magi.agent.memory.contacts.store")
 
+
+def _utc_today_midnight() -> datetime:
+    """Naive UTC midnight of "today".
+
+    The daily-note row key. Local-timezone conversion happens
+    at the *query* layer (system_settings timezone), not here
+    — the row key stays UTC for deterministic date arithmetic.
+    """
+    now = datetime.utcnow()
+    return datetime(now.year, now.month, now.day)
+
 _NOTE_MAX = 8 * 1024
 _ROLE_MAX = 64
+_DAILY_NOTE_DELTA_MAX = 8 * 1024  # per single update_daily_note call
+_DAILY_NOTE_BODY_MAX = 32 * 1024  # cumulative body ceiling per row
 
 
 @dataclass(frozen=True)
@@ -244,6 +257,142 @@ class ContactStore:
         with open_session() as db:
             row = db.get(ContactNote, note_id)
         return NoteView.from_row(row) if row else None
+
+    # -- daily notes -------------------------------------------------------
+
+    def upsert_daily_note(
+        self,
+        contact_id: int,
+        body_delta: str,
+        *,
+        note_date: Optional[datetime] = None,
+    ) -> NoteView:
+        """Append ``body_delta`` to today's daily note for ``contact_id``.
+
+        One row per (contact_id, kind='daily', note_date). If
+        the row exists, append with a newline separator; else
+        insert a new row. ``note_date`` defaults to today's
+        naive UTC midnight.
+
+        ``body_delta`` is capped at 32 KB on read — the LLM is
+        expected to keep each call short (a sentence or two).
+        The morning/night report reads the row verbatim
+        (truncated to 8 KB before injecting into the prompt,
+        same as the rest of the system's tool-result cap).
+
+        Idempotent at the row level: re-calling with the
+        same ``note_date`` appends, never duplicates. The
+        partial unique index ``ux_contact_notes_daily`` keeps
+        the row count honest under concurrent writes.
+        """
+        from sqlalchemy import update as _sa_update
+
+        body_delta = body_delta.strip()[:_DAILY_NOTE_DELTA_MAX]
+        if not body_delta:
+            raise ValueError("body_delta is required")
+        if note_date is None:
+            note_date = _utc_today_midnight()
+
+        with open_session() as db:
+            ct = db.get(Contact, contact_id)
+            if ct is None:
+                raise ValueError(f"contact {contact_id!r} not found")
+
+            existing = db.scalar(
+                select(ContactNote).where(
+                    ContactNote.contact_id == contact_id,
+                    ContactNote.kind == "daily",
+                    ContactNote.note_date == note_date,
+                )
+            )
+            if existing is None:
+                row = ContactNote(
+                    contact_id=contact_id,
+                    note=body_delta,
+                    source=SOURCE_EVE,
+                    kind="daily",
+                    note_date=note_date,
+                )
+                db.add(row)
+                ct.last_seen_at = utcnow_naive()
+                db.commit()
+                db.refresh(row)
+                return NoteView.from_row(row)
+
+            existing.note = (
+                existing.note + "\n" + body_delta
+            )[:_DAILY_NOTE_BODY_MAX]
+            existing.updated_at = utcnow_naive()
+            ct.last_seen_at = utcnow_naive()
+            # ``update`` with synchronize_session keeps the
+            # in-memory row in sync after we touch it
+            # directly without going through ``db.flush()``.
+            db.execute(
+                _sa_update(ContactNote)
+                .where(ContactNote.id == existing.id)
+                .values(
+                    note=existing.note,
+                    updated_at=existing.updated_at,
+                )
+            )
+            db.commit()
+            db.refresh(existing)
+            logger.info(
+                "daily note appended",
+                extra={"note_id": existing.id, "contact_id": contact_id},
+            )
+            return NoteView.from_row(existing)
+
+    def read_daily_note(
+        self,
+        contact_id: int,
+        *,
+        note_date: Optional[datetime] = None,
+    ) -> Optional[NoteView]:
+        """Return today's daily note (or ``note_date``'s), or
+        ``None`` if no row exists for that day.
+
+        The morning/night report readers call this once per
+        fire. Returns the single row keyed by
+        ``(contact_id, kind='daily', note_date)`` — the partial
+        unique index makes the query O(log n) on
+        ``contact_notes``.
+        """
+        if note_date is None:
+            note_date = _utc_today_midnight()
+        with open_session() as db:
+            row = db.scalar(
+                select(ContactNote).where(
+                    ContactNote.contact_id == contact_id,
+                    ContactNote.kind == "daily",
+                    ContactNote.note_date == note_date,
+                )
+            )
+        return NoteView.from_row(row) if row else None
+
+    def list_daily_notes(
+        self,
+        contact_id: int,
+        *,
+        limit: int = 14,
+    ) -> list[NoteView]:
+        """Recent daily notes for a contact, newest first.
+
+        Used by the night summary's "this week" filter and
+        future debugging surfaces. Default ``limit=14`` gives
+        two weeks of history.
+        """
+        with open_session() as db:
+            rows = db.scalars(
+                select(ContactNote)
+                .where(
+                    ContactNote.contact_id == contact_id,
+                    ContactNote.kind == "daily",
+                )
+                .order_by(ContactNote.note_date.desc())
+                .limit(limit)
+            ).all()
+        return [NoteView.from_row(r) for r in rows]
 
     # -- search ------------------------------------------------------------
 

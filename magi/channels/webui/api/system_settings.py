@@ -441,3 +441,55 @@ def put_compact_config(
         default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
         default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
+
+
+# Daily-note toggle — gates whether the agent loop folds
+# today's running log (the body the LLM appends to via
+# ``update_daily_note``) into the system prompt. Default
+# ON — the operator can mute it if the running-log noise
+# becomes distracting. A second toggle (``show_daily_note_prompt``)
+# folds the capture rules from ``prompts/daily_note.md`` into
+# the block header; default OFF (the tool description
+# already restates the core intent, and the full rules add
+# ~30 lines of system-prompt weight per turn).
+
+SHOW_DAILY_NOTE_KEY = "system.show_daily_note"
+SHOW_DAILY_NOTE_PROMPT_KEY = "system.show_daily_note_prompt"
+
+
+def _read_bool_setting(state_dir: str, key: str, *, default: bool) -> bool:
+    """Parse a bool from a meta-key string.
+
+    Accepts ``"true"`` / ``"1"`` (case-insensitive) as True;
+    everything else (including missing and empty) falls
+    back to ``default``. Same shape as the
+    :func:`_system_default_timezone` parser — the rest of
+    the codebase persists "true" / "false" as the literal
+    string, so a hand-edited state file or a stale legacy
+    value never blows up the loader.
+    """
+    raw = state_get(state_dir, key)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def get_show_daily_note(state_dir: str) -> bool:
+    """Whether today's daily note body is rendered into the
+    agent loop's system prompt. Default ON.
+    """
+    return _read_bool_setting(state_dir, SHOW_DAILY_NOTE_KEY, default=True)
+
+
+def get_show_daily_note_prompt(state_dir: str) -> bool:
+    """Whether the capture-rules text from
+    ``prompts/daily_note.md`` folds into the daily-note
+    block header. Default OFF — the ``update_daily_note``
+    tool description restates the core intent, and the
+    full rules add ~30 lines of system-prompt weight per
+    turn. Operators who want tighter capture discipline
+    flip this on.
+    """
+    return _read_bool_setting(
+        state_dir, SHOW_DAILY_NOTE_PROMPT_KEY, default=False
+    )
