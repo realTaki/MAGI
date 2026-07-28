@@ -49,6 +49,8 @@ class NoteView:
     contact_id: int
     note: str
     source: str
+    kind: str
+    note_date: str | None
     created_at: str
     updated_at: str
 
@@ -59,6 +61,11 @@ class NoteView:
             contact_id=row.contact_id,
             note=row.note,
             source=row.source,
+            kind=row.kind,
+            note_date=(
+                row.note_date.isoformat().replace("+00:00", "Z")
+                if row.note_date is not None else None
+            ),
             created_at=row.created_at.isoformat().replace("+00:00", "Z"),
             updated_at=row.updated_at.isoformat().replace("+00:00", "Z"),
         )
@@ -69,6 +76,8 @@ class NoteView:
             "contact_id": self.contact_id,
             "note": self.note,
             "source": self.source,
+            "kind": self.kind,
+            "note_date": self.note_date,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -208,7 +217,7 @@ class ContactStore:
                 source=source,
             )
             db.add(row)
-            contact.last_seen_at = utcnow_naive()
+            ct.last_seen_at = utcnow_naive()
             db.commit()
             db.refresh(row)
         logger.info("contact note added", extra={"note_id": row.id, "contact_id": contact_id})

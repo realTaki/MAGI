@@ -128,12 +128,19 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "update_memory",
         "complete_memory",
         "delete_memory",
-        # Contact directory — add contacts, manage notes.
+        # Contact directory — add contacts, manage notes,
+        # append to today's daily note.
         "add_contact",
         "add_contact_note",
         "update_contact_note",
         "delete_contact_note",
         "search_contacts",
+        "update_daily_note",
+        # Stub external-service tools — read_recent_emails
+        # and read_upcoming_meetings return mock data
+        # until the OAuth adapters land in C5.
+        "read_recent_emails",
+        "read_upcoming_meetings",
         # Todo / action-item — per-contact (admin /
         # assigned only). Registry filters them out of
         # the menu for other roles; tests see the full

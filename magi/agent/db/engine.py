@@ -260,12 +260,39 @@ def init_orm(state_dir: str | None = None) -> Engine:
     the old idempotent inline runner, then Alembic records the baseline. A
     fresh database skips the inline pass and is created by revision 0001.
     Once ``alembic_version`` exists, only Alembic revisions run.
+
+    The engine is a process-global singleton keyed on the absolute
+    path of the requested ``state_dir``. When ``state_dir`` changes
+    (every test fixture uses a fresh tmp_path), the cached engine
+    is disposed and rebuilt so the new fixture sees its own DB,
+    not stale rows from a previous test that survived via the
+    engine cache.
     """
+    global _engine, _SessionLocal
     if state_dir is not None:
         # Honour an explicit override (mostly for tests) before creating
         # the lazy engine. This also lets the settings facade initialise a
         # fresh database from its legacy ``state_dir`` argument.
         os.environ["MAGI_STATE_DIR"] = state_dir
+    requested_path = Path(_state_dir_from_env()).resolve()
+    if _engine is not None:
+        # If the cached engine points at a different directory,
+        # dispose it so the next ``get_engine()`` rebuilds. The
+        # cache check is by path (not by env var) so a re-entrant
+        # test that reuses ``MAGI_STATE_DIR`` hits the fast path.
+        try:
+            bound_url = _engine.url.database
+        except Exception:
+            bound_url = None
+        cached_path = Path(bound_url).resolve() if bound_url else None
+        if cached_path != requested_path / "magi.db":
+            try:
+                _engine.dispose()
+            except Exception:
+                pass
+            _engine = None
+            _SessionLocal = None
+            _aux_sessionmakers.clear()
     engine = get_engine()
     # Eagerly import every model module so its tables register
     # on ``Base.metadata`` before the migration runner starts. Doing

@@ -118,12 +118,26 @@ async def test_update_daily_note_rejects_bad_date_format(state_dir):
 @pytest.mark.asyncio
 async def test_update_daily_note_rejects_for_unassigned_contact(state_dir):
     """The in-run ``_gate`` blocks ``role='contact'`` (no admin) —
-    same shape as the permanent-note tools."""
+    same shape as the permanent-note tools. We mutate the
+    seeded contact's ``role`` to ``"contact"`` so the DB-
+    backed ``caller_role_denied_reason`` check sees a role
+    that isn't ``assigned`` and isn't admin."""
+    from magi.agent.db import Contact, open_session
     from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+
+    # Flip the seeded admin's role from "assigned" to "contact"
+    # so the in-run role check sees a non-author. Without
+    # ``admin=True`` in the ctx, the gate returns the
+    # permission-denied message.
+    with open_session() as db:
+        c = db.get(Contact, 1)
+        c.role = "contact"
+        c.admin = False
+        db.commit()
 
     tool = UpdateDailyNoteTool()
     res = await tool.run(
-        _ctx(str(state_dir), uid=2, role="contact", admin=False),
+        _ctx(str(state_dir), uid=1, role="contact", admin=False),
         body_delta="x",
     )
     assert res.is_error is True
