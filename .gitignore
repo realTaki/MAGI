@@ -256,3 +256,24 @@ magi.db-*
 # Agents
 .codebuddy/
 deploy/.tools/
+
+# -----------------------------------------------------------------------------
+# Local credentials and cluster access
+# -----------------------------------------------------------------------------
+# Kind embeds a client certificate and private key in its kubeconfig. Keep
+# developer credentials and real Secret manifests local; tracked examples are
+# explicitly retained as safe templates.
+.kind-kubeconfig
+*.kubeconfig
+.kube/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+token.json
+.env.*
+!.env.example
+!.env.*.example
+deploy/k8s/secrets/*.yaml
+!deploy/k8s/secrets/*.example.yaml

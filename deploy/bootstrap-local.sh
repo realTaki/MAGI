@@ -8,6 +8,7 @@ set -euo pipefail
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TOOLS_DIR="$ROOT_DIR/deploy/.tools"
 KIND_VERSION="${KIND_VERSION:-v0.24.0}"
+KUBECONFIG_PATH="${MAGI_KUBECONFIG:-$ROOT_DIR/.kind-kubeconfig}"
 mkdir -p "$TOOLS_DIR"
 command -v docker >/dev/null || { echo "Docker is required for local bootstrap" >&2; exit 1; }
 KIND="$TOOLS_DIR/kind"
@@ -22,13 +23,15 @@ if ! "$KIND" get clusters | grep -qx magi; then
   sed "s|__MAGI_REPO_ROOT__|$ROOT_DIR|g" "$ROOT_DIR/deploy/k8s/kind.dev.yaml" \
     | "$KIND" create cluster --name magi --config=-
 fi
+"$KIND" export kubeconfig --name magi --kubeconfig "$KUBECONFIG_PATH" >/dev/null
 docker build -f "$ROOT_DIR/deploy/Dockerfile" -t magi:0.1.0 "$ROOT_DIR"
 docker build -f "$ROOT_DIR/deploy/Dockerfile.dev" -t magi:dev "$ROOT_DIR"
 "$KIND" load docker-image magi:0.1.0 --name magi
 "$KIND" load docker-image magi:dev --name magi
 MAGI_IMAGE=magi:dev \
+  EVE_IMAGE=magi:0.1.0 \
   ADAM_OVERLAY="$ROOT_DIR/deploy/k8s/overlays/dev-alice" \
   ADAM_DEPLOYMENT=alice-magi-node \
   ADAM_SERVICE=alice-magi \
-  KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+  KUBECONFIG="$KUBECONFIG_PATH" \
   "$ROOT_DIR/deploy/bootstrap-k8s.sh"

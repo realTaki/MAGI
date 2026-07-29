@@ -11,6 +11,12 @@ namePrefix: alice-
 patches:
   - path: patch-config.yaml
   - path: patch-deployment.yaml
+  - path: patch-service.yaml
+  - target:
+      version: v1
+      kind: Service
+      name: magi
+    path: patch-service.json
   - path: patch-delete-pvc.yaml
   - target:
       group: apps
