@@ -12,27 +12,22 @@
 set -eu
 cd /app/magi/WebUI
 
-# Auto-install new dependencies on container start. Vite reads the
-# module graph at boot, so if a new dep was added to package.json
-# (e.g. @tanstack/react-query) but the bind-mounted /app/magi/WebUI
-# is from before that change, the runtime's node_modules is stale
-# and Vite fails with "Failed to resolve import". Doing `npm install`
-# here (instead of `npm ci`) means a small diff in package.json
-# is satisfied without an image rebuild; if package.json hasn't
-# changed, npm install short-circuits to a near-noop.
+# Auto-install dependencies into the writable node_modules volume. The source
+# checkout is read-only in the Kind dev overlay, so use `npm ci`: unlike npm
+# install it does not attempt to rewrite package-lock.json in that checkout.
 if [ -f package.json ]; then
   if [ -d node_modules ]; then
-    if [ package.json -nt node_modules/.package-lock.json ]; then
-      echo "[entrypoint] package.json newer than node_modules, running npm install"
-      npm install --no-audit --no-fund --prefer-offline || {
-        echo "[entrypoint] npm install failed; trying offline cache"
-        npm install --no-audit --no-fund --prefer-offline --offline
+    if [ ! -f node_modules/.package-lock.json ] || [ package.json -nt node_modules/.package-lock.json ]; then
+      echo "[entrypoint] package metadata newer than node_modules, running npm ci"
+      npm ci --no-audit --no-fund --prefer-offline || {
+        echo "[entrypoint] npm ci failed; trying offline cache"
+        npm ci --no-audit --no-fund --prefer-offline --offline
       }
       touch node_modules/.package-lock.json
     fi
   else
-    echo "[entrypoint] node_modules missing, running npm install"
-    npm install --no-audit --no-fund --prefer-offline
+    echo "[entrypoint] node_modules missing, running npm ci"
+    npm ci --no-audit --no-fund --prefer-offline
   fi
 fi
 

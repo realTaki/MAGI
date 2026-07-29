@@ -255,3 +255,4 @@ magi.db-*
 
 # Agents
 .codebuddy/
+deploy/.tools/

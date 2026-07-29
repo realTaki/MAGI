@@ -18,6 +18,25 @@ spec:
           env:
             - name: MAGI_ORCHESTRATOR_URL
               value: http://magi-orchestrator:42100
+          # `magi --check` opens the same SQLite state as the reloading
+          # development process. Probe the Vite dev server instead so probes
+          # do not contend with Alice's local state database.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
           volumeMounts:
             - name: workspace
               mountPath: /workspace
@@ -28,5 +47,4 @@ spec:
               mountPath: /app/magi/WebUI/node_modules
             - name: dev-entrypoint
               mountPath: /usr/local/bin/entrypoint.sh
-              subPath: entrypoint.dev.sh
               readOnly: true
