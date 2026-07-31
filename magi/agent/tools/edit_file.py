@@ -180,9 +180,14 @@ class EditFileTool(Tool):
             return ToolResult(
                 content=(
                     f"edit_file: ``old_str`` not found in "
-                    f"{path_arg!r}. The file may have been "
-                    f"edited since you last called read_file — "
-                    f"re-read it and try again."
+                    f"{path_arg!r}. The file's current content "
+                    f"differs from what your ``old_str`` "
+                    f"expects — either the file was edited "
+                    f"since your last ``read_file`` or your "
+                    f"``old_str`` has whitespace / indentation "
+                    f"that doesn't match. Call ``read_file`` "
+                    f"on {path_arg!r} first to refresh your view "
+                    f"of the file before retrying."
                 ),
                 is_error=True,
             )
@@ -192,7 +197,9 @@ class EditFileTool(Tool):
                     f"edit_file: ``old_str`` appears {occurrences} "
                     f"times in {path_arg!r}. The tool requires a "
                     f"unique match — include more surrounding "
-                    f"context to disambiguate."
+                    f"context (a few lines before + after) to "
+                    f"disambiguate, or call ``read_file`` first "
+                    f"to confirm the current content."
                 ),
                 is_error=True,
             )

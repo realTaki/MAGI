@@ -295,6 +295,12 @@ class _AgentContext:
     messages: list[ChatMessage]
     seen_message_ids: set[str]
     max_iter: int
+    # Per-turn ``edit_file`` retry tracker. Lives on the
+    # context (not on a global) so a new chat turn starts
+    # fresh — a long-running process serving many chats
+    # never accumulates cross-chat state. See
+    # :mod:`magi.agent.tools.edit_retry` for the policy.
+    edit_retry: EditRetryTracker
 
 
 @dataclass
@@ -394,6 +400,7 @@ def _build_context(
         messages=messages,
         seen_message_ids=seen_message_ids,
         max_iter=max_iter,
+        edit_retry=EditRetryTracker(),
     )
 
 
@@ -403,16 +410,19 @@ async def _run_tool_calls(
     tool_ctx: ToolContext,
     uid: int | None,
     session_id: str | None,
+    edit_retry: EditRetryTracker,
 ) -> list[dict]:
     """Execute one provider turn's tool calls and serialize their results."""
     tool_results: list[dict] = []
     for tool_use in result.tool_uses:
-        tool = get_tool(tool_use["name"])
+        tool_name = tool_use["name"]
+        tool_input = dict(tool_use.get("input") or {})
+        tool = get_tool(tool_name)
         if tool is None:
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tool_use["id"],
-                "content": f"unknown tool: {tool_use['name']!r}",
+                "content": f"unknown tool: {tool_name!r}",
                 "is_error": True,
             })
             continue
@@ -422,29 +432,39 @@ async def _run_tool_calls(
             # independent of Telegram or any other transport client.
             tool_result = await tool.run(
                 tool_ctx,
-                **dict(tool_use.get("input") or {}),
+                **tool_input,
             )
         except Exception as e:
             logger.exception(
                 "agent: tool %s crashed (contact=%s, session=%s)",
-                tool_use["name"], uid, session_id,
+                tool_name, uid, session_id,
             )
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_use["id"],
-                "content": f"tool {tool_use['name']!r} crashed: {e}"[:8000],
-                "is_error": True,
-            })
-            continue
+            content = f"tool {tool_name!r} crashed: {e}"[:8000]
+            is_error = True
+        else:
+            content = tool_result.content
+            if len(content) > 8000:
+                content = content[:8000] + "\n…[truncated at 8000 chars]"
+            is_error = tool_result.is_error
 
-        content = tool_result.content
-        if len(content) > 8000:
-            content = content[:8000] + "\n…[truncated at 8000 chars]"
+        # Per-tool ``edit_file`` retry nudge — appended to
+        # the tool_result the LLM reads next turn. The
+        # tracker returns ``None`` for non-edit tools and
+        # for the first failure on a given path, so the
+        # common path here is a no-op.
+        hint = edit_retry.record(
+            tool_name=tool_name,
+            input=tool_input,
+            is_error=is_error,
+        )
+        if hint:
+            content = f"{content}\n\n{hint}"
+
         tool_results.append({
             "type": "tool_result",
             "tool_use_id": tool_use["id"],
             "content": content,
-            "is_error": tool_result.is_error,
+            "is_error": is_error,
         })
     return tool_results
 
@@ -507,6 +527,7 @@ async def _run_tool_loop(
             tool_ctx=context.tool_ctx,
             uid=uid,
             session_id=session_id,
+            edit_retry=context.edit_retry,
         )
         context.messages.append(ChatMessage(
             role="user",

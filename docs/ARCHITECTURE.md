@@ -3,6 +3,8 @@
 > The design philosophy, component layout, and core mechanics of MAGI.
 > For the high-level vision, see the [README](../README.md).
 > For the build plan, see [ROADMAP.md](ROADMAP.md).
+> For the unimplemented production storage plan, see
+> [production-persistence.md](production-persistence.md).
 
 ---
 
