@@ -3,7 +3,7 @@
 > 状态：设计方案，尚未改动生产运行代码、Kubernetes 清单或数据模型。
 >
 > 本文定义 MAGI 从本地 kind 开发环境走向生产集群时的持久化边界。它不改变
-> 「每个 MAGIC Citizen 拥有独立运行时与工作区」这一产品模型；改变的是持久化
+> 「每个 MAGI Citizen 拥有独立运行时与工作区」这一产品模型；改变的是持久化
 > 的后端和运维方式。
 
 ## 结论
@@ -25,7 +25,7 @@ Secret Manager ─────────────────────�
 
 当前仓库已具备这条路径的第一部分：`deploy/k8s/base` 为 `/workspace`
 声明 PVC，EVE Orchestrator 也会创建独立的 workspace PVC。`hostPath` 仅应
-存在于 `overlays/dev-alice`，用于热加载和本机人工调试，绝不可进入生产 overlay。
+存在于 `overlays/dev-eva00`，用于热加载和本机人工调试，绝不可进入生产 overlay。
 
 ## 数据分层
 
@@ -50,7 +50,7 @@ skills 扫描都依赖正常的文件系统语义；对象存储应承载大对�
    reload。
 2. 为生产 overlay 显式指定受支持的 `StorageClass`（云盘、Ceph RBD 等 CSI
    后端），而不是依赖宿主机路径或开发集群默认行为。
-3. 一个 MAGIC Citizen 对应一个命名稳定的 PVC，例如
+3. 一个 MAGI Citizen 对应一个命名稳定的 PVC，例如
    `eve-<magic-id>-workspace`；PVC、Deployment、Secret 都标记
    `magis_id` 与 `magic_id`。
 4. 保持 `replicas: 1` 与 `Recreate` 策略。当前 SQLite 后端不能支持同一
@@ -121,11 +121,11 @@ Secret。生产环境应逐步将现有 HMAC 通道升级为服务身份、网�
 1. PostgreSQL 的定期全量备份与 PITR；
 2. 每个 workspace PVC 的快照策略；
 3. workspace 关键文件和附件到对象存储的版本化归档；
-4. 每个备份对应的 MAGI、MAGIS、镜像 digest、数据库迁移版本元数据；
+4. 每个备份对应的 MAGI、MAGIS、MAGIC、镜像 digest、数据库迁移版本元数据；
 5. 定期恢复演练：从备份恢复一个隔离的 EVE，并验证 SOUL、skills、会话和
    任务状态。
 
-恢复目标不是只让 Pod 变为 Running，而是让同一 MAGIC Citizen 恢复其身份、工作区、
+恢复目标不是只让 Pod 变为 Running，而是让同一 MAGI Citizen 恢复其身份、工作区、
 事务性历史及正确的凭据引用。
 
 ## 实施顺序

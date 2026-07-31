@@ -9,7 +9,7 @@ not a record of people. Person records
 
 The current ownership boundary is ``uid`` (the local
 runtime's assigned contact). It is not yet a shared
-MAGIS memory space or a per-MAGIC-Citizen memory model.
+MAGIS memory space or a per-MAGI-Citizen memory model.
 
 The LLM manages the table through four tools
 (:mod:`.tools`): add / update / complete / delete.

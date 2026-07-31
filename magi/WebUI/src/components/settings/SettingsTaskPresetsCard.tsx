@@ -16,9 +16,9 @@
  * docstring). New assigned contacts seeded AFTER the edit
  * pick up the new config; existing ones keep running under
  * their snapshotted fields. The editor surfaces a caveat
- * banner so the operator isn't surprised by Alice's
- * "每日晨报" still having the old prompt after they edit
- * the template.
+ * banner so the operator isn't surprised by the seeded
+ * MAGI's "每日晨报" still having the old prompt after they
+ * edit the template.
  */
 
 import { useEffect, useState } from "react";

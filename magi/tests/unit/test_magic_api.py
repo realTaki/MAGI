@@ -2,19 +2,26 @@
 from sqlalchemy import select
 
 
-def test_fresh_workspace_seeds_alice_as_genesis_adam(monkeypatch, tmp_path):
+def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
+    monkeypatch, tmp_path,
+):
+    """First boot seeds the canonical adam MAGIC on Genesis.
+
+    The exact seeded name is :data:`magi.agent.db.engine._DEFAULT_MAGI_NAME`
+    — pinned here so a rename is intentional rather than silent."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
     import magi.agent.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, init_orm, open_session
+    from magi.agent.db.engine import _DEFAULT_MAGI_NAME
     init_orm(str(tmp_path))
     with open_session() as db:
         genesis = db.scalar(select(MAGIS).where(MAGIS.name == "Genesis"))
-        alice = db.get(MAGIC, genesis.adam_id)
-        assert alice.name == "Alice"
+        adam_magic = db.get(MAGIC, genesis.adam_id)
+        assert adam_magic.name == _DEFAULT_MAGI_NAME
         roles = {r.name: r for r in db.scalars(select(MAGISRole).where(MAGISRole.magis_id == genesis.id))}
         assert set(roles) == {"Adam", "EVE"}
-        membership = db.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == alice.id))
+        membership = db.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == adam_magic.id))
         assert membership.role_id == roles["Adam"].id
 
 

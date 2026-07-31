@@ -418,7 +418,7 @@ export default {
     knowledgeTools: "工具列表",
     knowledgeMcp: "MCP 列表",
     knowledgeNavAria: "知识分组导航",
-    // MAGIS and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "管理员",
@@ -427,10 +427,10 @@ export default {
     magicExpandChildren: "展开子智群",
     magicCollapseChildren: "收起子智群",
   },
-  // -- MAGIS and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS 树 — 每个 MAGIS 可以有子 MAGIS，并绑定一个 ADAM MAGIC Citizen 作为控制面。",
+    paneDesc: "MAGIS 树 — 每个 MAGIS 可以有子 MAGIS，并绑定一个 ADAM MAGI Citizen 作为控制面。",
     createHeading: "新建智群",
     editHeading: "编辑智群",
     columnName: "名称",
@@ -448,15 +448,15 @@ export default {
     createParentRequired: "请选择上级智群。",
     editNameLabel: "智群名称",
     editParentLabel: "上级智群",
-    editAdamLabel: "ADAM MAGIC Citizen",
+    editAdamLabel: "ADAM MAGI Citizen",
     editAdamNone: "— 未指定 —",
-    deleteConfirm: "确定要删除这个 Society 吗？其下的 MAGIC Citizens 也会被删除。",
+    deleteConfirm: "确定要删除这个 Society 吗？其下的 MAGI Citizens 也会被删除。",
     parentCycleError: "不能将自己设为上级智群。",
     nameDuplicateError: "智群名称已存在。",
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens 是运行在 MAGIS 里的 AI 智能体。ADAM 负责协调调度，EVE 负责执行。每个 Citizen 绑定到一个 MAGIS。",
+    paneDesc: "MAGI Citizens 是运行在 MAGIS 里的 AI 智能体。ADAM 负责协调调度，EVE 负责执行。每个 MAGI Citizen 绑定到一个 MAGIS。",
     magisHeading: "MAGI Citizens",
     createHeading: "新建智能体",
     columnName: "名称",

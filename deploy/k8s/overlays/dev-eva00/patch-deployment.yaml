@@ -20,7 +20,7 @@ spec:
               value: http://magi-orchestrator:42100
           # `magi --check` opens the same SQLite state as the reloading
           # development process. Probe the Vite dev server instead so probes
-          # do not contend with Alice's local state database.
+          # do not contend with the dev instance's local state database.
           startupProbe:
             httpGet:
               path: /

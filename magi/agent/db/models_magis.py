@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 class MAGIS(Base):
-    """A MAGI Society (a group of MAGIs).
+    """A MAGI Society (a group of MAGI Citizens).
 
     ``adam_id`` references :class:`MAGIC` (the manager
     MAGIC for this Society) and is nullable — a ``MAGIS``

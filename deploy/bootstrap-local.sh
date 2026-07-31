@@ -2,7 +2,7 @@
 # One-command local development cluster bootstrap. Docker is the only host
 # prerequisite; kind and kubectl are pinned inside deploy/.tools rather than
 # system-installed. The kind node receives the checkout at /mnt/magi so the
-# dev-alice overlay can hot-reload backend and WebUI source.
+# dev-eva00 overlay can hot-reload backend and WebUI source.
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -30,8 +30,8 @@ docker build -f "$ROOT_DIR/deploy/Dockerfile.dev" -t magi:dev "$ROOT_DIR"
 "$KIND" load docker-image magi:dev --name magi
 MAGI_IMAGE=magi:dev \
   EVE_IMAGE=magi:0.1.0 \
-  ADAM_OVERLAY="$ROOT_DIR/deploy/k8s/overlays/dev-alice" \
-  ADAM_DEPLOYMENT=alice-magi-node \
-  ADAM_SERVICE=alice-magi \
+  ADAM_OVERLAY="$ROOT_DIR/deploy/k8s/overlays/dev-eva00" \
+  ADAM_DEPLOYMENT=eva00-magi-node \
+  ADAM_SERVICE=eva00-magi \
   KUBECONFIG="$KUBECONFIG_PATH" \
   "$ROOT_DIR/deploy/bootstrap-k8s.sh"

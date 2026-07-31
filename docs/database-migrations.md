@@ -80,7 +80,7 @@ HEAD = `0002_magis_membership_instructions`。
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 若数据库**有** `alembic_version` 但指向一个 Alembic 已不认识的 revision（典型：以前升级到了 `0007_swap_magic_magis_tables`，本次 rebase 后该文件已删除），`upgrade_head` 入口的 `_rebase_to_canonical_head` 会先 `DELETE FROM alembic_version` 再 stamp 到 `0001_baseline`。DB schema 不动（folded migration 的效果已在 baseline 里），只刷新 bookkeeping 行；
 4. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-5. `_seed_default_root` 确保有且仅有一个根 MAGI Society（Genesis），创建首个 MAGI（Alice），并将她以 Adam 角色加入 Genesis。
+5. `_seed_default_root` 确保有且仅有一个根 MAGI Society（Genesis），创建首个 MAGIC（默认名 `EVA-00 PROTO TYPE`），并以 Adam 角色加入 Genesis。
 
 因此容器启动、滚动更新或新 Pod 创建时，数据库会先完成迁移，再启动 WebUI、Telegram
 和 scheduler。应用代码启动即自动升级，**不需要在容器里手动调用 Alembic**。

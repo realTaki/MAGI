@@ -32,7 +32,7 @@ organization itself as the primary unit.
 | Collaboration ends with a task | Context, memory, skills, and relationships persist |
 | One process commonly hosts many agents | Every MAGI Citizen has an independent containerized runtime and workspace |
 | A manager delegates predefined work | Adam coordinates a Society; EVEs are independently managed, started, and stopped |
-| Scale means adding concurrent calls | Scale means adding capable Citizens and connected Societies |
+| Scale means adding concurrent calls | Scale means adding capable MAGI Citizens and connected Societies |
 
 MAGI does not replace workflow engines. It provides the substrate on which a
 long-lived agent organization can operate, learn, and evolve.
@@ -42,7 +42,7 @@ long-lived agent organization can operate, learn, and evolve.
 The end state is not a static hierarchy that repeatedly delegates prompts. A
 MAGIS should become better because it has existed:
 
-- Citizens learn from the outcomes, failures, and observations of their work.
+- MAGI Citizens learn from the outcomes, failures, and observations of their work.
 - Useful procedures become reusable Skills rather than disappearing into an
   individual conversation.
 - Adam can recognize capability gaps, organize specialized EVEs, and reshape
@@ -52,9 +52,9 @@ MAGIS should become better because it has existed:
 - Operators remain able to inspect the organization, its memory, its tools,
   and the authority used to change it.
 
-> **Implementation status:** durable memory, Skills, Society/Citizen modeling,
+> **Implementation status:** durable memory, Skills, Society/MAGI Citizen modeling,
 > and isolated EVE lifecycle management are the foundation available today.
-> Autonomous cross-Citizen learning, capability assessment, self-directed
+> Autonomous cross-MAGI Citizen learning, capability assessment, self-directed
 > organizational restructuring, and inter-Society knowledge exchange are
 > active design goals; they are **not implemented yet**.
 
@@ -67,8 +67,8 @@ The names are deliberate:
 | **MAGI** | The general kind of autonomous agent in this system. |
 | **MAGIS** | A **MAGI Society**: an organization of MAGI Citizens. Societies form a tree. |
 | **MAGIC** | A **MAGI Citizen**: one individual agent that belongs to exactly one Society. |
-| **Adam** | The leading MAGIC Citizen of a Society. Adam provides its control plane and coordinates its Citizens. |
-| **EVE** | A working MAGIC Citizen. A Society can create, configure, start, stop, and retire multiple EVEs. |
+| **Adam** | The leading MAGI Citizen of a Society. Adam provides its control plane and coordinates its MAGI Citizens. |
+| **EVE** | A working MAGI Citizen. A Society can create, configure, start, stop, and retire multiple EVEs. |
 
 ```text
 Operator
@@ -76,12 +76,12 @@ Operator
    ▼
 MAGIS: Engineering
    │
-   ├── Adam / MAGIC Citizen              control plane and coordinator
+   ├── Adam / MAGI Citizen              control plane and coordinator
    │      └── durable Society memory, policy, and relationships
    │
-   ├── EVE / MAGIC Citizen               independent runtime + workspace
-   ├── EVE / MAGIC Citizen               independent runtime + workspace
-   └── child MAGIS: Research             its own Adam and Citizens
+   ├── EVE / MAGI Citizen               independent runtime + workspace
+   ├── EVE / MAGI Citizen               independent runtime + workspace
+   └── child MAGIS: Research             its own Adam and MAGI Citizens
 ```
 
 An Adam is not granted the host Docker socket or broad Kubernetes credentials.
@@ -94,14 +94,14 @@ provider Secret required for that EVE.
 - **Independent runtimes** — Adam and every EVE run as separate Kubernetes
   Deployments with their own persistent workspace.
 - **Society administration** — the WebUI manages MAGIS trees and
-  MAGIC Citizens, including Adam assignment and EVE provider configuration.
+  MAGI Citizens, including Adam assignment and EVE provider configuration.
 - **EVE lifecycle control** — an Adam can request EVE start, stop, and delete
   operations through the in-cluster orchestrator.
 - **Persistent operational memory** — conversation history, contact knowledge,
   task state, and searchable stored memory survive across sessions.
 - **Channels and tools** — WebUI is available now; Telegram, MCP servers,
-  Skills, scheduled tasks, and built-in tools extend what a Citizen can do.
-- **Provider independence** — Citizens hold their own provider configuration
+  Skills, scheduled tasks, and built-in tools extend what a MAGI Citizen can do.
+- **Provider independence** — MAGI Citizens hold their own provider configuration
   and API credentials rather than sharing one global model account.
 
 ## Quick start: a local dev cluster
@@ -119,14 +119,14 @@ cd MAGI
 
 Open [http://127.0.0.1:42069](http://127.0.0.1:42069) and complete onboarding.
 During system initialization, MAGI automatically creates the root MAGI Society,
-**Genesis**. It then creates **EVA-00 PROTO TYPE**, the first MAGIC Citizen,
+**Genesis**. It then creates **EVA-00 PROTO TYPE**, the first MAGI Citizen,
 as Genesis's Adam.
 
 The local development deployment mounts:
 
 ```text
 host repository      → /app/magi        source hot reload
-workspace/alice      → /workspace       dev instance's durable workspace
+workspace/eva00      → /workspace       dev instance's durable workspace
 ```
 
 For an existing cluster or a production-style deployment, use:
@@ -142,13 +142,13 @@ storage, networking, Secrets, and environment-specific configuration.
 ## From the first MAGIS to a growing organization
 
 1. **Initialize Genesis.** MAGI creates the root MAGI Society, Genesis, then
-   creates **EVA-00 PROTO TYPE**—the first MAGIC Citizen—as Genesis's Adam.
+   creates **EVA-00 PROTO TYPE**—the first MAGI Citizen—as Genesis's Adam.
 2. **Onboard an operator.** Configure administrator access and the channels
    your Society should use.
 3. **Shape the organization.** In WebUI, create child MAGIS entries and
-   assign their Adam MAGIC Citizens.
+   assign their Adam MAGI Citizens.
 4. **Add capability.** Configure an EVE's provider and credentials, then ask
-   its Adam to start or stop that Citizen through the orchestrator.
+   its Adam to start or stop that MAGI Citizen through the orchestrator.
 5. **Accumulate intelligence.** Conversations, task outcomes, contacts,
    memory, and reusable Skills remain part of the Society instead of being
    discarded when a single request ends.
@@ -162,7 +162,7 @@ storage, networking, Secrets, and environment-specific configuration.
                         └──────────────┬──────────────┘
                                        │
                         ┌──────────────▼──────────────┐
-                        │          Adam / MAGIC       │
+                        │          Adam / MAGI Citizen       │
                         │   Society control plane      │
                         └──────────────┬──────────────┘
                                        │ authenticated lifecycle request
@@ -172,13 +172,13 @@ storage, networking, Secrets, and environment-specific configuration.
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVE / MAGIC  │  │ EVE / MAGIC     │
+                     │ EVE / MAGI Citizen  │  │ EVE / MAGI Citizen     │
                      │ Deployment   │  │ Deployment      │
                      │ PVC + Secret │  │ PVC + Secret    │
                      └──────────────┘  └─────────────────┘
 ```
 
-Kubernetes is the current deployment target. It gives each Citizen a concrete
+Kubernetes is the current deployment target. It gives each MAGI Citizen a concrete
 execution boundary and lets the orchestrator manage isolated runtime resources
 without making Adam a cluster administrator. SQLite is used in the current
 single-replica setup; a shared database is the path to broader fleet-scale

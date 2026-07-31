@@ -14,8 +14,8 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 - EVE 使用 Telegram 时不创建 HTTP Service；
 - SQLite 默认单副本运行，避免多个 Pod 同时写同一个数据库。
 
-本地开发另有 ``overlays/dev-alice``：它仅由 ``../bootstrap-k8s.sh``
-配合 kind extraMounts 使用，把宿主机 ``workspace/alice`` 映射为
+本地开发另有 ``overlays/dev-eva00``：它仅由 ``../bootstrap-k8s.sh``
+配合 kind extraMounts 使用，把宿主机 ``workspace/eva00`` 映射为
 `/workspace`，并把源码映射为 `/app/magi`，以启用 Uvicorn reload
 与 Vite HMR。不要将此 overlay 应用于远程/生产集群。
 
@@ -194,18 +194,18 @@ save-bot 写入 bot token 后自动启用），无需在启动时预设 `MAGI_CH
 
 ```bash
 cp -R deploy/k8s/overlays/eve-example \
-      deploy/k8s/overlays/eve-alice
+      deploy/k8s/overlays/eve-eva00
 ```
 
 然后修改：
 
-1. `eve-alice/kustomization.yaml`：
+1. `eve-eva00/kustomization.yaml`：
 
    ```yaml
-   namePrefix: eve-alice-
+   namePrefix: eve-eva00-
    ```
 
-2. `eve-alice/patch-config.yaml`：
+2. `eve-eva00/patch-config.yaml`：
 
    ```yaml
    data:
@@ -213,36 +213,36 @@ cp -R deploy/k8s/overlays/eve-example \
      MAGI_ADAM_URL: http://adam-magi:42069
    ```
 
-3. 创建 EVE 的 Telegram Secret。因为 overlay 使用了 `eve-alice-` 前缀，
+3. 创建 EVE 的 Telegram Secret。因为 overlay 使用了 `eve-eva00-` 前缀，
    Secret 名称也要带前缀：
 
    ```bash
-   kubectl -n magi create secret generic eve-alice-magi-secrets \
-     --from-literal=MAGI_BOT_TOKEN='alice-eves-bot-token' \
+   kubectl -n magi create secret generic eve-eva00-magi-secrets \
+     --from-literal=MAGI_BOT_TOKEN='eva00-eves-bot-token' \
      --from-literal=MAGI_SHARED_SECRET='same-adam-shared-secret'
    ```
 
 4. 预览并部署：
 
    ```bash
-   kubectl kustomize deploy/k8s/overlays/eve-alice
-   kubectl apply -k deploy/k8s/overlays/eve-alice
+   kubectl kustomize deploy/k8s/overlays/eve-eva00
+   kubectl apply -k deploy/k8s/overlays/eve-eva00
    ```
 
 每个 EVE 都会得到自己的资源，例如：
 
 ```text
-Deployment: eve-alice-magi-node
-PVC:       eve-alice-magi-workspace
-ConfigMap:  eve-alice-magi-config
-Secret:     eve-alice-magi-secrets
+Deployment: eve-eva00-magi-node
+PVC:       eve-eva00-magi-workspace
+ConfigMap:  eve-eva00-magi-config
+Secret:     eve-eva00-magi-secrets
 ```
 
 宿主机目录映射的等价概念是：
 
 ```text
 Adam       → adam-magi-workspace PVC → /workspace
-EVE Alice  → eve-alice-magi-workspace PVC → /workspace
+EVE Eva00  → eve-eva00-magi-workspace PVC → /workspace
 EVE Bob    → eve-bob-magi-workspace PVC → /workspace
 ```
 

@@ -12,7 +12,7 @@ What lives here:
 
 This is **self mid-term memory** for the current runtime
 context. Its ownership boundary is ``uid``; it is not yet
-a shared MAGIS memory space or a per-MAGIC-Citizen memory
+a shared MAGIS memory space or a per-MAGI-Citizen memory
 model. Person records
 ("Lily is in finance, telegram_id=9001") are **not** here;
 they live in :mod:`magi.agent.memory.contacts` because

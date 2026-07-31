@@ -384,7 +384,7 @@ export default {
     knowledgeTools: "Tools",
     knowledgeMcp: "MCP",
     knowledgeNavAria: "Knowledge sections",
-    // MAGIS and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "Admins",
@@ -393,10 +393,10 @@ export default {
     magicExpandChildren: "expand children",
     magicCollapseChildren: "collapse children",
   },
-  // -- MAGIS and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS tree — each MAGIS can have child MAGIS entries and is bound to an ADAM MAGIC Citizen as its control plane.",
+    paneDesc: "MAGIS tree — each MAGIS can have child MAGIS entries and is bound to an ADAM MAGI Citizen as its control plane.",
     createHeading: "New Society",
     editHeading: "Edit Society",
     columnName: "Name",
@@ -414,17 +414,17 @@ export default {
     createParentRequired: "Please select a parent Society.",
     editNameLabel: "Society Name",
     editParentLabel: "Parent Society",
-    editAdamLabel: "ADAM MAGIC Citizen",
+    editAdamLabel: "ADAM MAGI Citizen",
     editAdamNone: "— Not assigned —",
-    deleteConfirm: "Delete this Society? Its MAGIC Citizens will also be deleted.",
+    deleteConfirm: "Delete this Society? Its MAGI Citizens will also be deleted.",
     parentCycleError: "Cannot set self as parent.",
     nameDuplicateError: "Society name already exists.",
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens are AI agents running within a MAGIS. ADAM coordinates and schedules; EVE executes. Each Citizen is bound to one MAGIS.",
+    paneDesc: "MAGI Citizens are AI agents running within a MAGIS. ADAM coordinates and schedules; EVE executes. Each MAGI Citizen is bound to one MAGIS.",
     magisHeading: "MAGI Citizens",
-    createHeading: "New MAGIC Citizen",
+    createHeading: "New MAGI Citizen",
     columnName: "Name",
     columnId: "ID",
     columnTeam: "Society",
@@ -442,7 +442,7 @@ export default {
     createPositionLabel: "Position",
     createProviderLabel: "Provider",
     createApiKeyLabel: "API Key",
-    deleteConfirm: "Delete this MAGIC Citizen?",
+    deleteConfirm: "Delete this MAGI Citizen?",
     keyNotSet: "(not set)",
     keyNewPlaceholder: "leave blank to keep",
     startEve: "Start",

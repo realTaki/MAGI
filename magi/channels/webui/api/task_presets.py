@@ -249,8 +249,8 @@ def update_task_preset(
     Existing per-user ``Task`` rows are NOT updated (snapshot
     semantics). The edit takes effect for *future* seeds.
     The UI surfaces a caveat so the operator isn't surprised
-    that Alice's existing 每日晨报 task still has the old
-    prompt after they edit the template.
+    that the seeded MAGI's existing 每日晨报 task still has
+    the old prompt after they edit the template.
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 

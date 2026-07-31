@@ -8,8 +8,9 @@ nodes:
     extraMounts:
       - hostPath: __MAGI_REPO_ROOT__
         containerPath: /mnt/magi
-    # Alice is exposed by the local-only NodePort 30069. Map it to the
-    # familiar host WebUI port so a browser can use localhost:42069 directly.
+    # The dev instance is exposed by the local-only NodePort 30069. Map it
+    # to the familiar host WebUI port so a browser can use localhost:42069
+    # directly.
     extraPortMappings:
       - containerPort: 30069
         hostPort: 42069

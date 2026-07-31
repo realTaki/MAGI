@@ -1,5 +1,5 @@
 /**
- * AgenticSocietyTab — MAGIS and MAGIC Citizen panes.
+ * AgenticSocietyTab — MAGIS and MAGIC panes.
  *
  * Adam-only — EVE doesn't see this tab.
  *

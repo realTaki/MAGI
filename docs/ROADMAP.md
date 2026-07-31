@@ -149,7 +149,7 @@ discipline C0 deliberately punted on).
 |---|---|---|
 | `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/webui/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
 | Contact lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_contact.py` docstring |
-| `/api/magis` + `/api/magic` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magis.py` manages the MAGIS tree; `magic.py` manages MAGIC Citizens; replaces the old `api/departments`. |
+| `/api/magis` + `/api/magic` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magis.py` manages the MAGIS tree; `magic.py` manages MAGICs; replaces the old `api/departments`. |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
@@ -372,7 +372,7 @@ class MAGIS(Base):
     """一群 MAGI 组成的 Agentic Society。
 
     一个 MAGIS 不是单个容器 — 它是组织树里的容器节点,持有一个
-    Adam container + N Eve containers (每个 MAGIC agent 跑在
+    Adam container + N Eve containers (每个 MAGI Citizen 跑在
     自己的 Pod 里)。MAGISes 通过 parent_id self-FK 形成树结构。
     """
     __tablename__ = "magics"
@@ -483,7 +483,7 @@ class MagiImBinding(Base):
 - `agents` table — never shipped; not needed. Runtime processes bind
   to `magis` rows; process state is runtime-local, not DB.
 - `agent_assignments` table — never shipped; not needed.
-- `departments` table — gone. The org structure is now "one MAGIC
+- `departments` table — gone. The org structure is now "one MAGI Citizen
   + 1 ADAM + N EVE", with no sub-org tree.
 - `agents.department_id` column — gone.
 - `users.department_id` column — gone.
@@ -553,11 +553,11 @@ class MagiImBinding(Base):
 | `agents` / `agent_assignments` (proposed in earlier F1 drafts) | dropped (never shipped) |
 | `Employee.provider` / `Employee.api_key` | move to `Magi` |
 | `loop.py` LLM provider resolution | reads `Magi.provider` / `Magi.api_key` via the bound Magi row |
-| WebUI sidebar / tree view | a tree of **MAGICs** → expand a MAGIC → list its members (`magis`) with positions; expand a Magi → list its `users` (with `role`) |
+| WebUI sidebar / tree view | a tree of **MAGI Citizens** → expand a MAGIC → list its members (`magis`) with positions; expand a MAGI → list its `users` (with `role`) |
 | `/api/departments/*` | drop entirely |
 | `/api/employees/*` | drop entirely (no alias; it never shipped clean) |
 | `/api/magis/*` | MAGIS list / create / update / delete |
-| `/api/magic/*` | MAGIC Citizen list / create / update / delete; `magic_position` is required |
+| `/api/magic/*` | MAGIC list / create / update / delete; `magic_position` is required |
 | `/api/users/*` | new; list / create / update / archive User rows; `role` is a required field; `magi_id` is required iff `role IN {'admin','assigned'}` |
 | `/api/eves/*` | now a view onto `magis` filtered by `position='eve'` |
 | `dispatcher.lookup_im_id` | reads `magi_im_bindings.magi_id`; the lookup's "owner of this IM id" is a Magi, not a User |

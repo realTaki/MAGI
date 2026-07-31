@@ -217,7 +217,7 @@ def _lifecycle(action: str, magic_id: int, session: Session) -> EveRuntimeOut:
     membership_count = session.scalar(select(__import__("sqlalchemy").func.count()).select_from(MAGISMembership).where(MAGISMembership.magic_id == magic.id)) or 0
     if action == "start":
         if not membership_count:
-            raise MagiHTTPException(400, "validation.magic_membership_required", "assign this MAGI to a MAGIS before starting it")
+            raise MagiHTTPException(400, "validation.magic_membership_required", "assign this MAGIC to a MAGIS before starting it")
         if not magic.provider or not magic.api_key:
             raise MagiHTTPException(400, "validation.eve_provider_credentials_required", "configure provider and API key before starting this MAGI")
     from magi.orchestrator.client import OrchestratorUnavailable, request_lifecycle

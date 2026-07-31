@@ -381,7 +381,7 @@ export default {
     knowledgeTools: "ツール一覧",
     knowledgeMcp: "MCP",
     knowledgeNavAria: "ナレッジグループ",
-    // MAGIS and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "管理者",
@@ -390,10 +390,10 @@ export default {
     magicExpandChildren: "子知群を展開",
     magicCollapseChildren: "子知群を折り畳む",
   },
-  // -- MAGIS and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS ツリー。各 MAGIS は子 MAGIS を持ち、ADAM MAGIC Citizen に制御面としてバインドされます。",
+    paneDesc: "MAGIS ツリー。各 MAGIS は子 MAGIS を持ち、ADAM MAGI Citizen に制御面としてバインドされます。",
     createHeading: "新しい知群",
     editHeading: "知群編集",
     columnName: "名前",
@@ -411,17 +411,17 @@ export default {
     createParentRequired: "親知群を選択してください。",
     editNameLabel: "知群名",
     editParentLabel: "親知群",
-    editAdamLabel: "ADAM MAGIC Citizen",
+    editAdamLabel: "ADAM MAGI Citizen",
     editAdamNone: "— 未指定 —",
-    deleteConfirm: "この Society を削除しますか？所属する MAGIC Citizens も削除されます。",
+    deleteConfirm: "この Society を削除しますか？所属する MAGI Citizens も削除されます。",
     parentCycleError: "自分自身を親に設定できません。",
     nameDuplicateError: "知群名は既に存在します。",
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens は MAGIS 内で動作する AI エージェントです。ADAM が調整とスケジュールを担当し、EVE が実行します。",
+    paneDesc: "MAGI Citizens は MAGIS 内で動作する AI エージェントです。ADAM が調整とスケジュールを担当し、EVE が実行します。",
     magisHeading: "MAGI Citizens",
-    createHeading: "新しい MAGIC Citizen",
+    createHeading: "新しい MAGI Citizen",
     columnName: "名前",
     columnId: "ID",
     columnTeam: "所属知群",
@@ -430,7 +430,7 @@ export default {
     columnApiKey: "API Key",
     columnRuntime: "実行状態",
     columnActions: "操作",
-    empty: "まだ Magis がありません。作成して始めましょう。",
+    empty: "まだ MAGI Citizens がありません。作成して始めましょう。",
     positionAdam: "ADAM",
     positionEve: "EVE",
     createTeamLabel: "所属知群",

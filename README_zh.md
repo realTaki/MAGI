@@ -9,7 +9,7 @@
 > **MAGI 是面向持久化、模块化智能体社会的运行时。**
 >
 > MAGIS（一个 MAGI Society）不是一次性的群聊或任务流水线，而是由独立 MAGI Citizens
-> 组成的组织。每个 Citizen 都有自己的运行时、工作区、记忆、工具、模型提供方凭证，
+> 组成的组织。每个 MAGI Citizen 都有自己的运行时、工作区、记忆、工具、模型提供方凭证，
 > 以及在 Society 中的角色。它们由 Adam 协调、由 EVE 执行工作，保留经验，逐步成长为
 > 持久的群体智能。
 
@@ -26,9 +26,9 @@ MAGI 要回答的不只是「怎样把一个任务分配给多个 Agent」，而
 | --- | --- |
 | Agent 是工作流中的步骤 | MAGI Citizen 是组织中持久存在的成员 |
 | 协作随任务结束 | 上下文、记忆、技能和关系会保留 |
-| 多个 Agent 往往共用一个进程 | 每个 Citizen 都有独立的容器化运行时和工作区 |
+| 多个 Agent 往往共用一个进程 | 每个 MAGI Citizen 都有独立的容器化运行时和工作区 |
 | 管理者派发预定义任务 | Adam 协调 Society，EVE 可被独立配置、启动与停止 |
-| 扩展是增加并发调用 | 扩展是增加 Citizen 和相互连接的 Society |
+| 扩展是增加并发调用 | 扩展是增加 MAGI Citizen 和相互连接的 Society |
 
 MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以运行、学习与演化的基础。
 
@@ -37,14 +37,14 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
 最终目标不是一个反复委派 prompt 的静态层级，而是让一个 MAGIS 因为真实存在过
 而变得更好：
 
-- Citizens 从工作结果、失败和观察中学习；
+- MAGI Citizens 从工作结果、失败和观察中学习；
 - 有用的流程沉淀为可复用 Skills，而不是消失在一次对话中；
 - Adam 识别能力缺口，组织专业 EVE，并随着工作变化调整 Society；
 - Society 可以共享知识、互相协作，而不把成员简化为无状态 API 调用；
 - 操作者始终能够检查组织、记忆、工具，以及改变组织时使用的权限。
 
-> **实现状态：**持久记忆、Skills、Society/Citizen 模型和隔离的 EVE 生命周期管理
-> 已经构成当前基础。跨 Citizen 的自主学习、能力评估、自主组织重构，以及 Society 间
+> **实现状态：**持久记忆、Skills、Society/MAGI Citizen 模型和隔离的 EVE 生命周期管理
+> 已经构成当前基础。跨 MAGI Citizen 的自主学习、能力评估、自主组织重构，以及 Society 间
 > 知识交换都是正在设计的目标，**目前尚未实现**。
 
 ## MAGI 模型
@@ -56,8 +56,8 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
 | **MAGI** | 系统中自主 Agent 的总称。 |
 | **MAGIS** | **MAGI Society**：由 MAGI Citizens 组成的组织；Society 可以形成树。 |
 | **MAGIC** | **MAGI Citizen**：属于一个 Society 的单个 Agent。 |
-| **Adam** | Society 的领导 MAGIC Citizen，提供控制面并协调其他 Citizens。 |
-| **EVE** | 执行工作的 MAGIC Citizen；一个 Society 可以创建、配置、启动、停止和退役多个 EVE。 |
+| **Adam** | Society 的领导 MAGI Citizen，提供控制面并协调其他 MAGI Citizens。 |
+| **EVE** | 执行工作的 MAGI Citizen；一个 Society 可以创建、配置、启动、停止和退役多个 EVE。 |
 
 ```text
 操作者
@@ -65,12 +65,12 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
    ▼
 MAGIS：Engineering
    │
-   ├── Adam / MAGIC Citizen             控制面与协调者
+   ├── Adam / MAGI Citizen             控制面与协调者
    │      └── Society 的持久记忆、策略与关系
    │
-   ├── EVE / MAGIC Citizen              独立运行时 + 工作区
-   ├── EVE / MAGIC Citizen              独立运行时 + 工作区
-   └── 子 MAGIS：Research                自己的 Adam 与 Citizens
+   ├── EVE / MAGI Citizen              独立运行时 + 工作区
+   ├── EVE / MAGI Citizen              独立运行时 + 工作区
+   └── 子 MAGIS：Research                自己的 Adam 与 MAGI Citizens
 ```
 
 Adam 不会获得宿主机 Docker socket 或宽泛的 Kubernetes 权限。它通过受限、认证的
@@ -80,11 +80,11 @@ PVC 和 provider Secret。
 ## 当前已具备的能力
 
 - **独立运行时**：Adam 与每个 EVE 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
-- **组织管理**：WebUI 管理 MAGIS 树与 MAGIC Citizens，包括 Adam 指派和 EVE provider 配置。
+- **组织管理**：WebUI 管理 MAGIS 树与 MAGI Citizens，包括 Adam 指派和 EVE provider 配置。
 - **EVE 生命周期控制**：Adam 可经由集群内 orchestrator 请求启动、停止与删除 EVE。
 - **持久化运行记忆**：会话历史、联系人知识、任务状态和可搜索记忆跨会话保留。
-- **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 Citizen 的能力。
-- **Provider 独立性**：Citizen 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
+- **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI Citizen 的能力。
+- **Provider 独立性**：MAGI Citizen 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
 
 ## 快速开始：本地开发集群
 
@@ -99,14 +99,14 @@ cd MAGI
 ```
 
 打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，完成 onboarding。系统初始化时，
-会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGIC Citizen（**EVA-00 PROTO TYPE**），
+会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI Citizen（**EVA-00 PROTO TYPE**），
 并让它担任 Genesis 的 Adam。
 
 本地开发部署会挂载：
 
 ```text
 宿主仓库             → /app/magi        源码热加载
-workspace/alice      → /workspace       开发实例的持久化工作区
+workspace/eva00      → /workspace       开发实例的持久化工作区
 ```
 
 已有 Kubernetes 集群或生产式部署可使用：
@@ -120,10 +120,10 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 
 ## 从第一个 MAGIS 到组织成长
 
-1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGIC Citizen
+1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGI Citizen
    （**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 Adam。
 2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
-3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 Adam MAGIC Citizens。
+3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 Adam MAGI Citizens。
 4. **增加能力**：配置 EVE 的 provider 与凭证，然后让 Adam 通过 orchestrator 启动或停止它。
 5. **积累智能**：对话、任务结果、联系人、记忆和可复用 Skills 留在 Society 中，而非随一次请求丢弃。
 
@@ -136,7 +136,7 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
                         └──────────────┬──────────────┘
                                        │
                         ┌──────────────▼──────────────┐
-                        │         Adam / MAGIC         │
+                        │         Adam / MAGI Citizen         │
                         │       Society 控制面          │
                         └──────────────┬──────────────┘
                                        │ 经认证的生命周期请求
@@ -146,13 +146,13 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVE / MAGIC  │  │ EVE / MAGIC     │
+                     │ EVE / MAGI Citizen  │  │ EVE / MAGI Citizen     │
                      │ Deployment   │  │ Deployment      │
                      │ PVC + Secret │  │ PVC + Secret    │
                      └──────────────┘  └─────────────────┘
 ```
 
-Kubernetes 是当前部署目标：它为每个 Citizen 提供明确的运行边界，也让 orchestrator
+Kubernetes 是当前部署目标：它为每个 MAGI Citizen 提供明确的运行边界，也让 orchestrator
 能管理隔离资源，而不必让 Adam 成为集群管理员。当前单副本部署使用 SQLite；共享数据库
 是后续面向更大规模集群的路径。
 

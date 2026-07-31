@@ -189,7 +189,7 @@ _DEFAULT_ROOT_MAGIS_NAME = "Genesis"
 # deployer who renamed the seeded row keeps their rename —
 # same "rename survives re-seed" semantics as the root
 # MAGIS above.
-_DEFAULT_MAGI_NAME = "Alice"
+_DEFAULT_MAGI_NAME = "EVA-00 PROTO TYPE"
 
 
 def _seed_default_root(engine: Engine) -> None:
@@ -202,8 +202,9 @@ def _seed_default_root(engine: Engine) -> None:
     the next boot seeds a fresh Genesis only when no root row remains —
     so a renamed root stays renamed and we never accumulate duplicate
     roots. The root receives reserved Adam/EVE roles. On a fresh workspace,
-    Alice is created independently, assigned Adam in Genesis, and recorded
-    as Genesis's Adam.
+    the seed MAGIC (default name ``EVA-00 PROTO TYPE``) is created
+    independently, assigned the Adam role on Genesis via
+    :class:`MAGISMembership`, and recorded as Genesis's Adam.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
@@ -310,7 +311,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
-    import magi.agent.db.models_magic  # noqa: F401 — MAGIC Citizen rows
+    import magi.agent.db.models_magic  # noqa: F401 — MAGI Citizen rows
     import magi.agent.db.models_magis  # noqa: F401 — MAGIS tree
     import magi.agent.db.models_magis_membership  # noqa: F401 — roles + memberships
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
