@@ -260,7 +260,7 @@ def test_system_prompt_omits_daily_block_when_disabled(store_env):
 
 def test_system_prompt_folds_capture_rules_only_when_opted_in(store_env):
     """``system.show_daily_note_prompt=true`` folds the
-    ``prompts/daily_note.md`` capture rules into the block
+    ``prompts/context/daily_note.md`` capture rules into the block
     header; default OFF."""
     s = _store(store_env)
     s.upsert_daily_note(contact_id=1, body_delta="today's note")

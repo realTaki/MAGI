@@ -56,7 +56,7 @@ magi/
 │   ├── db/         # SQLAlchemy ORM + settings KV store
 │   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 │   ├── proactive/  # Scheduled task engine
-│   └── prompts/    # Markdown + YAML prompt templates (soul.md, memory_block.md, …; bot_replies.yaml)
+│   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
 ├── channels/       # How agents connect to the outside world
 │   ├── dispatcher.py   # D.28 — domain code talks to this, never to adapters
 │   ├── telegram/       # TG bot adapter

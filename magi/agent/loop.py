@@ -83,6 +83,7 @@ from magi.agent.token_usage import record_token_usage
 # live in :mod:`magi.agent.system_prompt` — not imported
 # here so this module stays focused on the chat loop.
 from magi.agent.tools.base import ToolContext
+from magi.agent.tools.edit_retry import EditRetryTracker
 from magi.agent.tools.registry import (
     get_tool,
     get_tool_schemas,

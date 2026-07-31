@@ -136,7 +136,7 @@ class UpdateDailyNoteTool(Tool):
     rows stay separate.
 
     Capture rules (full text lives in
-    ``prompts/daily_note.md`` — folded into the system prompt
+    ``prompts/context/daily_note.md`` — folded into the system prompt
     only when the operator toggles ``system.show_daily_note_prompt``):
 
     - Record from the user (tasks done, preferences, project

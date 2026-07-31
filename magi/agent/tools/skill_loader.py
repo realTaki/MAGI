@@ -639,7 +639,7 @@ def format_skills_block(skills: list[SkillMeta]) -> str:
     if not skills:
         return ""
     # Static header + intro come from the bundled
-    # ``skills_block.md`` template so an operator can reword
+    # ``context/skills_block.md`` template so an operator can reword
     # the wording in one file without touching Python. The
     # per-skill bullets below are formatted from the
     # runtime catalog.

@@ -111,7 +111,7 @@ def format_daily_note_block(
     same short-circuit the other blocks use.
 
     ``show_prompt_rules`` toggles whether to fold the
-    ``prompts/daily_note.md`` capture rules into the block
+    ``prompts/context/daily_note.md`` capture rules into the block
     header. Off by default — the tool description already
     carries the core intent; the full rules add ~30 lines
     of system prompt weight per turn. The operator opts in

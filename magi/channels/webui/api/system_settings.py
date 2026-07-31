@@ -448,7 +448,7 @@ def put_compact_config(
 # ``update_daily_note``) into the system prompt. Default
 # ON — the operator can mute it if the running-log noise
 # becomes distracting. A second toggle (``show_daily_note_prompt``)
-# folds the capture rules from ``prompts/daily_note.md`` into
+# folds the capture rules from ``prompts/context/daily_note.md`` into
 # the block header; default OFF (the tool description
 # already restates the core intent, and the full rules add
 # ~30 lines of system-prompt weight per turn).
@@ -483,7 +483,7 @@ def get_show_daily_note(state_dir: str) -> bool:
 
 def get_show_daily_note_prompt(state_dir: str) -> bool:
     """Whether the capture-rules text from
-    ``prompts/daily_note.md`` folds into the daily-note
+    ``prompts/context/daily_note.md`` folds into the daily-note
     block header. Default OFF — the ``update_daily_note``
     tool description restates the core intent, and the
     full rules add ~30 lines of system-prompt weight per

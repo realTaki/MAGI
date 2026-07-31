@@ -28,6 +28,9 @@ Files:
                              background "summarize a conversation
                              into a 3-5 word title" job. Read by
                              :mod:`magi.agent.memory.session.auto_title`.
+  - ``context/``           : static blocks that are assembled
+                             into an LLM system context: contact,
+                             daily-note, memory, and skills.
   - ``task_presets/``      : YAML definitions for bundled
                              scheduled-task templates. Read by
                              :mod:`magi.agent.proactive.preset_templates`
@@ -78,7 +81,7 @@ _cache_lock = Lock()
 
 
 def _load(name: str) -> str:
-    """Read a prompt file by short name (e.g. ``"soul"``).
+    """Read a prompt file by relative name (e.g. ``"soul"``).
 
     Hot-reload: each call stat()s the source file and
     compares ``(mtime_ns, size)`` to the last loaded
@@ -92,11 +95,15 @@ def _load(name: str) -> str:
     ``bot_replies`` loader is a thin wrapper that asks for
     the YAML form and ``yaml.safe_load`` it.
     """
+    relative_name = Path(name)
+    if relative_name.is_absolute() or ".." in relative_name.parts:
+        raise ValueError(f"prompt name must stay within {_PROMPTS_DIR}: {name!r}")
+
     # Locate the file once. ``.md`` first, fall back to
     # ``.yaml`` / ``.yml``.
     resolved_path: Path | None = None
     for suffix in (".md", ".yaml", ".yml"):
-        candidate = _PROMPTS_DIR / f"{name}{suffix}"
+        candidate = _PROMPTS_DIR / f"{relative_name}{suffix}"
         if candidate.is_file():
             resolved_path = candidate
             break
@@ -199,7 +206,7 @@ def load_memory_block_template() -> str:
     """The "Long-term memory (MAGI)" block the agent loop
     appends to the system prompt.
 
-    Reads the bundled ``memory_block.md``. The block is
+    Reads the bundled ``context/memory_block.md``. The block is
     the static header + intro + the two ``### 重要的事``
     / ``### 正在进行`` sub-section headings; the rows
     themselves are appended by :func:`format_memory_block`
@@ -208,7 +215,7 @@ def load_memory_block_template() -> str:
     marker to drop the empty placeholders when no rows
     land under a kind).
     """
-    return _load("memory_block")
+    return _load("context/memory_block")
 
 
 def load_contact_block_template() -> str:
@@ -218,7 +225,7 @@ def load_contact_block_template() -> str:
     :func:`magi.agent.memory.contacts.prompt.format_contact_block`
     for how the template is combined with the contact row.
     """
-    return _load("contact_block")
+    return _load("context/contact_block")
 
 
 def load_skills_block_template() -> str:
@@ -227,13 +234,13 @@ def load_skills_block_template() -> str:
     See :func:`magi.agent.tools.skill_loader.format_skills_block`
     for the per-skill bullet rendering that follows.
     """
-    return _load("skills_block")
+    return _load("context/skills_block")
 
 
 def load_daily_note_prompt() -> str:
     """The "Daily Note 记录指令" reference document.
 
-    Reads the bundled ``daily_note.md``. NOT auto-injected into
+    Reads the bundled ``context/daily_note.md``. NOT auto-injected into
     every chat turn's system prompt (would be noise). Instead
     the operator toggles ``system.show_daily_note_prompt`` to
     opt in — when on, :mod:`magi.agent.system_prompt` folds
@@ -243,7 +250,7 @@ def load_daily_note_prompt() -> str:
     ``update_daily_note`` tool description (which restates the
     core "what to record / when" intent in a few lines).
     """
-    return _load("daily_note")
+    return _load("context/daily_note")
 
 
 def load_bot_replies() -> dict[str, str]:

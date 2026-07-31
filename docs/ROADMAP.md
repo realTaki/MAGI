@@ -835,13 +835,13 @@ commit history.
   `soul.md`, `fallback_persona.md`,
   `chat_titles.md`, `compaction.md`,
   `bot_replies.yaml`, plus the three new
-  per-block templates:
-  - `memory_block.md` — header + intro +
+  per-block templates in `context/`:
+  - `context/memory_block.md` — header + intro +
     per-kind sub-section headings
     (`### 重要的事`, `### 正在进行`)
-  - `contact_block.md` — `## Current chatter`
+  - `context/contact_block.md` — `## Current chatter`
     header + intro
-  - `skills_block.md` — `## Available skills`
+  - `context/skills_block.md` — `## Available skills`
     header + intro
 - Loader at `magi/agent/prompts/__init__.py`
   caches each file once per process; the
