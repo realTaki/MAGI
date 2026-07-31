@@ -1,17 +1,20 @@
 """Self memory — long-lived facts and ongoing work for the current context.
 
-Stores the things the operator has told the EVE to
-"remember" (company policies, contract deadlines,
-ongoing projects, follow-ups). This is **MAGI's own
-memory** — not a record of people. Person records
+Stores durable facts and ongoing work for the current
+runtime context (company policies, contract deadlines,
+ongoing projects, follow-ups). It is **self memory** —
+not a record of people. Person records
 ("Lily 在财务部") live in
 :mod:`magi.agent.memory.contacts`.
 
+The current ownership boundary is ``uid`` (the local
+runtime's assigned contact). It is not yet a shared
+MAGIS memory space or a per-MAGIC-Citizen memory model.
+
 The LLM manages the table through four tools
 (:mod:`.tools`): add / update / complete / delete.
-Writes are not automatic — the operator must say
-"记住 X" or the LLM must judge the fact long-arc
-enough to persist.
+Writes are not automatic — an explicit "记住 X" request
+or the LLM's long-term-context judgment is required.
 
 The system-prompt formatter
 (:func:`.prompt.format_memory_block`) renders the

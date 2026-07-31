@@ -10,8 +10,10 @@ What lives here:
     the row stays in the table for the audit trail but
     drops out of the system-prompt block.
 
-This is **MAGI's own mid-term memory** — the things the
-operator has told the EVE to "remember". Person records
+This is **self mid-term memory** for the current runtime
+context. Its ownership boundary is ``uid``; it is not yet
+a shared MAGIS memory space or a per-MAGIC-Citizen memory
+model. Person records
 ("Lily is in finance, telegram_id=9001") are **not** here;
 they live in :mod:`magi.agent.memory.contacts` because
 they describe a person, not a fact about the world.
@@ -63,7 +65,7 @@ SOURCE_SYSTEM = "system"   # Seeded by the platform (onboarding
 
 
 class MemoryEntry(Base):
-    """One row of MAGI's mid-term memory.
+    """One row of self mid-term memory.
 
     Indexed for the two access patterns the system
     actually uses:
@@ -78,7 +80,7 @@ class MemoryEntry(Base):
     __tablename__ = "memory_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # The MAGI's own assigned contact. On a single-
+    # The current runtime's assigned contact. On a single-
     # instance setup this is the one assigned contact
     # for this node; could differ in a multi-tenant
     # future. ON DELETE CASCADE: removing the contact

@@ -29,12 +29,10 @@ import pytest
 
 @pytest.fixture
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """Fresh state dir + the two seeded default presets.
+    """Fresh state dir + the bundled default presets.
 
-    The migration ``0006_task_presets`` seeds
-    ``daily_standup_brief`` and ``weekly_review`` on a
-    fresh DB; the fixture runs ``init_orm`` so they're
-    present.
+    ``init_orm`` synchronises the YAML files under
+    ``prompts/task_presets`` after the schema is ready.
     """
     sd = tmp_path / "state"
     sd.mkdir()
@@ -76,6 +74,33 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def test_bundled_templates_are_loaded_and_resynchronised(state):
+    """A source-file edit wins over a stale bundled DB row on next boot."""
+    from magi.agent.db import open_session
+    from magi.agent.proactive.orm_models import TaskPreset
+    from magi.agent.proactive.preset_templates import (
+        load_task_preset_templates,
+        sync_bundled_task_presets,
+    )
+
+    templates = {template.key: template for template in load_task_preset_templates()}
+    assert set(templates) == set(state["preset_keys"])
+
+    with open_session() as db:
+        row = db.query(TaskPreset).filter_by(key="morning_brief").one()
+        row.prompt = "temporary developer override"
+        db.commit()
+
+    with open_session() as db:
+        created, updated = sync_bundled_task_presets(db)
+        db.commit()
+        row = db.query(TaskPreset).filter_by(key="morning_brief").one()
+
+    assert created == 0
+    assert updated == 1
+    assert row.prompt == templates["morning_brief"].prompt
 
 
 def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):

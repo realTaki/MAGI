@@ -329,6 +329,13 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
         stamp_baseline(state_dir or require_state_dir())
 
     upgrade_head(state_dir or require_state_dir(), engine)
+    # Built-in scheduled-task templates are code-owned prompts, not SQL
+    # literals in a migration.  Synchronise them after schema upgrade so a
+    # developer can tune a mounted YAML file and see it on the next boot.
+    from magi.agent.proactive.preset_templates import sync_bundled_task_presets
+    with Session(engine) as session:
+        sync_bundled_task_presets(session)
+        session.commit()
     if seed_root:
         _seed_default_root(engine)
     logger.info(

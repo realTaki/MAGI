@@ -16,14 +16,14 @@ dashboard.
 
 Each scenario:
 
-  A. POST  /api/contacts  role="assigned"   → 2 presets
+  A. POST  /api/contacts  role="assigned"   → all bundled presets
   B. POST  /api/contacts  role='guest'    → 0 presets
-     then PATCH role="assigned"               → 2 presets
+     then PATCH role="assigned"               → all bundled presets
   C. POST  /api/contacts  admin=true, role='guest'     → 0 presets
-     then PATCH role="assigned"               → 2 presets
+     then PATCH role="assigned"               → all bundled presets
   D. POST  /api/contacts  role='guest'    → 0 presets
      then PATCH role='guest' (no-op)       → 0 presets
-  E. POST  /api/contacts  role="assigned"   → 2 presets
+  E. POST  /api/contacts  role="assigned"   → all bundled presets
      then PATCH role="assigned" again        → 0 NEW (idempotent)
 """
 
@@ -39,9 +39,8 @@ from fastapi.testclient import TestClient
 def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Fresh state dir + one admin Contact (the operator).
 
-    Returns the seeded operator + the auto-seeded
-    ``daily_standup_brief`` / ``weekly_review`` presets
-    (via migration ``0006_task_presets``).
+    Returns the seeded operator + the bundled preset keys,
+    synchronised from ``prompts/task_presets`` at startup.
     """
     sd = tmp_path / "state"
     sd.mkdir()

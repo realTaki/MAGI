@@ -1,7 +1,7 @@
 """MAGI memory subsystem — three layers, three purposes.
 
-  - :mod:`.magi`     — MAGI's own mid-term memory
-                        (important facts + ongoing work).
+  - :mod:`.self`     — long-lived facts and ongoing work
+                        for the current runtime context.
                         Renders into the LLM system prompt.
   - :mod:`.contacts`  — the contact directory; what the
                         MAGI knows about people. The current
@@ -25,8 +25,8 @@ in a fixed order.
 from __future__ import annotations
 
 # Re-export the three sub-packages so callers can do
-# ``from magi.agent.memory import magi, contacts, session``
+# ``from magi.agent.memory import self, contacts, session``
 # and reach every symbol in one import. The sub-package
 # ``__init__.py`` files own their own public surface
 # (each lists its own __all__).
-from magi.agent.memory import contacts, magi, session  # noqa: F401
+from magi.agent.memory import contacts, self, session  # noqa: F401

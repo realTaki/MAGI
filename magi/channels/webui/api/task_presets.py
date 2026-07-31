@@ -1,12 +1,12 @@
 """``/api/task-presets`` — manage the preset templates.
 
-The :class:`TaskPreset` table is the operator-facing source of
-truth for which canned scheduled tasks get auto-seeded when a
-new ``assigned`` contact arrives (see
-:mod:`magi.agent.proactive.presets`). This router surfaces the
-four canonical CRUD verbs so the Settings → 任务预设 card can
-list, edit, create, and delete presets without going through
-the underlying ``task_presets`` table directly.
+The :class:`TaskPreset` table is the runtime store for scheduled
+task templates. Bundled template keys are synchronised from
+``magi/agent/prompts/task_presets`` at startup; operator-created
+keys are database-owned. This router surfaces the four canonical
+CRUD verbs so the Settings → 任务预设 card can list, edit, create,
+and delete presets without going through the underlying
+``task_presets`` table directly.
 
 Snapshot semantics
 ------------------
@@ -15,8 +15,10 @@ Editing a preset (``PATCH /api/task-presets/{id}``) does NOT
 rewrite existing per-user ``Task`` rows. The per-user row
 keeps the prompt / schedule / channel it was seeded with;
 new assigned contacts seeded AFTER the edit pick up the
-new config. The edit form in the UI displays a caveat
-banner so the operator isn't surprised.
+new config. For a bundled key, the source YAML takes effect
+again after the next node restart; use a newly created key for
+a durable operator-owned variant. The edit form in the UI
+displays a caveat banner so the operator isn't surprised.
 
 Deleting a preset (``DELETE /api/task-presets/{id}``) sets
 ``task.preset_id`` to NULL on every per-user row (FK

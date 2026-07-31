@@ -341,10 +341,10 @@ class TaskPreset(Base):
     ``role='assigned'`` (see
     :func:`magi.agent.proactive.presets.seed_presets_for_contact`).
 
-    Two startup presets ship via migration ``0006_task_presets``:
-    a daily morning brief and a Friday afternoon weekly review.
-    The operator can edit the prompt / schedule / channel from
-    Settings → 任务预设; existing per-user ``Task`` rows are
+    Bundled presets ship as YAML files under
+    ``magi/agent/prompts/task_presets/`` and are synchronised at
+    startup. The operator can create additional database-owned
+    presets from Settings → 任务预设; existing per-user ``Task`` rows are
     NOT updated when a preset is edited (snapshot semantics —
     new assigned contacts pick up the new config, contacts
     seeded before the edit keep running under their original
@@ -363,9 +363,8 @@ class TaskPreset(Base):
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
     # Stable machine identifier — survives edits, used as
     # the per-user ``Task.preset_key`` snapshot. Two presets
-    # with the same key are an error; the migration seeds
-    # the two defaults via ``INSERT … ON CONFLICT (key) DO
-    # NOTHING`` so re-running on an existing DB is a no-op.
+    # with the same key are an error. Bundled keys are
+    # synchronised from ``prompts/task_presets`` at boot.
     key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     # Operator-facing label (i18n key resolved in the UI).
     name: Mapped[str] = mapped_column(String(120), nullable=False)

@@ -28,6 +28,10 @@ Files:
                              background "summarize a conversation
                              into a 3-5 word title" job. Read by
                              :mod:`magi.agent.memory.session.auto_title`.
+  - ``task_presets/``      : YAML definitions for bundled
+                             scheduled-task templates. Read by
+                             :mod:`magi.agent.proactive.preset_templates`
+                             during node initialisation.
 
 Hot-reload: every ``_load`` call does a single ``Path.stat()``
 on the source file (microseconds) and compares ``mtime`` /

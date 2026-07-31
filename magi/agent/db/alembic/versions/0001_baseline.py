@@ -20,12 +20,9 @@ Schema in this file (in dependency order):
   - tasks                (per-user scheduled tasks; with ``preset_id``
                           FK → task_presets.id and ``preset_key``
                           snapshot for the WebUI's two-list split)
-  - task_presets         (operator-editable templates; seeded with
-                          four defaults — daily standup brief +
-                          weekly review + morning brief + night
-                          summary; the last two are the system-
-                          level daily-report tasks that read the
-                          daily_notes table)
+  - task_presets         (runtime templates; bundled defaults are
+                          injected from ``prompts/task_presets``
+                          after schema initialisation)
   - token_usage          (per-contact LLM token aggregation)
   - task_runs            (one row per fire — cron or manual)
 
@@ -352,62 +349,6 @@ def upgrade() -> None:
             # reports unavailable instead. Recording the migration
             # as ``head`` would only re-fail on every restart.
             pass
-
-    # ### Seed defaults (task_presets) ──────────────────────────────── #
-    # The two presets that ``magi/agent/proactive/presets.py``
-    # iterates on every assigned-user creation. ``ON CONFLICT
-    # (key) DO NOTHING`` keeps the seed idempotent so re-running
-    # this revision on a DB that already has the rows is a no-op.
-    op.execute(
-        sa.text(
-            """
-            INSERT INTO task_presets
-                (id, key, name, description, prompt,
-                 frequency, hour, minute, day_of_week, day_of_month,
-                 run_at, channel, enabled,
-                 created_at, updated_at)
-            VALUES
-                ('01J9HZ0000DAILYSTAND000UPBR',
-                 'daily_standup_brief',
-                 '每日晨报',
-                 '每个工作日 09:00 推送当日待办摘要 + 昨日完成情况。',
-                 'You are generating a brief morning summary for the assigned user. Today''s open tasks: {tasks_open}. Yesterday''s completed tasks: {tasks_done}. Urgent action items: {action_items}. Write a concise (under 120 words) stand-up brief in the user''s preferred language. Highlight anything due today, any blockers, and a single suggested focus for the morning.',
-                 'daily', 9, 0, NULL, NULL, NULL, 'tg', 1,
-                 '2026-01-01T00:00:00+00:00',
-                 '2026-01-01T00:00:00+00:00'),
-                ('01J9HZ0000WEEKLYREVIE0W000',
-                 'weekly_review',
-                 '周回顾',
-                 '每周五 17:00 推送本周完成情况 + 下周建议。',
-                 'You are generating a Friday-evening weekly review for the assigned user. Tasks completed this week: {tasks_done_week}. Tasks still pending: {tasks_open_week}. Action items created or completed this week: {action_items_week}. Write a concise (under 180 words) review covering: what got done, what carried over, what blocked progress, and three suggested focus areas for next week. Reply in the user''s preferred language.',
-                 'weekly', 17, 0, 4, NULL, NULL, 'tg', 1,
-                 '2026-01-01T00:00:00+00:00',
-                 '2026-01-01T00:00:00+00:00'),
-                -- System-level daily report — auto-seeded per
-                -- assigned user via ``seed_presets_for_contact``.
-                -- Reads today's daily note + mock emails +
-                -- mock meetings, sends a TG summary.
-                ('01J9HZ0000MORNINGBRIE0B0',
-                 'morning_brief',
-                 '早报',
-                 '每个工作日 08:00 推送当日邮件高光 + 今日行程 + 待办提醒。',
-                 '你正在生成早报。按以下顺序拉数据：(1) 调用 read_recent_emails(hours=24) 拉取过去 24h 邮件；(2) 调用 read_upcoming_meetings(days=1) 拿今日日程；(3) 用 search_contacts 或 read_daily_note 看相关人物的最新备注和今天积累的 daily_note。最后按三段结构输出：邮件高光 / 今日行程 / 待办提醒。语气如同事在群里发消息——简洁、直接，避免"很荣幸为你服务"之类的套话。优先使用中文。',
-                 'daily', 8, 0, NULL, NULL, NULL, 'tg', 1,
-                 '2026-01-01T00:00:00+00:00',
-                 '2026-01-01T00:00:00+00:00'),
-                ('01J9HZ0000NIGHTSUMMAR0Y0',
-                 'night_summary',
-                 '晚报',
-                 '每天 22:00 推送当日完成情况 + 明早首个会议。',
-                 '你正在生成晚报。按以下顺序拉数据：(1) 调用 read_recent_emails(hours=24) 看下午 / 晚上的邮件；(2) 调用 read_upcoming_meetings(days=2) 看今晚 + 明早会议；(3) 读今天的 daily_note 总结今天做完了什么。最后按三段结构输出：今日完成 / 明日首会 / 待办提醒。语气如同事在群里发消息——简洁、直接。优先使用中文。',
-                 'daily', 22, 0, NULL, NULL, NULL, 'tg', 1,
-                 '2026-01-01T00:00:00+00:00',
-                 '2026-01-01T00:00:00+00:00')
-            ON CONFLICT (key) DO NOTHING
-            """
-        )
-    )
-
 
 def downgrade() -> None:
     # The baseline is an adoption boundary. Do not drop the complete
