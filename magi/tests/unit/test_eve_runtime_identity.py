@@ -23,7 +23,7 @@ def test_eve_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_pa
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "private"))
     monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'public.db'}")
     from magi.agent.db import init_orm
-    from magi.agent.magis_public_db import init_magis_public_db
+    from magi.agent.db.magis import init_magis_public_db
     init_orm(seed_root=False)
     init_magis_public_db(seed_root=True)
     from magi.agent.llm.factory import get_provider

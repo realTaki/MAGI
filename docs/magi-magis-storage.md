@@ -17,7 +17,11 @@ workspace/MAGIC/<magi-name>/
 workspace/MAGIS/<magis-name>/  # 团队共享文件；生产环境对应独立 PVC
 ```
 
-PostgreSQL 保存组织事实：MAGIS 树、MAGI 注册表、直接 Membership、角色、团队/角色/个人 instructions、provider 配置和运行时状态。私有 SQLite 不保存这些组织事实，也不会成为另一份 MAGIS 数据库。
+PostgreSQL 保存组织事实：MAGIS 树、MAGI 注册表、直接 Membership、角色、团队/角色/个人 instructions、provider 配置和运行时状态。私有 SQLite 不参与这些运行时读写，也不会成为另一份 MAGIS 数据库。
+
+当前 Alembic baseline 为旧开发库保留了一组同名组织表，以便旧 SQLite 可以被
+安全 adoption；这是兼容残留，不是部署架构。新的组织功能必须经过
+`magi.agent.db.magis` 访问 PostgreSQL。
 
 ## 直接归属与管理范围
 
@@ -40,7 +44,7 @@ Genesis 使用：
 
 复制 `deploy/k8s/secrets/magis-genesis-db.example.yaml` 到不提交 Git 的位置，填入强随机密码后先 apply。`adam` overlay 会把数据库 URL 从该 Secret 注入初始节点；`dev-eva00` overlay 生成仅供本地 kind 使用的开发 Secret。
 
-新 MAGIS 由受限的 orchestrator 创建同构资源。新 MAGI 由 orchestrator 只注入其直属 MAGIS 的 `MAGIS_DATABASE_URL` 和 `MAGIS_ID`，并挂载 `/magis`。它不接收 provider、API Key、角色或 instruction 环境变量。
+新 MAGIS 由受限的 orchestrator 创建同构资源。新 MAGI 由 orchestrator 只注入其直属 MAGIS 的 `MAGIS_DATABASE_URL` 和 `MAGIS_ID`，并挂载 `/magis`。它不接收 provider、API Key、角色或 instruction 环境变量。代码中该边界对应：`magi.agent.db.engine`（私有 SQLite）与 `magi.agent.db.magis`（公共 MAGIS PostgreSQL）。
 
 启动前，控制面会把该 MAGI 的直接 Membership、角色、instructions 与 provider 配置投影到目标 MAGIS PostgreSQL；该投影通过受 HMAC 保护的控制请求写入数据库。运行容器只从数据库读取。修改这些组织配置后，重新启动该 MAGI 会刷新其运行时投影。
 

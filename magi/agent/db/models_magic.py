@@ -1,4 +1,4 @@
-"""ORM model ``magic`` — MAGIC, the MAGI Citizen rows.
+"""ORM model ``magic`` — MAGIC, the internal individual-MAGI rows.
 
 Each row is one independently created MAGI.  Membership in a
 :class:`MAGIS` and the role held there are represented by
@@ -21,7 +21,7 @@ After the 2026-07 naming refresh, this class is named
 ``MAGIC`` (one row = one individual MAGI agent). The Python
 class ``MAGIC`` represents an individual; the Python class
 ``MAGIS`` (in :mod:`magi.agent.db.models_magis`) represents
-a group of MAGI Citizens. ``__tablename__ = "magic"``.
+a group of MAGI. ``__tablename__ = "magic"``.
 """
 
 from __future__ import annotations
@@ -41,10 +41,10 @@ if TYPE_CHECKING:
 
 
 class MAGIC(Base):
-    """A MAGI runtime agent (a MAGI Citizen).
+    """An individual MAGI runtime agent.
 
-    A MAGI is created independently.  Its memberships determine the
-    MAGIS instructions and role instructions it receives.  ``provider`` /
+A MAGI is created independently. Its one direct Membership determines the
+MAGIS and role instructions it receives. ``provider`` /
     ``api_key`` carry the LLM credentials for the runtime process that
     binds to this row.
     """
@@ -86,9 +86,9 @@ def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, 
     keeps root-runtime callers simple while avoiding a global role lookup.
     """
     from sqlalchemy import select
-    from magi.agent.db import open_session
+    from magi.agent.db.magis import open_magis_session
 
-    with open_session() as db:
+    with open_magis_session() as db:
         if magic_id is not None:
             row = db.get(MAGIC, magic_id)
         else:

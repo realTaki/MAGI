@@ -1,6 +1,11 @@
-# MAGI 数据库迁移
+# MAGI 私有数据库迁移
 
-MAGI 的应用数据库由 Alembic 管理，SQLite 的 schema 版本记录在：
+本文只描述 **MAGI 私有 SQLite** 的兼容 schema 与 Alembic 迁移。运行中的
+MAGIS 组织数据不是这条迁移链的事实来源：每个 MAGI 只连接其直属 MAGIS 的
+PostgreSQL，由 `magi.agent.db.magis` 初始化和访问。完整的数据边界见
+[MAGI 与 MAGIS 的存储边界](magi-magis-storage.md)。
+
+私有 SQLite 的 schema 版本记录在：
 
 ```text
 alembic_version
@@ -51,16 +56,13 @@ HEAD = `0003_single_direct_magis_membership`。
 
 新增 schema 变化的纪律见下文「添加新的 schema 变化」。
 
-## 当前表清单（运行时）
+## 当前表清单（私有 SQLite）
 
-应用表（都在 `Base.metadata`，由 Alembic 或 legacy adoption 创建）：
+私有表由 Alembic 或 legacy adoption 创建：
 
 - `chat_sessions` / `chat_messages`（会话历史；二者另由 `magi.agent.memory.session` 包持有 ORM 模型）
 - `contacts`（统一的人表，取代旧的 `contacts` / `contact_entries` / `user_im_bindings`，`role ∈ {assigned, guest}`）
 - `contact_notes`（一人多备注 + 每日记录，含 `kind` 与 `note_date`）
-- `magis`（MAGI Society 组织树，含团队 instruction 和 `adam_id`）
-- `magic`（独立 MAGI，含 provider、API key 与个人 instruction）
-- `magis_roles` / `magis_memberships`（MAGIS 的角色及 MAGI 的多归属；保留 Adam/EVE 角色与可自定义角色）
 - `settings`（系统级 KV，承载 `system.timezone` 等）
 - `action_items` / `token_usage` / `memory_entries`
 - `task_presets` / `tasks` / `task_runs`（主动任务调度）
@@ -69,6 +71,19 @@ HEAD = `0003_single_direct_magis_membership`。
 - `chat_messages_fts`（FTS5 虚拟表，可选；不在 `Base.metadata`，由 baseline 的 DDL 直接建）
 - `alembic_version`（Alembic 维护）
 - `meta`（本地 bootstrap KV，由 `local_db.init_sqlite` 用原始 SQL 创建，不属于 `Base.metadata`）
+
+为了让旧开发数据库可以平滑启动，baseline 仍保留 `magis`、`magic`、
+`magis_roles`、`magis_memberships` 和 `eve_runtimes` 的历史 DDL。它们不是
+Kubernetes 运行时的组织事实来源；组织 API、instructions、provider 解析和
+生命周期状态均通过直属 MAGIS PostgreSQL 读写。新的产品功能不要再把组织
+数据写进 MAGI 私有 SQLite。
+
+直属 MAGIS PostgreSQL 的运行时表为：
+
+- `magis`（MAGIS 树及团队 instruction）；
+- `magic`（MAGI 身份、provider、API key、个人 instruction）；
+- `magis_roles` / `magis_memberships`（角色与每个 MAGI 的唯一直接归属）；
+- `eve_runtimes`（MAGI 生命周期状态）。
 
 ## 启动时行为
 
@@ -81,7 +96,10 @@ HEAD = `0003_single_direct_magis_membership`。
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 若数据库**有** `alembic_version` 但指向一个 Alembic 已不认识的 revision（典型：以前升级到了 `0007_swap_magic_magis_tables`，本次 rebase 后该文件已删除），`upgrade_head` 入口的 `_rebase_to_canonical_head` 会先 `DELETE FROM alembic_version` 再 stamp 到 `0001_baseline`。DB schema 不动（folded migration 的效果已在 baseline 里），只刷新 bookkeeping 行；
 4. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-5. `_seed_default_root` 确保有且仅有一个根 MAGI Society（Genesis），创建首个 MAGIC（默认名 `EVA-00 PROTO TYPE`），并以 Adam 角色加入 Genesis。
+5. 节点随后调用 `magi.agent.db.magis.init_magis_public_db()`；仅初始 Adam
+   会在其直属 MAGIS PostgreSQL 中调用 `_seed_default_root`，确保有且仅有一个
+   根 MAGI Society（Genesis），创建首个 MAGI（默认名 `EVA-00 PROTO TYPE`），
+   并以 Adam 角色加入 Genesis。
 
 因此容器启动、滚动更新或新 Pod 创建时，数据库会先完成迁移，再启动 WebUI、Telegram
 和 scheduler。应用代码启动即自动升级，**不需要在容器里手动调用 Alembic**。
@@ -124,6 +142,8 @@ HEAD = `0003_single_direct_magis_membership`。
 - 生产镜像必须包含 `alembic.ini` 和 `magi/agent/db/alembic/`；
 - `deploy/Dockerfile` 已将 `alembic.ini` 复制到 `/app/alembic.ini`；
 - Alembic 已经是核心 runtime dependency，不再只属于 Adam extra；
-- SQLite 默认单副本运行，避免多个 Pod 同时执行 migration 或写入数据库；
-- 部署 PostgreSQL / 多副本之前，需要单独审查 migration locking 和应用启动并发策略；
+- 每个 MAGI 的私有 SQLite 默认单副本运行，避免多个 Pod 同时执行 migration
+  或写入同一个私有数据库；
+- MAGIS PostgreSQL 是独立单副本数据库 Deployment；其 schema 由运行时
+  `create_all` 初始化，当前尚未纳入 Alembic；
 - 不要把真实数据库文件或包含 credentials 的 migration fixture 提交到 Git。

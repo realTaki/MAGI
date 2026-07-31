@@ -2,8 +2,9 @@
 
 ``Magi`` models the organisational identity of an agent.  This module models
 the separately managed execution resource for an EVE: a Kubernetes
-Deployment, its workspace PVC, and its provider Secret.  Keeping these
-concerns in a dedicated one-to-one table means an EVE can be configured while
+Deployment and private workspace PVC. Provider configuration is resolved from
+the direct MAGIS database. Keeping these concerns in a dedicated one-to-one
+table means an EVE can be configured while
 it is stopped without treating a missing Pod as a missing Magi.
 """
 

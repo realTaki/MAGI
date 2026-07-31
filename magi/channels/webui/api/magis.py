@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-from magi.agent.magis_public_db import get_magis_session
+from magi.agent.db.magis import get_magis_session
 from magi.agent.db.models_magis_membership import (
     RESERVED_ROLE_NAMES,
     adam_manages_magis,

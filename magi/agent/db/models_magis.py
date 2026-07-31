@@ -20,9 +20,9 @@ Naming convention
 
 After the 2026-07 naming refresh:
 
-  - A **MAGIS** is a MAGI Society: a group of MAGI Citizens.
+  - A **MAGIS** is a MAGI Society: a group of MAGI.
     Its row lives in the ``magis`` table.
-  - A **MAGIC** is an individual MAGI Citizen. Its row lives
+  - A **MAGIC** is the internal row name for an individual MAGI. Its row lives
     in the ``magic`` table.
 """
 
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 class MAGIS(Base):
-    """A MAGI Society (a group of MAGI Citizens).
+    """A MAGI Society (a group of MAGI).
 
     ``adam_id`` references :class:`MAGIC` (the manager
     MAGIC for this Society) and is nullable — a ``MAGIS``
@@ -78,7 +78,7 @@ class MAGIS(Base):
     # Self-referential tree. ``remote_side=id`` is the marker
     # that tells SQLAlchemy which side of the parent_id FK
     # is the "many" side, so ``children`` is a list of
-    # child MAGISes rather than a back to the parent.
+    # child MAGIS rows rather than a back to the parent.
     #
     # ``cascade="all, delete-orphan"`` would silently nuke
     # child MAGIS rows on parent delete (overriding the

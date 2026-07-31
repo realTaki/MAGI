@@ -1,141 +1,84 @@
-# 生产持久化与状态边界方案（未实施）
+# 生产持久化与状态边界
 
-> 状态：设计方案，尚未改动生产运行代码、Kubernetes 清单或数据模型。
->
-> 本文定义 MAGI 从本地 kind 开发环境走向生产集群时的持久化边界。它不改变
-> 「每个 MAGI Citizen 拥有独立运行时与工作区」这一产品模型；改变的是持久化
-> 的后端和运维方式。
+> 状态：第一阶段已实现。每个 MAGI 的私有状态与每个 MAGIS 的组织状态已经
+> 分离；高可用 PostgreSQL、对象存储归档、外部 Secret Manager 和恢复演练仍是后续工作。
 
-## 结论
+本文说明生产部署的持久化边界。完整的当前资源和启动顺序见
+[MAGI 与 MAGIS 的存储边界](magi-magis-storage.md)。
 
-生产环境**不使用宿主机目录映射或 `hostPath`**。但不应因此删除每个 MAGI 的
-持久化工作区，而应改为由 Kubernetes CSI 后端提供、每个 MAGI 独占的 PVC。
+## 当前架构
+
+生产环境不使用宿主机目录映射或 `hostPath`。只有本地 kind 开发 overlay 可以将
+源码和工作区映射进容器以支持热加载。
 
 ```text
-本地开发（仅 dev overlay）
-宿主机源码 / workspace ── hostPath ──> kind Pod
+每个 MAGI
+  私有 PVC ────────────────> /workspace
+  私有 SQLite ─────────────> 记忆、会话、任务、本地设置
 
-生产环境
-不可变镜像 ────────────────────────────> MAGI Pod
-每个 MAGI 的 CSI PVC ────────────────> /workspace
-PostgreSQL ───────────────────────────> 事务性状态
-对象存储 ─────────────────────────────> 附件、归档与备份
-Secret Manager ──────────────────────> Provider 凭据与控制密钥
+每个 MAGIS
+  PostgreSQL ──────────────> 组织树、MAGI、角色、直接归属、instructions、provider、运行状态
+  公共 PVC ────────────────> /magis
+
+Kubernetes Secret
+  MAGIS_DATABASE_URL ──────> 直属 MAGIS PostgreSQL 的连接串
 ```
 
-当前仓库已具备这条路径的第一部分：`deploy/k8s/base` 为 `/workspace`
-声明 PVC，EVE Orchestrator 也会创建独立的 workspace PVC。`hostPath` 仅应
-存在于 `overlays/dev-eva00`，用于热加载和本机人工调试，绝不可进入生产 overlay。
+一个 MAGI 只拥有一个**直接** MAGIS Membership，因此运行时只读取一个
+`MAGIS_DATABASE_URL`，也只挂载一个 `/magis`。Adam 可以管理所在 MAGIS 的子树，
+但不会因管理权限而读取子 MAGIS 的 instructions 或挂载其公共 PVC。
 
-## 数据分层
+## 数据边界
 
-| 数据 | 当前形态 | 生产目标 | 说明 |
+| 数据 | 权威存储 | 挂载/访问者 | 说明 |
 |---|---|---|---|
-| 工作区文件 | `/workspace`：SOUL、skills、受控文件、SQLite 过渡期数据 | 每个 MAGI 一个 CSI PVC | 保留 POSIX 文件系统语义，支持 Agent 的安全文件编辑工具。 |
-| 事务性状态 | SQLite：组织、联系人、会话、任务、审计、运行状态 | PostgreSQL | 提供可靠备份、并发控制和未来横向扩展能力。 |
-| 大对象 | 尚未独立分层 | S3/MinIO 等对象存储 | 用于附件、导出、模型产物、workspace 归档和备份。 |
-| 密钥 | Kubernetes Secret / 运行时配置 | 外部 Secret Manager + 短期凭据 | 包括 Provider API Key、控制面密钥和机器人凭据。 |
-| 临时计算文件 | 工作区内可能混存 | `emptyDir` 或临时卷 | 可丢弃的下载、缓存和中间结果不进入备份。 |
+| 私人记忆、会话、任务、本地设置 | MAGI 私有 SQLite | 该 MAGI | 单副本 PVC，保留正常 POSIX 文件语义。 |
+| SOUL、私有 skills 与私人文件 | MAGI 私有 PVC `/workspace` | 该 MAGI | 不在 MAGI 之间共享。 |
+| MAGIS 树、MAGI、角色、直接 Membership | 直属 MAGIS PostgreSQL | 该 MAGIS 的直接成员与受限控制面 | 一个 MAGI 只能有一个直接 Membership。 |
+| 团队、角色、个人 instruction 与 provider 配置 | 直属 MAGIS PostgreSQL | 对应 MAGI 运行时 | 运行容器从数据库读取，不通过环境变量接收内容。 |
+| 团队共享文件 | MAGIS 公共 PVC `/magis` | 该 MAGIS 的直接成员 | Kubernetes volume mount 是访问边界。 |
+| 大对象、归档与备份 | 尚未实现 | — | 后续使用对象存储，而非 FUSE 替代工作区。 |
 
-不要将 S3/MinIO 直接 FUSE 挂载为 `/workspace`。MAGI 的文件编辑、原子写入和
-skills 扫描都依赖正常的文件系统语义；对象存储应承载大对象与备份，而非替代
-可编辑工作区。
+私有 SQLite 的 Alembic baseline 仍含组织表的历史 DDL，目的是兼容旧开发数据库；
+它们不是 Kubernetes 运行时的组织事实来源。新组织功能必须通过
+`magi.agent.db.magis` 访问 PostgreSQL。
 
-## 阶段一：单副本生产化
+## Kubernetes 资源与生命周期
 
-此阶段不要求立刻迁移 SQLite。每个 MAGI 仍然只有一个 Pod，使用一个
-`ReadWriteOnce` PVC，因而不会出现多个 Pod 同时写同一 SQLite 文件的情况。
+Genesis 在部署时拥有一个 PostgreSQL Deployment、数据库 PVC、公共工作区 PVC 和
+数据库 Secret。创建子 MAGIS 时，受限 orchestrator 创建同构资源。启动 MAGI 时，
+控制面先把直接 Membership、角色、instructions 和 provider 配置投影至目标 MAGIS
+PostgreSQL，然后才创建该 MAGI 的 Deployment 和私有 PVC。
 
-1. 生产镜像以不可变 digest 发布；不挂载 `/app/magi`，不启用 Uvicorn/Vite
-   reload。
-2. 为生产 overlay 显式指定受支持的 `StorageClass`（云盘、Ceph RBD 等 CSI
-   后端），而不是依赖宿主机路径或开发集群默认行为。
-3. 一个 MAGI Citizen 对应一个命名稳定的 PVC，例如
-   `eve-<magic-id>-workspace`；PVC、Deployment、Secret 都标记
-   `magis_id` 与 `magic_id`。
-4. 保持 `replicas: 1` 与 `Recreate` 策略。当前 SQLite 后端不能支持同一
-   workspace 的多副本。
-5. 为 PVC 配置定期 VolumeSnapshot；同时将工作区归档写入对象存储，避免只
-   依赖单一存储系统。
-6. 数据库迁移由受控启动流程或专用 Job 执行，不把多副本竞态留给应用启动。
+停止和删除是不同操作：
 
-Kubernetes 的 PVC 是请求持久存储容量与访问模式的标准边界；实际卷由
-StorageClass/CSI 供给。[Kubernetes Persistent Volumes 文档](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+| 操作 | Deployment | 私有 PVC | MAGIS PostgreSQL / 公共 PVC |
+|---|---|---|---|
+| 停止 | 缩容至 0 | 保留 | 保留 |
+| 恢复 | 缩容至 1 | 复用 | 复用直属 MAGIS 资源 |
+| 删除 MAGI | 删除 | 删除 | 保留（可能仍被其他成员使用） |
+| 删除 MAGIS | 尚未提供自动删除流程 | — | 必须先处理成员、子树、备份与保留期 |
 
-## EVE 生命周期与数据保留
-
-“停止”和“销毁”必须是不同操作：
-
-| 操作 | Deployment | PVC / workspace | Provider Secret | 数据语义 |
-|---|---|---|---|---|
-| 停止 EVE | 缩容至 0 | 保留 | 保留或撤销短期 token | 可恢复，不丢失记忆与配置。 |
-| 恢复 EVE | 缩容至 1 | 复用原 PVC | 重新注入凭据 | 同一 MAGI 在原工作区继续运行。 |
-| 归档 EVE | 缩容至 0 | 创建快照并归档到对象存储 | 撤销 | 保留可审计、可恢复的历史。 |
-| 销毁 EVE | 删除 | 仅在保留期结束后删除 PVC/快照 | 立即撤销与删除 | 不可逆，必须显式确认并写审计日志。 |
-
-生产环境不应把“删除 Deployment”视为“已安全删除数据”。PVC 的回收策略、卷
-快照、对象存储保留期和数据库记录必须一起构成删除工作流。Orchestrator 应持续
-以数据库中的期望状态为准进行 reconcile，而不是由 Adam 直接持有 Kubernetes
-高权限或执行宿主机命令。
-
-## 阶段二：将核心状态迁移到 PostgreSQL
-
-SQLite 适合单节点、单副本 MAGI 的早期生产阶段，但不适合作为可弹性调度和高可用
-系统的核心状态库。迁移完成后：
-
-- 组织树、MAGIC/EVE 运行状态、联系人、会话、任务、审计和 token 用量进入
-  PostgreSQL；
-- 每个 MAGI 的数据通过 `magic_id` 作用域隔离，必要时进一步使用独立
-  database/schema 或 Row-Level Security；
-- PostgreSQL 做自动备份与 point-in-time recovery；
-- `/workspace` 保留为可编辑的人格与技能工作区，不再是唯一的事实来源；
-- Pod 可在节点故障后重新调度，而不会依赖原宿主机。
-
-是否使用 StatefulSet 取决于一个 MAGI 是否需要稳定 Pod 身份、稳定网络身份或
-有序扩缩容。对于“一个 MAGI 对应一个显式命名 PVC、单副本 Deployment”的近期
-模型，当前 Deployment 足够；当出现一组有序、持久副本时再引入 StatefulSet。
-[Kubernetes StatefulSet 文档](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
+生产 overlay 必须保持每个私有 SQLite PVC 对应一个 Pod 和 `Recreate` 策略；不得为
+同一 MAGI 扩成多副本。
 
 ## 密钥与权限
 
-Provider API Key、`MAGI_CONTROL_SECRET` 和机器人 token 不进入：
+`MAGIS_DATABASE_URL` 和 PostgreSQL 密码来自 Kubernetes Secret。provider API key
+保存在直属 MAGIS PostgreSQL，运行容器从该数据库解析，不作为 Deployment 环境变量
+注入。真实密码、控制面密钥、机器人 token、数据库文件和 kubeconfig 都不得提交 Git、
+写进 ConfigMap 或日志。
 
-- Git 仓库；
-- 容器镜像；
-- `/workspace`；
-- 日志、任务 prompt 或审计正文。
+Adam 不获得 Docker socket 或 Kubernetes API token。只有 orchestrator 的
+ServiceAccount 能创建、缩放和删除受限的 Deployment、PVC、Service、Secret 与
+PostgreSQL Deployment；Adam 仅调用经 HMAC 认证的内部 API。
 
-近期可使用 Kubernetes Secret，但集群必须启用 etcd 静态加密、最小 RBAC、按
-namespace/MAGIS 边界隔离访问，并限制只有真正需要凭据的容器能挂载它。长期建议
-采用云 Secret Manager 或 Vault，并通过 External Secrets / Secret Store CSI
-注入短期或可轮换凭据。[Kubernetes Secret 安全建议](https://kubernetes.io/docs/concepts/security/secrets-good-practices/)
+## 后续生产化工作
 
-控制面继续采用最小权限原则：Adam 只调用内部 Orchestrator API；只有
-Orchestrator 的 ServiceAccount 能创建、缩放或删除 EVE 的 Deployment、PVC 与
-Secret。生产环境应逐步将现有 HMAC 通道升级为服务身份、网络策略与 mTLS。
-
-## 备份、恢复与演练
-
-每个生产 MAGIS 至少需要：
-
-1. PostgreSQL 的定期全量备份与 PITR；
-2. 每个 workspace PVC 的快照策略；
-3. workspace 关键文件和附件到对象存储的版本化归档；
-4. 每个备份对应的 MAGI、MAGIS、MAGIC、镜像 digest、数据库迁移版本元数据；
-5. 定期恢复演练：从备份恢复一个隔离的 EVE，并验证 SOUL、skills、会话和
-   任务状态。
-
-恢复目标不是只让 Pod 变为 Running，而是让同一 MAGI Citizen 恢复其身份、工作区、
-事务性历史及正确的凭据引用。
-
-## 实施顺序
-
-本文不要求现在实施。实际工作建议按以下次序拆分：
-
-1. 新增生产 overlay，CI 阻止 `hostPath`、开发镜像和 reload 配置进入其中。
-2. 明确 StorageClass、PVC 标签、快照与删除保留策略。
-3. 为 Orchestrator 的停止、归档、销毁引入可审计的状态机。
-4. 接入外部 Secret Manager 与凭据轮换。
-5. 设计并实施 PostgreSQL 迁移、备份和恢复演练。
-6. 在确有多副本需求时，再评估 StatefulSet、连接池、迁移锁与高可用策略。
-
+1. 为 PostgreSQL 增加备份、PITR 与恢复演练；为私有/公共 PVC 配置快照和保留策略。
+2. 将 PostgreSQL 从单副本 Deployment 升级为受管或高可用服务，并为 schema migration
+   引入显式锁与版本管理。
+3. 将大对象、导出与工作区归档放入 S3/MinIO 等对象存储；不要把对象存储 FUSE 挂为
+   `/workspace`。
+4. 引入外部 Secret Manager、轮换与网络策略/mTLS。
+5. 审计并实现 MAGIS 删除、归档和跨树迁移的显式工作流。

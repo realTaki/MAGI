@@ -1,15 +1,15 @@
 """MAGI node — single ``Node`` assembly.
 
-A MAGI process is a node. Configuration is read from the database
-(``settings`` table), not from environment variables.  Hardcoded
-paths live in :mod:`magi.constants`.  Everything else lives in
-the SQLite database under ``/workspace/memories/magi.db``.
+A MAGI process is a node. Private runtime settings and state live in the
+SQLite database under ``/workspace/memories/magi.db``.  Organisation identity,
+instructions and provider configuration live in the direct MAGIS PostgreSQL
+database. Hardcoded paths live in :mod:`magi.constants`.
 
-``MAGI_NODE_ROLE`` and ``MAGI_RUNTIME_ID`` bind a running container to
-its deployment identity.  The organisational role remains a fact in the
-``magis`` table, but an isolated EVE workspace cannot query Adam's database
-at boot.  The orchestrator therefore injects this small, non-secret runtime
-identity into the EVE Deployment.
+``MAGI_NODE_ROLE`` and ``MAGI_RUNTIME_ID`` bind a running container to its
+deployment identity. ``MAGIS_DATABASE_URL`` identifies the one direct MAGIS
+database an isolated runtime may read. The orchestrator injects only that URL
+and the non-secret runtime identity, never an instruction bundle or provider
+credential environment variable.
 
 Boot flow: the first Adam workspace seeds Genesis.  An EVE workspace never
 seeds a Council or a second Adam; it only initialises its local runtime state.
@@ -133,7 +133,7 @@ def run() -> None:
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
     # lifecycle state. The initial Adam seeds Genesis there; an EVE only
     # opens the public schema assigned by its one direct MAGIS binding.
-    from magi.agent.magis_public_db import init_magis_public_db
+    from magi.agent.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON

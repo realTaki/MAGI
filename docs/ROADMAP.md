@@ -2,7 +2,8 @@
 
 > **Documentation note (2026-07):** this file preserves detailed historical
 > planning notes and completed milestones. For the current terminology, use
-> **MAGIS = MAGI Society** and **MAGIC = MAGI Citizen**. Historical sections
+> **MAGIS = MAGI Society**. `MAGIC` is the internal table/API name for an
+> individual MAGI. Historical sections
 > below may retain the old terms or old schema sketches; they are not the
 > current API or database contract. See [Architecture](ARCHITECTURE.md) and
 > [database migrations](database-migrations.md) for the current implementation.
@@ -372,8 +373,8 @@ class MAGIS(Base):
     """一群 MAGI 组成的 Agentic Society。
 
     一个 MAGIS 不是单个容器 — 它是组织树里的容器节点,持有一个
-    Adam container + N Eve containers (每个 MAGI Citizen 跑在
-    自己的 Pod 里)。MAGISes 通过 parent_id self-FK 形成树结构。
+    Adam container + N Eve containers（每个 MAGI 跑在
+    自己的 Pod 里）。MAGIS 通过 parent_id self-FK 形成树结构。
     """
     __tablename__ = "magics"
     id            : int            # PK
@@ -386,7 +387,7 @@ class MAGIS(Base):
 
 
 class MAGIC(Base):
-    """一个 MAGI 运行时 agent（一个 MAGI Citizen）。
+    """一个 MAGI 运行时 agent。
 
     每个 MAGIC 在它所在的 MAGIS 里持有一个 position：
       - position='adam' → 这个 MAGIS 的 ADAM（leader / operator）。
@@ -483,7 +484,7 @@ class MagiImBinding(Base):
 - `agents` table — never shipped; not needed. Runtime processes bind
   to `magis` rows; process state is runtime-local, not DB.
 - `agent_assignments` table — never shipped; not needed.
-- `departments` table — gone. The org structure is now "one MAGI Citizen
+- `departments` table — gone. The org structure is now "one MAGI
   + 1 ADAM + N EVE", with no sub-org tree.
 - `agents.department_id` column — gone.
 - `users.department_id` column — gone.
@@ -553,7 +554,7 @@ class MagiImBinding(Base):
 | `agents` / `agent_assignments` (proposed in earlier F1 drafts) | dropped (never shipped) |
 | `Employee.provider` / `Employee.api_key` | move to `Magi` |
 | `loop.py` LLM provider resolution | reads `Magi.provider` / `Magi.api_key` via the bound Magi row |
-| WebUI sidebar / tree view | a tree of **MAGI Citizens** → expand a MAGIC → list its members (`magis`) with positions; expand a MAGI → list its `users` (with `role`) |
+| WebUI sidebar / tree view | a tree of **MAGIS** → select a MAGIS → manage its MAGI and roles |
 | `/api/departments/*` | drop entirely |
 | `/api/employees/*` | drop entirely (no alias; it never shipped clean) |
 | `/api/magis/*` | MAGIS list / create / update / delete |

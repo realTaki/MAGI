@@ -78,11 +78,11 @@ def known_providers() -> list[str]:
 
 def get_provider(model: str | None = None) -> LLMProvider:
     """Resolve the MAGI runtime's LLM provider from the
-    seeded adam ``Magi`` row and instantiate it.
+    direct MAGIS database and instantiate it.
 
     The factory opens its own short-lived ORM session,
-    reads the root MAGIS's Adam (the runtime identity — see
-    :func:`magi.agent.db.engine._seed_default_root`),
+    resolves the runtime MAGI by ``MAGI_RUNTIME_ID`` (or the direct MAGIS's
+    Adam for the initial node),
     and uses that row's ``provider`` / ``api_key`` /
     ``model`` columns to build the provider.
 
@@ -96,7 +96,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
     Raises
     ------
     LLMNotConfiguredError
-        The adam Magi's ``provider`` / ``api_key`` is
+        The runtime MAGI's ``provider`` / ``api_key`` is
         unset. The chat / TG handler maps this to a
         503 ``magi.llm_credentials_required``.
     LLMError
@@ -106,7 +106,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
     from sqlalchemy import select
 
     from magi.agent.db import MAGIS, MAGIC
-    from magi.agent.magis_public_db import open_magis_session
+    from magi.agent.db.magis import open_magis_session
 
     runtime_id = os.environ.get("MAGI_RUNTIME_ID")
     with open_magis_session() as session:

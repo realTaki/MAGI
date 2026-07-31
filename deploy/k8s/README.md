@@ -12,16 +12,17 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 - 源码保留在不可变镜像内（`/app/magi`），不会挂载到 `/workspace`；
 - Adam 通过 ClusterIP Service 提供 WebUI；
 - EVE 使用 Telegram 时不创建 HTTP Service；
-- SQLite 默认单副本运行，避免多个 Pod 同时写同一个数据库。
+- 每个 MAGI 的私有 SQLite 仅单副本运行；每个 MAGIS 使用独立 PostgreSQL 保存组织数据。
 
 本地开发另有 ``overlays/dev-eva00``：它仅由 ``../bootstrap-k8s.sh``
 配合 kind extraMounts 使用，把宿主机 ``workspace/MAGIC/eva-00`` 映射为
 `/workspace`，并把源码映射为 `/app/magi`，以启用 Uvicorn reload
 与 Vite HMR。不要将此 overlay 应用于远程/生产集群。
 
-此外，``../bootstrap-k8s.sh`` 会部署 ``magi-orchestrator``。它是唯一可创建 EVE
-Deployment、PVC 和 provider Secret 的组件；Adam 仅通过带 HMAC 的集群内 API 请求
-启动/停止。不要为 Adam 挂载 Docker socket 或 Kubernetes ServiceAccount token。
+此外，``../bootstrap-k8s.sh`` 会部署 ``magi-orchestrator``。它是唯一可创建 MAGI 的
+Deployment/私有 PVC，以及新 MAGIS 的 PostgreSQL、公共 PVC 和数据库 Secret 的组件；
+Adam 仅通过带 HMAC 的集群内 API 请求启动/停止。不要为 Adam 挂载 Docker socket 或
+Kubernetes ServiceAccount token。
 
 ## 目录结构
 
@@ -32,6 +33,7 @@ deploy/k8s/
 │   ├── configmap.yaml
 │   ├── deployment.yaml
 │   ├── kustomization.yaml
+│   ├── magis-genesis.yaml
 │   ├── pvc.yaml
 │   ├── service.yaml
 │   └── serviceaccount.yaml
@@ -39,19 +41,23 @@ deploy/k8s/
 │   ├── adam/
 │   │   ├── ingress.example.yaml
 │   │   ├── kustomization.yaml
-│   │   └── patch-config.yaml
+│   │   ├── patch-config.yaml
+│   │   └── patch-magis-genesis.yaml
+│   ├── dev-eva00/                 # kind only: source hot reload + host paths
 │   └── eve-example/
 │       ├── kustomization.yaml
 │       ├── patch-config.yaml
 │       └── patch-delete-service.yaml
 ├── secrets/
 │   ├── adam-magi-secrets.example.yaml
-│   └── eve-example-magi-secrets.example.yaml
+│   ├── eve-example-magi-secrets.example.yaml
+│   └── magis-genesis-db.example.yaml
 └── README.md
 ```
 
-`base` 是公共节点模板；overlay 通过 name prefix 为每个节点生成独立的
-Deployment、PVC、ConfigMap 和 Service 名称。
+`base` 是初始节点模板，并声明 Genesis 的 PostgreSQL 和公共工作区。普通运行时
+由 orchestrator 按 MAGI/MAGIS ID 创建稳定命名的资源；不要依赖 Kustomize name prefix
+推导这些名称。
 
 ## 前置条件
 
@@ -100,7 +106,19 @@ images:
 - 只有 `/workspace` 是持久化挂载；
 - 不需要在 Pod 内运行 Vite。
 
-## 2. 部署 Adam
+## 2. 创建 Genesis 数据库 Secret 并部署 Adam
+
+Genesis PostgreSQL 是初始 MAGIS 的必需依赖。先复制示例到一个不提交 Git 的位置，
+填入强随机密码，然后创建 Secret：
+
+```bash
+cp deploy/k8s/secrets/magis-genesis-db.example.yaml /tmp/magis-genesis-db.yaml
+# 编辑 /tmp/magis-genesis-db.yaml 中的 POSTGRES_PASSWORD 和 MAGIS_DATABASE_URL
+kubectl -n magi apply -f /tmp/magis-genesis-db.yaml
+```
+
+`MAGIS_DATABASE_URL` 必须指向 `magi-magis-1-genesis-db:5432/magis_1`。初始 Adam
+会从这个 Secret 获得连接串，并在该 PostgreSQL 中创建 Genesis 与 `EVA-00 PROTO TYPE`。
 
 默认 Adam 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置
 （启动逻辑会从 settings DB 自动检测已 onboarded 的通道）：
@@ -152,10 +170,10 @@ http://adam-magi.magi.svc.cluster.local:42069
 http://adam-magi:42069
 ```
 
-## 3. Secret 和 Telegram
+## 3. Telegram Secret（可选）
 
-WebUI-only Adam 不需要 Secret。清单中的 Secret 引用是 optional 的，因此没有
-Secret 时 Pod 也能启动。
+WebUI-only Adam 不需要 Telegram Secret；Genesis 数据库 Secret 则是上一节的必需项。
+清单中的 Telegram Secret 引用是 optional 的，因此没有它 Pod 仍能启动。
 
 如果 Adam 同时启用 Telegram,推荐通过命令行创建 Secret,而不是把真实密钥写
 进 Git:
@@ -228,13 +246,13 @@ cp -R deploy/k8s/overlays/eve-example \
    kubectl apply -k deploy/k8s/overlays/eve-eva00
    ```
 
-每个 EVE 都会得到自己的资源，例如：
+每个由 orchestrator 启动的 MAGI 都会得到自己的资源，例如：
 
 ```text
 Deployment: eve-eva00-magi-node
 PVC:       eve-eva00-magi-workspace
 ConfigMap:  eve-eva00-magi-config
-Secret:     eve-eva00-magi-secrets
+MAGIS DB:   magi-magis-<magis-id>-<name>-db（共享，不是每个 MAGI 一个）
 ```
 
 宿主机目录映射的等价概念是：
@@ -246,6 +264,8 @@ EVE Bob    → eve-bob-magi-workspace PVC → /workspace
 ```
 
 各个 MAGI 的 `/workspace` 相互隔离，不共享 SQLite、SOUL、skills 或 session。
+它们只挂载直属 MAGIS 的 `/magis` 公共 PVC；Adam 对子 MAGIS 的管理权不意味着
+它会挂载子 MAGIS 的公共工作区。
 
 ## 5. 持久化布局
 
@@ -257,6 +277,7 @@ Compose:
 
 Kubernetes:
 PVC → /workspace
+独立 MAGIS PVC → /magis
 ```
 
 容器内布局保持一致：
@@ -266,6 +287,7 @@ PVC → /workspace
 /workspace/memories/magi.db
 /workspace/memories/sessions/
 /workspace/skills/
+/magis/                         # 直属 MAGIS 的团队共享文件
 ```
 
 这样可以让应用代码不感知底层是 bind mount 还是 PVC。

@@ -1,7 +1,7 @@
-"""MAGI ``db`` package — SQLite persistence.
+"""MAGI persistence boundaries.
 
-Holds every SQLAlchemy ORM table + the engine/session
-machinery. The package used to be called ``state`` and live
+Holds the SQLAlchemy ORM models plus private and public database access. The
+package used to be called ``state`` and live
 at :mod:`magi.agent.state`; the rename + split is the
 current shape, the old module path is gone (callers
 were updated in lockstep).
@@ -9,16 +9,19 @@ were updated in lockstep).
 Layout:
 
   - :mod:`.base`                — :class:`Base` declarative class
-  - :mod:`.engine`              — engine singleton + ``init_orm``
-                                  + ``get_session`` / ``open_session``
+  - :mod:`.engine`              — private per-MAGI SQLite engine +
+                                  ``init_orm`` / ``get_session`` /
+                                  ``open_session``
+  - :mod:`.magis`               — public PostgreSQL engine and sessions for
+                                  the MAGI's one direct MAGIS; organisation
+                                  routes and runtime configuration use this
+                                  boundary
   - :mod:`.models_contact`      — :class:`Contact` (the unified
                                   person directory; replaces the old
                                   ``contacts``, ``contact_entries``,
                                   and ``user_im_bindings`` tables)
-  - :mod:`.models_magis`        — :class:`MAGIS` (MAGI Societies,
-                                  a tree of MAGI groups)
-  - :mod:`.models_magic`        — :class:`MAGIC` (MAGI Citizens,
-                                  runtime agent rows bound to a ``MAGIS``)
+  - :mod:`.models_magis`        — :class:`MAGIS` (MAGI Societies, a tree)
+  - :mod:`.models_magic`        — :class:`MAGIC` (individual MAGI rows)
   - :mod:`.models_mcp_server`   — :class:`McpServer` (operator-
                                   configured MCP server rows; the
                                   loader reads these in place of
@@ -33,6 +36,10 @@ Layout:
                                   settings KV table)
   - :mod:`.settings`            — compatibility facade for the legacy
                                   ``state_get`` / ``state_set`` API
+
+The models are shared declarations because the public MAGIS schema has foreign
+keys across them.  In production, only the narrow organisation subset is
+created through :mod:`.magis`; private models and tables remain in SQLite.
 
 Public surface (re-exported below): the names the ~30
 external callers need (``Base`` + every model class +
@@ -68,7 +75,7 @@ from magi.agent.db.models_contact import Contact, ContactNote
 from magi.agent.db.models_eve_runtime import EveRuntime
 # Naming refresh (2026-07): ``MAGIS`` = a MAGI Society (a group
 # of MAGIs; lives in the ``magis`` table).
-# ``MAGIC`` = an individual MAGI agent (a "MAGI Citizen";
+# ``MAGIC`` = an individual MAGI agent (internal table/API name;
 # lives in the ``magic`` table).
 from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_magis import MAGIS

@@ -15,9 +15,9 @@
    └─ 失败吞掉，保留现有缓存
 
 2. 凭证校验 (get_provider, _validate_credentials 已被删除)
-   └─ get_provider() 在 magi/agent/llm/factory.py 内自己读 seeded Adam MAGI Citizen 行
+   └─ get_provider() 在 magi/agent/llm/factory.py 内自己读当前 MAGI 行
      （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVE 不再通过 provider/API key 环境变量绕过数据库）
-   └─ 凭证来自 magic 表（每个 MAGIC row = 一个 MAGI Citizen 的 LLM creds），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
+   └─ 凭证来自 magic 表（每行对应一个 MAGI 的 LLM 配置），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
    └─ MAGI 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
    └─ 严格模式，绝不回退系统默认凭证
 
@@ -61,16 +61,16 @@
 
 ```
 设计原则:
-  - magic 表（每个 MAGIC row = 一个 MAGI Citizen 的 LLM creds）是 Adam runtime 的唯一凭证来源
-  - EVE runtime 通过直属 MAGIS 的 `MAGIS_DATABASE_URL` 读取自己的 provider/API key 配置
-    跳过 DB,直接用 orchestrator 注入的 Secret
-  - Contact 表不存 provider/api_key (Token 消耗记在 Contact 上,但凭证属于 MAGI Citizen)
-  - 每笔 LLM 调用都按 Contact 记录 token_usage,但用对应 MAGI Citizen 的 key 发起
+  - magic 表（每行对应一个 MAGI 的 LLM 配置）是所有 runtime 的唯一凭证来源
+  - 所有 runtime 通过直属 MAGIS 的 `MAGIS_DATABASE_URL` 读取自己的 provider/API key 配置；
+    orchestrator 只注入数据库连接串，不注入 provider/API key
+  - Contact 表不存 provider/api_key（Token 消耗记在 Contact 上，但凭证属于 MAGI）
+  - 每笔 LLM 调用都按 Contact 记录 token_usage，但用对应 MAGI 的 key 发起
 
 调用链:
-  TG bot:    _handle_contact_message → get_provider() (env vars 路径)
-  WebUI:     _resolve_caller_credentials → get_provider() (DB 路径)
-  Runner:    execute_task → handle_message → get_provider() (env vars 路径)
+  TG bot:    _handle_contact_message → get_provider() (直属 MAGIS DB)
+  WebUI:     _resolve_caller_credentials → get_provider() (直属 MAGIS DB)
+  Runner:    execute_task → handle_message → get_provider() (直属 MAGIS DB)
 ```
 
 **不可改的守卫**:

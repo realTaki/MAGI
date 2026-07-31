@@ -1,10 +1,10 @@
-"""The public database for a MAGIS.
+"""Public database access for a MAGIS.
 
-Each MAGI keeps its own SQLite database for private memory, sessions and
-work. Organisation facts live in the PostgreSQL database of its direct
-MAGIS. The only runtime discovery input is ``MAGIS_DATABASE_URL``; it is
-mounted from the MAGIS database Secret by Kubernetes, never assembled from
-provider or instruction environment values.
+Each MAGI keeps a private SQLite database for its memory, sessions and local
+work.  Organisation facts live in the PostgreSQL database of its direct
+MAGIS.  The sole runtime discovery input is ``MAGIS_DATABASE_URL``; Kubernetes
+mounts it from the MAGIS database Secret, rather than passing provider or
+instruction values as environment variables.
 """
 
 from __future__ import annotations
@@ -28,14 +28,15 @@ def _url() -> str | None:
 def get_magis_engine() -> Engine:
     """Return this node's direct MAGIS public database engine.
 
-    Test and legacy-local fallback deliberately use the node SQLite engine;
-    production deployment always injects ``MAGIS_DATABASE_URL`` from the
-    direct MAGIS Secret.
+    Tests and legacy-local development deliberately fall back to the node
+    SQLite engine.  Production deployments always inject
+    ``MAGIS_DATABASE_URL`` from the direct MAGIS Secret.
     """
     global _engine, _session_factory
     url = _url()
     if url is None:
         from magi.agent.db.engine import get_engine
+
         return get_engine()
     if _engine is None or str(_engine.url) != url:
         if _engine is not None:
@@ -48,8 +49,8 @@ def get_magis_engine() -> Engine:
 def init_magis_public_db(*, seed_root: bool = False) -> Engine:
     """Create public organisation tables and optionally seed Genesis.
 
-    The public schema has a deliberately narrow table set. Private models are
-    never created in PostgreSQL.
+    The public schema has a deliberately narrow table set.  Private models
+    are never created in PostgreSQL.
     """
     from magi.agent.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
 
@@ -62,6 +63,7 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
         )
     if seed_root:
         from magi.agent.db.engine import _seed_default_root
+
         _seed_default_root(engine)
     return engine
 
@@ -74,6 +76,7 @@ def get_magis_session() -> Generator[Session, None, None]:
         _session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
     if _url() is None:
         from magi.agent.db.engine import get_session
+
         yield from get_session()
         return
     assert _session_factory is not None
@@ -91,6 +94,7 @@ def open_magis_session() -> Generator[Session, None, None]:
     engine = get_magis_engine()
     if _url() is None:
         from magi.agent.db.engine import open_session
+
         with open_session() as session:
             yield session
         return

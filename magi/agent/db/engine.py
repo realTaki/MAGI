@@ -1,9 +1,10 @@
-"""MAGI ``db`` package — engine, bootstrap, and session helpers.
+"""Private per-MAGI SQLite engine, bootstrap, and session helpers.
 
 Lives in the same SQLite file as the small ``meta`` bootstrap table.
-All application tables, including the legacy ``settings`` KV table, are
-accessed through SQLAlchemy via this module. ``meta`` remains a raw-SQL
-bootstrap table because it only carries schema hand-off metadata.
+Private application tables, including the legacy ``settings`` KV table, are
+accessed through SQLAlchemy via this module. MAGIS public PostgreSQL access
+lives in :mod:`magi.agent.db.magis`. ``meta`` remains a raw-SQL bootstrap
+table because it only carries schema hand-off metadata.
 
 Schema ownership is now Alembic. ``init_orm`` runs ``alembic upgrade head``
 before opening application sessions. The old inline migration module is used
@@ -311,7 +312,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
-    import magi.agent.db.models_magic  # noqa: F401 — MAGI Citizen rows
+    import magi.agent.db.models_magic  # noqa: F401 — individual MAGI rows
     import magi.agent.db.models_magis  # noqa: F401 — MAGIS tree
     import magi.agent.db.models_magis_membership  # noqa: F401 — roles + memberships
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers

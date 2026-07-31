@@ -23,7 +23,7 @@ Tables (in dependency order):
   - chat_sessions          per-user conversation threads
   - contacts               unified person directory
                            (role enum collapsed: ``assigned`` / ``guest``)
-  - magic                 MAGIC = MAGI Citizen = individual agent row
+  - magic                 MAGIC = internal individual MAGI row name
                            (carries LLM provider + api_key)
   - magis                  MAGIS = MAGI Society = tree of groups
                            (parent_id self-FK + adam_id → magic.id)
@@ -166,7 +166,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("name"),
     )
 
-    # ### magic (MAGIC — a MAGI Citizen; individual agent row) ──────── #
+    # ### magic (MAGIC — internal individual MAGI row name) ─────────── #
     # Carries LLM credentials and the MAGI's personal instruction.
     # MAGIS membership / role is modelled separately below.
     op.create_table(

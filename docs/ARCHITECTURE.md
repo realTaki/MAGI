@@ -3,7 +3,7 @@
 > The design philosophy, component layout, and core mechanics of MAGI.
 > For the high-level vision, see the [README](../README.md).
 > For the build plan, see [ROADMAP.md](ROADMAP.md).
-> For the unimplemented production storage plan, see
+> For the current production storage boundary and remaining work, see
 > [production-persistence.md](production-persistence.md).
 
 ---
@@ -17,15 +17,14 @@ and act as a collective**.
 The society is composed of three layers:
 
 ```
-  Society (MAGI)              The whole collective — all agents, all societies, all state
-    └── Societies (MAGISes)   Organizations. One leader (Adam) + many members (EVEs).
-          └── MAGI Citizens (MAGICs) Individual agents. Each has its own container,
-                               identity, memory, tools, and LLM.
-          └── Contacts         The people known to the society. Operators or recipients.
+  MAGIS                       One MAGI Society; it may have child MAGIS.
+    ├── Adam                  Leading MAGI and control-plane runtime.
+    ├── MAGI                  Individual runtimes, including MAGI with the EVE role.
+    └── Contacts              People known to a MAGI's private runtime.
 ```
 
-An agent is not a thread. Not a session. **A MAGI Citizen** — with its own container,
-its own identity, its own LLM credentials, and its own persistent state.
+An agent is not a thread or a session. A **MAGI** has its own container, identity,
+LLM configuration and private persistent state.
 
 ---
 
@@ -34,16 +33,18 @@ its own identity, its own LLM credentials, and its own persistent state.
 **One agent = one container = one runtime process.**
 
 There is one binary (`magi`). At boot, `MAGI_NODE_ROLE` selects the archetype preset
-(`adam` or `eve`), which determines the MAGI Citizen's position in its MAGIS.
+(`adam` or `eve`), which identifies the runtime archetype. The actual role,
+instructions and provider configuration are read from the direct MAGIS database.
 Every architectural choice is an independent configuration axis:
 
 | Axis | Env var | Default by archetype |
 |---|---|---|
 | Position | `MAGI_NODE_ROLE` | `adam` = leader, `eve` = member |
 | Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
-| State backend | `MAGI_STATE_BACKEND` | `auto` (SQLite) |
+| Private state | `/workspace/memories/magi.db` | SQLite, one replica per MAGI |
+| MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL Secret |
 | Adam peer | `MAGI_ADAM_URL` | `http://adam:42069` |
-| LLM provider | `ANTHROPIC_API_KEY` etc. | per-agent configuration |
+| LLM provider | direct MAGIS PostgreSQL | per-MAGI configuration; not injected as an env var |
 
 ---
 
@@ -55,7 +56,8 @@ magi/
 │   ├── loop.py     # handle_message(): one turn of the agent loop
 │   ├── tools/      # Registry + base + 20+ tool implementations
 │   ├── memory/     # Three-layer memory: session, contacts, self
-│   ├── db/         # SQLAlchemy ORM + settings KV store
+│   ├── db/         # private SQLite + public MAGIS PostgreSQL access
+│   │   └── magis/  # direct MAGIS engine/session boundary
 │   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 │   ├── proactive/  # Scheduled task engine
 │   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
@@ -101,13 +103,25 @@ adapter and registering it. Core code never changes.
 
 ---
 
-## Database (14 tables)
+## Persistence
+
+There are two storage domains. A MAGI's private SQLite is for local runtime state;
+its one direct MAGIS PostgreSQL database is for organization facts. Adam's child-tree
+management permission does not grant it a second runtime database or public mount.
+
+| Domain | Tables / files | Owner |
+|---|---|---|
+| Private SQLite + `/workspace` | sessions, memory, contacts, tasks, settings, SOUL, skills | one MAGI |
+| MAGIS PostgreSQL + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eve_runtimes` | one MAGIS |
+
+The compatibility Alembic baseline retains historical organization DDL in SQLite,
+but new runtime organization reads/writes use `magi.agent.db.magis` and PostgreSQL.
+
+## Private SQLite tables
 
 | Table | Holds |
 |---|---|
 | `contacts` | Person directory (unified `employees` + `contact_entries` + `user_im_bindings`) |
-| `magis` | MAGIS tree (via `parent_id`; `adam_id` points to its Adam MAGIC) |
-| `magic` | MAGIC rows (bound to a `magis`; `adam` / `eve` position) |
 | `action_items` | Operator to-do inbox |
 | `token_usage` | Per-call LLM billing |
 | `tasks` / `task_runs` | Scheduled tasks |
@@ -117,7 +131,7 @@ adapter and registering it. Core code never changes.
 | `mcp_servers` | Operator-configured MCP servers (name, type, endpoint, env, headers) |
 | `meta` / `settings` | KV runtime config |
 
-SQLite with WAL + `busy_timeout=5000` + `BEGIN IMMEDIATE`.
+Private SQLite uses WAL + `busy_timeout=5000` + `BEGIN IMMEDIATE`.
 
 ---
 
@@ -153,9 +167,9 @@ Agent-created skills live under `workspace/skills/`.
 ## Glossary
 
 - **MAGI** — The general kind of autonomous agent in this system.
-- **MAGIS** — A MAGI Society. A group of MAGIs (one Adam + N EVEs). Forms a tree via `parent_id`. ("MAGI Societies" in operator-facing copy.)
-- **MAGIC** — An individual MAGI agent (a MAGI Citizen). Container, identity, LLM, tools. ("MAGI Citizens" in operator-facing copy.)
-- **Adam** — Leader agent (a MAGI Citizen with `magic_position='adam'`). Manages a MAGIS, dispatches work.
-- **EVE** — Member agent (a MAGI Citizen with `magic_position='eve'`). Executes tasks, collaborates.
-- **Position** — `adam` / `eve`. Structural fact about the org.
+- **MAGIS** — A MAGI Society. A group of MAGI that forms a tree via `parent_id`.
+- **MAGIC** — Internal table/API name for an individual MAGI; not a separate product term.
+- **Adam** — Leading MAGI role. Manages its MAGIS subtree through the control plane.
+- **EVE** — Default working MAGI role. Executes tasks and collaborates.
+- **Role** — Adam and EVE are reserved roles; a MAGIS can also define custom roles.
 - **Contact** — A person known to the society. Role: `admin` (WebUI operator), `assigned` (the served user), or `guest` (everyone else).
