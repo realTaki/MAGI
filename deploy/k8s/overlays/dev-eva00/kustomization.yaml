@@ -18,6 +18,7 @@ patches:
   - path: patch-config.yaml
   - path: patch-deployment.yaml
   - path: patch-delete-pvc.yaml
+  - path: patch-delete-magis-workspace-pvc.yaml
   - target:
       group: apps
       version: v1

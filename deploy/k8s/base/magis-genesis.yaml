@@ -68,9 +68,33 @@ spec:
         magi.io/magis-id: "1"
     spec:
       securityContext:
-        fsGroup: 999
+        # The official postgres:16-alpine image owns its data directory as
+        # uid/gid 70.  Running it directly as that user avoids the image
+        # entrypoint's root-only chown path, which is incompatible with the
+        # capability drop below.
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
         seccompProfile:
           type: RuntimeDefault
+      # Dynamically provisioned volumes are initially root-owned.  The
+      # postgres process runs unprivileged, so prepare the empty data
+      # directory once with the smallest capability required for ownership.
+      initContainers:
+        - name: init-postgres-data
+          image: postgres:16-alpine
+          command: ["sh", "-ec", "chmod 0700 /var/lib/postgresql/data && chown -R 70:70 /var/lib/postgresql/data"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
       containers:
         - name: postgres
           image: postgres:16-alpine

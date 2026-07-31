@@ -8,4 +8,11 @@ resources:
 
 patches:
   - path: patch-webui.yaml
+  - path: patch-webui-volumes.json
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: magi-webui
+  - path: patch-delete-webui-pvc.yaml
   - path: patch-webui-service.yaml
