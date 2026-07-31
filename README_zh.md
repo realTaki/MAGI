@@ -1,6 +1,6 @@
 # MAGI — 模块化代理群体智能
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#项目状态)
 
@@ -182,4 +182,7 @@ MAGI 由人类与 AI 协作者共同开发，欢迎贡献与设计讨论。
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+MAGI 采用 [Business Source License 1.1](LICENSE)，以 source-available
+方式发布。个人使用、学术研究、教育和评估可免费使用；在某一版本首次公开发布满六个月
+之前，商业生产使用须取得 Licensor 的书面商业授权。该版本满六个月后，将依 MIT License
+开放商用。在 Change Date 前，本项目不是 OSI 定义的开源软件。

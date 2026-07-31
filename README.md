@@ -1,6 +1,6 @@
 # MAGI — Modular Agentic Group Intelligence
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
 
@@ -213,4 +213,9 @@ For security concerns, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MAGI is source-available under the [Business Source License 1.1](LICENSE).
+Personal use, academic research, education, and evaluation are free. Commercial
+production use requires a separate written license until the applicable version
+has been publicly available for six months; that version then becomes available
+under the MIT License. This is not an OSI-approved open-source license before
+its Change Date.
