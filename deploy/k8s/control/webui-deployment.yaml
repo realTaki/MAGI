@@ -45,9 +45,6 @@ spec:
           ports:
             - name: http
               containerPort: 42069
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
           startupProbe:
             httpGet: {path: /health, port: http}
             failureThreshold: 30
@@ -64,7 +61,3 @@ spec:
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "1", memory: 1Gi}
-      volumes:
-        - name: workspace
-          persistentVolumeClaim:
-            claimName: magi-webui-workspace

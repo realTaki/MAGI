@@ -22,6 +22,13 @@ logger = logging.getLogger("magi.api.auth_gates")
 
 
 def _is_admin_uid(uid: int) -> bool:
+    from magi.channels.webui import control_store
+    if control_store.enabled():
+        from magi.agent.db import ControlOperator
+        from magi.agent.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operator = session.get(ControlOperator, uid)
+            return operator is not None and bool(operator.admin)
     from magi.agent.db import Contact, open_session
 
     try:

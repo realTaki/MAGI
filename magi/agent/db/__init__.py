@@ -72,6 +72,7 @@ from magi.agent.db.engine import (
 from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_contact import Contact, ContactNote
+from magi.agent.db.models_control_plane import ControlOperator, ControlSetting
 from magi.agent.db.models_eve_runtime import EveRuntime
 # Naming refresh (2026-07): ``MAGIS`` = a MAGI Society (a group
 # of MAGIs; lives in the ``magis`` table).
@@ -101,6 +102,8 @@ __all__ = [
     # org
     "Contact",
     "ContactNote",
+    "ControlOperator",
+    "ControlSetting",
     "MAGIC",
     "MAGIS",
     "MAGISMembership",

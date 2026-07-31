@@ -14,5 +14,4 @@ patches:
       version: v1
       kind: Deployment
       name: magi-webui
-  - path: patch-delete-webui-pvc.yaml
   - path: patch-webui-service.yaml

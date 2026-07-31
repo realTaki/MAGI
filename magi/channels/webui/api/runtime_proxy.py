@@ -9,11 +9,12 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import Contact, EveRuntime, MAGIC, MAGIS
+from magi.agent.db import ControlOperator, EveRuntime, MAGIC, MAGIS
 from magi.agent.db.magis import get_magis_session
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers
+from magi.channels.webui import control_store
 
 router = APIRouter(tags=["runtime-proxy"])
 
@@ -55,10 +56,12 @@ async def proxy_runtime(
         control_uid = int(admin_uid)
     except ValueError as exc:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in") from exc
-    from magi.agent.db import open_session
-
-    with open_session() as control_session:
-        operator = control_session.get(Contact, control_uid)
+    if control_store.enabled():
+        operator = magis_session.get(ControlOperator, control_uid)
+    else:
+        from magi.agent.db import Contact, open_session
+        with open_session() as control_session:
+            operator = control_session.get(Contact, control_uid)
     if operator is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     runtime_path = f"/api/{path}"
@@ -70,7 +73,7 @@ async def proxy_runtime(
             path_and_query=runtime_path,
             target_id=magic_id,
             operator_id=operator.id,
-            operator_name=operator.display_name or operator.name,
+            operator_name=operator.display_name or getattr(operator, "name", None) or f"Admin {operator.id}",
             telegram_id=operator.telegram_id,
         )
     except RuntimeError as exc:

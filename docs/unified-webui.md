@@ -10,7 +10,7 @@ magi webui           → 全局唯一的 WebUI 控制面
 ```
 
 `magi-webui` 是浏览器唯一入口。它承载 React SPA、登录会话、MAGIS/MAGI 管理和
-生命周期操作。每个 MAGI runtime 不再挂载 SPA，也不直接暴露给浏览器；它只提供
+生命周期操作，但不拥有 workspace 或本地 SQLite。每个 MAGI runtime 不再挂载 SPA，也不直接暴露给浏览器；它只提供
 ClusterIP 可达的 Runtime API。
 
 ## 请求路径
@@ -49,6 +49,11 @@ MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 联系人 ID 作用域。该映射优先使用 Telegram ID；无 Telegram 的操作者使用系统标记。
 因此 WebUI 的登录身份不会要求所有 MAGI 共享 SQLite 或共享 Contact 主键。
 
+控制面自身的 Admin、登录/验证代码与 onboarding 状态存储在 Genesis MAGIS 的
+PostgreSQL（`control_operators`、`control_settings`）。Bot token 不保存在 WebUI：
+WebUI 用目标绑定的 HMAC 调用 Genesis runtime 的内部控制接口，由该 MAGI 写入自己的
+私有 SQLite 并启动频道。
+
 ## 前端目标选择与缓存
 
 控制面 API（登录、onboarding、MAGIS 树、MAGI 注册）保留在 `/api/*`。私有 Runtime API
@@ -59,7 +64,7 @@ MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 ## Kubernetes
 
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
-  `magi webui`，使用 Genesis MAGIS PostgreSQL 与自己的控制台工作区 PVC。
+  `magi webui`，只连接 Genesis MAGIS PostgreSQL，不挂载 PVC 或 workspace。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
 - orchestrator 在启动新的 MAGI 时，同时创建同名的内部 ClusterIP Service；停止时保留，
   删除 MAGI 时一并删除。
@@ -74,5 +79,5 @@ MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 - 网络策略：限制 Runtime Service 只接受 `magi-webui` Namespace/Pod 的流量。
 - mTLS 或服务身份：替代当前共享 HMAC 密钥。
 - 可用性与流式代理：对停止的 MAGI 显示更丰富的状态，并为聊天支持 SSE。
-- 集中身份目录：当前控制台登录数据在 WebUI 的私有 SQLite；长期可迁入专用控制面
-  PostgreSQL schema。
+- 控制面凭据的加密与密钥轮换：当前 Bot token 仅存于 Genesis runtime 的私有数据库；
+  未来应使用外部密钥管理服务。

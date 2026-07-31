@@ -722,16 +722,26 @@ def load_mcp_tools_blocking(
     We must run on a fresh loop — the boot code is itself sync,
     so borrowing the FastAPI loop would deadlock the asyncio
     scheduler.
+
+    When the caller is already inside a running asyncio loop
+    (Uvicorn's worker loop, for example), we drive a fresh
+    loop manually. We probe with :func:`asyncio.get_running_loop`
+    **before** constructing the coroutine so the
+    never-awaited-coroutine ``RuntimeWarning`` never fires on a
+    doomed coroutine that :func:`asyncio.run` refuses to consume.
     """
+    coro = load_mcp_tools_async(timeouts=timeouts)
     try:
-        asyncio.run(load_mcp_tools_async(timeouts=timeouts))
-    except RuntimeError as e:
-        # Nested loop — fall back to the ``_nest`` pattern.
-        if "asyncio.run() cannot be called" not in str(e):
-            raise
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — the simple, fast path.
+        asyncio.run(coro)
+    else:
+        # Nested loop (e.g. Uvicorn worker) — drive a fresh
+        # loop manually and await the same coroutine.
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(load_mcp_tools_async(timeouts=timeouts))
+            return loop.run_until_complete(coro)
         finally:
             loop.close()
     # Return the cached list (load_mcp_tools_async populates

@@ -230,6 +230,57 @@ def test_load_blocking_empty_db_returns_empty(mcp_db):
     assert mcp_loader.load_mcp_tools_blocking() == []
 
 
+def test_load_blocking_inside_running_loop_emits_no_unawaited_warning(mcp_db):
+    """Regression: when the caller is already on a running
+    asyncio loop (Uvicorn's worker loop calls
+    :func:`bootstrap_mcp_tools` from a sync hook in
+    ``create_app``), the wrapper used to call
+    ``asyncio.run(load_mcp_tools_async(...))`` which:
+      1. raised ``RuntimeError("asyncio.run() cannot be
+         called from a running event loop")``
+      2. left the coroutine object never-awaited
+      3. emitted ``RuntimeWarning: coroutine
+         'load_mcp_tools_async' was never awaited`` on GC
+
+    The fix constructs the coroutine first and only
+    feeds it to ``asyncio.run``; the exception branch
+    reuses the same coroutine object via
+    ``loop.run_until_complete``, so it's always awaited
+    exactly once and the warning never fires.
+
+    The "are we in a running loop?" probe is
+    ``asyncio.get_running_loop()`` — the canonical way
+    to detect the case. We patch it to return a sentinel
+    (simulating the Uvicorn worker shape) without
+    spinning up a real asyncio.run — which would
+    require the rest of the test to coexist with the
+    loader's module-level state.
+    """
+    import asyncio
+    import warnings
+    from unittest.mock import MagicMock
+
+    # Simulate "we're inside a running event loop" by
+    # making ``get_running_loop`` return a truthy object.
+    # The wrapper's probe reads this; the real
+    # ``asyncio.run`` call is bypassed entirely.
+    with patch.object(asyncio, "get_running_loop", return_value=MagicMock()):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", RuntimeWarning)
+            mcp_loader.load_mcp_tools_blocking()
+
+    never_awaited = [
+        w for w in caught
+        if issubclass(w.category, RuntimeWarning)
+        and "never awaited" in str(w.message)
+    ]
+    assert not never_awaited, (
+        f"load_mcp_tools_blocking emitted "
+        f"{len(never_awaited)} never-awaited warning(s); "
+        f"first: {never_awaited[0].message}"
+    )
+
+
 def test_load_blocking_populated_db_attempts_connections(mcp_db):
     """A populated table triggers :func:`connect` on
     each connection. With no real MCP server, the

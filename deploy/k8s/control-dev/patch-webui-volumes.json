@@ -4,13 +4,6 @@
     "path": "/spec/template/spec/volumes",
     "value": [
       {
-        "name": "workspace",
-        "hostPath": {
-          "path": "/mnt/magi/workspace/WEBUI",
-          "type": "DirectoryOrCreate"
-        }
-      },
-      {
         "name": "source",
         "hostPath": {
           "path": "/mnt/magi/magi",

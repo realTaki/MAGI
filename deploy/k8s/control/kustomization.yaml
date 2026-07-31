@@ -10,6 +10,5 @@ resources:
   - configmap.yaml
   - deployment.yaml
   - service.yaml
-  - webui-pvc.yaml
   - webui-deployment.yaml
   - webui-service.yaml

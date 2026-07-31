@@ -62,8 +62,9 @@ from sqlalchemy import select
 # resolve the name at import time, before the function
 # body ever runs. Same root cause as the D.22 fix on
 # ``magi/node/__init__.py``: hoist the import.
-from magi.agent.db import Contact, open_session, require_state_dir  # noqa: E402
+from magi.agent.db import Contact, ControlOperator, open_session, require_state_dir  # noqa: E402
 from magi.agent.db.settings import state_get  # noqa: E402
+from magi.channels.webui import control_store
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot  # noqa: E402
 
@@ -86,6 +87,10 @@ def _signing_key() -> bytes:
     Not cryptographically random, but prevents casual cookie
     tampering — an attacker with filesystem access to the
     state dir already owns the DB anyway."""
+    if control_store.enabled():
+        secret = os.environ.get("MAGI_CONTROL_SECRET")
+        if secret:
+            return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
     return hashlib.sha256(
         _state_dir().encode() + b"magi-session-signing"
     ).digest()
@@ -146,6 +151,10 @@ def _super_admins() -> set[int]:
     the two concepts collided on the served user who is
     also an operator).
     """
+    if control_store.enabled():
+        from magi.agent.db.magis import open_magis_session
+        with open_magis_session() as session:
+            return set(session.scalars(select(ControlOperator.id).where(ControlOperator.admin.is_(True))).all())
     state_dir = _state_dir()
     result: set[int] = set()
     try:
@@ -294,7 +303,7 @@ _LOGIN_KEY = "auth.login_code"
 def _load_login_code(uid: int) -> dict | None:
     from magi.agent.db.settings import state_get
 
-    raw = state_get(_state_dir(), f"{_LOGIN_KEY}.{uid}")
+    raw = control_store.get(f"{_LOGIN_KEY}.{uid}") if control_store.enabled() else state_get(_state_dir(), f"{_LOGIN_KEY}.{uid}")
     if not raw:
         return None
     try:
@@ -306,24 +315,27 @@ def _load_login_code(uid: int) -> dict | None:
 def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
     from magi.agent.db.settings import state_set
 
-    state_set(
-        _state_dir(),
-        f"{_LOGIN_KEY}.{uid}",
-        json.dumps(
+    value = json.dumps(
             {
                 "code": code,
                 "issued_at": issued_at.replace(microsecond=0).isoformat(),
                 "expires_at": expires_at,
                 "last_sent_at": issued_at.timestamp(),
             }
-        ),
-    )
+        )
+    if control_store.enabled():
+        control_store.set(f"{_LOGIN_KEY}.{uid}", value)
+    else:
+        state_set(_state_dir(), f"{_LOGIN_KEY}.{uid}", value)
 
 
 def _clear_login_code(uid: int) -> None:
     from magi.agent.db.settings import state_delete
 
-    state_delete(_state_dir(), f"{_LOGIN_KEY}.{uid}")
+    if control_store.enabled():
+        control_store.delete(f"{_LOGIN_KEY}.{uid}")
+    else:
+        state_delete(_state_dir(), f"{_LOGIN_KEY}.{uid}")
 
 
 # -- endpoints ---------------------------------------------------------
@@ -371,6 +383,14 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     We intentionally avoid Telegram ``getChat`` network calls here:
     login must stay fast even when Telegram is slow or blocked.
     """
+    if control_store.enabled():
+        from magi.agent.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operators = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+        return AllowedLoginAccountsResponse(accounts=[
+            AllowedLoginAccount(uid=operator.id, name=operator.display_name or f"Admin {operator.telegram_id}")
+            for operator in operators
+        ])
     accounts: list[AllowedLoginAccount] = []
 
     # 1. Super admins (wizard-configured). We resolve
@@ -456,6 +476,25 @@ async def send_login_code(
         )
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
+    if control_store.enabled():
+        from magi.agent.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operator = session.get(ControlOperator, uid)
+        if operator is None or not operator.admin:
+            return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
+        previous = _load_login_code(uid)
+        if previous and datetime.now(timezone.utc).timestamp() - float(previous.get("last_sent_at", 0)) < _RESEND_COOLDOWN_SECONDS:
+            return SendLoginCodeResponse(ok=False, error="Wait before requesting a new code.")
+        code = _generate_code()
+        issued_at = datetime.now(timezone.utc)
+        _store_login_code(uid, code, issued_at, issued_at.timestamp() + _CODE_TTL_SECONDS)
+        from magi.channels.webui.control_runtime import send_telegram
+        try:
+            await send_telegram(operator.telegram_id, f"Your MAGI sign-in code is: <code>{code}</code>")
+        except Exception as exc:
+            _clear_login_code(uid)
+            return SendLoginCodeResponse(ok=False, error=f"send failed: {exc}")
+        return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
     # Resolve the UID's bound IM channel via the channel
     # dispatcher (D.28). Today: TG. Future: dispatcher picks
     # the first channel with a live bot. If no IM is
@@ -635,6 +674,13 @@ async def me(
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
+    if control_store.enabled():
+        from magi.agent.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operator = session.get(ControlOperator, uid)
+        if operator is None:
+            raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
+        return MeResponse(uid=operator.id, telegram_id=operator.telegram_id, display_name=operator.display_name, admin=operator.admin)
     # We already proved the cookie is a valid admin
     # uid; re-read the row to surface the
     # telegram_id + display name. If the row has since
@@ -645,7 +691,7 @@ async def me(
     try:
         with open_session() as session:
             contact = session.get(Contact, uid)
-        if ct is None:
+        if contact is None:
             return MeResponse(
                 uid=uid,
                 telegram_id=None,

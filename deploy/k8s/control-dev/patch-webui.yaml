@@ -23,8 +23,6 @@ spec:
             - name: VITE_BACKEND_URL
               value: http://127.0.0.1:8000
           volumeMounts:
-            - name: workspace
-              mountPath: /workspace
             - name: source
               mountPath: /app/magi
               readOnly: true

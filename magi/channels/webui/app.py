@@ -63,7 +63,7 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def create_app(*, include_spa: bool = True, include_control_routes: bool = True, start_telegram: bool = True) -> FastAPI:
+def create_app(*, include_spa: bool = True, include_control_routes: bool = True, start_telegram: bool = True, include_private_routes: bool = True) -> FastAPI:
     """Build either the standalone control WebUI or an internal Runtime API.
 
     ``include_control_routes=False`` is used by every MAGI runtime: it omits
@@ -74,12 +74,13 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # child process.  The node-level ``run()`` call bootstraps
     # in the reloader process; uvicorn's ``reload=True`` spawns
     # a fresh child that needs its own cache.
-    try:
-        from magi.agent.tools.registry import bootstrap_mcp_tools
+    if include_private_routes:
+        try:
+            from magi.agent.tools.registry import bootstrap_mcp_tools
 
-        bootstrap_mcp_tools()
-    except Exception:
-        pass
+            bootstrap_mcp_tools()
+        except Exception:
+            pass
 
     # Start TG bot in the uvicorn child process.
     import logging as _log
@@ -105,6 +106,9 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # state — module-level startup would race those calls.
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
+        if not include_private_routes:
+            yield
+            return
         from magi.agent.memory.session.auto_title import (
             start_title_worker,
             stop_title_worker,
@@ -142,6 +146,17 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     if include_control_routes:
         app.include_router(auth.router, prefix="/api/auth")
         app.include_router(onboarding.router, prefix="/api/onboarding")
+    from magi.channels.webui.api import runtime_control
+    app.include_router(runtime_control.router, prefix="/api")
+    if not include_private_routes:
+        from magi.channels.webui.api import runtime_proxy
+        app.include_router(magic.router, prefix="/api")
+        app.include_router(magis.router, prefix="/api")
+        app.include_router(runtime_proxy.router, prefix="/api")
+        spa_dist = _find_spa_dist() if include_spa else None
+        if spa_dist is not None:
+            app.mount("/", StaticFiles(directory=str(spa_dist), html=True), name="spa")
+        return app
     # Contacts router — unified contact directory + CRUD.
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
@@ -291,8 +306,12 @@ def create_runtime_app() -> FastAPI:
     return create_app(include_spa=False, include_control_routes=False, start_telegram=False)
 
 
-# Module-level instance stays available for tests and direct ASGI imports.
-# Real services use factories: ``magi webui`` starts Telegram in its control
-# app, whereas a MAGI runtime factory must not accidentally start it merely by
-# importing this module.
-app = create_app(start_telegram=False)
+def create_control_app() -> FastAPI:
+    """Factory for the singleton browser-facing service; it has no local MAGI state."""
+    return create_app(include_spa=True, include_control_routes=True, start_telegram=False, include_private_routes=False)
+
+
+# A direct ASGI import must be safe in the singleton WebUI container: unlike a
+# MAGI runtime, it must never initialise private SQLite state merely by being
+# imported. Runtime containers always use ``create_runtime_app`` explicitly.
+app = create_control_app()
