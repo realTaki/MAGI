@@ -2,121 +2,184 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
-[![Status](https://img.shields.io/badge/status-experimental-orange)](#)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](#项目状态)
 
-**一个 Agentic Society。**
-MAGI 是为自主代理群体设计的基础设施 — 代理们自组织成团体，彼此协调，以集体
-的方式行动。一个 MAGI 不是一个聊天机器人 — 它是一个社会成员。部署一个 MAGI 时，
-你不是在安装软件，而是在为一个群体智能增加一位公民。
+[English README](README.md)
 
-不是单代理工具，不是多轮对话包装器。这是**群体智能的运行时**。
+> **MAGI 是面向持久化、模块化智能体社会的运行时。**
+>
+> MAGIS（一个 MAGI Society）不是一次性的群聊或任务流水线，而是由独立 MAGI Citizens
+> 组成的组织。每个 Citizen 都有自己的运行时、工作区、记忆、工具、模型提供方凭证，
+> 以及在 Society 中的角色。它们由 Adam 协调、由 EVE 执行工作，保留经验，逐步成长为
+> 持久的群体智能。
 
----
+MAGI 要回答的不只是「怎样把一个任务分配给多个 Agent」，而是：
 
-真正的代理社会代理组成组织（MAGIC），有领导者与成员，协同完成复杂任务，跨会话持久化共享状态。每个代理在社会中都有自己的位置 — 领导谁、跟随谁、知道什么。自组织团体无中心的任务分发、委托子任务、协同执行。一群代理一起工作，在能力上远超任何单个代理。每个代理都是一等公民每个 MAGI 运行在独立容器中，拥有自己的记忆、工具、LLM 凭证 — 以及自己的身份。不是线程，不是会话。是公民。持久化的群体记忆社会会记住。会话历史、长期事实、联系人知识、任务结果 — 全部可搜索、持久化。群体随时间越变越聪明。随处运行，按需扩展每个代理一个容器。笔记本用 SQLite；集群用 Postgres。Docker Compose 起一个团体；Kubernetes 起一个社会。规模不同，运行时相同。自带智能提供者Anthropic、Minimax、OpenAI，或你自己的接入点。每个代理配置自己的 LLM — 记在自己的账单上。没有供应商锁定，没有公共账号。开放设计MIT 许可。可扩展的工具系统。兼容 MCP。内置技能框架。社会的每一部分都可以定制。
+**怎样让一群 AI Agent 拥有身份、连续性、组织结构，并且能够随时间共同进步？**
 
----
+## 为什么是 MAGI？
 
-## 快速开始
+许多多 Agent 系统围绕一个工作流临时组队：分配研究任务、汇总结果、任务结束后团队
+随之消失。MAGI 把**组织本身**作为第一等对象。
+
+| 面向任务的多 Agent 编排 | MAGI Society 运行时 |
+| --- | --- |
+| Agent 是工作流中的步骤 | MAGI Citizen 是组织中持久存在的成员 |
+| 协作随任务结束 | 上下文、记忆、技能和关系会保留 |
+| 多个 Agent 往往共用一个进程 | 每个 Citizen 都有独立的容器化运行时和工作区 |
+| 管理者派发预定义任务 | Adam 协调 Society，EVE 可被独立配置、启动与停止 |
+| 扩展是增加并发调用 | 扩展是增加 Citizen 和相互连接的 Society |
+
+MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以运行、学习与演化的基础。
+
+## 走向群体智能
+
+最终目标不是一个反复委派 prompt 的静态层级，而是让一个 MAGIS 因为真实存在过
+而变得更好：
+
+- Citizens 从工作结果、失败和观察中学习；
+- 有用的流程沉淀为可复用 Skills，而不是消失在一次对话中；
+- Adam 识别能力缺口，组织专业 EVE，并随着工作变化调整 Society；
+- Society 可以共享知识、互相协作，而不把成员简化为无状态 API 调用；
+- 操作者始终能够检查组织、记忆、工具，以及改变组织时使用的权限。
+
+> **实现状态：**持久记忆、Skills、Society/Citizen 模型和隔离的 EVE 生命周期管理
+> 已经构成当前基础。跨 Citizen 的自主学习、能力评估、自主组织重构，以及 Society 间
+> 知识交换都是正在设计的目标，**目前尚未实现**。
+
+## MAGI 模型
+
+这些名称有明确分工：
+
+| 名词 | 含义 |
+| --- | --- |
+| **MAGI** | 系统中自主 Agent 的总称。 |
+| **MAGIS** | **MAGI Society**：由 MAGI Citizens 组成的组织；Society 可以形成树。 |
+| **MAGIC** | **MAGI Citizen**：属于一个 Society 的单个 Agent。 |
+| **Adam** | Society 的领导 MAGIC Citizen，提供控制面并协调其他 Citizens。 |
+| **EVE** | 执行工作的 MAGIC Citizen；一个 Society 可以创建、配置、启动、停止和退役多个 EVE。 |
+
+```text
+操作者
+   │ WebUI
+   ▼
+MAGIS：Engineering
+   │
+   ├── Adam / MAGIC Citizen             控制面与协调者
+   │      └── Society 的持久记忆、策略与关系
+   │
+   ├── EVE / MAGIC Citizen              独立运行时 + 工作区
+   ├── EVE / MAGIC Citizen              独立运行时 + 工作区
+   └── 子 MAGIS：Research                自己的 Adam 与 Citizens
+```
+
+Adam 不会获得宿主机 Docker socket 或宽泛的 Kubernetes 权限。它通过受限、认证的
+orchestrator 请求 EVE 生命周期变更；控制面只会创建该 EVE 所需范围内的 Deployment、
+PVC 和 provider Secret。
+
+## 当前已具备的能力
+
+- **独立运行时**：Adam 与每个 EVE 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
+- **组织管理**：WebUI 管理 MAGIS 树与 MAGIC Citizens，包括 Adam 指派和 EVE provider 配置。
+- **EVE 生命周期控制**：Adam 可经由集群内 orchestrator 请求启动、停止与删除 EVE。
+- **持久化运行记忆**：会话历史、联系人知识、任务状态和可搜索记忆跨会话保留。
+- **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 Citizen 的能力。
+- **Provider 独立性**：Citizen 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
+
+## 快速开始：本地 Alice
+
+最快的路径会启动本地 `kind` 集群和第一个开发 MAGI 节点 **Alice**。宿主机只需要 Docker。
+脚本会按需下载固定版本的 `kind` 与 `kubectl`、构建镜像、创建集群，并以后端 reload 与
+Vite HMR 部署 Alice。
 
 ```bash
 git clone https://github.com/realTaki/MAGI.git
 cd MAGI
-cp deploy/.env.example deploy/.env
-docker compose --env-file deploy/.env -f deploy/docker-compose/docker-compose.yml up --build
-# → http://localhost:42069
+./deploy/bootstrap-local.sh
 ```
 
-跟随首次配置向导 — 保存 Telegram Bot Token，验证管理员身份，你的第一个 MAGI
-社会就上线了。
+打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，完成 onboarding。系统初始化时，
+会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI（**Alice**），并让她担任
+Genesis 的 Adam。
 
-📖 [文档 →](docs/) &nbsp;|&nbsp; 🗺 [路线图 →](docs/ROADMAP.md)
+本地开发部署会挂载：
 
----
-
-## 社会模型
-
-| 实体 | 在社会中的角色 |
-|---|---|
-| **MAGI** | 社会本身 — 一群代理协调、学习、共同行动 |
-| **MAGIC** | 一个组织（智群）。一位领导者，多位成员。智群可以包含子智群 |
-| **Adam** | 领导者代理。管理智群，分发任务，持有共享状态 |
-| **EVE** | 成员代理。执行任务，与同伴协作，向 Adam 报告 |
-| **Contact** | 社会认识的人。操作智群或接收其输出 |
-
-代理们形成**智群树** — 每个 MAGIC 以一位 Adam 为根，协调一组 EVE。
-智群可以委托子智群。社会通过增加代理来扩展，而非通过复杂化架构。
-
----
-
-## 能力
-
-**协调与委派**
-代理之间自行分配任务。Adam 拆解复杂工作，将子任务分配给 EVE，综合结果。
-EVE 可以为并行工作流派生子代理。社会处理路由 — 你描述结果即可。
-
-**跨集体的持久记忆**
-三层记忆架构：会话历史（说过的话）、联系人知识（社会里有谁、了解什么）、
-自我记忆（社会学到了什么）。全层全文搜索。群体记住，你不必重复。
-
-**主动智能**
-代理不仅响应当下 — 还会预判未来。定时任务、周期报告、自动跟进。Adam 可以
-配置为定期检查 EVE 状态、汇总报告、在问题发生前发现问题。社会在无人照看下
-运行。
-
-**多渠道存在**
-每个代理都可触达。WebUI 是操作控制台。Telegram 是实时交互通道。通道分发器
-将消息路由到正确的代理，无论消息从哪个界面到达。单个代理可以同时出现在多个
-通道上。
-
-**工具生态**
-20+ 内置工具覆盖文件操作、Shell 执行、Web 搜索、记忆管理、定时调度等。
-兼容 MCP 以接入外部工具服务器。代理可以创建和完善技能 — 在使用中不断优化的
-程序化知识。社会的工具库随它一同成长。
-
-**身份与权限**
-每个代理有自己的身份、凭证和权限。每一次行动都有归属 — 审计跟踪记录谁在
-什么时候通过哪个通道做了什么。社会的治理默认透明。
-
----
-
-## 架构概览
-
-```
-                    ┌─────────────────────────────┐
-                    │         Operator (WebUI)     │
-                    └──────────────┬──────────────┘
-                                   │
-                    ┌──────────────▼──────────────┐
-                    │       Adam（领导者代理）      │
-                    │     智群："Engineering Council"          │
-                    └──┬───────────┬───────────┬──┘
-                       │           │           │
-              ┌────────▼──┐  ┌─────▼─────┐  ┌──▼────────┐
-              │  EVE α    │  │  EVE β    │  │  EVE γ    │
-              │  Telegram │  │  Telegram  │  │  Telegram  │
-              └───────────┘  └───────────┘  └───────────┘
-
-        每个代理 = 一个容器。每个智群 = 一位领导者 + 多位成员。
-        智群构成树。社会是整张图。
+```text
+宿主仓库             → /app/magi        源码热加载
+workspace/alice      → /workspace       Alice 的持久化工作区
 ```
 
-详细架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+已有 Kubernetes 集群或生产式部署可使用：
 
----
+```bash
+MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
+  ./deploy/bootstrap-k8s.sh
+```
+
+镜像、存储、网络、Secret 与环境配置请见 [Kubernetes 部署指南](deploy/k8s/README.md)。
+
+## 从第一个 MAGIS 到组织成长
+
+1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGI（Alice），
+   并让她担任 Genesis 的 Adam。
+2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
+3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 Adam MAGIC Citizens。
+4. **增加能力**：配置 EVE 的 provider 与凭证，然后让 Adam 通过 orchestrator 启动或停止它。
+5. **积累智能**：对话、任务结果、联系人、记忆和可复用 Skills 留在 Society 中，而非随一次请求丢弃。
+
+## 架构
+
+```text
+                        ┌─────────────────────────────┐
+                        │            操作者           │
+                        │             WebUI           │
+                        └──────────────┬──────────────┘
+                                       │
+                        ┌──────────────▼──────────────┐
+                        │         Adam / MAGIC         │
+                        │       Society 控制面          │
+                        └──────────────┬──────────────┘
+                                       │ 经认证的生命周期请求
+                        ┌──────────────▼──────────────┐
+                        │       MAGI Orchestrator      │
+                        │   受限的 Kubernetes API      │
+                        └───────┬──────────────┬───────┘
+                                │              │
+                     ┌──────────▼───┐  ┌──────▼──────────┐
+                     │ EVE / MAGIC  │  │ EVE / MAGIC     │
+                     │ Deployment   │  │ Deployment      │
+                     │ PVC + Secret │  │ PVC + Secret    │
+                     └──────────────┘  └─────────────────┘
+```
+
+Kubernetes 是当前部署目标：它为每个 Citizen 提供明确的运行边界，也让 orchestrator
+能管理隔离资源，而不必让 Adam 成为集群管理员。当前单副本部署使用 SQLite；共享数据库
+是后续面向更大规模集群的路径。
+
+深入实现请阅读：
+
+- [架构](docs/ARCHITECTURE.md)
+- [关键业务流程](docs/business-flows.md)
+- [数据库与迁移说明](docs/database-migrations.md)
+- [Kubernetes 部署](deploy/k8s/README.md)
+- [路线图](docs/ROADMAP.md)
+
+## 项目状态
+
+MAGI 仍处于实验阶段并在持续构建。现有代码已提供 Society 建模、onboarding、隔离节点部署
+和 EVE 生命周期控制；上文的群体智能机制是公开的项目愿景，并已明确标注其尚未实现，
+以避免混淆路线图和已交付能力。
 
 ## 参与贡献
 
-MAGI 由 AI 编写并维护，人类协作参与。欢迎贡献代码。
+MAGI 由人类与 AI 协作者共同开发，欢迎贡献与设计讨论。
 
-1. 阅读 [CONTRIBUTING.md](CONTRIBUTING.md)
-2. 写代码前先开 Issue 沟通
-3. 挑选 `good first issue` 或提出你的想法
+1. 阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+2. 开始较大改动前先创建 Issue。
+3. 从 `good first issue` 开始，或提出聚焦的改进建议。
 
-安全漏洞 → [SECURITY.md](SECURITY.md)。
-
----
+安全问题请见 [SECURITY.md](SECURITY.md)。
 
 ## 许可证
 
-MIT — 见 [LICENSE](LICENSE)。
+MIT，见 [LICENSE](LICENSE)。

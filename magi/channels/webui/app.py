@@ -139,7 +139,7 @@ def create_app() -> FastAPI:
     # and the admin management surface (POST/PATCH).
     app.include_router(contacts.router, prefix="/api")
     # MAGIC router — the "MAGI Citizens" surface for individual
-    # MAGI agent rows under each MAGIS Society.
+    # MAGI agent rows under each MAGIS.
     app.include_router(magic.router, prefix="/api")
     # MAGIS router — the "MAGI Societies" surface for the group tree.
     app.include_router(magis.router, prefix="/api")

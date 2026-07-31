@@ -32,7 +32,7 @@ its own identity, its own LLM credentials, and its own persistent state.
 **One agent = one container = one runtime process.**
 
 There is one binary (`magi`). At boot, `MAGI_NODE_ROLE` selects the archetype preset
-(`adam` or `eve`), which determines the agent's position in its council. No code branches.
+(`adam` or `eve`), which determines the Citizen's position in its MAGIS.
 Every architectural choice is an independent configuration axis:
 
 | Axis | Env var | Default by archetype |
@@ -104,7 +104,7 @@ adapter and registering it. Core code never changes.
 | Table | Holds |
 |---|---|
 | `contacts` | Person directory (unified `employees` + `contact_entries` + `user_im_bindings`) |
-| `magis` | MAGIS Society tree (via `parent_id`; `adam_id` points to its Adam MAGIC Citizen) |
+| `magis` | MAGIS tree (via `parent_id`; `adam_id` points to its Adam MAGIC Citizen) |
 | `magic` | MAGIC Citizen rows (bound to a `magis`; `adam` / `eve` position) |
 | `action_items` | Operator to-do inbox |
 | `token_usage` | Per-call LLM billing |
@@ -150,7 +150,7 @@ Agent-created skills live under `workspace/skills/`.
 
 ## Glossary
 
-- **MAGI** — The agentic society. The whole system.
+- **MAGI** — The general kind of autonomous agent in this system.
 - **MAGIS** — A MAGI Society. A group of MAGIs (one Adam + N EVEs). Forms a tree via `parent_id`. ("MAGI Societies" in operator-facing copy.)
 - **MAGIC** — An individual MAGI agent (a citizen of a Society). Container, identity, LLM, tools. ("MAGI Citizens" in operator-facing copy.)
 - **Adam** — Leader agent (a MAGIC with `magic_position='adam'`). Manages a MAGIS, dispatches work.

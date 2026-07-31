@@ -1,4 +1,4 @@
-"""End-to-end tests for ``/api/magis`` — the MAGIS Society
+"""End-to-end tests for ``/api/magis`` — MAGIS
 CRUD surface introduced by the post-refactor reframe.
 
 A ``MAGIS`` row is the org container: a tree of MAGI teams,

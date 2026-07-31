@@ -23,12 +23,17 @@ magi/agent/db/alembic/versions/  # 各 revision；script_location = magi/agent/d
 
 ## 当前迁移链
 
-HEAD = `0006_contact_notes`。完整链按 `down_revision` 串联：
+HEAD = `0007_swap_magic_magis_tables`。完整链按 `down_revision` 串联：
 
 ```text
 0001_baseline
    └─ 0002_admin_role_split
-        └─ 0006_contact_notes   ← HEAD
+        └─ 0006_contact_notes
+            └─ 0002_drop_contact_provider_api_key
+                └─ 0003_add_daily_note_kind
+                    └─ 0007_eve_runtimes
+                        └─ 0004_rename_magics_to_magic
+                            └─ 0007_swap_magic_magis_tables   ← HEAD
 ```
 
 | Revision | down_revision | 作用 |
@@ -36,6 +41,11 @@ HEAD = `0006_contact_notes`。完整链按 `down_revision` 串联：
 | `0001_baseline` | `None` | 整个 MAGI schema 一次性建好（dev 模式，见下「collapsed baseline」）。包含：`chat_sessions`、`contacts`、旧命名兼容用的 `magic` / `magis`、`settings`、`action_items`（含 `due_date`）、`chat_messages`（含 FTS5 同步触发器）、`memory_entries`（以 `uid` 为键）、`task_presets`、`tasks`（含 `preset_id` / `preset_key` 回指）、`token_usage`、`task_runs`、`mcp_servers`；按需创建 `chat_messages_fts`（FTS5 trigram，依赖 SQLite 编译选项）。最终命名由末尾的 swap 迁移确定。 |
 | `0002_admin_role_split` | `0001_baseline` | 把 `Contact.role` 拆成两个正交概念：保留 `role`（关系语义，取值收缩为 `assigned` / `contact` / `guest`）并新增独立布尔列 `admin`（WebUI 登录权限）。旧 `role='admin'` 行数据迁移为 `role='assigned', admin=True`。 |
 | `0006_contact_notes` | `0002_admin_role_split` | 新建 `contact_notes` 表（一人多备注的一对多结构），并把既有非空的 `contacts.notes` 文本各迁为一行。 |
+| `0002_drop_contact_provider_api_key` | `0006_contact_notes` | 删除 Contact 上已废弃的 provider / API key；凭证由 MAGIC Citizen 持有。 |
+| `0003_add_daily_note_kind` | `0002_drop_contact_provider_api_key` | 增加每日记录所需的 memory kind。 |
+| `0007_eve_runtimes` | `0003_add_daily_note_kind` | 增加 EVE 生命周期状态与 Kubernetes 资源记录。 |
+| `0004_rename_magics_to_magic` | `0007_eve_runtimes` | 兼容极早期开发库中 `magics` 的旧拼写；新库通常为 no-op。 |
+| `0007_swap_magic_magis_tables` | `0004_rename_magics_to_magic` | 最终命名迁移：`magis` 为 MAGIS（MAGI Society），`magic` 为 MAGIC（MAGI Citizen），并更新 EVE runtime 的外键目标。 |
 
 ### collapsed baseline（开发策略）
 
@@ -75,7 +85,7 @@ HEAD = `0006_contact_notes`。完整链按 `down_revision` 串联：
    - `_run_inline_migrations(engine)`（`magi/agent/db/migrations.py`）修复历史表名 / 列 / 索引；
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-4. `_seed_default_root` 确保有且仅有一个根 MAGIS（"Genesis"，靠 `parent_id IS NULL` 识别）和一只 `magic_position='adam'` 的 MAGIC（"Alice"）。
+4. `_seed_default_root` 确保有且仅有一个根 MAGI Society（`MAGIS` 行，名为 "Genesis"，靠 `parent_id IS NULL` 识别），随后创建首个 `magic_position='adam'` 的 MAGIC（"Alice"）并绑定为 Genesis 的 Adam。
 
 因此容器启动、滚动更新或新 Pod 创建时，数据库会先完成迁移，再启动 WebUI、Telegram
 和 scheduler。应用代码启动即自动升级，**不需要在容器里手动调用 Alembic**。

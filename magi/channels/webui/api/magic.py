@@ -5,7 +5,7 @@ a :class:`MAGIS` via ``magis_id``). ``magic_position`` is
 one of ``"adam"`` (the manager — exactly one per ``MAGIS``)
 or ``"eve"`` (a worker — N per ``MAGIS``).
 
-The MAGIS Society tree endpoints live in :mod:`magi.channels.webui.api.magis`
+The MAGIS tree endpoints live in :mod:`magi.channels.webui.api.magis`
 (GET/POST/PATCH/DELETE ``/api/magis``). This module only
 manages the per-MAGIS ``MAGIC`` rows.
 

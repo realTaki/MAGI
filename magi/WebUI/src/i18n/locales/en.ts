@@ -25,8 +25,8 @@ export default {
     setup: "Set up",
     signIn: "Sign in",
     setupHint: "First time here — runs the setup wizard.",
-    feature1Title: "MAGIS Society coordination",
-    feature1Desc: "Multiple MAGI Citizens form a MAGIS Society. ADAM orchestrates and EVEs carry out the work. A real team, not a chatbot.",
+    feature1Title: "MAGIS coordination",
+    feature1Desc: "Multiple MAGI Citizens form a MAGIS (a MAGI Society). ADAM orchestrates and EVEs carry out the work. A real team, not a chatbot.",
     feature2Title: "Runs locally",
     feature2Desc: "Everything on your own machine. Your data never leaves — zero cloud dependency.",
     feature3Title: "Multi-channel",
@@ -384,7 +384,7 @@ export default {
     knowledgeTools: "Tools",
     knowledgeMcp: "MCP",
     knowledgeNavAria: "Knowledge sections",
-    // MAGIS Society and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC Citizen sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "Admins",
@@ -393,10 +393,10 @@ export default {
     magicExpandChildren: "expand children",
     magicCollapseChildren: "collapse children",
   },
-  // -- MAGIS Society and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC Citizen panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS Society tree — each Society can have child Societies and is bound to an ADAM MAGIC Citizen as its control plane.",
+    paneDesc: "MAGIS tree — each MAGIS can have child MAGIS entries and is bound to an ADAM MAGIC Citizen as its control plane.",
     createHeading: "New Society",
     editHeading: "Edit Society",
     columnName: "Name",
@@ -422,7 +422,7 @@ export default {
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens are AI agents running within MAGIS Societies. ADAM coordinates and schedules; EVE executes. Each Citizen is bound to one Society.",
+    paneDesc: "MAGIC Citizens are AI agents running within a MAGIS. ADAM coordinates and schedules; EVE executes. Each Citizen is bound to one MAGIS.",
     magisHeading: "MAGI Citizens",
     createHeading: "New MAGIC Citizen",
     columnName: "Name",

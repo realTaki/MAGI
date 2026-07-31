@@ -418,7 +418,7 @@ export default {
     knowledgeTools: "工具列表",
     knowledgeMcp: "MCP 列表",
     knowledgeNavAria: "知识分组导航",
-    // MAGIS Society and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC Citizen sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "管理员",
@@ -427,10 +427,10 @@ export default {
     magicExpandChildren: "展开子智群",
     magicCollapseChildren: "收起子智群",
   },
-  // -- MAGIS Society and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC Citizen panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS Society 树 — Society 的组织架构。每个 Society 可以有子 Society，并绑定一个 ADAM MAGIC Citizen 作为控制面。",
+    paneDesc: "MAGIS 树 — 每个 MAGIS 可以有子 MAGIS，并绑定一个 ADAM MAGIC Citizen 作为控制面。",
     createHeading: "新建智群",
     editHeading: "编辑智群",
     columnName: "名称",
@@ -456,7 +456,7 @@ export default {
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens 是运行在 MAGIS Societies 里的 AI 智能体。ADAM 负责协调调度，EVE 负责执行。每个 Citizen 绑定到一个 Society。",
+    paneDesc: "MAGIC Citizens 是运行在 MAGIS 里的 AI 智能体。ADAM 负责协调调度，EVE 负责执行。每个 Citizen 绑定到一个 MAGIS。",
     magisHeading: "MAGI Citizens",
     createHeading: "新建智能体",
     columnName: "名称",

@@ -1,5 +1,12 @@
 # MAGI — Roadmap (C0 → C8)
 
+> **Documentation note (2026-07):** this file preserves detailed historical
+> planning notes and completed milestones. For the current terminology, use
+> **MAGIS = MAGI Society** and **MAGIC = MAGI Citizen**. Historical sections
+> below may retain the old terms or old schema sketches; they are not the
+> current API or database contract. See [Architecture](ARCHITECTURE.md) and
+> [database migrations](database-migrations.md) for the current implementation.
+
 > **Posture (2026-07-23 refresh):** MAGI is reframed as **Modular Agentic
 > Group Intelligence** — a system composed of autonomous agents ("MAGIs")
 > coordinating as a group. Today we ship two **archetypes**: a manager
@@ -142,14 +149,14 @@ discipline C0 deliberately punted on).
 |---|---|---|
 | `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/webui/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
 | Contact lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_contact.py` docstring |
-| `api/magics` + `api/magis` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magics.py` (MAGISes tree) + `magis.py` (MAGIC citizens); replaces the old `api/departments` |
+| `/api/magis` + `/api/magic` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magis.py` manages the MAGIS tree; `magic.py` manages MAGIC Citizens; replaces the old `api/departments`. |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; full chain extends to `0006_contact_notes` (HEAD) — see [docs/database-migrations.md](database-migrations.md) |
+| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; the current chain ends at `0007_swap_magic_magis_tables` — see [docs/database-migrations.md](database-migrations.md). |
 | All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
@@ -549,8 +556,8 @@ class MagiImBinding(Base):
 | WebUI sidebar / tree view | a tree of **MAGICs** → expand a MAGIC → list its members (`magis`) with positions; expand a Magi → list its `users` (with `role`) |
 | `/api/departments/*` | drop entirely |
 | `/api/employees/*` | drop entirely (no alias; it never shipped clean) |
-| `/api/magics/*` | new; list / create / archive MAGIC orgs |
-| `/api/magis/*` | new; list / create / update / archive Magi rows; `position` is a required field |
+| `/api/magis/*` | MAGIS list / create / update / delete |
+| `/api/magic/*` | MAGIC Citizen list / create / update / delete; `magic_position` is required |
 | `/api/users/*` | new; list / create / update / archive User rows; `role` is a required field; `magi_id` is required iff `role IN {'admin','assigned'}` |
 | `/api/eves/*` | now a view onto `magis` filtered by `position='eve'` |
 | `dispatcher.lookup_im_id` | reads `magi_im_bindings.magi_id`; the lookup's "owner of this IM id" is a Magi, not a User |

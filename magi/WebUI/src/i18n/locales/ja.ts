@@ -381,7 +381,7 @@ export default {
     knowledgeTools: "ツール一覧",
     knowledgeMcp: "MCP",
     knowledgeNavAria: "ナレッジグループ",
-    // MAGIS Society and MAGIC Citizen sidebar sections.
+    // MAGIS and MAGIC Citizen sidebar sections.
     magicMagics: "MAGI Societies",
     magicMagis: "MAGI Citizens",
     magicContacts: "管理者",
@@ -390,10 +390,10 @@ export default {
     magicExpandChildren: "子知群を展開",
     magicCollapseChildren: "子知群を折り畳む",
   },
-  // -- MAGIS Society and MAGIC Citizen panes -------------------------------
+  // -- MAGIS and MAGIC Citizen panes -------------------------------
   magis: {
     paneTitle: "MAGI Societies",
-    paneDesc: "MAGIS Society ツリー。各 Society は子 Society を持ち、ADAM MAGIC Citizen に制御面としてバインドされます。",
+    paneDesc: "MAGIS ツリー。各 MAGIS は子 MAGIS を持ち、ADAM MAGIC Citizen に制御面としてバインドされます。",
     createHeading: "新しい知群",
     editHeading: "知群編集",
     columnName: "名前",
@@ -419,7 +419,7 @@ export default {
   },
   magic: {
     paneTitle: "MAGI Citizens",
-    paneDesc: "MAGIC Citizens は MAGIS Societies 内で動作する AI エージェントです。ADAM が調整とスケジュールを担当し、EVE が実行します。",
+    paneDesc: "MAGIC Citizens は MAGIS 内で動作する AI エージェントです。ADAM が調整とスケジュールを担当し、EVE が実行します。",
     magisHeading: "MAGI Citizens",
     createHeading: "新しい MAGIC Citizen",
     columnName: "名前",

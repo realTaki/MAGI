@@ -5,7 +5,7 @@ surfaces that all share the same Contact row:
 
   1. ``POST /api/contacts``  — add a person to the directory
   2. ``PATCH /api/contacts/{id}`` — set role, provider, api_key
-  3. ``POST /api/magis``     — create a MAGIS Society
+  3. ``POST /api/magis``     — create a MAGIS (MAGI Society)
   4. ``POST /api/magic``      — add a MAGIC agent to the team
      (with ``magic_position='adam'`` to designate the team
      manager)

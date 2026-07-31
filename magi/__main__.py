@@ -1,6 +1,6 @@
 """MAGI node — single entry point.
 
-Adam / Eve is a **relationship in the MAGIS Society tree**, determined by
+Adam / Eve is a **relationship in the MAGIS tree**, determined by
 the ``magis`` table — not a code-path difference. There is one
 ``magi`` console script; the node derives its role from the
 database at boot.
@@ -21,7 +21,7 @@ from magi.node import check, run
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="magi",
-        description="MAGI node. Role is derived from the MAGIS Society tree in the database.",
+        description="MAGI node. Role is derived from the MAGIS tree in the database.",
     )
     parser.add_argument("--version", action="version", version=f"magi {__version__}")
     parser.add_argument(
