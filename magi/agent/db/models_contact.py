@@ -33,9 +33,9 @@ There is no longer a ``"contact"`` role — it was removed
 after a long period where it was functionally identical to
 ``"guest"`` (every gate that refused ``contact`` also
 refused ``guest``, with no operator-only distinction
-between the two). The data migration
-``0002_admin_role_split`` collapses any legacy
-``role='contact'`` rows to ``role='guest'``.
+between the two). The dev-mode collapsed baseline
+(``0001_baseline``) ships the final enum directly, so
+existing dev DBs are aligned on first ``init_orm``.
 
 WebUI sign-in rights are carried by the separate
 ``admin`` boolean (``True`` ↔ can sign into the operator
@@ -110,9 +110,8 @@ class Contact(Base):
     # The legacy ``"contact"`` value was functionally
     # identical to ``"guest"`` (every gate refused both)
     # and was removed in the 2024 role/admin split. The
-    # ``0002_admin_role_split`` migration collapses any
-    # legacy ``role='contact'`` rows to ``role='guest'`` so
-    # existing dev DBs land cleanly.
+    # dev-mode collapsed ``0001_baseline`` ships the final
+    # enum directly so existing dev DBs land cleanly.
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="guest"
     )

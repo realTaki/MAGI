@@ -156,7 +156,7 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; the current chain ends at `0007_swap_magic_magis_tables` — see [docs/database-migrations.md](database-migrations.md). |
+| First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; dev mode collapsed the whole chain into this single revision — see [docs/database-migrations.md](database-migrations.md). |
 | All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
@@ -292,7 +292,7 @@ worst-day operational scenarios.
 
 | Item | Status | Notes |
 |---|---|---|
-| First Alembic baseline (replaces `_run_inline_migrations`) | **Done** | chain `0001_baseline` → `0002_admin_role_split` → `0006_contact_notes` (HEAD); legacy runner is adoption-only — see [docs/database-migrations.md](database-migrations.md) |
+| First Alembic baseline (replaces `_run_inline_migrations`) | **Done** | `0001_baseline` is the sole revision (collapsed chain — see [docs/database-migrations.md](database-migrations.md)); legacy runner is adoption-only |
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
 | `tokens.py` to `llm/` | **Done** | (in this refactor series) |
@@ -944,8 +944,8 @@ asking before sinking more time:
    baseline (`0001_baseline`) shipped; the legacy inline pass
    (`_run_inline_migrations`) now runs only as the one-time
    adoption step for pre-Alembic DBs (stamped to `0001_baseline`,
-   then Alembic owns every change). Current chain:
-   `0001_baseline → 0002_admin_role_split → 0006_contact_notes`.
+   then Alembic owns every change). Dev mode collapsed the
+   whole chain into the single `0001_baseline` revision.
    See [docs/database-migrations.md](database-migrations.md).
 2. **C2 self-serve `/start <code>`** — code-generated
    one-time codes (operator prints), or QR-coded

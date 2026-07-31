@@ -111,7 +111,8 @@ def _dump_one_db(path: Path) -> dict[str, list[dict]]:
       - ``contacts`` rows with the legacy
         ``role='admin'`` value are rewritten to
         ``role='assigned', admin=True`` to match the
-        0002_admin_role_split migration. The restored
+        collapsed ``0001_baseline`` schema (the role/admin
+        split was folded into the baseline). The restored
         rows land in the post-baseline schema with the
         admin bit set, so the auth gate lets the operator
         sign back in.

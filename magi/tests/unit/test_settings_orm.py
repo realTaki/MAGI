@@ -60,6 +60,11 @@ def test_settings_table_is_registered_in_orm_metadata(state_dir):
 
 
 def test_init_orm_records_alembic_head(state_dir):
+    """After ``init_orm`` the ``alembic_version`` row names
+    the canonical head. The codebase is in dev mode and
+    follow-on migrations get folded back into the baseline,
+    so the post-init head is ``0001_baseline`` — not the
+    most-recent historical revision."""
     from magi.agent.db import init_orm
 
     engine = init_orm(str(state_dir))
@@ -67,4 +72,4 @@ def test_init_orm_records_alembic_head(state_dir):
     with engine.connect() as db:
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
 
-    assert revision == "0007_swap_magic_magis_tables"
+    assert revision == "0001_baseline"

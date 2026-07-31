@@ -11,6 +11,14 @@ logger = logging.getLogger("magi.agent.db.alembic_runner")
 
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
+#: The single revision every MAGI database should be at.
+#: The codebase is in dev mode (no production upgrade story);
+#: older follow-on revisions (0002..0007) were folded back
+#: into ``0001_baseline`` and deleted. Any database whose
+#: ``alembic_version`` row names a now-deleted revision is
+#: stamped back to this head before Alembic runs.
+CANONICAL_HEAD = "0001_baseline"
+
 
 def _find_alembic_ini() -> Path:
     """Find the config in a source checkout and in the runtime image.
@@ -55,12 +63,107 @@ def _config_for_state_dir(state_dir: str | Path):
     return config
 
 
+def _known_revisions(config) -> set[str]:
+    """Return the set of revisions Alembic can currently see."""
+    from alembic.script import ScriptDirectory
+
+    return {
+        rev.revision
+        for rev in ScriptDirectory.from_config(config).walk_revisions()
+    }
+
+
+def _rebase_to_canonical_head(
+    state_dir: str | Path, config, *, force: bool = False,
+) -> bool:
+    """Re-stamp any stale ``alembic_version`` to ``CANONICAL_HEAD``.
+
+    Returns ``True`` when a stamp happened. ``False`` when the
+    row is already at the canonical head (or the row is
+    absent, which is the "fresh DB" case handled by Alembic
+    itself: it creates ``alembic_version`` and stamps it
+    after running the baseline).
+
+    The rebasing logic kicks in when the existing row names a
+    revision Alembic can no longer find — typically because the
+    follow-on migration was deleted in a refactor. The shape of
+    the database is already correct (the deleted migration's
+    effect is folded into ``0001_baseline``); we just need the
+    bookkeeping row to match.
+
+    Implementation note: Alembic's ``stamp`` cannot target a
+    revision that the script directory doesn't ship, so when
+    the current row points at a now-deleted revision we have
+    to blank the row first (``DELETE FROM alembic_version``)
+    and then re-stamp. The DELETE is safe: a fresh stamp
+    re-inserts the row immediately, and a crash in between
+    leaves the DB in the "no alembic_version" state which
+    ``init_orm``'s legacy branch handles correctly on the
+    next boot.
+
+    ``force=True`` re-stamps even when the row already names a
+    known revision. Not used in the normal startup path — kept
+    as an escape hatch for ops debugging.
+    """
+    from alembic import command
+    from sqlalchemy import create_engine, text
+
+    db_path = Path(state_dir).resolve() / "magi.db"
+    if not db_path.is_file():
+        return False
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            # Probe whether ``alembic_version`` exists at all.
+            # On a truly fresh DB the table is created later by
+            # the baseline itself; reading it now would crash.
+            present = conn.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type='table' AND name='alembic_version'"
+                )
+            ).first() is not None
+            if not present:
+                return False
+
+            row = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).first()
+            current = row[0] if row is not None else None
+
+            if current == CANONICAL_HEAD and not force:
+                return False
+
+            known = _known_revisions(config)
+            needs_rebase = force or current is None or current not in known
+            if not needs_rebase:
+                return False
+
+            if current is not None:
+                logger.warning(
+                    "alembic_version row points at unknown revision %r; "
+                    "re-stamping to canonical head %r",
+                    current, CANONICAL_HEAD,
+                )
+                # Blank the bookkeeping row before re-stamping.
+                # ``command.stamp`` refuses to retarget from a
+                # revision it can't resolve.
+                conn.execute(text("DELETE FROM alembic_version"))
+                conn.commit()
+    finally:
+        engine.dispose()
+
+    command.stamp(config, CANONICAL_HEAD)
+    return True
+
+
 def stamp_baseline(state_dir: str | Path) -> None:
     """Stamp a legacy database after the compatibility pass has run."""
     from alembic import command
 
     config = _config_for_state_dir(state_dir)
-    command.stamp(config, "0001_baseline")
+    command.stamp(config, CANONICAL_HEAD)
 
 
 def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
@@ -79,6 +182,17 @@ def upgrade_head(state_dir: str | Path, engine: Engine | None = None) -> None:
 
     state_path = Path(state_dir).resolve()
     config = _config_for_state_dir(state_path)
+
+    # Adopt any DB whose alembic_version points at a revision
+    # Alembic no longer ships. The codebase is in dev mode
+    # and refactors occasionally fold follow-on migrations
+    # back into ``0001_baseline``; without this guard, a
+    # developer returning from a git pull would see Alembic
+    # raise ``Can't locate revision`` and the boot would
+    # fail. The database shape is already correct (the
+    # folded migration's effect is in the new baseline);
+    # we're just retargeting the bookkeeping row.
+    _rebase_to_canonical_head(state_path, config)
 
     logger.info("running Alembic migrations", extra={"state_dir": str(state_path)})
     command.upgrade(config, "head")

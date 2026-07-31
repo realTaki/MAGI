@@ -144,7 +144,7 @@
 **Contact.role 枚举 (2024 collapse)**:
 - 有效值: `assigned` | `guest` (共 2 个)
 - 历史值 `admin` 已被迁移到独立 `admin` 布尔字段 (见第 1 节"凭证校验")
-- 历史值 `contact` 已被合并入 `guest` — 历史上两个 role 在所有门控路径上行为完全相同 (都被拒绝),所以合并是无损的。0002_admin_role_split migration 的 upgrade 会把所有 `role='contact'` 行改成 `role='guest'`
+- 历史值 `contact` 已被合并入 `guest` — 历史上两个 role 在所有门控路径上行为完全相同 (都被拒绝),所以合并是无损的。`0001_baseline` 的最终 schema 已不含 `contact` 值 (dev 模式 collapsed baseline,历史迁移见 [docs/database-migrations.md](database-migrations.md))
 
 **不可改的守卫**:
 
