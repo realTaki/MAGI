@@ -29,7 +29,8 @@
  * bubbles up to App is the bot + admin list (so the rest of the
  * app, e.g. login dropdowns on a future re-sign-in, stays fresh).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useT } from "../i18n/index";
@@ -38,6 +39,8 @@ import ChatTab from "./ChatTab";
 import KnowledgeTab from "./KnowledgeTab";
 import AgenticSocietyTab from "./AgenticSocietyTab";
 import SettingsTab from "./SettingsTab";
+import { getSelectedMagicId, setSelectedMagicId } from "../lib/queryClient";
+import { useMagic } from "../lib/queries";
 
 export default function DashboardPage(props: {
   data: OnboardingData | null;
@@ -96,7 +99,27 @@ function PostLoginLayout(props: {
   // load. ``ChatTab`` already routes to its own "new chat"
   // view, so landing on chat is the right entry point.
   const [tab, setTab] = useState<TabKey>("chat");
+  const [selectedMagicId, setSelectedMagic] = useState(getSelectedMagicId);
+  const magicQuery = useMagic();
+  const qc = useQueryClient();
   const t = useT();
+
+  useEffect(() => {
+    const first = magicQuery.data?.[0];
+    if (!first || magicQuery.data?.some((m) => m.id === selectedMagicId)) return;
+    setSelectedMagic(first.id);
+    setSelectedMagicId(first.id);
+    qc.removeQueries({ queryKey: ["runtime"] });
+  }, [magicQuery.data, selectedMagicId, qc]);
+
+  const chooseMagic = (nextId: number) => {
+    if (nextId === selectedMagicId) return;
+    setSelectedMagic(nextId);
+    setSelectedMagicId(nextId);
+    // Every private read is target-scoped; dropping the previous target's
+    // cache also prevents transient stale content during a target switch.
+    qc.removeQueries({ queryKey: ["runtime"] });
+  };
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -122,6 +145,19 @@ function PostLoginLayout(props: {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            <label className="hidden md:flex items-center gap-1 text-xs text-ink-soft">
+              <span>MAGI</span>
+              <select
+                value={selectedMagicId}
+                onChange={(event) => chooseMagic(Number(event.target.value))}
+                className="rounded border border-sky-light bg-white px-1 py-0.5 text-ink"
+                aria-label="Selected MAGI"
+              >
+                {(magicQuery.data ?? []).map((m) => (
+                  <option key={m.id} value={m.id}>{m.name ?? `MAGI ${m.id}`}</option>
+                ))}
+              </select>
+            </label>
             <SignedInLabel
               displayName={props.user.display_name}
               telegramId={props.user.telegram_id}

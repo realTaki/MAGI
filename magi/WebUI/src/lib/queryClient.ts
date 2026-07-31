@@ -23,13 +23,44 @@ export const queryClient = new QueryClient({
   },
 });
 
+const TARGET_STORAGE_KEY = "magi.selected-magic-id";
+let selectedMagicId = Number(
+  typeof window === "undefined" ? 1 : window.localStorage.getItem(TARGET_STORAGE_KEY) ?? "1",
+);
+
+export function getSelectedMagicId(): number {
+  return Number.isInteger(selectedMagicId) && selectedMagicId > 0 ? selectedMagicId : 1;
+}
+
+export function setSelectedMagicId(magicId: number): void {
+  selectedMagicId = magicId;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(TARGET_STORAGE_KEY, String(magicId));
+  }
+}
+
+function isControlPath(url: string): boolean {
+  return ["/api/auth", "/api/onboarding", "/api/magis", "/api/magic", "/api/runtime"].some(
+    (prefix) => url === prefix || url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`),
+  );
+}
+
+function runtimeUrl(url: string): string {
+  if (!url.startsWith("/api/") || isControlPath(url)) return url;
+  return `/api/runtime/${getSelectedMagicId()}${url.slice(4)}`;
+}
+
+function runtimeKey<T extends readonly unknown[]>(...key: T): readonly ["runtime", number, ...T] {
+  return ["runtime", getSelectedMagicId(), ...key];
+}
+
 /** Typed fetch wrapper that throws on non-2xx. */
 export async function apiFetch<T>(
   url: string,
   init?: Omit<RequestInit, "body"> & { body?: unknown },
 ): Promise<T> {
   const { body, ...rest } = init ?? {};
-  const r = await fetch(url, {
+  const r = await fetch(runtimeUrl(url), {
     ...rest,
     credentials: "include",
     headers: {
@@ -52,46 +83,46 @@ export async function apiFetch<T>(
 export const qk = {
   me: ["me"] as const,
   contacts: (withNotes?: boolean) =>
-    ["contacts", { withNotes }] as const,
+    runtimeKey("contacts", { withNotes }),
   magis: ["magis"] as const,
   magic: ["magic"] as const,
-  skills: ["skills"] as const,
-  memory: ["memory"] as const,
+  skills: runtimeKey("skills"),
+  memory: runtimeKey("memory"),
   tasks: (filter?: { enabled?: boolean; kind?: "preset" | "custom" }) =>
-    filter ? ["tasks", filter] as const : ["tasks"] as const,
+    filter ? runtimeKey("tasks", filter) : runtimeKey("tasks"),
   taskRuns: (taskId: string) =>
-    ["taskRuns", taskId] as const,
+    runtimeKey("taskRuns", taskId),
   /** Single task by id — separate from the list cache
    *  so a per-row fetch doesn't refetch the whole list. */
   task: (taskId: string) =>
-    ["task", taskId] as const,
+    runtimeKey("task", taskId),
   /** Global preset templates — the operator-editable
    *  source of truth for the auto-seeded per-user
    *  "预设任务" rows. Settings → 任务预设 drives this
    *  cache; mutations invalidate on success. */
-  taskPresets: ["taskPresets"] as const,
+  taskPresets: runtimeKey("taskPresets"),
   /** Active session messages — paginated per session. */
   chatMessages: (sessionId: string) =>
-    ["chatMessages", sessionId] as const,
+    runtimeKey("chatMessages", sessionId),
   chatSessions: (limit?: number, offset?: number) =>
     limit === undefined && offset === undefined
-      ? (["chatSessions"] as const)
-      : (["chatSessions", { limit, offset }] as const),
+      ? runtimeKey("chatSessions")
+      : runtimeKey("chatSessions", { limit, offset }),
   /** Full session detail (messages included). */
   chatSession: (sessionId: string) =>
-    ["chatSession", sessionId] as const,
+    runtimeKey("chatSession", sessionId),
   /** Chat search results — keyed by query string so a
    *  re-typed query hits the cache. */
   chatSearch: (q: string) =>
-    ["chatSearch", q] as const,
-  actionItems: ["actionItems"] as const,
+    runtimeKey("chatSearch", q),
+  actionItems: runtimeKey("actionItems"),
   systemSettings: (key: string) =>
-    ["systemSettings", key] as const,
-  mcpServers: ["mcpServers"] as const,
+    runtimeKey("systemSettings", key),
+  mcpServers: runtimeKey("mcpServers"),
   // -- auth / onboarding / soul ---------------------------------------------
   allowedAccounts: ["auth", "allowed-accounts"] as const,
   onboardingStatus: ["onboarding", "status"] as const,
-  soul: ["soul"] as const,
+  soul: runtimeKey("soul"),
   tgReaction: (kind: "read" | "done") =>
-    ["tgReaction", kind] as const,
+    runtimeKey("tgReaction", kind),
 };

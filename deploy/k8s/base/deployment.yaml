@@ -43,6 +43,11 @@ spec:
           # the key when MAGI_CHANNELS includes telegram or when Adam/EVE
           # RPC authentication is enabled.
           env:
+            # The initial MAGI has the deterministic first registry ID. Every
+            # runtime must know its ID so it can reject proxy requests meant
+            # for another MAGI.
+            - name: MAGI_RUNTIME_ID
+              value: "1"
             # The Adam image cannot call the Kubernetes API. It holds only an
             # HMAC secret for the narrow internal orchestrator API.
             - name: MAGI_ORCHESTRATOR_URL

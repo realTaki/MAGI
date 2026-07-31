@@ -58,6 +58,7 @@ magi/
 │   ├── memory/     # Three-layer memory: session, contacts, self
 │   ├── db/         # private SQLite + public MAGIS PostgreSQL access
 │   │   └── magis/  # direct MAGIS engine/session boundary
+│   ├── webui_service.py # singleton WebUI service entry point (`magi webui`)
 │   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 │   ├── proactive/  # Scheduled task engine
 │   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
@@ -161,6 +162,28 @@ class Tool(ABC):
 
 20+ built-in tools. Lazy-imported via `registry.py`. MCP tools loaded at boot.
 Agent-created skills live under `workspace/skills/`.
+
+---
+
+## Unified WebUI and Runtime API
+
+The image has two service roles, selected by command rather than image name:
+
+```text
+Browser → magi-webui Service (`magi webui`)
+              ├─ React SPA, login, MAGIS/MAGI control API
+              └─ signed internal proxy
+                     ├─ magi Runtime API (one selected MAGI)
+                     └─ magi Runtime API (another selected MAGI)
+```
+
+The default `magi` process has no SPA mount and is never the browser entry
+point. It serves a private Runtime API so the WebUI can operate on a selected
+MAGI's SQLite workspace. The browser does not choose an upstream URL. Instead,
+WebUI resolves the selected `magic_id` from the control registry and sends a
+short-lived HMAC request bound to method, path, operator and target ID. The
+runtime checks that target ID against its `MAGI_RUNTIME_ID` before mapping the
+operator into its local contact/session scope.
 
 ---
 

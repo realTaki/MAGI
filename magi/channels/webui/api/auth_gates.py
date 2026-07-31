@@ -47,6 +47,14 @@ def _resolve_uid(raw: str | None) -> int | None:
 
 def admin_gate(request: Request) -> str:
     """FastAPI dependency — verify the caller is an admin."""
+    # A selected MAGI's Runtime API is never browser-facing. The one WebUI
+    # service forwards authenticated requests with a short-lived HMAC proof;
+    # map that global operator to this runtime's private Contact identity.
+    from magi.channels.webui.proxy_auth import ensure_runtime_operator
+
+    proxied_uid = ensure_runtime_operator(request)
+    if proxied_uid is not None:
+        return str(proxied_uid)
     raw = request.cookies.get("magi_session")
     uid = _resolve_uid(raw)
     if uid is None or not _is_admin_uid(uid):

@@ -1,8 +1,9 @@
-"""WebUI channel — the HTTP surface Adam (and optionally Eve) serves.
+"""HTTP applications for the unified WebUI and private MAGI Runtime API.
 
-This module builds the FastAPI application that the WebUI channel serves.
-It is imported by ``magi.node.run`` only when ``webui`` is in
-``MAGI_CHANNELS``.
+``create_app`` builds the singleton browser-facing control service. Runtime
+containers use ``create_runtime_app`` instead: it has no SPA mount and omits
+control registry/login routes, while retaining local APIs reached through the
+authenticated WebUI proxy.
 
 Mounting order (matters for routing precedence):
   1. ``/health``         — process-level liveness probe.
@@ -62,7 +63,13 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def create_app() -> FastAPI:
+def create_app(*, include_spa: bool = True, include_control_routes: bool = True, start_telegram: bool = True) -> FastAPI:
+    """Build either the standalone control WebUI or an internal Runtime API.
+
+    ``include_control_routes=False`` is used by every MAGI runtime: it omits
+    login/onboarding and MAGIS registry routes and never mounts React assets.
+    The runtime remains an internal HTTP API for the one WebUI service.
+    """
     # Bootstrap MCP tools synchronously inside the uvicorn
     # child process.  The node-level ``run()`` call bootstraps
     # in the reloader process; uvicorn's ``reload=True`` spawns
@@ -77,20 +84,20 @@ def create_app() -> FastAPI:
     # Start TG bot in the uvicorn child process.
     import logging as _log
 
-    _log.getLogger(__name__).info("create_app: starting TG bot")
-    from magi.agent.db import require_state_dir
-    from magi.channels.telegram.bot import start_bot
+    if start_telegram:
+        _log.getLogger(__name__).info("create_app: starting TG bot")
+        from magi.agent.db import require_state_dir
+        from magi.channels.telegram.bot import start_bot
 
-    # Importing the ASGI module in a CLI/test process must not require the
-    # container-only ``/workspace`` mount to exist. Node.run() initialises the
-    # workspace before serving in production; a direct app import simply
-    # leaves Telegram idle until a valid state directory is available.
-    try:
-        t = start_bot(require_state_dir())
-    except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
-        t = None
-        _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)
-    _log.getLogger(__name__).info("create_app: TG bot result=%s", t)
+        # Importing the ASGI module in a CLI/test process must not require the
+        # container-only ``/workspace`` mount to exist. Node.run() initialises
+        # the workspace before serving in production.
+        try:
+            t = start_bot(require_state_dir())
+        except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
+            t = None
+            _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)
+        _log.getLogger(__name__).info("create_app: TG bot result=%s", t)
 
     # D.7: lifespan hook starts the auto-title background
     # worker. Kept lazy (inside ``create_app``) so it runs
@@ -132,17 +139,23 @@ def create_app() -> FastAPI:
 
     # Feature routers — registered BEFORE the SPA static mount so
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
-    app.include_router(auth.router, prefix="/api/auth")
-    app.include_router(onboarding.router, prefix="/api/onboarding")
+    if include_control_routes:
+        app.include_router(auth.router, prefix="/api/auth")
+        app.include_router(onboarding.router, prefix="/api/onboarding")
     # Contacts router — unified contact directory + CRUD.
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
     app.include_router(contacts.router, prefix="/api")
     # MAGIC router — the internal persistence/API surface for individual
     # MAGIC agent rows under each MAGIS.
-    app.include_router(magic.router, prefix="/api")
+    if include_control_routes:
+        app.include_router(magic.router, prefix="/api")
     # MAGIS router — the "MAGI Societies" surface for the group tree.
-    app.include_router(magis.router, prefix="/api")
+    if include_control_routes:
+        app.include_router(magis.router, prefix="/api")
+        from magi.channels.webui.api import runtime_proxy
+
+        app.include_router(runtime_proxy.router, prefix="/api")
     # Telegram binding (chat id ↔ uid, v0 admin endpoint;
     # C2 will replace with a /start <code> flow that uses the
     # same underlying meta key).
@@ -256,7 +269,7 @@ def create_app() -> FastAPI:
     # stage). In a local dev checkout with `npm run build` it also gets
     # picked up; if neither produced a dist the mount is skipped and
     # vite dev (on the same :42069) serves the UI itself.
-    spa_dist = _find_spa_dist()
+    spa_dist = _find_spa_dist() if include_spa else None
     if spa_dist is not None:
         app.mount(
             "/",
@@ -273,5 +286,13 @@ def create_app() -> FastAPI:
     return app
 
 
-# Module-level instance for ``uvicorn magi.channels.webui.app:app``.
-app = create_app()
+def create_runtime_app() -> FastAPI:
+    """Factory for the internal API served by every MAGI runtime."""
+    return create_app(include_spa=False, include_control_routes=False, start_telegram=False)
+
+
+# Module-level instance stays available for tests and direct ASGI imports.
+# Real services use factories: ``magi webui`` starts Telegram in its control
+# app, whereas a MAGI runtime factory must not accidentally start it merely by
+# importing this module.
+app = create_app(start_telegram=False)

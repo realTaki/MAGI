@@ -16,6 +16,7 @@ import sys
 
 from magi import __version__
 from magi.node import check, run
+from magi.webui_service import run as run_webui
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -24,6 +25,13 @@ def _build_parser() -> argparse.ArgumentParser:
         description="MAGI node. Role is derived from the MAGIS tree in the database.",
     )
     parser.add_argument("--version", action="version", version=f"magi {__version__}")
+    parser.add_argument(
+        "service",
+        nargs="?",
+        choices=("runtime", "webui"),
+        default="runtime",
+        help="service role: runtime (default) or the singleton webui control plane",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -42,7 +50,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return check()
 
-    run()
+    if args.service == "webui":
+        run_webui()
+    else:
+        run()
     return 0
 
 

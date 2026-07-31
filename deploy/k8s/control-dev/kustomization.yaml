@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# kind-only unified WebUI: same magi:dev image as the runtime, with Vite HMR
+# on :42069 and the control API on :8000 inside the Pod.
+resources:
+  - ../control
+
+patches:
+  - path: patch-webui.yaml
+  - path: patch-webui-service.yaml

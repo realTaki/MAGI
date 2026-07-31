@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-webui
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: webui
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: magi
+      app.kubernetes.io/component: webui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: magi
+        app.kubernetes.io/component: webui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: magi
+          image: magi:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["magi", "webui"]
+          env:
+            - name: MAGIS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: magi-magis-1-genesis-db
+                  key: MAGIS_DATABASE_URL
+            - name: MAGI_CONTROL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: magi-control
+                  key: MAGI_CONTROL_SECRET
+            - name: MAGI_ROOT_RUNTIME_URL
+              value: http://magi:42069
+          ports:
+            - name: http
+              containerPort: 42069
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: magi-webui-workspace

@@ -186,9 +186,25 @@ single-replica SQLite workspace; each MAGIS has its own PostgreSQL database and
 public workspace PVC for organization facts and shared files. See
 [the storage boundary](docs/magi-magis-storage.md) for the exact split.
 
+### One WebUI, one image
+
+MAGI uses one container image with two selectable service roles. The default
+`magi` command runs one MAGI and exposes only an internal Runtime API. The
+singleton `magi webui` command serves the React application, authentication,
+organization control plane, and a protected proxy to the selected MAGI. A
+browser therefore always visits one WebUI Service; it never connects directly
+to an individual MAGI Pod.
+
+The proxy derives the target from the MAGI registry and signs each internal
+request with `MAGI_CONTROL_SECRET`, binding it to the selected MAGI and the
+authenticated operator. Each runtime rejects a request addressed to a different
+MAGI. Selecting another MAGI changes the target scope of private views such as
+chat, memory, SOUL, skills, tasks, and settings.
+
 For the implementation-level view, see:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Unified WebUI and Runtime API](docs/unified-webui.md)
 - [Business flows](docs/business-flows.md)
 - [Database and migration notes](docs/database-migrations.md)
 - [Kubernetes deployment](deploy/k8s/README.md)

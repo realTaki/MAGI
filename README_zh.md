@@ -158,9 +158,21 @@ Kubernetes 是当前部署目标：它为每个 MAGI 提供明确的运行边界
 工作区；每个 MAGIS 则有独立 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。
 精确边界见[存储设计](docs/magi-magis-storage.md)。
 
+### 一个 WebUI、一个镜像
+
+MAGI 只发布一个容器镜像，但提供两个可选服务角色。默认 `magi` 命令运行单个
+MAGI，并只提供集群内 Runtime API；`magi webui` 则运行唯一的 React 控制台、登录、
+组织控制面，以及到当前所选 MAGI 的受控代理。浏览器始终只访问一个 WebUI Service，
+不会直接连接任何 MAGI Pod。
+
+代理从 MAGI 注册表推导目标，并用 `MAGI_CONTROL_SECRET` 为每个内部请求签名；签名同时
+绑定目标 MAGI 与已认证操作者。运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 后，聊天、
+记忆、SOUL、skills、任务和设置等私有页面都会切换到对应目标。
+
 深入实现请阅读：
 
 - [架构](docs/ARCHITECTURE.md)
+- [统一 WebUI 与 Runtime API](docs/unified-webui.md)
 - [关键业务流程](docs/business-flows.md)
 - [数据库与迁移说明](docs/database-migrations.md)
 - [Kubernetes 部署](deploy/k8s/README.md)

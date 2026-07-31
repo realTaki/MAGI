@@ -96,6 +96,10 @@ class KubernetesEveBackend:
                 f"{self.base_url}{path}",
                 headers={"authorization": f"Bearer {self.token}", "accept": "application/json"},
             )
+        if response.status_code not in {200, 202, 404}:
+            raise RuntimeError(
+                f"Kubernetes DELETE {path}: {response.status_code} {response.text[:500]}"
+            )
 
     def provision_magis(self, binding: MagisBinding) -> MagisProvisionResult:
         """Provision one MAGIS's private PostgreSQL and public workspace.
@@ -220,10 +224,6 @@ class KubernetesEveBackend:
             raise RuntimeError(f"MAGIS database did not become ready: {last_error}")
         finally:
             engine.dispose()
-        if response.status_code not in {200, 202, 404}:
-            raise RuntimeError(
-                f"Kubernetes DELETE {path}: {response.status_code} {response.text[:500]}"
-            )
 
     def start(self, spec: EveSpec) -> EveOperationResult:
         name = _resource_name(spec)
@@ -253,6 +253,20 @@ class KubernetesEveBackend:
                 },
             },
         )
+        # The browser never reaches this Service. The singleton WebUI control
+        # plane uses it to proxy authenticated requests to this MAGI runtime.
+        self._apply(
+            f"{prefix}/services/{name}",
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": name, "labels": labels},
+                "spec": {
+                    "selector": {"magi.io/magic-id": str(spec.magic_id)},
+                    "ports": [{"name": "http", "port": 42069, "targetPort": "http"}],
+                },
+            },
+        )
         self._apply(
             f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{name}",
             {
@@ -278,6 +292,7 @@ class KubernetesEveBackend:
                                         {"name": "MAGI_RUNTIME_ID", "value": str(spec.magic_id)},
                                         {"name": "MAGIS_ID", "value": str(spec.magis.id)},
                                         {"name": "MAGIS_DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": magis_database_secret, "key": "MAGIS_DATABASE_URL"}}},
+                                        {"name": "MAGI_CONTROL_SECRET", "valueFrom": {"secretKeyRef": {"name": "magi-control", "key": "MAGI_CONTROL_SECRET"}}},
                                     ],
                                     "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}, {"name": "magis-workspace", "mountPath": "/magis"}],
                                     "securityContext": {
@@ -329,6 +344,7 @@ class KubernetesEveBackend:
         name = _resource_name(spec)
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._delete(f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{name}")
+        self._delete(f"{prefix}/services/{name}")
         self._delete(f"{prefix}/persistentvolumeclaims/{name}-workspace")
         return EveOperationResult(
             observed_state="deleted",

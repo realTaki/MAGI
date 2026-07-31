@@ -6,7 +6,8 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 
 当前清单支持：
 
-- 一个 Adam manager 节点；
+- 一个独立 `magi-webui` Service（浏览器唯一入口）；
+- 每个 MAGI 一个内部 Runtime API；
 - 每个 MAGI 一个独立 Deployment；
 - 每个 MAGI 一个独立 PVC，挂载到容器 `/workspace`；其 MAGIS 另有一个公共 PVC 挂载到 `/magis`；
 - 源码保留在不可变镜像内（`/app/magi`），不会挂载到 `/workspace`；
@@ -55,7 +56,9 @@ deploy/k8s/
 └── README.md
 ```
 
-`base` 是初始节点模板，并声明 Genesis 的 PostgreSQL 和公共工作区。普通运行时
+`base` 是初始节点模板，并声明 Genesis 的 PostgreSQL 和公共工作区。`control/` 同时
+部署 orchestrator 与唯一的 `magi-webui` 控制台；两者和所有 MAGI 使用同一个镜像，
+只是命令不同。普通运行时
 由 orchestrator 按 MAGI/MAGIS ID 创建稳定命名的资源；不要依赖 Kustomize name prefix
 推导这些名称。
 
@@ -143,13 +146,14 @@ kubectl apply -k deploy/k8s/overlays/adam
 
 ```bash
 kubectl -n magi get pods,svc,pvc -l app.kubernetes.io/name=magi
-kubectl -n magi logs -f deploy/adam-magi-node
+kubectl -n magi logs -f deploy/magi-node
+kubectl -n magi logs -f deploy/magi-webui
 ```
 
 本地访问 WebUI 可以使用 port-forward：
 
 ```bash
-kubectl -n magi port-forward svc/adam-magi 42069:42069
+kubectl -n magi port-forward svc/magi-webui 42069:42069
 ```
 
 然后打开：
@@ -158,16 +162,16 @@ kubectl -n magi port-forward svc/adam-magi 42069:42069
 http://127.0.0.1:42069/
 ```
 
-Adam 的集群内地址是：
+统一 WebUI 的集群内地址是：
 
 ```text
-http://adam-magi.magi.svc.cluster.local:42069
+http://magi-webui.magi.svc.cluster.local:42069
 ```
 
 短 Service 名在同一 namespace 内也可以使用：
 
 ```text
-http://adam-magi:42069
+http://magi-webui:42069
 ```
 
 ## 3. Telegram Secret（可选）

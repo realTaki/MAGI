@@ -1,18 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# MAGI node — single image, role chosen at runtime via MAGI_NODE_ROLE.
+# One MAGI image, two selectable service roles:
+#   - ``magi``       runs one MAGI runtime and its internal Runtime API;
+#   - ``magi webui`` runs the singleton React/control-plane WebUI service.
 #
-# Every MAGI node (Adam or EVE) bundles both:
-#   - the Python backend (magi runtime)
-#   - the React SPA (magi/WebUI/dist), served by FastAPI at /
-#
-# That way, http://localhost:42069/ works the same on Adam and on an
-# EVE container that mounted the webui channel — no external CDN, no
-# separate static host, no "is webui available on this role?" question.
-#
-# Role (Adam / EVE) is selected at runtime via MAGI_NODE_ROLE; channel
-# selection (webui / telegram) is read from settings.channels.enabled at
-# boot (seeded to [webui] on first boot, toggled via Settings → Channels).
-# SQLite lives at /workspace/state (bind-mounted to the host).
+# The SPA is deliberately baked into this one image so an installer downloads
+# one artifact. Kubernetes chooses the role through the Deployment command;
+# no MAGI runtime serves browser assets or a public WebUI endpoint.
 
 # -----------------------------------------------------------------------------
 # Stage 1: build the React SPA
@@ -49,7 +42,7 @@ COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eve
 
 # -----------------------------------------------------------------------------
-# Stage 3: runtime — Python + prebuilt SPA, run as non-root magi user
+# Stage 3: one runtime image — Python + prebuilt SPA, run as non-root magi user
 # -----------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --shell /bin/bash magi \
@@ -59,10 +52,8 @@ RUN useradd --create-home --shell /bin/bash magi \
 COPY --from=python-builder /opt/venv /opt/venv
 COPY magi /app/magi
 COPY alembic.ini /app/alembic.ini
-# Prebuilt SPA baked in. FastAPI's webui launcher mounts /app/magi/WebUI/dist
-# as StaticFiles (with html=True) so /, /assets/* etc. all serve the SPA,
-# and /api/* still hits the FastAPI routers (registered before the
-# static mount so they take precedence).
+# Prebuilt SPA is consumed only by ``magi webui``. It stays in the same image
+# as MAGI runtimes to keep installation and versioning to one artifact.
 COPY --from=web-builder /web/dist /app/magi/WebUI/dist
 
 ENV PATH="/opt/venv/bin:$PATH" \

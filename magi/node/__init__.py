@@ -110,7 +110,7 @@ def check() -> int:
 
 
 def run() -> None:
-    """Boot the node: init SQLite, then launch channels from DB config."""
+    """Boot one MAGI runtime and its internal, cluster-only HTTP API."""
     cfg = NodeConfig.from_env()
     logging.basicConfig(
         level=cfg.log_level.upper(),
@@ -183,24 +183,15 @@ def run() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    # Read channel enable/disable state from the DB.
+    # Read optional messaging channels from the MAGI's private DB. WebUI is
+    # now a separate control-plane service, while this runtime API is always
+    # started so that service can reach the selected MAGI.
     channels = _read_channels_from_db(state_dir)
-    if not channels:
-        logger.warning("no channels enabled; exiting")
-        return
-
-    # Launch non-blocking channels first, THEN blocking ones.
-    non_blocking: list[str] = []
-    blocking: list[str] = []
-    for channel in channels:
-        (blocking if channel == Channel.WEBUI else non_blocking).append(channel)
-
-    logger.info(
-        "channels resolved: non_blocking=%s blocking=%s",
-        non_blocking, blocking,
-    )
-    for channel in non_blocking + blocking:
+    messaging = [channel for channel in channels if channel != Channel.WEBUI]
+    logger.info("messaging channels resolved: %s", messaging)
+    for channel in messaging:
         _launch_channel(channel, cfg)
+    _launch_runtime_api(cfg)
 
 
 def _init_state(state_dir: str) -> None:
@@ -213,12 +204,12 @@ def _init_state(state_dir: str) -> None:
 # ----------------------------------------------------------------------
 # channel launchers
 # ----------------------------------------------------------------------
-def _launch_webui(cfg: NodeConfig) -> None:
-    """Mount the WebUI channel: serve FastAPI on the hardcoded port."""
+def _launch_runtime_api(cfg: NodeConfig) -> None:
+    """Serve private Runtime APIs; React is hosted by ``magi webui``."""
     reload_dirs = ["/app/magi"] if cfg.reload else None
 
     uvicorn.run(
-        "magi.channels.webui.app:create_app",
+        "magi.channels.webui.app:create_runtime_app",
         factory=True,
         host=cfg.host,
         port=cfg.port,
@@ -240,7 +231,6 @@ def _launch_telegram(cfg: NodeConfig) -> None:
 
 
 _LAUNCHERS = {
-    Channel.WEBUI: _launch_webui,
     "telegram": _launch_telegram,
 }
 

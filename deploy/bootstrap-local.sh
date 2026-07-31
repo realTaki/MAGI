@@ -31,7 +31,8 @@ docker build -f "$ROOT_DIR/deploy/Dockerfile.dev" -t magi:dev "$ROOT_DIR"
 MAGI_IMAGE=magi:dev \
   EVE_IMAGE=magi:0.1.0 \
   ADAM_OVERLAY="$ROOT_DIR/deploy/k8s/overlays/dev-eva00" \
-  ADAM_DEPLOYMENT=eva00-magi-node \
-  ADAM_SERVICE=eva00-magi \
+  CONTROL_OVERLAY="$ROOT_DIR/deploy/k8s/control-dev" \
+  ADAM_DEPLOYMENT=magi-node \
+  WEBUI_SERVICE=magi-webui \
   KUBECONFIG="$KUBECONFIG_PATH" \
   "$ROOT_DIR/deploy/bootstrap-k8s.sh"

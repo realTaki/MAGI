@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-webui
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 0
+      containers:
+        - name: magi
+          image: magi:dev
+          command: ["/usr/local/bin/entrypoint.sh"]
+          args: ["webui"]
+          env:
+            - name: MAGI_PORT
+              value: "8000"
+            - name: MAGI_RELOAD
+              value: "1"
+            - name: PYTHONPATH
+              value: /app
+            - name: VITE_BACKEND_URL
+              value: http://127.0.0.1:8000
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: source
+              mountPath: /app/magi
+              readOnly: true
+            - name: web-node-modules
+              mountPath: /app/magi/WebUI/node_modules
+            - name: dev-entrypoint
+              mountPath: /usr/local/bin/entrypoint.sh
+              readOnly: true
+      volumes:
+        - name: workspace
+          hostPath:
+            path: /mnt/magi/workspace/WEBUI
+            type: DirectoryOrCreate
+        - name: source
+          hostPath:
+            path: /mnt/magi/magi
+            type: Directory
+        - name: web-node-modules
+          emptyDir: {}
+        - name: dev-entrypoint
+          hostPath:
+            path: /mnt/magi/deploy/entrypoint.dev.sh
+            type: File
