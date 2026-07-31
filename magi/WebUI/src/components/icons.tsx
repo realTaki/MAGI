@@ -111,10 +111,10 @@ export const IconContacts = ({ className }: IconProps) => (
 
 // -- MAGI Council sidebar sections (智群管理 / 智能体管理) ------------------
 
-// "MAGI team" — a tree/council structure. Three connected
+// "MAGI Society" — a tree/council structure. Three connected
 // nodes in a hierarchy: the top node is the ADAM, the two
 // below are EVEs.
-export const IconMagic = ({ className }: IconProps) => (
+export const IconMagis = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="12" cy="5" r="2.2" />
     <path d="M12 7.2v3" />
@@ -125,12 +125,12 @@ export const IconMagic = ({ className }: IconProps) => (
   </Icon>
 );
 
-// "Smart agent" — a small chip head with antennae. Reads as
+// "MAGI Citizen" — a small chip head with antennae. Reads as
 // "MAGI agent" without leaning on the more common robot icon
 // (the chip + antennae pair is intentionally retro so the
 // sidebar entry doesn't compete visually with the bot-shaped
 // TG channel entry elsewhere in the UI).
-export const IconMagis = ({ className }: IconProps) => (
+export const IconMagic = ({ className }: IconProps) => (
   <Icon className={className}>
     <rect x="5" y="7" width="14" height="11" rx="2" />
     <path d="M12 3v4" />

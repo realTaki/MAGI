@@ -382,13 +382,13 @@ export default {
     knowledgeMcp: "MCP",
     knowledgeNavAria: "ナレッジグループ",
     // MAGIS and MAGIC sidebar sections.
-    magicMagics: "MAGI Societies",
-    magicMagis: "MAGI Citizens",
-    magicContacts: "管理者",
-    magicNavAria: "知群セクション",
-    magicScopeNavAria: "連絡先の範囲",
-    magicExpandChildren: "子知群を展開",
-    magicCollapseChildren: "子知群を折り畳む",
+    magisLabel: "MAGI Societies",
+    magicLabel: "MAGI Citizens",
+    contactsLabel: "管理者",
+    magisNavAria: "知群セクション",
+    contactsNavAria: "連絡先の範囲",
+    magisExpandChildren: "子知群を展開",
+    magisCollapseChildren: "子知群を折り畳む",
   },
   // -- MAGIS and MAGIC panes -------------------------------
   magis: {
@@ -420,7 +420,7 @@ export default {
   magic: {
     paneTitle: "MAGI Citizens",
     paneDesc: "MAGI Citizens は MAGIS 内で動作する AI エージェントです。ADAM が調整とスケジュールを担当し、EVE が実行します。",
-    magisHeading: "MAGI Citizens",
+    heading: "MAGI Citizens",
     createHeading: "新しい MAGI Citizen",
     columnName: "名前",
     columnId: "ID",

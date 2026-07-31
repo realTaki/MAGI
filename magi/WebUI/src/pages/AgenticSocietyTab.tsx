@@ -19,8 +19,8 @@ import { MagisPane } from "./agentic-society/MagisPane";
 type AgenticSocietySection = "magis" | "magic";
 
 const AGENTIC_SOCIETY_SECTIONS: SidebarItem[] = [
-  { id: "magis", label: "sidebar.magicMagics", icon: <IconMagic /> },
-  { id: "magic", label: "sidebar.magicMagis", icon: <IconMagis /> },
+  { id: "magis", label: "sidebar.magisLabel", icon: <IconMagis /> },
+  { id: "magic", label: "sidebar.magicLabel", icon: <IconMagic /> },
 ];
 
 /** Backend response shape for ``GET /api/contacts``. */
@@ -49,7 +49,7 @@ export default function AgenticSocietyTab() {
       items={AGENTIC_SOCIETY_SECTIONS}
       selectedId={section}
       onSelect={(id) => setSection(id as AgenticSocietySection)}
-      ariaLabel={t("sidebar.magicNavAria")}
+      ariaLabel={t("sidebar.magisNavAria")}
     >
       {section === "magis" && <MagisPane />}
       {section === "magic" && <MagicPane />}

@@ -419,13 +419,13 @@ export default {
     knowledgeMcp: "MCP 列表",
     knowledgeNavAria: "知识分组导航",
     // MAGIS and MAGIC sidebar sections.
-    magicMagics: "MAGI Societies",
-    magicMagis: "MAGI Citizens",
-    magicContacts: "管理员",
-    magicNavAria: "智群分组导航",
-    magicScopeNavAria: "管理员范围导航",
-    magicExpandChildren: "展开子智群",
-    magicCollapseChildren: "收起子智群",
+    magisLabel: "MAGI Societies",
+    magicLabel: "MAGI Citizens",
+    contactsLabel: "管理员",
+    magisNavAria: "智群分组导航",
+    contactsNavAria: "管理员范围导航",
+    magisExpandChildren: "展开子智群",
+    magisCollapseChildren: "收起子智群",
   },
   // -- MAGIS and MAGIC panes -------------------------------
   magis: {
@@ -457,7 +457,7 @@ export default {
   magic: {
     paneTitle: "MAGI Citizens",
     paneDesc: "MAGI Citizens 是运行在 MAGIS 里的 AI 智能体。ADAM 负责协调调度，EVE 负责执行。每个 MAGI Citizen 绑定到一个 MAGIS。",
-    magisHeading: "MAGI Citizens",
+    heading: "MAGI Citizens",
     createHeading: "新建智能体",
     columnName: "名称",
     columnId: "ID",

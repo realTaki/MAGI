@@ -385,13 +385,13 @@ export default {
     knowledgeMcp: "MCP",
     knowledgeNavAria: "Knowledge sections",
     // MAGIS and MAGIC sidebar sections.
-    magicMagics: "MAGI Societies",
-    magicMagis: "MAGI Citizens",
-    magicContacts: "Admins",
-    magicNavAria: "MAGI Society sections",
-    magicScopeNavAria: "Contact scope",
-    magicExpandChildren: "expand children",
-    magicCollapseChildren: "collapse children",
+    magisLabel: "MAGI Societies",
+    magicLabel: "MAGI Citizens",
+    contactsLabel: "Admins",
+    magisNavAria: "MAGI Society sections",
+    contactsNavAria: "Contact scope",
+    magisExpandChildren: "expand children",
+    magisCollapseChildren: "collapse children",
   },
   // -- MAGIS and MAGIC panes -------------------------------
   magis: {
@@ -423,7 +423,7 @@ export default {
   magic: {
     paneTitle: "MAGI Citizens",
     paneDesc: "MAGI Citizens are AI agents running within a MAGIS. ADAM coordinates and schedules; EVE executes. Each MAGI Citizen is bound to one MAGIS.",
-    magisHeading: "MAGI Citizens",
+    heading: "MAGI Citizens",
     createHeading: "New MAGI Citizen",
     columnName: "Name",
     columnId: "ID",

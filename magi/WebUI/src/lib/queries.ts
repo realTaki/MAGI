@@ -188,7 +188,7 @@ export function useSystemTimezone() {
 // -- convenience: refetch multiple queries -----------------------------------
 
 /** Invalidate magis + magic together (both panes share these). */
-export function useRefreshMagic() {
+export function useRefreshSociety() {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: qk.magis });
