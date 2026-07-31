@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.webui.api import auth, contacts, magics, magis, onboarding
+from magi.channels.webui.api import auth, contacts, magic, magis, onboarding
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -138,14 +138,10 @@ def create_app() -> FastAPI:
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
     app.include_router(contacts.router, prefix="/api")
-    # Magics router — the "MAGI 团体 / MAGIC (MAGI Council)"
-    # surface for the MAGI team tree (replaces the old
-    # ``/api/departments`` routes (dropped in the post-refactor reframe)
-    # dept sub-tree concept went away in the post-refactor
-    # reframe).
-    app.include_router(magics.router, prefix="/api")
-    # Magis router — the "智能体管理 / magis 管理" surface for
-    # individual MAGI agent rows under each MAGIC team.
+    # MAGIC router — the "MAGI Citizens" surface for individual
+    # MAGI agent rows under each MAGIS Society.
+    app.include_router(magic.router, prefix="/api")
+    # MAGIS router — the "MAGI Societies" surface for the group tree.
     app.include_router(magis.router, prefix="/api")
     # Telegram binding (chat id ↔ uid, v0 admin endpoint;
     # C2 will replace with a /start <code> flow that uses the

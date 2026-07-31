@@ -503,9 +503,9 @@ def _find_contact_by_telegram_id(
     operator flag since the 2024 split (see
     :mod:`magi.agent.db.models_contact`).
 
-    LLM credentials come from the ``magis`` table
-    (:func:`magi.agent.db.models_magi.resolve_magi_credentials`),
-    not from ``contacts``. The caller resolves the EVE Magi's
+    LLM credentials come from the ``magic`` table
+    (:func:`magi.agent.db.models_magi.resolve_magic_credentials`),
+    not from ``contacts``. The caller resolves the EVE MAGIC's
     provider/api_key before dispatching to the agent loop.
 
     Falls back to the legacy ``telegram.user.<tgid>.uid``
@@ -582,8 +582,8 @@ async def _handle_contact_message(
 ) -> None:
     """Route a message from a bound contact through the agent loop.
 
-    LLM credentials are resolved from the EVE Magi row
-    (:func:`magi.agent.db.models_magi.resolve_magi_credentials`)
+    LLM credentials are resolved from the EVE MAGIC row
+    (:func:`magi.agent.db.models_magi.resolve_magic_credentials`)
     rather than the Contact row — the EVE agent owns the
     credentials, not the person.
 
@@ -611,7 +611,7 @@ async def _handle_contact_message(
         utcnow_iso,
     )
 
-    # LLM credentials come from the seeded adam Magi row,
+    # LLM credentials come from the seeded adam MAGIC row,
     # resolved inside :func:`handle_message` via
     # :func:`magi.agent.llm.factory.get_provider` — we don't
     # read them here, and we don't pass them down.

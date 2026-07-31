@@ -15,13 +15,14 @@
    └─ 失败吞掉，保留现有缓存
 
 2. 凭证校验 (get_provider, _validate_credentials 已被删除)
-   └─ get_provider() 在 magi/agent/llm/factory.py 内自己读 seeded adam Magi 行
-   └─ 凭证来自 Magi 表，不是 Contact 表 — Contact 表根本没有 provider/api_key 列
-   └─ Magi 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
+   └─ get_provider() 在 magi/agent/llm/factory.py 内自己读 seeded adam MAGI 行
+     （Adam runtime 路径；EVE runtime 走 MAGI_LLM_PROVIDER / MAGI_LLM_API_KEY env vars 绕过 DB）
+   └─ 凭证来自 magi 表（每个 MAGIC row = 一个 MAGI agent 的 LLM creds），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
+   └─ MAGI 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
    └─ 严格模式，绝不回退系统默认凭证
 
 3. 构建上下文 (_build_context)
-   ├─ get_provider() — 未知 provider 抛 LLMError；Magi 未配置抛 LLMNotConfiguredError
+   ├─ get_provider() — 未知 provider 抛 LLMError；MAGI 未配置抛 LLMNotConfiguredError
    ├─ ToolContext(state_dir, workspace, uid, channel, session_id)
    ├─ _build_messages_from_session() — 从 SessionStore 加载历史 → (messages, seen_message_ids)
    ├─ read_soul(state_dir) — 读 SOUL.md
@@ -46,7 +47,7 @@
 
 **不可改的守卫**:
 
-- `get_provider()` 必须是 strict mode — Magi 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从 Magi 读
+- `get_provider()` 必须是 strict mode — MAGI 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从 magi 表读（Adam runtime）或从 `MAGI_LLM_*` env vars 读（EVE runtime）
 - `_drain_pending_user_messages` 的 store 读取失败必须吞掉（不崩溃主循环）
 - `_truncate_at_safe_boundary` 在拼接新消息前必须调用（否则 Anthropic API 拒绝交错 tool 块）
 - `_run_tool_calls` 的结果必须截断到 8000 字符
@@ -54,30 +55,29 @@
 
 ---
 
-## 2. LLM 凭证解析 (resolve_magi_credentials)
+## 2. LLM 凭证解析 (get_provider)
 
-**入口**: `magi/agent/db/models_magi.py::resolve_magi_credentials(position)`
+**入口**: `magi/agent/llm/factory.py::get_provider(model=None)`
 
 ```
 设计原则:
-  - Magi 表的 provider/api_key 是唯一凭证来源
-  - Contact 表不存 provider/api_key（Token 消耗记在 Contact 上，但凭证属于 Magi）
-  - 每笔 LLM 调用都按 Contact 记录 token_usage，但用 Magi 的 key 发起
-
-resolve_magi_credentials("adam") → WebUI chat 使用 Adam Magi 的 key
-resolve_magi_credentials("eve")  → TG bot / task runner 使用 EVE Magi 的 key
+  - magi 表 (每个 MAGIC row = 一个 MAGI agent 的 LLM creds) 是 Adam runtime 的唯一凭证来源
+  - EVE runtime 通过 env vars (MAGI_LLM_PROVIDER / MAGI_LLM_API_KEY / MAGI_LLM_MODEL)
+    跳过 DB,直接用 orchestrator 注入的 Secret
+  - Contact 表不存 provider/api_key (Token 消耗记在 Contact 上,但凭证属于 magi)
+  - 每笔 LLM 调用都按 Contact 记录 token_usage,但用对应 MAGIC 的 key 发起
 
 调用链:
-  TG bot:    _handle_contact_message → resolve_magi_credentials("eve")
-  WebUI:     _resolve_caller_credentials → resolve_magi_credentials("adam")
-  Runner:    execute_task → resolve_magi_credentials("eve")
+  TG bot:    _handle_contact_message → get_provider() (env vars 路径)
+  WebUI:     _resolve_caller_credentials → get_provider() (DB 路径)
+  Runner:    execute_task → handle_message → get_provider() (env vars 路径)
 ```
 
 **不可改的守卫**:
 
-- 绝不从 Contact 表读 provider/api_key（列已移除）
-- Token 消耗仍记给 Contact（token_usage.uid = contact.id）
-- 凭证不完整 → agent_no_credentials 拒绝，不回退默认值
+- 绝不从 Contact 表读 provider/api_key (列已移除)
+- Token 消耗仍记给 Contact (token_usage.uid = contact.id)
+- 凭证不完整 → LLMNotConfiguredError,不回退默认值
 
 ---
 
@@ -415,7 +415,7 @@ FTS5 搜索:
 - [ ] 写操作的角色门禁未被绕过
 - [ ] D.22 通道守卫未被移除
 - [ ] Credential 严格模式未被回退
-- [ ] LLM 凭证只从 Magi 表读取，不从 Contact 表
+- [ ] LLM 凭证只从 magi 表读取，不从 Contact 表
 - [ ] Cookie 值仍为 uid (int)，非 tgid
 - [ ] Onboarding 验证码一次性使用
 - [ ] TG adapter send 走原始 HTTP，不走 bot.send_message

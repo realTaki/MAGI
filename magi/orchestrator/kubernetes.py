@@ -103,7 +103,7 @@ class KubernetesEveBackend:
             "app.kubernetes.io/component": "eve",
             "magi.io/managed-by": "magi-orchestrator",
             "magi.io/magi-id": str(spec.magi_id),
-            "magi.io/magic-id": str(spec.magic_id),
+            "magi.io/magis-id": str(spec.magis_id),
         }
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._apply(

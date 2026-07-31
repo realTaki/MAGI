@@ -1,20 +1,29 @@
-"""ORM table ``magis`` — the MAGI agent rows.
+"""ORM table ``magic`` — MAGIC, the MAGI Citizen rows.
 
-Each row is a MAGI runtime process bound to one :class:`MAGIC`.
-``magic_id`` references :class:`MAGIC` (in
+Each row is a MAGIC runtime process bound to one :class:`MAGIS`.
+``magis_id`` references :class:`MAGIS` (in
 :mod:`magi.agent.db.models_magic`) and ``magic_position``
-is one of ``"adam"`` (the manager, exactly one per MAGIC) /
-``"eve"`` (a worker, N per MAGIC).
+is one of ``"adam"`` (the manager, exactly one per MAGIS) /
+``"eve"`` (a worker, N per MAGIS).
 
 The provider / api_key columns carry the LLM provider and key
-for the MAGI runtime. They are the **single source of truth**
+for the MAGIC runtime. They are the **single source of truth**
 for LLM credentials — the ``contacts`` table does NOT hold
 provider/api_key (removed in the D.30 credential refactor).
-Read via :func:`resolve_magi_credentials`.
+Read via :func:`resolve_magic_credentials`.
 
-Forward references to ``MAGIC`` resolve at mapper-config time
+Forward references to ``MAGIS`` resolve at mapper-config time
 via the standard ``TYPE_CHECKING`` + ``from __future__ import
 annotations`` pattern.
+
+Naming convention
+----------------
+
+After the 2026-07 naming refresh, this class is named
+``MAGIC`` (one row = one individual MAGI agent). The Python
+class ``MAGIC`` represents an individual; the Python class
+``MAGIS`` (in :mod:`magi.agent.db.models_magic`) represents
+a group of MAGI Citizens. ``__tablename__ = "magic"``.
 """
 
 from __future__ import annotations
@@ -34,28 +43,28 @@ from magi.agent.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_magic import MAGIC
+    from magi.agent.db.models_magic import MAGIS
 
 
-class Magi(Base):
-    """A MAGI runtime agent.
+class MAGIC(Base):
+    """A MAGI runtime agent (a MAGI Citizen).
 
-    Each ``Magi`` belongs to exactly one ``MAGIC`` via
-    ``magic_id``. ``magic_position`` selects the archetype:
-    ``"adam"`` (manager, exactly one per MAGIC) or
-    ``"eve"`` (worker, N per MAGIC). ``provider`` /
+    Each ``MAGIC`` belongs to exactly one ``MAGIS`` via
+    ``magis_id``. ``magic_position`` selects the archetype:
+    ``"adam"`` (manager, exactly one per MAGIS) or
+    ``"eve"`` (worker, N per MAGIS). ``provider`` /
     ``api_key`` carry the LLM credentials for the runtime
     process that binds to this row.
     """
 
-    __tablename__ = "magis"
+    __tablename__ = "magic"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str | None] = mapped_column(
         String(100), nullable=True,
     )
-    magic_id: Mapped[int] = mapped_column(
-        ForeignKey("magics.id", ondelete="CASCADE"),
+    magis_id: Mapped[int] = mapped_column(
+        ForeignKey("magis.id", ondelete="CASCADE"),
         nullable=False,
     )
     provider: Mapped[str | None] = mapped_column(
@@ -77,17 +86,17 @@ class Magi(Base):
 
     def __repr__(self) -> str:
         return (
-            f"Magi(id={self.id}, magic_id={self.magic_id}, "
+            f"MAGIC(id={self.id}, magis_id={self.magis_id}, "
             f"magic_position={self.magic_position!r})"
         )
 
 
-def resolve_magi_credentials(
+def resolve_magic_credentials(
     position: str,
 ) -> tuple[str | None, str | None]:
-    """Return ``(provider, api_key)`` from the first Magi
+    """Return ``(provider, api_key)`` from the first MAGIC
     row with ``magic_position == position``, or
-    ``(None, None)`` when no matching Magi exists.
+    ``(None, None)`` when no matching MAGIC exists.
 
     This is the single read path for LLM credentials.
     Token-usage recording still writes to the
@@ -96,7 +105,7 @@ def resolve_magi_credentials(
 
     Callers pass ``"adam"`` (WebUI chat) or ``"eve"``
     (TG bot / task runner). In v0 there is typically one
-    Magi row per position; multi-magi dispatch is a
+    MAGIC row per position; multi-magic dispatch is a
     future concern.
     """
     from sqlalchemy import select
@@ -104,7 +113,7 @@ def resolve_magi_credentials(
 
     with open_session() as db:
         row = db.scalar(
-            select(Magi).where(Magi.magic_position == position).limit(1)
+            select(MAGIC).where(MAGIC.magic_position == position).limit(1)
         )
     if row is None:
         return None, None

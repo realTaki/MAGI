@@ -35,7 +35,7 @@ class EveRuntime(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     magi_id: Mapped[int] = mapped_column(
-        ForeignKey("magis.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
+        ForeignKey("magic.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
     )
     desired_state: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     observed_state: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")

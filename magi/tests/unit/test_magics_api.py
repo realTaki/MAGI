@@ -1,15 +1,15 @@
-"""End-to-end tests for ``/api/magics`` — the "MAGI 团体"
+"""End-to-end tests for ``/api/magis`` — the MAGIS Society
 CRUD surface introduced by the post-refactor reframe.
 
-A ``MAGIC`` row is the org container: a tree of MAGI teams,
-each anchoring an ``adam`` Magi (exactly one per MAGIC). The
+A ``MAGIS`` row is the org container: a tree of MAGI teams,
+each anchoring an ``adam`` MAGIC (exactly one per MAGIS). The
 endpoints exercised here:
 
-  - ``GET    /api/magics``          — flat list with parent_id
-  - ``POST   /api/magics``          — create (name, parent_id)
-  - ``GET    /api/magics/{id}``     — single row + child_count
-  - ``PATCH  /api/magics/{id}``     — rename / reparent / set adam_id
-  - ``DELETE /api/magics/{id}``     — reparents children before delete
+  - ``GET    /api/magis``          — flat list with parent_id
+  - ``POST   /api/magis``          — create (name, parent_id)
+  - ``GET    /api/magis/{id}``     — single row + child_count
+  - ``PATCH  /api/magis/{id}``     — rename / reparent / set adam_id
+  - ``DELETE /api/magis/{id}``     — reparents children before delete
 
 Fixtures pin: ``MAGIC_STATE_DIR`` (test-scoped), one admin
 ``Contact`` (so the AdminGate lets the request through), and
@@ -34,7 +34,7 @@ def _signed_session_cookie(uid: int) -> str:
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    """MAGI_STATE_DIR + ORM + one admin Contact + one seeded MAGIC.root."""
+    """MAGI_STATE_DIR + ORM + one admin Contact + one seeded MAGIS.root."""
     state = tmp_path / "state"
     state.mkdir()
     ws = tmp_path / "workspace"
@@ -47,8 +47,8 @@ def env(monkeypatch, tmp_path):
 
     from magi.agent.db import (
         Contact,
+        MAGIS,
         MAGIC,
-        Magi,
         init_orm,
         init_sqlite,
         open_session)
@@ -63,13 +63,13 @@ def env(monkeypatch, tmp_path):
         )
         db.add(admin)
         db.flush()
-        # The seed already created MAGIC.root + one adam Magi;
+        # The seed already created MAGIS.root + one adam MAGIC;
         # capture that row's id so tests can reparent cleanly.
         root = db.scalar(
-            db.query(MAGIC).filter_by(name="Genesis")  # seed name in _seed_default_root
+            db.query(MAGIS).filter_by(name="Genesis")  # seed name in _seed_default_root
             .statement
-        ) if False else db.scalar(__import__("sqlalchemy").select(MAGIC).where(MAGIC.name == "Genesis"))
-        adam = db.scalar(__import__("sqlalchemy").select(Magi).where(Magi.magic_position == "adam"))
+        ) if False else db.scalar(__import__("sqlalchemy").select(MAGIS).where(MAGIS.name == "Genesis"))
+        adam = db.scalar(__import__("sqlalchemy").select(MAGIC).where(MAGIC.magic_position == "adam"))
         db.commit()
         db.refresh(admin)
 
@@ -115,9 +115,9 @@ def non_admin_client(env):
 # -- tests -----------------------------------------------------------------
 
 def test_list_magics_returns_seeded_root(client, env):
-    """The default seed stamps one ``MAGIC`` row; list
+    """The default seed stamps one ``MAGIS`` row; list
     reflects it (sorted by name)."""
-    r = client.get("/api/magics")
+    r = client.get("/api/magis")
     assert r.status_code == 200
     body = r.json()
     names = [m["name"] for m in body]
@@ -129,7 +129,7 @@ def test_list_magics_returns_seeded_root(client, env):
 
 def test_create_magic_top_level(client, env):
     r = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "Marketing", "parent_id": env["root"].id})
     assert r.status_code == 201
     body = r.json()
@@ -142,148 +142,148 @@ def test_create_magic_duplicate_name_rejected(client, env):
     """Two rows with the same name -> 400 (duplicate-name
     check; the unique index would also kick in)."""
     r = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": env["root"].name, "parent_id": env["root"].id})
     assert r.status_code == 400
-    assert r.json()["code"] == "validation.magic_name_duplicate"
+    assert r.json()["code"] == "validation.magis_name_duplicate"
 
 def test_create_magic_invalid_parent_rejected(client):
     r = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "Orphan", "parent_id": 9999})
     assert r.status_code == 400
-    assert r.json()["code"] == "validation.parent_magic_not_found"
+    assert r.json()["code"] == "validation.parent_magis_not_found"
 
 def test_get_magic_returns_child_count(client, env):
-    """``GET /api/magics/{id}`` includes child_count (set
+    """``GET /api/magis/{id}`` includes child_count (set
     after re-fetch + children load)."""
     # Create a child so the root has at least one.
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "Eng", "parent_id": env["root"].id})
     assert cr.status_code == 201
     child_id = cr.json()["id"]
 
-    r = client.get(f"/api/magics/{env['root'].id}")
+    r = client.get(f"/api/magis/{env['root'].id}")
     assert r.status_code == 200
     body = r.json()
     assert body["name"] == env["root"].name
     assert body["child_count"] == 1
 
     # The child itself has 0 children.
-    r = client.get(f"/api/magics/{child_id}")
+    r = client.get(f"/api/magis/{child_id}")
     assert r.json()["child_count"] == 0
 
 def test_get_magic_404_for_missing(client):
-    r = client.get("/api/magics/9999")
+    r = client.get("/api/magis/9999")
     assert r.status_code == 404
-    assert r.json()["code"] == "not_found.magic"
+    assert r.json()["code"] == "not_found.magis"
 
 def test_update_magic_renames(client, env):
     """``PATCH name`` updates, blank rejected, duplicate rejected."""
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "OldName", "parent_id": env["root"].id})
     mid = cr.json()["id"]
 
-    r = client.patch(f"/api/magics/{mid}", json={"name": "NewName"})
+    r = client.patch(f"/api/magis/{mid}", json={"name": "NewName"})
     assert r.status_code == 200
     assert r.json()["name"] == "NewName"
 
     # Duplicate — should 400.
     cr2 = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "Other", "parent_id": env["root"].id})
     other_id = cr2.json()["id"]
-    r = client.patch(f"/api/magics/{mid}", json={"name": "Other"})
+    r = client.patch(f"/api/magis/{mid}", json={"name": "Other"})
     assert r.status_code == 400
-    assert r.json()["code"] == "validation.magic_name_duplicate"
+    assert r.json()["code"] == "validation.magis_name_duplicate"
 
 def test_update_magic_self_parent_rejected(client, env):
-    """``PATCH parent_id=self_id`` raises — a MAGIC can't
+    """``PATCH parent_id=self_id`` raises — a MAGIS can't
     be its own parent."""
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "Cycle1", "parent_id": env["root"].id})
     mid = cr.json()["id"]
 
-    r = client.patch(f"/api/magics/{mid}", json={"parent_id": mid})
+    r = client.patch(f"/api/magis/{mid}", json={"parent_id": mid})
     assert r.status_code == 400
-    assert r.json()["code"] == "validation.magic_self_parent"
+    assert r.json()["code"] == "validation.magis_self_parent"
 
 def test_update_magic_reparents_cycle_rejected(client, env):
     """Reparent a subtree under a descendant — refused."""
     cr1 = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "A", "parent_id": env["root"].id})
     a = cr1.json()["id"]
     cr2 = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "A.b", "parent_id": a})
     ab = cr2.json()["id"]
 
     # Now try to make ``a`` a child of ``A.b`` — cycle.
-    r = client.patch(f"/api/magics/{a}", json={"parent_id": ab})
+    r = client.patch(f"/api/magis/{a}", json={"parent_id": ab})
     assert r.status_code == 400
-    assert r.json()["code"] == "validation.magic_cycle"
+    assert r.json()["code"] == "validation.magis_cycle"
 
 def test_update_magic_sets_adam(client, env):
-    """``PATCH adam_id`` binds an existing adam Magi."""
+    """``PATCH adam_id`` binds an existing adam MAGIC."""
     mid = env["root"].id
     # The seed already set root.adam_id; explicitly re-bind
     # to the same id is a no-op success case.
-    r = client.patch(f"/api/magics/{mid}", json={"adam_id": env["adam"].id})
+    r = client.patch(f"/api/magis/{mid}", json={"adam_id": env["adam"].id})
     assert r.status_code == 200
     assert r.json()["adam_id"] == env["adam"].id
 
 def test_update_magic_invalid_adam_id_rejected(client, env):
     r = client.patch(
-        f"/api/magics/{env['root'].id}",
+        f"/api/magis/{env['root'].id}",
         json={"adam_id": 9999})
     assert r.status_code == 400
     assert r.json()["code"] == "validation.adam_magi_not_found"
 
 def test_delete_magic_reparents_children(client, env):
-    """Deleting a non-leaf MAGIC re-parents its direct
+    """Deleting a non-leaf MAGIS re-parents its direct
     children to the deleted row's parent (so they don't
     become orphans with a NULL parent_id reference)."""
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "ParentA", "parent_id": env["root"].id})
     parent_a = cr.json()["id"]
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "ParentA.1", "parent_id": parent_a})
     child1 = cr.json()["id"]
     cr = client.post(
-        "/api/magics",
+        "/api/magis",
         json={"name": "ParentA.2", "parent_id": parent_a})
     child2 = cr.json()["id"]
 
-    r = client.delete(f"/api/magics/{parent_a}")
+    r = client.delete(f"/api/magis/{parent_a}")
     assert r.status_code == 204
 
     # Both children now report parent_id == root (the
     # grandparent of the deleted row).
-    r1 = client.get(f"/api/magics/{child1}")
-    r2 = client.get(f"/api/magics/{child2}")
+    r1 = client.get(f"/api/magis/{child1}")
+    r2 = client.get(f"/api/magis/{child2}")
     assert r1.json()["parent_id"] == env["root"].id
     assert r2.json()["parent_id"] == env["root"].id
 
 def test_delete_magic_404_for_missing(client):
-    r = client.delete("/api/magics/9999")
+    r = client.delete("/api/magis/9999")
     assert r.status_code == 404
 
 def test_all_endpoints_require_admin(non_admin_client):
     """``non_admin_client`` (role='guest') is rejected at
-    the AdminGate for every verb on /api/magics."""
-    r = non_admin_client.get("/api/magics")
+    the AdminGate for every verb on /api/magis."""
+    r = non_admin_client.get("/api/magis")
     assert r.status_code == 401
-    r = non_admin_client.post("/api/magics", json={"name": "X"})
+    r = non_admin_client.post("/api/magis", json={"name": "X"})
     assert r.status_code == 401
-    r = non_admin_client.patch("/api/magics/1", json={"name": "Y"})
+    r = non_admin_client.patch("/api/magis/1", json={"name": "Y"})
     assert r.status_code == 401
-    r = non_admin_client.delete("/api/magics/1")
+    r = non_admin_client.delete("/api/magis/1")
     assert r.status_code == 401
 
 def test_endpoints_require_signed_cookie(client):
@@ -294,5 +294,5 @@ def test_endpoints_require_signed_cookie(client):
     cannot accept.)"""
     raw_client = TestClient(client.app)
     raw_client.cookies.set("magi_session", "junk-not-a-cookie")
-    r = raw_client.get("/api/magics")
+    r = raw_client.get("/api/magis")
     assert r.status_code == 401

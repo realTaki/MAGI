@@ -15,11 +15,11 @@ and act as a collective**.
 The society is composed of three layers:
 
 ```
-  Society (MAGI)            The whole collective — all agents, all councils, all state
-    └── Councils (MAGICs)   Organizations. One leader (Adam) + many members (EVEs).
-          └── Agents (Magis) Individual citizens. Each has its own container,
-                             identity, memory, tools, and LLM.
-          └── Contacts       The people known to the society. Operators or recipients.
+  Society (MAGI)              The whole collective — all agents, all societies, all state
+    └── Societies (MAGISes)   Organizations. One leader (Adam) + many members (EVEs).
+          └── Citizens (MAGICs) Individual agents. Each has its own container,
+                               identity, memory, tools, and LLM.
+          └── Contacts         The people known to the society. Operators or recipients.
 ```
 
 An agent is not a thread. Not a session. **A citizen** — with its own container,
@@ -104,8 +104,8 @@ adapter and registering it. Core code never changes.
 | Table | Holds |
 |---|---|
 | `contacts` | Person directory (unified `employees` + `contact_entries` + `user_im_bindings`) |
-| `magics` | Councils (tree via `parent_id`) |
-| `magis` | Agent rows (bound to a `magic`, `adam` / `eve` position) |
+| `magis` | MAGIS Society tree (via `parent_id`; `adam_id` points to its Adam MAGIC Citizen) |
+| `magic` | MAGIC Citizen rows (bound to a `magis`; `adam` / `eve` position) |
 | `action_items` | Operator to-do inbox |
 | `token_usage` | Per-call LLM billing |
 | `tasks` / `task_runs` | Scheduled tasks |
@@ -151,9 +151,9 @@ Agent-created skills live under `workspace/skills/`.
 ## Glossary
 
 - **MAGI** — The agentic society. The whole system.
-- **MAGIC** — A council. One Adam + N EVEs. Forms a tree with `parent_id`.
-- **Magi** — An individual agent. Container, identity, LLM, tools.
-- **Adam** — Leader agent. Manages a MAGIC, dispatches work.
-- **EVE** — Member agent. Executes tasks, collaborates.
+- **MAGIS** — A MAGI Society. A group of MAGIs (one Adam + N EVEs). Forms a tree via `parent_id`. ("MAGI Societies" in operator-facing copy.)
+- **MAGIC** — An individual MAGI agent (a citizen of a Society). Container, identity, LLM, tools. ("MAGI Citizens" in operator-facing copy.)
+- **Adam** — Leader agent (a MAGIC with `magic_position='adam'`). Manages a MAGIS, dispatches work.
+- **EVE** — Member agent (a MAGIC with `magic_position='eve'`). Executes tasks, collaborates.
 - **Position** — `adam` / `eve`. Structural fact about the org.
-- **Contact** — A person known to the society. Role: `admin` / `assigned` / `contact` / `guest`.
+- **Contact** — A person known to the society. Role: `admin` (WebUI operator), `assigned` (the served user), or `guest` (everyone else).

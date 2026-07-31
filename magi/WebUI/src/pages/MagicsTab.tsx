@@ -1,11 +1,11 @@
 /**
- * MagicsTab — 智群管理 + 智能体管理 panes.
+ * MagicsTab — MAGI Societies + MAGI Citizens panes.
  *
  * Adam-only — EVE doesn't see this tab.
  *
  * Two sidebar sections:
- *   - 智群管理 (Magics) — MAGIC tree.
- *   - 智能体管理 (Magis) — flat list of every Magi agent row.
+ *   - MAGI Societies (magis) — group tree.
+ *   - MAGI Citizens (magic) — flat list of every MAGIC agent row.
  */
 
 import { useState } from "react";
@@ -16,11 +16,11 @@ import { useT } from "../i18n/index";
 import { MagicsPane } from "./magics/MagicsPane";
 import { MagisPane } from "./magics/MagisPane";
 
-type MagicsSection = "magics" | "magis";
+type MagicsSection = "magis" | "magic";
 
 const MAGICS_SECTIONS: SidebarItem[] = [
-  { id: "magics", label: "sidebar.magicMagics", icon: <IconMagic /> },
-  { id: "magis", label: "sidebar.magicMagis", icon: <IconMagis /> },
+  { id: "magis", label: "sidebar.magicMagics", icon: <IconMagic /> },
+  { id: "magic", label: "sidebar.magicMagis", icon: <IconMagis /> },
 ];
 
 /** Backend response shape for ``GET /api/contacts``. */
@@ -28,23 +28,8 @@ export type ContactRow = {
   id: number;
   name: string;
   display_name: string | null;
-  // LLM credentials (``provider`` / ``api_key``) live on
-  // the ``magis`` table, not on Contact — see ``MagiRow``
-  // below and the ``/api/magis`` endpoints.
   separated_at: string | null;
-  // ``role`` is the relationship to MAGI (assigned /
-  // guest). WebUI sign-in rights are NOT in the role
-  // enum — they're a separate boolean below. Pre-2024
-  // this enum had ``"admin"`` (moved to ``admin:
-  // boolean``) and ``"contact"`` (collapsed into
-  // ``"guest"`` because every gate that refused
-  // ``contact`` also refused ``guest``, with no
-  // operator-only distinction between the two).
   role: "assigned" | "guest";
-  // WebUI sign-in rights — independent of ``role``.
-  // ``true`` means this contact can authenticate to the
-  // operator console (``/api/auth/me`` accepts the
-  // session cookie; tasks creator gate allows them).
   admin: boolean;
   telegram_id: number | null;
   notes: string;
@@ -57,7 +42,7 @@ export type ContactRow = {
 
 export default function MagicsTab() {
   const t = useT();
-  const [section, setSection] = useState<MagicsSection>("magics");
+  const [section, setSection] = useState<MagicsSection>("magis");
 
   return (
     <SidebarShell
@@ -66,8 +51,8 @@ export default function MagicsTab() {
       onSelect={(id) => setSection(id as MagicsSection)}
       ariaLabel={t("sidebar.magicNavAria")}
     >
-      {section === "magics" && <MagicsPane />}
-      {section === "magis" && <MagisPane />}
+      {section === "magis" && <MagicsPane />}
+      {section === "magic" && <MagisPane />}
     </SidebarShell>
   );
 }

@@ -11,7 +11,7 @@ Schema in this file (in dependency order):
   - chat_sessions        (per-user conversation threads)
   - contacts             (unified person table; ``assigned`` role gets
                           auto-seeded preset tasks)
-  - magics               (MAGI team tree)
+  - magic               (MAGI team tree)
   - magis                (individual MAGI agents)
   - settings             (KV store for system.timezone + presets)
   - action_items         (with ``due_date`` for C4 EVE follow-ups)
@@ -85,8 +85,8 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
 
-    # ### magics ────────────────────────────────────────────────────── #
-    op.create_table('magics',
+    # ### magic (a MAGIS — a MAGI Society) ──────────────────────────────── #
+    op.create_table('magic',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('parent_id', sa.Integer(), nullable=True),
@@ -94,12 +94,12 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['adam_id'], ['magis.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['parent_id'], ['magics.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['parent_id'], ['magic.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')
     )
 
-    # ### magis ─────────────────────────────────────────────────────── #
+    # ### magis (MAGIC — a MAGI agent / "MAGI Citizen") ──────────────────────── #
     op.create_table('magis',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=True),
@@ -109,7 +109,7 @@ def upgrade() -> None:
     sa.Column('magic_position', sa.String(length=16), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['magic_id'], ['magics.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['magic_id'], ['magic.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
 

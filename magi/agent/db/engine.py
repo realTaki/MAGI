@@ -186,35 +186,36 @@ _DEFAULT_ROOT_MAGIC_NAME = "Genesis"
 
 
 def _seed_default_root(engine: Engine) -> None:
-    """Ensure the workspace has exactly one root MAGIC + a default adam Magi.
+    """Ensure the workspace has exactly one root MAGIS + a default adam MAGIC.
 
-    The *root* of the council tree is identified by ``parent_id IS NULL``
+    The *root* of the society tree is identified by ``parent_id IS NULL``
     (not by the literal name ``"Genesis"``). On first boot, if no root
     row exists, seed one named ``_DEFAULT_ROOT_MAGIC_NAME`` ("Genesis") as
-    the council anchor. If the deployer later renames or deletes the root,
+    the society anchor. If the deployer later renames or deletes the root,
     the next boot seeds a fresh Genesis only when no root row remains —
     so a renamed root stays renamed and we never accumulate duplicate
-    roots. Also seeds one ``Magi`` row with ``magic_position='adam'``
-    (named "Alice") for the root MAGIC so the "智能体管理" page is never
+    roots. Also seeds one ``MAGIC`` row with ``magic_position='adam'``
+    (named "Alice") for the root MAGIS so the "智能体管理" page is never
     empty on first boot.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
-    from magi.agent.db.models_magi import Magi
-    from magi.agent.db.models_magic import MAGIC
+    from magi.agent.db.models_magi import MAGIC
+    from magi.agent.db.models_magic import MAGIS
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
-        # NULL), NOT the literal name "Genesis". Keying on the name let a
-        # rename/delete of the root spawn a duplicate "Genesis" on the
-        # next boot. Pick the first root row if several exist (defensive)
-        # and only seed a fresh Genesis when no root exists at all.
+        # NULL), NOT by the literal name "Genesis". Keying on the name
+        # let a rename/delete of the root spawn a duplicate "Genesis"
+        # on the next boot. Pick the first root row if several exist
+        # (defensive) and only seed a fresh Genesis when no root row
+        # exists at all.
         existing_root = session.scalar(
-            select(MAGIC).where(MAGIC.parent_id.is_(None)).order_by(MAGIC.id).limit(1)
+            select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id).limit(1)
         )
         if existing_root is None:
-            root = MAGIC(
+            root = MAGIS(
                 name=_DEFAULT_ROOT_MAGIC_NAME,
                 parent_id=None,
                 adam_id=None,
@@ -222,30 +223,30 @@ def _seed_default_root(engine: Engine) -> None:
             session.add(root)
             session.flush()  # populate root.id
             logger.info(
-                "seeded default root MAGIC: %s (id=%d)",
+                "seeded default root MAGIS: %s (id=%d)",
                 _DEFAULT_ROOT_MAGIC_NAME, root.id,
             )
             existing_root = root
 
-        # Seed one adam Magi under the root if none exists yet.
+        # Seed one adam MAGIC under the root if none exists yet.
         has_adam = session.scalar(
-            select(Magi.id).where(Magi.magic_position == "adam").limit(1)
+            select(MAGIC.id).where(MAGIC.magic_position == "adam").limit(1)
         )
         if has_adam is None:
-            adam = Magi(
+            adam = MAGIC(
                 name="Alice",
-                magic_id=existing_root.id,
+                magis_id=existing_root.id,
                 magic_position="adam",
                 provider=None,
                 api_key=None,
             )
             session.add(adam)
             session.flush()
-            # Bind the Adam to the MAGIC row so the MagicsPane
+            # Bind the Adam to the MAGIS row so the MagicsPane
             # renders the ADAM column correctly.
             existing_root.adam_id = adam.id
             logger.info(
-                "seeded default adam Magi under %s (id=%d)",
+                "seeded default adam MAGIC under %s (id=%d)",
                 _DEFAULT_ROOT_MAGIC_NAME, adam.id,
             )
 
@@ -304,7 +305,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
     import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
-    import magi.agent.db.models_magic  # noqa: F401 — MAGIC tree
+    import magi.agent.db.models_magic  # noqa: F401 — MAGIS Society tree
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
     import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.agent.db.models_token_usage  # noqa: F401

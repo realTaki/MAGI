@@ -15,10 +15,10 @@ Layout:
                                   person directory; replaces the old
                                   ``contacts``, ``contact_entries``,
                                   and ``user_im_bindings`` tables)
-  - :mod:`.models_magic`        — :class:`MAGIC` (a tree of MAGI
-                                  teams / councils)
-  - :mod:`.models_magi`         — :class:`Magi` (MAGI runtime
-                                  agent rows bound to a ``MAGIC``)
+  - :mod:`.models_magic`        — :class:`MAGIS` (MAGI Societies,
+                                  a tree of MAGI groups)
+  - :mod:`.models_magi`         — :class:`MAGIC` (MAGI Citizens,
+                                  runtime agent rows bound to a ``MAGIS``)
   - :mod:`.models_mcp_server`   — :class:`McpServer` (operator-
                                   configured MCP server rows; the
                                   loader reads these in place of
@@ -66,8 +66,12 @@ from magi.agent.db.local_db import init_sqlite
 from magi.agent.db.models_action_item import ActionItem
 from magi.agent.db.models_contact import Contact, ContactNote
 from magi.agent.db.models_eve_runtime import EveRuntime
-from magi.agent.db.models_magi import Magi
-from magi.agent.db.models_magic import MAGIC
+# Naming refresh (2026-07): ``MAGIS`` = a MAGI Society (a group
+# of MAGIs; lives in the ``magis`` table).
+# ``MAGIC`` = an individual MAGI agent (a "MAGI Citizen";
+# lives in the ``magic`` table).
+from magi.agent.db.models_magi import MAGIC
+from magi.agent.db.models_magic import MAGIS
 from magi.agent.db.models_mcp_server import McpServer
 from magi.agent.db.models_setting import Setting
 from magi.agent.db.models_token_usage import TokenUsage
@@ -90,7 +94,7 @@ __all__ = [
     "Contact",
     "ContactNote",
     "MAGIC",
-    "Magi",
+    "MAGIS",
     "EveRuntime",
     "McpServer",
     # dashboard

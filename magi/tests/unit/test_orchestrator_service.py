@@ -47,7 +47,7 @@ def test_orchestrator_dispatches_signed_start(monkeypatch):
 
     monkeypatch.setattr(service, "KubernetesEveBackend", FakeBackend)
     client = TestClient(service.create_app())
-    body = b'{"magi_id":7,"magic_id":1,"name":"worker","provider":"claude","api_key":"secret"}'
+    body = b'{"magi_id":7,"magis_id":1,"name":"worker","provider":"claude","api_key":"secret"}'
     response = client.post("/v1/eves/7/start", content=body, headers=_signed_headers("test-control-secret", body))
     assert response.status_code == 200, response.text
     assert response.json()["observed_state"] == "provisioning"

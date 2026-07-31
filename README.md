@@ -48,12 +48,13 @@ Walk through the first-time setup wizard — save a Telegram bot token, verify a
 | Entity | Role in the society |
 |---|---|
 | **MAGI** | The society itself — a collective of agents coordinating, learning, and acting together |
-| **MAGIC** | An organization (council). One leader, many members. Councils can contain sub-councils |
-| **Adam** | A leader agent. Manages its council, dispatches work, holds shared state |
-| **EVE** | A member agent. Executes tasks, collaborates with peers, reports to its Adam |
+| **MAGIS** | A MAGI Society (a group of MAGIs). One Adam + many EVEs. Societies can contain sub-societies |
+| **MAGIC** | An individual MAGI agent (a citizen of a Society). One of two positions: |
+| **Adam** | A leader agent (MAGIC position). Manages its Society, dispatches work, holds shared state |
+| **EVE** | A member agent (MAGIC position). Executes tasks, collaborates with peers, reports to its Adam |
 | **Contact** | A participant known to the society. Operates the council or receives its output |
 
-Agents form a **tree of councils** — each MAGIC has one Adam at its root, coordinating a
+Agents form a **tree of Societies** — each MAGIS has one Adam at its root, coordinating a
 set of EVEs. Councils can delegate to child councils. The society scales by adding agents,
 not by complicating the architecture.
 

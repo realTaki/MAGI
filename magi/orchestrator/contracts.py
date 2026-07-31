@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class EveSpec(BaseModel):
     magi_id: int = Field(ge=1)
-    magic_id: int = Field(ge=1)
+    magis_id: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=100)
     provider: str | None = Field(default=None, max_length=64)
     api_key: str | None = Field(default=None, max_length=256)

@@ -78,7 +78,7 @@ def _resolve_caller_credentials(
     ``uid`` (the cookie value post-D.24) and return
     ``(uid, role)``.
 
-    LLM credentials live on ``magis`` (the Adam Magi
+    LLM credentials live on ``magic`` (the Adam MAGIC
     owns the provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
     :func:`magi.agent.loop.handle_message` reads them
@@ -370,7 +370,7 @@ async def send_chat(
             detail=(
                 "MAGI runtime has no LLM provider / API key "
                 "configured; set them via PATCH "
-                "/api/magis/{adam_id}"
+                "/api/magic/{adam_id}"
             ),
         )
     except Exception as e:

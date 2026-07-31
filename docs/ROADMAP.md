@@ -127,7 +127,7 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIC / Magi / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIC` + `Magi` carry the org tree |
+| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIS / MAGIC / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIS` (group tree) + `MAGIC` (individual agent) carry the org tree |
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
 | Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/agent/db/alembic/versions`; `init_orm` runs `upgrade head` |
 | Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/agent/db/migrations.py`, runs only for databases without `alembic_version` |
@@ -142,7 +142,7 @@ discipline C0 deliberately punted on).
 |---|---|---|
 | `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/webui/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
 | Contact lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_contact.py` docstring |
-| `api/magics` + `api/magis` for MAGIC + Magi rows | **Done** | `magi/channels/webui/api/magics.py` + `magis.py`; replaces the old `api/departments` |
+| `api/magics` + `api/magis` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magics.py` (MAGISes tree) + `magis.py` (MAGIC citizens); replaces the old `api/departments` |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
@@ -326,14 +326,14 @@ The schema collapses to **three tables**:
 
 `magis.position` and `users.role` are **orthogonal axes**:
 
-- A `Magi`'s `position` is intrinsic to the agent's role in the
-  MAGIC's org structure (1 ADAM + N EVE per MAGIC). It is **not**
+- A `MAGIC`'s `position` is intrinsic to the agent's role in the
+  MAGIS's org structure (1 ADAM + N EVE per MAGIS). It is **not**
   derived from which User logs in or which User is being served.
 - A `User`'s `role` describes the person's service relationship
   to a specific MAGI (`admin` = operator; `assigned` = the person
   being served; `user` = unbound org member; `guest` = external).
-  These are per-(Magi, User) facts; in v0 a User row has a single
-  `magi_id` FK (the MAGI it relates to).
+  These are per-(MAGI, User) facts; in v0 a User row has a single
+  `magis_id` FK (the MAGI it relates to).
 
 All the previous intermediate tables (`employees`, `agents`,
 `agent_assignments`, `departments`) are dropped. `contact_entries`
@@ -349,10 +349,10 @@ Two independent axes that earlier drafts conflated:
 
 | Axis | Question it answers | Stored in | Values |
 |---|---|---|---|
-| **Org position** | "What is this agent's role in the MAGIC's structure?" | `magis.position` | `adam` / `eve` |
+| **Org position** | "What is this agent's role in the MAGIS's structure?" | `magis.position` | `adam` / `eve` |
 | **Service role** | "How does this person relate to a specific MAGI?" | `users.role` | `admin` / `assigned` / `user` / `guest` |
 | **Service binding** | "Which MAGI does this `users` row belong to?" | `users.magi_id` (FK) | nullable (NULL for `user`/`guest`) |
-| **Channel identity** | "Which TG chat / Slack channel does this MAGI own?" | `magi_im_bindings(magi_id, channel, im_id)` | per-(Magi, channel) row |
+| **Channel identity** | "Which TG chat / Slack channel does this MAGI own?" | `magi_im_bindings(magi_id, channel, im_id)` | per-(MAGI, channel) row |
 
 These four are independent. Changing `magis.position` does NOT
 change `users.role`; changing `users.role` does NOT change
@@ -361,25 +361,30 @@ change `users.role`; changing `users.role` does NOT change
 #### Target schema
 
 ```python
-class Magic(Base):
-    """一个组织：Modular Agentic Group Intelligence Council。"""
+class MAGIS(Base):
+    """一群 MAGI 组成的 Agentic Society。
+
+    一个 MAGIS 不是单个容器 — 它是组织树里的容器节点,持有一个
+    Adam container + N Eve containers (每个 MAGIC agent 跑在
+    自己的 Pod 里)。MAGISes 通过 parent_id self-FK 形成树结构。
+    """
     __tablename__ = "magics"
     id            : int            # PK
-    name          : str            # "MAGIC.root" / "MAGIC.acme" / ...
+    name          : str            # "MAGIS.root" / "MAGIS.acme" / ...
     display_name  : str | None
     created_at    : datetime
     updated_at    : datetime
 
-    members: Mapped[list["Magi"]] = relationship(back_populates="magic")
+    members: Mapped[list["MAGIC"]] = relationship(back_populates="magis")
 
 
-class Magi(Base):
-    """一个 agent（一个 MAGI 运行时实体）。
+class MAGIC(Base):
+    """一个 MAGI 运行时 agent（一个 MAGI Citizen）。
 
-    每个 Magi 在它所在的 MAGIC 里持有一个 position：
-      - position='adam' → 这个 MAGIC 的 ADAM（leader / operator）。
-                         每个 MAGIC 恰好一个（partial UNIQUE）。
-      - position='eve'  → 这个 MAGIC 的 EVE（普通 member）。N 个。
+    每个 MAGIC 在它所在的 MAGIS 里持有一个 position：
+      - position='adam' → 这个 MAGIS 的 ADAM（leader / operator）。
+                         每个 MAGIS 恰好一个（partial UNIQUE）。
+      - position='eve'  → 这个 MAGIS 的 EVE（普通 member）。N 个。
     """
     __tablename__ = "magis"
     id            : int            # PK

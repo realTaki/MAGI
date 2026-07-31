@@ -22,7 +22,7 @@ MAGI runtime's LLM credentials. Every chat turn, task
 fire, and compaction pass reads the adam ``Magi`` row
 through this factory — callers never thread provider
 name + key + model through their own signatures. If the
-Magi hasn't been configured yet, :func:`get_provider`
+MAGIC hasn't been configured yet, :func:`get_provider`
 raises :class:`LLMNotConfiguredError` so the chat
 handler can return the operator a clear "set them in
 智能体管理" 503.
@@ -71,7 +71,7 @@ def known_providers() -> list[str]:
     intentionally NOT listed here — operators pick a
     region explicitly so there's no ambiguity.
     :func:`get_provider` still accepts ``"minimax"`` for
-    backward compat with any pre-v0 Magi rows.
+    backward compat with any pre-v0 MAGIC rows.
     """
     return ["claude", "minimax-global", "minimax-cn"]
 
@@ -91,7 +91,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
     ----------
     model
         Optional per-call override. ``None`` means "use
-        the model stored on the Magi row" (the
+        the model stored on the MAGIC row" (the
         operator's pick at PATCH time).
 
     Raises
@@ -117,17 +117,17 @@ def get_provider(model: str | None = None) -> LLMProvider:
     else:
         from sqlalchemy import select
 
-        from magi.agent.db import Magi, open_session
+        from magi.agent.db import MAGIC, open_session
 
         with open_session() as session:
             magi = session.scalar(
-                select(Magi).where(Magi.magic_position == "adam").order_by(Magi.id).limit(1)
+                select(MAGIC).where(MAGIC.magic_position == "adam").order_by(MAGIC.id).limit(1)
             )
             if magi is None or not magi.provider or not magi.api_key:
                 logger.warning("get_provider: no adam Magi with provider+api_key configured")
                 raise LLMNotConfiguredError(
                     "MAGI runtime has no LLM provider / API key configured; "
-                    "set them via PATCH /api/magis/{adam_id}"
+                    "set them via PATCH /api/magic/{adam_id}"
                 )
             provider_name = magi.provider
             api_key = magi.api_key
