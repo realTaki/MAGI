@@ -1,10 +1,8 @@
 """ORM model ``magic`` — MAGIC, the MAGI Citizen rows.
 
-Each row is a MAGIC runtime process bound to one :class:`MAGIS`.
-``magis_id`` references :class:`MAGIS` (in
-:mod:`magi.agent.db.models_magis`) and ``magic_position``
-is one of ``"adam"`` (the manager, exactly one per MAGIS) /
-``"eve"`` (a worker, N per MAGIS).
+Each row is one independently created MAGI.  Membership in a
+:class:`MAGIS` and the role held there are represented by
+``MAGISMembership`` rows, rather than fixed columns on the MAGI itself.
 
 The provider / api_key columns carry the LLM provider and key
 for the MAGIC runtime. They are the **single source of truth**
@@ -32,11 +30,7 @@ from datetime import datetime
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import (
-    DateTime,
-    ForeignKey,
-    String,
-)
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.agent.db.base import Base, utcnow_naive
@@ -49,12 +43,10 @@ if TYPE_CHECKING:
 class MAGIC(Base):
     """A MAGI runtime agent (a MAGI Citizen).
 
-    Each ``MAGIC`` belongs to exactly one ``MAGIS`` via
-    ``magis_id``. ``magic_position`` selects the archetype:
-    ``"adam"`` (manager, exactly one per MAGIS) or
-    ``"eve"`` (worker, N per MAGIS). ``provider`` /
-    ``api_key`` carry the LLM credentials for the runtime
-    process that binds to this row.
+    A MAGI is created independently.  Its memberships determine the
+    MAGIS instructions and role instructions it receives.  ``provider`` /
+    ``api_key`` carry the LLM credentials for the runtime process that
+    binds to this row.
     """
 
     __tablename__ = "magic"
@@ -63,19 +55,13 @@ class MAGIC(Base):
     name: Mapped[str | None] = mapped_column(
         String(100), nullable=True,
     )
-    magis_id: Mapped[int] = mapped_column(
-        ForeignKey("magis.id", ondelete="CASCADE"),
-        nullable=False,
-    )
     provider: Mapped[str | None] = mapped_column(
         String(64), nullable=True,
     )
     api_key: Mapped[str | None] = mapped_column(
         String(256), nullable=True,
     )
-    magic_position: Mapped[str] = mapped_column(
-        String(16), nullable=False,
-    )
+    instruction: Mapped[str] = mapped_column(default="", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, nullable=False
@@ -85,36 +71,30 @@ class MAGIC(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"MAGIC(id={self.id}, magis_id={self.magis_id}, "
-            f"magic_position={self.magic_position!r})"
-        )
+        return f"MAGIC(id={self.id}, name={self.name!r})"
 
 
-def resolve_magic_credentials(
-    position: str,
-) -> tuple[str | None, str | None]:
-    """Return ``(provider, api_key)`` from the first MAGIC
-    row with ``magic_position == position``, or
-    ``(None, None)`` when no matching MAGIC exists.
+def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, str | None]:
+    """Return credentials for the runtime MAGI.
 
     This is the single read path for LLM credentials.
     Token-usage recording still writes to the
     ``token_usage`` table keyed by the Contact's ``uid``
     — the billing identity is the person, not the agent.
 
-    Callers pass ``"adam"`` (WebUI chat) or ``"eve"``
-    (TG bot / task runner). In v0 there is typically one
-    MAGIC row per position; multi-magic dispatch is a
-    future concern.
+    When ``magic_id`` is omitted, resolve the root MAGIS's Adam.  This
+    keeps root-runtime callers simple while avoiding a global role lookup.
     """
     from sqlalchemy import select
     from magi.agent.db import open_session
 
     with open_session() as db:
-        row = db.scalar(
-            select(MAGIC).where(MAGIC.magic_position == position).limit(1)
-        )
+        if magic_id is not None:
+            row = db.get(MAGIC, magic_id)
+        else:
+            from magi.agent.db.models_magis import MAGIS
+            root = db.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            row = db.get(MAGIC, root.adam_id) if root and root.adam_id else None
     if row is None:
         return None, None
     return row.provider, row.api_key

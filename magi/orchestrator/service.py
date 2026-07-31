@@ -44,40 +44,40 @@ def create_app() -> FastAPI:
         _verify_request(body, x_magi_timestamp, x_magi_signature)
         return EveSpec.model_validate_json(body)
 
-    @app.post("/v1/eves/{magi_id}/start", response_model=EveOperationResult)
+    @app.post("/v1/eves/{magic_id}/start", response_model=EveOperationResult)
     async def start_eve(
-        magi_id: int,
+        magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> EveOperationResult:
         spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magi_id != magi_id:
-            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
+        if spec.magic_id != magic_id:
+            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
         return KubernetesEveBackend().start(spec)
 
-    @app.post("/v1/eves/{magi_id}/stop", response_model=EveOperationResult)
+    @app.post("/v1/eves/{magic_id}/stop", response_model=EveOperationResult)
     async def stop_eve(
-        magi_id: int,
+        magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> EveOperationResult:
         spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magi_id != magi_id:
-            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
+        if spec.magic_id != magic_id:
+            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
         return KubernetesEveBackend().stop(spec)
 
-    @app.post("/v1/eves/{magi_id}/delete", response_model=EveOperationResult)
+    @app.post("/v1/eves/{magic_id}/delete", response_model=EveOperationResult)
     async def delete_eve(
-        magi_id: int,
+        magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> EveOperationResult:
         spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magi_id != magi_id:
-            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
+        if spec.magic_id != magic_id:
+            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
         return KubernetesEveBackend().delete(spec)
 
     return app

@@ -662,8 +662,9 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     ``role='admin'`` and a bound TG chat (via the channel
     dispatcher, D.28), living under no team (the
     "unassigned" scope). Display name is resolved via Telegram
-    ``getChat`` so the dashboard can show "Alice" instead of
-    "12345" without a second round-trip per row.
+    ``getChat`` so the dashboard can show the operator's
+    handle instead of their TG numeric id without a second
+    round-trip per row.
 
     Side effects on each call:
       - Any prior ``Contact`` with ``role='admin'`` whose

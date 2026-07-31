@@ -81,8 +81,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
     seeded adam ``Magi`` row and instantiate it.
 
     The factory opens its own short-lived ORM session,
-    reads the first ``Magi`` row whose ``magic_position``
-    is ``"adam"`` (the runtime's identity — see
+    reads the root MAGIS's Adam (the runtime identity — see
     :func:`magi.agent.db.engine._seed_default_root`),
     and uses that row's ``provider`` / ``api_key`` /
     ``model`` columns to build the provider.
@@ -117,12 +116,11 @@ def get_provider(model: str | None = None) -> LLMProvider:
     else:
         from sqlalchemy import select
 
-        from magi.agent.db import MAGIC, open_session
+        from magi.agent.db import MAGIS, MAGIC, open_session
 
         with open_session() as session:
-            magi = session.scalar(
-                select(MAGIC).where(MAGIC.magic_position == "adam").order_by(MAGIC.id).limit(1)
-            )
+            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            magi = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
             if magi is None or not magi.provider or not magi.api_key:
                 logger.warning("get_provider: no adam Magi with provider+api_key configured")
                 raise LLMNotConfiguredError(

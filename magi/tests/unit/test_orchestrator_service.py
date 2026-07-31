@@ -38,7 +38,7 @@ def test_orchestrator_dispatches_signed_start(monkeypatch):
 
     class FakeBackend:
         def start(self, spec):
-            assert spec.magi_id == 7
+            assert spec.magic_id == 7
             return EveOperationResult(
                 observed_state="provisioning", namespace="magi", deployment_name="magi-eve-7-worker",
                 workspace_claim_name="magi-eve-7-worker-workspace",
@@ -47,7 +47,7 @@ def test_orchestrator_dispatches_signed_start(monkeypatch):
 
     monkeypatch.setattr(service, "KubernetesEveBackend", FakeBackend)
     client = TestClient(service.create_app())
-    body = b'{"magi_id":7,"magis_id":1,"name":"worker","provider":"claude","api_key":"secret"}'
+    body = b'{"magic_id":7,"name":"worker","provider":"claude","api_key":"secret"}'
     response = client.post("/v1/eves/7/start", content=body, headers=_signed_headers("test-control-secret", body))
     assert response.status_code == 200, response.text
     assert response.json()["observed_state"] == "provisioning"

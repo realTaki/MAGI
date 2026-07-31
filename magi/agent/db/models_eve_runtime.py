@@ -34,7 +34,7 @@ class EveRuntime(Base):
     __tablename__ = "eve_runtimes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    magi_id: Mapped[int] = mapped_column(
+    magic_id: Mapped[int] = mapped_column(
         ForeignKey("magic.id", ondelete="CASCADE"), unique=True, nullable=False, index=True
     )
     desired_state: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")

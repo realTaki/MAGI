@@ -48,7 +48,7 @@ export function useAdminContacts() {
 
 export type MagisRow = {
   id: number; name: string; parent_id: number | null;
-  adam_id: number | null; child_count: number; member_count: number;
+  adam_id: number | null; instruction: string; child_count: number; member_count: number;
   created_at: string; updated_at: string;
 };
 
@@ -60,8 +60,9 @@ export function useMagis() {
 }
 
 export type MAGICRow = {
-  id: number; name: string | null; magis_id: number; magic_position: string;
+  id: number; name: string | null;
   provider: string | null; api_key_set: boolean; api_key_last4: string | null;
+  memberships: { magis_id: number; magis_name: string; role_id: number; role_name: string }[];
   runtime: EveRuntimeRow | null;
   created_at: string; updated_at: string;
 };

@@ -18,8 +18,7 @@ Two surfaces pinned:
     :mod:`magi.channels.webui.api.soul` (so this module
     is the single point of contact for "what does SOUL.md
     actually mean on disk").
-  - :func:`build_system_prompt` — assembles the full
-    four-block prompt (SOUL + memory + contact + skills)
+  - :func:`build_system_prompt` — assembles the full prompt
     in the fixed order the agent loop uses. Stateless
     from the caller's POV: takes the inputs (``state_dir``
     / ``uid`` / ``soul``), returns a single string. The
@@ -88,17 +87,19 @@ def build_system_prompt(
 ) -> str:
     """Assemble the full system prompt for one LLM turn.
 
-    Five blocks, concatenated in this fixed order:
+    Six blocks, concatenated in this fixed order:
 
       1. **SOUL** — the persona file (workspace-global).
-      2. **Long-term memory** — :func:`format_memory_block`
+      2. **Instructions** — the MAGI's personal instruction plus every
+         MAGIS and role instruction from its memberships.
+      3. **Long-term memory** — :func:`format_memory_block`
          renders the calling User's ``important`` +
          ``ongoing in-flight`` rows. ``completed`` ongoing
          rows are filtered out (per the store's
          ``include_completed=False`` default) so the prompt
          reflects the LLM's working set, not the audit
          trail.
-      3. **Current chatter** — :func:`format_contact_block`
+      4. **Current chatter** — :func:`format_contact_block`
          renders the :class:`ContactEntry` row scoped to
          ``(uid, uid)``: the User's own self-record, the
          same lookup the user's ``add_contact_note`` /
@@ -109,14 +110,14 @@ def build_system_prompt(
          ``magi_session`` value IS the UID directly.
          There is no second "person on the other end" in
          this model — "admin 当前 在跟谁聊 根本不存在".
-      4. **Daily note** — :func:`format_daily_note_block`
+      5. **Daily note** — :func:`format_daily_note_block`
          renders today's running log (``contact_notes``
          where ``kind='daily'``). The LLM appends to it via
          the ``update_daily_note`` tool. Operator-toggleable
          via ``system.show_daily_note`` (default ON); the
          capture-rules prompt fold-in is gated separately by
          ``system.show_daily_note_prompt`` for noisy loops.
-      5. **Available skills** — :func:`format_skills_block`
+      6. **Available skills** — :func:`format_skills_block`
          lists the frontmatter ``name`` + ``description``
          of every registered SKILL.md. Bodies load on
          demand via ``load_skill``.
@@ -153,6 +154,11 @@ def build_system_prompt(
     # SOUL first — establishes the persona for the rest
     # of the system prompt.
     parts: list[str] = [soul]
+
+    from magi.agent.instructions import runtime_instruction_block
+    instruction_block = runtime_instruction_block()
+    if instruction_block:
+        parts.append(instruction_block)
 
     # Memory block — User-wide facts + in-flight work.
     try:

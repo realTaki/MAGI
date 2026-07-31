@@ -86,11 +86,11 @@ PVC 和 provider Secret。
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 Citizen 的能力。
 - **Provider 独立性**：Citizen 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
 
-## 快速开始：本地 Alice
+## 快速开始：本地开发集群
 
-最快的路径会启动本地 `kind` 集群和第一个开发 MAGI 节点 **Alice**。宿主机只需要 Docker。
+最快的路径会启动本地 `kind` 集群和第一个开发 MAGI 节点。宿主机只需要 Docker。
 脚本会按需下载固定版本的 `kind` 与 `kubectl`、构建镜像、创建集群，并以后端 reload 与
-Vite HMR 部署 Alice。
+Vite HMR 部署开发节点。
 
 ```bash
 git clone https://github.com/realTaki/MAGI.git
@@ -99,14 +99,14 @@ cd MAGI
 ```
 
 打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，完成 onboarding。系统初始化时，
-会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI（**Alice**），并让她担任
-Genesis 的 Adam。
+会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGIC Citizen（**EVA-00 PROTO TYPE**），
+并让它担任 Genesis 的 Adam。
 
 本地开发部署会挂载：
 
 ```text
 宿主仓库             → /app/magi        源码热加载
-workspace/alice      → /workspace       Alice 的持久化工作区
+workspace/alice      → /workspace       开发实例的持久化工作区
 ```
 
 已有 Kubernetes 集群或生产式部署可使用：
@@ -120,8 +120,8 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 
 ## 从第一个 MAGIS 到组织成长
 
-1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGI（Alice），
-   并让她担任 Genesis 的 Adam。
+1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGIC Citizen
+   （**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 Adam。
 2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
 3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 Adam MAGIC Citizens。
 4. **增加能力**：配置 EVE 的 provider 与凭证，然后让 Adam 通过 orchestrator 启动或停止它。

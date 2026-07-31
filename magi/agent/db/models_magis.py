@@ -2,8 +2,8 @@
 
 A :class:`MAGIS` row is the org container: one group of
 MAGI agents (``magic`` table, see :mod:`.models_magic`)
-coordinated by exactly one ``MAGIC`` with ``magic_position
-= 'adam'``. The tree shape is maintained via
+optionally coordinated by one MAGI assigned the reserved ``Adam`` role.
+The tree shape is maintained via
 ``parent_id`` self-FK.
 
 ``adam_id`` references ``magic.id`` (the manager MAGIC for
@@ -66,6 +66,7 @@ class MAGIS(Base):
         ForeignKey("magic.id", ondelete="SET NULL"),
         nullable=True,
     )
+    instruction: Mapped[str] = mapped_column(default="", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, nullable=False

@@ -104,12 +104,12 @@ provider Secret required for that EVE.
 - **Provider independence** — Citizens hold their own provider configuration
   and API credentials rather than sharing one global model account.
 
-## Quick start: a local Alice
+## Quick start: a local dev cluster
 
 The fastest path starts a local `kind` cluster and the first development MAGI
-node, **Alice**. Docker is the only host prerequisite. The script downloads
-its pinned `kind` and `kubectl` tools locally when needed, builds the images,
-creates the cluster, and deploys Alice with backend reload and Vite HMR.
+node. Docker is the only host prerequisite. The script downloads its pinned
+`kind` and `kubectl` tools locally when needed, builds the images, creates
+the cluster, and deploys the dev node with backend reload and Vite HMR.
 
 ```bash
 git clone https://github.com/realTaki/MAGI.git
@@ -119,13 +119,14 @@ cd MAGI
 
 Open [http://127.0.0.1:42069](http://127.0.0.1:42069) and complete onboarding.
 During system initialization, MAGI automatically creates the root MAGI Society,
-**Genesis**. It then creates **Alice**, the first MAGI, as Genesis's Adam.
+**Genesis**. It then creates **EVA-00 PROTO TYPE**, the first MAGIC Citizen,
+as Genesis's Adam.
 
 The local development deployment mounts:
 
 ```text
 host repository      → /app/magi        source hot reload
-workspace/alice      → /workspace       Alice's durable workspace
+workspace/alice      → /workspace       dev instance's durable workspace
 ```
 
 For an existing cluster or a production-style deployment, use:
@@ -141,7 +142,7 @@ storage, networking, Secrets, and environment-specific configuration.
 ## From the first MAGIS to a growing organization
 
 1. **Initialize Genesis.** MAGI creates the root MAGI Society, Genesis, then
-   creates Alice—the first MAGI—as Genesis's Adam.
+   creates **EVA-00 PROTO TYPE**—the first MAGIC Citizen—as Genesis's Adam.
 2. **Onboard an operator.** Configure administrator access and the channels
    your Society should use.
 3. **Shape the organization.** In WebUI, create child MAGIS entries and

@@ -72,6 +72,7 @@ from magi.agent.db.models_eve_runtime import EveRuntime
 # lives in the ``magic`` table).
 from magi.agent.db.models_magic import MAGIC
 from magi.agent.db.models_magis import MAGIS
+from magi.agent.db.models_magis_membership import MAGISMembership, MAGISRole
 from magi.agent.db.models_mcp_server import McpServer
 from magi.agent.db.models_setting import Setting
 from magi.agent.db.models_token_usage import TokenUsage
@@ -95,6 +96,8 @@ __all__ = [
     "ContactNote",
     "MAGIC",
     "MAGIS",
+    "MAGISMembership",
+    "MAGISRole",
     "EveRuntime",
     "McpServer",
     # dashboard

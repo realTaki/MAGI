@@ -144,8 +144,8 @@ def upgrade() -> None:
     # endpoint re-parents children before deleting a
     # MAGIS, so the DB-level guard is belt-and-braces.
     # ``adam_id`` points at the manager ``magic`` row
-    # (the MAGIC with ``magic_position='adam'`` for this
-    # society); SET NULL because deleting the adam
+    # (the MAGI assigned the reserved ``Adam`` role for this
+    # MAGIS); SET NULL because deleting the Adam
     # MAGIC shouldn't cascade through the society.
     op.create_table(
         "magis",
@@ -153,6 +153,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=True),
         sa.Column("adam_id", sa.Integer(), nullable=True),
+        sa.Column("instruction", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
@@ -166,25 +167,50 @@ def upgrade() -> None:
     )
 
     # ### magic (MAGIC — a MAGI Citizen; individual agent row) ──────── #
-    # Carries the LLM credentials (``provider`` /
-    # ``api_key``). ``magis_id`` is the FK to the
-    # containing MAGIS (CASCADE — deleting a society
-    # clears its citizens).
+    # Carries LLM credentials and the MAGI's personal instruction.
+    # MAGIS membership / role is modelled separately below.
     op.create_table(
         "magic",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(length=100), nullable=True),
-        sa.Column("magis_id", sa.Integer(), nullable=False),
         sa.Column("provider", sa.String(length=64), nullable=True),
         sa.Column("api_key", sa.String(length=256), nullable=True),
-        sa.Column("magic_position", sa.String(length=16), nullable=False),
+        sa.Column("instruction", sa.Text(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["magis_id"], ["magis.id"], ondelete="CASCADE",
-        ),
         sa.PrimaryKeyConstraint("id"),
     )
+
+    op.create_table(
+        "magis_roles",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("magis_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=80), nullable=False),
+        sa.Column("instruction", sa.Text(), nullable=False, server_default=""),
+        sa.Column("is_reserved", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["magis_id"], ["magis.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("magis_id", "name", name="uq_magis_roles_magis_name"),
+    )
+    op.create_index("ix_magis_roles_magis_id", "magis_roles", ["magis_id"])
+    op.create_table(
+        "magis_memberships",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("magis_id", sa.Integer(), nullable=False),
+        sa.Column("magic_id", sa.Integer(), nullable=False),
+        sa.Column("role_id", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["magis_id"], ["magis.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["magic_id"], ["magic.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["role_id"], ["magis_roles.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("magis_id", "magic_id", name="uq_magis_memberships_magis_magic"),
+    )
+    op.create_index("ix_magis_memberships_magis_id", "magis_memberships", ["magis_id"])
+    op.create_index("ix_magis_memberships_magic_id", "magis_memberships", ["magic_id"])
 
     # ### settings (KV) ─────────────────────────────────────────────── #
     op.create_table(
@@ -354,13 +380,13 @@ def upgrade() -> None:
     )
 
     # ### eve_runtimes (desired/observed EVE lifecycle state) ──────── #
-    # ``magi_id`` references ``magic.id`` (the individual
+    # ``magic_id`` references ``magic.id`` (the individual
     # MAGIC this EVE runs for) with CASCADE — deleting a
     # MAGIC row also drops its lifecycle row.
     op.create_table(
         "eve_runtimes",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("magi_id", sa.Integer(), nullable=False),
+        sa.Column("magic_id", sa.Integer(), nullable=False),
         sa.Column("desired_state", sa.String(length=16), nullable=False, server_default="draft"),
         sa.Column("observed_state", sa.String(length=16), nullable=False, server_default="draft"),
         sa.Column("namespace", sa.String(length=63), nullable=True),
@@ -371,15 +397,15 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(
-            ["magi_id"], ["magic.id"], ondelete="CASCADE",
+            ["magic_id"], ["magic.id"], ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("magi_id"),
+        sa.UniqueConstraint("magic_id"),
     )
     op.create_index(
-        "ix_eve_runtimes_magi_id",
+        "ix_eve_runtimes_magic_id",
         "eve_runtimes",
-        ["magi_id"],
+        ["magic_id"],
         unique=True,
     )
 

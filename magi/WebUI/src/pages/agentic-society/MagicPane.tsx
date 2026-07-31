@@ -1,258 +1,31 @@
-/**
- * MagicPane — MAGIC Citizen management.
- */
-import { useMemo, useState } from "react";
+/** MAGI creation and runtime control. Membership is managed in MAGIS. */
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-
 import ConsoleCard from "../../components/ConsoleCard";
 import { IconDelete, IconEdit } from "../../components/icons";
-import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
-import { useMagis, useMagic, type MAGICRow } from "../../lib/queries";
+import { useMagic, type MAGICRow } from "../../lib/queries";
 
-type EditDraft = { name: string; provider: string; api_key: string };
-
-const PROVIDER_OPTIONS = [
-  { value: "", label: "—" },
-  { value: "claude", label: "Anthropic (Claude)" },
-  { value: "minimax-global", label: "Minimax (Global)" },
-  { value: "minimax-cn", label: "Minimax (China)" },
-];
+const PROVIDERS = ["", "claude", "minimax-global", "minimax-cn"];
 
 export function MagicPane() {
-  const t = useT();
-  const qc = useQueryClient();
-  const magisQuery = useMagis();
-  const magicQuery = useMagic();
-  const magis = magisQuery.data ?? [];
-  const magic = magicQuery.data ?? [];
-  const loadError = (magisQuery.error || magicQuery.error)
-    ? (magisQuery.error instanceof Error ? magisQuery.error.message : "") || (magicQuery.error instanceof Error ? magicQuery.error.message : "") || "load failed"
-    : null;
-
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: qk.magis });
-    void qc.invalidateQueries({ queryKey: qk.magic });
+  const t = useT(); const qc = useQueryClient(); const { data: magic = [], error } = useMagic();
+  const [open, setOpen] = useState(false); const [form, setForm] = useState({ name: "", provider: "", api_key: "" });
+  const [editing, setEditing] = useState<number | null>(null); const [draft, setDraft] = useState({ name: "", provider: "", api_key: "" });
+  const [busy, setBusy] = useState<number | null>(null); const [message, setMessage] = useState<string | null>(null);
+  const refresh = () => { void qc.invalidateQueries({ queryKey: qk.magic }); void qc.invalidateQueries({ queryKey: qk.magis }); };
+  const request = async (path: string, method: string, body?: unknown) => {
+    const r = await fetch(path, { method, credentials: "include", headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   };
-
-  const [addForm, setAddForm] = useState({ magis_id: "", name: "", magic_position: "eve" as "adam" | "eve", provider: "", api_key: "" });
-  const [addError, setAddError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<EditDraft>({ name: "", provider: "", api_key: "" });
-  const [editError, setEditError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [lifecycleId, setLifecycleId] = useState<number | null>(null);
-  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
-
-  const teamName = useMemo(() => { const m = new Map<number, string>(); magis.forEach((c) => m.set(c.id, c.name)); return m; }, [magis]);
-
-  const submitCreate = async () => {
-    setAddError(null);
-    const mid = Number.parseInt(addForm.magis_id, 10);
-    if (!Number.isFinite(mid) || mid <= 0) { setAddError("select a society"); return; }
-    setAdding(true);
-    try {
-      const res = await fetch("/api/magic", { method: "POST", credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: addForm.name.trim() || null, magis_id: mid, magic_position: addForm.magic_position, provider: addForm.provider || null, api_key: addForm.api_key || null }) });
-      if (!res.ok) { setAddError(`create failed: ${res.status} ${await res.text()}`); return; }
-      setAddForm({ magis_id: "", name: "", magic_position: "eve", provider: "", api_key: "" }); setAddOpen(false); refresh();
-    } catch (e) { setAddError(`network error: ${(e as Error).message}`); }
-    finally { setAdding(false); }
-  };
-
-  const startEdit = (m: MAGICRow) => { setEditingId(m.id); setEditDraft({ name: m.name ?? "", provider: m.provider ?? "", api_key: "" }); setEditError(null); };
-  const cancelEdit = () => { setEditingId(null); setEditError(null); };
-  const submitEdit = async (id: number) => {
-    setEditError(null);
-    const patch: Record<string, unknown> = { name: editDraft.name.trim() || null, provider: editDraft.provider.trim() || null };
-    if (editDraft.api_key.trim()) patch.api_key = editDraft.api_key.trim();
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/magic/${id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
-      if (!res.ok) { setEditError(`save failed: ${res.status} ${await res.text()}`); return; }
-      setEditingId(null); refresh();
-    } catch (e) { setEditError(`network error: ${(e as Error).message}`); }
-    finally { setSaving(false); }
-  };
-
-  const del = async (id: number) => {
-    const name = magic.find((m) => m.id === id)?.name ?? `#${id}`;
-    if (!confirm(`${t("magic.deleteConfirm")} (${name})`)) return;
-    const res = await fetch(`/api/magic/${id}`, { method: "DELETE", credentials: "include" });
-    if (res.ok) refresh();
-  };
-
-  const setLifecycle = async (id: number, action: "start" | "stop") => {
-    setLifecycleError(null); setLifecycleId(id);
-    try {
-      const res = await fetch(`/api/magic/${id}/runtime/${action}`, { method: "POST", credentials: "include" });
-      if (!res.ok) { setLifecycleError(`${action} failed: ${res.status} ${await res.text()}`); return; }
-      refresh();
-    } catch (e) { setLifecycleError(`network error: ${(e as Error).message}`); }
-    finally { setLifecycleId(null); }
-  };
-
-  return (
-    <div className="space-y-4">
-      <ConsoleCard
-        title={t("magic.paneTitle")}
-        headerRight={<InfoTip text={t("magic.paneDesc")} />}
-        headerAction={
-          <button type="button" className="btn btn-primary text-xs py-1.5 px-3"
-            onClick={() => { setAddOpen((o) => !o); setAddError(null); }}>
-            {addOpen ? t("common.cancel") : `+ ${t("magic.createHeading")}`}
-          </button>
-        }
-      >
-        {loadError && <p className="form-error mb-3">{loadError}</p>}
-        {lifecycleError && <p className="form-error mb-3">{lifecycleError}</p>}
-
-        {addOpen && (
-          <div className="mb-5 rounded-lg border border-sky-light/40 bg-sky-pale/10 p-3">
-            {addError && <p className="form-error mb-3">{addError}</p>}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 items-end">
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magic.createTeamLabel")}</span>
-                <select className="form-input text-sm py-1.5 px-3 w-full" value={addForm.magis_id}
-                  onChange={(e) => setAddForm((f) => ({ ...f, magis_id: e.target.value }))}>
-                  <option value="" disabled>—</option>
-                  {magis.map((c) => (<option key={c.id} value={String(c.id)}>{c.name}</option>))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magic.createNameLabel")}</span>
-                <input className="form-input text-sm py-1.5 px-3 w-full" placeholder={t("magic.createNamePlaceholder")}
-                  value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magic.createPositionLabel")}</span>
-                <select className="form-input text-sm py-1.5 px-3 w-full" value={addForm.magic_position}
-                  onChange={(e) => setAddForm((f) => ({ ...f, magic_position: e.target.value as "adam" | "eve" }))}>
-                  <option value="eve">EVE</option><option value="adam">ADAM</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magic.createProviderLabel")}</span>
-                <select className="form-input text-sm py-1.5 px-3 w-full" value={addForm.provider}
-                  onChange={(e) => setAddForm((f) => ({ ...f, provider: e.target.value }))}>
-                  {PROVIDER_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="form-label">{t("magic.createApiKeyLabel")}</span>
-                <input type="password" className="form-input text-sm py-1.5 px-3 w-full"
-                  value={addForm.api_key} onChange={(e) => setAddForm((f) => ({ ...f, api_key: e.target.value }))} />
-              </label>
-              <button type="button" disabled={adding || !addForm.magis_id}
-                className="btn btn-primary text-sm py-1.5 px-4" onClick={() => { void submitCreate(); }}>
-                {adding ? t("common.loading") : t("common.add")}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="data-table w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
-                <th className="py-2 pr-3 font-medium">{t("magic.columnName")}</th>
-                <th className="py-2 pr-3 font-medium">{t("magic.columnTeam")}</th>
-                <th className="py-2 pr-3 font-medium">{t("magic.columnPosition")}</th>
-                <th className="py-2 pr-3 font-medium">{t("magic.columnProvider")}</th>
-                <th className="py-2 pr-3 font-medium">{t("magic.columnApiKey")}</th>
-                <th className="py-2 pr-3 font-medium">{t("magic.columnRuntime")}</th>
-                <th className="py-2 pr-3 font-medium w-24 text-right" />
-              </tr>
-            </thead>
-            <tbody>
-              {magic.map((m) => {
-                const isEdit = editingId === m.id;
-                const tname = teamName.get(m.magis_id);
-                return (
-                  <tr key={m.id} className={`border-b border-sky-light/30 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
-                    {isEdit ? (
-                      <td className="py-2 pr-3" colSpan={6}>
-                        <div className="flex items-center gap-2">
-                          <input className="form-input text-sm py-1 px-2 w-28" placeholder={t("magic.createNamePlaceholder")}
-                            value={editDraft.name} onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))} />
-                          <select className="form-input text-sm py-1 px-2 w-40" value={editDraft.provider}
-                            onChange={(e) => setEditDraft((d) => ({ ...d, provider: e.target.value }))}>
-                            {PROVIDER_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-                          </select>
-                          <input type="password" className="form-input text-sm py-1 px-2 w-40"
-                            placeholder={t("magic.keyNewPlaceholder")} value={editDraft.api_key}
-                            onChange={(e) => setEditDraft((d) => ({ ...d, api_key: e.target.value }))} />
-                          <button type="button" disabled={saving} onClick={() => { void submitEdit(m.id); }}
-                            className="btn btn-primary text-xs py-1 px-3">{saving ? "…" : t("common.save")}</button>
-                          <button type="button" onClick={cancelEdit} className="btn btn-secondary text-xs py-1 px-2">{t("common.cancel")}</button>
-                          {editError && <span className="text-xs text-rose-600">{editError}</span>}
-                        </div>
-                      </td>
-                    ) : (
-                      <>
-                        <td className="py-2 pr-3">
-                          <span className="font-medium text-ink text-sm">{m.name || <span className="text-ink-soft italic">#{m.id}</span>}</span>
-                        </td>
-                        <td className="py-2 pr-3">
-                          {tname ? <span className="text-ink-soft text-xs">{tname}<span className="text-ink-soft/30 font-mono text-[11px] ml-1">#{m.magis_id}</span></span>
-                            : <span className="text-ink-soft italic text-xs">#{m.magis_id}</span>}
-                        </td>
-                        <td className="py-2 pr-3">
-                          <span className={`inline-flex text-[11px] font-medium rounded px-1.5 py-0.5 ${m.magic_position === "adam" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-sky-50 text-sky-700 border border-sky-200"}`}>
-                            {m.magic_position === "adam" ? t("magic.positionAdam") : t("magic.positionEve")}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-3 text-xs text-ink-soft">{m.provider ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono text-[11px] text-ink-soft">{m.api_key_set ? `••••${m.api_key_last4 ?? ""}` : t("magic.keyNotSet")}</td>
-                        <td className="py-2 pr-3 text-xs">
-                          {m.magic_position === "eve" ? (
-                            <span className={m.runtime?.observed_state === "failed" ? "text-rose-600" : "text-ink-soft"}>
-                              {m.runtime?.observed_state ?? "draft"}
-                            </span>
-                          ) : "—"}
-                        </td>
-                      </>
-                    )}
-                    <td className="py-2 pr-3 text-right">
-                      {isEdit ? null : (
-                        <div className="flex items-center justify-end gap-0.5">
-                          <button type="button" onClick={() => startEdit(m)}
-                            title={t("common.edit")}
-                            className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
-                            <IconEdit className="h-4 w-4" />
-                          </button>
-                          {m.magic_position === "eve" && (
-                            <button type="button" disabled={lifecycleId === m.id}
-                              onClick={() => { void setLifecycle(m.id, m.runtime?.desired_state === "running" ? "stop" : "start"); }}
-                              title={m.runtime?.desired_state === "running" ? t("magic.stopEve") : t("magic.startEve")}
-                              className="px-1.5 py-1 rounded text-[11px] text-sky-700 hover:bg-sky-pale transition-colors">
-                              {lifecycleId === m.id ? "…" : m.runtime?.desired_state === "running" ? t("magic.stopEve") : t("magic.startEve")}
-                            </button>
-                          )}
-                          <button type="button" onClick={() => { void del(m.id); }}
-                            title={t("common.delete")}
-                            className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
-                            <IconDelete className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {magic.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-ink-soft text-sm text-center">{t("magic.empty")}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-      </ConsoleCard>
-    </div>
-  );
+  const create = async () => { setBusy(-1); setMessage(null); try { await request("/api/magic", "POST", { name: form.name || null, provider: form.provider || null, api_key: form.api_key || null }); setForm({ name: "", provider: "", api_key: "" }); setOpen(false); refresh(); } catch (e) { setMessage((e as Error).message); } finally { setBusy(null); } };
+  const save = async (m: MAGICRow) => { setBusy(m.id); try { await request(`/api/magic/${m.id}`, "PATCH", { name: draft.name || null, provider: draft.provider || null, ...(draft.api_key ? { api_key: draft.api_key } : {}) }); setEditing(null); refresh(); } catch (e) { setMessage((e as Error).message); } finally { setBusy(null); } };
+  const lifecycle = async (m: MAGICRow, action: "start" | "stop") => { setBusy(m.id); try { await request(`/api/magic/${m.id}/runtime/${action}`, "POST"); refresh(); } catch (e) { setMessage((e as Error).message); } finally { setBusy(null); } };
+  return <ConsoleCard title={t("magic.paneTitle")} headerAction={<button className="btn btn-primary text-xs py-1.5 px-3" onClick={() => setOpen(!open)}>{open ? t("common.cancel") : `+ ${t("magic.createHeading")}`}</button>}>
+    <p className="text-xs text-ink-soft mb-3">Create MAGI independently. Assign its MAGIS memberships and roles from the MAGIS page before starting it.</p>
+    {message && <p className="form-error mb-3">{message}</p>}{error && <p className="form-error mb-3">{String(error)}</p>}
+    {open && <div className="grid gap-2 sm:grid-cols-4 mb-4 p-3 rounded border border-sky-light/40"><input className="form-input" placeholder={t("magic.createNamePlaceholder")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}/><select className="form-input" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>{PROVIDERS.map((p) => <option key={p} value={p}>{p || "Provider"}</option>)}</select><input className="form-input" type="password" placeholder={t("magic.createApiKeyLabel")} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}/><button disabled={busy !== null} className="btn btn-primary" onClick={() => void create()}>{t("common.add")}</button></div>}
+    <div className="overflow-x-auto"><table className="data-table w-full text-sm"><thead><tr><th>Name</th><th>MAGIS memberships</th><th>Provider</th><th>Runtime</th><th /></tr></thead><tbody>{magic.map((m) => <tr key={m.id} className="border-t border-sky-light/30">{editing === m.id ? <><td colSpan={4} className="py-2"><div className="flex gap-2"><input className="form-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}/><select className="form-input" value={draft.provider} onChange={(e) => setDraft({ ...draft, provider: e.target.value })}>{PROVIDERS.map((p) => <option key={p} value={p}>{p || "Provider"}</option>)}</select><input className="form-input" type="password" placeholder="New API key" value={draft.api_key} onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}/><button className="btn btn-primary" onClick={() => void save(m)}>Save</button></div></td></> : <><td className="py-2 font-medium">{m.name || `#${m.id}`}</td><td>{m.memberships.length ? m.memberships.map((x) => `${x.magis_name} (${x.role_name})`).join(", ") : <em className="text-ink-soft">Unassigned</em>}</td><td>{m.provider || "—"}</td><td>{m.runtime?.observed_state || "draft"}</td></>}<td className="py-2 text-right whitespace-nowrap">{editing === m.id ? <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancel</button> : <><button className="p-1" title="Edit" onClick={() => { setEditing(m.id); setDraft({ name: m.name || "", provider: m.provider || "", api_key: "" }); }}><IconEdit className="h-4 w-4"/></button>{m.memberships.length > 0 && <button className="btn btn-secondary text-xs ml-1" disabled={busy === m.id} onClick={() => void lifecycle(m, m.runtime?.desired_state === "running" ? "stop" : "start")}>{m.runtime?.desired_state === "running" ? "Stop" : "Start"}</button>}<button className="p-1 ml-1" title="Delete" onClick={() => { if (confirm(t("magic.deleteConfirm"))) void request(`/api/magic/${m.id}`, "DELETE").then(refresh); }}><IconDelete className="h-4 w-4"/></button></>}</td></tr>)}{!magic.length && <tr><td colSpan={5} className="py-6 text-center text-ink-soft">{t("magic.empty")}</td></tr>}</tbody></table></div>
+  </ConsoleCard>;
 }

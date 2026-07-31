@@ -9,7 +9,8 @@ import { IconCheck, IconDelete, IconEdit, IconEye, IconX } from "../../component
 import { InfoTip } from "../../components/InfoTip";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
-import { useMagis, useMagic, type MagisRow, type MAGICBrief } from "../../lib/queries";
+import { useMagis, useMagic, type MagisRow, type MAGICRow } from "../../lib/queries";
+import { SocietyControls } from "./SocietyControls";
 
 // -- tree flatten ----------------------------------------------------------
 
@@ -61,7 +62,11 @@ export function MagisPane() {
 
   const tree = useMemo(() => flattenTree(magis), [magis]);
   const adamByMagis = useMemo(() => {
-    const m = new Map<number, MAGICBrief>(); for (const g of magic) { if (g.magic_position === "adam") m.set(g.magis_id, g); } return m;
+    const m = new Map<number, MAGICRow>();
+    for (const g of magic) for (const membership of g.memberships) {
+      if (membership.role_name === "Adam") m.set(membership.magis_id, g);
+    }
+    return m;
   }, [magic]);
   const childrenByParent = useMemo(() => {
     const m = new Map<number, MagisRow[]>();
@@ -218,6 +223,7 @@ export function MagisPane() {
                                 <IconEye className="h-3.5 w-3.5" />
                               </button>
                             )}
+                            <button type="button" onClick={() => setDetailId(detailId === r.id ? null : r.id)} className="text-xs text-sky-700 px-1">Manage</button>
                             <button type="button" onClick={() => startEdit(r)} title={t("common.edit")}
                               className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
                               <IconEdit className="h-3.5 w-3.5" />
@@ -250,6 +256,9 @@ export function MagisPane() {
           </table>
         )}
       </ConsoleCard>
+      {detailId !== null && magis.find((m) => m.id === detailId) && (
+        <SocietyControls society={magis.find((m) => m.id === detailId)!} magic={magic} onChanged={refresh} />
+      )}
     </div>
   );
 }

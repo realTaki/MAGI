@@ -23,13 +23,14 @@ magi/agent/db/alembic/versions/  # 各 revision；script_location = magi/agent/d
 
 ## 当前迁移链
 
-HEAD = `0001_baseline`（唯一 revision）。
+HEAD = `0002_magis_membership_instructions`。
 
 代码处于 dev 模式（暂无生产升级故事），历史上串联的 7 个 follow-on 修订（`0002_admin_role_split`、`0002_drop_contact_provider_api_key`、`0003_add_daily_note_kind`、`0004_rename_magics_to_magic`、`0006_contact_notes`、`0007_eve_runtimes`、`0007_swap_magic_magis_tables`）已被**全部吸收进 `0001_baseline`**，文件本身已删除。所以新数据库一次 `upgrade head` 直接得到最终形态，老数据库若 `alembic_version` 还指向已删除的 revision，启动器会自动 re-stamp 到 `0001_baseline`（见「旧数据库迁移（adoption）」）。
 
 | Revision | down_revision | 作用 |
 |---|---|---|
-| `0001_baseline` | `None` | 整个 MAGI 最终 schema 一次性建好（dev 模式 collapsed baseline）。包含：`chat_sessions`、`contacts`、`magic`（MAGI Citizen / 单 agent）、`magis`（MAGI Society / 组织树，自引用 `parent_id` + `adam_id` → `magic.id`）、`settings`、`action_items`（含 `due_date` 与 `ux_action_items_open_per_kind` 偏唯一索引）、`chat_messages` + FTS5 同步触发器、`memory_entries`（以 `uid` 为键）、`contact_notes`（含 `kind` / `note_date` 与 `ux_contact_notes_daily` 偏唯一索引）、`eve_runtimes`（`magi_id` → `magic.id`）、`tasks`（含 `preset_id` / `preset_key` 回指）、`task_presets`、`token_usage`、`task_runs`、`mcp_servers`；按需创建 `chat_messages_fts`（FTS5 trigram，依赖 SQLite 编译选项）。 |
+| `0001_baseline` | `None` | 新数据库的完整基础 schema。 |
+| `0002_magis_membership_instructions` | `0001_baseline` | 将旧的单 MAGIS / 固定职位 MAGI 迁移为独立 `magic`、`magis_memberships` 和 `magis_roles`；增加个人、团队、角色 instructions，并将 `eve_runtimes.magi_id` 改为 `magic_id`。新库的 baseline 已含最终结构，因此此 revision 对新库是 no-op。 |
 
 ### collapsed baseline（开发策略）
 
@@ -56,12 +57,13 @@ HEAD = `0001_baseline`（唯一 revision）。
 - `chat_sessions` / `chat_messages`（会话历史；二者另由 `magi.agent.memory.session` 包持有 ORM 模型）
 - `contacts`（统一的人表，取代旧的 `contacts` / `contact_entries` / `user_im_bindings`，`role ∈ {assigned, guest}`）
 - `contact_notes`（一人多备注 + 每日记录，含 `kind` 与 `note_date`）
-- `magis`（一群 MAGI 组成的 Agentic Society = MAGIS 组织树，自引用 `parent_id` + `adam_id` → `magic.id`）
-- `magic`（MAGIC 运行时 agent 行 = "MAGI Citizens"，以 `magis_id` 归属 Society，持有 `provider` / `api_key`，`magic_position` ∈ {`adam`, `eve`}）
+- `magis`（MAGI Society 组织树，含团队 instruction 和 `adam_id`）
+- `magic`（独立 MAGI，含 provider、API key 与个人 instruction）
+- `magis_roles` / `magis_memberships`（MAGIS 的角色及 MAGI 的多归属；保留 Adam/EVE 角色与可自定义角色）
 - `settings`（系统级 KV，承载 `system.timezone` 等）
 - `action_items` / `token_usage` / `memory_entries`
 - `task_presets` / `tasks` / `task_runs`（主动任务调度）
-- `eve_runtimes`（EVE 生命周期状态，`magi_id` → `magic.id`）
+- `eve_runtimes`（MAGI 生命周期状态，`magic_id` → `magic.id`）
 - `mcp_servers`（operator 配置的 MCP server）
 - `chat_messages_fts`（FTS5 虚拟表，可选；不在 `Base.metadata`，由 baseline 的 DDL 直接建）
 - `alembic_version`（Alembic 维护）
@@ -78,7 +80,7 @@ HEAD = `0001_baseline`（唯一 revision）。
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 若数据库**有** `alembic_version` 但指向一个 Alembic 已不认识的 revision（典型：以前升级到了 `0007_swap_magic_magis_tables`，本次 rebase 后该文件已删除），`upgrade_head` 入口的 `_rebase_to_canonical_head` 会先 `DELETE FROM alembic_version` 再 stamp 到 `0001_baseline`。DB schema 不动（folded migration 的效果已在 baseline 里），只刷新 bookkeeping 行；
 4. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-5. `_seed_default_root` 确保有且仅有一个根 MAGI Society（`MAGIS` 行，名为 "Genesis"，靠 `parent_id IS NULL` 识别），随后创建首个 `magic_position='adam'` 的 MAGIC（"Alice"）并绑定为 Genesis 的 Adam。
+5. `_seed_default_root` 确保有且仅有一个根 MAGI Society（Genesis），创建首个 MAGI（Alice），并将她以 Adam 角色加入 Genesis。
 
 因此容器启动、滚动更新或新 Pod 创建时，数据库会先完成迁移，再启动 WebUI、Telegram
 和 scheduler。应用代码启动即自动升级，**不需要在容器里手动调用 Alembic**。
@@ -103,7 +105,7 @@ HEAD = `0001_baseline`（唯一 revision）。
 
 ## 添加新的 schema 变化
 
-MAGI 在 dev 模式下只走 collapsed baseline：纯 DDL 的结构性变化（新表、新列、索引）和简单的数据迁移直接改 `0001_baseline.py` 的 `upgrade()`，保持「一键建全库」。引入新的独立 revision 会破坏这一策略，因此不被支持。
+新数据库的纯 DDL 应同时写入 `0001_baseline.py`；影响已有数据库数据或约束的变化则新增一个可升级的 revision。`0002` 是这条规则的例子：它既让新数据库通过 baseline 一次建全，也安全升级已经处于旧 baseline 的开发数据库。
 
 新增列 / 表 / 索引的纪律：
 

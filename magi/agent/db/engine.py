@@ -182,27 +182,35 @@ def _register_begin_immediate(engine: Engine) -> None:
 # re-created as Genesis on a fresh DB if they ever wipe and
 # start over, but a renamed root stays renamed). When C8
 # hardening lands this becomes configurable via env var.
-_DEFAULT_ROOT_MAGIC_NAME = "Genesis"
+_DEFAULT_ROOT_MAGIS_NAME = "Genesis"
+# Default name for the auto-seeded adam MAGIC on a fresh
+# workspace. The seed runs once at first boot; on subsequent
+# boots it only fills in when no adam MAGIC exists yet, so a
+# deployer who renamed the seeded row keeps their rename —
+# same "rename survives re-seed" semantics as the root
+# MAGIS above.
+_DEFAULT_MAGI_NAME = "Alice"
 
 
 def _seed_default_root(engine: Engine) -> None:
-    """Ensure the workspace has exactly one root MAGIS + a default adam MAGIC.
+    """Ensure the workspace has exactly one root MAGIS + its Adam.
 
     The *root* of the society tree is identified by ``parent_id IS NULL``
     (not by the literal name ``"Genesis"``). On first boot, if no root
-    row exists, seed one named ``_DEFAULT_ROOT_MAGIC_NAME`` ("Genesis") as
+    row exists, seed one named ``_DEFAULT_ROOT_MAGIS_NAME`` ("Genesis") as
     the society anchor. If the deployer later renames or deletes the root,
     the next boot seeds a fresh Genesis only when no root row remains —
     so a renamed root stays renamed and we never accumulate duplicate
-    roots. Also seeds one ``MAGIC`` row with ``magic_position='adam'``
-    (named "Alice") for the root MAGIS so the "智能体管理" page is never
-    empty on first boot.
+    roots. The root receives reserved Adam/EVE roles. On a fresh workspace,
+    Alice is created independently, assigned Adam in Genesis, and recorded
+    as Genesis's Adam.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
     from magi.agent.db.models_magic import MAGIC
     from magi.agent.db.models_magis import MAGIS
+    from magi.agent.db.models_magis_membership import MAGISMembership, ensure_default_roles
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
@@ -216,7 +224,7 @@ def _seed_default_root(engine: Engine) -> None:
         )
         if existing_root is None:
             root = MAGIS(
-                name=_DEFAULT_ROOT_MAGIC_NAME,
+                name=_DEFAULT_ROOT_MAGIS_NAME,
                 parent_id=None,
                 adam_id=None,
             )
@@ -224,30 +232,28 @@ def _seed_default_root(engine: Engine) -> None:
             session.flush()  # populate root.id
             logger.info(
                 "seeded default root MAGIS: %s (id=%d)",
-                _DEFAULT_ROOT_MAGIC_NAME, root.id,
+                _DEFAULT_ROOT_MAGIS_NAME, root.id,
             )
             existing_root = root
 
-        # Seed one adam MAGIC under the root if none exists yet.
-        has_adam = session.scalar(
-            select(MAGIC.id).where(MAGIC.magic_position == "adam").limit(1)
-        )
-        if has_adam is None:
+        roles = ensure_default_roles(session, existing_root.id)
+        if existing_root.adam_id is None:
             adam = MAGIC(
-                name="Alice",
-                magis_id=existing_root.id,
-                magic_position="adam",
+                name=_DEFAULT_MAGI_NAME,
                 provider=None,
                 api_key=None,
             )
             session.add(adam)
             session.flush()
-            # Bind the Adam to the MAGIS row so the MagisPane
-            # renders the ADAM column correctly.
+            session.add(MAGISMembership(
+                magis_id=existing_root.id,
+                magic_id=adam.id,
+                role_id=roles["Adam"].id,
+            ))
             existing_root.adam_id = adam.id
             logger.info(
-                "seeded default adam MAGIC under %s (id=%d)",
-                _DEFAULT_ROOT_MAGIC_NAME, adam.id,
+                "seeded default adam MAGIC %r under %s (id=%d)",
+                _DEFAULT_MAGI_NAME, _DEFAULT_ROOT_MAGIS_NAME, adam.id,
             )
 
         session.commit()
@@ -306,6 +312,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
     import magi.agent.db.models_magic  # noqa: F401 — MAGIC Citizen rows
     import magi.agent.db.models_magis  # noqa: F401 — MAGIS tree
+    import magi.agent.db.models_magis_membership  # noqa: F401 — roles + memberships
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
     import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.agent.db.models_token_usage  # noqa: F401

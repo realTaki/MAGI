@@ -39,7 +39,7 @@ def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
     body = spec.model_dump_json(exclude_none=True).encode()
     try:
         response = httpx.post(
-            f"{url.rstrip('/')}/v1/eves/{spec.magi_id}/{action}",
+            f"{url.rstrip('/')}/v1/eves/{spec.magic_id}/{action}",
             content=body,
             headers={"content-type": "application/json", **_headers(body)},
             timeout=15.0,

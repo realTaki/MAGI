@@ -8,6 +8,7 @@ pod exec capability.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 from pathlib import Path
@@ -24,7 +25,7 @@ _CA_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
 def _resource_name(spec: EveSpec) -> str:
     raw = (spec.name or "eve").lower()
     slug = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-") or "eve"
-    return f"magi-eve-{spec.magi_id}-{slug}"[:63].rstrip("-")
+    return f"magi-eve-{spec.magic_id}-{slug}"[:63].rstrip("-")
 
 
 def _secret_data(values: dict[str, str]) -> dict[str, str]:
@@ -102,8 +103,7 @@ class KubernetesEveBackend:
             "app.kubernetes.io/name": "magi",
             "app.kubernetes.io/component": "eve",
             "magi.io/managed-by": "magi-orchestrator",
-            "magi.io/magi-id": str(spec.magi_id),
-            "magi.io/magis-id": str(spec.magis_id),
+            "magi.io/magic-id": str(spec.magic_id),
         }
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._apply(
@@ -143,7 +143,7 @@ class KubernetesEveBackend:
                 "spec": {
                     "replicas": 1,
                     "strategy": {"type": "Recreate"},
-                    "selector": {"matchLabels": {"magi.io/magi-id": str(spec.magi_id)}},
+                    "selector": {"matchLabels": {"magi.io/magic-id": str(spec.magic_id)}},
                     "template": {
                         "metadata": {"labels": labels},
                         "spec": {
@@ -156,7 +156,8 @@ class KubernetesEveBackend:
                                     "imagePullPolicy": "IfNotPresent",
                                     "env": [
                                         {"name": "MAGI_NODE_ROLE", "value": "eve"},
-                                        {"name": "MAGI_RUNTIME_ID", "value": str(spec.magi_id)},
+                                        {"name": "MAGI_RUNTIME_ID", "value": str(spec.magic_id)},
+                                        {"name": "MAGI_INSTRUCTION_BUNDLE", "value": json.dumps({"personal_instruction": spec.personal_instruction, "memberships": spec.memberships})},
                                         {
                                             "name": "MAGI_LLM_PROVIDER",
                                             "valueFrom": {

@@ -36,6 +36,7 @@ import { SettingsAgentCard } from "../components/settings/SettingsAgentCard";
 import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCard";
 import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
+import { SettingsInstructionCard } from "../components/settings/SettingsInstructionCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
 import { SettingsTaskPresetsCard } from "../components/settings/SettingsTaskPresetsCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
@@ -46,6 +47,7 @@ import type { OnboardingData } from "./onboardingTypes";
 export type SettingSection =
   | "channels"
   | "persona"
+  | "instruction"
   | "tg-read"
   | "tz"
   | "agent"
@@ -56,6 +58,7 @@ export type SettingSection =
 export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "channels", label: "settings.navChannels", icon: <IconConnectors /> },
   { id: "persona", label: "settings.navPersona", icon: <IconSkills /> },
+  { id: "instruction", label: "My instruction", icon: <IconSkills /> },
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
@@ -101,6 +104,7 @@ export default function SettingsTab(props: SettingsTabProps) {
           />
         )}
         {section === "persona" && <SettingsPersonaCard />}
+        {section === "instruction" && <SettingsInstructionCard />}
         {section === "tg-read" && <SettingsTgReadReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
         {section === "agent" && <SettingsAgentCard />}
