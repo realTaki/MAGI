@@ -5,14 +5,30 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class MagisBinding(BaseModel):
+    """The MAGI's one direct MAGIS runtime binding."""
+
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class MagisRuntimeConfiguration(BaseModel):
+    """Configuration projected by control plane into a direct MAGIS DB."""
+
+    magis_instruction: str = Field(default="", max_length=12000)
+    role_name: str = Field(min_length=1, max_length=80)
+    role_instruction: str = Field(default="", max_length=12000)
+    magic_name: str | None = Field(default=None, max_length=100)
+    personal_instruction: str = Field(default="", max_length=12000)
+    provider: str | None = Field(default=None, max_length=64)
+    api_key: str | None = Field(default=None, max_length=256)
+
+
 class EveSpec(BaseModel):
     magic_id: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=100)
-    provider: str | None = Field(default=None, max_length=64)
-    api_key: str | None = Field(default=None, max_length=256)
-    model: str | None = Field(default=None, max_length=128)
-    personal_instruction: str = Field(default="", max_length=12000)
-    memberships: list[dict[str, str]] = Field(default_factory=list, max_length=3)
+    magis: MagisBinding | None = None
+    configuration: MagisRuntimeConfiguration | None = None
 
 
 class EveOperationResult(BaseModel):
@@ -20,5 +36,11 @@ class EveOperationResult(BaseModel):
     namespace: str
     deployment_name: str
     workspace_claim_name: str
-    credential_secret_name: str
+    credential_secret_name: str | None = None
+    message: str | None = None
+
+
+class MagisProvisionResult(BaseModel):
+    database_service_name: str
+    workspace_claim_name: str
     message: str | None = None

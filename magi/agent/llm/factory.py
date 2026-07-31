@@ -103,34 +103,26 @@ def get_provider(model: str | None = None) -> LLMProvider:
         The configured provider id is not in
         :func:`known_providers` (typo, stale value).
     """
-    runtime_provider = os.environ.get("MAGI_LLM_PROVIDER")
-    runtime_api_key = os.environ.get("MAGI_LLM_API_KEY")
-    if runtime_provider or runtime_api_key:
-        if not runtime_provider or not runtime_api_key:
-            raise LLMNotConfiguredError(
-                "EVE runtime requires both MAGI_LLM_PROVIDER and MAGI_LLM_API_KEY"
-            )
-        provider_name = runtime_provider
-        api_key = runtime_api_key
-        effective_model = model or os.environ.get("MAGI_LLM_MODEL") or None
-    else:
-        from sqlalchemy import select
+    from sqlalchemy import select
 
-        from magi.agent.db import MAGIS, MAGIC, open_session
+    from magi.agent.db import MAGIS, MAGIC
+    from magi.agent.magis_public_db import open_magis_session
 
-        with open_session() as session:
+    runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+    with open_magis_session() as session:
+        if runtime_id and runtime_id.isdigit():
+            magi = session.get(MAGIC, int(runtime_id))
+        else:
             root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
             magi = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
-            if magi is None or not magi.provider or not magi.api_key:
-                logger.warning("get_provider: no adam Magi with provider+api_key configured")
-                raise LLMNotConfiguredError(
-                    "MAGI runtime has no LLM provider / API key configured; "
-                    "set them via PATCH /api/magic/{adam_id}"
-                )
-            provider_name = magi.provider
-            api_key = magi.api_key
-            # Per-call override wins over the stored model.
-            effective_model = model if model is not None else getattr(magi, "model", None)
+        if magi is None or not magi.provider or not magi.api_key:
+            logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
+            raise LLMNotConfiguredError(
+                "MAGI runtime has no LLM provider / API key configured; set it in MAGI management"
+            )
+        provider_name = magi.provider
+        api_key = magi.api_key
+        effective_model = model if model is not None else getattr(magi, "model", None)
 
     if not provider_name:
         raise LLMError("provider name is required")

@@ -8,14 +8,14 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 
 - 一个 Adam manager 节点；
 - 每个 MAGI 一个独立 Deployment；
-- 每个 MAGI 一个独立 PVC，挂载到容器 `/workspace`；
+- 每个 MAGI 一个独立 PVC，挂载到容器 `/workspace`；其 MAGIS 另有一个公共 PVC 挂载到 `/magis`；
 - 源码保留在不可变镜像内（`/app/magi`），不会挂载到 `/workspace`；
 - Adam 通过 ClusterIP Service 提供 WebUI；
 - EVE 使用 Telegram 时不创建 HTTP Service；
 - SQLite 默认单副本运行，避免多个 Pod 同时写同一个数据库。
 
 本地开发另有 ``overlays/dev-eva00``：它仅由 ``../bootstrap-k8s.sh``
-配合 kind extraMounts 使用，把宿主机 ``workspace/eva00`` 映射为
+配合 kind extraMounts 使用，把宿主机 ``workspace/MAGIC/eva-00`` 映射为
 `/workspace`，并把源码映射为 `/app/magi`，以启用 Uvicorn reload
 与 Vite HMR。不要将此 overlay 应用于远程/生产集群。
 
@@ -62,8 +62,7 @@ Deployment、PVC、ConfigMap 和 Service 名称。
 - 一个可被集群拉取的 MAGI 镜像仓库；
 - 集群有默认 StorageClass，或者在 overlay 中指定 `storageClassName`。
 
-当前应用默认使用 SQLite，因此必须保持单副本。后续切换到 PostgreSQL 后，
-才适合重新设计多副本和水平扩展。
+MAGI 的私人状态使用 SQLite，因此每个 MAGI 私有 PVC 必须保持单副本；MAGIS 的组织数据使用独立 PostgreSQL。完整边界见 [MAGI 与 MAGIS 的存储边界](../../docs/magi-magis-storage.md)。
 
 先创建 namespace（幂等操作）：
 

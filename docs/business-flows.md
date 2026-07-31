@@ -16,7 +16,7 @@
 
 2. 凭证校验 (get_provider, _validate_credentials 已被删除)
    └─ get_provider() 在 magi/agent/llm/factory.py 内自己读 seeded Adam MAGI Citizen 行
-     （Adam runtime 路径；EVE runtime 走 MAGI_LLM_PROVIDER / MAGI_LLM_API_KEY env vars 绕过 DB）
+     （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVE 不再通过 provider/API key 环境变量绕过数据库）
    └─ 凭证来自 magic 表（每个 MAGIC row = 一个 MAGI Citizen 的 LLM creds），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
    └─ MAGI 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
    └─ 严格模式，绝不回退系统默认凭证
@@ -47,7 +47,7 @@
 
 **不可改的守卫**:
 
-- `get_provider()` 必须是 strict mode — MAGI Citizen 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从 magic 表读（Adam runtime）或从 `MAGI_LLM_*` env vars 读（EVE runtime）
+- `get_provider()` 必须是 strict mode — MAGI 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从直属 MAGIS 公共数据库的 `magic` 表读取。
 - `_drain_pending_user_messages` 的 store 读取失败必须吞掉（不崩溃主循环）
 - `_truncate_at_safe_boundary` 在拼接新消息前必须调用（否则 Anthropic API 拒绝交错 tool 块）
 - `_run_tool_calls` 的结果必须截断到 8000 字符
@@ -62,7 +62,7 @@
 ```
 设计原则:
   - magic 表（每个 MAGIC row = 一个 MAGI Citizen 的 LLM creds）是 Adam runtime 的唯一凭证来源
-  - EVE runtime 通过 env vars (MAGI_LLM_PROVIDER / MAGI_LLM_API_KEY / MAGI_LLM_MODEL)
+  - EVE runtime 通过直属 MAGIS 的 `MAGIS_DATABASE_URL` 读取自己的 provider/API key 配置
     跳过 DB,直接用 orchestrator 注入的 Secret
   - Contact 表不存 provider/api_key (Token 消耗记在 Contact 上,但凭证属于 MAGI Citizen)
   - 每笔 LLM 调用都按 Contact 记录 token_usage,但用对应 MAGI Citizen 的 key 发起

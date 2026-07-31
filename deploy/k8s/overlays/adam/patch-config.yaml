@@ -7,4 +7,4 @@ data:
   # MAGI_CHANNELS intentionally unset — Adam defaults to webui, and the
   # telegram channel is brought up by the onboarding wizard's save-bot
   # step (and re-detected at boot by reading the settings DB).
-  MAGI_ADAM_URL: http://adam-magi:42069
+  MAGI_ADAM_URL: http://magi:42069

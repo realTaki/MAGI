@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger("magi.agent.instructions")
@@ -34,37 +32,29 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
 
 
 def runtime_instruction_block() -> str:
-    """Load the instruction bundle for either EVE or the root Adam runtime."""
-    raw = os.environ.get("MAGI_INSTRUCTION_BUNDLE")
-    if raw:
-        try:
-            bundle = json.loads(raw)
-            return _render(str(bundle.get("personal_instruction") or ""), list(bundle.get("memberships") or []))
-        except (ValueError, TypeError):
-            logger.warning("invalid MAGI_INSTRUCTION_BUNDLE; ignoring it")
-            return ""
-
-    # Adam shares its control-plane DB. EVE does not, so it always receives
-    # the frozen startup bundle above.
+    """Load only this MAGI's direct MAGIS instruction from public database."""
     try:
         from sqlalchemy import select
-        from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, open_session
-        with open_session() as session:
-            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-            magic = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
+        import os
+        from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
+        from magi.agent.magis_public_db import open_magis_session
+        with open_magis_session() as session:
+            runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+            if runtime_id and runtime_id.isdigit():
+                magic = session.get(MAGIC, int(runtime_id))
+            else:
+                root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+                magic = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
             if magic is None:
                 return ""
-            rows = session.execute(
+            row = session.execute(
                 select(MAGISMembership, MAGISRole, MAGIS)
                 .join(MAGISRole, MAGISRole.id == MAGISMembership.role_id)
                 .join(MAGIS, MAGIS.id == MAGISMembership.magis_id)
                 .where(MAGISMembership.magic_id == magic.id)
                 .order_by(MAGISMembership.id)
-            ).all()
-            memberships = [
-                {"magis_name": society.name, "team_instruction": society.instruction, "role_name": role.name, "role_instruction": role.instruction}
-                for _membership, role, society in rows
-            ]
+            ).first()
+            memberships = ([{"magis_name": row[2].name, "team_instruction": row[2].instruction, "role_name": row[1].name, "role_instruction": row[1].instruction}] if row else [])
             return _render(magic.instruction, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")

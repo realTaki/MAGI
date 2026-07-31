@@ -4,7 +4,6 @@ kind: Kustomization
 resources:
   - ../../base
 
-namePrefix: adam-
-
 patches:
   - path: patch-config.yaml
+  - path: patch-magis-genesis.yaml

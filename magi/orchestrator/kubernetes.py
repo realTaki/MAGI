@@ -8,15 +8,18 @@ pod exec capability.
 from __future__ import annotations
 
 import base64
-import json
+import hashlib
+import hmac
 import os
 import re
 from pathlib import Path
 from typing import Any
 
 import httpx
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec
+from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
 
 _TOKEN_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
 _CA_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
@@ -26,6 +29,11 @@ def _resource_name(spec: EveSpec) -> str:
     raw = (spec.name or "eve").lower()
     slug = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-") or "eve"
     return f"magi-eve-{spec.magic_id}-{slug}"[:63].rstrip("-")
+
+
+def _magis_resource_name(binding: MagisBinding) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", binding.name.lower()).strip("-") or "magis"
+    return f"magi-magis-{binding.id}-{slug}"[:55].rstrip("-")
 
 
 def _secret_data(values: dict[str, str]) -> dict[str, str]:
@@ -88,16 +96,137 @@ class KubernetesEveBackend:
                 f"{self.base_url}{path}",
                 headers={"authorization": f"Bearer {self.token}", "accept": "application/json"},
             )
+
+    def provision_magis(self, binding: MagisBinding) -> MagisProvisionResult:
+        """Provision one MAGIS's private PostgreSQL and public workspace.
+
+        The deterministic password prevents an idempotent reconciliation from
+        rotating credentials underneath an existing PostgreSQL volume. It is
+        written only to a Kubernetes Secret; MAGI nodes receive the DSN from
+        that Secret, never from an instruction/config environment payload.
+        """
+        resource = _magis_resource_name(binding)
+        database_service = f"{resource}-db"
+        database_claim = f"{resource}-db-data"
+        workspace_claim = f"{resource}-workspace"
+        secret_name = f"{resource}-db"
+        password = hmac.new(
+            os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
+            f"magis-db:{binding.id}".encode(), hashlib.sha256,
+        ).hexdigest()
+        database = f"magis_{binding.id}"
+        database_url = f"postgresql+psycopg://magi:{password}@{database_service}:5432/{database}"
+        labels = {
+            "app.kubernetes.io/name": "magi",
+            "app.kubernetes.io/component": "magis-database",
+            "magi.io/managed-by": "magi-orchestrator",
+            "magi.io/magis-id": str(binding.id),
+        }
+        prefix = f"/api/v1/namespaces/{self.namespace}"
+        self._apply(f"{prefix}/secrets/{secret_name}", {
+            "apiVersion": "v1", "kind": "Secret", "metadata": {"name": secret_name, "labels": labels},
+            "type": "Opaque", "data": _secret_data({"POSTGRES_PASSWORD": password, "MAGIS_DATABASE_URL": database_url}),
+        })
+        for claim, component in ((database_claim, "magis-database"), (workspace_claim, "magis-workspace")):
+            self._apply(f"{prefix}/persistentvolumeclaims/{claim}", {
+                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
+                "metadata": {"name": claim, "labels": {**labels, "app.kubernetes.io/component": component}},
+                "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+            })
+        self._apply(f"{prefix}/services/{database_service}", {
+            "apiVersion": "v1", "kind": "Service", "metadata": {"name": database_service, "labels": labels},
+            "spec": {"selector": {"magi.io/magis-db": resource}, "ports": [{"name": "postgres", "port": 5432, "targetPort": "postgres"}]},
+        })
+        self._apply(f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{database_service}", {
+            "apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": database_service, "labels": labels},
+            "spec": {"replicas": 1, "strategy": {"type": "Recreate"}, "selector": {"matchLabels": {"magi.io/magis-db": resource}}, "template": {"metadata": {"labels": {**labels, "magi.io/magis-db": resource}}, "spec": {"securityContext": {"fsGroup": 999}, "containers": [{"name": "postgres", "image": "postgres:16-alpine", "ports": [{"name": "postgres", "containerPort": 5432}], "env": [{"name": "POSTGRES_USER", "value": "magi"}, {"name": "POSTGRES_DB", "value": database}, {"name": "POSTGRES_PASSWORD", "valueFrom": {"secretKeyRef": {"name": secret_name, "key": "POSTGRES_PASSWORD"}}}], "volumeMounts": [{"name": "data", "mountPath": "/var/lib/postgresql/data"}], "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}}}], "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": database_claim}}]}}},
+        })
+        return MagisProvisionResult(database_service_name=database_service, workspace_claim_name=workspace_claim, message="MAGIS PostgreSQL and public workspace PVC applied.")
+
+    def _magis_database_url(self, binding: MagisBinding) -> str:
+        resource = _magis_resource_name(binding)
+        try:
+            secret = self._request(
+                "GET",
+                f"/api/v1/namespaces/{self.namespace}/secrets/{resource}-db",
+                content_type="application/json",
+            )
+            encoded = (secret.get("data") or {}).get("MAGIS_DATABASE_URL")
+            if encoded:
+                return base64.b64decode(encoded).decode()
+        except Exception:
+            # New MAGIS provision uses the deterministic fallback below. The
+            # explicit Secret remains authoritative whenever it exists.
+            pass
+        password = hmac.new(
+            os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
+            f"magis-db:{binding.id}".encode(), hashlib.sha256,
+        ).hexdigest()
+        return f"postgresql+psycopg://magi:{password}@{resource}-db:5432/magis_{binding.id}"
+
+    def _project_runtime_configuration(self, spec: EveSpec) -> None:
+        """Write a MAGI's direct-MAGIS configuration before Pod creation.
+
+        The target database is a runtime projection. The Adam control plane
+        remains the authority for the MAGIS tree; a container only receives
+        the one direct MAGIS record it needs to operate.
+        """
+        if spec.magis is None or spec.configuration is None:
+            return
+        from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
+        from magi.agent.db.models_magis_membership import ensure_default_roles
+
+        engine = create_engine(self._magis_database_url(spec.magis), pool_pre_ping=True, future=True)
+        try:
+            # PostgreSQL may still be starting just after provision. Retry a
+            # bounded amount here so the MAGI never boots against an empty DB.
+            last_error: Exception | None = None
+            for _attempt in range(20):
+                try:
+                    MAGIS.metadata.create_all(engine, tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__])
+                    with Session(engine) as session:
+                        society = session.get(MAGIS, spec.magis.id)
+                        if society is None:
+                            society = MAGIS(id=spec.magis.id, name=spec.magis.name, instruction=spec.configuration.magis_instruction)
+                            session.add(society)
+                        else:
+                            society.name, society.instruction = spec.magis.name, spec.configuration.magis_instruction
+                        session.flush()
+                        ensure_default_roles(session, society.id)
+                        magic = session.get(MAGIC, spec.magic_id)
+                        if magic is None:
+                            magic = MAGIC(id=spec.magic_id)
+                            session.add(magic)
+                        magic.name, magic.instruction = spec.configuration.magic_name, spec.configuration.personal_instruction
+                        magic.provider, magic.api_key = spec.configuration.provider, spec.configuration.api_key
+                        role = session.scalar(select(MAGISRole).where(MAGISRole.magis_id == society.id, MAGISRole.name == spec.configuration.role_name))
+                        if role is None:
+                            role = MAGISRole(magis_id=society.id, name=spec.configuration.role_name, instruction=spec.configuration.role_instruction, is_reserved=spec.configuration.role_name in {"Adam", "EVE"})
+                            session.add(role); session.flush()
+                        else:
+                            role.instruction = spec.configuration.role_instruction
+                        membership = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == magic.id))
+                        if membership is None:
+                            session.add(MAGISMembership(magis_id=society.id, magic_id=magic.id, role_id=role.id))
+                        else:
+                            membership.magis_id, membership.role_id = society.id, role.id
+                        if role.name == "Adam": society.adam_id = magic.id
+                        session.commit()
+                    return
+                except Exception as exc:  # database Deployment may not be Ready yet
+                    last_error = exc
+                    import time
+                    time.sleep(1)
+            raise RuntimeError(f"MAGIS database did not become ready: {last_error}")
+        finally:
+            engine.dispose()
         if response.status_code not in {200, 202, 404}:
             raise RuntimeError(
                 f"Kubernetes DELETE {path}: {response.status_code} {response.text[:500]}"
             )
 
     def start(self, spec: EveSpec) -> EveOperationResult:
-        if not spec.provider or not spec.api_key:
-            raise ValueError("starting an EVE requires provider and API key")
         name = _resource_name(spec)
-        secret_name = f"{name}-provider"
         pvc_name = f"{name}-workspace"
         labels = {
             "app.kubernetes.io/name": "magi",
@@ -106,22 +235,12 @@ class KubernetesEveBackend:
             "magi.io/magic-id": str(spec.magic_id),
         }
         prefix = f"/api/v1/namespaces/{self.namespace}"
-        self._apply(
-            f"{prefix}/secrets/{secret_name}",
-            {
-                "apiVersion": "v1",
-                "kind": "Secret",
-                "metadata": {"name": secret_name, "labels": labels},
-                "type": "Opaque",
-                "data": _secret_data(
-                    {
-                        "MAGI_LLM_PROVIDER": spec.provider,
-                        "MAGI_LLM_API_KEY": spec.api_key,
-                        **({"MAGI_LLM_MODEL": spec.model} if spec.model else {}),
-                    }
-                ),
-            },
-        )
+        if spec.magis is None:
+            raise ValueError("starting a MAGI requires one direct MAGIS binding")
+        self._project_runtime_configuration(spec)
+        magis_resource = _magis_resource_name(spec.magis)
+        magis_workspace_claim = f"{magis_resource}-workspace"
+        magis_database_secret = f"{magis_resource}-db"
         self._apply(
             f"{prefix}/persistentvolumeclaims/{pvc_name}",
             {
@@ -157,29 +276,10 @@ class KubernetesEveBackend:
                                     "env": [
                                         {"name": "MAGI_NODE_ROLE", "value": "eve"},
                                         {"name": "MAGI_RUNTIME_ID", "value": str(spec.magic_id)},
-                                        {"name": "MAGI_INSTRUCTION_BUNDLE", "value": json.dumps({"personal_instruction": spec.personal_instruction, "memberships": spec.memberships})},
-                                        {
-                                            "name": "MAGI_LLM_PROVIDER",
-                                            "valueFrom": {
-                                                "secretKeyRef": {
-                                                    "name": secret_name,
-                                                    "key": "MAGI_LLM_PROVIDER",
-                                                }
-                                            },
-                                        },
-                                        {
-                                            "name": "MAGI_LLM_API_KEY",
-                                            "valueFrom": {
-                                                "secretKeyRef": {
-                                                    "name": secret_name,
-                                                    "key": "MAGI_LLM_API_KEY",
-                                                }
-                                            },
-                                        },
+                                        {"name": "MAGIS_ID", "value": str(spec.magis.id)},
+                                        {"name": "MAGIS_DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": magis_database_secret, "key": "MAGIS_DATABASE_URL"}}},
                                     ],
-                                    "volumeMounts": [
-                                        {"name": "workspace", "mountPath": "/workspace"}
-                                    ],
+                                    "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}, {"name": "magis-workspace", "mountPath": "/magis"}],
                                     "securityContext": {
                                         "allowPrivilegeEscalation": False,
                                         "capabilities": {"drop": ["ALL"]},
@@ -191,6 +291,7 @@ class KubernetesEveBackend:
                                     "name": "workspace",
                                     "persistentVolumeClaim": {"claimName": pvc_name},
                                 }
+                                ,{"name": "magis-workspace", "persistentVolumeClaim": {"claimName": magis_workspace_claim}}
                             ],
                         },
                     },
@@ -202,8 +303,8 @@ class KubernetesEveBackend:
             namespace=self.namespace,
             deployment_name=name,
             workspace_claim_name=pvc_name,
-            credential_secret_name=secret_name,
-            message="EVE Deployment applied; wait for its Pod to become Ready.",
+            credential_secret_name=None,
+            message="MAGI Deployment applied; it resolves configuration from its direct MAGIS database.",
         )
 
     def stop(self, spec: EveSpec) -> EveOperationResult:
@@ -219,8 +320,8 @@ class KubernetesEveBackend:
             namespace=self.namespace,
             deployment_name=name,
             workspace_claim_name=f"{name}-workspace",
-            credential_secret_name=f"{name}-provider",
-            message="EVE scaled to zero; its workspace and provider secret were retained.",
+            credential_secret_name=None,
+            message="MAGI scaled to zero; its private and MAGIS public workspaces were retained.",
         )
 
     def delete(self, spec: EveSpec) -> EveOperationResult:
@@ -229,12 +330,11 @@ class KubernetesEveBackend:
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._delete(f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{name}")
         self._delete(f"{prefix}/persistentvolumeclaims/{name}-workspace")
-        self._delete(f"{prefix}/secrets/{name}-provider")
         return EveOperationResult(
             observed_state="deleted",
             namespace=self.namespace,
             deployment_name=name,
             workspace_claim_name=f"{name}-workspace",
-            credential_secret_name=f"{name}-provider",
-            message="EVE Deployment, workspace PVC, and provider Secret were deleted.",
+            credential_secret_name=None,
+            message="MAGI Deployment and private workspace PVC were deleted.",
         )

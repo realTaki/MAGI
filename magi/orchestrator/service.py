@@ -9,7 +9,7 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec
+from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
 from magi.orchestrator.kubernetes import KubernetesEveBackend
 
 
@@ -36,6 +36,20 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "magi-orchestrator"}
+
+    @app.post("/v1/magis/{magis_id}/provision", response_model=MagisProvisionResult)
+    async def provision_magis(
+        magis_id: int,
+        request: Request,
+        x_magi_timestamp: str | None = Header(default=None),
+        x_magi_signature: str | None = Header(default=None),
+    ) -> MagisProvisionResult:
+        body = await request.body()
+        _verify_request(body, x_magi_timestamp, x_magi_signature)
+        binding = MagisBinding.model_validate_json(body)
+        if binding.id != magis_id:
+            raise HTTPException(status_code=400, detail="path/body MAGIS id mismatch")
+        return KubernetesEveBackend().provision_magis(binding)
 
     async def _spec_and_auth(
         request: Request, x_magi_timestamp: str | None, x_magi_signature: str | None

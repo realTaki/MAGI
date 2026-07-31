@@ -15,7 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole, get_session
+from magi.agent.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
+from magi.agent.magis_public_db import get_magis_session
 from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.magic")
@@ -28,7 +29,6 @@ def _admin_gate(request: Request) -> str:
 
 
 AdminGate = Annotated[str, Depends(_admin_gate)]
-MAX_MAGIS_MEMBERSHIPS = 3
 
 
 class MembershipBrief(BaseModel):
@@ -113,14 +113,14 @@ def _serialize(session: Session, magic: MAGIC, runtime: EveRuntime | None = None
 
 
 @router.get("/magic", response_model=list[MAGICOut])
-def list_magic(_admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> list[MAGICOut]:
+def list_magic(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGICOut]:
     rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
     runtimes = {r.magic_id: r for r in session.scalars(select(EveRuntime).where(EveRuntime.magic_id.in_([m.id for m in rows]))).all()} if rows else {}
     return [_serialize(session, magic, runtimes.get(magic.id)) for magic in rows]
 
 
 @router.post("/magic", response_model=MAGICOut, status_code=201)
-def create_magic(payload: MAGICCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGICOut:
+def create_magic(payload: MAGICCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
     magic = MAGIC(name=payload.name, provider=payload.provider, api_key=payload.api_key)
     session.add(magic)
     session.commit()
@@ -136,13 +136,13 @@ def _magic_or_404(session: Session, magic_id: int) -> MAGIC:
 
 
 @router.get("/magic/{magic_id}", response_model=MAGICOut)
-def get_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGICOut:
+def get_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
     magic = _magic_or_404(session, magic_id)
     return _serialize(session, magic, session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id)))
 
 
 @router.patch("/magic/{magic_id}", response_model=MAGICOut)
-def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGICOut:
+def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
     magic = _magic_or_404(session, magic_id)
     for field in ("name", "provider"):
         if field in payload.model_fields_set:
@@ -166,13 +166,13 @@ def _current_magic(session: Session) -> MAGIC:
 
 
 @router.get("/magic/self/instruction", response_model=InstructionOut)
-def get_self_instruction(_admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> InstructionOut:
+def get_self_instruction(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> InstructionOut:
     magic = _current_magic(session)
     return InstructionOut(magic_id=magic.id, instruction=magic.instruction)
 
 
 @router.put("/magic/self/instruction", response_model=InstructionOut)
-def put_self_instruction(payload: InstructionPayload, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> InstructionOut:
+def put_self_instruction(payload: InstructionPayload, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> InstructionOut:
     magic = _current_magic(session)
     magic.instruction = payload.instruction
     session.commit()
@@ -188,15 +188,15 @@ def _runtime_or_create(session: Session, magic: MAGIC) -> EveRuntime:
     return runtime
 
 
-def _instruction_bundle(session: Session, magic: MAGIC) -> list[dict[str, str]]:
-    from magi.agent.db import MAGIS
-    rows = session.execute(
+def _direct_magis_binding(session: Session, magic: MAGIC):
+    """Return the MAGI's one direct MAGIS, role, and membership."""
+    row = session.execute(
         select(MAGISMembership, MAGISRole, MAGIS)
         .join(MAGISRole, MAGISRole.id == MAGISMembership.role_id)
         .join(MAGIS, MAGIS.id == MAGISMembership.magis_id)
         .where(MAGISMembership.magic_id == magic.id).order_by(MAGISMembership.id)
-    ).all()
-    return [{"magis_name": society.name, "team_instruction": society.instruction, "role_name": role.name, "role_instruction": role.instruction} for _membership, role, society in rows]
+    ).first()
+    return row
 
 
 def _apply_result(runtime: EveRuntime, result) -> None:
@@ -207,23 +207,37 @@ def _apply_result(runtime: EveRuntime, result) -> None:
 
 
 @router.get("/magic/{magic_id}/runtime", response_model=EveRuntimeOut)
-def get_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> EveRuntimeOut:
+def get_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
     return _runtime_out(_runtime_or_create(session, _magic_or_404(session, magic_id)))  # type: ignore[return-value]
 
 
 def _lifecycle(action: str, magic_id: int, session: Session) -> EveRuntimeOut:
     magic = _magic_or_404(session, magic_id)
     runtime = _runtime_or_create(session, magic)
-    membership_count = session.scalar(select(__import__("sqlalchemy").func.count()).select_from(MAGISMembership).where(MAGISMembership.magic_id == magic.id)) or 0
+    direct_binding = _direct_magis_binding(session, magic)
     if action == "start":
-        if not membership_count:
-            raise MagiHTTPException(400, "validation.magic_membership_required", "assign this MAGIC to a MAGIS before starting it")
+        if direct_binding is None:
+            raise MagiHTTPException(400, "validation.magic_membership_required", "assign this MAGI to a MAGIS before starting it")
         if not magic.provider or not magic.api_key:
             raise MagiHTTPException(400, "validation.eve_provider_credentials_required", "configure provider and API key before starting this MAGI")
     from magi.orchestrator.client import OrchestratorUnavailable, request_lifecycle
     from magi.orchestrator.contracts import EveSpec
     runtime.desired_state = "running" if action == "start" else "stopped"
-    spec = EveSpec(magic_id=magic.id, name=magic.name, provider=magic.provider if action == "start" else None, api_key=magic.api_key if action == "start" else None, personal_instruction=magic.instruction, memberships=_instruction_bundle(session, magic))
+    from magi.orchestrator.contracts import MagisBinding, MagisRuntimeConfiguration
+    magis = MagisBinding(id=direct_binding[2].id, name=direct_binding[2].name) if direct_binding else None
+    configuration = (
+        MagisRuntimeConfiguration(
+            magis_instruction=direct_binding[2].instruction,
+            role_name=direct_binding[1].name,
+            role_instruction=direct_binding[1].instruction,
+            magic_name=magic.name,
+            personal_instruction=magic.instruction,
+            provider=magic.provider,
+            api_key=magic.api_key,
+        )
+        if direct_binding else None
+    )
+    spec = EveSpec(magic_id=magic.id, name=magic.name, magis=magis, configuration=configuration)
     try:
         result = request_lifecycle(action, spec)
     except OrchestratorUnavailable as exc:
@@ -236,17 +250,17 @@ def _lifecycle(action: str, magic_id: int, session: Session) -> EveRuntimeOut:
 
 
 @router.post("/magic/{magic_id}/runtime/start", response_model=EveRuntimeOut)
-def start_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> EveRuntimeOut:
+def start_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
     return _lifecycle("start", magic_id, session)
 
 
 @router.post("/magic/{magic_id}/runtime/stop", response_model=EveRuntimeOut)
-def stop_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> EveRuntimeOut:
+def stop_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
     return _lifecycle("stop", magic_id, session)
 
 
 @router.delete("/magic/{magic_id}", status_code=204)
-def delete_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> Response:
+def delete_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
     magic = _magic_or_404(session, magic_id)
     runtime = session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id))
     if runtime and runtime.deployment_name:

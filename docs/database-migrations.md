@@ -23,7 +23,7 @@ magi/agent/db/alembic/versions/  # 各 revision；script_location = magi/agent/d
 
 ## 当前迁移链
 
-HEAD = `0002_magis_membership_instructions`。
+HEAD = `0003_single_direct_magis_membership`。
 
 代码处于 dev 模式（暂无生产升级故事），历史上串联的 7 个 follow-on 修订（`0002_admin_role_split`、`0002_drop_contact_provider_api_key`、`0003_add_daily_note_kind`、`0004_rename_magics_to_magic`、`0006_contact_notes`、`0007_eve_runtimes`、`0007_swap_magic_magis_tables`）已被**全部吸收进 `0001_baseline`**，文件本身已删除。所以新数据库一次 `upgrade head` 直接得到最终形态，老数据库若 `alembic_version` 还指向已删除的 revision，启动器会自动 re-stamp 到 `0001_baseline`（见「旧数据库迁移（adoption）」）。
 
@@ -31,6 +31,7 @@ HEAD = `0002_magis_membership_instructions`。
 |---|---|---|
 | `0001_baseline` | `None` | 新数据库的完整基础 schema。 |
 | `0002_magis_membership_instructions` | `0001_baseline` | 将旧的单 MAGIS / 固定职位 MAGI 迁移为独立 `magic`、`magis_memberships` 和 `magis_roles`；增加个人、团队、角色 instructions，并将 `eve_runtimes.magi_id` 改为 `magic_id`。新库的 baseline 已含最终结构，因此此 revision 对新库是 no-op。 |
+| `0003_single_direct_magis_membership` | `0002_magis_membership_instructions` | 收敛为每个 MAGI 一个直接 MAGIS Membership；若旧开发库存在多个 Membership，保留最早的一条。Adam 对子树的管理权由 MAGIS tree 推导，不再通过额外 Membership 表示。 |
 
 ### collapsed baseline（开发策略）
 

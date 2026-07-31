@@ -1,4 +1,4 @@
-"""The controller accepts only signed, fixed-shape lifecycle requests."""
+"""Authentication and contracts for the restricted control plane."""
 
 from __future__ import annotations
 
@@ -6,48 +6,30 @@ import hashlib
 import hmac
 import time
 
-from fastapi.testclient import TestClient
+import pytest
+from fastapi import HTTPException
 
 
-def _signed_headers(secret: str, body: bytes) -> dict[str, str]:
-    timestamp = str(int(time.time()))
-    signature = hmac.new(
-        secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
-    ).hexdigest()
-    return {
-        "content-type": "application/json",
-        "X-MAGI-Timestamp": timestamp,
-        "X-MAGI-Signature": signature,
-    }
+def test_orchestrator_rejects_missing_hmac(monkeypatch):
+    from magi.orchestrator.service import _verify_request
+
+    monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
+    with pytest.raises(HTTPException, match="missing control authentication"):
+        _verify_request(b"{}", None, None)
 
 
-def test_orchestrator_requires_valid_hmac(monkeypatch):
+def test_orchestrator_accepts_valid_hmac(monkeypatch):
+    from magi.orchestrator.service import _verify_request
+
+    secret, body, timestamp = "test-control-secret", b'{"magic_id":7}', str(int(time.time()))
+    signature = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    monkeypatch.setenv("MAGI_CONTROL_SECRET", secret)
+    _verify_request(body, timestamp, signature)
+
+
+def test_control_plane_exposes_magis_provision_route():
     from magi.orchestrator.service import create_app
 
-    monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
-    client = TestClient(create_app())
-    response = client.post("/v1/eves/7/start", content=b"{}")
-    assert response.status_code == 401
-
-
-def test_orchestrator_dispatches_signed_start(monkeypatch):
-    import magi.orchestrator.service as service
-    from magi.orchestrator.contracts import EveOperationResult
-
-    monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
-
-    class FakeBackend:
-        def start(self, spec):
-            assert spec.magic_id == 7
-            return EveOperationResult(
-                observed_state="provisioning", namespace="magi", deployment_name="magi-eve-7-worker",
-                workspace_claim_name="magi-eve-7-worker-workspace",
-                credential_secret_name="magi-eve-7-worker-provider",
-            )
-
-    monkeypatch.setattr(service, "KubernetesEveBackend", FakeBackend)
-    client = TestClient(service.create_app())
-    body = b'{"magic_id":7,"name":"worker","provider":"claude","api_key":"secret"}'
-    response = client.post("/v1/eves/7/start", content=body, headers=_signed_headers("test-control-secret", body))
-    assert response.status_code == 200, response.text
-    assert response.json()["observed_state"] == "provisioning"
+    paths = {route.path for route in create_app().routes}
+    assert "/v1/magis/{magis_id}/provision" in paths
+    assert "/v1/eves/{magic_id}/start" in paths

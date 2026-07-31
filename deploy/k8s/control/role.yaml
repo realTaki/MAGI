@@ -5,7 +5,7 @@ metadata:
 rules:
   # Fixed EVE resources only. No pod exec, node access, CRDs, or cluster-wide RBAC.
   - apiGroups: [""]
-    resources: ["secrets", "persistentvolumeclaims"]
+    resources: ["secrets", "persistentvolumeclaims", "services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]

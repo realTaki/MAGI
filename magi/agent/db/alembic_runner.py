@@ -17,7 +17,7 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 #: into ``0001_baseline`` and deleted. Any database whose
 #: ``alembic_version`` row names a now-deleted revision is
 #: stamped back to this head before Alembic runs.
-CANONICAL_HEAD = "0002_magis_membership_instructions"
+CANONICAL_HEAD = "0003_single_direct_magis_membership"
 
 
 def _find_alembic_ini() -> Path:

@@ -207,7 +207,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["magic_id"], ["magic.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["role_id"], ["magis_roles.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("magis_id", "magic_id", name="uq_magis_memberships_magis_magic"),
+        sa.UniqueConstraint("magic_id", name="uq_magis_memberships_magic"),
     )
     op.create_index("ix_magis_memberships_magis_id", "magis_memberships", ["magis_id"])
     op.create_index("ix_magis_memberships_magic_id", "magis_memberships", ["magic_id"])

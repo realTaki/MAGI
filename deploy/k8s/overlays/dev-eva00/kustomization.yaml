@@ -6,7 +6,13 @@ kind: Kustomization
 resources:
   - ../../base
 
-namePrefix: eva00-
+secretGenerator:
+  - name: magi-magis-1-genesis-db
+    literals:
+      - POSTGRES_PASSWORD=magi-dev-postgres-password
+      - MAGIS_DATABASE_URL=postgresql+psycopg://magi:magi-dev-postgres-password@magi-magis-1-genesis-db:5432/magis_1
+    options:
+      disableNameSuffixHash: true
 
 patches:
   - path: patch-config.yaml

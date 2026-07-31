@@ -1,0 +1,106 @@
+# Genesis is the initial MAGIS. Child MAGIS use the same resource shape but
+# are created by the restricted orchestrator after their MAGIS row exists.
+# Create the referenced Secret from secrets/magis-genesis-db.example.yaml
+# before applying this production base.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: magi-magis-1-genesis-db-data
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: magis-database
+    magi.io/magis-id: "1"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: magi-magis-1-genesis-workspace
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: magis-workspace
+    magi.io/magis-id: "1"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: magi-magis-1-genesis-db
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: magis-database
+spec:
+  selector:
+    magi.io/magis-db: magi-magis-1-genesis
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-magis-1-genesis-db
+  labels:
+    app.kubernetes.io/name: magi
+    app.kubernetes.io/component: magis-database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      magi.io/magis-db: magi-magis-1-genesis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: magi
+        app.kubernetes.io/component: magis-database
+        magi.io/magis-db: magi-magis-1-genesis
+        magi.io/magis-id: "1"
+    spec:
+      securityContext:
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: magi
+            - name: POSTGRES_DB
+              value: magis_1
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: magi-magis-1-genesis-db
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            tcpSocket:
+              port: postgres
+          livenessProbe:
+            tcpSocket:
+              port: postgres
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: magi-magis-1-genesis-db-data

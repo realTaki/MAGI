@@ -9,5 +9,6 @@ resources:
   - serviceaccount.yaml
   - configmap.yaml
   - pvc.yaml
+  - magis-genesis.yaml
   - deployment.yaml
   - service.yaml

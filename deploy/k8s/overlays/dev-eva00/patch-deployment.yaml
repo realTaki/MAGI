@@ -18,6 +18,13 @@ spec:
           env:
             - name: MAGI_ORCHESTRATOR_URL
               value: http://magi-orchestrator:42100
+            - name: MAGIS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: magi-magis-1-genesis-db
+                  key: MAGIS_DATABASE_URL
+            - name: MAGIS_ID
+              value: "1"
           # `magi --check` opens the same SQLite state as the reloading
           # development process. Probe the Vite dev server instead so probes
           # do not contend with the dev instance's local state database.
@@ -40,6 +47,8 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            - name: magis-workspace
+              mountPath: /magis
             - name: source
               mountPath: /app/magi
               readOnly: true

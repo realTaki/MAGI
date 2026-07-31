@@ -9,7 +9,7 @@ import time
 
 import httpx
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec
+from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
 
 
 class OrchestratorUnavailable(RuntimeError):
@@ -51,3 +51,23 @@ def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
             f"orchestrator rejected {action}: {response.status_code} {response.text[:500]}"
         )
     return EveOperationResult.model_validate(response.json())
+
+
+def provision_magis(binding: MagisBinding) -> MagisProvisionResult:
+    """Create the public database and workspace for a MAGIS through control plane."""
+    url = os.environ.get("MAGI_ORCHESTRATOR_URL", "http://magi-orchestrator:42100")
+    body = binding.model_dump_json().encode()
+    try:
+        response = httpx.post(
+            f"{url.rstrip('/')}/v1/magis/{binding.id}/provision",
+            content=body,
+            headers={"content-type": "application/json", **_headers(body)},
+            timeout=20.0,
+        )
+    except httpx.HTTPError as exc:
+        raise OrchestratorUnavailable(f"MAGIS provision request failed: {exc}") from exc
+    if response.status_code >= 400:
+        raise OrchestratorUnavailable(
+            f"orchestrator rejected MAGIS provision: {response.status_code} {response.text[:500]}"
+        )
+    return MagisProvisionResult.model_validate(response.json())

@@ -125,11 +125,16 @@ def run() -> None:
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
-    # Initialise the ORM tables. Idempotent.
+    # Initialise private SQLite tables. Organisation facts deliberately do
+    # not seed here: a MAGI's private PVC must never become a shadow MAGIS.
     from magi.agent.db import init_orm
-    # An EVE has a deliberately isolated workspace.  Seeding Genesis there
-    # would create a phantom local Adam and make provider lookup ambiguous.
-    init_orm(state_dir, seed_root=cfg.role == "adam")
+    init_orm(state_dir, seed_root=False)
+
+    # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
+    # lifecycle state. The initial Adam seeds Genesis there; an EVE only
+    # opens the public schema assigned by its one direct MAGIS binding.
+    from magi.agent.magis_public_db import init_magis_public_db
+    init_magis_public_db(seed_root=cfg.role == "adam")
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
     # session files. Idempotent.

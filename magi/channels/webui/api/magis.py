@@ -9,12 +9,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, get_session
-from magi.agent.db.models_magis_membership import RESERVED_ROLE_NAMES, ensure_default_roles
+from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
+from magi.agent.magis_public_db import get_magis_session
+from magi.agent.db.models_magis_membership import (
+    RESERVED_ROLE_NAMES,
+    adam_manages_magis,
+    ensure_default_roles,
+)
 from magi.channels.webui.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["magis"])
-MAX_MAGIS_MEMBERSHIPS = 3
 
 
 def _admin_gate(request: Request) -> str:
@@ -111,17 +115,38 @@ def _membership_out(row: tuple[MAGISMembership, MAGIC, MAGISRole]) -> Membership
     return MembershipOut(id=membership.id, magic_id=magic.id, magic_name=magic.name, role_id=role.id, role_name=role.name)
 
 
+def _serving_adam(session: Session) -> int | None:
+    """MAGI identity for this WebUI process, if it is an Adam node.
+
+    Authentication still verifies the human administrator. This check adds
+    the MAGIS-tree scope of the Adam whose WebUI they are operating.
+    """
+    import os
+    runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+    if runtime_id and runtime_id.isdigit():
+        return int(runtime_id)
+    root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+    return root.adam_id if root else None
+
+
+def _require_managed(session: Session, magis_id: int) -> None:
+    actor = _serving_adam(session)
+    if actor is not None and not adam_manages_magis(session, actor, magis_id):
+        raise MagiHTTPException(403, "forbidden.magis_management_scope", "this Adam cannot manage the target MAGIS")
+
+
 @router.get("/magis", response_model=list[MAGISOut])
-def list_magis(_admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> list[MAGISOut]:
+def list_magis(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGISOut]:
     rows = session.scalars(select(MAGIS).options(selectinload(MAGIS.children)).order_by(MAGIS.name)).all()
     counts = dict(session.execute(select(MAGISMembership.magis_id, func.count()).group_by(MAGISMembership.magis_id)).all())
     return [_out(row, counts.get(row.id, 0)) for row in rows]
 
 
 @router.post("/magis", response_model=MAGISOut, status_code=201)
-def create_magis(payload: MAGISCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGISOut:
+def create_magis(payload: MAGISCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGISOut:
     if payload.parent_id is not None:
         _magis_or_404(session, payload.parent_id)
+        _require_managed(session, payload.parent_id)
     if session.scalar(select(MAGIS.id).where(MAGIS.name == payload.name)):
         raise MagiHTTPException(400, "validation.magis_name_duplicate", "MAGIS name already exists")
     magis = MAGIS(name=payload.name, parent_id=payload.parent_id, instruction=payload.instruction)
@@ -129,12 +154,20 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, session: Annotated[Ses
     session.flush()
     ensure_default_roles(session, magis.id)
     session.commit()
+    # Provisioning is control-plane work. A MAGI never gets Kubernetes API
+    # credentials just because it manages a MAGIS.
+    try:
+        from magi.orchestrator.client import provision_magis
+        from magi.orchestrator.contracts import MagisBinding
+        provision_magis(MagisBinding(id=magis.id, name=magis.name))
+    except Exception as exc:
+        raise MagiHTTPException(503, "runtime.magis_provisioning_unavailable", str(exc)) from exc
     session.refresh(magis, ["children"])
     return _out(magis)
 
 
 @router.get("/magis/{magis_id}", response_model=MAGISOut)
-def get_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGISOut:
+def get_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGISOut:
     m = _magis_or_404(session, magis_id)
     session.refresh(m, ["children"])
     count = session.scalar(select(func.count()).select_from(MAGISMembership).where(MAGISMembership.magis_id == magis_id)) or 0
@@ -142,8 +175,9 @@ def get_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depe
 
 
 @router.patch("/magis/{magis_id}", response_model=MAGISOut)
-def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MAGISOut:
+def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGISOut:
     m = _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
     if payload.name is not None and payload.name != m.name:
         duplicate = session.scalar(select(MAGIS.id).where(MAGIS.name == payload.name))
         if duplicate and duplicate != magis_id:
@@ -168,8 +202,9 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, session
 
 
 @router.delete("/magis/{magis_id}", status_code=204)
-def delete_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> Response:
+def delete_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
     m = _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
     session.execute(update(MAGIS).where(MAGIS.parent_id == magis_id).values(parent_id=m.parent_id))
     session.delete(m)
     session.commit()
@@ -177,16 +212,18 @@ def delete_magis(magis_id: int, _admin: AdminGate, session: Annotated[Session, D
 
 
 @router.get("/magis/{magis_id}/roles", response_model=list[RoleOut])
-def list_roles(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> list[RoleOut]:
+def list_roles(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[RoleOut]:
     _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
     ensure_default_roles(session, magis_id)
     session.commit()
     return [_role_out(r) for r in session.scalars(select(MAGISRole).where(MAGISRole.magis_id == magis_id).order_by(MAGISRole.is_reserved.desc(), MAGISRole.name)).all()]
 
 
 @router.post("/magis/{magis_id}/roles", response_model=RoleOut, status_code=201)
-def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> RoleOut:
+def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> RoleOut:
     _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
     if payload.name in RESERVED_ROLE_NAMES:
         raise MagiHTTPException(400, "validation.role_name_reserved", "Adam and EVE are reserved role names")
     if session.scalar(select(MAGISRole.id).where(MAGISRole.magis_id == magis_id, MAGISRole.name == payload.name)):
@@ -197,7 +234,8 @@ def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, session: 
 
 
 @router.patch("/magis/{magis_id}/roles/{role_id}", response_model=RoleOut)
-def update_role(magis_id: int, role_id: int, payload: RoleUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> RoleOut:
+def update_role(magis_id: int, role_id: int, payload: RoleUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> RoleOut:
+    _require_managed(session, magis_id)
     role = _role_or_404(session, magis_id, role_id)
     if role.is_reserved:
         raise MagiHTTPException(403, "forbidden.reserved_role", "reserved roles cannot be edited")
@@ -209,7 +247,8 @@ def update_role(magis_id: int, role_id: int, payload: RoleUpdate, _admin: AdminG
 
 
 @router.delete("/magis/{magis_id}/roles/{role_id}", status_code=204)
-def delete_role(magis_id: int, role_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> Response:
+def delete_role(magis_id: int, role_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
+    _require_managed(session, magis_id)
     role = _role_or_404(session, magis_id, role_id)
     if role.is_reserved:
         raise MagiHTTPException(403, "forbidden.reserved_role", "reserved roles cannot be deleted")
@@ -219,8 +258,9 @@ def delete_role(magis_id: int, role_id: int, _admin: AdminGate, session: Annotat
 
 
 @router.get("/magis/{magis_id}/memberships", response_model=list[MembershipOut])
-def list_memberships(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> list[MembershipOut]:
+def list_memberships(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MembershipOut]:
     _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
     rows = session.execute(select(MAGISMembership, MAGIC, MAGISRole).join(MAGIC, MAGIC.id == MAGISMembership.magic_id).join(MAGISRole, MAGISRole.id == MAGISMembership.role_id).where(MAGISMembership.magis_id == magis_id).order_by(MAGISMembership.id)).all()
     return [_membership_out(row) for row in rows]
 
@@ -235,14 +275,14 @@ def _assign_adam(m: MAGIS, role: MAGISRole, magic_id: int) -> None:
 
 
 @router.post("/magis/{magis_id}/memberships", response_model=MembershipOut, status_code=201)
-def create_membership(magis_id: int, payload: MembershipCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MembershipOut:
+def create_membership(magis_id: int, payload: MembershipCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MembershipOut:
     m = _magis_or_404(session, magis_id); role = _role_or_404(session, magis_id, payload.role_id)
+    _require_managed(session, magis_id)
     magic = session.get(MAGIC, payload.magic_id)
     if magic is None: raise MagiHTTPException(404, "not_found.magic", "MAGI not found")
-    if session.scalar(select(MAGISMembership.id).where(MAGISMembership.magis_id == magis_id, MAGISMembership.magic_id == magic.id)):
-        raise MagiHTTPException(409, "validation.membership_duplicate", "MAGI already belongs to this MAGIS")
-    count = session.scalar(select(func.count()).select_from(MAGISMembership).where(MAGISMembership.magic_id == magic.id)) or 0
-    if count >= MAX_MAGIS_MEMBERSHIPS: raise MagiHTTPException(400, "validation.membership_limit", "a MAGI can belong to at most three MAGIS")
+    existing = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == magic.id))
+    if existing is not None:
+        raise MagiHTTPException(409, "validation.magic_already_assigned", "a MAGI can have only one direct MAGIS membership")
     _assign_adam(m, role, magic.id)
     membership = MAGISMembership(magis_id=magis_id, magic_id=magic.id, role_id=role.id)
     session.add(membership); session.commit(); session.refresh(membership)
@@ -250,8 +290,9 @@ def create_membership(magis_id: int, payload: MembershipCreate, _admin: AdminGat
 
 
 @router.patch("/magis/{magis_id}/memberships/{membership_id}", response_model=MembershipOut)
-def update_membership(magis_id: int, membership_id: int, payload: MembershipUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> MembershipOut:
+def update_membership(magis_id: int, membership_id: int, payload: MembershipUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MembershipOut:
     m = _magis_or_404(session, magis_id); membership = session.get(MAGISMembership, membership_id)
+    _require_managed(session, magis_id)
     if membership is None or membership.magis_id != magis_id: raise MagiHTTPException(404, "not_found.membership", "membership not found")
     role = _role_or_404(session, magis_id, payload.role_id)
     _assign_adam(m, role, membership.magic_id)
@@ -260,8 +301,9 @@ def update_membership(magis_id: int, membership_id: int, payload: MembershipUpda
 
 
 @router.delete("/magis/{magis_id}/memberships/{membership_id}", status_code=204)
-def delete_membership(magis_id: int, membership_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_session)]) -> Response:
+def delete_membership(magis_id: int, membership_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
     m = _magis_or_404(session, magis_id); membership = session.get(MAGISMembership, membership_id)
+    _require_managed(session, magis_id)
     if membership is None or membership.magis_id != magis_id: raise MagiHTTPException(404, "not_found.membership", "membership not found")
     if m.adam_id == membership.magic_id: m.adam_id = None
     session.delete(membership); session.commit(); return Response(status_code=204)
