@@ -1,5 +1,5 @@
 /**
- * MagicsTab — MAGI Societies + MAGI Citizens panes.
+ * AgenticSocietyTab — MAGIS and MAGIC Citizen panes.
  *
  * Adam-only — EVE doesn't see this tab.
  *
@@ -13,12 +13,12 @@ import { useState } from "react";
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import { IconMagic, IconMagis } from "../components/icons";
 import { useT } from "../i18n/index";
-import { MagicsPane } from "./magics/MagicsPane";
-import { MagisPane } from "./magics/MagisPane";
+import { MagicPane } from "./agentic-society/MagicPane";
+import { MagisPane } from "./agentic-society/MagisPane";
 
-type MagicsSection = "magis" | "magic";
+type AgenticSocietySection = "magis" | "magic";
 
-const MAGICS_SECTIONS: SidebarItem[] = [
+const AGENTIC_SOCIETY_SECTIONS: SidebarItem[] = [
   { id: "magis", label: "sidebar.magicMagics", icon: <IconMagic /> },
   { id: "magic", label: "sidebar.magicMagis", icon: <IconMagis /> },
 ];
@@ -40,19 +40,19 @@ export type ContactRow = {
   updated_at: string;
 };
 
-export default function MagicsTab() {
+export default function AgenticSocietyTab() {
   const t = useT();
-  const [section, setSection] = useState<MagicsSection>("magis");
+  const [section, setSection] = useState<AgenticSocietySection>("magis");
 
   return (
     <SidebarShell
-      items={MAGICS_SECTIONS}
+      items={AGENTIC_SOCIETY_SECTIONS}
       selectedId={section}
-      onSelect={(id) => setSection(id as MagicsSection)}
+      onSelect={(id) => setSection(id as AgenticSocietySection)}
       ariaLabel={t("sidebar.magicNavAria")}
     >
-      {section === "magis" && <MagicsPane />}
-      {section === "magic" && <MagisPane />}
+      {section === "magis" && <MagisPane />}
+      {section === "magic" && <MagicPane />}
     </SidebarShell>
   );
 }

@@ -15,9 +15,9 @@ Layout:
                                   person directory; replaces the old
                                   ``contacts``, ``contact_entries``,
                                   and ``user_im_bindings`` tables)
-  - :mod:`.models_magic`        — :class:`MAGIS` (MAGI Societies,
+  - :mod:`.models_magis`        — :class:`MAGIS` (MAGI Societies,
                                   a tree of MAGI groups)
-  - :mod:`.models_magi`         — :class:`MAGIC` (MAGI Citizens,
+  - :mod:`.models_magic`        — :class:`MAGIC` (MAGI Citizens,
                                   runtime agent rows bound to a ``MAGIS``)
   - :mod:`.models_mcp_server`   — :class:`McpServer` (operator-
                                   configured MCP server rows; the
@@ -70,8 +70,8 @@ from magi.agent.db.models_eve_runtime import EveRuntime
 # of MAGIs; lives in the ``magis`` table).
 # ``MAGIC`` = an individual MAGI agent (a "MAGI Citizen";
 # lives in the ``magic`` table).
-from magi.agent.db.models_magi import MAGIC
-from magi.agent.db.models_magic import MAGIS
+from magi.agent.db.models_magic import MAGIC
+from magi.agent.db.models_magis import MAGIS
 from magi.agent.db.models_mcp_server import McpServer
 from magi.agent.db.models_setting import Setting
 from magi.agent.db.models_token_usage import TokenUsage

@@ -199,7 +199,7 @@ def load_memory_block_template() -> str:
     the static header + intro + the two ``### 重要的事``
     / ``### 正在进行`` sub-section headings; the rows
     themselves are appended by :func:`format_memory_block`
-    in :mod:`magi.agent.memory.magi.prompt` (which then
+    in :mod:`magi.agent.memory.self.prompt` (which then
     string-splits the template at the ``### 重要的事``
     marker to drop the empty placeholders when no rows
     land under a kind).

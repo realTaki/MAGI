@@ -15,11 +15,11 @@ from sqlalchemy import engine_from_config, pool
 import magi.agent.db.models_action_item  # noqa: F401,E402
 import magi.agent.db.models_contact  # noqa: F401,E402
 import magi.agent.db.models_eve_runtime  # noqa: F401,E402
-import magi.agent.db.models_magi  # noqa: F401,E402
 import magi.agent.db.models_magic  # noqa: F401,E402
+import magi.agent.db.models_magis  # noqa: F401,E402
 import magi.agent.db.models_setting  # noqa: F401,E402
 import magi.agent.db.models_token_usage  # noqa: F401,E402
-import magi.agent.memory.magi.models  # noqa: F401,E402
+import magi.agent.memory.self.models  # noqa: F401,E402
 import magi.agent.memory.session.tables  # noqa: F401,E402
 import magi.agent.proactive.orm_models  # noqa: F401,E402
 from magi.agent.db.base import Base

@@ -1,4 +1,4 @@
-"""MAGI's mid-term memory — what the MAGI itself knows.
+"""Self memory — long-lived facts and ongoing work for the current context.
 
 Stores the things the operator has told the EVE to
 "remember" (company policies, contract deadlines,
@@ -30,7 +30,7 @@ Layout:
 
 from __future__ import annotations
 
-from magi.agent.memory.magi.models import (
+from magi.agent.memory.self.models import (
     ALL_KINDS,
     KIND_IMPORTANT,
     KIND_ONGOING,
@@ -39,9 +39,9 @@ from magi.agent.memory.magi.models import (
     SOURCE_SYSTEM,
     MemoryEntry,
 )
-from magi.agent.memory.magi.prompt import format_memory_block
-from magi.agent.memory.magi.store import MemoryStore, MemoryView
-from magi.agent.memory.magi.tools import (
+from magi.agent.memory.self.prompt import format_memory_block
+from magi.agent.memory.self.store import MemoryStore, MemoryView
+from magi.agent.memory.self.tools import (
     AddMemoryTool,
     CompleteMemoryTool,
     DeleteMemoryTool,

@@ -90,7 +90,7 @@ def _build_tools() -> list["Tool"]:
         UpdateContactNoteTool,
         UpdateDailyNoteTool,
     )
-    from magi.agent.memory.magi.tools import (
+    from magi.agent.memory.self.tools import (
         AddMemoryTool,
         CompleteMemoryTool,
         DeleteMemoryTool,

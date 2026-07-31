@@ -1,4 +1,4 @@
-"""LLM-callable memory tools for MAGI's mid-term memory.
+"""LLM-callable tools for long-term self memory.
 
 The agent loop exposes these to the LLM through the
 standard :mod:`magi.agent.tools.registry` mechanism.
@@ -35,11 +35,11 @@ import logging
 from typing import Any
 
 from magi.agent.db import Contact, open_session
-from magi.agent.memory.magi.models import (
+from magi.agent.memory.self.models import (
     ALL_KINDS,
     SOURCE_EVE,
 )
-from magi.agent.memory.magi.store import MemoryStore
+from magi.agent.memory.self.store import MemoryStore
 from magi.agent.tools.base import (
     Tool,
     ToolContext,
@@ -48,7 +48,7 @@ from magi.agent.tools.base import (
 )
 
 
-logger = logging.getLogger("magi.agent.memory.magi.tools")
+logger = logging.getLogger("magi.agent.memory.self.tools")
 
 _WRITE_ROLES = frozenset({"admin", "assigned"})
 

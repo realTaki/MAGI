@@ -18,7 +18,7 @@ Why per-chat (not "all contacts"):
     lean and predictable.
 
 The format is the same Markdown bullet style as
-:func:`magi.agent.memory.magi.prompt.format_memory_block`
+:func:`magi.agent.memory.self.prompt.format_memory_block`
 so the LLM sees a single coherent "memory" surface
 in its system prompt.
 

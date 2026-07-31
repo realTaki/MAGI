@@ -27,7 +27,7 @@ from sqlalchemy import select
 
 from magi.agent.db import open_session
 from magi.agent.db.base import utcnow_naive
-from magi.agent.memory.magi.models import (
+from magi.agent.memory.self.models import (
     ALL_KINDS,
     KIND_ONGOING,
     SOURCE_EVE,
@@ -35,7 +35,7 @@ from magi.agent.memory.magi.models import (
 )
 
 
-logger = logging.getLogger("magi.agent.memory.magi.store")
+logger = logging.getLogger("magi.agent.memory.self.store")
 
 # Caps mirroring the Pydantic layer (the WebUI form has
 # the same numbers). Truncating here too guards against

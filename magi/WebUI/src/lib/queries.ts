@@ -2,14 +2,14 @@
  *
  * Every hook here uses ``qk.*`` query keys so invalidation
  * from one surface (e.g. creating a Magi) automatically
- * refreshes the MagicsPane that lists them. Components that
+ * refreshes the MagisPane that lists them. Components that
  * previously did their own ``fetch + useState`` now get
  * cache dedup + background revalidation for free.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ContactRow as MagicContactRow } from "../pages/MagicsTab";
+import type { ContactRow as MagicContactRow } from "../pages/AgenticSocietyTab";
 import { apiFetch, qk } from "./queryClient";
 
 // -- shared types -----------------------------------------------------------

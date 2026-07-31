@@ -52,7 +52,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.memory.magi.models import MemoryEntry
+from magi.agent.memory.self.models import MemoryEntry
 from magi.channels.webui.api.action_items import _current_admin_id
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.agent.db import get_session

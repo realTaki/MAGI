@@ -1,0 +1,366 @@
+"""End-to-end tests for ``/api/magic`` — MAGIC Citizens CRUD.
+CRUD surface introduced by the post-refactor reframe.
+
+Each ``MAGIC`` row is a MAGI runtime agent bound to one
+``MAGIS`` via ``magis_id``. ``magic_position`` selects the
+archetype (one of ``adam`` / ``eve``). Endpoints exercised:
+
+  - ``GET    /api/magic``              — flat list with optional ``?magis_id=``
+  - ``POST   /api/magic``              — create (magis_id, position, etc.)
+  - ``GET    /api/magic/{id}``         — single row
+  - ``PATCH  /api/magic/{id}``         — rename / re-position / rotate key
+  - ``DELETE /api/magic/{id}``         — drop the agent row
+
+The fixtures pin ``MAGIC_STATE_DIR``, the admin Contact, the
+seeded ``MAGIS.root`` + its adam, and the signed cookie.
+"""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+_MAGI_POSITIONS: tuple[str, ...] = ("adam", "eve")
+
+def _signed_session_cookie(uid: int) -> str:
+    """Mint an HMAC-signed ``magi_session`` cookie value
+    (the prod cookie layer rejects naked ids)."""
+    from magi.channels.webui.api.auth import _sign_uid
+
+    return _sign_uid(uid)
+
+@pytest.fixture
+def env(monkeypatch, tmp_path):
+    """MAGI_STATE_DIR + ORM + one admin Contact + the
+    seeded MAGIS root (with its default adam MAGIC)."""
+    state = tmp_path / "state"
+    state.mkdir()
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
+    
+    import magi.agent.db.engine as orm_mod
+    orm_mod._engine = None
+    orm_mod._SessionLocal = None
+
+    from magi.agent.db import (
+        Contact,
+        MAGIS,
+        MAGIC,
+        init_orm,
+        init_sqlite,
+        open_session)
+    import sqlalchemy as sa
+
+    init_sqlite(str(state))
+    init_orm(str(state))
+
+    with open_session() as db:
+        admin = Contact(
+            name="Alice",
+            telegram_id=9001,
+            admin=True, role="assigned"
+        )
+        db.add(admin)
+        db.flush()
+        root = db.scalar(sa.select(MAGIS).where(MAGIS.name == "Genesis"))
+        adam = db.scalar(
+            sa.select(MAGIC).where(MAGIC.magic_position == "adam")
+        )
+        db.commit()
+        db.refresh(admin)
+
+    return {
+        "state": state,
+        "admin": admin,
+        "root": root,
+        "adam": adam,
+    }
+
+@pytest.fixture
+def client(env):
+    """TestClient with signed admin cookie."""
+    from magi.channels.webui.app import create_app
+
+    app = create_app()
+    c = TestClient(app)
+    c.cookies.set("magi_session", _signed_session_cookie(env["admin"].id))
+    return c
+
+# -- tests -----------------------------------------------------------------
+
+def test_list_magics_returns_seeded_adam(client, env):
+    """Default seed stamps one adam MAGIC bound to MAGIS.root.
+    Listing returns at least that one, sorted by id (adam is
+    the lowest id)."""
+    r = client.get("/api/magic")
+    assert r.status_code == 200
+    body = r.json()
+    ids = [m["id"] for m in body]
+    assert env["adam"].id in ids
+    adam_row = next(m for m in body if m["id"] == env["adam"].id)
+    assert adam_row["magis_id"] == env["root"].id
+    assert adam_row["magic_position"] == "adam"
+
+def test_list_magis_filter_by_magic_id(client, env):
+    """``?magis_id=X`` returns only rows bound to that MAGIS."""
+    r = client.get(f"/api/magic?magis_id={env['root'].id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert all(m["magis_id"] == env["root"].id for m in body)
+
+def test_create_magi_eve(client, env):
+    """Create an eve MAGIC under the seeded root."""
+    r = client.post(
+        "/api/magic",
+        json={
+            "magis_id": env["root"].id,
+            "name": "Eve1",
+            "magic_position": "eve",
+            "provider": "anthropic",
+            "api_key": "sk-eve1",
+        })
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == "Eve1"
+    assert body["magic_position"] == "eve"
+    assert body["provider"] == "anthropic"
+    assert body["api_key_set"] is True
+    assert body["api_key_last4"] == "eve1"
+    assert body["runtime"]["desired_state"] == "draft"
+    assert body["runtime"]["observed_state"] == "draft"
+
+
+def test_eve_runtime_start_stop(client, env, monkeypatch):
+    """An EVE remains a draft until its lifecycle is explicitly started."""
+    from magi.orchestrator.contracts import EveOperationResult
+    import magi.orchestrator.client as orchestrator_client
+
+    created = client.post(
+        "/api/magic",
+        json={
+            "magis_id": env["root"].id,
+            "name": "Worker One",
+            "magic_position": "eve",
+            "provider": "claude",
+            "api_key": "sk-worker-one",
+        },
+    )
+    magi_id = created.json()["id"]
+    calls: list[str] = []
+
+    def fake_lifecycle(action, spec):
+        calls.append(action)
+        assert spec.magi_id == magi_id
+        return EveOperationResult(
+            observed_state="provisioning" if action == "start" else "stopped",
+            namespace="magi",
+            deployment_name="magi-eve-2-worker-one",
+            workspace_claim_name="magi-eve-2-worker-one-workspace",
+            credential_secret_name="magi-eve-2-worker-one-provider",
+        )
+
+    monkeypatch.setattr(orchestrator_client, "request_lifecycle", fake_lifecycle)
+    started = client.post(f"/api/magic/{magi_id}/runtime/start")
+    assert started.status_code == 200, started.text
+    assert started.json()["desired_state"] == "running"
+    assert started.json()["observed_state"] == "provisioning"
+    assert started.json()["deployment_name"] == "magi-eve-2-worker-one"
+
+    stopped = client.post(f"/api/magic/{magi_id}/runtime/stop")
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["desired_state"] == "stopped"
+    assert stopped.json()["observed_state"] == "stopped"
+    assert calls == ["start", "stop"]
+
+
+def test_eve_runtime_requires_provider_credentials(client, env):
+    created = client.post(
+        "/api/magic",
+        json={"magis_id": env["root"].id, "name": "Unconfigured", "magic_position": "eve"},
+    )
+    response = client.post(f"/api/magic/{created.json()['id']}/runtime/start")
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation.eve_provider_credentials_required"
+
+
+def test_adam_cannot_have_eve_runtime(client, env):
+    response = client.get(f"/api/magic/{env['adam'].id}/runtime")
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation.eve_runtime_requires_eve"
+
+def test_create_magi_invalid_position(client, env):
+    """``magic_position='minion'`` rejected with 400 + structured error."""
+    r = client.post(
+        "/api/magic",
+        json={
+            "magis_id": env["root"].id,
+            "magic_position": "minion",
+        })
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.magic_position_unknown"
+
+def test_create_magi_unknown_magic_id(client):
+    """``magis_id`` pointing at no row -> 400."""
+    r = client.post(
+        "/api/magic",
+        json={"magis_id": 9999, "magic_position": "eve"})
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.magic_id_not_found"
+
+def test_create_magi_adam_when_already_bound_returns_409(client, env):
+    """The MAGIS already has an adam (the seed). Trying to
+    create a second adam raises 409 (no silent overwrite).
+
+    Bug guard: ensures the invariant ``one adam per MAGIS``
+    is enforced at the API boundary, not left to luck."""
+    r = client.post(
+        "/api/magic",
+        json={
+            "magis_id": env["root"].id,
+            "magic_position": "adam",
+            "name": "Adam2",
+        })
+    assert r.status_code == 409
+    assert r.json()["code"] == "validation.adam_already_assigned"
+
+def test_create_magi_adam_when_unbound_succeeds(client, env):
+    """If the MAGIS has no adam yet (e.g. a fresh child MAGIS),
+    creating one binds it."""
+    # Make a fresh child MAGIS under root — seed only created one root.
+    cr = client.post(
+        "/api/magic",
+        json={"name": "Branch", "parent_id": env["root"].id})
+    branch_id = cr.json()["id"]
+    assert cr.json()["adam_id"] is None
+
+    # Now create an adam for the branch — should succeed and bind.
+    r = client.post(
+        "/api/magic",
+        json={
+            "magis_id": branch_id,
+            "magic_position": "adam",
+            "name": "BranchAdam",
+        })
+    assert r.status_code == 201, r.text
+    new_adam_id = r.json()["id"]
+
+    # MAGIS.adam_id is now bound to the new adam.
+    r = client.get(f"/api/magic/{branch_id}")
+    assert r.json()["adam_id"] == new_adam_id
+
+def test_create_magi_minimal_payload(client, env):
+    """name is optional; defaults to None. Position required."""
+    r = client.post(
+        "/api/magic",
+        json={"magis_id": env["root"].id, "magic_position": "eve"})
+    assert r.status_code == 201
+    assert r.json()["name"] is None
+
+def test_get_magi(client, env):
+    pid = env["adam"].id
+    r = client.get(f"/api/magic/{pid}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == pid
+    assert body["magic_position"] == "adam"
+
+def test_get_magi_404(client):
+    r = client.get("/api/magic/9999")
+    assert r.status_code == 404
+    assert r.json()["code"] == "not_found.magi"
+
+def test_patch_magi_renames(client, env):
+    pid = env["adam"].id
+    r = client.patch(f"/api/magic/{pid}", json={"name": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "Renamed"
+
+def test_patch_magi_rotates_api_key(client, env):
+    """PATCH api_key writes new value, last4 reflects it
+    (and ``""`` clears)."""
+    pid = env["adam"].id
+    r = client.patch(f"/api/magic/{pid}", json={"api_key": "sk-new"})
+    assert r.status_code == 200
+    assert r.json()["api_key_last4"] == "w-new" if False else r.json()["api_key_last4"][-4:] == "-new"
+
+    # Clear via empty string.
+    r = client.patch(f"/api/magic/{pid}", json={"api_key": ""})
+    assert r.status_code == 200
+    assert r.json()["api_key_set"] is False
+    assert r.json()["api_key_last4"] is None
+
+def test_patch_magi_invalid_position_400(client, env):
+    pid = env["adam"].id
+    r = client.patch(f"/api/magic/{pid}", json={"magic_position": "minion"})
+    assert r.status_code == 400
+    assert r.json()["code"] == "validation.magic_position_unknown"
+
+def test_patch_magi_provider_change(client, env):
+    pid = env["adam"].id
+    r = client.patch(f"/api/magic/{pid}", json={"provider": "openai"})
+    assert r.status_code == 200
+    assert r.json()["provider"] == "openai"
+
+def test_patch_magi_404(client):
+    r = client.patch("/api/magic/9999", json={"name": "X"})
+    assert r.status_code == 404
+
+def test_delete_magi_eve(client, env):
+    """Deleting an eve leaves MAGIS.adam_id alone."""
+    cr = client.post(
+        "/api/magic",
+        json={
+            "magis_id": env["root"].id,
+            "magic_position": "eve",
+            "name": "Doomed",
+        })
+    eid = cr.json()["id"]
+    r = client.delete(f"/api/magic/{eid}")
+    assert r.status_code == 204
+
+    r = client.get(f"/api/magic/{eid}")
+    assert r.status_code == 404
+
+def test_delete_magi_adam_clears_adam_binding(client, env):
+    """Deleting the bound adam MUST clear MAGIS.adam_id so a
+    new adam can later be created for that MAGIS."""
+    adam_id = env["adam"].id
+    r = client.delete(f"/api/magic/{adam_id}")
+    assert r.status_code == 204
+
+    # MAGIS.adam_id is now NULL.
+    r = client.get(f"/api/magic/{env['root'].id}")
+    assert r.json()["adam_id"] is None
+
+def test_delete_magi_404(client):
+    r = client.delete("/api/magic/9999")
+    assert r.status_code == 404
+
+def test_list_magis_requires_admin(client, env):
+    """A non-admin (role='guest') gets 401 at the gate."""
+    from magi.agent.db import Contact, open_session
+
+    with open_session() as db:
+        u = Contact(
+            name="User2",
+            telegram_id=9002,
+            role='guest')
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        uid = u.id
+
+    raw = TestClient(client.app)
+    raw.cookies.set("magi_session", _signed_session_cookie(uid))
+    r = raw.get("/api/magic")
+    assert r.status_code == 401
+
+    r = raw.post("/api/magic", json={"magis_id": env["root"].id, "magic_position": "eve"})
+    assert r.status_code == 401
+
+    r = raw.patch(f"/api/magic/{env['adam'].id}", json={"name": "X"})
+    assert r.status_code == 401
+
+    r = raw.delete(f"/api/magic/{env['adam'].id}")
+    assert r.status_code == 401

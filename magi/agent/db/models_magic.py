@@ -1,29 +1,29 @@
-"""ORM table ``magis`` — MAGIS, the MAGI Society tree.
+"""ORM model ``magic`` — MAGIC, the MAGI Citizen rows.
 
-A :class:`MAGIS` row is the org container: one group of
-MAGI agents (``magic`` table, see :mod:`.models_magi`)
-coordinated by exactly one ``MAGIC`` with ``magic_position
-= 'adam'``. The tree shape is maintained via
-``parent_id`` self-FK.
+Each row is a MAGIC runtime process bound to one :class:`MAGIS`.
+``magis_id`` references :class:`MAGIS` (in
+:mod:`magi.agent.db.models_magis`) and ``magic_position``
+is one of ``"adam"`` (the manager, exactly one per MAGIS) /
+``"eve"`` (a worker, N per MAGIS).
 
-``adam_id`` references ``magic.id`` (the manager MAGIC for
-this MAGIS) and is nullable — a ``MAGIS`` can exist before
-its adam MAGIC row is provisioned.
+The provider / api_key columns carry the LLM provider and key
+for the MAGIC runtime. They are the **single source of truth**
+for LLM credentials — the ``contacts`` table does NOT hold
+provider/api_key (removed in the D.30 credential refactor).
+Read via :func:`resolve_magic_credentials`.
 
-The cross-table relationships (``adam``, ``children``,
-``parent``) resolve at mapper-config time via the standard
-``TYPE_CHECKING`` + ``from __future__ import annotations``
-pattern — same as :mod:`.models_contact`.
+Forward references to ``MAGIS`` resolve at mapper-config time
+via the standard ``TYPE_CHECKING`` + ``from __future__ import
+annotations`` pattern.
 
 Naming convention
 ----------------
 
-After the 2026-07 naming refresh:
-
-  - A **MAGIS** is a MAGI Society: a group of MAGI Citizens.
-    Its row lives in the ``magis`` table.
-  - A **MAGIC** is an individual MAGI Citizen. Its row lives
-    in the ``magic`` table.
+After the 2026-07 naming refresh, this class is named
+``MAGIC`` (one row = one individual MAGI agent). The Python
+class ``MAGIC`` represents an individual; the Python class
+``MAGIS`` (in :mod:`magi.agent.db.models_magis`) represents
+a group of MAGI Citizens. ``__tablename__ = "magic"``.
 """
 
 from __future__ import annotations
@@ -37,34 +37,44 @@ from sqlalchemy import (
     ForeignKey,
     String,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.agent.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_magi import MAGIC
+    from magi.agent.db.models_magis import MAGIS
 
 
-class MAGIS(Base):
-    """A MAGI Society (a group of MAGIs).
+class MAGIC(Base):
+    """A MAGI runtime agent (a MAGI Citizen).
 
-    ``adam_id`` references :class:`MAGIC` (the manager
-    MAGIC for this Society) and is nullable — a ``MAGIS``
-    can exist before its adam MAGIC row is provisioned.
+    Each ``MAGIC`` belongs to exactly one ``MAGIS`` via
+    ``magis_id``. ``magic_position`` selects the archetype:
+    ``"adam"`` (manager, exactly one per MAGIS) or
+    ``"eve"`` (worker, N per MAGIS). ``provider`` /
+    ``api_key`` carry the LLM credentials for the runtime
+    process that binds to this row.
     """
 
-    __tablename__ = "magis"
+    __tablename__ = "magic"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("magis.id", ondelete="RESTRICT"),
-        nullable=True,
+    name: Mapped[str | None] = mapped_column(
+        String(100), nullable=True,
     )
-    adam_id: Mapped[int | None] = mapped_column(
-        ForeignKey("magic.id", ondelete="SET NULL"),
-        nullable=True,
+    magis_id: Mapped[int] = mapped_column(
+        ForeignKey("magis.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+    api_key: Mapped[str | None] = mapped_column(
+        String(256), nullable=True,
+    )
+    magic_position: Mapped[str] = mapped_column(
+        String(16), nullable=False,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -74,28 +84,37 @@ class MAGIS(Base):
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
-    # Self-referential tree. ``remote_side=id`` is the marker
-    # that tells SQLAlchemy which side of the parent_id FK
-    # is the "many" side, so ``children`` is a list of
-    # child MAGISes rather than a back to the parent.
-    #
-    # ``cascade="all, delete-orphan"`` would silently nuke
-    # child MAGIS rows on parent delete (overriding the
-    # RESTRICT FK guard and the API's reparent step). The
-    # delete endpoint re-parents children explicitly before
-    # issuing ``session.delete(parent)``; we therefore *do
-    # not* want ORM-side cascading here.
-    children: Mapped[list["MAGIS"]] = relationship(
-        back_populates="parent",
-    )
-    parent: Mapped["MAGIS | None"] = relationship(
-        back_populates="children",
-        remote_side="MAGIS.id",
-    )
-
-    adam: Mapped["MAGIC | None"] = relationship(
-        foreign_keys=[adam_id],
-    )
-
     def __repr__(self) -> str:
-        return f"MAGIS(id={self.id}, name={self.name!r}, parent_id={self.parent_id})"
+        return (
+            f"MAGIC(id={self.id}, magis_id={self.magis_id}, "
+            f"magic_position={self.magic_position!r})"
+        )
+
+
+def resolve_magic_credentials(
+    position: str,
+) -> tuple[str | None, str | None]:
+    """Return ``(provider, api_key)`` from the first MAGIC
+    row with ``magic_position == position``, or
+    ``(None, None)`` when no matching MAGIC exists.
+
+    This is the single read path for LLM credentials.
+    Token-usage recording still writes to the
+    ``token_usage`` table keyed by the Contact's ``uid``
+    — the billing identity is the person, not the agent.
+
+    Callers pass ``"adam"`` (WebUI chat) or ``"eve"``
+    (TG bot / task runner). In v0 there is typically one
+    MAGIC row per position; multi-magic dispatch is a
+    future concern.
+    """
+    from sqlalchemy import select
+    from magi.agent.db import open_session
+
+    with open_session() as db:
+        row = db.scalar(
+            select(MAGIC).where(MAGIC.magic_position == position).limit(1)
+        )
+    if row is None:
+        return None, None
+    return row.provider, row.api_key

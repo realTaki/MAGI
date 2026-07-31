@@ -1,5 +1,5 @@
 /**
- * MagisPane — MAGIC Citizen management.
+ * MagicPane — MAGIC Citizen management.
  */
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,7 +20,7 @@ const PROVIDER_OPTIONS = [
   { value: "minimax-cn", label: "Minimax (China)" },
 ];
 
-export function MagisPane() {
+export function MagicPane() {
   const t = useT();
   const qc = useQueryClient();
   const magisQuery = useMagis();

@@ -306,7 +306,7 @@ _super_admins():
 
 ## 9. Memory 工具 — 角色门
 
-**入口**: `magi/agent/memory/magi/tools.py`
+**入口**: `magi/agent/memory/self/tools.py`
 
 ```
 四个工具: add_memory / update_memory / complete_memory / delete_memory

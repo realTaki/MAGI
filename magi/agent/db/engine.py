@@ -201,8 +201,8 @@ def _seed_default_root(engine: Engine) -> None:
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
-    from magi.agent.db.models_magi import MAGIC
-    from magi.agent.db.models_magic import MAGIS
+    from magi.agent.db.models_magic import MAGIC
+    from magi.agent.db.models_magis import MAGIS
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
@@ -242,7 +242,7 @@ def _seed_default_root(engine: Engine) -> None:
             )
             session.add(adam)
             session.flush()
-            # Bind the Adam to the MAGIS row so the MagicsPane
+            # Bind the Adam to the MAGIS row so the MagisPane
             # renders the ADAM column correctly.
             existing_root.adam_id = adam.id
             logger.info(
@@ -304,12 +304,12 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_action_item  # noqa: F401
     import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
     import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
-    import magi.agent.db.models_magi  # noqa: F401 — Magi agent rows
-    import magi.agent.db.models_magic  # noqa: F401 — MAGIS tree
+    import magi.agent.db.models_magic  # noqa: F401 — MAGIC Citizen rows
+    import magi.agent.db.models_magis  # noqa: F401 — MAGIS tree
     import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
     import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.agent.db.models_token_usage  # noqa: F401
-    import magi.agent.memory.magi.models  # noqa: F401 — MAGI memory table
+    import magi.agent.memory.self.models  # noqa: F401 — self-memory table
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
     application_tables = set(Base.metadata.tables)

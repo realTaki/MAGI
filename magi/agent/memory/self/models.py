@@ -1,4 +1,4 @@
-"""ORM table for MAGI's mid-term memory.
+"""ORM table for long-term self memory.
 
 What lives here:
 

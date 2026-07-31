@@ -36,7 +36,7 @@ import { useT } from "../i18n/index";
 import type { OnboardingData } from "./onboardingTypes";
 import ChatTab from "./ChatTab";
 import KnowledgeTab from "./KnowledgeTab";
-import MagicsTab from "./MagicsTab";
+import AgenticSocietyTab from "./AgenticSocietyTab";
 import SettingsTab from "./SettingsTab";
 
 export default function DashboardPage(props: {
@@ -145,7 +145,7 @@ function PostLoginLayout(props: {
       <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
         <div className="space-y-4">
           {tab === "chat" && <ChatTab />}
-          {tab === "magic" && <MagicsTab />}
+          {tab === "magic" && <AgenticSocietyTab />}
           {tab === "knowledge" && <KnowledgeTab />}
           {tab === "settings" && (
             <SettingsTab

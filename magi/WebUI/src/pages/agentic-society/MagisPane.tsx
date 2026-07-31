@@ -1,5 +1,5 @@
 /**
- * MagicsPane — MAGI Societies (MAGIS) management.
+ * MagisPane — MAGIS management.
  */
 import { Fragment, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,7 +31,7 @@ function flattenTree(rows: MagisRow[]): FlatMagis[] {
   return out;
 }
 
-export function MagicsPane() {
+export function MagisPane() {
   const t = useT();
   const qc = useQueryClient();
   const magisQuery = useMagis();

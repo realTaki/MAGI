@@ -1,4 +1,4 @@
-"""System-prompt block formatter for MAGI's mid-term memory.
+"""System-prompt block formatter for long-term self memory.
 
 Renders the MAGI's important + ongoing memory as a
 Markdown block to be appended to the LLM system
@@ -29,12 +29,12 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
-from magi.agent.memory.magi.models import (
+from magi.agent.memory.self.models import (
     KIND_IMPORTANT,
     KIND_ONGOING,
     MemoryEntry,
 )
-from magi.agent.memory.magi.store import MemoryView
+from magi.agent.memory.self.store import MemoryView
 from magi.agent.prompts import load_memory_block_template
 
 
@@ -106,7 +106,7 @@ def _ensure_kind_headers_loaded() -> None:
     _TEMPLATE_KIND_HEADERS.update(sections)
 
 
-logger = logging.getLogger("magi.agent.memory.magi.prompt")
+logger = logging.getLogger("magi.agent.memory.self.prompt")
 
 # Soft cap on the rendered block. ~4 KB is roughly 1k
 # tokens — fits the LLM's working memory comfortably

@@ -504,7 +504,7 @@ def _find_contact_by_telegram_id(
     :mod:`magi.agent.db.models_contact`).
 
     LLM credentials come from the ``magic`` table
-    (:func:`magi.agent.db.models_magi.resolve_magic_credentials`),
+    (:func:`magi.agent.db.models_magic.resolve_magic_credentials`),
     not from ``contacts``. The caller resolves the EVE MAGIC's
     provider/api_key before dispatching to the agent loop.
 
@@ -583,7 +583,7 @@ async def _handle_contact_message(
     """Route a message from a bound contact through the agent loop.
 
     LLM credentials are resolved from the EVE MAGIC row
-    (:func:`magi.agent.db.models_magi.resolve_magic_credentials`)
+    (:func:`magi.agent.db.models_magic.resolve_magic_credentials`)
     rather than the Contact row — the EVE agent owns the
     credentials, not the person.
 
