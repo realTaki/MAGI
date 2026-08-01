@@ -64,6 +64,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from magi.agent.compaction import maybe_compact
 from magi.channels import Channel
@@ -413,6 +414,9 @@ async def _run_tool_calls(
     edit_retry: EditRetryTracker,
 ) -> list[dict]:
     """Execute one provider turn's tool calls and serialize their results."""
+    from magi.plugins.base import Hook, PluginContext
+    from magi.plugins.bus import emit
+
     tool_results: list[dict] = []
     for tool_use in result.tool_uses:
         tool_name = tool_use["name"]
@@ -426,6 +430,17 @@ async def _run_tool_calls(
                 "is_error": True,
             })
             continue
+
+        emit(
+            Hook.BEFORE_TOOL_CALL,
+            PluginContext(
+                hook=Hook.BEFORE_TOOL_CALL,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                session_id=session_id,
+                session_uid=uid,
+            ),
+        )
 
         try:
             # The tool itself owns channel dispatch; the loop remains
@@ -441,11 +456,26 @@ async def _run_tool_calls(
             )
             content = f"tool {tool_name!r} crashed: {e}"[:8000]
             is_error = True
+            tool_result_obj: Any = None
         else:
             content = tool_result.content
             if len(content) > 8000:
                 content = content[:8000] + "\n…[truncated at 8000 chars]"
             is_error = tool_result.is_error
+            tool_result_obj = tool_result
+
+        emit(
+            Hook.AFTER_TOOL_CALL,
+            PluginContext(
+                hook=Hook.AFTER_TOOL_CALL,
+                tool_name=tool_name,
+                tool_input=tool_input,
+                tool_result=tool_result_obj,
+                tool_is_error=is_error,
+                session_id=session_id,
+                session_uid=uid,
+            ),
+        )
 
         # Per-tool ``edit_file`` retry nudge — appended to
         # the tool_result the LLM reads next turn. The

@@ -6,7 +6,7 @@
 > For the current production storage boundary and remaining work, see
 > [production-persistence.md](production-persistence.md).
 > For the proposed actor-based execution model, see
-> [message-driven-agent-runtime.md](message-driven-agent-runtime.md).
+> [MAGI_single_agent_event_driven_runtime_design.md](MAGI_single_agent_event_driven_runtime_design.md).
 
 ---
 

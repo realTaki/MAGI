@@ -190,6 +190,9 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         drop — domain code that hits this case is usually
         missing a setup step the wizard should have run.
     """
+    from magi.plugins.base import Hook, PluginContext
+    from magi.plugins.bus import emit
+
     _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
     if adapter is None:
@@ -198,7 +201,43 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         raise RuntimeError(
             f"user {uid} has no {channel!r} binding"
         )
-    await adapter.send(uid, text)
+
+    emit(
+        Hook.BEFORE_CHANNEL_SEND,
+        PluginContext(
+            hook=Hook.BEFORE_CHANNEL_SEND,
+            channel=str(channel),
+            channel_target_uid=uid,
+            channel_text=text,
+        ),
+    )
+
+    error: str | None = None
+    try:
+        await adapter.send(uid, text)
+    except Exception as exc:
+        error = repr(exc)
+        emit(
+            Hook.AFTER_CHANNEL_SEND,
+            PluginContext(
+                hook=Hook.AFTER_CHANNEL_SEND,
+                channel=str(channel),
+                channel_target_uid=uid,
+                channel_text=text,
+                channel_error=error,
+            ),
+        )
+        raise
+    else:
+        emit(
+            Hook.AFTER_CHANNEL_SEND,
+            PluginContext(
+                hook=Hook.AFTER_CHANNEL_SEND,
+                channel=str(channel),
+                channel_target_uid=uid,
+                channel_text=text,
+            ),
+        )
 
 
 async def send_to_session(session_id: str, text: str) -> None:
