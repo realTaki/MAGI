@@ -59,7 +59,7 @@ def read_soul(state_dir: str) -> str:
 
     This is a **read** function — it does not bootstrap or write
     to disk. :func:`magi.agent.workspace.bootstrap_workspace`
-    runs once at boot from ``magi.node`` and is responsible
+    runs once at boot from ``magi.__main__`` and is responsible
     for keeping ``SOUL.md`` in place. If the file is still
     missing (e.g. operator wiped the workspace mid-run, or the
     bundled prompt is absent from the install), we fall back to

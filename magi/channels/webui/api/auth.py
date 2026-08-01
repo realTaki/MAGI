@@ -62,7 +62,7 @@ from sqlalchemy import select
 # ``from .auth import _state_dir`` or similar) would
 # resolve the name at import time, before the function
 # body ever runs. Same root cause as the D.22 fix on
-# ``magi/node/__init__.py``: hoist the import.
+# ``magi/__main__.py``: hoist the import.
 from magi.db import Contact, ControlOperator, EveRuntime, MAGIC, MAGIS, open_session, require_state_dir  # noqa: E402
 from magi.db.settings import state_get  # noqa: E402
 from magi.channels.webui import control_store

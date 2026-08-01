@@ -30,7 +30,7 @@ real event loop.
 ## Lifecycle
 
 1. :func:`start_scheduler(state_dir)` — called once from
-   :func:`magi.node.run` after ``init_orm``. Builds the
+   :func:`magi.__main__.run` after ``init_orm``. Builds the
    singleton, starts the loop thread + scheduler, reads
    enabled tasks from the DB and re-registers each.
 2. The module-level :func:`get_scheduler()` returns the
@@ -206,7 +206,7 @@ class TaskScheduler:
     def shutdown(self, *, wait: bool = True, cancel_running: bool = True) -> None:
         """Tear down the scheduler + the loop thread.
 
-        Called from ``magi.node.run``'s shutdown path.
+        Called from ``magi.__main__.run``'s shutdown path.
         ``wait=False`` is for tests — for prod we want
         to drain in-flight fires before the process exits.
         """

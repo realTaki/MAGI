@@ -61,7 +61,7 @@ file.
 The plan is reverse-engineered from code comments and
 runtime-config intent (C-stage names are referenced in
 docstrings, configuration keys, and module docstrings
-throughout `magi/agent/` and `magi/node/`). Where the
+throughout `magi/agent/` and `magi/main/`). Where the
 code is ambiguous, the **Status** column below marks
 the item explicitly as **unconfirmed** so future work
 can confirm it before sinking time.
@@ -96,8 +96,8 @@ stubbed or absent.
 | `meta` table + `settings` table | **Done** | `meta` remains a raw bootstrap KV; `settings` is now an ORM model behind the compatibility facade |
 | Departments + Users tables (raw-SQL) | **Done** | C1.1 will layer an ORM on top |
 | First-touch handler ("I don't know who you are") | **Done** | node `__init__` C0 path; C3 replaces with the real dispatcher |
-| Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `node/__init__.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
-| `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `node/__init__.py` docstring |
+| Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `main.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
+| `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `main.py` docstring |
 | Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
 | LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
@@ -111,7 +111,7 @@ stubbed or absent.
 
 - Postgres state backend — env value exists in `NodeConfig`, init module
   just logs "deferring to C1+".
-- Real agent-loop dispatcher — `node/__init__.py` mentions
+- Real agent-loop dispatcher — `main.py` mentions
   "C3 will replace this with the real agent-loop
   dispatcher".
 - /start binding flow — currently operator-driven only
@@ -204,8 +204,8 @@ that talk to each other.
 
 | Item | Status | Notes |
 |---|---|---|
-| Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `node/__init__.py: "C3 will replace this with the real agent-loop dispatcher"` |
-| Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `node/__init__.py` |
+| Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `main.py: "C3 will replace this with the real agent-loop dispatcher"` |
+| Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `main.py` |
 | `/ingest/audit` route (EVE → Adam) | **Next** | `app.py: "C3 — /ingest/audit, /ingest/heartbeat"` |
 | `/ingest/heartbeat` route (EVE → Adam) | **Next** | Same |
 | Adam ↔ EVE auth via `MAGI_SHARED_SECRET` | **Done** | `NodeConfig` knows the env vars; HTTP client + server impl lands in C3 |
@@ -653,7 +653,7 @@ feature.
 | Surface | Action |
 |---|---|
 | `magi/__init__.py` | update module docstring to the new framing (done 2026-07-23) |
-| `magi/node/__init__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
+| `magi/__main__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
 | `magi/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
 
 ---

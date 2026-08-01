@@ -264,7 +264,7 @@ def reset_cache() -> None:
 
 
 def bootstrap_mcp_tools() -> list["Tool"]:
-    """One-shot MCP loader used by :mod:`magi.node` at startup.
+    """One-shot MCP loader used by :mod:`magi.__main__` at startup.
 
     Sync from the caller's POV — it runs the asyncio
     bootstrap in a private event loop and returns the

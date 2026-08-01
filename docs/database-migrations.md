@@ -87,7 +87,7 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 
 ## 启动时行为
 
-`magi.node.run()` → `init_orm(state_dir)`（`magi/db/engine.py`）。`init_orm` 内部：
+`magi.__main__.run()` → `init_orm(state_dir)`（`magi/db/engine.py`）。`init_orm` 内部：
 
 1. eager-import 所有 model 模块，让表注册到 `Base.metadata`；
 2. 若数据库没有 `alembic_version`（legacy C0/C1 库）：

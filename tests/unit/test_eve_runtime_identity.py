@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def test_eve_node_config_requires_runtime_id(monkeypatch):
-    from magi.node import NodeConfig
+    from magi.__main__ import NodeConfig
 
     monkeypatch.setenv("MAGI_NODE_ROLE", "eve")
     monkeypatch.delenv("MAGI_RUNTIME_ID", raising=False)

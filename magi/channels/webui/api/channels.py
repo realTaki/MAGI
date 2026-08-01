@@ -25,7 +25,7 @@ from magi.channels.webui.api.errors import MagiHTTPException
 from magi.db import get_session
 from magi.db.settings import state_get, state_set
 from magi.db import require_state_dir
-from magi.node import start_channel, stop_channel, is_channel_running
+from magi.__main__ import start_channel, stop_channel, is_channel_running
 
 logger = logging.getLogger("magi.api.channels")
 

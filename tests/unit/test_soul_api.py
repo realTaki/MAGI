@@ -13,7 +13,7 @@ workspace ``SOUL.md``. Tests cover:
   - POST /reset rewrites to the bundled default
   - Cookie-less callers get 401 (admin gate)
 
-TestClient hits the in-process FastAPI app via ``magi.node``
+TestClient hits the in-process FastAPI app via ``magi.__main__``
 factory wiring, so paths resolve against the same
 ``workspace_root`` derivation production uses.
 """
