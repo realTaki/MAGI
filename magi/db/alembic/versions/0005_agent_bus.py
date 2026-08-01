@@ -56,10 +56,10 @@ def upgrade() -> None:
             sa.Column("updated_at", sa.DateTime(), nullable=False),
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("event_id"),
-            sa.UniqueConstraint("run_id"),
         )
         op.create_index("ix_agent_inbox_claim", "agent_inbox", ["status", "available_at", "id"])
         op.create_index("ix_agent_inbox_lease", "agent_inbox", ["status", "leased_until"])
+        op.create_index("ix_agent_inbox_run", "agent_inbox", ["run_id", "id"])
 
     if "run_inputs" not in existing:
         op.create_table(

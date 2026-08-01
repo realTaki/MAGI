@@ -18,7 +18,9 @@ class AgentInbox(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # A run receives its root input plus later steering/tool/A2A result
+    # events, so this is intentionally indexed rather than unique.
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -35,6 +37,7 @@ class AgentInbox(Base):
     __table_args__ = (
         Index("ix_agent_inbox_claim", "status", "available_at", "id"),
         Index("ix_agent_inbox_lease", "status", "leased_until"),
+        Index("ix_agent_inbox_run", "run_id", "id"),
     )
 
 
