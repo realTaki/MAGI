@@ -1,3 +1,4 @@
+
 """Private per-MAGI SQLite engine, bootstrap, and session helpers.
 
 Lives in the same SQLite file as the small ``meta`` bootstrap table.
@@ -31,11 +32,11 @@ from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.agent.db.alembic_runner import stamp_baseline, upgrade_head
-from magi.agent.db.base import Base
-from magi.agent.db.migrations import _run_inline_migrations
+from magi.db.alembic_runner import stamp_baseline, upgrade_head
+from magi.db.base import Base
+from magi.db.migrations import _run_inline_migrations
 
-logger = logging.getLogger("magi.agent.db.engine")
+logger = logging.getLogger("magi.db.engine")
 
 
 def require_state_dir() -> str:

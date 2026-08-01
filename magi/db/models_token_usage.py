@@ -1,3 +1,4 @@
+
 """ORM table ``token_usage`` — one row per outbound LLM call.
 
 Powers the per-contact token-bill aggregation endpoint

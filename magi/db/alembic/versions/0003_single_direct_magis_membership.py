@@ -1,3 +1,4 @@
+
 """Make MAGI membership a single direct MAGIS home.
 
 Revision ID: 0003_single_direct_magis_membership

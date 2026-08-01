@@ -1,3 +1,4 @@
+
 """ORM model for the legacy ``settings`` key/value table.
 
 The table started life as a tiny raw-SQL store for runtime configuration

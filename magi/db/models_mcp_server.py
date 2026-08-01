@@ -1,3 +1,4 @@
+
 """ORM table ``mcp_servers`` — operator-configured MCP server rows.
 
 Each row is one Model-Context-Protocol server the operator

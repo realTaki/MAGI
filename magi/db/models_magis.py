@@ -1,3 +1,4 @@
+
 """ORM model for ``magis`` — MAGIS, the MAGI Society tree.
 
 A :class:`MAGIS` row is the org container: one group of

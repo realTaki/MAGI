@@ -1,3 +1,4 @@
+
 """Public database access for a MAGIS.
 
 Each MAGI keeps a private SQLite database for its memory, sessions and local

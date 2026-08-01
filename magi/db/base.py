@@ -1,3 +1,4 @@
+
 """SQLAlchemy declarative base for the MAGI ``db`` package.
 
 Single ``Base.metadata`` is shared by every table module under

@@ -1,3 +1,4 @@
+
 """SQLite local store — created on every MAGI container boot.
 
 Independent of role: Adam uses SQLite for its (small / dev) system-of-record

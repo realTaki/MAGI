@@ -1,3 +1,4 @@
+
 """Compatibility facade for the ORM-backed ``settings`` KV table.
 
 The public ``state_get`` / ``state_set`` / ``state_delete`` names are kept

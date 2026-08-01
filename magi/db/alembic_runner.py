@@ -1,3 +1,4 @@
+
 """Programmatic Alembic runner used during MAGI startup."""
 
 from __future__ import annotations
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy.engine import Engine
 
-logger = logging.getLogger("magi.agent.db.alembic_runner")
+logger = logging.getLogger("magi.db.alembic_runner")
 
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
@@ -17,7 +18,7 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 #: into ``0001_baseline`` and deleted. Any database whose
 #: ``alembic_version`` row names a now-deleted revision is
 #: stamped back to this head before Alembic runs.
-CANONICAL_HEAD = "0003_single_direct_magis_membership"
+CANONICAL_HEAD = "0004_magis_admins"
 
 
 def _find_alembic_ini() -> Path:
@@ -31,7 +32,7 @@ def _find_alembic_ini() -> Path:
     Refusing the cwd lookup is the second line of defence; the
     primary one is the empty URL above.
     """
-    package_root = Path(__file__).resolve().parents[2]  # ``.../magi``
+    package_root = Path(__file__).resolve().parents[1]  # ``.../magi``
     candidates = (
         package_root.parent / "alembic.ini",  # source checkout / /app
         Path("/app/alembic.ini"),  # production image runtime stage

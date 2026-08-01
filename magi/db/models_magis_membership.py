@@ -1,3 +1,4 @@
+
 """MAGIS roles and MAGI memberships.
 
 Roles belong to one MAGIS. A membership is the MAGI's one direct MAGIS

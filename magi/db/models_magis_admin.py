@@ -1,3 +1,4 @@
+
 """Human administrators of one direct MAGIS.
 
 ``MAGISAdmin`` deliberately lives in the MAGIS public database rather than in

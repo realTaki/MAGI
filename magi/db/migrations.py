@@ -1,3 +1,4 @@
+
 """Legacy pre-Alembic compatibility migrations + FTS5 sync triggers.
 
 This module is retained only to adopt databases created before the Alembic
@@ -28,7 +29,7 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-logger = logging.getLogger("magi.agent.db.migrations")
+logger = logging.getLogger("magi.db.migrations")
 
 
 _INLINE_MIGRATIONS: list[tuple[str, str, str]] = [

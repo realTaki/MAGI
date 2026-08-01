@@ -1,3 +1,4 @@
+
 """Separate MAGI identity from MAGIS membership and add instructions.
 
 Revision ID: 0002_magis_membership_instructions

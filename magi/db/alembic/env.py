@@ -1,3 +1,4 @@
+
 """Alembic environment for MAGI's runtime database."""
 
 from __future__ import annotations

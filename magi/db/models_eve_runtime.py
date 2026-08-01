@@ -1,3 +1,4 @@
+
 """Persistent desired/observed state for an EVE runtime.
 
 ``Magi`` models the organisational identity of an agent.  This module models

@@ -1,3 +1,4 @@
+
 """Add direct MAGIS administrator grants.
 
 Revision ID: 0004_magis_admins

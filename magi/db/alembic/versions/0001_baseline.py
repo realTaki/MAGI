@@ -1,3 +1,4 @@
+
 """Single-shot baseline — the canonical final schema for MAGI.
 
 The codebase is in dev mode (no production upgrade story).

@@ -1,3 +1,4 @@
+
 """ORM table ``contacts`` — every person MAGI knows.
 
 This is the **unified** contact table that replaces three

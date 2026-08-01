@@ -1,3 +1,4 @@
+
 """Persistent, workspace-free state for the singleton WebUI control plane."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+
 """ORM model ``magic`` — MAGIC, the internal individual-MAGI rows.
 
 Each row is one independently created MAGI.  Membership in a

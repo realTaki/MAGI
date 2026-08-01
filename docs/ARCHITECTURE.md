@@ -68,6 +68,7 @@ magi/
 ├── proactive/      # Proactive policies and task-preset injection
 ├── prompts/        # Central Markdown + YAML prompt corpus and hot-reload loader
 ├── tools/          # Capability layer: built-ins, Skills and MCP integration
+├── db/             # Shared SQLite, MAGIS PostgreSQL, ORM and Alembic boundary
 ├── node/           # Bootstrap: NodeConfig → init → run
 └── WebUI/          # React 19 + Vite 5 + Tailwind v4 SPA
 ```
