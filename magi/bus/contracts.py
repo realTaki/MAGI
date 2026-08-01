@@ -50,6 +50,18 @@ class BusClaim:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolClaim:
+    """A leased tool job returned to a tools-owned worker."""
+
+    job_id: str
+    run_id: str
+    tool_call_id: str
+    tool_name: str
+    payload: dict[str, Any]
+    attempts: int
+
+
+@dataclass(frozen=True, slots=True)
 class RunResult:
     """The terminal or in-progress state of an agent run."""
 

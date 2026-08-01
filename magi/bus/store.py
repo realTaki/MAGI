@@ -16,8 +16,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from magi.bus.contracts import AgentMessage, BusClaim, RunResult
-from magi.bus.models import AgentInbox, AgentRun, RunInput
+from magi.bus.contracts import AgentMessage, BusClaim, RunResult, ToolClaim
+from magi.bus.models import AgentInbox, AgentRun, RunInput, ToolCall, ToolJob
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
 
@@ -244,3 +244,129 @@ class BusStore:
                 error_code=run.error_code,
                 error_detail=run.error_detail,
             )
+
+    def enqueue_tool_job(
+        self,
+        *,
+        run_id: str,
+        tool_call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> str:
+        """Durably schedule a tool effect exactly once by ``tool_call_id``."""
+        now = utcnow_naive()
+        job_id = _new_id("tool")
+        payload = {"arguments": arguments, "context": context}
+        with open_session(self._state_dir) as session:
+            existing = session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id))
+            if existing is not None:
+                return existing.job_id
+            session.add(
+                ToolCall(
+                    tool_call_id=tool_call_id,
+                    run_id=run_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    status="requested",
+                    created_at=now,
+                )
+            )
+            session.add(
+                ToolJob(
+                    job_id=job_id,
+                    run_id=run_id,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    payload=payload,
+                    status="pending",
+                    available_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.commit()
+        return job_id
+
+    def claim_next_tool_job(self, worker_id: str, *, lease_seconds: int = 60) -> ToolClaim | None:
+        """Lease one pending tool job; execution itself remains transaction-free."""
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(
+                select(ToolJob)
+                .where(ToolJob.status.in_(("pending", "retry")), ToolJob.available_at <= now)
+                .order_by(ToolJob.id)
+                .limit(1)
+            )
+            if row is None:
+                return None
+            row.status = "processing"
+            row.leased_by = worker_id
+            row.leased_until = now + timedelta(seconds=lease_seconds)
+            row.attempts += 1
+            row.updated_at = now
+            tool_call = session.scalar(
+                select(ToolCall).where(ToolCall.tool_call_id == row.tool_call_id)
+            )
+            if tool_call is not None:
+                tool_call.status = "running"
+            session.commit()
+            return ToolClaim(
+                job_id=row.job_id,
+                run_id=row.run_id,
+                tool_call_id=row.tool_call_id,
+                tool_name=row.tool_name,
+                payload=dict(row.payload),
+                attempts=row.attempts,
+            )
+
+    def complete_tool_job(self, claim: ToolClaim, *, content: str, is_error: bool) -> None:
+        """Commit a tool result and return it through the agent mailbox."""
+        now = utcnow_naive()
+        event_id = f"tool-result:{claim.tool_call_id}"
+        payload = {
+            "text": content,
+            "tool_call_id": claim.tool_call_id,
+            "tool_name": claim.tool_name,
+            "is_error": is_error,
+        }
+        with open_session(self._state_dir) as session:
+            job = session.scalar(select(ToolJob).where(ToolJob.job_id == claim.job_id))
+            if job is None:
+                raise KeyError(f"unknown tool job: {claim.job_id}")
+            job.status = "completed"
+            job.leased_by = None
+            job.leased_until = None
+            job.updated_at = now
+            tool_call = session.scalar(
+                select(ToolCall).where(ToolCall.tool_call_id == claim.tool_call_id)
+            )
+            if tool_call is not None:
+                tool_call.status = "failed" if is_error else "completed"
+                tool_call.result = {"content": content, "is_error": is_error}
+                tool_call.completed_at = now
+            existing = session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id))
+            if existing is None:
+                session.add(
+                    AgentInbox(
+                        event_id=event_id,
+                        run_id=claim.run_id,
+                        kind="tool.result",
+                        source_id=claim.tool_call_id,
+                        payload=payload,
+                        status="pending",
+                        available_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                session.add(
+                    RunInput(
+                        run_id=claim.run_id,
+                        event_id=event_id,
+                        kind="tool.result",
+                        payload=payload,
+                        created_at=now,
+                    )
+                )
+            session.commit()

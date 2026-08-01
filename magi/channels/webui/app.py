@@ -114,16 +114,19 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
             stop_title_worker,
         )
         from magi.agent.worker import start_agent_worker, stop_agent_worker
+        from magi.tools.worker import start_tool_worker, stop_tool_worker
 
         await start_agent_worker()
+        await start_tool_worker()
         await start_title_worker()
-        logger.info("agent and auto-title workers started")
+        logger.info("agent, tool, and auto-title workers started")
         try:
             yield
         finally:
             await stop_title_worker()
+            await stop_tool_worker()
             await stop_agent_worker()
-            logger.info("agent and auto-title workers stopped")
+            logger.info("agent, tool, and auto-title workers stopped")
 
     app = FastAPI(
         title="MAGI",
