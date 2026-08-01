@@ -5,6 +5,8 @@
 > For the build plan, see [ROADMAP.md](ROADMAP.md).
 > For the current production storage boundary and remaining work, see
 > [production-persistence.md](production-persistence.md).
+> For the proposed actor-based execution model, see
+> [message-driven-agent-runtime.md](message-driven-agent-runtime.md).
 
 ---
 
