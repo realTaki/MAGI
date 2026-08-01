@@ -32,5 +32,10 @@ class Channel(StrEnum):
     WEBUI = "webui"
     """WebUI chat console (ADAM → operator)."""
 
+    A2A = "a2a"
+    """Agent-to-Agent channel — MAGI peers exchange messages via
+    HMAC-signed HTTP, scoped to peers in the same MAGIS by
+    default. See ``magi.channels.a2a`` for the design."""
+
     SCHEDULED = "scheduled"
-    """Proactive runner — fires tools on a cron schedule."""
+    """Internal scheduled-task channel — fires persisted tasks on a schedule."""

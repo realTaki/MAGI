@@ -59,7 +59,7 @@ def read_soul(state_dir: str) -> str:
 
     This is a **read** function — it does not bootstrap or write
     to disk. :func:`magi.agent.workspace.bootstrap_workspace`
-    runs once at boot from ``magi.node`` and is responsible
+    runs once at boot from ``magi.__main__`` and is responsible
     for keeping ``SOUL.md`` in place. If the file is still
     missing (e.g. operator wiped the workspace mid-run, or the
     bundled prompt is absent from the install), we fall back to
@@ -67,7 +67,7 @@ def read_soul(state_dir: str) -> str:
     write anything — the agent loop should never silently
     mutate on-disk state.
     """
-    from magi.agent.prompts import load_fallback_persona
+    from magi.prompts import load_fallback_persona
     from magi.agent.workspace import workspace_root
 
     soul_path = workspace_root(state_dir) / SOUL_FILENAME
@@ -142,7 +142,7 @@ def build_system_prompt(
     )
     from magi.agent.memory.self.prompt import format_memory_block
     from magi.agent.memory.self.store import MemoryStore
-    from magi.agent.tools.skill_loader import (
+    from magi.tools.skill_loader import (
         format_skills_block,
         get_skill_loader,
     )

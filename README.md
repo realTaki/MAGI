@@ -117,7 +117,8 @@ cd MAGI
 ./deploy/bootstrap-local.sh
 ```
 
-Open [http://127.0.0.1:42069](http://127.0.0.1:42069) and complete onboarding.
+Open [http://127.0.0.1:42069](http://127.0.0.1:42069), select the running
+MAGI, and complete onboarding.
 During system initialization, MAGI automatically creates the root MAGI Society,
 **Genesis**. It then creates **EVA-00 PROTO TYPE**, the first MAGI,
 as Genesis's Adam.
@@ -195,11 +196,13 @@ organization control plane, and a protected proxy to the selected MAGI. A
 browser therefore always visits one WebUI Service; it never connects directly
 to an individual MAGI Pod.
 
-The proxy derives the target from the MAGI registry and signs each internal
+The landing page first selects a running MAGI, then offers only that MAGI's
+direct MAGIS administrators and assigned user. The proxy signs each internal
 request with `MAGI_CONTROL_SECRET`, binding it to the selected MAGI and the
-authenticated operator. Each runtime rejects a request addressed to a different
-MAGI. Selecting another MAGI changes the target scope of private views such as
-chat, memory, SOUL, skills, tasks, and settings.
+authenticated identity. Each runtime rejects a request addressed to a different
+MAGI. Selecting another MAGI requires a new login; it is not an in-dashboard
+target switch. A MAGI's own Bot sends login codes when configured; otherwise
+its direct MAGIS Adam Bot provides the one-time bootstrap fallback.
 
 For the implementation-level view, see:
 

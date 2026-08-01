@@ -61,7 +61,7 @@ file.
 The plan is reverse-engineered from code comments and
 runtime-config intent (C-stage names are referenced in
 docstrings, configuration keys, and module docstrings
-throughout `magi/agent/` and `magi/node/`). Where the
+throughout `magi/agent/` and `magi/main/`). Where the
 code is ambiguous, the **Status** column below marks
 the item explicitly as **unconfirmed** so future work
 can confirm it before sinking time.
@@ -96,22 +96,22 @@ stubbed or absent.
 | `meta` table + `settings` table | **Done** | `meta` remains a raw bootstrap KV; `settings` is now an ORM model behind the compatibility facade |
 | Departments + Users tables (raw-SQL) | **Done** | C1.1 will layer an ORM on top |
 | First-touch handler ("I don't know who you are") | **Done** | node `__init__` C0 path; C3 replaces with the real dispatcher |
-| Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `node/__init__.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
-| `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `node/__init__.py` docstring |
-| Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/agent/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
+| Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `main.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
+| `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `main.py` docstring |
+| Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
 | LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
 | Memory subsystem (magi / contacts / session) | **Partial** | Tables + tools exist; agent loop doesn't render them yet |
-| Bash tool (run / output / kill) | **Done** | `magi/agent/tools/bash.py` |
-| File tools (read / write / list) | **Done** | `magi/agent/tools/{read_file,write_file,list_files}.py` |
-| `edit_file` tool (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| Bash tool (run / output / kill) | **Done** | `magi/tools/bash.py` |
+| File tools (read / write / list) | **Done** | `magi/tools/{read_file,write_file,list_files}.py` |
+| `edit_file` tool (precise string replacement) | **Done** | `magi/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
 | `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 
 **Not in C0 (deferred):**
 
 - Postgres state backend — env value exists in `NodeConfig`, init module
   just logs "deferring to C1+".
-- Real agent-loop dispatcher — `node/__init__.py` mentions
+- Real agent-loop dispatcher — `main.py` mentions
   "C3 will replace this with the real agent-loop
   dispatcher".
 - /start binding flow — currently operator-driven only
@@ -135,10 +135,10 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIS / MAGIC / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIS` (group tree) + `MAGIC` (individual agent) carry the org tree |
+| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIS / MAGIC / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIS` (group tree) + `MAGIC` (individual agent) carry the org tree |
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
-| Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/agent/db/alembic/versions`; `init_orm` runs `upgrade head` |
-| Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/agent/db/migrations.py`, runs only for databases without `alembic_version` |
+| Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/db/alembic/versions`; `init_orm` runs `upgrade head` |
+| Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/db/migrations.py`, runs only for databases without `alembic_version` |
 | FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | folded into Alembic `0001_baseline` (no separate `0002_fts5`); trigram tokenizer for CJK-friendly substring search |
 | Default-root seed ("MAGI") | **Done** | `engine._seed_default_root` |
 | Departments tree (parent_id self-FK + manager_id) | **Done** | Cycles prevented at API layer (out-of-scope for C1.1 per `departments.py` comment) |
@@ -204,8 +204,8 @@ that talk to each other.
 
 | Item | Status | Notes |
 |---|---|---|
-| Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `node/__init__.py: "C3 will replace this with the real agent-loop dispatcher"` |
-| Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `node/__init__.py` |
+| Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `main.py: "C3 will replace this with the real agent-loop dispatcher"` |
+| Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `main.py` |
 | `/ingest/audit` route (EVE → Adam) | **Next** | `app.py: "C3 — /ingest/audit, /ingest/heartbeat"` |
 | `/ingest/heartbeat` route (EVE → Adam) | **Next** | Same |
 | Adam ↔ EVE auth via `MAGI_SHARED_SECRET` | **Done** | `NodeConfig` knows the env vars; HTTP client + server impl lands in C3 |
@@ -297,7 +297,7 @@ worst-day operational scenarios.
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
 | `tokens.py` to `llm/` | **Done** | (in this refactor series) |
-| File tools — `edit_file` (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| File tools — `edit_file` (precise string replacement) | **Done** | `magi/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
 | File tools — `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 | File tools — `tiktoken` token-aware truncation | **Later** | Trigger: LLM complains "truncated but still too much" — adds a native dep |
 | File tools — `edit_file` `replace_globally` switch | **Later** | Trigger: real need for "rename var across whole file" workflows |
@@ -543,8 +543,8 @@ class MagiImBinding(Base):
 
 | Surface | Action |
 |---|---|
-| `magi/agent/db/models_employee.py` → split into `models_magic.py` + `models_magi.py` + `models_user.py` + `models_magi_im_binding.py` | new files; old `models_employee.py` dropped |
-| `magi/agent/memory/contacts/models.py` → becomes `magi/agent/db/models_user.py` | rename + add `role` + `magi_id` columns; drop `owner_id` / `person_id` |
+| `magi/db/models_employee.py` → split into `models_magic.py` + `models_magi.py` + `models_user.py` + `models_magi_im_binding.py` | new files; old `models_employee.py` dropped |
+| `magi/agent/memory/contacts/models.py` → becomes `magi/db/models_user.py` | rename + add `role` + `magi_id` columns; drop `owner_id` / `person_id` |
 | `Employee` class | gone |
 | `ContactEntry` class | renamed to `User`; restructured per above |
 | `Magi` class | new; columns above |
@@ -653,8 +653,8 @@ feature.
 | Surface | Action |
 |---|---|
 | `magi/__init__.py` | update module docstring to the new framing (done 2026-07-23) |
-| `magi/node/__init__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
-| `magi/agent/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
+| `magi/__main__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
+| `magi/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
 
 ---
 
@@ -829,7 +829,7 @@ commit history.
   self-record.
   up via a tool call.
 
-### Prompt text centralized in `magi/agent/prompts/`
+### Prompt text centralized in `magi/prompts/`
 
 - All natural-language text the runtime
   emits to the LLM lives in one place:
@@ -844,7 +844,7 @@ commit history.
     header + intro
   - `context/skills_block.md` — `## Available skills`
     header + intro
-- Loader at `magi/agent/prompts/__init__.py`
+- Loader at `magi/prompts/__init__.py`
   caches each file once per process; the
   cache survives across requests. A future
   C8 file-watcher will close the loop so an
@@ -864,7 +864,7 @@ commit history.
 - Python 3.12 emits `DeprecationWarning`
   for `datetime.utcnow()`. Two helpers now
   replace it:
-  - `magi.agent.db.base.utcnow_naive()` —
+  - `magi.db.base.utcnow_naive()` —
     used by every ORM `default=` /
     `onupdate=`. Lives in `db/base.py`
     (lowest layer) so model files import
@@ -912,9 +912,9 @@ domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/
   the loop-bound `bot.send_message` bug. Auto-registers at import time.
 - `chat_sessions.tgid` → `delivery_address` column rename (migration entry in
   `_RENAME_COLUMN_MIGRATIONS`, data survives — SQLite rename is metadata-only).
-- `agent/tools/send_message.py` → `dispatcher.send_to_session`.
-- `agent/tools/schedule_task.py` → reads `session.delivery_address`.
-- `agent/proactive/runner.py` → `_tg_send_callback` closure removed; calls
+- `tools/send_message.py` → `dispatcher.send_to_session`.
+- `tools/schedule_task.py` → reads `session.delivery_address`.
+- `channels/tasks/runner.py` → `_tg_send_callback` closure removed; calls
   `dispatcher.send_to_session`.
 - `agent/loop.py` — zero `tgid` references.
 - `auto_title.py` — `delivery_address` instead of `tgid` in `TitleJob`.

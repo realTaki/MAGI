@@ -21,7 +21,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.agent.db import Contact, open_session
+from magi.db import Contact, open_session
 from magi.channels import Channel
 from magi.channels import dispatcher as channel_dispatcher
 from magi.channels.webui.api.auth_gates import AdminGate

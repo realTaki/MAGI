@@ -6,6 +6,8 @@
  * a single CTA button. All copy in i18n (``landing.*``).
  */
 import { useT } from "../i18n/index";
+import { useEffect, useState } from "react";
+import { useAvailableMagi } from "../lib/queries";
 
 function FeaturePill(props: { color: string; title: string; desc: string }) {
   return (
@@ -26,9 +28,16 @@ function FeaturePill(props: { color: string; title: string; desc: string }) {
 
 export default function LandingPage(props: {
   isFirstTime: boolean;
-  onSignIn: () => void;
+  onSelectMagic: (magicId: number) => void;
 }) {
   const t = useT();
+  const magiQuery = useAvailableMagi();
+  const [selectedMagicId, setSelectedMagicId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedMagicId !== null || !magiQuery.data?.magi.length) return;
+    setSelectedMagicId(magiQuery.data.magi[0].id);
+  }, [magiQuery.data, selectedMagicId]);
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-10">
@@ -85,9 +94,29 @@ export default function LandingPage(props: {
             {t("landing.setupHint")}
           </p>
         )}
+        <label className="mt-7 block text-sm font-medium text-sky-deep">
+          {t("landing.selectMagi")}
+          <select
+            value={selectedMagicId ?? ""}
+            onChange={(event) => setSelectedMagicId(Number(event.target.value))}
+            className="form-input mt-2 w-full"
+            disabled={magiQuery.isLoading || !magiQuery.data?.magi.length}
+          >
+            {(magiQuery.data?.magi ?? []).map((magi) => (
+              <option key={magi.id} value={magi.id}>
+                {magi.name ?? t("landing.defaultMagiName").replace("{id}", String(magi.id))}
+              </option>
+            ))}
+          </select>
+        </label>
+        {magiQuery.isError && <p className="form-error mt-3">{t("landing.loadMagiError")}</p>}
+        {!magiQuery.isLoading && !magiQuery.data?.magi.length && (
+          <p className="mt-3 text-sm text-ink-soft">{t("landing.noMagiRunning")}</p>
+        )}
         <button
           type="button"
-          onClick={props.onSignIn}
+          onClick={() => selectedMagicId !== null && props.onSelectMagic(selectedMagicId)}
+          disabled={selectedMagicId === null}
           className="btn btn-primary w-full mt-3 py-3 text-base"
         >
           {props.isFirstTime

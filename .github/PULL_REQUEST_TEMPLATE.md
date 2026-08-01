@@ -19,7 +19,7 @@ Fixes #
 ## Checklist
 
 - [ ] Code follows existing patterns in the project
-- [ ] Tests pass (`ruff check . && pytest magi/tests/`)
+- [ ] Tests pass (`ruff check . && pytest tests/`)
 - [ ] No unrelated changes mixed in
 - [ ] Commit messages follow Conventional Commits
 

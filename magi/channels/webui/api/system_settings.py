@@ -47,8 +47,8 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.agent.db.settings import state_get, state_set
-from magi.agent.db.engine import require_state_dir
+from magi.db.settings import state_get, state_set
+from magi.db.engine import require_state_dir
 
 logger = logging.getLogger("magi.api.system_settings")
 
@@ -300,7 +300,7 @@ def put_tool_max_iterations(
     structured error before this handler runs. We don't
     need to re-validate here.
     """
-    from magi.agent.db.settings import state_set as _state_set
+    from magi.db.settings import state_set as _state_set
     _state_set(_state_dir(), TOOL_MAX_ITERATIONS_KEY, str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(

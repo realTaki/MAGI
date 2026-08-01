@@ -202,7 +202,7 @@ TelegramAdapter.send(uid, text):
 4. 注册到 apscheduler (cron/interval)
 ```
 
-### 执行 (magi/agent/proactive/runner.py::execute_task)
+### 执行 (magi/channels/tasks/runner.py::execute_task)
 ```
 1. 加载 Task 行 + Contact 凭证
    └─ 无 session_id 的旧行 → 首次触发时分配
@@ -358,7 +358,7 @@ format_contact_block:
 
 ## 11. MCP 工具加载
 
-**入口**: `magi/agent/tools/mcp_client.py` + `loop.py::maybe_reload_mcp_tools()`
+**入口**: `magi/tools/mcp_loader.py` + `loop.py::maybe_reload_mcp_tools()`
 
 ```
 启动时:

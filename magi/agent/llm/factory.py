@@ -105,8 +105,8 @@ def get_provider(model: str | None = None) -> LLMProvider:
     """
     from sqlalchemy import select
 
-    from magi.agent.db import MAGIS, MAGIC
-    from magi.agent.db.magis import open_magis_session
+    from magi.db import MAGIS, MAGIC
+    from magi.db.magis import open_magis_session
 
     runtime_id = os.environ.get("MAGI_RUNTIME_ID")
     with open_magis_session() as session:

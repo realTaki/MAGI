@@ -52,21 +52,20 @@ Every architectural choice is an independent configuration axis:
 
 ```
 magi/
+├── __main__.py     # sole service entry point (`magi runtime` / `magi webui`)
 ├── agent/          # The core runtime — what every MAGI runs
 │   ├── loop.py     # handle_message(): one turn of the agent loop
-│   ├── tools/      # Registry + base + 20+ tool implementations
 │   ├── memory/     # Three-layer memory: session, contacts, self
-│   ├── db/         # private SQLite + public MAGIS PostgreSQL access
-│   │   └── magis/  # direct MAGIS engine/session boundary
-│   ├── webui_service.py # singleton WebUI service entry point (`magi webui`)
-│   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
-│   ├── proactive/  # Scheduled task engine
-│   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
+│   └── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 ├── channels/       # How agents connect to the outside world
 │   ├── dispatcher.py   # D.28 — domain code talks to this, never to adapters
+│   ├── tasks/          # Scheduled-task CRUD, timing and execution
 │   ├── telegram/       # TG bot adapter
 │   └── webui/          # FastAPI app + React SPA
-├── node/           # Bootstrap: NodeConfig → init → run
+├── proactive/      # Proactive policies and task-preset injection
+├── prompts/        # Central Markdown + YAML prompt corpus and hot-reload loader
+├── tools/          # Capability layer: built-ins, Skills and MCP integration
+├── db/             # Shared SQLite, MAGIS PostgreSQL, ORM and Alembic boundary
 └── WebUI/          # React 19 + Vite 5 + Tailwind v4 SPA
 ```
 
@@ -116,7 +115,7 @@ management permission does not grant it a second runtime database or public moun
 | MAGIS PostgreSQL + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eve_runtimes` | one MAGIS |
 
 The compatibility Alembic baseline retains historical organization DDL in SQLite,
-but new runtime organization reads/writes use `magi.agent.db.magis` and PostgreSQL.
+but new runtime organization reads/writes use `magi.db.magis` and PostgreSQL.
 
 ## Private SQLite tables
 
@@ -192,7 +191,8 @@ operator into its local contact/session scope.
 - **MAGI** — The general kind of autonomous agent in this system.
 - **MAGIS** — A MAGI Society. A group of MAGI that forms a tree via `parent_id`.
 - **MAGIC** — Internal table/API name for an individual MAGI; not a separate product term.
-- **Adam** — Leading MAGI role. Manages its MAGIS subtree through the control plane.
+- **Adam** — Leading MAGI role for its direct MAGIS. MAGIS administrator grants
+  are direct-only and do not inherit across the society tree.
 - **EVE** — Default working MAGI role. Executes tasks and collaborates.
 - **Role** — Adam and EVE are reserved roles; a MAGIS can also define custom roles.
 - **Contact** — A person known to the society. Role: `admin` (WebUI operator), `assigned` (the served user), or `guest` (everyone else).

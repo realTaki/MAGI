@@ -13,7 +13,7 @@ insert with no hidden state from the loop's locals.
 
 from __future__ import annotations
 
-from magi.agent.db import TokenUsage, open_session
+from magi.db import TokenUsage, open_session
 from magi.channels import Channel
 
 

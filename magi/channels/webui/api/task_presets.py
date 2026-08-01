@@ -1,8 +1,8 @@
 """``/api/task-presets`` — manage the preset templates.
 
-The :class:`TaskPreset` table is the runtime store for scheduled
+The :class:`TaskPreset` table is the runtime store for proactive
 task templates. Bundled template keys are synchronised from
-``magi/agent/prompts/task_presets`` at startup; operator-created
+``magi/prompts/task_presets`` at startup; operator-created
 keys are database-owned. This router surfaces the four canonical
 CRUD verbs so the Settings → 任务预设 card can list, edit, create,
 and delete presets without going through the underlying
@@ -39,12 +39,12 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from magi.agent.db import get_session
-from magi.agent.proactive.cron_utils import (
+from magi.db import get_session
+from magi.channels.tasks.cron_utils import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.agent.proactive.orm_models import TaskPreset
+from magi.proactive.models import TaskPreset
 from magi.agent.memory.session import new_session_id
 from magi.channels.webui.api.auth_gates import AdminGate
 

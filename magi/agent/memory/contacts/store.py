@@ -18,9 +18,9 @@ from typing import Optional
 
 from sqlalchemy import select
 
-from magi.agent.db import Contact, ContactNote, open_session
-from magi.agent.db.base import utcnow_naive
-from magi.agent.db.models_contact import SOURCE_EVE
+from magi.db import Contact, ContactNote, open_session
+from magi.db.base import utcnow_naive
+from magi.db.models_contact import SOURCE_EVE
 
 logger = logging.getLogger("magi.agent.memory.contacts.store")
 

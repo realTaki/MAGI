@@ -46,7 +46,7 @@ from magi.agent.memory.session import (
     SessionSummary,
     new_session_id,
 )
-from magi.agent.db import Contact, open_session, require_state_dir
+from magi.db import Contact, open_session, require_state_dir
 
 logger = logging.getLogger("magi.api.chat_sessions")
 

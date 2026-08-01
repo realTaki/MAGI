@@ -58,7 +58,7 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.auth_gates import AdminOrAssignedGate
-from magi.agent.db.engine import require_state_dir
+from magi.db.engine import require_state_dir
 from magi.agent.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
@@ -168,7 +168,7 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
             is_bundled_fallback=False,
         )
     except FileNotFoundError:
-        from magi.agent.prompts import load_fallback_persona
+        from magi.prompts import load_fallback_persona
         return SoulReadResponse(
             content=load_fallback_persona(),
             modified_at=None,
@@ -220,7 +220,7 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
     default = load_soul()
     path = _soul_path()
     modified_at = _write_atomic(path, default)

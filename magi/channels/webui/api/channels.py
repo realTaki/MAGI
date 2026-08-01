@@ -22,10 +22,10 @@ from pydantic import BaseModel, Field
 from magi.channels import Channel
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.db import get_session
-from magi.agent.db.settings import state_get, state_set
-from magi.agent.db import require_state_dir
-from magi.node import start_channel, stop_channel, is_channel_running
+from magi.db import get_session
+from magi.db.settings import state_get, state_set
+from magi.db import require_state_dir
+from magi.__main__ import start_channel, stop_channel, is_channel_running
 
 logger = logging.getLogger("magi.api.channels")
 

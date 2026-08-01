@@ -7,6 +7,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import type { OnboardingData } from "./pages/onboardingTypes";
 import { I18nProvider } from "./i18n/index";
 import { useQueryClient } from "@tanstack/react-query";
+import { setSelectedMagicId } from "./lib/queryClient";
 
 import {
   useCompleteOnboarding,
@@ -65,13 +66,15 @@ export default function App() {
   const [signedInUser, setSignedInUser] = useState<{
     telegram_id: string;
     display_name: string | null;
+    admin: boolean;
   } | null>(null);
   // Manual override for the boot-routed view. Used by the
   // landing page's "Sign in" button (jumps to login even when
   // the boot logic would otherwise stay on landing) and by
   // dashboard actions (sign-out, restart, complete) that need
   // a known next view without waiting for the next boot.
-  const [viewOverride, setViewOverride] = useState<"login" | null>(null);
+  const [viewOverride, setViewOverride] = useState<"onboarding" | "login" | null>(null);
+  const [loginMagicId, setLoginMagicId] = useState<number | null>(null);
 
   // When the user lands on the dashboard via the cookie
   // (returning user), pre-populate the Settings tab's bot
@@ -101,6 +104,7 @@ export default function App() {
       setSignedInUser({
         telegram_id: meQuery.data.telegram_id,
         display_name: meQuery.data.display_name,
+        admin: meQuery.data.admin,
       });
     } else {
       setSignedInUser(null);
@@ -113,16 +117,14 @@ export default function App() {
     view = null; // boot splash
   } else if (meQuery.data) {
     view = "dashboard";
-  } else if (statusQuery.data && statusQuery.data.onboarding_complete) {
-    view = "landing";
   } else {
-    view = "onboarding";
+    view = "landing";
   }
   // Apply the manual override last (transient states like
   // "Sign in" → login form, or "complete onboarding" →
   // login). The override is reset on every transition.
-  if (viewOverride === "login" && view === "landing") {
-    view = "login";
+  if (viewOverride && view === "landing") {
+    view = viewOverride;
   }
   // The override is irrelevant when /me says we're
   // already signed in; ignore it.
@@ -141,16 +143,11 @@ export default function App() {
     content = (
       <LandingPage
         isFirstTime={isFirstTime}
-        onSignIn={() => {
+        onSelectMagic={(magicId) => {
+          setLoginMagicId(magicId);
+          setSelectedMagicId(magicId);
           if (isFirstTime) {
-            // Boot logic already maps "no /me + no
-            // onboarding_complete" to the wizard;
-            // invalidating the status query triggers
-            // a refetch on the next render and
-            // re-evaluates the view.
-            void qc.invalidateQueries({
-              queryKey: ["onboarding", "status"],
-            });
+            setViewOverride("onboarding");
           } else {
             setViewOverride("login");
           }
@@ -160,6 +157,7 @@ export default function App() {
   } else if (view === "login") {
     content = (
       <LoginPage
+        magicId={loginMagicId ?? 1}
         onLoggedIn={async (uid) => {
           // The LoginPage's verify mutation
           // invalidated ``qk.me``; force a fresh read
@@ -168,11 +166,13 @@ export default function App() {
           const me = qc.getQueryData<{
             telegram_id: string;
             display_name: string | null;
+            admin: boolean;
           }>(["me"]);
           setSignedInUser(
             me ?? {
               telegram_id: String(uid),
               display_name: null,
+              admin: false,
             },
           );
           setViewOverride(null);

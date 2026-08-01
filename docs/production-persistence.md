@@ -41,7 +41,7 @@ Kubernetes Secret
 
 私有 SQLite 的 Alembic baseline 仍含组织表的历史 DDL，目的是兼容旧开发数据库；
 它们不是 Kubernetes 运行时的组织事实来源。新组织功能必须通过
-`magi.agent.db.magis` 访问 PostgreSQL。
+`magi.db.magis` 访问 PostgreSQL。
 
 ## Kubernetes 资源与生命周期
 

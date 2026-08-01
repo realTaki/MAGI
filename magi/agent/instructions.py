@@ -36,8 +36,8 @@ def runtime_instruction_block() -> str:
     try:
         from sqlalchemy import select
         import os
-        from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-        from magi.agent.db.magis import open_magis_session
+        from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             runtime_id = os.environ.get("MAGI_RUNTIME_ID")
             if runtime_id and runtime_id.isdigit():

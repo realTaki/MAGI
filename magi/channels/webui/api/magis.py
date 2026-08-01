@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-from magi.agent.db.magis import get_magis_session
-from magi.agent.db.models_magis_membership import (
+from magi.db import MAGIC, MAGIS, MAGISAdmin, MAGISMembership, MAGISRole
+from magi.db.magis import get_magis_session
+from magi.db.models_magis_membership import (
     RESERVED_ROLE_NAMES,
     adam_manages_magis,
     ensure_default_roles,
@@ -88,6 +88,18 @@ class MembershipUpdate(BaseModel):
     role_id: int = Field(ge=1)
 
 
+class MAGISAdminOut(BaseModel):
+    id: int
+    magis_id: int
+    telegram_id: int
+    display_name: str | None = None
+
+
+class MAGISAdminCreate(BaseModel):
+    telegram_id: int
+    display_name: str | None = Field(default=None, max_length=120)
+
+
 def _out(m: MAGIS, members: int = 0) -> MAGISOut:
     return MAGISOut(id=m.id, name=m.name, parent_id=m.parent_id, adam_id=m.adam_id, instruction=m.instruction, child_count=len(m.children), member_count=members, created_at=m.created_at.isoformat() if m.created_at else "", updated_at=m.updated_at.isoformat() if m.updated_at else "")
 
@@ -115,6 +127,10 @@ def _membership_out(row: tuple[MAGISMembership, MAGIC, MAGISRole]) -> Membership
     return MembershipOut(id=membership.id, magic_id=magic.id, magic_name=magic.name, role_id=role.id, role_name=role.name)
 
 
+def _admin_out(row: MAGISAdmin) -> MAGISAdminOut:
+    return MAGISAdminOut(id=row.id, magis_id=row.magis_id, telegram_id=row.telegram_id, display_name=row.display_name)
+
+
 def _serving_adam(session: Session) -> int | None:
     """MAGI identity for this WebUI process, if it is an Adam node.
 
@@ -129,15 +145,27 @@ def _serving_adam(session: Session) -> int | None:
     return root.adam_id if root else None
 
 
-def _require_managed(session: Session, magis_id: int) -> None:
+def _served_direct_magis_id(session: Session) -> int | None:
+    """The one MAGIS whose data this runtime may administer."""
     actor = _serving_adam(session)
-    if actor is not None and not adam_manages_magis(session, actor, magis_id):
-        raise MagiHTTPException(403, "forbidden.magis_management_scope", "this Adam cannot manage the target MAGIS")
+    if actor is not None:
+        membership = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == actor))
+        if membership is not None:
+            return membership.magis_id
+    root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+    return root.id if root else None
+
+
+def _require_managed(session: Session, magis_id: int) -> None:
+    served = _served_direct_magis_id(session)
+    if served != magis_id:
+        raise MagiHTTPException(403, "forbidden.magis_management_scope", "MAGIS administration is limited to the current MAGI's direct MAGIS")
 
 
 @router.get("/magis", response_model=list[MAGISOut])
 def list_magis(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGISOut]:
-    rows = session.scalars(select(MAGIS).options(selectinload(MAGIS.children)).order_by(MAGIS.name)).all()
+    served = _served_direct_magis_id(session)
+    rows = session.scalars(select(MAGIS).options(selectinload(MAGIS.children)).where(MAGIS.id == served).order_by(MAGIS.name)).all() if served else []
     counts = dict(session.execute(select(MAGISMembership.magis_id, func.count()).group_by(MAGISMembership.magis_id)).all())
     return [_out(row, counts.get(row.id, 0)) for row in rows]
 
@@ -307,3 +335,36 @@ def delete_membership(magis_id: int, membership_id: int, _admin: AdminGate, sess
     if membership is None or membership.magis_id != magis_id: raise MagiHTTPException(404, "not_found.membership", "membership not found")
     if m.adam_id == membership.magic_id: m.adam_id = None
     session.delete(membership); session.commit(); return Response(status_code=204)
+
+
+@router.get("/magis/{magis_id}/admins", response_model=list[MAGISAdminOut])
+def list_magis_admins(magis_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGISAdminOut]:
+    _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
+    return [_admin_out(row) for row in session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == magis_id).order_by(MAGISAdmin.id)).all()]
+
+
+@router.post("/magis/{magis_id}/admins", response_model=MAGISAdminOut, status_code=201)
+def add_magis_admin(magis_id: int, payload: MAGISAdminCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGISAdminOut:
+    _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
+    existing = session.scalar(select(MAGISAdmin).where(MAGISAdmin.magis_id == magis_id, MAGISAdmin.telegram_id == payload.telegram_id))
+    if existing is not None:
+        if payload.display_name is not None:
+            existing.display_name = payload.display_name
+            session.commit()
+        return _admin_out(existing)
+    row = MAGISAdmin(magis_id=magis_id, telegram_id=payload.telegram_id, display_name=payload.display_name)
+    session.add(row); session.commit(); session.refresh(row)
+    return _admin_out(row)
+
+
+@router.delete("/magis/{magis_id}/admins/{admin_id}", status_code=204)
+def delete_magis_admin(magis_id: int, admin_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
+    _magis_or_404(session, magis_id)
+    _require_managed(session, magis_id)
+    row = session.get(MAGISAdmin, admin_id)
+    if row is None or row.magis_id != magis_id:
+        raise MagiHTTPException(404, "not_found.magis_admin", "MAGIS admin not found")
+    session.delete(row); session.commit()
+    return Response(status_code=204)

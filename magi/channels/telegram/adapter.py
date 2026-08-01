@@ -32,7 +32,7 @@ import threading
 
 from sqlalchemy import select
 
-from magi.agent.db import Contact, open_session
+from magi.db import Contact, open_session
 from magi.channels import Channel
 from magi.channels.dispatcher import (
     ChannelAdapter,

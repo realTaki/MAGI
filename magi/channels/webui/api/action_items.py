@@ -57,8 +57,8 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.db import ActionItem, Contact, get_session
-from magi.agent.db.base import utcnow_naive
+from magi.db import ActionItem, Contact, get_session
+from magi.db.base import utcnow_naive
 
 logger = logging.getLogger("magi.api.action_items")
 

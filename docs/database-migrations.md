@@ -2,7 +2,7 @@
 
 本文只描述 **MAGI 私有 SQLite** 的兼容 schema 与 Alembic 迁移。运行中的
 MAGIS 组织数据不是这条迁移链的事实来源：每个 MAGI 只连接其直属 MAGIS 的
-PostgreSQL，由 `magi.agent.db.magis` 初始化和访问。完整的数据边界见
+PostgreSQL，由 `magi.db.magis` 初始化和访问。完整的数据边界见
 [MAGI 与 MAGIS 的存储边界](magi-magis-storage.md)。
 
 私有 SQLite 的 schema 版本记录在：
@@ -20,10 +20,10 @@ alembic.ini                      # 仓库根；生产镜像复制到 /app/alembi
 迁移脚本位置：
 
 ```text
-magi/agent/db/alembic/versions/  # 各 revision；script_location = magi/agent/db/alembic
+magi/db/alembic/versions/  # 各 revision；script_location = magi/db/alembic
 ```
 
-运行时由 `magi/agent/db/alembic_runner.py` 调用 Alembic（`upgrade head` /
+运行时由 `magi/db/alembic_runner.py` 调用 Alembic（`upgrade head` /
 `stamp`），`engine.init_orm` 在节点启动时自动触发，无需手动执行。
 
 ## 当前迁移链
@@ -42,7 +42,7 @@ HEAD = `0003_single_direct_magis_membership`。
 
 代码处于 dev 模式（暂无生产升级故事），因此历史上独立的若干迁移已被**吸收进 `0001_baseline`**，不再作为独立 revision 存在：
 
-- 原 `0002_fts5` → FTS5 虚拟表 + 同步触发器，现内联在 baseline 的 `chat_messages` 之后（DDL 取自 `magi/agent/db/migrations._FTS_MIGRATIONS`）。
+- 原 `0002_fts5` → FTS5 虚拟表 + 同步触发器，现内联在 baseline 的 `chat_messages` 之后（DDL 取自 `magi/db/migrations._FTS_MIGRATIONS`）。
 - 原 `0002_admin_role_split` → `Contact.role` 拆分 + `admin` 布尔列，现 baseline 直接用最终形态（`role ∈ {assigned, guest}` + `admin` 列）。
 - 原 `0002_drop_contact_provider_api_key` → `contacts` 上的 `provider` / `api_key` 删除（凭证现由 `magic` 表持有），现 baseline 已不含这两列。
 - 原 `0003_add_daily_note_kind` → `contact_notes.kind` / `note_date` 与 `ux_contact_notes_daily`，现 baseline 已含。
@@ -87,16 +87,16 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 
 ## 启动时行为
 
-`magi.node.run()` → `init_orm(state_dir)`（`magi/agent/db/engine.py`）。`init_orm` 内部：
+`magi.__main__.run()` → `init_orm(state_dir)`（`magi/db/engine.py`）。`init_orm` 内部：
 
 1. eager-import 所有 model 模块，让表注册到 `Base.metadata`；
 2. 若数据库没有 `alembic_version`（legacy C0/C1 库）：
    - `Base.metadata.create_all(engine)` 创建缺失表；
-   - `_run_inline_migrations(engine)`（`magi/agent/db/migrations.py`）修复历史表名 / 列 / 索引；
+   - `_run_inline_migrations(engine)`（`magi/db/migrations.py`）修复历史表名 / 列 / 索引；
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 若数据库**有** `alembic_version` 但指向一个 Alembic 已不认识的 revision（典型：以前升级到了 `0007_swap_magic_magis_tables`，本次 rebase 后该文件已删除），`upgrade_head` 入口的 `_rebase_to_canonical_head` 会先 `DELETE FROM alembic_version` 再 stamp 到 `0001_baseline`。DB schema 不动（folded migration 的效果已在 baseline 里），只刷新 bookkeeping 行；
 4. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-5. 节点随后调用 `magi.agent.db.magis.init_magis_public_db()`；仅初始 Adam
+5. 节点随后调用 `magi.db.magis.init_magis_public_db()`；仅初始 Adam
    会在其直属 MAGIS PostgreSQL 中调用 `_seed_default_root`，确保有且仅有一个
    根 MAGI Society（Genesis），创建首个 MAGI（默认名 `EVA-00 PROTO TYPE`），
    并以 Adam 角色加入 Genesis。
@@ -109,7 +109,7 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 没有 `alembic_version` 的 C0/C1 数据库走一次性 adoption 流程（见上 `init_orm` 步骤 2）：
 
 1. `Base.metadata.create_all` 创建缺失表；
-2. `magi.agent.db.migrations._run_inline_migrations` 修复历史表名、列和索引；
+2. `magi.db.migrations._run_inline_migrations` 修复历史表名、列和索引；
 3. 将数据库 stamp 到 `0001_baseline`；
 4. 执行后续 Alembic revisions；
 5. 后续启动只运行 Alembic，不再运行旧 inline migration。
@@ -120,7 +120,7 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 从而把 bookkeeping 行对齐；DB schema 不动。
 
 这个兼容路径只服务于已有数据库。新的 schema 变化**不能**继续添加到
-`magi/agent/db/migrations.py`。
+`magi/db/migrations.py`。
 
 ## 添加新的 schema 变化
 
@@ -128,18 +128,18 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 
 新增列 / 表 / 索引的纪律：
 
-1. **DDL** — 直接编辑 `magi/agent/db/alembic/versions/0001_baseline.py` 的 `upgrade()`。SQLite 不可轻易改列的就放 `batch_alter_table` 里。
-2. **数据迁移** — 同样在 `upgrade()` 末尾用 `bind.execute(text(...))` 跑一段 `UPDATE` / `INSERT`。代码可以引用 ORM 类（`from magi.agent.db import open_session, MyModel`）。
-3. **ORM 模型** — 同步改对应的 `magi/agent/db/models_*.py`（或在 `magi/agent/memory/...` / `magi/agent/proactive/orm_models.py`），保持与 baseline DDL 字面一致。
+1. **DDL** — 直接编辑 `magi/db/alembic/versions/0001_baseline.py` 的 `upgrade()`。SQLite 不可轻易改列的就放 `batch_alter_table` 里。
+2. **数据迁移** — 同样在 `upgrade()` 末尾用 `bind.execute(text(...))` 跑一段 `UPDATE` / `INSERT`。代码可以引用 ORM 类（`from magi.db import open_session, MyModel`）。
+3. **ORM 模型** — 同步改对应的 `magi/db/models_*.py`（或在 `magi/agent/memory/...` / `magi/channels/tasks/models.py`），保持与 baseline DDL 字面一致。
 4. **索引 / 约束** — 同上，要么 inline `unique=True`，要么显式 `create_index(...sqlite_where=...)`。
-5. **测试** — 跑 `pytest magi/tests/` 确认 green，特别留意 init_orm / alembic upgrade / 表 CRUD 的路径。
+5. **测试** — 跑 `pytest tests/` 确认 green，特别留意 init_orm / alembic upgrade / 表 CRUD 的路径。
 
-`alembic.ini` 与 `magi/agent/db/alembic/env.py` 不动；历史 follow-on migration 文件
+`alembic.ini` 与 `magi/db/alembic/env.py` 不动；历史 follow-on migration 文件
 已删除，dev rebaseline 后只剩 `0001_baseline.py`。
 
 ## 生产注意事项
 
-- 生产镜像必须包含 `alembic.ini` 和 `magi/agent/db/alembic/`；
+- 生产镜像必须包含 `alembic.ini` 和 `magi/db/alembic/`；
 - `deploy/Dockerfile` 已将 `alembic.ini` 复制到 `/app/alembic.ini`；
 - Alembic 已经是核心 runtime dependency，不再只属于 Adam extra；
 - 每个 MAGI 的私有 SQLite 默认单副本运行，避免多个 Pod 同时执行 migration

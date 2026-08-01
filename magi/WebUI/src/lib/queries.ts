@@ -372,6 +372,43 @@ export function useAllowedAccounts() {
   });
 }
 
+export type AvailableMAGI = { id: number; name: string | null };
+export function useAvailableMagi() {
+  return useQuery({
+    queryKey: qk.availableMagi,
+    queryFn: () => apiFetch<{ magi: AvailableMAGI[] }>("/api/auth/available-magi"),
+  });
+}
+
+export type TargetLoginAccount = {
+  telegram_id: number; name: string; admin: boolean; assigned: boolean;
+};
+export function useTargetLoginAccounts(magicId: number | null) {
+  return useQuery({
+    queryKey: qk.targetAccounts(magicId ?? 0),
+    queryFn: () => apiFetch<{ accounts: TargetLoginAccount[] }>(`/api/auth/targets/${magicId}/accounts`),
+    enabled: magicId !== null,
+  });
+}
+
+export function useSendTargetLoginCode(magicId: number) {
+  return useMutation({
+    mutationFn: (telegram_id: number) => apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
+      `/api/auth/targets/${magicId}/send-login-code`, { method: "POST", body: { telegram_id } },
+    ),
+  });
+}
+
+export function useVerifyTargetLoginCode(magicId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { telegram_id: number; code: string }) => apiFetch<{ ok: boolean; error?: string }>(
+      `/api/auth/targets/${magicId}/verify-login-code`, { method: "POST", body: payload },
+    ),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.me }); },
+  });
+}
+
 export type OnboardingStatus = {
   bot_saved: boolean;
   bot_username?: string;

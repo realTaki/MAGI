@@ -8,7 +8,7 @@ the rest of the codebase uses; these ORM classes are the
 storage layer underneath.
 
 Why these tables live with sessions, not with the rest
-of the ORM tables in :mod:`magi.agent.db.models_*`:
+of the ORM tables in :mod:`magi.db.models_*`:
 
   - They're tightly coupled to the :class:`SessionStore`
     contract (the indexes, the FTS5 sync triggers, the
@@ -22,7 +22,7 @@ of the ORM tables in :mod:`magi.agent.db.models_*`:
     and now the tables.
 
 Both tables register on the shared
-:class:`magi.agent.db.base.Base` so :func:`magi.agent.db.engine.init_orm`
+:class:`magi.db.base.Base` so :func:`magi.db.engine.init_orm`
 picks them up via the eager import in ``init_orm``. The
 tables MUST be importable before ``create_all`` runs.
 """
@@ -39,7 +39,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.agent.db.base import Base
+from magi.db.base import Base
 
 
 # ────────────────────────────────────────────────────────────────── #

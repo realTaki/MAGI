@@ -6,8 +6,8 @@ import os
 
 from sqlalchemy import select
 
-from magi.agent.db import ControlSetting
-from magi.agent.db.magis import open_magis_session
+from magi.db import ControlSetting
+from magi.db.magis import open_magis_session
 
 
 def enabled() -> bool:

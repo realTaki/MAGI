@@ -6,8 +6,8 @@ If you need to change one of these, you must edit this file
 and rebuild.
 
 For mutable configuration, see the ``settings`` table
-(``magi/agent/db/models_setting.py``, read via
-``magi.agent.db.settings.state_get``).
+(``magi/db/models_setting.py``, read via
+``magi.db.settings.state_get``).
 """
 
 from __future__ import annotations

@@ -76,7 +76,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # a fresh child that needs its own cache.
     if include_private_routes:
         try:
-            from magi.agent.tools.registry import bootstrap_mcp_tools
+            from magi.tools.registry import bootstrap_mcp_tools
 
             bootstrap_mcp_tools()
         except Exception:
@@ -87,7 +87,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
 
     if start_telegram:
         _log.getLogger(__name__).info("create_app: starting TG bot")
-        from magi.agent.db import require_state_dir
+        from magi.db import require_state_dir
         from magi.channels.telegram.bot import start_bot
 
         # Importing the ASGI module in a CLI/test process must not require the
@@ -150,13 +150,22 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     app.include_router(runtime_control.router, prefix="/api")
     if not include_private_routes:
         from magi.channels.webui.api import runtime_proxy
-        app.include_router(magic.router, prefix="/api")
-        app.include_router(magis.router, prefix="/api")
         app.include_router(runtime_proxy.router, prefix="/api")
         spa_dist = _find_spa_dist() if include_spa else None
         if spa_dist is not None:
             app.mount("/", StaticFiles(directory=str(spa_dist), html=True), name="spa")
         return app
+    # Target-scoped login is owned by the MAGI runtime.  The singleton WebUI
+    # calls it with a target-bound internal signature before a browser session
+    # exists, so it must not be mounted on the browser-facing control service.
+    from magi.channels.webui.api import runtime_access
+    app.include_router(runtime_access.router, prefix="/api")
+    # Organisation routes execute inside the selected MAGI runtime as well.
+    # They therefore see only that MAGI's direct MAGIS database, rather than
+    # the singleton WebUI's bootstrap database connection.
+    if not include_control_routes:
+        app.include_router(magic.router, prefix="/api")
+        app.include_router(magis.router, prefix="/api")
     # Contacts router — unified contact directory + CRUD.
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
@@ -250,7 +259,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # ``task_presets`` template table. Each template
     # auto-seeds a per-user ``Task`` row when a new
     # ``assigned`` contact is created (see
-    # ``magi/agent/proactive/presets.py``). Settings → 任务
+    # ``magi/proactive/task_presets.py``). Settings → 任务
     # 预设 drives this router; the per-user tasks end up
     # in the Knowledge → Tasks pane's "preset" section.
     from magi.channels.webui.api import task_presets

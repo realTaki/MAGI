@@ -31,7 +31,7 @@ uv sync --group dev
   - English for code and comments (Chinese allowed in user-facing strings)
   - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`)
   - FastAPI dependency injection pattern
-- `ruff check . && pytest magi/tests/` should pass before pushing
+- `ruff check . && pytest tests/` should pass before pushing
 
 ## Commit style
 
@@ -57,7 +57,7 @@ docs: Update README with new architecture
 | `magi/agent/` | Agent loop, LLM providers, memory, tools |
 | `magi/channels/` | Telegram + WebUI channel adapters |
 | `magi/WebUI/` | React frontend |
-| `magi/tests/` | Unit tests |
+| `tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
 
 ## Questions?

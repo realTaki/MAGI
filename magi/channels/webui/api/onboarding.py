@@ -37,7 +37,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.agent.db import ControlOperator, require_state_dir
+from magi.db import ControlOperator, MAGIS, MAGISAdmin, require_state_dir
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.webui import control_store
@@ -166,17 +166,18 @@ async def get_status() -> OnboardingStatus:
     informational / for the wizard's own resume logic.
     """
     if control_store.enabled():
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
-            admins = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            admins = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all() if root else []
         username = control_store.get("telegram.bot_username")
         return OnboardingStatus(
             bot_saved=bool(username), bot_username=username,
             super_admins_count=len(admins), super_admins=[str(a.telegram_id) for a in admins],
             onboarding_complete=(control_store.get("onboarding.complete") or "").lower() in {"true", "1"},
         )
-    from magi.agent.db import Contact, open_session
-    from magi.agent.db.settings import state_get
+    from magi.db import Contact, open_session
+    from magi.db.settings import state_get
 
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
@@ -286,8 +287,8 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     from magi.channels.webui.api.action_items import (
         _ensure_llm_credentials_item,
     )
-    from magi.agent.db import Contact, open_session
-    from magi.agent.db.settings import state_set
+    from magi.db import Contact, open_session
+    from magi.db.settings import state_set
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
@@ -348,7 +349,7 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     if control_store.enabled():
         control_store.delete("onboarding.complete")
         return RestartResponse(ok=True)
-    from magi.agent.db.settings import state_delete
+    from magi.db.settings import state_delete
 
     try:
         state_delete(_state_dir(), "onboarding.complete")
@@ -396,7 +397,7 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
             logger.exception("failed to configure root runtime telegram")
             return SaveBotResponse(ok=False, error=str(exc))
         return SaveBotResponse(ok=True)
-    from magi.agent.db.settings import state_set
+    from magi.db.settings import state_set
 
     state_dir = _state_dir()
     try:
@@ -499,7 +500,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
             control_store.delete(f"telegram.verify_code.{delivery_address}")
             return SendAdminCodeResponse(ok=False, error=f"Telegram send failed: {exc}")
         return SendAdminCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-    from magi.agent.db.settings import state_get, state_set
+    from magi.db.settings import state_get, state_set
 
     bot_token = state_get(_state_dir(), "telegram.bot_token")
     if not bot_token:
@@ -584,7 +585,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     try:
         await tg_bot.send_text_raw(bot_token, int(delivery_address), text)
     except Exception as exc:
-        from magi.agent.db.settings import state_delete
+        from magi.db.settings import state_delete
         state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
         return SendAdminCodeResponse(
             ok=False, error=f"Telegram send failed: {exc}",
@@ -628,7 +629,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
         except (TypeError, ValueError, json.JSONDecodeError):
             return VerifyAdminCodeResponse(ok=False, error="Stored code is corrupt")
         return VerifyAdminCodeResponse(ok=True)
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
 
     delivery_address = payload.tgid.strip()
     code = payload.code.strip()
@@ -663,7 +664,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
         expires_at = 0
     now_ts = datetime.now(timezone.utc).timestamp()
 
-    from magi.agent.db.settings import state_delete
+    from magi.db.settings import state_delete
     if not expires_at or now_ts >= expires_at:
         state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
         return VerifyAdminCodeResponse(
@@ -700,7 +701,7 @@ async def _fetch_display_name(delivery_address: str) -> str | None:
     """Resolve a TG chat display name via raw HTTP API.
     Fails silently — returns ``None`` on any error.
     """
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
     return await tg_bot.get_chat_name_raw(bot_token, int(delivery_address))
@@ -749,9 +750,12 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             return SaveAdminResponse(ok=False, error="tgid must be numeric")
         if not telegram_ids:
             return SaveAdminResponse(ok=False, error="At least one tgid required")
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
-            existing = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            if root is None:
+                return SaveAdminResponse(ok=False, error="Genesis MAGIS is not initialized")
+            existing = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all()
             wanted = set(telegram_ids)
             for operator in existing:
                 if operator.telegram_id not in wanted:
@@ -759,10 +763,10 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             known = {operator.telegram_id: operator for operator in existing}
             for telegram_id in telegram_ids:
                 if telegram_id not in known:
-                    session.add(ControlOperator(telegram_id=telegram_id, display_name=f"Admin {telegram_id}", admin=True))
+                    session.add(MAGISAdmin(magis_id=root.id, telegram_id=telegram_id, display_name=f"Admin {telegram_id}"))
             session.commit()
         return SaveAdminResponse(ok=True, count=len(telegram_ids))
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.channels import dispatcher as channel_dispatcher
 
     state_dir = _state_dir()
@@ -782,7 +786,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             )
 
     # Display name resolution runs in parallel for all ids.
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
 
     bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
     display_names: dict[int, str | None] = {}

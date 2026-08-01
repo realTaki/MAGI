@@ -1,7 +1,7 @@
 """LLM-callable tools for long-term self memory.
 
 The agent loop exposes these to the LLM through the
-standard :mod:`magi.agent.tools.registry` mechanism.
+standard :mod:`magi.tools.registry` mechanism.
 The LLM decides when to call them based on operator
 instructions ("记住 X" / "在跟进 Y" / "完成了").
 
@@ -34,13 +34,13 @@ import json
 import logging
 from typing import Any
 
-from magi.agent.db import Contact, open_session
+from magi.db import Contact, open_session
 from magi.agent.memory.self.models import (
     ALL_KINDS,
     SOURCE_EVE,
 )
 from magi.agent.memory.self.store import MemoryStore
-from magi.agent.tools.base import (
+from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
@@ -55,7 +55,7 @@ _WRITE_ROLES = frozenset({"admin", "assigned"})
 
 def _gate(ctx: ToolContext) -> str | None:
     """Thin wrapper around
-    :func:`magi.agent.tools.base.caller_role_denied_reason`
+    :func:`magi.tools.base.caller_role_denied_reason`
     — the canonical in-run gate lives there so memory,
     contacts, and action-item tools share one check. The
     re-resolution on every call (not cache on ``ctx``) is

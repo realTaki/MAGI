@@ -29,8 +29,7 @@
  * bubbles up to App is the bot + admin list (so the rest of the
  * app, e.g. login dropdowns on a future re-sign-in, stays fresh).
  */
-import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useT } from "../i18n/index";
@@ -39,12 +38,10 @@ import ChatTab from "./ChatTab";
 import KnowledgeTab from "./KnowledgeTab";
 import AgenticSocietyTab from "./AgenticSocietyTab";
 import SettingsTab from "./SettingsTab";
-import { getSelectedMagicId, setSelectedMagicId } from "../lib/queryClient";
-import { useMagic } from "../lib/queries";
 
 export default function DashboardPage(props: {
   data: OnboardingData | null;
-  signedInUser: { telegram_id: string; display_name: string | null } | null;
+  signedInUser: { telegram_id: string; display_name: string | null; admin: boolean } | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ telegramId: string; displayName: string | null }>,
@@ -83,7 +80,7 @@ export default function DashboardPage(props: {
 // shown in the reference (logo + inline nav + identity pill +
 // utility buttons on the right, all on one row).
 function PostLoginLayout(props: {
-  user: { telegram_id: string; display_name: string | null };
+  user: { telegram_id: string; display_name: string | null; admin: boolean };
   data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
@@ -99,27 +96,7 @@ function PostLoginLayout(props: {
   // load. ``ChatTab`` already routes to its own "new chat"
   // view, so landing on chat is the right entry point.
   const [tab, setTab] = useState<TabKey>("chat");
-  const [selectedMagicId, setSelectedMagic] = useState(getSelectedMagicId);
-  const magicQuery = useMagic();
-  const qc = useQueryClient();
   const t = useT();
-
-  useEffect(() => {
-    const first = magicQuery.data?.[0];
-    if (!first || magicQuery.data?.some((m) => m.id === selectedMagicId)) return;
-    setSelectedMagic(first.id);
-    setSelectedMagicId(first.id);
-    qc.removeQueries({ queryKey: ["runtime"] });
-  }, [magicQuery.data, selectedMagicId, qc]);
-
-  const chooseMagic = (nextId: number) => {
-    if (nextId === selectedMagicId) return;
-    setSelectedMagic(nextId);
-    setSelectedMagicId(nextId);
-    // Every private read is target-scoped; dropping the previous target's
-    // cache also prevents transient stale content during a target switch.
-    qc.removeQueries({ queryKey: ["runtime"] });
-  };
 
   return (
     <main className="min-h-screen flex flex-col">
@@ -141,23 +118,10 @@ function PostLoginLayout(props: {
           </div>
 
           <div className="flex-1 flex justify-center">
-            <InlineTabBar current={tab} onChange={setTab} />
+            <InlineTabBar current={tab} onChange={setTab} isAdmin={props.user.admin} />
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <label className="hidden md:flex items-center gap-1 text-xs text-ink-soft">
-              <span>MAGI</span>
-              <select
-                value={selectedMagicId}
-                onChange={(event) => chooseMagic(Number(event.target.value))}
-                className="rounded border border-sky-light bg-white px-1 py-0.5 text-ink"
-                aria-label="Selected MAGI"
-              >
-                {(magicQuery.data ?? []).map((m) => (
-                  <option key={m.id} value={m.id}>{m.name ?? `MAGI ${m.id}`}</option>
-                ))}
-              </select>
-            </label>
             <SignedInLabel
               displayName={props.user.display_name}
               telegramId={props.user.telegram_id}
@@ -181,12 +145,13 @@ function PostLoginLayout(props: {
       <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
         <div className="space-y-4">
           {tab === "chat" && <ChatTab />}
-          {tab === "magic" && <AgenticSocietyTab />}
+          {tab === "magic" && props.user.admin && <AgenticSocietyTab />}
           {tab === "knowledge" && <KnowledgeTab />}
           {tab === "settings" && (
             <SettingsTab
               data={props.data}
               signedInUser={props.user}
+              isAdmin={props.user.admin}
               onBotUpdated={props.onBotUpdated}
               onAdminsChanged={props.onAdminsChanged}
               onRestart={props.onRestart}
@@ -205,11 +170,12 @@ function PostLoginLayout(props: {
 function InlineTabBar(props: {
   current: TabKey;
   onChange: (t: TabKey) => void;
+  isAdmin: boolean;
 }) {
   const t = useT();
   const tabs: Array<{ key: TabKey; labelKey: string }> = [
     { key: "chat", labelKey: "sidebar.tabChat" },
-    { key: "magic", labelKey: "sidebar.tabMagic" },
+    ...(props.isAdmin ? [{ key: "magic" as const, labelKey: "sidebar.tabMagic" }] : []),
     { key: "knowledge", labelKey: "sidebar.tabKnowledge" },
     { key: "settings", labelKey: "sidebar.tabSettings" },
   ];

@@ -24,8 +24,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import Contact, ContactNote, get_session
-from magi.agent.db.base import utcnow_naive
+from magi.db import Contact, ContactNote, get_session
+from magi.db.base import utcnow_naive
 from magi.channels.webui.api.auth_gates import admin_gate, AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 
@@ -90,7 +90,7 @@ class ContactListOut(BaseModel):
 class ContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     display_name: str | None = Field(default=None, max_length=120)
-    role: str = Field(default="contact", max_length=16)
+    role: str = Field(default="guest", max_length=16)
     # Defaults to ``False`` — a freshly-created contact is
     # not a WebUI operator until the operator explicitly
     # promotes them via ``PATCH /api/contacts/{id}`` with
@@ -170,7 +170,7 @@ def list_contacts(
 
     if with_notes:
         # Contacts that have at least one note in ``contact_notes``.
-        from magi.agent.db.models_contact import ContactNote
+        from magi.db.models_contact import ContactNote
         note_ids = session.scalars(
             select(ContactNote.contact_id).distinct()
         ).all()
@@ -200,7 +200,7 @@ def list_contacts(
         base = base.order_by(Contact.last_seen_at.desc()).limit(_MAX_ROWS)
         rows = session.scalars(base).all()
         # Preload notes counts in one query
-        from magi.agent.db.models_contact import ContactNote
+        from magi.db.models_contact import ContactNote
         note_counts: dict[int, int] = {}
         if rows:
             cids = [r.id for r in rows]
@@ -260,6 +260,14 @@ def create_contact(
             status_code=400, code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
         )
+    if payload.role == "assigned" and session.scalar(
+        select(Contact.id).where(Contact.role == "assigned", Contact.separated_at.is_(None))
+    ) is not None:
+        raise MagiHTTPException(
+            status_code=409,
+            code="conflict.assigned_user_exists",
+            detail="This MAGI already has an assigned user",
+        )
     if payload.telegram_id is not None and session.scalar(
         select(Contact).where(Contact.telegram_id == payload.telegram_id)
     ) is not None:
@@ -297,7 +305,7 @@ def create_contact(
     # there).
     if contact.role == "assigned":
         try:
-            from magi.agent.proactive.presets import seed_presets_for_contact
+            from magi.proactive.task_presets import seed_presets_for_contact
             seed_presets_for_contact(session, contact.id)
             session.commit()
         except Exception as exc:
@@ -331,7 +339,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -394,7 +402,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -460,6 +468,18 @@ def update_contact(
         # an idempotent assigned→assigned PATCH that
         # shouldn't trigger a fresh seed round).
         prev_role = contact.role
+        if payload.role == "assigned" and prev_role != "assigned" and session.scalar(
+            select(Contact.id).where(
+                Contact.role == "assigned",
+                Contact.separated_at.is_(None),
+                Contact.id != contact.id,
+            )
+        ) is not None:
+            raise MagiHTTPException(
+                status_code=409,
+                code="conflict.assigned_user_exists",
+                detail="This MAGI already has an assigned user",
+            )
         contact.role = payload.role
         # Tag the local variable for the post-commit
         # branch. We need this outside the ``if`` so it
@@ -500,7 +520,7 @@ def update_contact(
     # double-seed is a no-op rather than a duplicate.
     if newly_assigned:
         try:
-            from magi.agent.proactive.presets import seed_presets_for_contact
+            from magi.proactive.task_presets import seed_presets_for_contact
             seed_presets_for_contact(session, contact.id)
             session.commit()
         except Exception as exc:
@@ -534,7 +554,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -582,7 +602,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(

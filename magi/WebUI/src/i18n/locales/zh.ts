@@ -24,6 +24,10 @@ export default {
     description: "MAGI 是一个模块化自治智能体系统。将 MAGI Citizens（MAGIC）组成 MAGI Societies（MAGIS），由 ADAM 带队、EVE 执行，自主协作分工。你通过控制台设定规则、赋予技能，剩下的交给它们。",
     setup: "开始配置",
     signIn: "登录",
+    selectMagi: "选择一个 MAGI",
+    defaultMagiName: "MAGI {id}",
+    loadMagiError: "无法加载正在运行的 MAGI 节点。",
+    noMagiRunning: "当前没有正在运行的 MAGI。",
     setupHint: "首次使用 — 运行引导向导完成初始配置。",
     feature1Title: "智群协作",
     feature1Desc: "多个 MAGI Citizens（MAGIC）组成一个 MAGI Society（MAGIS），ADAM 统筹、EVE 执行，共同完成复杂任务。",
@@ -35,8 +39,10 @@ export default {
   onboarding: {
     header: "首次配置",
     step1Title: "为 MAGI 接入通讯账号",
-    step1Desc: "选择一个即时通讯平台，让 MAGI 通过它收发消息。Telegram 是目前唯一可用的通道，更多平台陆续接入。",
+    step1Desc: "选择一个即时通讯平台，让 MAGI 通过它收发消息。",
+    step1Help: "Telegram 是目前唯一可用的通道，更多平台陆续接入。",
     channelTelegramDesc: "Telegram Bot 是 MAGI 在该平台上的身份。创建一个 Bot，把 Token 填进来即可。",
+    channelTelegramBotFatherLink: "打开 @BotFather",
     channelSlackDesc: "Slack 通道即将支持。",
     channelWechatDesc: "微信通道即将支持。",
     botTokenLabel: "Bot Token",
@@ -185,7 +191,7 @@ export default {
     toolsInputs: "输入参数",
     toolsInputsNone: "无",
     // Per-card empty copy. The built-in card is empty only
-    // if :mod:`magi.agent.tools.registry` has nothing for
+    // if :mod:`magi.tools.registry` has nothing for
     // the current build (shouldn't happen in v0); the MCP
     // card is empty on a fresh install because no
     // ``mcp.json`` is configured.
