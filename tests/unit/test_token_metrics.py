@@ -44,11 +44,11 @@ def env(monkeypatch, tmp_path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import (
+    from magi.db import (
         Contact,
         TokenUsage,
         init_orm,
@@ -106,7 +106,7 @@ def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
     the table — the agent loop always writes them; tests
     use the same shape.
     """
-    from magi.agent.db import TokenUsage, open_session
+    from magi.db import TokenUsage, open_session
 
     with open_session() as db:
         db.add(
@@ -179,7 +179,7 @@ def test_week_window_includes_recent(client, env):
 def test_scope_to_one_uid(client, env):
     """Aggregation filters by the URL's uid; other Contacts'
     rows aren't counted."""
-    from magi.agent.db import Contact, open_session as _os
+    from magi.db import Contact, open_session as _os
 
     with _os() as db:
         other = Contact(

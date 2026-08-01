@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from magi.agent.db import (
+from magi.db import (
     Contact,
     init_orm,
     init_sqlite,
@@ -68,7 +68,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -81,9 +81,9 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # The engine singleton resets across tests; this final
     # open_session forces the FK-respecting order.
     try:
-        from magi.agent.db import open_session as _os
+        from magi.db import open_session as _os
         from magi.channels.tasks.models import Task, TaskRun
-        from magi.agent.db import ChatSession as _CS, ChatMessage as _CM
+        from magi.db import ChatSession as _CS, ChatMessage as _CM
         with _os() as db:
             db.query(_CM).delete()
             db.query(TaskRun).delete()

@@ -4,7 +4,7 @@
 Lives in the same SQLite file as the small ``meta`` bootstrap table.
 Private application tables, including the legacy ``settings`` KV table, are
 accessed through SQLAlchemy via this module. MAGIS public PostgreSQL access
-lives in :mod:`magi.agent.db.magis`. ``meta`` remains a raw-SQL bootstrap
+lives in :mod:`magi.db.magis`. ``meta`` remains a raw-SQL bootstrap
 table because it only carries schema hand-off metadata.
 
 Schema ownership is now Alembic. ``init_orm`` runs ``alembic upgrade head``
@@ -211,9 +211,9 @@ def _seed_default_root(engine: Engine) -> None:
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
-    from magi.agent.db.models_magic import MAGIC
-    from magi.agent.db.models_magis import MAGIS
-    from magi.agent.db.models_magis_membership import MAGISMembership, ensure_default_roles
+    from magi.db.models_magic import MAGIC
+    from magi.db.models_magis import MAGIS
+    from magi.db.models_magis_membership import MAGISMembership, ensure_default_roles
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
@@ -310,15 +310,15 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.agent.db.models_action_item  # noqa: F401
-    import magi.agent.db.models_contact  # noqa: F401 — unified contact directory
-    import magi.agent.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
-    import magi.agent.db.models_magic  # noqa: F401 — individual MAGI rows
-    import magi.agent.db.models_magis  # noqa: F401 — MAGIS tree
-    import magi.agent.db.models_magis_membership  # noqa: F401 — roles + memberships
-    import magi.agent.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
-    import magi.agent.db.models_setting  # noqa: F401 — legacy settings KV model
-    import magi.agent.db.models_token_usage  # noqa: F401
+    import magi.db.models_action_item  # noqa: F401
+    import magi.db.models_contact  # noqa: F401 — unified contact directory
+    import magi.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
+    import magi.db.models_magic  # noqa: F401 — individual MAGI rows
+    import magi.db.models_magis  # noqa: F401 — MAGIS tree
+    import magi.db.models_magis_membership  # noqa: F401 — roles + memberships
+    import magi.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
+    import magi.db.models_setting  # noqa: F401 — legacy settings KV model
+    import magi.db.models_token_usage  # noqa: F401
     import magi.agent.memory.self.models  # noqa: F401 — self-memory table
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.channels.tasks.models  # noqa: F401 — scheduled-task channel
@@ -362,7 +362,7 @@ def get_session() -> Generator[Session, None, None]:
     Usage in a route::
 
         from fastapi import Depends
-        from magi.agent.db.engine import get_session
+        from magi.db.engine import get_session
 
         @router.get(...)
         def list_magis(session: Session = Depends(get_session)):

@@ -25,10 +25,10 @@ from pathlib import Path
 import pytest
 
 from magi.agent.memory.session import SessionStore
-from magi.agent.db import init_sqlite
-from magi.agent.db import ChatMessage, init_orm, open_session
-from magi.agent.tools.base import ToolContext
-from magi.agent.tools.search_sessions import SearchSessionsTool
+from magi.db import init_sqlite
+from magi.db import ChatMessage, init_orm, open_session
+from magi.tools.base import ToolContext
+from magi.tools.search_sessions import SearchSessionsTool
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -43,7 +43,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -381,7 +381,7 @@ def test_search_sessions_schema_has_required_fields(tmp_path, monkeypatch):
     the registry import (which loads the tool loader) does
     not bounce off the ``_MissingStateDirError`` guard."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
 
     schemas = {s["name"]: s for s in get_tool_schemas()}
     assert "search_sessions" in schemas

@@ -49,12 +49,12 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import init_sqlite
-    from magi.agent.db import init_orm
+    from magi.db import init_sqlite
+    from magi.db import init_orm
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -80,7 +80,7 @@ def _msg(role: str, text: str = "hi", ts: str = "2026-07-03T00:00:00Z") -> Sessi
 
 def test_create_persists(store):
     """``create`` returns a populated Session and ``get`` sees it."""
-    from magi.agent.db import ChatSession, open_session
+    from magi.db import ChatSession, open_session
 
     s = store.create(7, )
     # Session row landed in the DB.
@@ -165,7 +165,7 @@ def test_append_validates_role(store):
 
 def test_delete_idempotent(store):
     """``delete`` returns True the first time, False after."""
-    from magi.agent.db import ChatSession, open_session
+    from magi.db import ChatSession, open_session
     s = store.create(7, )
     assert store.delete(7, s.session_id) is True
     with open_session() as db:
@@ -176,7 +176,7 @@ def test_delete_idempotent(store):
 
 def test_delete_cascades_to_messages(store):
     """Deleting a session also clears its message rows."""
-    from magi.agent.db import ChatMessage, open_session
+    from magi.db import ChatMessage, open_session
     s = store.create(7, )
     store.append_messages(7, s.session_id, [_msg("user"), _msg("assistant")])
     store.delete(7, s.session_id)
@@ -228,7 +228,7 @@ def test_list_summaries_message_count_excludes_archive(store):
     store.append_messages(7, s.session_id, msgs)
     # Manually flip two rows to archived=1 to simulate a
     # compaction pass.
-    from magi.agent.db import ChatMessage, open_session
+    from magi.db import ChatMessage, open_session
     with open_session() as db:
         rows = db.query(ChatMessage).filter_by(session_id=s.session_id).all()
         for r in rows[:2]:
@@ -455,7 +455,7 @@ def test_chatsession_repr_uses_tgid(store):
     first time anything tried to log or debug-print a
     session row. The fixed repr must round-trip via the
     real column name."""
-    from magi.agent.db import ChatSession, open_session
+    from magi.db import ChatSession, open_session
 
     s = store.create(1, delivery_address="9001")
     with open_session() as db:

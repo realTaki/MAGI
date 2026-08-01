@@ -32,7 +32,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.db import McpServer, open_session
+from magi.db import McpServer, open_session
 from magi.tools.base import (
     Tool,
     ToolContext,

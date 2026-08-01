@@ -7,13 +7,13 @@ def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
 ):
     """First boot seeds the canonical adam MAGIC on Genesis.
 
-    The exact seeded name is :data:`magi.agent.db.engine._DEFAULT_MAGI_NAME`
+    The exact seeded name is :data:`magi.db.engine._DEFAULT_MAGI_NAME`
     — pinned here so a rename is intentional rather than silent."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.agent.db.engine as engine_mod
+    import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.agent.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, init_orm, open_session
-    from magi.agent.db.engine import _DEFAULT_MAGI_NAME
+    from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, init_orm, open_session
+    from magi.db.engine import _DEFAULT_MAGI_NAME
     init_orm(str(tmp_path))
     with open_session() as db:
         genesis = db.scalar(select(MAGIS).where(MAGIS.name == "Genesis"))
@@ -27,9 +27,9 @@ def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
 
 def test_new_magic_is_unassigned(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.agent.db.engine as engine_mod
+    import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.agent.db import MAGIC, MAGISMembership, init_orm, open_session
+    from magi.db import MAGIC, MAGISMembership, init_orm, open_session
     init_orm(str(tmp_path))
     with open_session() as db:
         worker = MAGIC(name="Worker")
@@ -39,11 +39,11 @@ def test_new_magic_is_unassigned(monkeypatch, tmp_path):
 
 def test_magic_has_only_one_direct_magis_membership(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.agent.db.engine as engine_mod
+    import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     from sqlalchemy.exc import IntegrityError
-    from magi.agent.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
-    from magi.agent.db.models_magis_membership import ensure_default_roles
+    from magi.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
+    from magi.db.models_magis_membership import ensure_default_roles
     init_orm(str(tmp_path), seed_root=False)
     with open_session() as db:
         one, two, magic = MAGIS(name="One"), MAGIS(name="Two"), MAGIC(name="Only one home")

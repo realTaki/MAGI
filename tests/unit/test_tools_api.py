@@ -1,6 +1,6 @@
 """End-to-end TestClient test for ``/api/tools``.
 
-The endpoint reads :mod:`magi.agent.tools.registry` directly,
+The endpoint reads :mod:`magi.tools.registry` directly,
 so it doesn't need a real LLM, just the App + a seeded admin
 cookie. The MCP-loader branch is skipped via
 ``bootstrap_mcp_tools``'s graceful "no mcp.json" fallback
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from magi.agent.tools import registry as registry_mod
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools import registry as registry_mod
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 class _FakeTool(Tool):
     name = "fake__demo"
@@ -78,9 +78,9 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
     
-    from magi.agent.db import init_sqlite
-    from magi.agent.db import Contact, init_orm, open_session
-    import magi.agent.db.engine as _orm_mod
+    from magi.db import init_sqlite
+    from magi.db import Contact, init_orm, open_session
+    import magi.db.engine as _orm_mod
     # Reset the SQLAlchemy engine singleton so each test
     # opens its own fresh sqlite file. Without this, an
     # earlier test's engine (pointing at a deleted path)

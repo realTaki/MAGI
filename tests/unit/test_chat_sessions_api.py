@@ -19,8 +19,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from magi.agent.memory.session import SessionStore
-from magi.agent.db import init_sqlite
-from magi.agent.db import Contact, init_orm, open_session
+from magi.db import init_sqlite
+from magi.db import Contact, init_orm, open_session
 
 # A fake LLM reply used when we monkey-patch ``handle_message``
 # for the duration of a test that exercises ``/api/chat/send``.
@@ -35,7 +35,7 @@ def state(tmp_path, monkeypatch) -> Path:
     """Set up an isolated state_dir + workspace_dir for the test.
 
     We also reset the module-global SQLAlchemy engine in
-    :mod:`magi.agent.db.orm` — without that, the
+    :mod:`magi.db.orm` — without that, the
     second test reuses the first test's engine, which
     points at a different (already-deleted) sqlite file.
     The engine is a process-global; per-test isolation
@@ -52,7 +52,7 @@ def state(tmp_path, monkeypatch) -> Path:
     # every test after the first inserts into a path that
     # no longer exists → IntegrityError on duplicate key
     # from a half-flushed engine with stale conn pool.
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
 
@@ -116,7 +116,7 @@ def _reset_orm_engine():
     sqlite file path is stale) and the inserts collide on
     seeded admin rows.
     """
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
     yield
@@ -144,7 +144,7 @@ def test_create_returns_session_id_and_persists(client, admin, state, monkeypatc
     sid = body["session_id"]
     # D.18: sessions live in SQLite (``chat_sessions`` table)
     # instead of a JSON file. Verify the row landed.
-    from magi.agent.db import ChatSession, open_session
+    from magi.db import ChatSession, open_session
     with open_session() as db:
         row = db.get(ChatSession, sid)
     assert row is not None, f"expected session row for {sid}"

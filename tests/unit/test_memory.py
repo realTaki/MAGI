@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.db import Contact, init_orm, open_session
+from magi.db import Contact, init_orm, open_session
 from magi.agent.memory.self import (
     KIND_IMPORTANT,
     KIND_ONGOING,
@@ -42,7 +42,7 @@ from magi.agent.memory.self.tools import (
     CompleteMemoryTool,
     DeleteMemoryTool,
     UpdateMemoryTool)
-from magi.agent.tools.base import ToolContext
+from magi.tools.base import ToolContext
 
 
 # -- fixtures ---------------------------------------------------------------
@@ -55,7 +55,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

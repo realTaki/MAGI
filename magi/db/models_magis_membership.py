@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db.base import Base, utcnow_naive
+from magi.db.base import Base, utcnow_naive
 
 RESERVED_ROLE_NAMES = frozenset({"Adam", "EVE"})
 DEFAULT_ROLE_INSTRUCTIONS = {
@@ -71,7 +71,7 @@ def adam_manages_magis(session, magic_id: int, target_magis_id: int) -> bool:
     MAGIS's data, instructions, or administrator scope.  The current access
     model is deliberately direct-only.
     """
-    from magi.agent.db.models_magis import MAGIS
+    from magi.db.models_magis import MAGIS
 
     target = session.get(MAGIS, target_magis_id)
     return target is not None and target.adam_id == magic_id

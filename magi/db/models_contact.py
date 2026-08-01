@@ -74,7 +74,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db.base import Base, utcnow_naive
+from magi.db.base import Base, utcnow_naive
 
 
 # Sources — mirrors :mod:`magi.agent.memory.self.models`.

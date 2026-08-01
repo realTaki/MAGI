@@ -16,7 +16,7 @@
 The split keeps each layer's lifecycle + prompt rules
 in their own file. None of the three layers talk to
 each other at the SQL level (they all share ``Base``
-from :mod:`magi.agent.db` but no inter-table FKs); the
+from :mod:`magi.db` but no inter-table FKs); the
 only cross-cutting dependency is the agent loop's
 prompt assembly, which renders each layer's formatter
 in a fixed order.

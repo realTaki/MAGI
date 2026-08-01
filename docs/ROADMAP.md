@@ -98,7 +98,7 @@ stubbed or absent.
 | First-touch handler ("I don't know who you are") | **Done** | node `__init__` C0 path; C3 replaces with the real dispatcher |
 | Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `node/__init__.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
 | `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `node/__init__.py` docstring |
-| Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/agent/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
+| Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
 | LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
 | Memory subsystem (magi / contacts / session) | **Partial** | Tables + tools exist; agent loop doesn't render them yet |
@@ -135,10 +135,10 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIS / MAGIC / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/agent/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIS` (group tree) + `MAGIC` (individual agent) carry the org tree |
+| SQLAlchemy `Base` + per-table ORM models (Contact / MAGIS / MAGIC / action_items / token_usage / chat_sessions / chat_messages) | **Done** | `magi/db/models_*.py` — people live in the `contacts` table (the `employees` rename was completed via the inline ``ALTER TABLE employees RENAME TO contacts`` migration); `MAGIS` (group tree) + `MAGIC` (individual agent) carry the org tree |
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
-| Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/agent/db/alembic/versions`; `init_orm` runs `upgrade head` |
-| Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/agent/db/migrations.py`, runs only for databases without `alembic_version` |
+| Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/db/alembic/versions`; `init_orm` runs `upgrade head` |
+| Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/db/migrations.py`, runs only for databases without `alembic_version` |
 | FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | folded into Alembic `0001_baseline` (no separate `0002_fts5`); trigram tokenizer for CJK-friendly substring search |
 | Default-root seed ("MAGI") | **Done** | `engine._seed_default_root` |
 | Departments tree (parent_id self-FK + manager_id) | **Done** | Cycles prevented at API layer (out-of-scope for C1.1 per `departments.py` comment) |
@@ -543,8 +543,8 @@ class MagiImBinding(Base):
 
 | Surface | Action |
 |---|---|
-| `magi/agent/db/models_employee.py` → split into `models_magic.py` + `models_magi.py` + `models_user.py` + `models_magi_im_binding.py` | new files; old `models_employee.py` dropped |
-| `magi/agent/memory/contacts/models.py` → becomes `magi/agent/db/models_user.py` | rename + add `role` + `magi_id` columns; drop `owner_id` / `person_id` |
+| `magi/db/models_employee.py` → split into `models_magic.py` + `models_magi.py` + `models_user.py` + `models_magi_im_binding.py` | new files; old `models_employee.py` dropped |
+| `magi/agent/memory/contacts/models.py` → becomes `magi/db/models_user.py` | rename + add `role` + `magi_id` columns; drop `owner_id` / `person_id` |
 | `Employee` class | gone |
 | `ContactEntry` class | renamed to `User`; restructured per above |
 | `Magi` class | new; columns above |
@@ -654,7 +654,7 @@ feature.
 |---|---|
 | `magi/__init__.py` | update module docstring to the new framing (done 2026-07-23) |
 | `magi/node/__init__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
-| `magi/agent/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
+| `magi/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
 
 ---
 
@@ -864,7 +864,7 @@ commit history.
 - Python 3.12 emits `DeprecationWarning`
   for `datetime.utcnow()`. Two helpers now
   replace it:
-  - `magi.agent.db.base.utcnow_naive()` —
+  - `magi.db.base.utcnow_naive()` —
     used by every ORM `default=` /
     `onupdate=`. Lives in `db/base.py`
     (lowest layer) so model files import

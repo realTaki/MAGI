@@ -240,7 +240,7 @@ def validate_run_at(raw: str) -> str:
     can parse — the same set Python's ``datetime`` accepts
     (offset-aware or naive UTC). Naive timestamps are
     interpreted as UTC, matching the project's "UTC in
-    DB" convention from :mod:`magi.agent.db.base`.
+    DB" convention from :mod:`magi.db.base`.
 
     Returns the **canonical** ISO string (rounded-to-second)
     so two operators who write ``"2026-08-01T07:30:00+00:00"``

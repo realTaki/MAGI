@@ -21,7 +21,7 @@ import pytest
 @pytest.fixture
 def tg_settings_env(monkeypatch, tmp_path):
     """Fresh state dir per test. The config module reads
-    ``MAGI_STATE_DIR`` via :mod:`magi.agent.db.settings`,
+    ``MAGI_STATE_DIR`` via :mod:`magi.db.settings`,
     so a tmp dir keeps tests isolated and idempotent.
 
     Calls :func:`init_sqlite` (not just :func:`init_orm`)
@@ -32,7 +32,7 @@ def tg_settings_env(monkeypatch, tmp_path):
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    from magi.agent.db import init_sqlite
+    from magi.db import init_sqlite
     init_sqlite(str(state))
     return state
 
@@ -41,7 +41,7 @@ def tg_settings_env(monkeypatch, tmp_path):
 def client(tg_settings_env):
     """TestClient with an admin cookie; mirrors the other
     settings-API fixtures in this suite."""
-    from magi.agent.db import (
+    from magi.db import (
         Contact,
         init_orm,
         open_session)
@@ -96,7 +96,7 @@ def test_config_falls_back_on_unknown_value(tg_settings_env):
     from magi.channels.telegram.config import (
         DEFAULT_READ_REACTION_EMOJI,
         get_read_reaction_emoji)
-    from magi.agent.db.settings import state_set
+    from magi.db.settings import state_set
 
     # ✅ is in the Unicode block but NOT in our user-facing
     # choices (Telegram rejects it as a reaction type) —
@@ -295,7 +295,7 @@ def test_done_config_falls_back_on_unknown_value(tg_settings_env):
     from magi.channels.telegram.config import (
         DEFAULT_DONE_REACTION_EMOJI,
         get_done_reaction_emoji)
-    from magi.agent.db.settings import state_set
+    from magi.db.settings import state_set
 
     state_set(str(tg_settings_env), "tg.done_reaction_emoji", "✅")
     assert get_done_reaction_emoji(str(tg_settings_env)) == DEFAULT_DONE_REACTION_EMOJI

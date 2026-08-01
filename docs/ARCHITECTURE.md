@@ -119,7 +119,7 @@ management permission does not grant it a second runtime database or public moun
 | MAGIS PostgreSQL + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eve_runtimes` | one MAGIS |
 
 The compatibility Alembic baseline retains historical organization DDL in SQLite,
-but new runtime organization reads/writes use `magi.agent.db.magis` and PostgreSQL.
+but new runtime organization reads/writes use `magi.db.magis` and PostgreSQL.
 
 ## Private SQLite tables
 

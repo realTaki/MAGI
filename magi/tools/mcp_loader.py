@@ -5,7 +5,7 @@ existing :mod:`magi.tools` registry.
 Each upstream MCP server exposes a ``list_tools`` /
 ``call_tool`` pair; this module mirrors that surface as a
 :class:`Tool` so the agent loop doesn't need to know MCP exists.
-Modeled on MiniMax-AI/Mini-Agent's ``mini_agent/tools/mcp_loader.py`` —
+Modeled on MiniMax-AI/Mini-Agent's ``mini_tools/mcp_loader.py`` —
 same connection transports (``stdio`` / ``sse`` /
 ``streamable_http``), same timeout guarding, simplified to
 fit a single-process host where ``async`` work runs in one
@@ -15,7 +15,7 @@ Configuration
 -------------
 
 The single source of truth is the ``mcp_servers`` table
-(:class:`magi.agent.db.models_mcp_server.McpServer`).
+(:class:`magi.db.models_mcp_server.McpServer`).
 Operators add / edit / toggle / delete rows from the
 WebUI Settings → MCP card. The loader reads the table on
 demand — no JSON file, no env var, no deploy manifest.
@@ -107,7 +107,7 @@ class MCPTimeoutConfig:
 def _timeout_from_settings(key: str, default: float) -> float:
     """Read a float setting, falling back to *default*."""
     try:
-        from magi.agent.db.settings import state_get
+        from magi.db.settings import state_get
         from magi.constants import STATE_DIR
         raw = state_get(STATE_DIR, key)
         if raw:
@@ -490,7 +490,7 @@ def _load_servers_from_db() -> list[MCPServerConnection]:
     Returns ``[]`` if the table is empty (no operators
     have added servers yet) or the DB read fails.
     """
-    from magi.agent.db import McpServer, open_session
+    from magi.db import McpServer, open_session
 
     try:
         with open_session() as session:
@@ -656,7 +656,7 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
         endpoint surfaces a 200 + empty list.
       - ``list[MCPTool]`` on success.
     """
-    from magi.agent.db import McpServer, open_session
+    from magi.db import McpServer, open_session
 
     # 1. Active connection? Use it.
     for conn in _connections:

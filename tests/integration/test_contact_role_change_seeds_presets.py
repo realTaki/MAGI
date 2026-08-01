@@ -48,11 +48,11 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import (
+    from magi.db import (
         Contact,
         init_orm,
         init_sqlite,
@@ -115,7 +115,7 @@ def _preset_task_count(contact_id: int) -> int:
     directly via the DB (the API's ``kind`` filter is what
     the dashboard uses; this matches that exactly). The
     dashboard's two-list layout depends on this."""
-    from magi.agent.db import open_session
+    from magi.db import open_session
     from magi.channels.tasks.models import Task
 
     with open_session() as db:
@@ -127,7 +127,7 @@ def _preset_task_count(contact_id: int) -> int:
 def _all_task_count(contact_id: int) -> int:
     """Helper: count ALL tasks owned by ``contact_id``
     (preset + custom), directly via the DB."""
-    from magi.agent.db import open_session
+    from magi.db import open_session
     from magi.channels.tasks.models import Task
 
     with open_session() as db:

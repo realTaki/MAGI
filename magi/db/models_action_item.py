@@ -25,7 +25,7 @@ naturally surfaces the prompt again instead of
 erasing it.
 
 FKs reference :class:`Contact` in
-:mod:`magi.agent.db.models_contact`. Type-only import
+:mod:`magi.db.models_contact`. Type-only import
 under TYPE_CHECKING — FK strings resolve at mapper
 config time.
 """
@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from magi.agent.db.base import utcnow_naive
+from magi.db.base import utcnow_naive
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -44,11 +44,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.agent.db.base import Base
+from magi.db.base import Base
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_contact import Contact
+    from magi.db.models_contact import Contact
 
 
 class ActionItem(Base):

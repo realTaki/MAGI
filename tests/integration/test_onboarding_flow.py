@@ -65,11 +65,11 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
     
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import init_orm, init_sqlite
+    from magi.db import init_orm, init_sqlite
     init_sqlite(str(sd))
     init_orm(str(sd))
     return sd
@@ -134,8 +134,8 @@ def test_full_onboarding_flow_creates_admin_and_stamps_action_items(
     test; if it fails, the wizard is broken at one of the
     four checkpoints above.
     """
-    from magi.agent.db import ActionItem, Contact, open_session
-    from magi.agent.db.settings import state_get
+    from magi.db import ActionItem, Contact, open_session
+    from magi.db.settings import state_get
 
     # Step 0: pristine dashboard shows nothing saved yet.
     status = client.get("/api/onboarding/status").json()
@@ -277,8 +277,8 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
     also cleared — a deployer upgrading from v0 doesn't get
     stranded by a stale read-only key.
     """
-    from magi.agent.db import Contact, open_session
-    from magi.agent.db.settings import state_set
+    from magi.db import Contact, open_session
+    from magi.db.settings import state_set
 
     # Seed the post-onboarding state directly so we don't have
     # to walk the wizard in this test.
@@ -306,7 +306,7 @@ def test_restart_clears_complete_flag_but_preserves_bot_and_admins(
     assert r.json() == {"ok": True}
 
     # The canonical flag is cleared.
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
     assert state_get(state, "onboarding.complete") is None
     # The legacy v0 flag is cleared too (write-only delete).
     assert state_get(state, "telegram.onboarding_complete") is None
@@ -352,7 +352,7 @@ def test_onboarded_admins_show_up_in_contacts_directory(
     client.post("/api/onboarding/send-admin-code", json={"tgid": "91001"})
     raw = client.get("/api/onboarding/status")  # warm cache
     code = json.loads(__import__(
-        "magi.agent.db.settings", fromlist=["state_get"]
+        "magi.db.settings", fromlist=["state_get"]
     ).state_get(state, "telegram.verify_code.91001"))["code"]
     client.post(
         "/api/onboarding/verify-admin-code",
@@ -362,7 +362,7 @@ def test_onboarded_admins_show_up_in_contacts_directory(
         json={"tgids": ["91001"]})
     # Mint a signed cookie for the just-created admin so we
     # can hit /api/contacts as them.
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.channels.webui.api.auth import _sign_uid
     with open_session() as db:
         admin = db.query(Contact).filter_by(telegram_id=91001).one()

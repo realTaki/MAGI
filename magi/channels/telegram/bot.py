@@ -41,7 +41,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.prompts import load_bot_replies  # noqa: E402
-from magi.agent.db.engine import require_state_dir  # noqa: E402
+from magi.db.engine import require_state_dir  # noqa: E402
 from magi.channels import Channel  # noqa: E402
 
 # Loaded once per process. The dict is shared across
@@ -158,8 +158,8 @@ async def send_text_auto(chat_id: int, text: str) -> None:
     ``magi/channels/telegram/`` should touch the bot token
     or raw HTTP directly.
     """
-    from magi.agent.db.engine import require_state_dir
-    from magi.agent.db.settings import state_get
+    from magi.db.engine import require_state_dir
+    from magi.db.settings import state_get
 
     bot_token = state_get(require_state_dir(), "telegram.bot_token")
     if not bot_token:
@@ -438,9 +438,9 @@ def _auto_create_stranger_contact(
     """
     from sqlalchemy.exc import IntegrityError
 
-    from magi.agent.db import Contact, open_session, require_state_dir
-    from magi.agent.db.base import utcnow_naive
-    from magi.agent.db.models_contact import SOURCE_SYSTEM
+    from magi.db import Contact, open_session, require_state_dir
+    from magi.db.base import utcnow_naive
+    from magi.db.models_contact import SOURCE_SYSTEM
 
     try:
         cid_int = int(tgid)
@@ -501,7 +501,7 @@ def _find_contact_by_telegram_id(
     sign-in bit) and ``role`` (the served-by relationship)
     independently — ``admin=True`` is the canonical
     operator flag since the 2024 split (see
-    :mod:`magi.agent.db.models_contact`).
+    :mod:`magi.db.models_contact`).
 
     LLM credentials come from the direct MAGIS ``magic`` table,
     not from ``contacts``. Provider resolution happens in the agent loop.
@@ -514,8 +514,8 @@ def _find_contact_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.agent.db import Contact, open_session, require_state_dir
-    from magi.agent.db.settings import state_get
+    from magi.db import Contact, open_session, require_state_dir
+    from magi.db.settings import state_get
 
     try:
         cid_int = int(tgid)
@@ -996,7 +996,7 @@ def start_bot(state_dir: str) -> Optional[threading.Thread]:
     and keep the loop alive with an ``asyncio.Event`` that never gets
     set. The daemon thread is killed when the process exits.
     """
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
 
     # Idempotent start: if a polling thread is already alive,
     # return it instead of spawning a second one.

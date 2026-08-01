@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.tools.base import ToolContext, ToolResult
-from magi.agent.tools.bash import (
+from magi.tools.base import ToolContext, ToolResult
+from magi.tools.bash import (
     BashKillTool,
     BashOutputTool,
     BashRunTool,
@@ -241,7 +241,7 @@ def test_run_background_full_lifecycle(workspace_ctx):
         assert "line-1" not in again.content
 
         # 5. Kill the (still-running) background shell.
-        from magi.agent.tools.bash import _BackgroundShellManager
+        from magi.tools.bash import _BackgroundShellManager
         await kill_tool.run(workspace_ctx, bash_id=bid)
         # The id is gone from the registry.
         assert _BackgroundShellManager.get(bid) is None
@@ -328,7 +328,7 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
     Same single-loop dance as
     :func:`test_run_background_full_lifecycle`."""
     async def _kill_flow() -> None:
-        from magi.agent.tools.bash import _BackgroundShellManager
+        from magi.tools.bash import _BackgroundShellManager
         run_tool = BashRunTool()
         kill_tool = BashKillTool()
 
@@ -387,7 +387,7 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     # The registry builds each tool on first call;
     # the role-gate tools open a session lazily so
     # the engine only needs to be importable here.
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = [t["name"] for t in get_tool_schemas()]
     assert "bash" in names
     assert "bash_output" in names

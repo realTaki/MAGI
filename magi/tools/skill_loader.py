@@ -63,7 +63,7 @@ templates and won't cover quirks. We pin PyYAML in
 """
 
 from __future__ import annotations
-from magi.agent.db.engine import require_state_dir
+from magi.db.engine import require_state_dir
 
 import logging
 import os

@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.tools.skill_loader import (
+from magi.tools.skill_loader import (
     format_skills_block,
     get_skill_loader,
 )
-from magi.agent.tools.skill_loader import (
+from magi.tools.skill_loader import (
     SkillLoader,
     _reset_for_tests,
 )
@@ -386,7 +386,7 @@ def test_process_skill_paths_rewrites_directory_relative_paths(tmp_path):
     """``scripts/foo.py`` → absolute path when the file
     exists in the skill dir.
     """
-    from magi.agent.tools.skill_loader import _process_skill_paths
+    from magi.tools.skill_loader import _process_skill_paths
     skill_dir = tmp_path / "alpha"
     skill_dir.mkdir()
     (skill_dir / "scripts").mkdir()
@@ -409,7 +409,7 @@ def test_process_skill_paths_rewrites_prose_references(tmp_path):
     read_file to access)``. LLM can copy-paste the
     absolute path into a ``read_file`` call.
     """
-    from magi.agent.tools.skill_loader import _process_skill_paths
+    from magi.tools.skill_loader import _process_skill_paths
     skill_dir = tmp_path / "alpha"
     skill_dir.mkdir()
     (skill_dir / "reference.md").write_text("# ref", encoding="utf-8")
@@ -423,7 +423,7 @@ def test_process_skill_paths_rewrites_markdown_links(tmp_path):
     """Markdown link ``[`text`](relpath)`` →
     ``[`text`](`abs/path`) (use read_file to access)``.
     """
-    from magi.agent.tools.skill_loader import _process_skill_paths
+    from magi.tools.skill_loader import _process_skill_paths
     skill_dir = tmp_path / "alpha"
     skill_dir.mkdir()
     (skill_dir / "guide.md").write_text("guide", encoding="utf-8")
@@ -438,7 +438,7 @@ def test_process_skill_paths_leaves_nonexistent_paths_alone(tmp_path):
     left untouched. Avoids hallucinating files the
     deployer didn't ship.
     """
-    from magi.agent.tools.skill_loader import _process_skill_paths
+    from magi.tools.skill_loader import _process_skill_paths
     skill_dir = tmp_path / "alpha"
     skill_dir.mkdir()
     out = _process_skill_paths("see ghost.md for context", skill_dir)
@@ -450,7 +450,7 @@ def test_skill_root_dir_line_announces_path(tmp_path):
     thing the LLM sees — tells it where sibling
     files live.
     """
-    from magi.agent.tools.skill_loader import _skill_root_dir_line
+    from magi.tools.skill_loader import _skill_root_dir_line
     line = _skill_root_dir_line(tmp_path / "alpha")
     assert "Skill Root Directory" in line
     assert str(tmp_path / "alpha") in line
@@ -475,10 +475,10 @@ def test_load_skill_body_prepends_root_dir_line(workspace):
         "the body",
         encoding="utf-8",
     )
-    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+    from magi.tools.skill_loader_tool import SkillLoaderTool
 
     # Reset the singleton so the new SKILL.md is picked up.
-    from magi.agent.tools.skill_loader import _reset_for_tests
+    from magi.tools.skill_loader import _reset_for_tests
     _reset_for_tests()
 
     result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))
@@ -514,8 +514,8 @@ def test_load_skill_body_rewrites_known_sibling_paths(workspace):
         encoding="utf-8",
     )
 
-    from magi.agent.tools.skill_loader import _reset_for_tests
-    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+    from magi.tools.skill_loader import _reset_for_tests
+    from magi.tools.skill_loader_tool import SkillLoaderTool
     _reset_for_tests()
 
     result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))
@@ -554,8 +554,8 @@ def test_load_skill_body_adds_read_file_hint_for_prose_reference(workspace):
         encoding="utf-8",
     )
 
-    from magi.agent.tools.skill_loader import _reset_for_tests
-    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
+    from magi.tools.skill_loader import _reset_for_tests
+    from magi.tools.skill_loader_tool import SkillLoaderTool
     _reset_for_tests()
 
     result = asyncio_run(SkillLoaderTool().run(None, name="alpha"))

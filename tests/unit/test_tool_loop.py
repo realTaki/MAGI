@@ -39,15 +39,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from magi.agent.llm.provider import ChatMessage, ChatResult
-from magi.agent.tools._safe_path import safe_resolve
-from magi.agent.tools.base import ToolContext, ToolResult
-from magi.agent.tools.list_files import ListFilesTool
-from magi.agent.tools.read_file import ReadFileTool
-from magi.agent.tools.registry import (
+from magi.tools._safe_path import safe_resolve
+from magi.tools.base import ToolContext, ToolResult
+from magi.tools.list_files import ListFilesTool
+from magi.tools.read_file import ReadFileTool
+from magi.tools.registry import (
     get_tool,
     get_tool_schemas)
-from magi.agent.tools.send_message import SendMessageTool
-from magi.agent.tools.write_file import WriteFileTool
+from magi.tools.send_message import SendMessageTool
+from magi.tools.write_file import WriteFileTool
 
 # ────────────────────────────────────────────────────────────────── #
 # Schema + provider wiring
@@ -221,7 +221,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     # tmp_path. Without this, the second test onwards
     # writes to the first test's DB and the third test's
     # rows appear in the fourth test's results.
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     return ToolContext(
@@ -350,7 +350,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     the webui handler was silently dropping messages. The
     test follows the production code path.
     """
-    from magi.agent.db import (
+    from magi.db import (
         ChatSession,
         open_session)
     from magi.channels import dispatcher
@@ -363,7 +363,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     # row the tool's ``ctx.session_id`` points at. The
     # post-refactor dispatcher reads ``Contact.telegram_id``
     # directly as the per-channel IM identifier.
-    from magi.agent.db import Contact
+    from magi.db import Contact
     with open_session() as db:
         existing = db.get(Contact, 42)
         if existing is None:
@@ -514,7 +514,7 @@ async def test_edit_file_replaces_unique_match(workspace_ctx):
     and a ``new_str``; the file is updated and
     the original content is preserved everywhere
     else."""
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "config.yaml"
     target.write_text(
         "name: app\nversion: 1\nport: 8080\n",
@@ -540,7 +540,7 @@ async def test_edit_file_rejects_non_unique_match(workspace_ctx):
     patching the first occurrence is the kind of
     footgun the LLM needs a guard against.
     """
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "dupe.txt"
     target.write_text("foo\nbar\nfoo\n", encoding="utf-8")
     tool = EditFileTool()
@@ -559,7 +559,7 @@ async def test_edit_file_rejects_missing_match(workspace_ctx):
     """``old_str`` not in the file → clear error,
     not a silent append / replacement of nothing.
     """
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "f.txt"
     target.write_text("hello\n", encoding="utf-8")
     tool = EditFileTool()
@@ -576,7 +576,7 @@ async def test_edit_file_supports_empty_new_str(workspace_ctx):
     """``new_str=""`` deletes the matched chunk.
     Common LLM pattern: drop a debug print.
     """
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "code.py"
     target.write_text(
         "def f():\n    print('debug')\n    return 1\n",
@@ -598,7 +598,7 @@ async def test_edit_file_rejects_traversal(workspace_ctx):
     a ``../etc/passwd`` attempt is rejected, same
     as read/write.
     """
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     tool = EditFileTool()
     result = await tool.run(
         workspace_ctx,
@@ -612,7 +612,7 @@ async def test_edit_file_rejects_traversal(workspace_ctx):
 async def test_edit_file_rejects_non_utf8(workspace_ctx):
     """Editing a non-UTF-8 file fails with a clear
     message rather than corrupting bytes."""
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "binary.bin"
     target.write_bytes(b"\x80\x81\x82not-utf-8")
     tool = EditFileTool()
@@ -630,7 +630,7 @@ async def test_edit_file_rejects_oversized_old_str(workspace_ctx):
     pasting the whole file. Cap it at 64 KB with a
     helpful message.
     """
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools.edit_file import EditFileTool
     target = workspace_ctx.workspace / "big.txt"
     target.write_text("hello\n", encoding="utf-8")
     tool = EditFileTool()
@@ -650,8 +650,8 @@ async def test_edit_file_atomicity_preserves_previous_on_failure(
     monkey-patching ``os.replace`` to raise and
     verify the original content is still on disk.
     """
-    from magi.agent.tools import edit_file
-    from magi.agent.tools.edit_file import EditFileTool
+    from magi.tools import edit_file
+    from magi.tools.edit_file import EditFileTool
 
     target = workspace_ctx.workspace / "atomic.txt"
     original = "line1\nline2\nline3\n"
@@ -688,7 +688,7 @@ def test_edit_file_appears_in_registry(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
 
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = [t["name"] for t in get_tool_schemas()]
     assert "edit_file" in names
 
@@ -713,7 +713,7 @@ async def test_run_tool_calls_appends_retry_hint_on_repeated_edit_file_failures(
     """
     from magi.agent.llm.provider import ChatResult
     from magi.agent.loop import _run_tool_calls
-    from magi.agent.tools.edit_retry import EditRetryTracker
+    from magi.tools.edit_retry import EditRetryTracker
 
     target = workspace_ctx.workspace / "drift.py"
     target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
@@ -770,7 +770,7 @@ async def test_run_tool_calls_no_hint_on_successful_edit_then_failure(
     """
     from magi.agent.llm.provider import ChatResult
     from magi.agent.loop import _run_tool_calls
-    from magi.agent.tools.edit_retry import EditRetryTracker
+    from magi.tools.edit_retry import EditRetryTracker
 
     target = workspace_ctx.workspace / "ok.py"
     target.write_text("a\nb\nc\n", encoding="utf-8")

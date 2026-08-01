@@ -47,13 +47,13 @@ from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels import Channel
-from magi.agent.db import get_session
+from magi.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.tasks.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
 from magi.channels.tasks.models import Task, TaskRun
 from magi.channels.tasks.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import ChatSession, Contact, require_state_dir
+from magi.db import ChatSession, Contact, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
@@ -441,7 +441,7 @@ def create_task(
     # system TZ was in force when the row was created).
     # The runtime, however, ignores it: every fire reads
     # the current ``system.timezone`` via
-    # :func:`magi.agent.db.settings.state_get`. Resolve
+    # :func:`magi.db.settings.state_get`. Resolve
     # BEFORE we issue any outer-session queries —
     # ``state_get`` opens its own ORM session, and a
     # nested BEGIN IMMEDIATE inside the FastAPI route's
@@ -762,7 +762,7 @@ def _resolve_creator_id(request: Request, _payload) -> int:
         # on the route's session (the dispatcher call in
         # :func:`create_task` would deadlock against that
         # outer txn).
-        from magi.agent.db import open_session as _open
+        from magi.db import open_session as _open
         with _open() as db:
             contact = db.get(Contact, cand)
         if contact is None:
@@ -783,7 +783,7 @@ def _resolve_creator_id(request: Request, _payload) -> int:
     # the dispatcher lookup fires.
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
-    from magi.agent.db import open_session as _open
+    from magi.db import open_session as _open
     with _open() as db:
         contact = db.get(Contact, uid)
     if contact is None:
@@ -890,7 +890,7 @@ def _resolve_system_tz() -> str:
     global _SYSTEM_TZ_CACHE
     if _SYSTEM_TZ_CACHE is not None:
         return _SYSTEM_TZ_CACHE
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
     raw = state_get(_state_dir(), "system.timezone")
     val = raw if raw else "UTC"
     _SYSTEM_TZ_CACHE = val

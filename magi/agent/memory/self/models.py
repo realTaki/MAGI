@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from magi.agent.db.base import utcnow_naive
+from magi.db.base import utcnow_naive
 
 from sqlalchemy import (
     DateTime,
@@ -43,7 +43,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db.base import Base
+from magi.db.base import Base
 
 
 # Memory kinds — what's stored. Person records are NOT

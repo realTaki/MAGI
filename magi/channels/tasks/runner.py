@@ -70,8 +70,8 @@ from magi.agent.memory.session import (
     new_session_id,
     utcnow_iso,
 )
-from magi.agent.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
-from magi.agent.db.settings import state_get
+from magi.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
+from magi.db.settings import state_get
 
 # D.28: the runner no longer touches the TG client API
 # directly. The channel dispatcher is the single dispatch

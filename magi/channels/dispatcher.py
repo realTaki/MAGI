@@ -40,7 +40,7 @@ from typing import Awaitable, Callable, Protocol, runtime_checkable
 from sqlalchemy import select
 from sqlalchemy.exc import MultipleResultsFound
 
-from magi.agent.db import Contact, open_session
+from magi.db import Contact, open_session
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.dispatcher")
@@ -229,7 +229,7 @@ async def send_to_session(session_id: str, text: str) -> None:
         from magi.agent.memory.session.store import SessionStore
         from magi.agent.memory.session.ids import new_session_id, utcnow_iso
         from magi.agent.memory.session.models import SessionMessage
-        from magi.agent.db.engine import require_state_dir
+        from magi.db.engine import require_state_dir
         store = SessionStore(state_dir=require_state_dir())
         store.append_messages(
             sess.uid, session_id,

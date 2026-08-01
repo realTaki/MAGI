@@ -40,11 +40,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.agent.db.base import Base, utcnow_naive
+from magi.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.agent.db.models_magic import MAGIC
+    from magi.db.models_magic import MAGIC
 
 
 class MAGIS(Base):

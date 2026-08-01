@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.db import (
+from magi.db import (
     ChatMessage,
     ChatSession,
     Contact,
@@ -64,7 +64,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
     
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
 

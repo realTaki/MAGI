@@ -28,12 +28,12 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path):
     sd.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import init_orm, open_session
-    from magi.agent.db.models_contact import Contact
+    from magi.db import init_orm, open_session
+    from magi.db.models_contact import Contact
     init_orm(str(sd))
 
     with open_session() as db:

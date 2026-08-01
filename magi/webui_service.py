@@ -15,7 +15,7 @@ def run() -> None:
         level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    from magi.agent.db.magis import init_magis_public_db
+    from magi.db.magis import init_magis_public_db
 
     # Seeding is idempotent. This service owns initial control-plane startup;
     # keeping it here also works when it starts before the first runtime.

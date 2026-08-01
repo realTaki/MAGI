@@ -120,8 +120,8 @@ def ensure_runtime_operator(request: Request) -> int | None:
     is_admin, is_assigned = scope
     from sqlalchemy import select
 
-    from magi.agent.db import Contact, open_session
-    from magi.agent.db.models_contact import SOURCE_SYSTEM
+    from magi.db import Contact, open_session
+    from magi.db.models_contact import SOURCE_SYSTEM
 
     marker = f"magi.control_operator_id={operator_id}"
     with open_session() as session:

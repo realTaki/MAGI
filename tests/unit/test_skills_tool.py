@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.tools.skill_loader import _reset_for_tests
-from magi.agent.tools.skill_loader_tool import SkillLoaderTool
-from magi.agent.tools.base import ToolContext, ToolResult
+from magi.tools.skill_loader import _reset_for_tests
+from magi.tools.skill_loader_tool import SkillLoaderTool
+from magi.tools.base import ToolContext, ToolResult
 
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):

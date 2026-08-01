@@ -37,8 +37,8 @@ class TelegramVerify(BaseModel):
 @router.post("/control/telegram/bootstrap")
 async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> dict[str, bool]:
     _require_control(request)
-    from magi.agent.db import require_state_dir
-    from magi.agent.db.settings import state_set
+    from magi.db import require_state_dir
+    from magi.db.settings import state_set
     from magi.channels.telegram import bot as tg_bot
 
     state_dir = require_state_dir()
@@ -64,8 +64,8 @@ async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str
 @router.post("/control/telegram/send")
 async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bool]:
     _require_control(request)
-    from magi.agent.db import require_state_dir
-    from magi.agent.db.settings import state_get
+    from magi.db import require_state_dir
+    from magi.db.settings import state_get
     from magi.channels.telegram import bot as tg_bot
 
     token = state_get(require_state_dir(), "telegram.bot_token")

@@ -35,11 +35,11 @@ def env(monkeypatch, tmp_path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import (
+    from magi.db import (
         Contact,
         init_orm,
         init_sqlite,
@@ -193,7 +193,7 @@ def test_list_contacts_with_notes_returns_only_noted(env, client):
     """``?with_notes=true`` returns contacts that have at
     least one row in the ``contact_notes`` table (the
     LLM-recorded directory). Charlie stays empty."""
-    from magi.agent.db import ContactNote, open_session
+    from magi.db import ContactNote, open_session
 
     with open_session() as db:
         db.add(ContactNote(

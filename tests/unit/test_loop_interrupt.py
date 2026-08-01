@@ -123,7 +123,7 @@ def _reset_orm_engine() -> None:
     Mirrors the same auto-reset in
     ``test_chat_sessions_api`` — same root cause, same fix.
     """
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
     yield
@@ -143,7 +143,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    from magi.agent.db import Contact, init_orm, init_sqlite, open_session
+    from magi.db import Contact, init_orm, init_sqlite, open_session
 
     init_sqlite(str(state))
     init_orm(str(state))

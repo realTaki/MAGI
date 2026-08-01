@@ -4,7 +4,7 @@
 This module is retained only to adopt databases created before the Alembic
 baseline. It runs when ``alembic_version`` is absent and must not receive
 new schema changes. All future schema changes belong in
-``magi/agent/db/alembic/versions``.
+``magi/db/alembic/versions``.
 
 SQLAlchemy's ``create_all`` is a no-op when a table already exists, so the
 legacy lists below repair old databases before the baseline is stamped.

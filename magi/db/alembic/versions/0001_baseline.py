@@ -580,7 +580,7 @@ def upgrade() -> None:
     # Optional — falls through silently on stripped SQLite
     # builds. Virtual table + sync triggers for full-text
     # search across ``chat_messages``. The DDL list lives
-    # in :mod:`magi.agent.db.migrations._FTS_MIGRATIONS`
+    # in :mod:`magi.db.migrations._FTS_MIGRATIONS`
     # so the source of truth is one module (this file
     # just inlines it).
     bind = op.get_bind()
@@ -599,7 +599,7 @@ def upgrade() -> None:
 
     if has_fts5:
         try:
-            from magi.agent.db.migrations import _FTS_MIGRATIONS
+            from magi.db.migrations import _FTS_MIGRATIONS
             for _name, ddl in _FTS_MIGRATIONS:
                 bind.execute(text(ddl))
             bind.execute(

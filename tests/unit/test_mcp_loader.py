@@ -33,9 +33,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from magi.agent.tools import mcp_loader
-from magi.agent.tools.base import ToolContext, ToolResult
-from magi.agent.tools.registry import (
+from magi.tools import mcp_loader
+from magi.tools.base import ToolContext, ToolResult
+from magi.tools.registry import (
     bootstrap_mcp_tools,
     get_tool,
     get_tool_schemas,
@@ -62,12 +62,12 @@ def mcp_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import init_orm, open_session
-    from magi.agent.db.models_mcp_server import McpServer
+    from magi.db import init_orm, open_session
+    from magi.db.models_mcp_server import McpServer
 
     init_orm(str(state))
 
@@ -183,8 +183,8 @@ def test_load_servers_malformed_json_falls_back_to_empty(mcp_db, caplog):
     ``args_json`` doesn't crash the whole load. The
     loader logs a warning and treats the column as
     empty."""
-    from magi.agent.db import open_session
-    from magi.agent.db.models_mcp_server import McpServer
+    from magi.db import open_session
+    from magi.db.models_mcp_server import McpServer
 
     with open_session() as s:
         s.add(McpServer(
@@ -367,8 +367,8 @@ def test_maybe_reload_fires_on_table_edit(mcp_db):
     # ``onupdate`` only fires on column value changes,
     # so we touch ``enabled``.
     import time as _t
-    from magi.agent.db import open_session
-    from magi.agent.db.models_mcp_server import McpServer
+    from magi.db import open_session
+    from magi.db.models_mcp_server import McpServer
 
     # The datetime resolution on sqlite is second-level,
     # so a sub-second edit may not bump the stamp. Sleep
@@ -395,10 +395,10 @@ def test_maybe_reload_handles_deleted_table(mcp_db, monkeypatch):
     mcp_db(command="echo")
     bootstrap_mcp_tools()
     # Force the inner query to blow up by patching
-    # ``magi.agent.db.open_session`` to raise — that's
+    # ``magi.db.open_session`` to raise — that's
     # the symbol the function actually resolves at call
     # time.
-    import magi.agent.db as db_mod
+    import magi.db as db_mod
 
     real_open_session = db_mod.open_session
     def _boom(*_a, **_kw):
@@ -451,7 +451,7 @@ def test_mcptool_run_returns_text_content(mcp_db, monkeypatch):
     ``AsyncMock`` for the upstream session — no
     subprocess, no real MCP server."""
 
-    from magi.agent.tools.mcp_loader import MCPTool
+    from magi.tools.mcp_loader import MCPTool
 
     class _FakeSession:
         async def call_tool(self, name, arguments):
@@ -493,7 +493,7 @@ def test_mcptool_run_handles_timeout(mcp_db):
     agent loop."""
     import asyncio
     from pathlib import Path
-    from magi.agent.tools.mcp_loader import MCPTool
+    from magi.tools.mcp_loader import MCPTool
     from magi.channels import Channel
 
     class _SlowSession:
@@ -525,7 +525,7 @@ def test_mcptool_run_handles_call_exception():
     reported as an error, not propagated."""
     import asyncio
     from pathlib import Path
-    from magi.agent.tools.mcp_loader import MCPTool
+    from magi.tools.mcp_loader import MCPTool
     from magi.channels import Channel
 
     class _BrokenSession:
@@ -559,12 +559,12 @@ def test_get_tool_finds_builtin_tool(mcp_db):
     instance by name. The lookup path is shared
     between built-in and MCP tools — this is the
     built-in half of the contract."""
-    from magi.agent.tools.registry import get_tool
+    from magi.tools.registry import get_tool
     tool = get_tool("read_file")
     assert tool is not None
     assert tool.name == "read_file"
 
 
 def test_get_tool_returns_none_for_unknown(mcp_db):
-    from magi.agent.tools.registry import get_tool
+    from magi.tools.registry import get_tool
     assert get_tool("definitely_not_a_real_tool_xyz") is None

@@ -58,7 +58,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
-from magi.agent.db import McpServer, get_session
+from magi.db import McpServer, get_session
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 

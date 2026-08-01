@@ -36,7 +36,7 @@ def _reset_orm_engine() -> None:
     """Reset the process-wide ORM engine singleton so each
     test gets a fresh SQLite at ``tmp_path``. Same fix as
     ``test_chat_sessions_api``."""
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
     yield
@@ -50,7 +50,7 @@ def state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    from magi.agent.db import init_orm, init_sqlite
+    from magi.db import init_orm, init_sqlite
     init_sqlite(str(state))
     init_orm(str(state))
     return state
@@ -65,7 +65,7 @@ def seed_contacts(state_dir: Path):
         whose contact row exists for Alice but isn't the
         current chat.
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     with open_session() as db:
         alice = Contact(
             id=1, name="Alice",
@@ -135,7 +135,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
     a markdown bullet under the "Long-term memory" section.
     Pinning this catches a future "memory block silently
     dropped" regression."""
-    from magi.agent.db import open_session
+    from magi.db import open_session
     from magi.agent.memory.self.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
@@ -171,7 +171,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
     """The memory block must NOT bleed across admins. Bob
     (uid=2) gets Alice's (uid=1) memory
     when Bob's loop is the caller."""
-    from magi.agent.db import open_session
+    from magi.db import open_session
     from magi.agent.memory.self.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
@@ -217,7 +217,7 @@ def test_prompt_excludes_completed_ongoing_rows(
     NOT render in the prompt."""
     from datetime import datetime, timezone
 
-    from magi.agent.db import open_session
+    from magi.db import open_session
     from magi.agent.memory.self.models import (
         KIND_ONGOING,
         SOURCE_MANUAL,
@@ -268,7 +268,7 @@ def test_prompt_includes_contact_block_for_self(
     — the post-refactor schema collapses to a single
     ``Contact`` table where each person IS their own row.
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -295,7 +295,7 @@ def test_prompt_contact_block_uses_display_name_not_raw_id(
     ``**1**`` (the raw PK). This test pins the fix so a
     future "drop the display_name kwarg" revert is caught.
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -344,7 +344,7 @@ def test_prompt_contact_block_only_for_self(
     We pin that Alice's ``notes`` field is the only thing
     shown in her prompt.)
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -366,7 +366,7 @@ def test_prompt_skips_contact_block_for_other_user(
     state_dir, seed_contacts):
     """When uid=1 (Alice), only Alice's row renders —
     Bob's row (id=2) is not pulled into her prompt."""
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.agent.system_prompt import build_system_prompt
 
     with open_session() as db:
@@ -426,7 +426,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     Under the unified ``Contact`` schema, the contact
     block renders the chatter's own row by id, not a
     separate ``ContactEntry`` row keyed by ``person_id``."""
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.agent.memory.self.models import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,

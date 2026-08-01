@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Optional
 
 from magi.agent.llm.errors import LLMError
-from magi.agent.db.engine import require_state_dir
+from magi.db.engine import require_state_dir
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.prompts import load_chat_title_prompt

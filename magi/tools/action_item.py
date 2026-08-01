@@ -56,7 +56,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.db import ActionItem, open_session
+from magi.db import ActionItem, open_session
 from magi.tools.base import (
     Tool,
     ToolContext,

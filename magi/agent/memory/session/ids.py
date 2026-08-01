@@ -77,10 +77,10 @@ def utcnow_iso() -> str:
 
 # ``utcnow_naive`` (the canonical "replacement for the
 # deprecated ``datetime.utcnow()``") now lives in
-# :mod:`magi.agent.db.base` so the ORM model files can
+# :mod:`magi.db.base` so the ORM model files can
 # import it without going through ``magi.agent.memory.__init__``
 # (which transitively imports the contact tools, which
-# import from ``magi.agent.db`` — the resulting cycle would
+# import from ``magi.db`` — the resulting cycle would
 # deadlock module init). The companion ``utcnow_iso`` here
 # stays put because it's a session-package helper that only
 # touches the standard library + a path.

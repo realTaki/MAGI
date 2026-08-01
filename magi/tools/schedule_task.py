@@ -50,8 +50,8 @@ from magi.channels.tasks.cron_utils import preset_to_cron, validate_run_at, vali
 from magi.channels.tasks.models import Task
 from magi.channels.tasks.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
-from magi.agent.db import ChatSession, Contact, open_session, require_state_dir
-from magi.agent.db.settings import state_get
+from magi.db import ChatSession, Contact, open_session, require_state_dir
+from magi.db.settings import state_get
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.channels import Channel
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -594,7 +594,7 @@ def _session_delivery_address(session_id):
     if not session_id:
         return None
     try:
-        from magi.agent.db import open_session as _open
+        from magi.db import open_session as _open
         from magi.agent.memory.session.tables import (
             ChatSession as _ChatSession,
         )

@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db import Base
+from magi.db import Base
 
 
 class TaskPreset(Base):

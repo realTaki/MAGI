@@ -34,7 +34,7 @@ import json
 import logging
 from typing import Any
 
-from magi.agent.db import Contact, open_session
+from magi.db import Contact, open_session
 from magi.agent.memory.self.models import (
     ALL_KINDS,
     SOURCE_EVE,

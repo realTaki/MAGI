@@ -9,7 +9,7 @@ the rest of the database.
 
 The public ``state_get`` / ``state_set`` / ``state_delete`` functions remain
 as a compatibility facade for callers that still use the old state-oriented
-API. They are implemented in :mod:`magi.agent.db.settings` and do not open a
+API. They are implemented in :mod:`magi.db.settings` and do not open a
 second DB connection themselves.
 """
 
@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from sqlalchemy import String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db.base import Base
+from magi.db.base import Base
 
 
 def _utcnow_sqlite_text() -> str:

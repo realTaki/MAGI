@@ -63,8 +63,8 @@ from sqlalchemy import select
 # resolve the name at import time, before the function
 # body ever runs. Same root cause as the D.22 fix on
 # ``magi/node/__init__.py``: hoist the import.
-from magi.agent.db import Contact, ControlOperator, EveRuntime, MAGIC, MAGIS, open_session, require_state_dir  # noqa: E402
-from magi.agent.db.settings import state_get  # noqa: E402
+from magi.db import Contact, ControlOperator, EveRuntime, MAGIC, MAGIS, open_session, require_state_dir  # noqa: E402
+from magi.db.settings import state_get  # noqa: E402
 from magi.channels.webui import control_store
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot  # noqa: E402
@@ -193,7 +193,7 @@ def _super_admins() -> set[int]:
     also an operator).
     """
     if control_store.enabled():
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             return set(session.scalars(select(ControlOperator.id).where(ControlOperator.admin.is_(True))).all())
     state_dir = _state_dir()
@@ -344,7 +344,7 @@ _LOGIN_KEY = "auth.login_code"
 
 
 def _load_login_code(uid: int) -> dict | None:
-    from magi.agent.db.settings import state_get
+    from magi.db.settings import state_get
 
     raw = control_store.get(f"{_LOGIN_KEY}.{uid}") if control_store.enabled() else state_get(_state_dir(), f"{_LOGIN_KEY}.{uid}")
     if not raw:
@@ -356,7 +356,7 @@ def _load_login_code(uid: int) -> dict | None:
 
 
 def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
-    from magi.agent.db.settings import state_set
+    from magi.db.settings import state_set
 
     value = json.dumps(
             {
@@ -373,7 +373,7 @@ def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: floa
 
 
 def _clear_login_code(uid: int) -> None:
-    from magi.agent.db.settings import state_delete
+    from magi.db.settings import state_delete
 
     if control_store.enabled():
         control_store.delete(f"{_LOGIN_KEY}.{uid}")
@@ -408,7 +408,7 @@ async def _target_access(magic_id: int, method: str, path: str, payload: dict[st
     the narrow pre-login capability, and the signature remains bound to the
     selected runtime id and exact path.
     """
-    from magi.agent.db.magis import open_magis_session
+    from magi.db.magis import open_magis_session
     from magi.channels.webui.api.runtime_proxy import _runtime_url
 
     with open_magis_session() as session:
@@ -438,7 +438,7 @@ async def available_magi() -> AvailableMAGIResponse:
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    from magi.agent.db.magis import open_magis_session
+    from magi.db.magis import open_magis_session
     with open_magis_session() as session:
         rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
         runtimes = {row.magic_id: row for row in session.scalars(select(EveRuntime)).all()}
@@ -529,7 +529,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     login must stay fast even when Telegram is slow or blocked.
     """
     if control_store.enabled():
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             operators = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
         return AllowedLoginAccountsResponse(accounts=[
@@ -622,7 +622,7 @@ async def send_login_code(
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
     if control_store.enabled():
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             operator = session.get(ControlOperator, uid)
         if operator is None or not operator.admin:
@@ -828,7 +828,7 @@ async def me(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
     if control_store.enabled():
-        from magi.agent.db.magis import open_magis_session
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             operator = session.get(ControlOperator, uid)
         if operator is None:

@@ -13,18 +13,18 @@ from sqlalchemy import engine_from_config, pool
 # Import every model so `alembic revision --autogenerate` sees the complete
 # metadata. The runtime's init_orm() uses the same import set before invoking
 # `alembic upgrade head`.
-import magi.agent.db.models_action_item  # noqa: F401,E402
-import magi.agent.db.models_contact  # noqa: F401,E402
-import magi.agent.db.models_eve_runtime  # noqa: F401,E402
-import magi.agent.db.models_magic  # noqa: F401,E402
-import magi.agent.db.models_magis  # noqa: F401,E402
-import magi.agent.db.models_setting  # noqa: F401,E402
-import magi.agent.db.models_token_usage  # noqa: F401,E402
+import magi.db.models_action_item  # noqa: F401,E402
+import magi.db.models_contact  # noqa: F401,E402
+import magi.db.models_eve_runtime  # noqa: F401,E402
+import magi.db.models_magic  # noqa: F401,E402
+import magi.db.models_magis  # noqa: F401,E402
+import magi.db.models_setting  # noqa: F401,E402
+import magi.db.models_token_usage  # noqa: F401,E402
 import magi.agent.memory.self.models  # noqa: F401,E402
 import magi.agent.memory.session.tables  # noqa: F401,E402
 import magi.channels.tasks.models  # noqa: F401,E402
 import magi.proactive.models  # noqa: F401,E402
-from magi.agent.db.base import Base
+from magi.db.base import Base
 
 config = context.config
 if config.config_file_name is not None:

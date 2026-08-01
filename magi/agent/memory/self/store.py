@@ -25,8 +25,8 @@ from typing import Iterable, Optional
 
 from sqlalchemy import select
 
-from magi.agent.db import open_session
-from magi.agent.db.base import utcnow_naive
+from magi.db import open_session
+from magi.db.base import utcnow_naive
 from magi.agent.memory.self.models import (
     ALL_KINDS,
     KIND_ONGOING,

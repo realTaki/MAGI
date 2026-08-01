@@ -18,9 +18,9 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.agent.db import Contact, EveRuntime, MAGIC, MAGIS, MAGISAdmin, MAGISMembership, open_session, require_state_dir
-from magi.agent.db.magis import open_magis_session
-from magi.agent.db.settings import state_delete, state_get, state_set
+from magi.db import Contact, EveRuntime, MAGIC, MAGIS, MAGISAdmin, MAGISMembership, open_session, require_state_dir
+from magi.db.magis import open_magis_session
+from magi.db.settings import state_delete, state_get, state_set
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers, verified_proxy_operator

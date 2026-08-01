@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
-from magi.agent.db.magis import get_magis_session
+from magi.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
+from magi.db.magis import get_magis_session
 from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.magic")

@@ -24,8 +24,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import Contact, ContactNote, get_session
-from magi.agent.db.base import utcnow_naive
+from magi.db import Contact, ContactNote, get_session
+from magi.db.base import utcnow_naive
 from magi.channels.webui.api.auth_gates import admin_gate, AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 
@@ -170,7 +170,7 @@ def list_contacts(
 
     if with_notes:
         # Contacts that have at least one note in ``contact_notes``.
-        from magi.agent.db.models_contact import ContactNote
+        from magi.db.models_contact import ContactNote
         note_ids = session.scalars(
             select(ContactNote.contact_id).distinct()
         ).all()
@@ -200,7 +200,7 @@ def list_contacts(
         base = base.order_by(Contact.last_seen_at.desc()).limit(_MAX_ROWS)
         rows = session.scalars(base).all()
         # Preload notes counts in one query
-        from magi.agent.db.models_contact import ContactNote
+        from magi.db.models_contact import ContactNote
         note_counts: dict[int, int] = {}
         if rows:
             cids = [r.id for r in rows]
@@ -339,7 +339,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -402,7 +402,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -554,7 +554,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -602,7 +602,7 @@ def list_contact_notes(
     _admin: AdminGate,
     session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.agent.db.models_contact import Contact, ContactNote
+    from magi.db.models_contact import Contact, ContactNote
     contact = session.get(Contact, contact_id)
     if contact is None:
         raise MagiHTTPException(

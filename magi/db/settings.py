@@ -7,7 +7,7 @@ is no longer accessed through a second raw ``sqlite3`` connection: every
 operation goes through the shared SQLAlchemy engine and ``open_session()``.
 
 This module is intentionally the only legacy KV facade. New code that needs
-structured settings should use :class:`magi.agent.db.models_setting.Setting`
+structured settings should use :class:`magi.db.models_setting.Setting`
 directly, while existing system-setting keys can continue using these
 helpers until their callers are migrated.
 """
@@ -17,8 +17,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from magi.agent.db.engine import open_session
-from magi.agent.db.models_setting import Setting
+from magi.db.engine import open_session
+from magi.db.models_setting import Setting
 
 
 def _prepare_session(state_dir: str):

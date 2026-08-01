@@ -12,7 +12,7 @@ Singular ``session`` (not ``sessions``) because this package
 is the *manager* of the chat-session concept — the data
 model, the store, the auto-title worker, the migration
 importer. The actual bulk storage lives one layer down
-in :mod:`magi.agent.db` (the SQLAlchemy tables and
+in :mod:`magi.db` (the SQLAlchemy tables and
 engine).
 
 Why SQLite

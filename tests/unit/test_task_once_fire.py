@@ -35,7 +35,7 @@ from magi.channels.tasks.scheduler import (
     TaskScheduler,
     _reset_for_tests,
     stop_scheduler)
-from magi.agent.db import init_orm, init_sqlite, open_session
+from magi.db import init_orm, init_sqlite, open_session
 from magi.channels.tasks.models import Task
 
 
@@ -86,7 +86,7 @@ def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     sd.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     init_sqlite(str(sd))
@@ -104,7 +104,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
     from magi.channels.tasks import models as _  # noqa: F401  (registers Task on Base)
-    from magi.agent.db import Contact
+    from magi.db import Contact
 
     task_id = "T" + "0" * 25
     row_kwargs = dict(overrides)
@@ -227,12 +227,12 @@ async def test_schedule_task_tool_once_writes_run_at_row(
     ``ChatSession`` allocation don't read apscheduler
     state).
     """
-    from magi.agent.tools.schedule_task import ScheduleTaskTool
-    from magi.agent.tools.base import ToolContext
+    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.base import ToolContext
 
     # Seed a target operator + bind the cookie identity
     # the ``_gate`` consults.
-    from magi.agent.db import Contact
+    from magi.db import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",
@@ -272,12 +272,12 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     the LLM gets a precise message back, not a server-side
     traceback."""
     from magi.channels.tasks.scheduler import start_scheduler
-    from magi.agent.tools.schedule_task import ScheduleTaskTool
-    from magi.agent.tools.base import ToolContext
+    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.base import ToolContext
 
     start_scheduler(str(state_db))
 
-    from magi.agent.db import Contact
+    from magi.db import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",

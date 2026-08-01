@@ -3,10 +3,10 @@
 
 This subpackage owns the engine and sessions for the one public PostgreSQL
 database assigned to a MAGI's direct MAGIS.  Private, per-MAGI SQLite access
-remains in :mod:`magi.agent.db.engine`.
+remains in :mod:`magi.db.engine`.
 """
 
-from magi.agent.db.magis.engine import (
+from magi.db.magis.engine import (
     get_magis_engine,
     get_magis_session,
     init_magis_public_db,

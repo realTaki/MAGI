@@ -254,7 +254,7 @@ def caller_role_denied_reason(
             "caller did not authenticate through a "
             "cookie / TG binding."
         )
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     with open_session() as db:
         contact = db.get(Contact, ct_id)
     if contact is None:

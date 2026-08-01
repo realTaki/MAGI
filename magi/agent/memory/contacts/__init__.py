@@ -1,6 +1,6 @@
 """Contact directory — what the MAGI knows about people.
 
-The unified ``contacts`` table (see :mod:`magi.agent.db.models_contact`)
+The unified ``contacts`` table (see :mod:`magi.db.models_contact`)
 holds every person row. Each ``Contact`` carries a ``notes``
 field (LLM-managed free-form markdown) and a ``source`` field.
 
@@ -13,7 +13,7 @@ Layout:
 
 from __future__ import annotations
 
-from magi.agent.db.models_contact import (
+from magi.db.models_contact import (
     SOURCE_EVE,
     SOURCE_MANUAL,
     SOURCE_SYSTEM,

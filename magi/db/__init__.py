@@ -53,7 +53,7 @@ The session-domain tables (:class:`ChatSession`,
 the ``session`` package (singular: this is the *manager*
 of sessions, not a place where sessions are *stored* in
 bulk). The db package re-exports them so existing
-``from magi.agent.db import ChatSession`` imports keep
+``from magi.db import ChatSession`` imports keep
 working.
 """
 
@@ -86,26 +86,26 @@ from magi.db.models_mcp_server import McpServer
 from magi.db.models_setting import Setting
 from magi.db.models_token_usage import TokenUsage
 
-# The session/memory packages still accept historical ``magi.agent.db.models_*``
+# The session/memory packages still accept historical ``magi.db.models_*``
 # imports while they are migrated. Alias only modules already loaded above, so
 # this does not create a second SQLAlchemy declarative registry.
 import sys as _sys
-_sys.modules["magi.agent.db.engine"] = _sys.modules["magi.db.engine"]
-_sys.modules["magi.agent.db.local_db"] = _sys.modules["magi.db.local_db"]
+_sys.modules["magi.db.engine"] = _sys.modules["magi.db.engine"]
+_sys.modules["magi.db.local_db"] = _sys.modules["magi.db.local_db"]
 for _module_name in (
     "models_action_item", "models_contact", "models_control_plane",
     "models_eve_runtime", "models_magic", "models_magis", "models_magis_admin",
     "models_magis_membership", "models_mcp_server", "models_setting",
     "models_token_usage",
 ):
-    _sys.modules[f"magi.agent.db.{_module_name}"] = _sys.modules[
+    _sys.modules[f"magi.db.{_module_name}"] = _sys.modules[
         f"magi.db.{_module_name}"
     ]
-_sys.modules["magi.agent.db.settings"] = __import__("magi.db.settings", fromlist=["*"])
+_sys.modules["magi.db.settings"] = __import__("magi.db.settings", fromlist=["*"])
 
 # Session-domain tables — owned by ``magi.agent.session``
 # but re-exported here for callers that want a single import
-# surface (``from magi.agent.db import ChatSession``).
+# surface (``from magi.db import ChatSession``).
 from magi.agent.memory.session.tables import ChatMessage, ChatSession
 
 __all__ = [

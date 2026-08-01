@@ -48,7 +48,7 @@ def fresh_state_dir(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 
     The env var matters because ``start_scheduler`` →
     ``start()`` lazily initialises the SQLAlchemy engine,
-    which calls :func:`magi.agent.db.engine.require_state_dir`
+    which calls :func:`magi.db.engine.require_state_dir`
     and raises ``_MissingStateDirError`` when unset. The
     bare-init test (``test_init_populates_required_attributes``)
     doesn't trigger the engine — passes without — but

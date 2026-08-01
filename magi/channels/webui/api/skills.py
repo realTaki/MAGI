@@ -31,9 +31,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.agent.db import get_session
-from magi.agent.db.settings import state_get, state_set
-from magi.agent.db.engine import require_state_dir
+from magi.db import get_session
+from magi.db.settings import state_get, state_set
+from magi.db.engine import require_state_dir
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.tools.skill_loader import get_skill_loader
 

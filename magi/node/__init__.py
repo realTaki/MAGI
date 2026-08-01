@@ -61,7 +61,7 @@ class NodeConfig:
         # Log level: read from settings if available, fall back to "info".
         log_level = DEFAULT_LOG_LEVEL
         try:
-            from magi.agent.db.settings import state_get
+            from magi.db.settings import state_get
             db_level = state_get(STATE_DIR, "system.log_level")
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
@@ -121,19 +121,19 @@ def run() -> None:
     state_dir = cfg.state_dir
 
     # SQLite init — always SQLite, no Postgres switch.
-    from magi.agent.db import init_sqlite
+    from magi.db import init_sqlite
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
     # Initialise private SQLite tables. Organisation facts deliberately do
     # not seed here: a MAGI's private PVC must never become a shadow MAGIS.
-    from magi.agent.db import init_orm
+    from magi.db import init_orm
     init_orm(state_dir, seed_root=False)
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
     # lifecycle state. The initial Adam seeds Genesis there; an EVE only
     # opens the public schema assigned by its one direct MAGIS binding.
-    from magi.agent.db.magis import init_magis_public_db
+    from magi.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")
 
     # D.18 — one-shot import of any leftover pre-D.18 JSON
@@ -196,7 +196,7 @@ def run() -> None:
 
 def _init_state(state_dir: str) -> None:
     """Create the SQLite file under ``state_dir``.  Always SQLite."""
-    from magi.agent.db import init_sqlite
+    from magi.db import init_sqlite
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
@@ -253,7 +253,7 @@ def _read_channels_from_db(state_dir: str) -> list[str]:
     always on.  The operator can then toggle TG on via the Settings →
     Channels card.
     """
-    from magi.agent.db.settings import state_get, state_set
+    from magi.db.settings import state_get, state_set
     raw = state_get(state_dir, _CHANNELS_SETTINGS_KEY)
     if not raw:
         # Seed on first boot

@@ -16,7 +16,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.agent.db.base import Base, utcnow_naive
+from magi.db.base import Base, utcnow_naive
 
 EVE_DESIRED_STATES = frozenset({"draft", "running", "stopped", "deleted"})
 EVE_OBSERVED_STATES = frozenset(

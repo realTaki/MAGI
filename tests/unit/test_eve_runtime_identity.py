@@ -18,12 +18,12 @@ def test_eve_node_config_requires_runtime_id(monkeypatch):
 
 def test_eve_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_path):
     """Provider config now comes from the direct MAGIS public database."""
-    import magi.agent.db.engine as engine_mod
+    import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "private"))
     monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'public.db'}")
-    from magi.agent.db import init_orm
-    from magi.agent.db.magis import init_magis_public_db
+    from magi.db import init_orm
+    from magi.db.magis import init_magis_public_db
     init_orm(seed_root=False)
     init_magis_public_db(seed_root=True)
     from magi.agent.llm.factory import get_provider

@@ -1,4 +1,4 @@
-"""Tests for :mod:`magi.agent.tools.edit_retry`.
+"""Tests for :mod:`magi.tools.edit_retry`.
 
 The tracker is the policy behind the agent loop's
 "edit_file failed twice — nudge the LLM to re-read"
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from magi.agent.tools.edit_retry import FAILURE_THRESHOLD, EditRetryTracker
+from magi.tools.edit_retry import FAILURE_THRESHOLD, EditRetryTracker
 
 
 # ──────────────────────────────────────────────────────────── #

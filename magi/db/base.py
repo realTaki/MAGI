@@ -2,7 +2,7 @@
 """SQLAlchemy declarative base for the MAGI ``db`` package.
 
 Single ``Base.metadata`` is shared by every table module under
-:mod:`magi.agent.db.models_*` and the session-package tables at
+:mod:`magi.db.models_*` and the session-package tables at
 :mod:`magi.agent.memory.session.tables`. Alembic uses this metadata for
 autogeneration, while committed revisions own the actual schema changes.
 Adding a model therefore also requires a reviewed Alembic revision.
@@ -15,7 +15,7 @@ Lives here (rather than in
 ``utcnow_iso`` lives) so the ORM model files can import
 it without triggering ``magi.agent.memory.__init__`` —
 which in turn imports the contact tools module, which
-imports from ``magi.agent.db``, which is mid-load. A
+imports from ``magi.db``, which is mid-load. A
 top-level db-package import keeps that loop closed.
 """
 

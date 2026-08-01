@@ -39,7 +39,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from magi.agent.db import get_session
+from magi.db import get_session
 from magi.channels.tasks.cron_utils import (
     preset_to_cron,
     validate_run_at,

@@ -27,12 +27,12 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.db import ActionItem, Contact, init_orm, open_session
-from magi.agent.tools.action_item import (
+from magi.db import ActionItem, Contact, init_orm, open_session
+from magi.tools.action_item import (
     AddActionItemTool,
     CompleteActionItemTool,
     ListActionItemTool)
-from magi.agent.tools.base import ToolContext
+from magi.tools.base import ToolContext
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
@@ -352,7 +352,7 @@ def _tool_names(schemas):
 
 
 def test_admin_role_sees_all_tools(seed_contacts):
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_admin=True, caller_role="assigned"))
     assert "schedule_task" in names
     assert "add_action_item" in names
@@ -366,7 +366,7 @@ def test_admin_role_sees_all_tools(seed_contacts):
 
 
 def test_assigned_role_sees_all_tools(seed_contacts):
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="assigned"))
     assert "schedule_task" in names
     assert "add_action_item" in names
@@ -383,7 +383,7 @@ def test_contact_role_omits_all_built_in_tools(seed_contacts):
     collapsed into ``guest`` after the 2024 role/admin
     split so the test now exercises the same gate with
     the surviving enum value."""
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role='guest'))
     # All built-ins are gone.
     assert "bash" not in names
@@ -395,7 +395,7 @@ def test_contact_role_omits_all_built_in_tools(seed_contacts):
 
 
 def test_guest_role_omits_all_built_in_tools(seed_contacts):
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas(caller_role="guest"))
     assert "bash" not in names
     assert "read_file" not in names
@@ -408,7 +408,7 @@ def test_none_role_is_permissive_by_default(seed_contacts):
     shows all tools — production paths always pass an
     explicit role so this branch only kicks in when
     plumbing is missing."""
-    from magi.agent.tools.registry import get_tool_schemas
+    from magi.tools.registry import get_tool_schemas
     names = _tool_names(get_tool_schemas())
     assert "schedule_task" in names
     assert "add_action_item" in names
@@ -416,7 +416,7 @@ def test_none_role_is_permissive_by_default(seed_contacts):
 
 
 def test_get_tool_single_lookup_respects_role(seed_contacts):
-    from magi.agent.tools.registry import get_tool
+    from magi.tools.registry import get_tool
     # Non-admin/non-assigned can't see anything built-in.
     assert get_tool("schedule_task", caller_role='guest') is None
     assert get_tool("bash", caller_role='guest') is None

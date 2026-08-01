@@ -43,11 +43,11 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
     
-    import magi.agent.db.engine as orm_mod
+    import magi.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.agent.db import (
+    from magi.db import (
         Contact,
         init_orm,
         init_sqlite,
@@ -291,7 +291,7 @@ def test_create_tg_task_without_telegram_binding_returns_400(state):
     that let the request through would otherwise ship a row
     with no valid destination.
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
     from magi.channels.webui.api.auth import _sign_uid
     from magi.channels.webui.app import create_app
 

@@ -282,7 +282,7 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     ``load_mcp_tools_blocking`` for the loop mechanics.
     """
     global _mcp_tools_cache, _mcp_loaded_at_db
-    from magi.agent.db import McpServer, open_session
+    from magi.db import McpServer, open_session
     from magi.tools.mcp_loader import load_mcp_tools_blocking
 
     tools = load_mcp_tools_blocking()
@@ -341,7 +341,7 @@ def maybe_reload_mcp_tools() -> list["Tool"] | None:
     tools". Returns ``None`` when the cache was up to date
     — no logging, no churn.
     """
-    from magi.agent.db import McpServer, open_session
+    from magi.db import McpServer, open_session
 
     try:
         with open_session() as s:

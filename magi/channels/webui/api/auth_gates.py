@@ -24,12 +24,12 @@ logger = logging.getLogger("magi.api.auth_gates")
 def _is_admin_uid(uid: int) -> bool:
     from magi.channels.webui import control_store
     if control_store.enabled():
-        from magi.agent.db import ControlOperator
-        from magi.agent.db.magis import open_magis_session
+        from magi.db import ControlOperator
+        from magi.db.magis import open_magis_session
         with open_magis_session() as session:
             operator = session.get(ControlOperator, uid)
             return operator is not None and bool(operator.admin)
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
 
     try:
         with open_session() as session:
@@ -94,13 +94,13 @@ def admin_or_assigned_gate(request: Request) -> str:
     ``role='assigned', admin=False`` is the served user who
     should also pass.
     """
-    from magi.agent.db import Contact, open_session
+    from magi.db import Contact, open_session
 
     from magi.channels.webui.proxy_auth import ensure_runtime_operator
 
     proxied_uid = ensure_runtime_operator(request)
     if proxied_uid is not None:
-        from magi.agent.db import Contact, open_session
+        from magi.db import Contact, open_session
         with open_session() as session:
             contact = session.get(Contact, proxied_uid)
         if contact is not None and (bool(contact.admin) or contact.role == "assigned"):

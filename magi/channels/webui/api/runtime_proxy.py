@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import EveRuntime, MAGIC, MAGIS
-from magi.agent.db.magis import get_magis_session
+from magi.db import EveRuntime, MAGIC, MAGIS
+from magi.db.magis import get_magis_session
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers
 

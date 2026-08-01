@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from magi.agent.db import Contact, init_orm, init_sqlite, open_session
+from magi.db import Contact, init_orm, init_sqlite, open_session
 from magi.agent.memory.session import (
     ChannelMismatchError,
     SessionMessage,
@@ -52,7 +52,7 @@ def _reset_orm_engine() -> None:
     reset, every test after the first reuses the prior
     test's engine and inserts into a tmp_path that's
     already gone."""
-    import magi.agent.db.engine as _orm_mod
+    import magi.db.engine as _orm_mod
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
     yield

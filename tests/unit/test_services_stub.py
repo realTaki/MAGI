@@ -41,7 +41,7 @@ def _ctx():
 
 @pytest.mark.asyncio
 async def test_read_recent_emails_default_window():
-    from magi.agent.tools.services_stub import ReadRecentEmailsTool
+    from magi.tools.services_stub import ReadRecentEmailsTool
     tool = ReadRecentEmailsTool()
     res = await tool.run(_ctx())
     assert res.is_error is False
@@ -57,7 +57,7 @@ async def test_read_recent_emails_default_window():
 
 @pytest.mark.asyncio
 async def test_read_recent_emails_hours_param_threads_through():
-    from magi.agent.tools.services_stub import ReadRecentEmailsTool
+    from magi.tools.services_stub import ReadRecentEmailsTool
     tool = ReadRecentEmailsTool()
     res = await tool.run(_ctx(), hours=72)
     payload = json.loads(res.content)
@@ -68,8 +68,8 @@ async def test_read_recent_emails_hours_param_threads_through():
 async def test_read_recent_emails_visible_to_guest():
     """``ALLOWED_ROLES = frozenset()`` makes the stub tools
     visible to every role, including guest."""
-    from magi.agent.tools.base import Tool
-    from magi.agent.tools.services_stub import ReadRecentEmailsTool
+    from magi.tools.base import Tool
+    from magi.tools.services_stub import ReadRecentEmailsTool
     assert ReadRecentEmailsTool().is_allowed_for_role("guest") is True
     assert ReadRecentEmailsTool().is_allowed_for_role(None) is True
 
@@ -79,7 +79,7 @@ async def test_read_recent_emails_visible_to_guest():
 
 @pytest.mark.asyncio
 async def test_read_upcoming_meetings_default_window():
-    from magi.agent.tools.services_stub import ReadUpcomingMeetingsTool
+    from magi.tools.services_stub import ReadUpcomingMeetingsTool
     tool = ReadUpcomingMeetingsTool()
     res = await tool.run(_ctx())
     assert res.is_error is False
@@ -94,7 +94,7 @@ async def test_read_upcoming_meetings_default_window():
 
 @pytest.mark.asyncio
 async def test_read_upcoming_meetings_days_param_threads_through():
-    from magi.agent.tools.services_stub import ReadUpcomingMeetingsTool
+    from magi.tools.services_stub import ReadUpcomingMeetingsTool
     tool = ReadUpcomingMeetingsTool()
     res = await tool.run(_ctx(), days=7)
     payload = json.loads(res.content)
@@ -103,7 +103,7 @@ async def test_read_upcoming_meetings_days_param_threads_through():
 
 @pytest.mark.asyncio
 async def test_read_upcoming_meetings_visible_to_guest():
-    from magi.agent.tools.services_stub import ReadUpcomingMeetingsTool
+    from magi.tools.services_stub import ReadUpcomingMeetingsTool
     assert ReadUpcomingMeetingsTool().is_allowed_for_role("guest") is True
 
 
@@ -113,11 +113,11 @@ async def test_read_upcoming_meetings_visible_to_guest():
 def test_stub_tools_are_in_the_registry():
     """``tools/registry.py`` registers both stubs alongside the
     other built-in tools."""
-    from magi.agent.tools.services_stub import (
+    from magi.tools.services_stub import (
         ReadRecentEmailsTool,
         ReadUpcomingMeetingsTool,
     )
-    from magi.agent.tools.registry import get_tools, reset_cache
+    from magi.tools.registry import get_tools, reset_cache
 
     # ``reset_cache`` is idempotent and guards against stale
     # fixtures from earlier tests.

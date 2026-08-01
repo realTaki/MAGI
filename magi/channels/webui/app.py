@@ -87,7 +87,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
 
     if start_telegram:
         _log.getLogger(__name__).info("create_app: starting TG bot")
-        from magi.agent.db import require_state_dir
+        from magi.db import require_state_dir
         from magi.channels.telegram.bot import start_bot
 
         # Importing the ASGI module in a CLI/test process must not require the
