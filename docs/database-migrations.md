@@ -132,7 +132,7 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 2. **数据迁移** — 同样在 `upgrade()` 末尾用 `bind.execute(text(...))` 跑一段 `UPDATE` / `INSERT`。代码可以引用 ORM 类（`from magi.agent.db import open_session, MyModel`）。
 3. **ORM 模型** — 同步改对应的 `magi/agent/db/models_*.py`（或在 `magi/agent/memory/...` / `magi/channels/tasks/models.py`），保持与 baseline DDL 字面一致。
 4. **索引 / 约束** — 同上，要么 inline `unique=True`，要么显式 `create_index(...sqlite_where=...)`。
-5. **测试** — 跑 `pytest magi/tests/` 确认 green，特别留意 init_orm / alembic upgrade / 表 CRUD 的路径。
+5. **测试** — 跑 `pytest tests/` 确认 green，特别留意 init_orm / alembic upgrade / 表 CRUD 的路径。
 
 `alembic.ini` 与 `magi/agent/db/alembic/env.py` 不动；历史 follow-on migration 文件
 已删除，dev rebaseline 后只剩 `0001_baseline.py`。
