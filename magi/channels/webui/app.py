@@ -259,7 +259,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # ``task_presets`` template table. Each template
     # auto-seeds a per-user ``Task`` row when a new
     # ``assigned`` contact is created (see
-    # ``magi/agent/proactive/presets.py``). Settings → 任务
+    # ``magi/proactive/task_presets.py``). Settings → 任务
     # 预设 drives this router; the per-user tasks end up
     # in the Knowledge → Tasks pane's "preset" section.
     from magi.channels.webui.api import task_presets

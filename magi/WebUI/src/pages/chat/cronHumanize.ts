@@ -2,7 +2,7 @@
 // surfaces into the operator-facing Chinese phrase.
 //
 // Scope is intentionally narrow: v0 ships four preset shapes
-// (see magi.agent.proactive.cron_utils.preset_to_cron).
+// (see magi.channels.tasks.cron_utils.preset_to_cron).
 // Anything outside those four falls through to the raw cron
 // text plus a question mark hint. We don't try to be a
 // general cron parser; that's a future cron-utils story.
@@ -114,7 +114,7 @@ export function humanizeCron(cron: string): string {
   const dom = Number(parts[2]);
   // cron's DOW uses Sun=0..Sat=6; the v0 preset builder
   // shifts our Mon=0 into cron's Sun=0 (see
-  // magi.agent.proactive.cron_utils.preset_to_cron; weekly
+  // magi.channels.tasks.cron_utils.preset_to_cron; weekly
   // preset uses ``cron_dow = (day_of_week + 1) % 7``).
   // Convert back so the rendered weekday matches the v0
   // preset family that the dashboard asks for.
@@ -155,7 +155,7 @@ export function humanizeCron(cron: string): string {
 //
 // Naive timestamps (no offset) are interpreted as UTC —
 // matches the v0 validator in
-// magi.agent.proactive.cron_utils.validate_run_at.
+// magi.channels.tasks.cron_utils.validate_run_at.
 //
 // Examples:
 //   "2026-08-01T15:30:00+08:00" -> "2026-08-01 15:30 (+08:00)"

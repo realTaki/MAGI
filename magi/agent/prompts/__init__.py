@@ -33,7 +33,7 @@ Files:
                              daily-note, memory, and skills.
   - ``task_presets/``      : YAML definitions for bundled
                              scheduled-task templates. Read by
-                             :mod:`magi.agent.proactive.preset_templates`
+                             :mod:`magi.proactive.task_preset_templates`
                              during node initialisation.
 
 Hot-reload: every ``_load`` call does a single ``Path.stat()``

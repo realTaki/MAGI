@@ -96,7 +96,7 @@ def _fake_handle_message_patch():
     no-op so the runner exercises the chat-session attach path
     without calling out to a real LLM provider.
     """
-    from magi.agent.proactive import runner as runner_mod
+    from magi.channels.tasks import runner as runner_mod
 
     real = runner_mod.handle_message
 
@@ -170,7 +170,7 @@ def test_create_webui_task_then_manual_run_lands_reply_in_task_session(
     # we invoke the runner directly. The fake
     # ``handle_message`` swap is the standard hook used in
     # ``test_runner_delivery_to``.
-    from magi.agent.proactive.runner import execute_task
+    from magi.channels.tasks.runner import execute_task
     with _fake_handle_message_patch():
         import asyncio
         asyncio.run(execute_task(

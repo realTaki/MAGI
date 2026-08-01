@@ -21,7 +21,8 @@ import magi.agent.db.models_setting  # noqa: F401,E402
 import magi.agent.db.models_token_usage  # noqa: F401,E402
 import magi.agent.memory.self.models  # noqa: F401,E402
 import magi.agent.memory.session.tables  # noqa: F401,E402
-import magi.agent.proactive.orm_models  # noqa: F401,E402
+import magi.channels.tasks.models  # noqa: F401,E402
+import magi.proactive.models  # noqa: F401,E402
 from magi.agent.db.base import Base
 
 config = context.config

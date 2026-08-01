@@ -1,19 +1,14 @@
 """ORM models for scheduled tasks.
 
 Two tables back the "定时/循环任务" feature (see
-``magi/agent/proactive/``):
+``magi/channels/tasks/``):
 
 - ``tasks``        : one row per operator-defined task
 - ``task_runs``    : one row per execution attempt (cron or manual)
-- ``task_presets`` : one row per *template* that gets snapshotted
-                     into a per-user ``tasks`` row whenever a new
-                     ``assigned`` contact is seeded (see
-                     ``magi/agent/proactive/presets.py``).
 
-Why these live in :mod:`magi.agent.proactive` instead of
-:meth:`magi.agent.db.engine` directly: the proactive
-runtime is a new module family; keeping the schema near the
-runtime code makes "what does this table serve?" obvious in
+Why these live in :mod:`magi.channels.tasks` instead of
+:mod:`magi.agent.db.engine` directly: keeping task schema near its
+channel runtime makes "what does this table serve?" obvious in
 a single ``grep``. The Base class is still imported from
 :mod:`magi.agent.db.orm` so the SQLite file is shared
 and ``init_orm`` can ``create_all`` these tables alongside
@@ -101,7 +96,7 @@ class Task(Base):
     # the prompt.
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     # Standard 5-field cron: ``min hour day month dow``.
-    # Validated by ``proactive.cron_utils.validate_cron`` at
+    # Validated by ``channels.tasks.cron_utils.validate_cron`` at
     # the API/tool boundaries; an invalid value is a 400,
     # not silent fallback.
     cron: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -333,81 +328,3 @@ class TaskRun(Base):
         # rows per task.
         Index("ix_task_runs_task_started", "task_id", "started_at"),
     )
-
-
-class TaskPreset(Base):
-    """A reusable template that gets snapshotted into a per-user
-    :class:`Task` row whenever a contact transitions to
-    ``role='assigned'`` (see
-    :func:`magi.agent.proactive.presets.seed_presets_for_contact`).
-
-    Bundled presets ship as YAML files under
-    ``magi/agent/prompts/task_presets/`` and are synchronised at
-    startup. The operator can create additional database-owned
-    presets from Settings → 任务预设; existing per-user ``Task`` rows are
-    NOT updated when a preset is edited (snapshot semantics —
-    new assigned contacts pick up the new config, contacts
-    seeded before the edit keep running under their original
-    snapshot).
-
-    There is no FK to ``contacts`` here on purpose: a preset
-    is a global template, not a per-user row. The
-    ``uid``/``enabled``/``last_run_at`` fields that the
-    per-user ``Task`` carries are intentionally absent — the
-    operator controls ``enabled`` per-user via the standard
-    task toggle after seed.
-    """
-
-    __tablename__ = "task_presets"
-
-    id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    # Stable machine identifier — survives edits, used as
-    # the per-user ``Task.preset_key`` snapshot. Two presets
-    # with the same key are an error. Bundled keys are
-    # synchronised from ``prompts/task_presets`` at boot.
-    key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    # Operator-facing label (i18n key resolved in the UI).
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    # Short description rendered under the name in the
-    # Settings card. Helps the operator remember what this
-    # preset does at a glance ("推送到 TG 的当日待办摘要").
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    # The verbatim LLM instruction, snapshotted into each
-    # per-user ``Task.prompt`` at seed time. Same size cap
-    # as ``TaskIn.prompt`` (8000) so a future operator edit
-    # never widens the column past what the per-user row
-    # accepts.
-    prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    # Same scheduling vocabulary as the per-user
-    # ``TaskIn`` — the seed helper renders this to the
-    # 5-field ``cron`` / ``run_at`` columns on the per-user
-    # row via the existing ``preset_to_cron`` utility.
-    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
-    hour: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    minute: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # ISO datetime for ``frequency="once"`` presets. Most
-    # shipped presets are recurring (daily / weekly), so
-    # this is almost always NULL — kept on the table for
-    # symmetry with ``TaskIn``.
-    run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # "webui" or "tg" — same closed set as
-    # ``Task.target_channel``. The migration seeds two
-    # presets at "tg" because the assigned user is
-    # typically an IM-first persona, not a webui operator.
-    target_channel: Mapped[str] = mapped_column("channel", String(16), nullable=False, default="webui")
-    # Operator's per-template on/off. When 0, the seed
-    # helper skips this preset — existing per-user rows
-    # keep their snapshotted ``enabled`` bit and continue
-    # firing. The knob is for "stop seeding new contacts
-    # from this template" not "globally mute every row".
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
-
-    # No ``__table_args__`` constraints beyond the
-    # ``UNIQUE(key)`` declared inline above — there's only
-    # one table-level index (the unique on key) and no
-    # composite read paths that warrant more.

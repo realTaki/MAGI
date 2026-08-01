@@ -305,7 +305,7 @@ def create_contact(
     # there).
     if contact.role == "assigned":
         try:
-            from magi.agent.proactive.presets import seed_presets_for_contact
+            from magi.proactive.task_presets import seed_presets_for_contact
             seed_presets_for_contact(session, contact.id)
             session.commit()
         except Exception as exc:
@@ -520,7 +520,7 @@ def update_contact(
     # double-seed is a no-op rather than a duplicate.
     if newly_assigned:
         try:
-            from magi.agent.proactive.presets import seed_presets_for_contact
+            from magi.proactive.task_presets import seed_presets_for_contact
             seed_presets_for_contact(session, contact.id)
             session.commit()
         except Exception as exc:

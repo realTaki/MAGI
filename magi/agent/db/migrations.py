@@ -168,9 +168,9 @@ _INDEX_MIGRATIONS: list[tuple[str, str, str]] = [
         "ix_token_usage_emp_ts",
         "(uid, ts)",
     ),
-    # 定时 / 循环任务 (proactive runtime) — indexes
+    # 定时 / 循环任务（scheduled-task channel）— indexes
     # backfilled for existing DBs that pre-date the
-    # proactive feature. The model declares the same
+    # scheduled-task feature. The model declares the same
     # names in __table_args__; on fresh installs
     # ``create_all`` builds these alongside the new
     # tables. ``tasks(enabled, last_run_at)`` covers the

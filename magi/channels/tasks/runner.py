@@ -48,7 +48,7 @@ Why a coroutine running inside its own event loop:
 but the project's FastAPI endpoint already runs an asyncio
 loop on the same process. Sharing a loop means a slow task
 stalls a request handler; the dedicated loop (built by
-:class:`magi.agent.proactive.scheduler.TaskScheduler`)
+:class:`magi.channels.tasks.scheduler.TaskScheduler`)
 decouples the two. See :class:`TaskScheduler` for the bridge.
 """
 
@@ -63,7 +63,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from magi.agent.loop import handle_message
-from magi.agent.proactive.orm_models import Task, TaskRun
+from magi.channels.tasks.models import Task, TaskRun
 from magi.agent.memory.session import (
     SessionMessage,
     SessionStore,
@@ -84,7 +84,7 @@ from magi.agent.db.settings import state_get
 from magi.channels import dispatcher as channel_dispatcher
 from magi.channels import Channel
 
-logger = logging.getLogger("magi.agent.proactive.runner")
+logger = logging.getLogger("magi.channels.tasks.runner")
 
 # Default failure-threshold before the runner auto-disables a
 # task and posts an ActionItem. Override via the ``settings``
@@ -95,7 +95,7 @@ _DEFAULT_FAILURE_THRESHOLD = 5
 
 # Wall-clock budget on a single fire (seconds). Past this we
 # give up the call and record a timeout; mirrors the
-# 300-second running-task SLA in the proactive README.
+# 300-second running-task SLA documented in ``docs/proactive-architecture.md``.
 _RUN_TIMEOUT_SECONDS = 300
 
 # Cap on per-run reply we keep in the ``reply_excerpt`` column

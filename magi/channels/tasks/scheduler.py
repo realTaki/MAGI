@@ -73,11 +73,11 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from magi.agent.proactive.orm_models import Task
-from magi.agent.proactive.runner import execute_task
+from magi.channels.tasks.channel import TaskChannel
+from magi.channels.tasks.models import Task
 from magi.agent.db import open_session
 
-logger = logging.getLogger("magi.agent.proactive.scheduler")
+logger = logging.getLogger("magi.channels.tasks.scheduler")
 
 
 _DEFAULT_EXECUTOR_WORKERS = 4
@@ -359,7 +359,7 @@ class TaskScheduler:
             return
         try:
             fut = asyncio.run_coroutine_threadsafe(
-                execute_task(
+                TaskChannel.dispatch(
                     self._state_dir,
                     task_id,
                     manual=manual,
@@ -450,7 +450,7 @@ def get_scheduler() -> TaskScheduler:
     if _scheduler is None:
         raise RuntimeError(
             "TaskScheduler is not running; "
-            "call magi.agent.proactive.scheduler.start_scheduler() first"
+            "call magi.channels.tasks.scheduler.start_scheduler() first"
         )
     return _scheduler
 

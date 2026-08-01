@@ -1,4 +1,4 @@
-"""Regression tests for :func:`magi.agent.proactive.runner.execute_task`'s
+"""Regression tests for :func:`magi.channels.tasks.runner.execute_task`'s
 ``delivery_to`` dispatch.
 
 The runner's behaviour is the dual of the ``ScheduleTaskTool``
@@ -45,12 +45,12 @@ from magi.agent.db import (
     # Avoid circular import; the runner imports db from
     # here as well.
 )
-from magi.agent.proactive.runner import execute_task
+from magi.channels.tasks.runner import execute_task
 from magi.agent.memory.session import new_session_id
-from magi.agent.proactive.scheduler import (
+from magi.channels.tasks.scheduler import (
     _reset_for_tests,
     stop_scheduler)
-from magi.agent.proactive.orm_models import Task, TaskRun
+from magi.channels.tasks.models import Task, TaskRun
 
 # -- fixtures --------------------------------------------------------------
 
@@ -438,7 +438,7 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
         # them — nothing extra to seed.
 
         # Patch handle_message to capture the kwargs.
-        import magi.agent.proactive.runner as runner_mod
+        import magi.channels.tasks.runner as runner_mod
         real = runner_mod.handle_message
 
         async def _capture(*_args, **kwargs):
@@ -539,7 +539,7 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
     positional + keyword shape (``state_dir`` is
     positional in the real signature; everything else
     is kw-only)."""
-    import magi.agent.proactive.runner as runner_mod
+    import magi.channels.tasks.runner as runner_mod
 
     real = runner_mod.handle_message
 
@@ -553,4 +553,3 @@ async def _fake_fire(task_id: str, state_dir: Path) -> None:
         runner_mod.handle_message = real  # restore
 
 # -- TG delivery_to: reuses operator's existing TG chat session ----------
-

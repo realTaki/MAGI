@@ -914,7 +914,7 @@ domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/
   `_RENAME_COLUMN_MIGRATIONS`, data survives — SQLite rename is metadata-only).
 - `agent/tools/send_message.py` → `dispatcher.send_to_session`.
 - `agent/tools/schedule_task.py` → reads `session.delivery_address`.
-- `agent/proactive/runner.py` → `_tg_send_callback` closure removed; calls
+- `channels/tasks/runner.py` → `_tg_send_callback` closure removed; calls
   `dispatcher.send_to_session`.
 - `agent/loop.py` — zero `tgid` references.
 - `auto_title.py` — `delivery_address` instead of `tgid` in `TitleJob`.

@@ -1,4 +1,4 @@
-"""Regression tests for :class:`magi.agent.proactive.scheduler.TaskScheduler`.
+"""Scheduled-task scheduler regression tests.
 
 Catches the botched ``__init__`` edit where a ``@property``
 declaration was pasted inside the constructor body,
@@ -32,7 +32,7 @@ from typing import Iterator
 
 import pytest
 
-from magi.agent.proactive.scheduler import (
+from magi.channels.tasks.scheduler import (
     TaskScheduler,
     _DEFAULT_EXECUTOR_WORKERS,
     _reset_for_tests,

@@ -300,7 +300,7 @@ def test_webui_send_to_webui_owned_session_is_200(
 def test_webui_send_to_scheduled_owned_session_is_403(
     client: TestClient, admin: Contact, state: Path) -> None:
     """A scheduled-task-owned session is similarly
-    protected — only the proactive runner (channel=
+    protected — only the scheduled-task runner (channel=
     ``"scheduled"``) can append to it."""
     sid = _make_session(state, "scheduled", (admin.telegram_id))
 

@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
 
-logger = logging.getLogger("magi.agent.proactive.cron_utils")
+logger = logging.getLogger("magi.channels.tasks.cron_utils")
 
 
 def validate_cron(expr: str) -> None:
@@ -314,4 +314,3 @@ def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> s
             f"past-time jobs are silently dropped by apscheduler)"
         )
     return run_at_iso
-

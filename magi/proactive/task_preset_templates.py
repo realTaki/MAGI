@@ -1,4 +1,4 @@
-"""Bundled scheduled-task templates and their database synchroniser.
+"""Bundled proactive task templates and their database synchroniser.
 
 The templates live in ``magi/agent/prompts/task_presets/*.yaml`` so the
 natural-language instructions can be tuned and reviewed like every other
@@ -24,11 +24,14 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.proactive.orm_models import TaskPreset
+from magi.proactive.models import TaskPreset
 
-logger = logging.getLogger("magi.agent.proactive.preset_templates")
+logger = logging.getLogger("magi.proactive.task_preset_templates")
 
-_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "prompts" / "task_presets"
+# Task runtime is a channel, while bundled prompt source remains alongside the
+# rest of the agent prompts. ``parents[1]`` is the ``magi`` package root for
+# ``magi/proactive/task_preset_templates.py``.
+_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "agent" / "prompts" / "task_presets"
 _REQUIRED_FIELDS = frozenset({
     "id", "key", "name", "description", "prompt", "frequency", "hour",
     "minute", "day_of_week", "day_of_month", "run_at", "channel", "enabled",

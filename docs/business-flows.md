@@ -202,7 +202,7 @@ TelegramAdapter.send(uid, text):
 4. 注册到 apscheduler (cron/interval)
 ```
 
-### 执行 (magi/agent/proactive/runner.py::execute_task)
+### 执行 (magi/channels/tasks/runner.py::execute_task)
 ```
 1. 加载 Task 行 + Contact 凭证
    └─ 无 session_id 的旧行 → 首次触发时分配

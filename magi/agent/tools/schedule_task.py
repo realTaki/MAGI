@@ -45,9 +45,9 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.agent.proactive.cron_utils import preset_to_cron, validate_run_at, validate_run_at_future
-from magi.agent.proactive.orm_models import Task
-from magi.agent.proactive.scheduler import get_scheduler
+from magi.channels.tasks.cron_utils import preset_to_cron, validate_run_at, validate_run_at_future
+from magi.channels.tasks.models import Task
+from magi.channels.tasks.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
 from magi.agent.db import ChatSession, Contact, open_session, require_state_dir
 from magi.agent.db.settings import state_get

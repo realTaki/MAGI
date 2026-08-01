@@ -71,7 +71,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         db.commit()
         db.refresh(admin)
 
-        from magi.agent.proactive.orm_models import TaskPreset
+        from magi.proactive.models import TaskPreset
         preset_keys = sorted(
             p.key for p in db.query(TaskPreset).all()
         )
@@ -116,7 +116,7 @@ def _preset_task_count(contact_id: int) -> int:
     the dashboard uses; this matches that exactly). The
     dashboard's two-list layout depends on this."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.orm_models import Task
+    from magi.channels.tasks.models import Task
 
     with open_session() as db:
         return db.query(Task).filter(
@@ -128,7 +128,7 @@ def _all_task_count(contact_id: int) -> int:
     """Helper: count ALL tasks owned by ``contact_id``
     (preset + custom), directly via the DB."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.orm_models import Task
+    from magi.channels.tasks.models import Task
 
     with open_session() as db:
         return db.query(Task).filter(Task.uid == contact_id).count()

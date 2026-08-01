@@ -1,7 +1,7 @@
 """MAGI runtime — shared between Adam and EVE.
 
 Holds the agent loop, dynamic context builder, skill runner,
-proactive engine, LLM provider abstraction and audit writers.
+LLM provider abstraction and audit writers.
 Both node types run this package; the only differences live in
 (a) which ``channels.*`` adapter is mounted, (b) the
 permission scope, and (c) where each node sources its data
@@ -13,7 +13,7 @@ checkpoints import against a stable layout.
 Public surface (re-exported from :mod:`magi.agent.loop`):
 
 - :func:`handle_message` — the agent loop entry point. WebUI
-  / TG / proactive callers all reach it through
+  / TG / scheduled-task callers all reach it through
   ``magi.agent.handle_message``.
 - :func:`_record_token_usage` / :func:`_build_messages_from_session`
   / :func:`_maybe_compact` — internal helpers exposed to

@@ -60,12 +60,13 @@ magi/
 │   │   └── magis/  # direct MAGIS engine/session boundary
 │   ├── webui_service.py # singleton WebUI service entry point (`magi webui`)
 │   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
-│   ├── proactive/  # Scheduled task engine
 │   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
 ├── channels/       # How agents connect to the outside world
 │   ├── dispatcher.py   # D.28 — domain code talks to this, never to adapters
+│   ├── tasks/          # Scheduled-task CRUD, timing and execution
 │   ├── telegram/       # TG bot adapter
 │   └── webui/          # FastAPI app + React SPA
+├── proactive/      # Proactive policies and task-preset injection
 ├── node/           # Bootstrap: NodeConfig → init → run
 └── WebUI/          # React 19 + Vite 5 + Tailwind v4 SPA
 ```

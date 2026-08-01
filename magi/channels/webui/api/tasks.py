@@ -49,9 +49,9 @@ from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels import Channel
 from magi.agent.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.agent.proactive.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
-from magi.agent.proactive.orm_models import Task, TaskRun
-from magi.agent.proactive.scheduler import get_scheduler
+from magi.channels.tasks.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
+from magi.channels.tasks.models import Task, TaskRun
+from magi.channels.tasks.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
 from magi.agent.db import ChatSession, Contact, require_state_dir
 
@@ -206,7 +206,7 @@ class TaskOut(BaseModel):
     # to find which session belongs to which task.
     session_id: Optional[str] = None
     # Preset back-pointers (see TaskPreset model +
-    # ``magi/agent/proactive/presets.py``). Non-null iff
+    # ``magi/proactive/task_presets.py``). Non-null iff
     # the row was auto-seeded from a template; the
     # WebUI's Tasks pane uses ``preset_key IS NULL`` /
     # ``IS NOT NULL`` to split the list into "preset
@@ -691,10 +691,10 @@ def run_task_now(
         # fallback so the button still works in
         # ``pytest`` mode. The runner writes the row's
         # terminal state directly.
-        from magi.agent.proactive.runner import execute_task
+        from magi.channels.tasks.channel import TaskChannel
         import asyncio
         try:
-            asyncio.run(execute_task(
+            asyncio.run(TaskChannel.dispatch(
                 _state_dir(), task_id,
                 manual=True, pre_created_run_id=run_id,
             ))

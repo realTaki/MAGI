@@ -320,7 +320,8 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.agent.db.models_token_usage  # noqa: F401
     import magi.agent.memory.self.models  # noqa: F401 — self-memory table
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
-    import magi.agent.proactive.orm_models  # noqa: F401 — proactive runtime
+    import magi.channels.tasks.models  # noqa: F401 — scheduled-task channel
+    import magi.proactive.models  # noqa: F401 — proactive task templates
     application_tables = set(Base.metadata.tables)
     existing_tables = set(inspect(engine).get_table_names())
     is_legacy = "alembic_version" not in existing_tables
@@ -341,7 +342,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # Built-in scheduled-task templates are code-owned prompts, not SQL
     # literals in a migration.  Synchronise them after schema upgrade so a
     # developer can tune a mounted YAML file and see it on the next boot.
-    from magi.agent.proactive.preset_templates import sync_bundled_task_presets
+    from magi.proactive.task_preset_templates import sync_bundled_task_presets
     with Session(engine) as session:
         sync_bundled_task_presets(session)
         session.commit()

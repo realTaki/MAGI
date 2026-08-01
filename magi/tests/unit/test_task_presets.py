@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`magi.agent.proactive.presets`.
+"""Unit tests for :mod:`magi.proactive.task_presets`.
 
 Covers the four invariants that drive the seed-on-create
 feature:
@@ -62,7 +62,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         db.commit()
         db.refresh(admin)
         # Sanity: the migration's seed is present.
-        from magi.agent.proactive.orm_models import TaskPreset
+        from magi.proactive.models import TaskPreset
         presets = db.query(TaskPreset).order_by(TaskPreset.key).all()
     return {
         "state": sd,
@@ -79,8 +79,8 @@ def _now() -> str:
 def test_bundled_templates_are_loaded_and_resynchronised(state):
     """A source-file edit wins over a stale bundled DB row on next boot."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.orm_models import TaskPreset
-    from magi.agent.proactive.preset_templates import (
+    from magi.proactive.models import TaskPreset
+    from magi.proactive.task_preset_templates import (
         load_task_preset_templates,
         sync_bundled_task_presets,
     )
@@ -110,8 +110,9 @@ def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
     rides on ``state["preset_count"]`` so this test stays
     in sync as new presets are added."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
-    from magi.agent.proactive.orm_models import Task, TaskPreset
+    from magi.proactive.task_presets import seed_presets_for_contact
+    from magi.channels.tasks.models import Task
+    from magi.proactive.models import TaskPreset
 
     with open_session() as db:
         alice = Contact(name="Alice", role="assigned", telegram_id=9202)
@@ -151,8 +152,8 @@ def test_seed_is_idempotent_on_repeat_call(state):
     return 0 on the second call (per-preset existence
     short-circuit) and leave the row count unchanged."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
-    from magi.agent.proactive.orm_models import Task
+    from magi.proactive.task_presets import seed_presets_for_contact
+    from magi.channels.tasks.models import Task
 
     with open_session() as db:
         alice = Contact(name="Alice", role="assigned", telegram_id=9202)
@@ -186,8 +187,8 @@ def test_seed_skips_admin_contacts(state):
     doesn't need auto-seeded daily briefings.
     """
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
-    from magi.agent.proactive.orm_models import Task
+    from magi.proactive.task_presets import seed_presets_for_contact
+    from magi.channels.tasks.models import Task
 
     with open_session() as db:
         admin2 = Contact(name="Admin2", admin=True, role='guest', telegram_id=9203)
@@ -209,8 +210,9 @@ def test_seed_skips_disabled_presets(state):
     decide whether to SEED, not to flip already-seeded
     rows)."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
-    from magi.agent.proactive.orm_models import Task, TaskPreset
+    from magi.proactive.task_presets import seed_presets_for_contact
+    from magi.channels.tasks.models import Task
+    from magi.proactive.models import TaskPreset
 
     with open_session() as db:
         # Disable everything except the daily preset so the
@@ -242,8 +244,9 @@ def test_seed_snapshot_semantics_edits_preset_after_seed(state):
     already-seeded per-user rows. The per-user ``Task``
     row keeps its snapshotted ``prompt``."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
-    from magi.agent.proactive.orm_models import Task, TaskPreset
+    from magi.proactive.task_presets import seed_presets_for_contact
+    from magi.channels.tasks.models import Task
+    from magi.proactive.models import TaskPreset
 
     # 1. Seed an assigned contact.
     with open_session() as db:
@@ -277,7 +280,7 @@ def test_seed_returns_zero_for_unknown_contact(state):
     helper returns 0 and logs a warning. No FK violation
     surfaces to the route handler."""
     from magi.agent.db import open_session
-    from magi.agent.proactive.presets import seed_presets_for_contact
+    from magi.proactive.task_presets import seed_presets_for_contact
 
     with open_session() as db:
         n = seed_presets_for_contact(db, 99999)

@@ -1,7 +1,7 @@
 /**
  * SettingsTaskPresetsCard — manage the preset templates that
  * auto-seed per-user scheduled tasks when a contact becomes
- * ``role='assigned'`` (see ``magi/agent/proactive/presets.py``).
+ * ``role='assigned'`` (see ``magi/proactive/task_presets.py``).
  *
  * One row per preset with:
  *  - key (mono, machine identifier; immutable)

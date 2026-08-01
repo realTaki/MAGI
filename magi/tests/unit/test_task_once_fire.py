@@ -28,15 +28,15 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.proactive.cron_utils import (
+from magi.channels.tasks.cron_utils import (
     validate_run_at,
     validate_run_at_future)
-from magi.agent.proactive.scheduler import (
+from magi.channels.tasks.scheduler import (
     TaskScheduler,
     _reset_for_tests,
     stop_scheduler)
 from magi.agent.db import init_orm, init_sqlite, open_session
-from magi.agent.proactive.orm_models import Task
+from magi.channels.tasks.models import Task
 
 
 # -- validate_run_at --------------------------------------------------------
@@ -103,7 +103,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     """Insert a row directly via ORM. Bypass the ``schedule_task``
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
-    from magi.agent.proactive import orm_models as _  # noqa: F401  (registers Task on Base)
+    from magi.channels.tasks import models as _  # noqa: F401  (registers Task on Base)
     from magi.agent.db import Contact
 
     task_id = "T" + "0" * 25
@@ -143,7 +143,7 @@ def test_register_with_run_at_uses_date_trigger(state_db: Path) -> None:
     """The one-shot path. ``register`` builds an apscheduler
     ``DateTrigger`` (one-shot, no further cron) for rows
     whose ``run_at`` is set, regardless of cron."""
-    from magi.agent.proactive.scheduler import start_scheduler
+    from magi.channels.tasks.scheduler import start_scheduler
 
     sch = start_scheduler(str(state_db))
 
@@ -168,7 +168,7 @@ def test_register_with_cron_only_uses_cron_trigger(state_db: Path) -> None:
     """Recurring path unchanged by the once-fire addition.
     Regression guard: ``run_at=NULL`` + ``cron='0 9 * * *'``
     still goes through ``CronTrigger``."""
-    from magi.agent.proactive.scheduler import start_scheduler
+    from magi.channels.tasks.scheduler import start_scheduler
 
     sch = start_scheduler(str(state_db))
     row = _make_task(
@@ -190,7 +190,7 @@ def test_register_with_both_cron_and_run_at_prefers_run_at(state_db: Path) -> No
     not silent fallback to cron; it's "don't crash the
     loop on a slightly malformed row".
     """
-    from magi.agent.proactive.scheduler import start_scheduler
+    from magi.channels.tasks.scheduler import start_scheduler
 
     sch = start_scheduler(str(state_db))
     fire_at = "2099-01-01T00:00:00+00:00"
@@ -271,7 +271,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     """``run_at`` validation surfaces as ``is_error=True`` —
     the LLM gets a precise message back, not a server-side
     traceback."""
-    from magi.agent.proactive.scheduler import start_scheduler
+    from magi.channels.tasks.scheduler import start_scheduler
     from magi.agent.tools.schedule_task import ScheduleTaskTool
     from magi.agent.tools.base import ToolContext
 

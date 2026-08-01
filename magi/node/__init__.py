@@ -155,9 +155,9 @@ def run() -> None:
     except Exception as e:  # noqa: BLE001 — never block boot
         logger.warning("MCP bootstrap skipped: %s", e)
 
-    # Start the proactive task scheduler.
+    # Start the scheduled-task channel.
     try:
-        from magi.agent.proactive.scheduler import start_scheduler
+        from magi.channels.tasks.scheduler import start_scheduler
         start_scheduler(state_dir)
     except Exception as e:  # noqa: BLE001
         logger.warning("scheduler bootstrap skipped: %s", e)
@@ -178,7 +178,7 @@ def run() -> None:
     # Register a shutdown hook.
     try:
         import atexit
-        from magi.agent.proactive.scheduler import stop_scheduler
+        from magi.channels.tasks.scheduler import stop_scheduler
         atexit.register(stop_scheduler)
     except Exception:  # noqa: BLE001
         pass

@@ -1,4 +1,4 @@
-"""Preset-task seeder — per-user snapshots of ``task_presets``.
+"""Proactive task-preset policy — materialise per-user task snapshots.
 
 When a contact transitions to ``role='assigned'`` (either via
 the initial ``POST /api/contacts`` create or via a
@@ -13,7 +13,7 @@ by hand.
 Idempotent
 ----------
 
-The helper checks for an existing row per ``(uid,
+The policy checks for an existing row per ``(uid,
 preset_id)`` pair BEFORE inserting — repeating the hook
 against the same contact (e.g. role assigned → admin →
 assigned again) is a no-op, not a duplicate. This is the same
@@ -65,13 +65,14 @@ from sqlalchemy.orm import Session
 
 from magi.agent.db import ChatSession, Contact
 from magi.agent.memory.session import new_session_id
-from magi.agent.proactive.cron_utils import (
+from magi.channels.tasks.cron_utils import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.agent.proactive.orm_models import Task, TaskPreset
+from magi.channels.tasks.models import Task
+from magi.proactive.models import TaskPreset
 
-logger = logging.getLogger("magi.agent.proactive.presets")
+logger = logging.getLogger("magi.proactive.task_presets")
 
 
 def seed_presets_for_contact(session: Session, contact_id: int) -> int:
@@ -169,7 +170,7 @@ def seed_presets_for_contact(session: Session, contact_id: int) -> int:
         # to nudge it here. Calling ``get_scheduler()`` from
         # inside a route-handler session is also fragile —
         # the scheduler module pulls in ``apscheduler`` +
-        # ``magi.agent.proactive.runner`` and importing those
+        # ``magi.channels.tasks.runner`` and importing those
         # while a SQLite ``BEGIN IMMEDIATE`` is already held
         # has historically tripped the "database is locked"
         # on tests that share a single connection across

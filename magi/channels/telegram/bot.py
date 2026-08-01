@@ -70,7 +70,7 @@ _telegram_shutdown_event: "asyncio.Event | None" = None
 
 def set_telegram_bot(bot) -> None:
     """Register the running ``telegram.Bot`` for cross-
-    thread access (most notably :func:`proactive.runner.
+    thread access (most notably :func:`channels.tasks.runner.
     execute_task`, which fires cron-driven rows into the
     operator's TG chat). Idempotent — replacing an existing
     instance just rebinds."""
