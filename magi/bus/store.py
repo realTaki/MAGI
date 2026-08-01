@@ -164,6 +164,105 @@ class BusStore:
                 run.updated_at = now
             session.commit()
 
+    def complete_agent_input(self, event_id: str) -> None:
+        """Acknowledge an inbox event while its run remains active."""
+        with open_session(self._state_dir) as session:
+            row = session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id))
+            if row is None:
+                raise KeyError(f"unknown agent inbox event: {event_id}")
+            row.status = "completed"
+            row.leased_by = None
+            row.leased_until = None
+            row.updated_at = utcnow_naive()
+            session.commit()
+
+    def wait_for_tools(
+        self,
+        event_id: str,
+        *,
+        continuation: dict[str, Any],
+        jobs: list[dict[str, Any]],
+    ) -> None:
+        """Atomically persist a continuation and enqueue its tool effects."""
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id))
+            if row is None:
+                raise KeyError(f"unknown agent inbox event: {event_id}")
+            run = session.get(AgentRun, row.run_id)
+            if run is None:
+                raise KeyError(f"unknown agent run: {row.run_id}")
+            row.status = "completed"
+            row.leased_by = None
+            row.leased_until = None
+            row.updated_at = now
+            run.status = "waiting_tool"
+            run.continuation = continuation
+            run.updated_at = now
+            for job_data in jobs:
+                tool_call_id = str(job_data["tool_call_id"])
+                if session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)):
+                    continue
+                session.add(
+                    ToolCall(
+                        tool_call_id=tool_call_id,
+                        run_id=run.run_id,
+                        tool_name=str(job_data["tool_name"]),
+                        arguments=dict(job_data["arguments"]),
+                        status="requested",
+                        created_at=now,
+                    )
+                )
+                session.add(
+                    ToolJob(
+                        job_id=_new_id("tool"),
+                        run_id=run.run_id,
+                        tool_call_id=tool_call_id,
+                        tool_name=str(job_data["tool_name"]),
+                        payload={
+                            "arguments": dict(job_data["arguments"]),
+                            "context": dict(job_data["context"]),
+                        },
+                        status="pending",
+                        available_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            session.commit()
+
+    def load_tool_continuation(
+        self, run_id: str
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+        """Return a resumable continuation only after all expected tools settle."""
+        with open_session(self._state_dir) as session:
+            run = session.get(AgentRun, run_id)
+            if run is None or run.status != "waiting_tool" or not run.continuation:
+                return None
+            continuation = dict(run.continuation)
+            call_ids = list(continuation.get("tool_call_ids") or [])
+            calls = {
+                row.tool_call_id: row
+                for row in session.scalars(select(ToolCall).where(ToolCall.run_id == run_id))
+            }
+            if any(
+                call_id not in calls or calls[call_id].status not in {"completed", "failed"}
+                for call_id in call_ids
+            ):
+                return None
+            results = []
+            for call_id in call_ids:
+                result = calls[call_id].result or {}
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": str(result.get("content") or ""),
+                        "is_error": bool(result.get("is_error")),
+                    }
+                )
+            return continuation, results
+
     def fail_agent_message(self, event_id: str, *, error_code: str, error_detail: str) -> None:
         """Terminally fail a turn while preserving a user-safe error record."""
         now = utcnow_naive()

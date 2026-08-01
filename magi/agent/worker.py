@@ -81,20 +81,22 @@ class AgentWorker:
             await self._process(claim)
 
     async def _process(self, claim: BusClaim) -> None:
-        payload = claim.payload
         try:
-            # Dynamic import preserves the existing test seam and keeps a
-            # future pure AgentStep implementation local to ``magi.agent``.
-            from magi.agent.loop import handle_message
-
-            reply = await handle_message(
-                self.state_dir,
-                text=str(payload["text"]),
-                channel=str(payload["channel"]),
-                session_id=payload.get("session_id"),
-                uid=payload.get("uid"),
-                caller_role=payload.get("caller_role"),
-            )
+            if claim.kind == "tool.result":
+                resumed = self.store.load_tool_continuation(claim.run_id)
+                if resumed is None:
+                    self.store.complete_agent_input(claim.event_id)
+                    return
+                continuation, tool_results = resumed
+                payload = dict(continuation["input"])
+                await self._advance(
+                    claim,
+                    payload,
+                    continuation_messages=list(continuation["messages"]),
+                    tool_results=tool_results,
+                )
+                return
+            await self._advance(claim, claim.payload)
         except Exception as exc:  # a durable run must not strand its producer
             error_code = _error_code(exc)
             logger.exception("agent run %s failed", claim.run_id)
@@ -102,7 +104,56 @@ class AgentWorker:
                 claim.event_id, error_code=error_code, error_detail=str(exc)
             )
             return
-        self.store.complete_agent_message(claim.event_id, reply)
+
+    async def _advance(
+        self,
+        claim: BusClaim,
+        payload: dict,
+        *,
+        continuation_messages: list[dict] | None = None,
+        tool_results: list[dict] | None = None,
+    ) -> None:
+        from magi.agent.loop import DEFAULT_MAX_TOKENS
+        from magi.agent.step import run_agent_step
+        from magi.agent.workspace import workspace_root
+
+        step = await run_agent_step(
+            self.state_dir,
+            text=str(payload.get("text") or ""),
+            channel=str(payload.get("channel") or ""),
+            session_id=payload.get("session_id"),
+            uid=payload.get("uid"),
+            caller_role=payload.get("caller_role"),
+            max_tokens=DEFAULT_MAX_TOKENS,
+            continuation_messages=continuation_messages,
+            tool_results=tool_results,
+        )
+        if not step.tool_uses:
+            self.store.complete_agent_message(claim.event_id, step.text)
+            return
+        context = {
+            "workspace": str(workspace_root(self.state_dir)),
+            "uid": payload.get("uid"),
+            "channel": payload.get("channel"),
+            "session_id": payload.get("session_id"),
+            "caller_role": payload.get("caller_role"),
+        }
+        tool_call_ids = [str(tool_use["id"]) for tool_use in step.tool_uses]
+        continuation = {
+            "input": payload,
+            "messages": list(step.messages),
+            "tool_call_ids": tool_call_ids,
+        }
+        jobs = [
+            {
+                "tool_call_id": tool_use["id"],
+                "tool_name": tool_use["name"],
+                "arguments": dict(tool_use.get("input") or {}),
+                "context": context,
+            }
+            for tool_use in step.tool_uses
+        ]
+        self.store.wait_for_tools(claim.event_id, continuation=continuation, jobs=jobs)
 
 
 def _error_code(exc: Exception) -> str:

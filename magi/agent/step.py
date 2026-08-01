@@ -24,6 +24,7 @@ class AgentStepResult:
     provider: str
     model: str | None
     usage: dict[str, Any]
+    messages: tuple[dict[str, Any], ...]
 
 
 async def run_agent_step(
@@ -35,6 +36,8 @@ async def run_agent_step(
     session_id: str | None,
     caller_role: str | None,
     max_tokens: int,
+    continuation_messages: list[dict[str, Any]] | None = None,
+    tool_results: list[dict[str, Any]] | None = None,
 ) -> AgentStepResult:
     """Run one inference and return effects for the actor to persist.
 
@@ -52,6 +55,7 @@ async def run_agent_step(
             provider="",
             model=None,
             usage={},
+            messages=(),
         )
     context = loop._build_context(  # noqa: SLF001
         state_dir,
@@ -70,8 +74,22 @@ async def run_agent_step(
             provider="",
             model=None,
             usage={},
+            messages=(),
         )
 
+    if continuation_messages is not None:
+        context.messages = [
+            loop.ChatMessage(
+                role=item["role"],
+                content=item["content"],
+                content_blocks=item.get("content_blocks"),
+            )
+            for item in continuation_messages
+        ]
+        if tool_results:
+            context.messages.append(
+                loop.ChatMessage(role="user", content="", content_blocks=tool_results)
+            )
     await loop.maybe_compact(  # noqa: SLF001
         state_dir, uid, session_id, context.messages
     )
@@ -83,6 +101,11 @@ async def run_agent_step(
         max_tokens=max_tokens,
         tools=context.tool_schemas,
     )
+    context.messages.append(
+        loop.ChatMessage(
+            role="assistant", content=result.text or "", content_blocks=result.raw_blocks or None
+        )
+    )
     return AgentStepResult(
         text=result.text or "",
         tool_uses=tuple(dict(item) for item in result.tool_uses),
@@ -90,4 +113,12 @@ async def run_agent_step(
         provider=context.provider.name,
         model=result.model,
         usage=dict(result.usage or {}),
+        messages=tuple(
+            {
+                "role": message.role,
+                "content": message.content,
+                "content_blocks": message.content_blocks,
+            }
+            for message in context.messages
+        ),
     )

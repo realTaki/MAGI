@@ -20,7 +20,7 @@ def worker_state(tmp_path, monkeypatch) -> str:
 async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> None:
     state = worker_state
 
-    from magi.agent import loop
+    from magi.agent import step as step_mod
     from magi.agent.worker import (
         start_agent_worker,
         stop_agent_worker,
@@ -29,11 +29,19 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
 
     calls: list[dict] = []
 
-    async def fake_handle_message(_state_dir, **kwargs):
+    async def fake_step(_state_dir, **kwargs):
         calls.append(kwargs)
-        return "durable reply"
+        return step_mod.AgentStepResult(
+            text="durable reply",
+            tool_uses=(),
+            assistant_blocks=(),
+            provider="test",
+            model="test",
+            usage={},
+            messages=(),
+        )
 
-    monkeypatch.setattr(loop, "handle_message", fake_handle_message)
+    monkeypatch.setattr(step_mod, "run_agent_step", fake_step)
     await start_agent_worker(state)
     try:
         reply = await submit_and_wait_agent_message(
@@ -58,5 +66,75 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
             "session_id": "session-1",
             "uid": 1,
             "caller_role": None,
+            "max_tokens": 1024,
+            "continuation_messages": None,
+            "tool_results": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_resumes_after_durable_tool_result(worker_state, monkeypatch) -> None:
+    from magi.agent import step as step_mod
+    from magi.agent.worker import (
+        start_agent_worker,
+        stop_agent_worker,
+        submit_and_wait_agent_message,
+    )
+    from magi.tools import worker as tool_worker_mod
+
+    steps: list[dict] = []
+
+    async def fake_step(_state_dir, **kwargs):
+        steps.append(kwargs)
+        if len(steps) == 1:
+            return step_mod.AgentStepResult(
+                text="",
+                tool_uses=({"id": "call-1", "name": "fake_tool", "input": {}},),
+                assistant_blocks=(),
+                provider="test",
+                model="test",
+                usage={},
+                messages=({"role": "user", "content": "hello", "content_blocks": None},),
+            )
+        return step_mod.AgentStepResult(
+            text="after tool",
+            tool_uses=(),
+            assistant_blocks=(),
+            provider="test",
+            model="test",
+            usage={},
+            messages=(),
+        )
+
+    class FakeTool:
+        async def run(self, _context, **_kwargs):
+            from magi.tools.base import ToolResult
+
+            return ToolResult(content="tool output")
+
+    monkeypatch.setattr(step_mod, "run_agent_step", fake_step)
+    monkeypatch.setattr(tool_worker_mod, "get_tool", lambda *_args, **_kwargs: FakeTool())
+    await start_agent_worker(worker_state)
+    tool_worker = tool_worker_mod.ToolWorker(worker_state, poll_seconds=0.01)
+    await tool_worker.start()
+    try:
+        reply = await submit_and_wait_agent_message(
+            AgentMessage(event_id="tool-run", text="hello", channel="webui", uid=1),
+            state_dir=worker_state,
+            timeout_seconds=2,
+        )
+    finally:
+        await tool_worker.stop()
+        await stop_agent_worker()
+
+    assert reply == "after tool"
+    assert len(steps) == 2
+    assert steps[1]["tool_results"] == [
+        {
+            "type": "tool_result",
+            "tool_use_id": "call-1",
+            "content": "tool output",
+            "is_error": False,
         }
     ]

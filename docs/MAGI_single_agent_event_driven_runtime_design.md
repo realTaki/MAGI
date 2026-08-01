@@ -1,7 +1,7 @@
 # MAGI 单 Agent 事件驱动 Runtime 设计方案
 
 > 版本：v1.1  
-> 状态：Phase 1–2 已落地；Phase 3–6 仍为后续实现方案。
+> 状态：Phase 1–4 的核心执行链已落地；streaming、delivery outbox sender 与 A2A transport 仍为后续实现方案。
 > 本次更新：active run steering、Actor 内完整 LLM 调用、流式输出
 
 ## 1. 目标
