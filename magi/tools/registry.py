@@ -68,10 +68,11 @@ def _build_tools() -> list["Tool"]:
     )
     from magi.tools.edit_file import EditFileTool
     from magi.tools.list_files import ListFilesTool
-    from magi.tools.mcp_manage import (
+    from magi.mcp.manage import (
         AddMcpServerTool,
         DeleteMcpServerTool,
         ListMcpServersTool,
+        UpdateMcpServerTool,
     )
     from magi.tools.read_file import ReadFileTool
     from magi.tools.schedule_task import ScheduleTaskTool
@@ -147,8 +148,13 @@ def _build_tools() -> list["Tool"]:
         CompleteActionItemTool(),
         ListActionItemTool(),
         # MCP server management — admin-only.
+        # LLM-side CRUD lives in :mod:`magi.mcp.manage`;
+        # the registry imports them from the MCP package
+        # (top-level ``mcp/`` subsystem, not under
+        # ``tools/``).
         AddMcpServerTool(),
         ListMcpServersTool(),
+        UpdateMcpServerTool(),
         DeleteMcpServerTool(),
     ]
 
@@ -283,7 +289,7 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     """
     global _mcp_tools_cache, _mcp_loaded_at_db
     from magi.db import McpServer, open_session
-    from magi.tools.mcp_loader import load_mcp_tools_blocking
+    from magi.mcp.loader import load_mcp_tools_blocking
 
     tools = load_mcp_tools_blocking()
     _mcp_tools_cache = list(tools)

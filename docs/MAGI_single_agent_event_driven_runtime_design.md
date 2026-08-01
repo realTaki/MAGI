@@ -1,7 +1,7 @@
 # MAGI 单 Agent 事件驱动 Runtime 设计方案
 
 > 版本：v1.1  
-> 状态：第一版实现方案  
+> 状态：Phase 1–2 已落地；Phase 3–6 仍为后续实现方案。
 > 本次更新：active run steering、Actor 内完整 LLM 调用、流式输出
 
 ## 1. 目标
@@ -111,7 +111,7 @@ SQLite 状态提交成功，但消息没有写入 broker
 
 ### 3.4 保留未来替换能力
 
-业务代码不能直接依赖 SQLite SQL，应通过 Runtime Store 接口访问。
+业务代码不能直接依赖 SQLite SQL，应通过 BusStore 接口访问。
 
 未来需要多副本或更高吞吐量时，可以替换为 PostgreSQL 或 broker-backed 实现，而不修改 Agent、Channel 和 Tool 的核心逻辑。
 
@@ -155,9 +155,9 @@ at-least-once delivery + idempotent consumption
 
 因此所有事件、Tool job、LLM attempt 和 delivery 都必须有稳定的幂等或关联 ID。
 
-### 4.4 Runtime 不做业务编排
+### 4.4 Bus 不做业务编排
 
-Runtime 不能决定：
+Bus 不能决定：
 
 - 哪个 Agent 应该完成任务；
 - Agent 之间如何分工；
@@ -217,8 +217,9 @@ LLM Worker
 | `agent_runs` | Agent Worker | Agent Worker | continuation 和当前运行状态 |
 | `run_inputs` | Channel/Agent Worker | Agent Worker | active run 期间到达的 steering inputs |
 | `tool_calls` | Agent Worker、Tool Worker | Agent Worker | 工具调用及结果聚合 |
+| `a2a_invocations` | Agent Worker、A2A sender/receiver | Agent Worker | 委派请求、回执与 continuation 关联 |
 | `llm_attempts` | Agent Worker | Agent Worker、WebUI | 推理尝试与流式生命周期，不保存逐 token 队列 |
-| `session_messages` | Agent Runtime | LLM context builder、WebUI | 模型及用户可见 transcript |
+| `session_messages` | Agent Worker | LLM context builder、WebUI | 模型及用户可见 transcript |
 
 不要让所有模块往一张表中写入记录，再通过 `message_type` 猜测由谁处理。
 
@@ -323,10 +324,11 @@ delivered_at
 ```text
 run_id                    PRIMARY KEY
 conversation_id
-status                    ready | running | waiting_tools |
+status                    ready | running | waiting_tools | waiting_a2a |
                           completed | failed | cancelled
 continuation_json
 expected_tool_call_ids
+expected_a2a_invocation_ids
 iteration_count
 token_usage
 deadline_at
@@ -381,7 +383,29 @@ completed_at
 
 `ordinal` 用于按照模型最初生成 tool calls 的顺序重建 provider-valid transcript。
 
-### 6.7 `llm_attempts`
+### 6.7 `a2a_invocations`
+
+```text
+invocation_id             PRIMARY KEY
+run_id
+target_magic_id
+request_event_id          UNIQUE
+reply_to
+status                    pending | accepted | completed | failed | timed_out | cancelled
+idempotency_key           UNIQUE
+deadline_at
+result_json
+error_json
+created_at
+accepted_at
+completed_at
+```
+
+`202 Accepted` 只更新为 `accepted`，绝不代表委派完成。若该 invocation 是当前 run
+继续推理的必要条件，`agent_runs` 记录它的 ID 并进入 `waiting_a2a`；返回的 A2A event
+必须以 `reply_to=invocation_id` 关联回正确 run。
+
+### 6.8 `llm_attempts`
 
 ```text
 llm_attempt_id            PRIMARY KEY
@@ -401,7 +425,7 @@ completed_at
 
 第一版可以只持久化 attempt 的开始与终态；如需短时断线续传，可定期批量保存 draft checkpoint，但不能把 draft 当成最终 continuation。
 
-### 6.8 `session_messages`
+### 6.9 `session_messages`
 
 继续保存用户和模型可见的会话记录，但它不是执行队列。
 
@@ -417,12 +441,12 @@ completed_at
 
 不要只保存扁平化后的字符串，否则重启后可能无法构造合法的工具调用上下文。
 
-## 7. Runtime 接口
+## 7. Bus 接口
 
 定义与具体数据库无关的接口。名称可以根据现有代码风格调整。
 
 ```python
-class RuntimeStore(Protocol):
+class BusStore(Protocol):
     async def publish_inbox(
         self,
         event: AgentEvent,
@@ -476,12 +500,12 @@ class RuntimeStore(Protocol):
 SQLite 只是这个接口的第一种实现，例如：
 
 ```text
-runtime/store.py
-runtime/sqlite/store.py
-runtime/models.py
-runtime/worker.py
-runtime/recovery.py
-runtime/streaming.py
+bus/contracts.py
+bus/store.py
+bus/sqlite_store.py
+bus/wakeup.py
+bus/recovery.py
+bus/stream.py
 ```
 
 不要创建名为 `SQLiteQueue` 的接口，避免上层代码绑定实现细节。
@@ -875,7 +899,10 @@ Agent B SQLite
 
 A2A HTTP response 只确认“消息已持久化接收”，不能等待 B 完成 LLM 推理。
 
-B 的回复是一个新的、带 correlation metadata 的 A2A event。
+B 的回复是一个新的、带 correlation metadata 的 A2A event。若 A 的当前 run 正在等待
+B 的结果，回复还必须携带 `reply_to=invocation_id`；A 的 Actor 只恢复该匹配 run。这样
+“请求已被 B durable 接收”和“B 已产生可用结果”是两个可恢复、可审计的状态，而不是
+一个同步 RPC 调用栈。
 
 A2A 消息属于 Agent 能力，不要在 Runtime 中把它解释成 task graph 或同步 RPC。第一版 A2A 不传输逐 token stream。
 
@@ -949,22 +976,23 @@ replicas: 1
 
 ```text
 magi/
-├── agent/       # reasoning、context、单次 step
-├── llm/         # provider gateways、stream normalization
-├── runtime/     # events、mailbox、workers、leases、recovery、StreamHub
-├── channels/    # Telegram、WebUI、A2A ingress/egress
-├── tools/       # tool definitions 和 executors
-├── proactive/   # 产生 runtime events 的 policy
+├── bus/         # SQLite durable bus：contracts、mailbox、lease、retry、recovery、StreamHub
+├── agent/       # reasoning、context、单次 step、AgentWorker、LLM gateway
+├── channels/    # Telegram、WebUI、A2A ingress/delivery workers
+├── tools/       # tool definitions、ToolWorker 和 executors
+├── proactive/   # 产生 bus events 的 policy
 └── db/          # ORM、migration、SQLite implementation
 ```
 
 依赖方向：
 
 ```text
-channels/tools/proactive → runtime contracts
-runtime worker → agent.step
-agent → LLM gateway、memory、tool schemas、runtime contracts
-runtime streaming → channel stream sinks
+channels/tools/proactive → bus contracts
+agent worker → bus + agent.step
+tool worker → bus + tool.run
+channel workers → bus
+agent → LLM gateway、memory、tool schemas、bus contracts
+bus StreamHub → channel stream sinks
 ```
 
 禁止：
@@ -980,10 +1008,10 @@ LLM gateway → agent mailbox per-token events
 
 不要一次性删除现有 `handle_message()`。按以下阶段迁移，并确保每个阶段可运行、可测试。
 
-### Phase 1：Runtime contracts 与 SQLite schema
+### Phase 1：Bus contracts 与 SQLite schema
 
 - 定义 AgentEvent、Transition 和 Store interface；
-- 增加 inbox、tool jobs、outbox、runs、run inputs、tool calls 和 LLM attempts 表；
+- 增加 inbox、tool jobs、outbox、runs、run inputs、tool calls、A2A invocations 和 LLM attempts 表；
 - 配置 WAL、busy timeout 和索引；
 - 实现 publish、claim、complete、retry 和 lease recovery；
 - 增加并发、去重、lease 过期和 crash recovery 测试。
@@ -1025,6 +1053,7 @@ LLM gateway → agent mailbox per-token events
 - A2A receiver 只负责持久化接收并返回 `202`；
 - A2A sender 消费 delivery outbox；
 - 实现 event ID 去重和重试；
+- 持久化 `a2a_invocations` 与 `waiting_a2a` continuation；
 - 删除 HTTP 请求内调用远端 Agent Loop 的行为。
 
 ### Phase 6：清理旧 Loop
@@ -1099,6 +1128,7 @@ LLM gateway → agent mailbox per-token events
 - 接收方根据 event ID 去重；
 - 返回 `202` 时消息已经持久化；
 - HTTP 请求不等待 Agent 推理。
+- `202 accepted` 不会被误当成 A2A result；只有匹配 `reply_to` 的结果可恢复等待中的 run。
 
 ### 20.8 Delivery
 
@@ -1165,11 +1195,12 @@ LLM gateway → agent mailbox per-token events
 - [ ] 普通 steering input 不取消 Tool，不新建并行 run。
 - [ ] 所有 tool results 闭合后，steering messages 紧接在其后进入下一次 LLM input。
 - [ ] steering 不要求旧目标先生成 final answer。
+- [ ] `202 Accepted` 不被视为 A2A invocation 的完成；等待 A2A 结果的 run 可在重启后恢复。
 - [ ] 所有 inbox、tool jobs 和 deliveries 都支持 lease、retry 和 recovery。
 - [ ] 所有跨边界事件都有稳定幂等 ID。
 - [ ] 重启后能够从 SQLite 恢复 pending/processing 状态。
-- [ ] Runtime 不包含 Agent 分工、自然语言意图分类或业务流程决策。
-- [ ] 上层代码只依赖 Runtime Store contract，不直接依赖 SQLite 实现。
+- [ ] Bus 不包含 Agent 分工、自然语言意图分类或业务流程决策。
+- [ ] 上层代码只依赖 BusStore contract，不直接依赖 SQLite 实现。
 
 ## 24. 最终设计原则
 

@@ -17,9 +17,8 @@ task's cron fires. Each invocation:
    ensures every task ends up with one home session
    without requiring a separate migration.
 
-2. Calls :func:`magi.agent.loop.handle_message` with the
-   contact credentials already in scope, against the
-   task's home session. The agent loop sees the full
+2. Publishes a durable ``task.triggered`` input with the
+   contact identity and task's home session. The agent worker sees the full
    history of prior fires' prompts + replies — same as
    a normal chat that happens to be triggered by a
    timer.
@@ -35,7 +34,7 @@ task's cron fires. Each invocation:
    (system-prompt-mandated): a "report-if-changed,
    otherwise-stay-silent" task shouldn't push anything.
 
-4. Pulls the latest TokenUsage row (the agent loop just
+4. Pulls the latest TokenUsage row (the agent worker just
    wrote one) onto the :class:`TaskRun` for cost-roll-up.
 
 5. On failure, increments ``consecutive_failures``; if the
@@ -62,7 +61,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.loop import handle_message
+from magi.agent.worker import submit_and_wait_agent_message
+from magi.bus import AgentMessage
 from magi.channels.tasks.models import Task, TaskRun
 from magi.agent.memory.session import (
     SessionMessage,
@@ -328,27 +328,21 @@ async def execute_task(
 
     try:
         reply = await asyncio.wait_for(
-            handle_message(
-                state_dir,
-                text=prompt,
-                # Task runner is the third channel after
-                # WebUI / TG. The agent loop uses this to
-                # gate send_message tool activation —
-                # the tool returns is_error for non-tg
-                # channels. Passing Channel.SCHEDULED here (a
-                # leftover from when the runner was a
-                # one-off subsystem) would silently
-                # disable the tool, so the agent's
-                # "deliver via send_message" directive
-                # in the user-message wouldn't reach TG.
-                # LLM credentials are resolved inside
-                # ``handle_message`` via
-                # :func:`magi.agent.llm.factory.get_provider`
-                # — we don't pass them as kwargs.
-                channel="task",
-                uid=contact.id,
-                session_id=session_id,
-                caller_role=contact.role,
+            submit_and_wait_agent_message(
+                AgentMessage(
+                    event_id=f"task:{task_id}:{run_id}",
+                    source_id=run_id,
+                    kind="task.triggered",
+                    text=prompt,
+                    # Keep the existing task channel value during the
+                    # compatibility phase; delivery remains the task
+                    # channel's responsibility, not the worker's.
+                    channel="task",
+                    uid=contact.id,
+                    session_id=session_id,
+                    caller_role=contact.role,
+                ),
+                state_dir=state_dir,
             ),
             timeout=_RUN_TIMEOUT_SECONDS,
         )

@@ -600,7 +600,8 @@ async def _handle_contact_message(
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.agent.loop import handle_message
+    from magi.agent.worker import submit_and_wait_agent_message
+    from magi.bus import AgentMessage
     from magi.agent.memory.session import (
         SessionMessage,
         SessionStore,
@@ -608,10 +609,8 @@ async def _handle_contact_message(
         utcnow_iso,
     )
 
-    # LLM credentials come from the seeded adam MAGIC row,
-    # resolved inside :func:`handle_message` via
-    # :func:`magi.agent.llm.factory.get_provider` — we don't
-    # read them here, and we don't pass them down.
+    # LLM credentials remain local to the agent. Telegram only publishes a
+    # durable input and never receives provider credentials.
 
     if contact_separated:
         # Separated contacts can't chat with their EVE —
@@ -752,30 +751,26 @@ async def _handle_contact_message(
         name=f"tg-typing-{update.effective_chat.id}",
     )
 
-    # ``send_message`` tool needs an out-of-band channel to
-    # the TG bot — the agent loop owns the bot reference
-    # (so the tool stays SDK-agnostic). Without this
-    # callback the tool returns
-    # "TG callback not wired into the tool context".
-    bot = update.get_bot()
-    tgid_int = update.effective_chat.id
-
     try:
-        reply = await handle_message(
-            state_dir,
-            text=text,
-            channel=Channel.TG,
-            session_id=session_id,
-            uid=uid,
-            # The bound operator's role — required by the
-            # agent loop to filter admin-only tools
-            # (``schedule_task`` + action-item trio) out
-            # of the TG-callable menu. Telegram only
-            # serves ``admin`` and ``assigned`` today (the
-            # earlier branch in this function already
-            # refused everyone else with a polite reply),
-            # so this is always one of those two roles.
-            caller_role=contact_role,
+        reply = await submit_and_wait_agent_message(
+            AgentMessage(
+                # Telegram message ids are stable per chat, and the inbound
+                # session message is separately persisted above. Together
+                # they make webhook/update retries idempotent.
+                event_id=(
+                    f"telegram:{update.effective_chat.id}:"
+                    f"{update.effective_message.message_id}"
+                ),
+                source_id=str(update.effective_message.message_id),
+                text=text,
+                channel=Channel.TG,
+                session_id=session_id,
+                uid=uid,
+                # The bound operator's role lets the eventual agent step
+                # filter privileged tools without a Telegram dependency.
+                caller_role=contact_role,
+            ),
+            state_dir=state_dir,
         )
     finally:
         # Always cancel — success, error, exception.

@@ -1,7 +1,10 @@
 # 消息驱动的 MAGI Actor Runtime（讨论草案）
 
-> 状态：提案，尚未实现。本文不改变当前 runtime 的行为，也不取代现有
-> `handle_message()` / tool loop；它定义下一轮执行架构重构应遵循的边界。
+> 状态：Phase 1–2 已实现（私有 SQLite bus、lease recovery、串行
+> `AgentWorker` 与三类入口发布）；`handle_message()` / tool loop 仍是
+> Worker 内部的兼容 bridge。Phase 3 以后的 step、异步 tool 与 A2A 尚未实现。
+> 已审阅并吸收 v1.1 的首版实现决策；详细的 schema、streaming 和验收规范见
+> [MAGI_single_agent_event_driven_runtime_design.md](MAGI_single_agent_event_driven_runtime_design.md)。
 
 ## 背景
 
@@ -35,6 +38,9 @@ mailbox 和可恢复状态的 Actor：channel、tool、proactive policy 和其�
    投递和网络超时是正常情况，不是例外路径。
 5. **协调权留给 MAGI。** runtime 只保证可靠投递、串行化、恢复和资源限制；它不
    决定哪个 MAGI 应先行动、何时汇总，或如何处理社会内部的业务协作。
+6. **普通新消息是 steering，不是隐式取消。** 同一 conversation 的新消息在 active
+   run 期间立即持久化；它不会中断当前 LLM stream、取消 tool 或新建并行 run，而会
+   在合法的下一个 LLM 输入点改变该 run 的后续方向。
 
 这里的“原子”不是把 LLM、网络和工具调用放在一个数据库事务内。它的含义是：
 
@@ -62,7 +68,7 @@ Telegram / WebUI / Tasks / Proactive / A2A ingress
                          │
          ┌───────────────┼────────────────┐
          ▼               ▼                ▼
-     LLM worker      Tool worker    Delivery / A2A worker
+LLMGateway + StreamHub Tool worker  Delivery / A2A worker
          │               │                │
          └──── result / event ────────────┘
                          │
@@ -74,16 +80,22 @@ Telegram / WebUI / Tasks / Proactive / A2A ingress
 出站投递 effect。现有 `channels/dispatcher.py` 的职责更接近出站 delivery router；
 长期可考虑改名为 `delivery` 或 `outbound`，但这不是第一阶段的前置条件。
 
-建议新增的运行时边界暂定为 `magi/execution/`：它负责 inbox/outbox、worker lease、
-run 生命周期、重试、取消、优先级和资源限制。`magi/agent/` 只处理标准化事件与
-agent 状态，不 import Telegram、WebUI、A2A adapter 或具体 delivery 实现。
+新增的公共边界为 `magi/bus/`：它是以 SQLite 实现的本地 durable message bus，负责
+消息契约、发布、领取、lease、幂等、重试、唤醒和恢复。它不理解 agent 推理、tool
+业务或具体 channel，也不拥有这些领域的 worker。
+
+`magi/agent/` 自己拥有 `AgentWorker`：读取 `agent_inbox`、执行单次 step，并写出 tool、
+delivery 与 A2A intents。`magi/tools/` 自己拥有 ToolWorker；`magi/channels/` 自己拥有
+ingress/delivery worker；`magi/proactive/` 主要是 event/task producer。
 
 建议的依赖方向：
 
 ```text
-channels / tools / proactive → execution contracts
-execution workers            → agent.step
-agent                         → LLM, memory, tool schemas, execution contracts
+channels / tools / proactive → bus contracts
+agent worker                 → bus + agent.step
+tool worker                  → bus + tool.run
+channel workers              → bus
+agent                        → LLM, memory, tool schemas, bus contracts
 ```
 
 因此禁止以下依赖：
@@ -116,7 +128,7 @@ LLM、网络、工具执行都发生在事务外，因此 SQLite 的单 writer �
 
 这不承诺 SQLite 永远足够。只有当同一个 MAGI 需要多 Pod、多机器共享 mailbox，或
 SQLite busy/retry 已形成持续瓶颈时，才迁移到 PostgreSQL 或 broker-backed store；届时
-替换 `RuntimeStore` 实现，而非改变 agent/channel/tool 的契约。
+替换 `BusStore` 实现，而非改变 agent/channel/tool 的契约。
 
 因此第一版的每个 MAGI workload 必须是 `replicas: 1`，使用独占 PVC；滚动更新时不能
 有两个 Pod 同时打开同一个 SQLite 文件。部署应选 StatefulSet，或 Deployment 的
@@ -169,7 +181,9 @@ class AgentMessage:
 | `tool_jobs` | Agent worker | Tool worker | 待执行的工具调用 |
 | `delivery_outbox` | Agent worker | Telegram/WebUI/A2A sender | 待投递的最终回复、进度或 A2A event |
 | `agent_runs` | Agent worker | Agent worker | continuation、状态与 active run |
+| `run_inputs` | channel、Agent worker | Agent worker | active run 期间到达的 steering/control input |
 | `tool_calls` | Agent/Tool worker | Agent worker | tool 结果聚合与原始顺序 |
+| `llm_attempts` | Agent worker | Agent worker、WebUI | inference/stream 生命周期与诊断 |
 | `session_messages` | Agent transition | context builder、WebUI | 用户/模型可见 transcript，而非执行队列 |
 
 最小 schema 语义：
@@ -183,8 +197,14 @@ class AgentMessage:
   channel、destination、payload、外部消息 ID、重试状态和租约。
 - `agent_runs`：保存 `run_id`、`magic_id`、conversation/correlation、状态、版本号、
   iteration、deadline 与 continuation。
+- `run_inputs`：保存 `input_id`、`run_id`、来源 event、`received_seq`、可选的
+  `context_seq`、内容和 `pending/attached/consumed` 状态。真实收件顺序与 provider
+  transcript 顺序必须分开记录。
 - `tool_calls`：保存 `tool_call_id`、`run_id`、`ordinal`、参数、状态、结果和错误。
   `ordinal` 用于按模型最初的 tool-call 顺序重建 transcript。
+- `llm_attempts`：保存 `llm_attempt_id`、`run_id`、inbox event、provider/model、
+  `started/streaming/completed/interrupted/failed` 状态、usage 和错误。它不保存逐 token
+  队列，只用于 stream 去重、诊断与崩溃恢复。
 
 `session_messages` 必须逐步支持 provider-native blocks（assistant text/tool-use、
 tool-result、provider metadata、tool-call ID），不能只保留扁平字符串；否则重启后无法
@@ -211,10 +231,15 @@ human.message
   → next LLM step
 ```
 
-每个 agent transition 最多进行一次 LLM 推理；它绝不直接等待 tool 或远程 MAGI。
-第一阶段可以让该单次推理由 Actor worker 直接 await，因为没有 channel 请求在等待它。
-若未来需要将 LLM 限流、排队或跨进程执行，也可以将其进一步拆为 `llm.request` /
-`llm.response` effect，而不改变 agent message 契约。
+每个 agent transition 最多进行一次完整 LLM inference；它绝不直接等待 tool 或远程
+MAGI。第一版由 Actor worker 经 `LLMGateway.stream()` 直接完成该 inference，而不是建立
+独立的 `llm.request` / `llm.response` durable worker。
+
+LLM 的流式 delta 经本进程 `StreamHub` best-effort 分发给 WebUI（以及可选的节流
+Telegram 编辑）；它们不是 inbox event，也不逐 token 写 SQLite/outbox。完整 provider
+response 只有在 transition transaction 成功后才成为权威 transcript，并发出
+`message.committed`。若 stream 中断，新的 `llm_attempt_id` 重试；旧 draft 不得混入新的
+committed message。
 
 每个 run 至少需要持久化：
 
@@ -237,13 +262,13 @@ result/error, idempotency_key, requested_at, completed_at
 
 ## Worker 生命周期、lease 与事务边界
 
-`RuntimeStore` 是 execution 层对持久化的抽象；上层不应依赖 SQLite SQL 或名为
+`BusStore` 是 bus 层对持久化的抽象；上层不应依赖 SQLite SQL 或名为
 `SQLiteQueue` 的实现细节。其最小职责包括：发布 inbox、claim/complete/retry inbox、
 原子提交 agent transition、claim/complete tool job、claim/complete delivery，以及启动时
 的 lease recovery。
 
 ```python
-class RuntimeStore(Protocol):
+class BusStore(Protocol):
     async def publish_inbox(self, event: AgentMessage) -> PublishResult: ...
     async def claim_next_inbox(self, worker_id: str) -> AgentMessage | None: ...
     async def commit_agent_transition(self, transition: AgentTransition) -> None: ...
@@ -301,19 +326,22 @@ inbox message。这样工具结果不会在进程崩溃时丢失在两个状态�
 
 这既保持并行，也避免 provider 因不完整 tool-result 序列拒绝请求。
 
-### 第一版 mailbox 可处理性规则
+### 第一版 mailbox 与 steering 规则
 
-第一版采用严格单 active-run 语义，以优先保证 provider transcript 的正确性：
+第一版仍是严格单 active-run，但同一 conversation 可以 steering 当前 run：
 
-- MAGI 空闲时，按 `available_at`、`created_at`、`id` 顺序领取下一条外部输入；
-- MAGI 处于 `waiting_tools` 时，只处理该 active run 的 `tool.completed`、
-  `tool.failed` 与 `run.cancel`；
-- 新的用户消息、task 和 A2A request 留在 `pending`，不自动合并、取消当前工具，
-  也不启动并行 run；
-- 当前 run 完成、失败或取消后，才继续领取后续外部输入。
+- MAGI 空闲时，按 `available_at`、`created_at`、`id` 领取外部输入并建立新 run；
+- active run 期间，同一 conversation 的新消息立即写入 `run_inputs`，关联该 `run_id`；
+  当前 inbox event 可完成，但不会立即启动第二次 LLM inference；
+- 当前 LLM stream 不被普通消息中断；正在执行的 tool 也不被普通消息取消；
+- `waiting_tools` 时，tool result 全部进入终态后，先按 `ordinal` 写入所有 tool-result
+  blocks，再按 `received_seq` 添加 steering inputs，随后进行下一次 inference；
+- 其他 conversation 的输入仍留在 `pending`，直到 active run 完成；
+- 只有 Stop 按钮、取消 API 或显式系统事件产生 `run.cancel`。取消时仍必须让每个 tool
+  call 进入真实的 completed、failed 或 cancelled 终态，形成 provider-valid transcript。
 
-这是第一版的明确保守策略。以后可在有明确 transcript/cancel 语义后增加 interrupt，
-但不应在初始实现中隐式插入用户消息或并行运行两个 conversation。
+这避免了将 `assistant tool_use → user steering → tool result` 这种 provider 可能拒绝的
+顺序写入 transcript，也避免要求模型先对过时目标产出 final answer。
 
 ## A2A 语义
 
@@ -333,6 +361,15 @@ Agent A emits a2a.invoke
 
 因此 A 不会等待 B；A 的当前 transition 在写出 delegation effect 后结束。A2A 结果的
 网络投递应具备重试和幂等，不能依赖一个仍然存活的 HTTP 调用栈。
+
+### A2A continuation 的必要补充
+
+`202 Accepted` 仅表示目标 MAGI 已持久化收到请求，不代表该委派完成。若 Agent A 的
+后续推理需要 Agent B 的结果，Phase 5 必须新增或等价持久化 `a2a_invocations`：保存
+`invocation_id`、发起 run、目标 MAGI、状态、deadline、幂等键和 `reply_to`。对应的
+`agent_runs` 记录 `waiting_a2a` / pending invocation IDs；B 的 `a2a.result` 以
+`reply_to=invocation_id` 写回 A inbox，只能恢复匹配的 run。这样既没有同步 RPC 等待，
+也不会把“已投递”误认为“已得到结果”。
 
 ## 持久化、投递与并发
 
@@ -372,7 +409,7 @@ Agent A emits a2a.invoke
   插话的场景测试；
 - 不修改现有运行路径。
 
-### 阶段 1：Runtime contracts、SQLite schema 与恢复
+### 阶段 1：Bus contracts、SQLite schema 与恢复
 
 - 在私有 SQLite 增加 inbox、tool jobs、outbox、runs 与 tool calls schema；
 - 实现 publish、claim、complete、retry、lease recovery、polling/wakeup 与索引；
@@ -385,22 +422,27 @@ Agent A emits a2a.invoke
 - 将最终回复写入 delivery outbox，暂时复用现有 dispatcher；
 - 保持已有用户体验，同时验证单 Actor、inbox 和 delivery 语义。
 
-### 阶段 3：单次 inference 的 `agent.step()` 与 continuation
+### 阶段 3：单次 inference 的 `agent.step()`、streaming 与 continuation
 
 - 将长生命周期 loop 拆为每次最多一次 LLM inference 的可恢复 step；
-- 持久化 provider-native blocks、continuation 与 transcript projection；
+- 在 Actor 内经 `LLMGateway.stream()` 完成 inference，接入 StreamHub；
+- 持久化 provider-native blocks、continuation、`llm_attempts` 与 transcript projection；
+- 明确 best-effort delta 与 committed final message 的边界；
 - 删除依赖内存调用栈的等待逻辑。
 
 ### 阶段 4：异步 tool worker 与结果聚合
 
 - Agent step 只创建 `tool_jobs`；tool worker 独立执行；
 - tool result 通过 inbox 返回，按 ordinal 聚合后再 continuation；
+- 同一 conversation 的 input 作为 steering 写入 `run_inputs`，在 tool results 后进入
+  下一次 LLM input；
 - 加入 tool idempotency、timeout、retry 与 recovery 测试。
 
 ### 阶段 5：异步 A2A ingress/egress
 
 - A2A request 采用 accept-then-process；
 - 将结果、失败、进度和取消写回发起 MAGI inbox；
+- 持久化 `a2a_invocations` 与 `waiting_a2a` continuation；
 - 接入身份认证、MAGIS 权限与审计。
 
 ### 阶段 6：清理旧 loop、delivery 与运行治理
@@ -411,12 +453,12 @@ Agent A emits a2a.invoke
 
 ## 待定问题
 
-1. 单次 LLM 调用是否保留在 Actor transition 内，还是从第一版开始也变为
-   `llm.request` / `llm.response`？建议第一版前者，保留后者的契约扩展点。
+1. `conversation_id` 如何在现有 `chat_sessions`、Telegram、WebUI 和 A2A 中统一定义，
+   并与 runtime 访问权限绑定？
 2. 哪些 tool 必须以 workspace/resource lock 串行？哪些可安全并行？
 3. A2A 的身份、能力授权、回调/轮询和结果保留期分别如何定义？
 4. run event 的保留、审计和隐私边界如何区分于普通 chat history？
-5. 第二阶段以后是否需要显式 interrupt/cancel policy，而非严格 pending？
+5. `waiting_a2a` 与 tool result 混合等待时，哪些结果是下一次 inference 的必要条件？
 
 ## 验证、观测与迁移门槛
 

@@ -437,9 +437,12 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
         # has ``telegram_id=9101`` so the dispatch can find
         # them — nothing extra to seed.
 
-        # Patch handle_message to capture the kwargs.
+        # The AgentWorker resolves the loop dynamically after it claims the
+        # durable task event, so patch the loop module rather than the task
+        # producer.
         import magi.channels.tasks.runner as runner_mod
-        real = runner_mod.handle_message
+        import magi.agent.loop as loop_mod
+        real = loop_mod.handle_message
 
         async def _capture(*_args, **kwargs):
             captured["channel"] = kwargs.get("channel")
@@ -450,11 +453,11 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
             captured["tg_send_callback"] = kwargs.get("tg_send_callback")
             return "fake reply"
 
-        runner_mod.handle_message = _capture  # type: ignore[assignment]
+        loop_mod.handle_message = _capture  # type: ignore[assignment]
         try:
             await runner_mod.execute_task(str(state_dir), task_id, manual=True)
         finally:
-            runner_mod.handle_message = real
+            loop_mod.handle_message = real
 
         # The runner no longer threads a TG callback into
         # the loop. The dispatch happens via
@@ -528,28 +531,18 @@ async def test_tg_session_is_not_modified_by_task_fire(
 # -- helper: stand-in for the agent loop so we exercise the runner --------
 
 async def _fake_fire(task_id: str, state_dir: Path) -> None:
-    """Patch ``handle_message`` to a no-op so the runner's
-    own dispatch logic is exercised without needing an
-    LLM provider.
+    """Stub the worker's compatibility loop without requiring an LLM."""
+    import magi.agent.loop as loop_mod
 
-    We swap the agent-loop entry point on the runner's
-    module (the runner does ``from magi.agent.loop import
-    handle_message``, so the symbol resolves through
-    runner.handle_message). The no-op accepts every
-    positional + keyword shape (``state_dir`` is
-    positional in the real signature; everything else
-    is kw-only)."""
-    import magi.channels.tasks.runner as runner_mod
-
-    real = runner_mod.handle_message
+    real = loop_mod.handle_message
 
     async def _noop(*_args, **_kwargs):
         return "fake reply"
 
-    runner_mod.handle_message = _noop  # type: ignore[assignment]
+    loop_mod.handle_message = _noop  # type: ignore[assignment]
     try:
         await execute_task(str(state_dir), task_id, manual=True)
     finally:
-        runner_mod.handle_message = real  # restore
+        loop_mod.handle_message = real
 
 # -- TG delivery_to: reuses operator's existing TG chat session ----------

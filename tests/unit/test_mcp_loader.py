@@ -33,7 +33,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from magi.tools import mcp_loader
+from magi.mcp import loader as mcp_loader
 from magi.tools.base import ToolContext, ToolResult
 from magi.tools.registry import (
     bootstrap_mcp_tools,
@@ -451,7 +451,7 @@ def test_mcptool_run_returns_text_content(mcp_db, monkeypatch):
     ``AsyncMock`` for the upstream session — no
     subprocess, no real MCP server."""
 
-    from magi.tools.mcp_loader import MCPTool
+    from magi.mcp.loader import MCPTool
 
     class _FakeSession:
         async def call_tool(self, name, arguments):
@@ -493,7 +493,7 @@ def test_mcptool_run_handles_timeout(mcp_db):
     agent loop."""
     import asyncio
     from pathlib import Path
-    from magi.tools.mcp_loader import MCPTool
+    from magi.mcp.loader import MCPTool
     from magi.channels import Channel
 
     class _SlowSession:
@@ -525,7 +525,7 @@ def test_mcptool_run_handles_call_exception():
     reported as an error, not propagated."""
     import asyncio
     from pathlib import Path
-    from magi.tools.mcp_loader import MCPTool
+    from magi.mcp.loader import MCPTool
     from magi.channels import Channel
 
     class _BrokenSession:

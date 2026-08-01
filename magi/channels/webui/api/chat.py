@@ -1,11 +1,10 @@
 """Adam's chat endpoint — the WebUI channel's "send a
 message to the LLM" route.
 
-v0: synchronous request / response. The frontend POSTs a
-text, we call :func:`magi.agent.loop.handle_message` and
-return the reply string. C7 replaces this with a streaming
-endpoint (SSE or WebSocket) so the user sees tokens as they
-arrive; v0 just blocks until the full reply is ready.
+The frontend POSTs text into the private durable bus, then
+waits for the corresponding agent run. The request/response
+shape remains compatible while the agent owns sequential
+consumption rather than the HTTP handler calling a loop.
 
 LLM credentials
 ===============
@@ -42,8 +41,12 @@ from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
-from magi.agent.loop import handle_message
-from magi.agent.llm.errors import LLMNotConfiguredError
+from magi.agent.worker import (
+    AgentRunFailed,
+    AgentRunTimedOut,
+    submit_and_wait_agent_message,
+)
+from magi.bus import AgentMessage
 from magi.agent.memory.session import (
     ChannelMismatchError,
     SessionMessage,
@@ -81,16 +84,16 @@ def _resolve_caller_credentials(
     LLM credentials live on ``magic`` (the Adam MAGIC
     owns the provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
-    :func:`magi.agent.loop.handle_message` reads them
+    the agent worker reads them
     internally through :func:`magi.agent.llm.factory
     .get_provider`. Token-usage recording is still per-
     Contact (``token_usage.uid``).
 
     The ``role`` field is included so the chat handler
-    can pass it down to :func:`magi.agent.loop.handle_message`
+    can put it on the durable agent message
     as ``caller_role`` — ``schedule_task`` and the
     action-item trio are gated to ``admin`` and ``assigned``
-    only, and the agent loop needs to strip them out of
+    only, and the agent worker needs to strip them out of
     other roles' tool menus.
 
     Raises ``MagiHTTPException``:
@@ -291,12 +294,13 @@ async def send_chat(
     # ``ChannelMismatchError`` and we 403 the caller instead
     # of mixing two LLM loops into one history.
     ts_in = _utcnow_iso()
+    inbound_message_id = new_session_id()
     try:
         post = store.append_messages(
             uid, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
-                message_id=new_session_id(),
+                message_id=inbound_message_id,
             )],
             channel=Channel.WEBUI,
         )
@@ -348,21 +352,40 @@ async def send_chat(
         )
 
     try:
-        reply = await handle_message(
-            _state_dir(),
-            text=text,
-            channel=Channel.WEBUI,
-            session_id=session_id,
-            uid=uid,
-            caller_role=contact_role,
+        reply = await submit_and_wait_agent_message(
+            AgentMessage(
+                # The persisted inbound session-message id is the producer's
+                # idempotency key. A network retry cannot create a second
+                # agent turn for that exact input.
+                event_id=f"webui:{session_id}:{inbound_message_id}",
+                source_id=inbound_message_id,
+                text=text,
+                channel=Channel.WEBUI,
+                session_id=session_id,
+                uid=uid,
+                caller_role=contact_role,
+            ),
+            state_dir=_state_dir(),
         )
-    except LLMNotConfiguredError as e:
+    except AgentRunFailed as e:
+        if e.result.error_code != "magi.llm_credentials_required":
+            logger.exception(
+                "chat: agent run failed for session=%s uid=%s", session_id, uid,
+            )
+            raise MagiHTTPException(
+                status_code=500,
+                code=e.result.error_code or "chat.agent_crashed",
+                detail=(
+                    f"agent run failed: {e} — try again. "
+                    "If the problem persists, check server logs."
+                ),
+            )
         # The MAGI runtime has no provider / API key
         # configured. Surface this as 503 (system-side
         # misconfiguration) so the frontend can show a
         # "configure in 智能体管理" banner.
         logger.warning(
-            "chat: adam Magi has no LLM credentials: %s", e,
+            "chat: MAGI has no LLM credentials: %s", e,
         )
         raise MagiHTTPException(
             status_code=503,
@@ -373,26 +396,16 @@ async def send_chat(
                 "/api/magic/{adam_id}"
             ),
         )
-    except Exception as e:
-        # The agent loop only catches LLMError internally.
-        # An unhandled Exception (CancelledError, DB hiccup,
-        # tool crash leaking past the tool-level guard, etc.)
-        # should not become a bare 500 — surface the detail
-        # so the operator knows something went wrong.
-        logger.exception(
-            "chat: handle_message crashed for session=%s uid=%s",
-            session_id, uid,
-        )
+    except AgentRunTimedOut as e:
         raise MagiHTTPException(
-            status_code=500,
-            code="chat.agent_crashed",
+            status_code=504,
+            code="chat.agent_timeout",
             detail=(
-                f"agent loop crashed: {e} — try again. "
-                "If the problem persists, check server logs."
+                f"agent run timed out: {e} — it may still finish in the background."
             ),
         )
 
-    # Defensive truncation — the agent loop should already
+    # Defensive truncation — the agent worker should already
     # cap via the LLM's max_tokens, but a misbehaving model
     # could still send a multi-megabyte response. We trim
     # here so the WebUI doesn't choke rendering a 5MB
@@ -405,7 +418,7 @@ async def send_chat(
     # got the reply and a missing history line is worse
     # than a console line. The same ``channel=Channel.WEBUI``
     # guard applies (D.22); a mismatch here would mean
-    # ``handle_message`` somehow ran against a TG-owned
+    # the worker somehow ran against a TG-owned
     # session, which the inbound check above already
     # blocked. Belt and braces.
     ts_out = _utcnow_iso()

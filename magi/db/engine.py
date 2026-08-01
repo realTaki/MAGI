@@ -319,6 +319,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
     import magi.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.db.models_token_usage  # noqa: F401
+    import magi.bus.models  # noqa: F401 — durable local message bus
     import magi.agent.memory.self.models  # noqa: F401 — self-memory table
     import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
     import magi.channels.tasks.models  # noqa: F401 — scheduled-task channel

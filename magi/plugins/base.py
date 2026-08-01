@@ -65,7 +65,9 @@ class PluginContext:
     hook: Hook
     """Which hook is firing."""
 
-    occurred_at: datetime = field(default_factory=datetime.utcnow)
+    occurred_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc),
+    )
     """When the runtime emitted this hook."""
 
     # The remaining fields are populated selectively
