@@ -52,14 +52,14 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
     The public schema has a deliberately narrow table set.  Private models
     are never created in PostgreSQL.
     """
-    from magi.agent.db import ControlOperator, ControlSetting, EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
+    from magi.agent.db import ControlOperator, ControlSetting, EveRuntime, MAGIC, MAGIS, MAGISAdmin, MAGISMembership, MAGISRole
 
     engine = get_magis_engine()
     if _url() is not None:
         # SQLAlchemy sorts the FK dependencies (magic before magis) for us.
         MAGIS.metadata.create_all(
             engine,
-            tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__, EveRuntime.__table__, ControlSetting.__table__, ControlOperator.__table__],
+            tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__, MAGISAdmin.__table__, EveRuntime.__table__, ControlSetting.__table__, ControlOperator.__table__],
         )
     if seed_root:
         from magi.agent.db.engine import _seed_default_root

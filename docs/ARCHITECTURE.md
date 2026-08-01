@@ -192,7 +192,8 @@ operator into its local contact/session scope.
 - **MAGI** — The general kind of autonomous agent in this system.
 - **MAGIS** — A MAGI Society. A group of MAGI that forms a tree via `parent_id`.
 - **MAGIC** — Internal table/API name for an individual MAGI; not a separate product term.
-- **Adam** — Leading MAGI role. Manages its MAGIS subtree through the control plane.
+- **Adam** — Leading MAGI role for its direct MAGIS. MAGIS administrator grants
+  are direct-only and do not inherit across the society tree.
 - **EVE** — Default working MAGI role. Executes tasks and collaborates.
 - **Role** — Adam and EVE are reserved roles; a MAGIS can also define custom roles.
 - **Contact** — A person known to the society. Role: `admin` (WebUI operator), `assigned` (the served user), or `guest` (everyone else).

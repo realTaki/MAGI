@@ -47,6 +47,7 @@ import hashlib
 import hmac
 import asyncio
 from base64 import urlsafe_b64encode, urlsafe_b64decode
+import httpx
 from fastapi import APIRouter, Cookie, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -62,11 +63,13 @@ from sqlalchemy import select
 # resolve the name at import time, before the function
 # body ever runs. Same root cause as the D.22 fix on
 # ``magi/node/__init__.py``: hoist the import.
-from magi.agent.db import Contact, ControlOperator, open_session, require_state_dir  # noqa: E402
+from magi.agent.db import Contact, ControlOperator, EveRuntime, MAGIC, MAGIS, open_session, require_state_dir  # noqa: E402
 from magi.agent.db.settings import state_get  # noqa: E402
 from magi.channels.webui import control_store
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot  # noqa: E402
+from magi.channels.webui.api.errors import MagiHTTPException
+from magi.channels.webui.proxy_auth import build_proxy_headers
 
 logger = logging.getLogger("magi.api.auth")
 
@@ -127,6 +130,44 @@ def _verify_signed_uid(token: str) -> int | None:
             return None
         return uid
     except Exception:
+        return None
+
+
+def _sign_selected_session(*, magic_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
+    """Sign a browser session bound to exactly one selected MAGI.
+
+    ``_sign_uid`` remains for compatibility with private-runtime tests and
+    old single-node sessions. New control-plane sessions are versioned and
+    include their selected target, so a browser cannot reuse a B session to
+    proxy requests to C.
+    """
+    payload = {
+        "v": 2, "magic_id": magic_id, "telegram_id": telegram_id,
+        "display_name": display_name, "admin": admin, "assigned": assigned,
+        "ts": int(datetime.now(timezone.utc).timestamp()),
+    }
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    signature = hmac.new(_signing_key(), raw, hashlib.sha256).hexdigest()[:24]
+    return "v2." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
+
+
+def selected_session(token: str | None) -> dict[str, object] | None:
+    """Return the selected-MAGI browser session, if valid and unexpired."""
+    if not token or not token.startswith("v2."):
+        return None
+    try:
+        _version, body, signature = token.split(".", 2)
+        raw = urlsafe_b64decode(body + "=" * (-len(body) % 4))
+        expected = hmac.new(_signing_key(), raw, hashlib.sha256).hexdigest()[:24]
+        if not hmac.compare_digest(signature, expected):
+            return None
+        payload = json.loads(raw)
+        if payload.get("v") != 2 or not isinstance(payload.get("magic_id"), int) or not isinstance(payload.get("telegram_id"), int):
+            return None
+        if datetime.now(timezone.utc).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
+            return None
+        return payload
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
         return None
 
 
@@ -266,6 +307,8 @@ class MeResponse(BaseModel):
     telegram_id: int | None = None
     display_name: str | None = None
     admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
+    assigned: bool = False
+    selected_magic_id: int | None = None
 
     # D.24: the cookie is keyed by ``uid``, not
     # the per-channel delivery address. The response
@@ -339,6 +382,108 @@ def _clear_login_code(uid: int) -> None:
 
 
 # -- endpoints ---------------------------------------------------------
+
+
+class AvailableMAGI(BaseModel):
+    id: int
+    name: str | None = None
+
+
+class AvailableMAGIResponse(BaseModel):
+    magi: list[AvailableMAGI]
+
+
+class TargetLoginRequest(BaseModel):
+    telegram_id: int
+
+
+class TargetVerifyRequest(TargetLoginRequest):
+    code: str = Field(min_length=6, max_length=6)
+
+
+async def _target_access(magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    """Call a target runtime before a browser identity exists.
+
+    This is still authenticated service-to-service: ``operator_id=0`` marks
+    the narrow pre-login capability, and the signature remains bound to the
+    selected runtime id and exact path.
+    """
+    from magi.agent.db.magis import open_magis_session
+    from magi.channels.webui.api.runtime_proxy import _runtime_url
+
+    with open_magis_session() as session:
+        base = _runtime_url(session, magic_id)
+    headers = build_proxy_headers(
+        method=method, path_and_query=path, target_id=magic_id,
+        operator_id=0, operator_name="WebUI login", telegram_id=None,
+    )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(method, base + path, json=payload, headers=headers)
+    except httpx.HTTPError as exc:
+        raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {"detail": "Selected MAGI returned an invalid response"}
+    if response.is_error:
+        raise MagiHTTPException(response.status_code, str(body.get("code", "access.target_error")), str(body.get("detail", "Target request failed")))
+    return body
+
+
+@router.get("/available-magi", response_model=AvailableMAGIResponse)
+async def available_magi() -> AvailableMAGIResponse:
+    """List login targets that are currently running.
+
+    The control deployment reads runtime registry metadata only.  It does not
+    read a target's local workspace or user records.
+    """
+    from magi.agent.db.magis import open_magis_session
+    with open_magis_session() as session:
+        rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
+        runtimes = {row.magic_id: row for row in session.scalars(select(EveRuntime)).all()}
+        root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+        result = [
+            AvailableMAGI(id=row.id, name=row.name)
+            for row in rows
+            if (root is not None and root.adam_id == row.id)
+            # The orchestrator records ``provisioning`` immediately after
+            # creating the Deployment; Kubernetes does not synchronously
+            # write a later observed state back to this registry.  Desired
+            # running is therefore the durable availability signal here.
+            or (runtimes.get(row.id) is not None and runtimes[row.id].desired_state == "running")
+        ]
+    return AvailableMAGIResponse(magi=result)
+
+
+@router.get("/targets/{magic_id}/accounts")
+async def target_accounts(magic_id: int) -> dict[str, object]:
+    return await _target_access(magic_id, "GET", "/api/access/login-accounts")
+
+
+@router.post("/targets/{magic_id}/send-login-code")
+async def target_send_login_code(magic_id: int, payload: TargetLoginRequest) -> dict[str, object]:
+    return await _target_access(magic_id, "POST", "/api/access/send-login-code", payload.model_dump())
+
+
+@router.post("/targets/{magic_id}/verify-login-code", response_model=VerifyLoginCodeResponse)
+async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, response: Response) -> VerifyLoginCodeResponse:
+    result = await _target_access(magic_id, "POST", "/api/access/verify-login-code", payload.model_dump())
+    if not result.get("ok"):
+        return VerifyLoginCodeResponse(ok=False, error=str(result.get("error") or "Code does not match"))
+    telegram_id = result.get("telegram_id")
+    if not isinstance(telegram_id, int):
+        raise MagiHTTPException(502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity")
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=_sign_selected_session(
+            magic_id=magic_id, telegram_id=telegram_id,
+            display_name=result.get("display_name") if isinstance(result.get("display_name"), str) else None,
+            admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
+        ),
+        max_age=SESSION_TTL_SECONDS, httponly=True, samesite="lax", path="/",
+    )
+    return VerifyLoginCodeResponse(ok=True)
 
 
 @router.get("/allowed-accounts", response_model=AllowedLoginAccountsResponse)
@@ -669,6 +814,14 @@ async def me(
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
+    selected = selected_session(magi_session)
+    if selected is not None:
+        return MeResponse(
+            uid=int(selected["telegram_id"]), telegram_id=int(selected["telegram_id"]),
+            display_name=selected.get("display_name") if isinstance(selected.get("display_name"), str) else None,
+            admin=bool(selected.get("admin")), assigned=bool(selected.get("assigned")),
+            selected_magic_id=int(selected["magic_id"]),
+        )
     uid = _verify_signed_uid(magi_session or "")
     if uid is None or uid not in _super_admins():
         raise MagiHTTPException(

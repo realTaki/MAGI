@@ -16,7 +16,7 @@ def test_each_magis_gets_reserved_roles(monkeypatch, tmp_path):
         assert {(r.name, r.is_reserved) for r in roles} == {("Adam", True), ("EVE", True)}
 
 
-def test_adam_manages_descendants_without_child_membership(monkeypatch, tmp_path):
+def test_adam_does_not_manage_descendant_without_direct_membership(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
     import magi.agent.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
@@ -28,5 +28,5 @@ def test_adam_manages_descendants_without_child_membership(monkeypatch, tmp_path
         db.add_all([root, child, adam]); db.flush(); child.parent_id = root.id
         roles = ensure_default_roles(db, root.id)
         db.add(MAGISMembership(magis_id=root.id, magic_id=adam.id, role_id=roles["Adam"].id)); root.adam_id = adam.id; db.commit()
-        assert adam_manages_magis(db, adam.id, child.id)
+        assert not adam_manages_magis(db, adam.id, child.id)
         assert db.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == adam.id, MAGISMembership.magis_id == child.id)) is None

@@ -9,12 +9,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.db import ControlOperator, EveRuntime, MAGIC, MAGIS
+from magi.agent.db import EveRuntime, MAGIC, MAGIS
 from magi.agent.db.magis import get_magis_session
-from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers
-from magi.channels.webui import control_store
 
 router = APIRouter(tags=["runtime-proxy"])
 
@@ -41,7 +39,6 @@ async def proxy_runtime(
     magic_id: int,
     path: str,
     request: Request,
-    admin_uid: AdminGate,
     magis_session: Session = Depends(get_magis_session),
 ) -> Response:
     """Forward one browser request to the chosen MAGI's internal API.
@@ -52,18 +49,13 @@ async def proxy_runtime(
     """
     if not path or path.startswith("/") or ".." in path.split("/"):
         raise MagiHTTPException(status_code=400, code="runtime.path_invalid", detail="Invalid runtime path")
-    try:
-        control_uid = int(admin_uid)
-    except ValueError as exc:
-        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in") from exc
-    if control_store.enabled():
-        operator = magis_session.get(ControlOperator, control_uid)
-    else:
-        from magi.agent.db import Contact, open_session
-        with open_session() as control_session:
-            operator = control_session.get(Contact, control_uid)
-    if operator is None:
+    from magi.channels.webui.api.auth import selected_session
+
+    browser_session = selected_session(request.cookies.get("magi_session"))
+    if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
+    if int(browser_session["magic_id"]) != magic_id:
+        raise MagiHTTPException(status_code=403, code="auth.target_mismatch", detail="The session is bound to another MAGI")
     runtime_path = f"/api/{path}"
     if request.url.query:
         runtime_path = f"{runtime_path}?{request.url.query}"
@@ -72,9 +64,11 @@ async def proxy_runtime(
             method=request.method,
             path_and_query=runtime_path,
             target_id=magic_id,
-            operator_id=operator.id,
-            operator_name=operator.display_name or getattr(operator, "name", None) or f"Admin {operator.id}",
-            telegram_id=operator.telegram_id,
+            operator_id=int(browser_session["telegram_id"]),
+            operator_name=(browser_session.get("display_name") if isinstance(browser_session.get("display_name"), str) else None) or f"User {browser_session['telegram_id']}",
+            telegram_id=int(browser_session["telegram_id"]),
+            admin=bool(browser_session.get("admin")),
+            assigned=bool(browser_session.get("assigned")),
         )
     except RuntimeError as exc:
         raise MagiHTTPException(status_code=503, code="runtime.proxy_unavailable", detail=str(exc)) from exc
@@ -94,3 +88,24 @@ async def proxy_runtime(
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
     )
+
+
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def proxy_selected_runtime(
+    path: str,
+    request: Request,
+    magis_session: Session = Depends(get_magis_session),
+) -> Response:
+    """Compatibility path for runtime APIs called without ``/runtime/<id>``.
+
+    Most React Query calls are rewritten client-side, but a few independent
+    controls use ``fetch('/api/...')``.  Keeping this server-side fallback
+    means they cannot accidentally reach WebUI-local state.  Auth and
+    onboarding routers are mounted earlier and retain their explicit paths.
+    """
+    from magi.channels.webui.api.auth import selected_session
+
+    browser_session = selected_session(request.cookies.get("magi_session"))
+    if browser_session is None:
+        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
+    return await proxy_runtime(int(browser_session["magic_id"]), path, request, magis_session)

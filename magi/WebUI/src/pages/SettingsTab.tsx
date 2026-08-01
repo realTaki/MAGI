@@ -73,6 +73,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
 export type SettingsTabProps = {
   data: OnboardingData | null;
   signedInUser: { telegram_id: string; display_name: string | null };
+  isAdmin: boolean;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ telegramId: string; displayName: string | null }>,
@@ -86,7 +87,7 @@ export default function SettingsTab(props: SettingsTabProps) {
   return (
     <div className="space-y-4">
       <SidebarShell
-        items={SETTINGS_SECTIONS.map((it) => ({
+        items={SETTINGS_SECTIONS.filter((it) => props.isAdmin || !["webui-access", "onboarding", "agent", "task-presets"].includes(it.id)).map((it) => ({
           ...it,
           // Translate the i18n key in the consumer (sidebar
           // shell expects pre-resolved labels). ``label`` is
@@ -107,15 +108,15 @@ export default function SettingsTab(props: SettingsTabProps) {
         {section === "instruction" && <SettingsInstructionCard />}
         {section === "tg-read" && <SettingsTgReadReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
-        {section === "agent" && <SettingsAgentCard />}
-        {section === "task-presets" && <SettingsTaskPresetsCard />}
-        {section === "webui-access" && (
+        {section === "agent" && props.isAdmin && <SettingsAgentCard />}
+        {section === "task-presets" && props.isAdmin && <SettingsTaskPresetsCard />}
+        {section === "webui-access" && props.isAdmin && (
           <SettingsWebuiAccessCard
             signedInUser={props.signedInUser}
             onAdminsChanged={props.onAdminsChanged}
           />
         )}
-        {section === "onboarding" && (
+        {section === "onboarding" && props.isAdmin && (
           <SettingsOnboardingCard onRestart={props.onRestart} />
         )}
       </SidebarShell>

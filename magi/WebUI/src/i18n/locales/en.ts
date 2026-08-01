@@ -35,8 +35,10 @@ export default {
   onboarding: {
     header: "First-time setup",
     step1Title: "Connect an IM account for MAGI",
-    step1Desc: "Pick a messaging platform for MAGI to send and receive messages. Telegram is the only live channel today; more platforms on the way.",
+    step1Desc: "Pick a messaging platform for MAGI to send and receive messages.",
+    step1Help: "Telegram is the only live channel today; more platforms on the way.",
     channelTelegramDesc: "A Telegram Bot is MAGI's identity on that platform. Create a Bot and paste its token below.",
+    channelTelegramBotFatherLink: "Open @BotFather",
     channelSlackDesc: "Slack channel coming soon.",
     channelWechatDesc: "WeChat channel coming soon.",
     botTokenLabel: "Bot Token",

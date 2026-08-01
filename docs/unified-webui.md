@@ -9,19 +9,19 @@ magi                 → 一个 MAGI runtime（默认命令）
 magi webui           → 全局唯一的 WebUI 控制面
 ```
 
-`magi-webui` 是浏览器唯一入口。它承载 React SPA、登录会话、MAGIS/MAGI 管理和
-生命周期操作，但不拥有 workspace 或本地 SQLite。每个 MAGI runtime 不再挂载 SPA，也不直接暴露给浏览器；它只提供
-ClusterIP 可达的 Runtime API。
+`magi-webui` 是浏览器唯一入口。它承载 React SPA、目标绑定的登录会话和内部请求代理，
+但不拥有 workspace、本地 SQLite、Bot Token 或用户权限数据。每个 MAGI runtime 不再挂载
+SPA，也不直接暴露给浏览器；它只提供 ClusterIP 可达的 Runtime API。
 
 ## 请求路径
 
 ```text
 Browser
-  │ cookie
+  │ selected MAGI + cookie
   ▼
 magi-webui
-  │ resolves magic_id from the control registry
-  │ signs method + path + operator + magic_id
+  │ discovers running MAGI, then routes only to the selected target
+  │ signs method + path + identity capabilities + magic_id
   ▼
 magi Runtime Service
   │ checks MAGI_RUNTIME_ID and HMAC freshness
@@ -45,26 +45,32 @@ MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 有效的 HMAC；签名覆盖 HTTP method、完整 path/query、时间戳、目标 MAGI ID 和操作者 ID。
 每个 runtime 必须有 `MAGI_RUNTIME_ID`，并拒绝目标 ID 不匹配或签名过期的请求。
 
-被验证的操作者会映射到目标 MAGI 私有 SQLite 的 Contact，以保持原有的会话、任务和
-联系人 ID 作用域。该映射优先使用 Telegram ID；无 Telegram 的操作者使用系统标记。
-因此 WebUI 的登录身份不会要求所有 MAGI 共享 SQLite 或共享 Contact 主键。
+被验证的身份会映射到目标 MAGI 私有 SQLite 的 Contact，以保持原有的会话、任务和联系人
+ID 作用域。映射使用 Telegram ID；MAGI 私有 SQLite 主键不会跨节点传播。
 
-控制面自身的 Admin、登录/验证代码与 onboarding 状态存储在 Genesis MAGIS 的
-PostgreSQL（`control_operators`、`control_settings`）。Bot token 不保存在 WebUI：
-WebUI 用目标绑定的 HMAC 调用 Genesis runtime 的内部控制接口，由该 MAGI 写入自己的
-私有 SQLite 并启动频道。
+权限和验证数据归属如下：
+
+- `magis_admins` 位于某个 MAGIS 的 PostgreSQL：一个 MAGIS 可有多个 Admin；授权不继承到
+  父 MAGIS 或子 MAGIS。
+- `contacts.role='assigned'` 位于目标 MAGI 本地 SQLite：一个 MAGI 最多一个 assigned user。
+- 登录验证码位于**被登录 MAGI**的本地 SQLite。该 MAGI 有自己的 Bot 时由自己投递；尚未
+  配置 Bot 时，仅可由其**直接所属 MAGIS**的 Adam Bot 代发。Adam 只投递，不保存验证码，
+  也不获得子节点登录权限。
+- Bot Token 始终只写入目标 MAGI 的本地 SQLite。WebUI 不持有 Token。
 
 ## 前端目标选择与缓存
 
-控制面 API（登录、onboarding、MAGIS 树、MAGI 注册）保留在 `/api/*`。私有 Runtime API
-由前端自动改写为上述代理路径。顶部 MAGI 选择器保存当前目标；React Query 的私有 key
-包含 `runtime/<magic_id>` 前缀。切换目标时，旧目标缓存会被清除，避免 A 的聊天或设置短暂
-显示给 B。
+登录页先显示正在运行的 MAGI，再显示所选 MAGI 可登录的账号（其直接 MAGIS 的 Admin 与
+该节点的 assigned user）。成功登录后 cookie 固定 `selected_magic_id`；代理拒绝任何不同
+目标的请求。切换 MAGI 必须回到登录页重新认证，而不是在已登录页面的顶部切换。
+
+MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 runtime 的直接 MAGIS
+及其直接 MAGI。停止、重启或删除当前登录的 MAGI 会被拒绝，避免浏览器会话被主动切断。
 
 ## Kubernetes
 
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
-  `magi webui`，只连接 Genesis MAGIS PostgreSQL，不挂载 PVC 或 workspace。
+  `magi webui`，只使用运行时注册元数据和内部服务，不挂载 PVC 或 workspace。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
 - orchestrator 在启动新的 MAGI 时，同时创建同名的内部 ClusterIP Service；停止时保留，
   删除 MAGI 时一并删除。
@@ -79,5 +85,5 @@ WebUI 用目标绑定的 HMAC 调用 Genesis runtime 的内部控制接口，由
 - 网络策略：限制 Runtime Service 只接受 `magi-webui` Namespace/Pod 的流量。
 - mTLS 或服务身份：替代当前共享 HMAC 密钥。
 - 可用性与流式代理：对停止的 MAGI 显示更丰富的状态，并为聊天支持 SSE。
-- 控制面凭据的加密与密钥轮换：当前 Bot token 仅存于 Genesis runtime 的私有数据库；
-  未来应使用外部密钥管理服务。
+- Bot Token 的加密与密钥轮换：Token 当前只位于各 MAGI 私有数据库；生产环境应使用外部
+  密钥管理服务。

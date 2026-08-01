@@ -150,13 +150,22 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     app.include_router(runtime_control.router, prefix="/api")
     if not include_private_routes:
         from magi.channels.webui.api import runtime_proxy
-        app.include_router(magic.router, prefix="/api")
-        app.include_router(magis.router, prefix="/api")
         app.include_router(runtime_proxy.router, prefix="/api")
         spa_dist = _find_spa_dist() if include_spa else None
         if spa_dist is not None:
             app.mount("/", StaticFiles(directory=str(spa_dist), html=True), name="spa")
         return app
+    # Target-scoped login is owned by the MAGI runtime.  The singleton WebUI
+    # calls it with a target-bound internal signature before a browser session
+    # exists, so it must not be mounted on the browser-facing control service.
+    from magi.channels.webui.api import runtime_access
+    app.include_router(runtime_access.router, prefix="/api")
+    # Organisation routes execute inside the selected MAGI runtime as well.
+    # They therefore see only that MAGI's direct MAGIS database, rather than
+    # the singleton WebUI's bootstrap database connection.
+    if not include_control_routes:
+        app.include_router(magic.router, prefix="/api")
+        app.include_router(magis.router, prefix="/api")
     # Contacts router — unified contact directory + CRUD.
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).

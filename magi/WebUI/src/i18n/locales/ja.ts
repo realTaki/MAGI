@@ -35,8 +35,10 @@ export default {
   onboarding: {
     header: "初期設定",
     step1Title: "MAGI に IM アカウントを接続",
-    step1Desc: "メッセージングプラットフォームを選び、MAGI がメッセージを送受信できるようにします。現在は Telegram のみ利用可能で、他のプラットフォームは順次対応予定です。",
+    step1Desc: "メッセージングプラットフォームを選び、MAGI がメッセージを送受信できるようにします。",
+    step1Help: "現在は Telegram のみ利用可能で、他のプラットフォームは順次対応予定です。",
     channelTelegramDesc: "Telegram Bot は MAGI のプラットフォーム上の識別子です。Bot を作成し、Token を入力してください。",
+    channelTelegramBotFatherLink: "@BotFather を開く",
     channelSlackDesc: "Slack チャンネルは近日対応予定。",
     channelWechatDesc: "WeChat チャンネルは近日対応予定。",
     botTokenLabel: "Bot Token",

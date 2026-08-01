@@ -162,15 +162,17 @@ export const IconTools = ({ className }: IconProps) => (
   </Icon>
 );
 
-// `?` in a circle — used for the InfoTip component. Sits
-// next to a card title; hover or focus surfaces a tooltip
-// with a longer explanation that doesn't need to live in
-// the card body.
+// Lower-case `i` in a circle — used for the InfoTip component.
+// Sits next to a card title; hover or focus surfaces a tooltip
+// with a longer explanation that doesn't need to live in the
+// card body. The dot + stem glyph reads as "info" universally
+// (Material/Heroicons/etc. all use this shape), unlike a `?`
+// which reads as "question / unknown".
 export const IconHelp = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="12" cy="12" r="9" />
-    <path d="M9.5 9.5a2.5 2.5 0 0 1 5 0c0 1.5-2 2-2 3" />
-    <circle cx="12.5" cy="16.5" r="0.6" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
+    <path d="M11.25 11h1.5v5.5h-1.5z" fill="currentColor" stroke="none" />
   </Icon>
 );
 

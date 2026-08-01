@@ -40,7 +40,7 @@ export function setSelectedMagicId(magicId: number): void {
 }
 
 function isControlPath(url: string): boolean {
-  return ["/api/auth", "/api/onboarding", "/api/magis", "/api/magic", "/api/runtime"].some(
+  return ["/api/auth", "/api/onboarding", "/api/runtime"].some(
     (prefix) => url === prefix || url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`),
   );
 }
@@ -121,6 +121,8 @@ export const qk = {
   mcpServers: runtimeKey("mcpServers"),
   // -- auth / onboarding / soul ---------------------------------------------
   allowedAccounts: ["auth", "allowed-accounts"] as const,
+  availableMagi: ["auth", "available-magi"] as const,
+  targetAccounts: (magicId: number) => ["auth", "target-accounts", magicId] as const,
   onboardingStatus: ["onboarding", "status"] as const,
   soul: runtimeKey("soul"),
   tgReaction: (kind: "read" | "done") =>

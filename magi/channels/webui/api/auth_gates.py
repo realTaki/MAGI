@@ -61,7 +61,11 @@ def admin_gate(request: Request) -> str:
 
     proxied_uid = ensure_runtime_operator(request)
     if proxied_uid is not None:
-        return str(proxied_uid)
+        if _is_admin_uid(proxied_uid):
+            return str(proxied_uid)
+        raise MagiHTTPException(
+            status_code=403, code="auth.magis_admin_required", detail="This action requires a MAGIS administrator"
+        )
     raw = request.cookies.get("magi_session")
     uid = _resolve_uid(raw)
     if uid is None or not _is_admin_uid(uid):
@@ -91,6 +95,17 @@ def admin_or_assigned_gate(request: Request) -> str:
     should also pass.
     """
     from magi.agent.db import Contact, open_session
+
+    from magi.channels.webui.proxy_auth import ensure_runtime_operator
+
+    proxied_uid = ensure_runtime_operator(request)
+    if proxied_uid is not None:
+        from magi.agent.db import Contact, open_session
+        with open_session() as session:
+            contact = session.get(Contact, proxied_uid)
+        if contact is not None and (bool(contact.admin) or contact.role == "assigned"):
+            return str(proxied_uid)
+        raise MagiHTTPException(status_code=403, code="auth.soul_edit_forbidden", detail="This action requires node access")
 
     raw = request.cookies.get("magi_session") or ""
     uid = _resolve_uid(raw)

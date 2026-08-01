@@ -30,6 +30,10 @@ class TelegramSend(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+class TelegramVerify(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+
+
 @router.post("/control/telegram/bootstrap")
 async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> dict[str, bool]:
     _require_control(request)
@@ -43,6 +47,18 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
     if tg_bot.get_telegram_bot() is None:
         tg_bot.start_bot(state_dir)
     return {"ok": True}
+
+
+@router.post("/control/telegram/verify")
+async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str, object]:
+    _require_control(request)
+    from magi.channels.telegram import bot as tg_bot
+
+    try:
+        username = await tg_bot.verify_token(payload.token)
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "username": username}
 
 
 @router.post("/control/telegram/send")

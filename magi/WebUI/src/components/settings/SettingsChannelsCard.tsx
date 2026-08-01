@@ -158,6 +158,7 @@ export function SettingsChannelsCard(props: {
                           {t("settings.channelTgNoToken")}
                         </p>
                         <BotTokenField
+                          runtimeTarget
                           onSaved={(token, username) => {
                             props.onBotUpdated({ token, username });
                             void qc.invalidateQueries({ queryKey: ["channels"] });
@@ -173,6 +174,7 @@ export function SettingsChannelsCard(props: {
                     <tr key={`${ch.name}-edit`} className="border-b border-sky-light/20 bg-sky-pale/10">
                       <td colSpan={3} className="p-3">
                         <BotTokenField
+                          runtimeTarget
                           onSaved={(token, username) => {
                             props.onBotUpdated({ token, username });
                             setEditingToken(false);

@@ -98,7 +98,7 @@ cd MAGI
 ./deploy/bootstrap-local.sh
 ```
 
-打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，完成 onboarding。系统初始化时，
+打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成 onboarding。系统初始化时，
 会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI（**EVA-00 PROTO TYPE**），
 并让它担任 Genesis 的 Adam。
 
@@ -165,9 +165,11 @@ MAGI，并只提供集群内 Runtime API；`magi webui` 则运行唯一的 React
 组织控制面，以及到当前所选 MAGI 的受控代理。浏览器始终只访问一个 WebUI Service，
 不会直接连接任何 MAGI Pod。
 
-代理从 MAGI 注册表推导目标，并用 `MAGI_CONTROL_SECRET` 为每个内部请求签名；签名同时
-绑定目标 MAGI 与已认证操作者。运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 后，聊天、
-记忆、SOUL、skills、任务和设置等私有页面都会切换到对应目标。
+落地页先选择正在运行的 MAGI，再只显示该 MAGI 的直接 MAGIS Admin 与 assigned user。
+代理用 `MAGI_CONTROL_SECRET` 为每个内部请求签名；签名同时绑定目标 MAGI 与已认证身份。
+运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 必须重新登录，不能在已登录页面直接切换。
+MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS 的 Adam
+Bot 代发验证码。
 
 深入实现请阅读：
 

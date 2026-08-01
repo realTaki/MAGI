@@ -38,10 +38,12 @@ def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> Non
     assert verified_proxy_operator(_request(headers)) is None
 
 
-def test_runtime_app_has_no_spa_or_control_registry_routes() -> None:
+def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
     from magi.channels.webui.app import create_runtime_app
 
     app = create_runtime_app()
     paths = {route.path for route in app.routes if hasattr(route, "path")}
-    assert "/api/magis" not in paths
+    # MAGIS management is target-scoped and therefore lives in the selected
+    # runtime; browser login and the SPA remain control-plane only.
+    assert "/api/auth/available-magi" not in paths
     assert "/" not in paths

@@ -1,9 +1,8 @@
 """MAGIS roles and MAGI memberships.
 
 Roles belong to one MAGIS. A membership is the MAGI's one direct MAGIS
-home. Adam's authority over descendant MAGIS is derived from the MAGIS tree;
-it is not represented by additional memberships and does not add descendant
-instructions or workspaces to the Adam's runtime.
+home. MAGIS administration is direct-only; a parent/child tree relationship
+does not add another MAGIS's instructions, workspace, or authority to Adam.
 """
 
 from __future__ import annotations
@@ -64,17 +63,14 @@ def ensure_default_roles(session, magis_id: int) -> dict[str, MAGISRole]:
 
 
 def adam_manages_magis(session, magic_id: int, target_magis_id: int) -> bool:
-    """Whether ``magic_id`` is Adam of ``target_magis_id`` or an ancestor.
+    """Whether ``magic_id`` is the Adam of exactly ``target_magis_id``.
 
-    This deliberately checks the tree rather than memberships. A MAGI has
-    exactly one direct MAGIS home, while an Adam manages the whole subtree
-    without receiving any child MAGIS instruction or public workspace mount.
+    Adam may administer child MAGIS from the WebUI in a future, separately
+    granted capability, but tree ancestry must never silently give it a child
+    MAGIS's data, instructions, or administrator scope.  The current access
+    model is deliberately direct-only.
     """
     from magi.agent.db.models_magis import MAGIS
 
-    cursor = session.get(MAGIS, target_magis_id)
-    while cursor is not None:
-        if cursor.adam_id == magic_id:
-            return True
-        cursor = session.get(MAGIS, cursor.parent_id) if cursor.parent_id else None
-    return False
+    target = session.get(MAGIS, target_magis_id)
+    return target is not None and target.adam_id == magic_id

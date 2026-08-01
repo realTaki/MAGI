@@ -16,10 +16,13 @@ import { useState } from "react";
 
 import { useT } from "../../i18n/index";
 import { useSaveBot, useVerifyBot } from "../../lib/queries";
+import { apiFetch } from "../../lib/queryClient";
 
 export function BotTokenField(props: {
   onSaved: (token: string, username: string) => void;
   onCancel: () => void;
+  /** Settings for a logged-in MAGI go to that runtime, never WebUI state. */
+  runtimeTarget?: boolean;
 }) {
   const t = useT();
   const [token, setToken] = useState("");
@@ -49,7 +52,11 @@ export function BotTokenField(props: {
     setTestState("testing");
     setTestError("");
     try {
-      const data = await verifyMut.mutateAsync(token.trim());
+      const data = props.runtimeTarget
+        ? await apiFetch<{ ok: boolean; username?: string; error?: string }>("/api/control/telegram/verify", {
+            method: "POST", body: { token: token.trim() },
+          })
+        : await verifyMut.mutateAsync(token.trim());
       if (data.ok && data.username) {
         setTestState("success");
         setUsername(data.username);
@@ -69,10 +76,11 @@ export function BotTokenField(props: {
     setSaveState("saving");
     setSaveError("");
     try {
-      const data = await saveMut.mutateAsync({
-        token: verifiedToken,
-        username,
-      });
+      const data = props.runtimeTarget
+        ? await apiFetch<{ ok: boolean; error?: string }>("/api/control/telegram/bootstrap", {
+            method: "POST", body: { token: verifiedToken, username },
+          })
+        : await saveMut.mutateAsync({ token: verifiedToken, username });
       if (data.ok) {
         setSaveState("saved");
         props.onSaved(verifiedToken, username);

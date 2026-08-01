@@ -35,8 +35,10 @@ export default {
   onboarding: {
     header: "首次配置",
     step1Title: "为 MAGI 接入通讯账号",
-    step1Desc: "选择一个即时通讯平台，让 MAGI 通过它收发消息。Telegram 是目前唯一可用的通道，更多平台陆续接入。",
+    step1Desc: "选择一个即时通讯平台，让 MAGI 通过它收发消息。",
+    step1Help: "Telegram 是目前唯一可用的通道，更多平台陆续接入。",
     channelTelegramDesc: "Telegram Bot 是 MAGI 在该平台上的身份。创建一个 Bot，把 Token 填进来即可。",
+    channelTelegramBotFatherLink: "打开 @BotFather",
     channelSlackDesc: "Slack 通道即将支持。",
     channelWechatDesc: "微信通道即将支持。",
     botTokenLabel: "Bot Token",

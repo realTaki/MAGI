@@ -37,7 +37,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from magi.agent.db import ControlOperator, require_state_dir
+from magi.agent.db import ControlOperator, MAGIS, MAGISAdmin, require_state_dir
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.webui import control_store
@@ -168,7 +168,8 @@ async def get_status() -> OnboardingStatus:
     if control_store.enabled():
         from magi.agent.db.magis import open_magis_session
         with open_magis_session() as session:
-            admins = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            admins = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all() if root else []
         username = control_store.get("telegram.bot_username")
         return OnboardingStatus(
             bot_saved=bool(username), bot_username=username,
@@ -751,7 +752,10 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             return SaveAdminResponse(ok=False, error="At least one tgid required")
         from magi.agent.db.magis import open_magis_session
         with open_magis_session() as session:
-            existing = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
+            if root is None:
+                return SaveAdminResponse(ok=False, error="Genesis MAGIS is not initialized")
+            existing = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all()
             wanted = set(telegram_ids)
             for operator in existing:
                 if operator.telegram_id not in wanted:
@@ -759,7 +763,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             known = {operator.telegram_id: operator for operator in existing}
             for telegram_id in telegram_ids:
                 if telegram_id not in known:
-                    session.add(ControlOperator(telegram_id=telegram_id, display_name=f"Admin {telegram_id}", admin=True))
+                    session.add(MAGISAdmin(magis_id=root.id, telegram_id=telegram_id, display_name=f"Admin {telegram_id}"))
             session.commit()
         return SaveAdminResponse(ok=True, count=len(telegram_ids))
     from magi.agent.db import Contact, open_session

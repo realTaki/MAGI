@@ -112,9 +112,27 @@ def _serialize(session: Session, magic: MAGIC, runtime: EveRuntime | None = None
     )
 
 
+def _served_direct_magis_id(session: Session) -> int | None:
+    current = _current_magic(session)
+    binding = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == current.id))
+    return binding.magis_id if binding is not None else None
+
+
+def _require_visible_magic(session: Session, magic: MAGIC, *, allow_unassigned: bool = True) -> None:
+    binding = _direct_magis_binding(session, magic)
+    served = _served_direct_magis_id(session)
+    if binding is None and allow_unassigned:
+        return
+    if binding is None or served is None or binding[0].magis_id != served:
+        raise MagiHTTPException(403, "forbidden.magic_management_scope", "MAGI is outside the current direct MAGIS")
+
+
 @router.get("/magic", response_model=list[MAGICOut])
 def list_magic(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGICOut]:
-    rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
+    served = _served_direct_magis_id(session)
+    direct_ids = select(MAGISMembership.magic_id).where(MAGISMembership.magis_id == served) if served else select(MAGISMembership.magic_id).where(False)
+    assigned_ids = select(MAGISMembership.magic_id)
+    rows = session.scalars(select(MAGIC).where((MAGIC.id.in_(direct_ids)) | (~MAGIC.id.in_(assigned_ids))).order_by(MAGIC.id)).all()
     runtimes = {r.magic_id: r for r in session.scalars(select(EveRuntime).where(EveRuntime.magic_id.in_([m.id for m in rows]))).all()} if rows else {}
     return [_serialize(session, magic, runtimes.get(magic.id)) for magic in rows]
 
@@ -138,12 +156,14 @@ def _magic_or_404(session: Session, magic_id: int) -> MAGIC:
 @router.get("/magic/{magic_id}", response_model=MAGICOut)
 def get_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
     magic = _magic_or_404(session, magic_id)
+    _require_visible_magic(session, magic)
     return _serialize(session, magic, session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id)))
 
 
 @router.patch("/magic/{magic_id}", response_model=MAGICOut)
 def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
     magic = _magic_or_404(session, magic_id)
+    _require_visible_magic(session, magic)
     for field in ("name", "provider"):
         if field in payload.model_fields_set:
             setattr(magic, field, getattr(payload, field))
@@ -208,11 +228,16 @@ def _apply_result(runtime: EveRuntime, result) -> None:
 
 @router.get("/magic/{magic_id}/runtime", response_model=EveRuntimeOut)
 def get_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
-    return _runtime_out(_runtime_or_create(session, _magic_or_404(session, magic_id)))  # type: ignore[return-value]
+    magic = _magic_or_404(session, magic_id)
+    _require_visible_magic(session, magic, allow_unassigned=False)
+    return _runtime_out(_runtime_or_create(session, magic))  # type: ignore[return-value]
 
 
 def _lifecycle(action: str, magic_id: int, session: Session) -> EveRuntimeOut:
     magic = _magic_or_404(session, magic_id)
+    _require_visible_magic(session, magic, allow_unassigned=False)
+    if magic.id == _current_magic(session).id:
+        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot stop or restart the MAGI currently serving this session")
     runtime = _runtime_or_create(session, magic)
     direct_binding = _direct_magis_binding(session, magic)
     if action == "start":
@@ -262,6 +287,9 @@ def stop_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, D
 @router.delete("/magic/{magic_id}", status_code=204)
 def delete_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
     magic = _magic_or_404(session, magic_id)
+    _require_visible_magic(session, magic)
+    if magic.id == _current_magic(session).id:
+        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot delete the MAGI currently serving this session")
     runtime = session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id))
     if runtime and runtime.deployment_name:
         from magi.orchestrator.client import OrchestratorUnavailable, request_lifecycle

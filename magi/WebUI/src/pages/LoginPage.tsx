@@ -14,24 +14,21 @@
 
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/index";
-import {
-  useAllowedAccounts,
-  useSendLoginCode,
-  useVerifyLoginCode,
-} from "../lib/queries";
+import { useSendTargetLoginCode, useTargetLoginAccounts, useVerifyTargetLoginCode } from "../lib/queries";
 
 type Phase = "send" | "code" | "verifying" | "error";
 
 export default function LoginPage(props: {
-  onLoggedIn: (uid: number) => void;
+  magicId: number;
+  onLoggedIn: (telegramId: number) => void;
   onBack: () => void;
 }) {
   const t = useT();
-  const accountsQuery = useAllowedAccounts();
-  const sendMut = useSendLoginCode();
-  const verifyMut = useVerifyLoginCode();
+  const accountsQuery = useTargetLoginAccounts(props.magicId);
+  const sendMut = useSendTargetLoginCode(props.magicId);
+  const verifyMut = useVerifyTargetLoginCode(props.magicId);
 
-  const [selectedUid, setSelectedUid] = useState<number | null>(null);
+  const [selectedTelegramId, setSelectedTelegramId] = useState<number | null>(null);
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("send");
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +39,16 @@ export default function LoginPage(props: {
   // the meantime.
   useEffect(() => {
     if (!accountsQuery.data) return;
-    if (selectedUid !== null) return;
+    if (selectedTelegramId !== null) return;
     const list = accountsQuery.data.accounts;
-    if (list.length > 0) setSelectedUid(list[0].uid);
-  }, [accountsQuery.data, selectedUid]);
+    if (list.length > 0) setSelectedTelegramId(list[0].telegram_id);
+  }, [accountsQuery.data, selectedTelegramId]);
 
   async function handleSend() {
-    if (selectedUid === null) return;
+    if (selectedTelegramId === null) return;
     setError(null);
     try {
-      const data = await sendMut.mutateAsync(selectedUid);
+      const data = await sendMut.mutateAsync(selectedTelegramId);
       if (data.ok) {
         setPhase("code");
       } else {
@@ -66,15 +63,15 @@ export default function LoginPage(props: {
 
   async function handleVerify() {
     const c = code.trim();
-    if (selectedUid === null || !c || c.length !== 6) return;
+    if (selectedTelegramId === null || !c || c.length !== 6) return;
     setError(null);
     try {
       const data = await verifyMut.mutateAsync({
-        uid: selectedUid,
+        telegram_id: selectedTelegramId,
         code: c,
       });
       if (data.ok) {
-        props.onLoggedIn(selectedUid);
+        props.onLoggedIn(selectedTelegramId);
         return;
       }
       setError(data.error ?? "Verification failed");
@@ -125,10 +122,10 @@ export default function LoginPage(props: {
                 <div className="flex gap-2">
                   <select
                     id="login-uid"
-                    value={selectedUid ?? ""}
+                    value={selectedTelegramId ?? ""}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setSelectedUid(v === "" ? null : Number(v));
+                      setSelectedTelegramId(v === "" ? null : Number(v));
                     }}
                     className="form-input flex-1 appearance-none text-base py-3 px-4"
                     style={{
@@ -140,7 +137,7 @@ export default function LoginPage(props: {
                     }}
                   >
                     {accounts.map((a) => (
-                      <option key={a.uid} value={a.uid}>
+                      <option key={a.telegram_id} value={a.telegram_id}>
                         {a.name}
                       </option>
                     ))}
@@ -148,7 +145,7 @@ export default function LoginPage(props: {
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={selectedUid === null || sending}
+                    disabled={selectedTelegramId === null || sending}
                     className="btn btn-primary px-4 py-3 shrink-0"
                   >
                     {sending ? t("common.loading") : codeInputVisible ? t("onboarding.resendCode") : t("login.sendCode")}

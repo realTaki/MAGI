@@ -90,7 +90,7 @@ class ContactListOut(BaseModel):
 class ContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     display_name: str | None = Field(default=None, max_length=120)
-    role: str = Field(default="contact", max_length=16)
+    role: str = Field(default="guest", max_length=16)
     # Defaults to ``False`` — a freshly-created contact is
     # not a WebUI operator until the operator explicitly
     # promotes them via ``PATCH /api/contacts/{id}`` with
@@ -259,6 +259,14 @@ def create_contact(
         raise MagiHTTPException(
             status_code=400, code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
+        )
+    if payload.role == "assigned" and session.scalar(
+        select(Contact.id).where(Contact.role == "assigned", Contact.separated_at.is_(None))
+    ) is not None:
+        raise MagiHTTPException(
+            status_code=409,
+            code="conflict.assigned_user_exists",
+            detail="This MAGI already has an assigned user",
         )
     if payload.telegram_id is not None and session.scalar(
         select(Contact).where(Contact.telegram_id == payload.telegram_id)
@@ -460,6 +468,18 @@ def update_contact(
         # an idempotent assigned→assigned PATCH that
         # shouldn't trigger a fresh seed round).
         prev_role = contact.role
+        if payload.role == "assigned" and prev_role != "assigned" and session.scalar(
+            select(Contact.id).where(
+                Contact.role == "assigned",
+                Contact.separated_at.is_(None),
+                Contact.id != contact.id,
+            )
+        ) is not None:
+            raise MagiHTTPException(
+                status_code=409,
+                code="conflict.assigned_user_exists",
+                detail="This MAGI already has an assigned user",
+            )
         contact.role = payload.role
         # Tag the local variable for the post-commit
         # branch. We need this outside the ``if`` so it
