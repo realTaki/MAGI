@@ -32,15 +32,15 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 logger = logging.getLogger("magi.channels.telegram.bot")
 
-# All bot replies now live in ``magi/agent/prompts/bot_replies.yaml``
+# All bot replies now live in ``magi/prompts/bot_replies.yaml``
 # — see that file for wording. The dispatchers below call
-# :func:`magi.agent.prompts.load_bot_replies` once and look up
+# :func:`magi.prompts.load_bot_replies` once and look up
 # templates by id. Keeping the templates out of code means an
 # operator can tweak wording without touching Python. The
 # lazy import + per-process cache in ``prompts/__init__.py``
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
-from magi.agent.prompts import load_bot_replies  # noqa: E402
+from magi.prompts import load_bot_replies  # noqa: E402
 from magi.agent.db.engine import require_state_dir  # noqa: E402
 from magi.channels import Channel  # noqa: E402
 

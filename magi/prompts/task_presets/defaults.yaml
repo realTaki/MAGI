@@ -1,4 +1,5 @@
-# Bundled scheduled-task templates.  These records are synchronised into the
+
+# Bundled proactive task templates. These records are synchronised into the
 # task_presets table whenever MAGI starts.  Edit this file during development;
 # do not edit SQLite directly.  Each key and id is stable because existing
 # per-user tasks retain a back-pointer to the preset that created them.

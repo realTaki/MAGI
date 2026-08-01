@@ -168,7 +168,7 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
             is_bundled_fallback=False,
         )
     except FileNotFoundError:
-        from magi.agent.prompts import load_fallback_persona
+        from magi.prompts import load_fallback_persona
         return SoulReadResponse(
             content=load_fallback_persona(),
             modified_at=None,
@@ -220,7 +220,7 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
     default = load_soul()
     path = _soul_path()
     modified_at = _write_atomic(path, default)

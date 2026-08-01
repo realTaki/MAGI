@@ -166,7 +166,7 @@ async def call_llm_for_summary(
     so the caller can fall back to "no compaction
     happened".
     """
-    from magi.agent.prompts import load_compaction_prompt
+    from magi.prompts import load_compaction_prompt
 
     system = load_compaction_prompt()
     # Serialise the messages as plain text. Format mirrors

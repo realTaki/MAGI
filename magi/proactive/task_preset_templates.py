@@ -1,6 +1,6 @@
 """Bundled proactive task templates and their database synchroniser.
 
-The templates live in ``magi/agent/prompts/task_presets/*.yaml`` so the
+The templates live in ``magi/prompts/task_presets/*.yaml`` so the
 natural-language instructions can be tuned and reviewed like every other
 prompt.  ``task_presets`` remains the runtime-facing table used by the API
 and per-contact seeder, but bundled rows are synchronised from these files
@@ -31,7 +31,7 @@ logger = logging.getLogger("magi.proactive.task_preset_templates")
 # Task runtime is a channel, while bundled prompt source remains alongside the
 # rest of the agent prompts. ``parents[1]`` is the ``magi`` package root for
 # ``magi/proactive/task_preset_templates.py``.
-_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "agent" / "prompts" / "task_presets"
+_TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "prompts" / "task_presets"
 _REQUIRED_FIELDS = frozenset({
     "id", "key", "name", "description", "prompt", "frequency", "hour",
     "minute", "day_of_week", "day_of_month", "run_at", "channel", "enabled",

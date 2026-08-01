@@ -643,7 +643,7 @@ def format_skills_block(skills: list[SkillMeta]) -> str:
     # the wording in one file without touching Python. The
     # per-skill bullets below are formatted from the
     # runtime catalog.
-    from magi.agent.prompts import load_skills_block_template
+    from magi.prompts import load_skills_block_template
     lines = ["", *load_skills_block_template().splitlines(), ""]
     for s in skills:
         # One bullet per skill. Version is appended in

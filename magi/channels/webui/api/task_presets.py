@@ -2,7 +2,7 @@
 
 The :class:`TaskPreset` table is the runtime store for proactive
 task templates. Bundled template keys are synchronised from
-``magi/agent/prompts/task_presets`` at startup; operator-created
+``magi/prompts/task_presets`` at startup; operator-created
 keys are database-owned. This router surfaces the four canonical
 CRUD verbs so the Settings → 任务预设 card can list, edit, create,
 and delete presets without going through the underlying

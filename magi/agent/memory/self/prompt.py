@@ -35,7 +35,7 @@ from magi.agent.memory.self.models import (
     MemoryEntry,
 )
 from magi.agent.memory.self.store import MemoryView
-from magi.agent.prompts import load_memory_block_template
+from magi.prompts import load_memory_block_template
 
 
 # Sub-section labels rendered between the rows in the
@@ -48,7 +48,7 @@ from magi.agent.prompts import load_memory_block_template
 #
 # Hot-reload: ``_ensure_kind_headers_loaded`` re-parses
 # the template on every call (the underlying loader is
-# already mtime-aware via ``magi.agent.prompts._load``),
+# already mtime-aware via ``magi.prompts._load``),
 # so an operator editing ``context/memory_block.md`` to rename
 # "重要的事" → "公司政策" picks up the new heading on
 # the next LLM turn without a process restart.
@@ -140,8 +140,8 @@ def format_memory_block(rows: Iterable[MemoryView]) -> str:
 
     The block's static parts (header, intro paragraph,
     per-kind sub-section labels) come from the bundled
-    ``magi/agent/prompts/context/memory_block.md`` template — see
-    :func:`magi.agent.prompts.load_memory_block_template`.
+    ``magi/prompts/context/memory_block.md`` template — see
+    :func:`magi.prompts.load_memory_block_template`.
     The per-row bullets are formatted by this function
     from the runtime rows.
 

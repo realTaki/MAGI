@@ -1,3 +1,4 @@
+
 You are summarising a portion of a chat between a
 person and their MAGI assistant. Produce a structured
 summary that preserves

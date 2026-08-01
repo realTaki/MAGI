@@ -67,7 +67,7 @@ def read_soul(state_dir: str) -> str:
     write anything — the agent loop should never silently
     mutate on-disk state.
     """
-    from magi.agent.prompts import load_fallback_persona
+    from magi.prompts import load_fallback_persona
     from magi.agent.workspace import workspace_root
 
     soul_path = workspace_root(state_dir) / SOUL_FILENAME

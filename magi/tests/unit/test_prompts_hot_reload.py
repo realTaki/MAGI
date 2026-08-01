@@ -1,4 +1,4 @@
-"""Tests for prompt hot-reload via ``magi.agent.prompts``.
+"""Tests for prompt hot-reload via ``magi.prompts``.
 
 The loader's contract:
 
@@ -14,7 +14,7 @@ The loader's contract:
      a reload without waiting for the next LLM turn.
 
 The on-disk fixture for these tests lives in the
-bundled ``magi/agent/prompts/`` directory — we read
+bundled ``magi/prompts/`` directory — we read
 ``soul.md`` and ``chat_titles.md`` which ship with the
 repo. The mtime test mutates a tempfile copy rather
 than the bundled files (a passing test must not
@@ -42,7 +42,7 @@ def tmp_prompts_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     module-level cache; we drop it on entry and exit
     so prior tests don't leak in.
     """
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     prompts.reset_cache()
     monkeypatch.setattr(prompts, "_PROMPTS_DIR", tmp_path)
@@ -73,7 +73,7 @@ def _bump_mtime(path: Path) -> None:
 
 def test_first_load_reads_file(tmp_prompts_dir: Path):
     """The very first ``_load`` reads from disk."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "version 1")
     out = prompts._load("test")
@@ -82,7 +82,7 @@ def test_first_load_reads_file(tmp_prompts_dir: Path):
 
 def test_second_load_returns_cached(tmp_prompts_dir: Path):
     """Unchanged file → cached text, no re-read."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "stable text")
     first = prompts._load("test")
@@ -102,7 +102,7 @@ def test_second_load_returns_cached(tmp_prompts_dir: Path):
 def test_mtime_change_triggers_reread(tmp_prompts_dir: Path):
     """Operator edits ``test.md`` → next ``_load`` sees
     the new content. The cache version tuple updates."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "v1")
     assert prompts._load("test") == "v1"
@@ -121,7 +121,7 @@ def test_size_change_triggers_reread(tmp_prompts_dir: Path):
     different mtime at the second granularity, but the
     size tiebreaker covers the 1-second-resolution
     edge case)."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "v1")
     prompts._load("test")
@@ -134,7 +134,7 @@ def test_size_change_triggers_reread(tmp_prompts_dir: Path):
 def test_reset_cache_evicts(tmp_prompts_dir: Path):
     """``reset_cache()`` drops the in-memory cache. The
     next ``_load`` walks the slow path again."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "before reset")
     prompts._load("test")
@@ -149,7 +149,7 @@ def test_reset_cache_then_load_returns_current_content(
     new content (the mtime fast-path would also pick
     it up, but reset_cache is the manual override an
     operator hits when they want a known-clean state)."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "v1")
     prompts._load("test")
@@ -163,7 +163,7 @@ def test_yaml_file_loads_as_raw_text(tmp_prompts_dir: Path):
     """YAML files come back as the raw text — the caller
     ``yaml.safe_load``s them. The loader doesn't parse;
     it just reads."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.yaml", "key: value\nlist: [1, 2]\n")
     out = prompts._load("test")
@@ -174,7 +174,7 @@ def test_missing_file_raises(tmp_prompts_dir: Path):
     """Asking for a non-existent prompt is a programming
     error → ``FileNotFoundError`` (not a silent empty
     string). Catches typos in the loader caller."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     with pytest.raises(FileNotFoundError):
         prompts._load("does-not-exist")
@@ -184,7 +184,7 @@ def test_prefers_md_over_yaml(tmp_prompts_dir: Path):
     same name, ``.md`` wins (the loader tries suffixes
     in order). This avoids accidental dual-file
     maintenance during a template conversion."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
 
     _write(tmp_prompts_dir / "test.md", "from md")
     _write(tmp_prompts_dir / "test.yaml", "from yaml: ignore")
@@ -196,7 +196,7 @@ def test_admin_reload_endpoint_clears_cache(
     tmp_prompts_dir: Path, monkeypatch):
     """``POST /api/prompts/reload`` returns ``cleared: N``
     and drops the in-memory cache."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
     from fastapi.testclient import TestClient
     from magi.channels.webui.app import create_app
     from magi.agent.db import Contact, init_orm, init_sqlite, open_session
@@ -241,7 +241,7 @@ def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     future refactor that loosens the gate (e.g. to
     expose the endpoint to ``assigned`` roles) catches
     the change in a test."""
-    from magi.agent import prompts
+    import magi.prompts as prompts
     from fastapi.testclient import TestClient
     from magi.channels.webui.app import create_app
 

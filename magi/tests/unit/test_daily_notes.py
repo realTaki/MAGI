@@ -231,7 +231,7 @@ def test_system_prompt_folds_daily_note_block_by_default(store_env):
     s.upsert_daily_note(contact_id=1, body_delta="today's note")
 
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
 
     rendered = build_system_prompt(
         str(store_env), uid=1, soul=load_soul(),
@@ -250,7 +250,7 @@ def test_system_prompt_omits_daily_block_when_disabled(store_env):
     _state_set(str(store_env), "system.show_daily_note", "false")
 
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
 
     rendered = build_system_prompt(
         str(store_env), uid=1, soul=load_soul(),
@@ -269,7 +269,7 @@ def test_system_prompt_folds_capture_rules_only_when_opted_in(store_env):
     _state_set(str(store_env), "system.show_daily_note_prompt", "true")
 
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
 
     rendered = build_system_prompt(
         str(store_env), uid=1, soul=load_soul(),
@@ -282,7 +282,7 @@ def test_system_prompt_omits_block_when_no_daily_row(store_env):
     """Fresh contact, no daily note yet — the block is silently
     empty so the assembly helper drops it."""
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.prompts import load_soul
+    from magi.prompts import load_soul
 
     rendered = build_system_prompt(
         str(store_env), uid=1, soul=load_soul(),

@@ -59,14 +59,14 @@ magi/
 │   ├── db/         # private SQLite + public MAGIS PostgreSQL access
 │   │   └── magis/  # direct MAGIS engine/session boundary
 │   ├── webui_service.py # singleton WebUI service entry point (`magi webui`)
-│   ├── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
-│   └── prompts/    # Markdown + YAML prompts; context/ holds system-context blocks, task_presets/ holds bundled tasks
+│   └── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 ├── channels/       # How agents connect to the outside world
 │   ├── dispatcher.py   # D.28 — domain code talks to this, never to adapters
 │   ├── tasks/          # Scheduled-task CRUD, timing and execution
 │   ├── telegram/       # TG bot adapter
 │   └── webui/          # FastAPI app + React SPA
 ├── proactive/      # Proactive policies and task-preset injection
+├── prompts/        # Central Markdown + YAML prompt corpus and hot-reload loader
 ├── node/           # Bootstrap: NodeConfig → init → run
 └── WebUI/          # React 19 + Vite 5 + Tailwind v4 SPA
 ```

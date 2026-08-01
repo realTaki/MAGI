@@ -36,7 +36,7 @@ import logging
 from typing import Optional
 
 from magi.agent.memory.contacts.store import ContactView, NoteView
-from magi.agent.prompts import load_contact_block_template
+from magi.prompts import load_contact_block_template
 
 
 logger = logging.getLogger("magi.agent.memory.contacts.prompt")
@@ -137,7 +137,7 @@ def format_daily_note_block(
         "",
     ]
     if show_prompt_rules:
-        from magi.agent.prompts import load_daily_note_prompt
+        from magi.prompts import load_daily_note_prompt
         lines.append(load_daily_note_prompt())
         lines.append("")
     lines.append(body)

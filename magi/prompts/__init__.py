@@ -1,4 +1,4 @@
-"""Prompt templates shipped with the runtime.
+"""Central prompt assets and loaders for every MAGI component.
 
 Every piece of natural-language text the runtime emits to a
 human (or to the LLM) lives under this directory. The
@@ -58,11 +58,11 @@ from typing import Final
 
 import yaml
 
-logger = logging.getLogger("magi.agent.prompts")
+logger = logging.getLogger("magi.prompts")
 
-# Directory this __init__ lives in. Prompts are co-located
-# next to the loader so a single ``git mv`` moves the
-# whole subsystem.
+# Directory this module lives in. Prompt assets are deliberately co-located
+# with the loader so prompt-engineering workflows can optimise the complete
+# corpus without depending on a particular runtime component.
 _PROMPTS_DIR: Final[Path] = Path(__file__).resolve().parent
 
 # Cache: name → (text, mtime_ns, size). Filled lazily.

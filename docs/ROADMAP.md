@@ -829,7 +829,7 @@ commit history.
   self-record.
   up via a tool call.
 
-### Prompt text centralized in `magi/agent/prompts/`
+### Prompt text centralized in `magi/prompts/`
 
 - All natural-language text the runtime
   emits to the LLM lives in one place:
@@ -844,7 +844,7 @@ commit history.
     header + intro
   - `context/skills_block.md` — `## Available skills`
     header + intro
-- Loader at `magi/agent/prompts/__init__.py`
+- Loader at `magi/prompts/__init__.py`
   caches each file once per process; the
   cache survives across requests. A future
   C8 file-watcher will close the loop so an

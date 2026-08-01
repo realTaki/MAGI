@@ -103,10 +103,10 @@ DEFAULT_MAX_TOKENS = 1024
 # length), and ``agent_no_credentials`` for the strict-mode
 # rejection when the chat caller never supplied per-
 # contact credentials. Both live in
-# ``magi/agent/prompts/bot_replies.yaml`` — see that file
+# ``magi/prompts/bot_replies.yaml`` — see that file
 # to tweak. Resolved lazily and cached so a single YAML
 # read serves every fallback for the rest of the process.
-from magi.agent.prompts import load_bot_replies  # noqa: E402
+from magi.prompts import load_bot_replies  # noqa: E402
 
 _FALLBACK_REPLY_CACHE: dict[str, str] = {}
 
