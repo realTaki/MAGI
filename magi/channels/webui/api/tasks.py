@@ -858,7 +858,7 @@ def _state_dir() -> str:
 # (``_enforce_creator_can_create``) when ``role='admin'``
 # was retired in favour of the ``admin`` boolean. The
 # helper takes both fields so the LLM tool side
-# (``magi/agent/tools/schedule_task.py``) and this API
+# (``magi/tools/schedule_task.py``) and this API
 # agree on the policy: ``admin=True OR role='assigned'``.
 # ``contact`` and ``guest`` rows can't sign in to a MAGI
 # node and so have no use for scheduled tasks.

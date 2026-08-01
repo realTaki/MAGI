@@ -1,3 +1,4 @@
+
 """Tool base class + the per-call context.
 
 A :class:`Tool` is a callable the LLM can ask the agent
@@ -30,7 +31,7 @@ v0 fields:
                         route back to the right channel)
 
 Each tool implementation lives in its own module under
-``magi/agent/tools/`` and exports a single class.
+``magi/tools/`` and exports a single class.
 ``registry.get_tools()`` is the lazy-import entry point so
 test isolation works (a test can monkeypatch one tool
 without importing the whole batch).
@@ -222,7 +223,7 @@ def caller_role_denied_reason(
 
     Used inside a tool's :meth:`Tool.run` as the second-
     layer defence — the registry's role filter at
-    :func:`magi.agent.tools.registry.get_tools` is the
+    :func:`magi.tools.registry.get_tools` is the
     first gate and strips this tool out of the LLM's
     menu for any caller whose role isn't in
     ``allowed_roles``. The check here ensures a caller

@@ -1,3 +1,4 @@
+
 """Tool registry — the single source of truth for which
 tools the LLM can call.
 
@@ -18,9 +19,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.agent.tools.base import Tool
+    from magi.tools.base import Tool
 
-logger = logging.getLogger("magi.agent.tools.registry")
+logger = logging.getLogger("magi.tools.registry")
 
 # Single-shot cache so we don't re-instantiate the tool
 # classes on every chat turn. The cache lives for the
@@ -55,33 +56,33 @@ def _build_tools() -> list["Tool"]:
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
     """
-    from magi.agent.tools.bash import (
+    from magi.tools.bash import (
         BashKillTool,
         BashOutputTool,
         BashRunTool,
     )
-    from magi.agent.tools.action_item import (
+    from magi.tools.action_item import (
         AddActionItemTool,
         CompleteActionItemTool,
         ListActionItemTool,
     )
-    from magi.agent.tools.edit_file import EditFileTool
-    from magi.agent.tools.list_files import ListFilesTool
-    from magi.agent.tools.mcp_manage import (
+    from magi.tools.edit_file import EditFileTool
+    from magi.tools.list_files import ListFilesTool
+    from magi.tools.mcp_manage import (
         AddMcpServerTool,
         DeleteMcpServerTool,
         ListMcpServersTool,
     )
-    from magi.agent.tools.read_file import ReadFileTool
-    from magi.agent.tools.schedule_task import ScheduleTaskTool
-    from magi.agent.tools.services_stub import (
+    from magi.tools.read_file import ReadFileTool
+    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.services_stub import (
         ReadRecentEmailsTool,
         ReadUpcomingMeetingsTool,
     )
-    from magi.agent.tools.skill_loader_tool import SkillLoaderTool
-    from magi.agent.tools.search_sessions import SearchSessionsTool
-    from magi.agent.tools.send_message import SendMessageTool
-    from magi.agent.tools.write_file import WriteFileTool
+    from magi.tools.skill_loader_tool import SkillLoaderTool
+    from magi.tools.search_sessions import SearchSessionsTool
+    from magi.tools.send_message import SendMessageTool
+    from magi.tools.write_file import WriteFileTool
     from magi.agent.memory.contacts.tools import (
         AddContactNoteTool,
         AddContactTool,
@@ -282,7 +283,7 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     """
     global _mcp_tools_cache, _mcp_loaded_at_db
     from magi.agent.db import McpServer, open_session
-    from magi.agent.tools.mcp_loader import load_mcp_tools_blocking
+    from magi.tools.mcp_loader import load_mcp_tools_blocking
 
     tools = load_mcp_tools_blocking()
     _mcp_tools_cache = list(tools)

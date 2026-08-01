@@ -76,7 +76,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # a fresh child that needs its own cache.
     if include_private_routes:
         try:
-            from magi.agent.tools.registry import bootstrap_mcp_tools
+            from magi.tools.registry import bootstrap_mcp_tools
 
             bootstrap_mcp_tools()
         except Exception:

@@ -1,3 +1,4 @@
+
 """``schedule_task`` tool — LLM-callable task creation.
 
 Public surface: the LLM can call this from any conversation
@@ -51,11 +52,11 @@ from magi.channels.tasks.scheduler import get_scheduler
 from magi.agent.memory.session import new_session_id
 from magi.agent.db import ChatSession, Contact, open_session, require_state_dir
 from magi.agent.db.settings import state_get
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.channels import Channel
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-logger = logging.getLogger("magi.agent.tools.schedule_task")
+logger = logging.getLogger("magi.tools.schedule_task")
 
 _NAME_MAX = 120
 _PROMPT_MAX = 8000

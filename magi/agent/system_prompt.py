@@ -142,7 +142,7 @@ def build_system_prompt(
     )
     from magi.agent.memory.self.prompt import format_memory_block
     from magi.agent.memory.self.store import MemoryStore
-    from magi.agent.tools.skill_loader import (
+    from magi.tools.skill_loader import (
         format_skills_block,
         get_skill_loader,
     )

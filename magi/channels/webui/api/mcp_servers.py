@@ -13,7 +13,7 @@ Lazy-reload semantics
 
 Edits made via these endpoints do NOT immediately
 reconnect the subprocess. The agent loop calls
-:func:`magi.agent.tools.registry.maybe_reload_mcp_tools`
+:func:`magi.tools.registry.maybe_reload_mcp_tools`
 on every chat turn; that compares the table's
 ``max(updated_at)`` against the in-memory cache stamp
 and re-bootstraps on a mismatch. The operator sees the
@@ -354,7 +354,7 @@ def list_mcp_server_tools(
     """List the live tools exposed by a single MCP server.
 
     Goes through the loader's
-    :func:`magi.agent.tools.mcp_loader.list_tools_for_server`
+    :func:`magi.tools.mcp_loader.list_tools_for_server`
     — which prefers the active subprocess connection
     (fast) and falls back to a one-shot connect → list →
     disconnect (slow) when the operator opens the detail
@@ -367,7 +367,7 @@ def list_mcp_server_tools(
         the subprocess couldn't connect (the row is
         misconfigured, or the binary is missing).
     """
-    from magi.agent.tools import mcp_loader
+    from magi.tools import mcp_loader
 
     tools = mcp_loader.list_tools_for_server(name)
     if tools is None:

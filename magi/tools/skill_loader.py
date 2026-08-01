@@ -1,3 +1,4 @@
+
 """SKILL.md loader — scans two roots for skills on demand.
 
 A skill is a directory under either root, containing a
@@ -78,7 +79,7 @@ _SKILL_SUBDIR_NAME = "skills"
 _SKILL_FILENAME = "SKILL.md"
 
 # Path to the bundle shipped with the image. ``skill_loader.py``
-# lives at ``magi/agent/tools/skill_loader.py``; the bundle sits
+# lives at ``magi/tools/skill_loader.py``; the bundle sits
 # at ``magi/skills/`` — one level up from the package, one
 # level further up from the package's parent. Resolved at
 # import time so the path is stable regardless of where the

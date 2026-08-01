@@ -1,3 +1,4 @@
+
 """Stub external-service tools (gmail, calendar).
 
 v0 returns mock data so the morning / night report prompt
@@ -25,10 +26,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 
-logger = logging.getLogger("magi.agent.tools.services_stub")
+logger = logging.getLogger("magi.tools.services_stub")
 
 
 def _ok(payload: Any) -> ToolResult:

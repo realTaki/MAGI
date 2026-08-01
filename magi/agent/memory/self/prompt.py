@@ -3,7 +3,7 @@
 Renders the MAGI's important + ongoing memory as a
 Markdown block to be appended to the LLM system
 prompt — same role as
-:func:`magi.agent.tools.skill_loader.format_skills_block`,
+:func:`magi.tools.skill_loader.format_skills_block`,
 but for long-term facts rather than SKILL.md metadata.
 
 The block is empty when the MAGI has no memory (fresh

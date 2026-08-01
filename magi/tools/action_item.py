@@ -1,3 +1,4 @@
+
 """LLM-callable action-item tools.
 
 Three surfaces pinned:
@@ -28,7 +29,7 @@ Scope (per-contact, role-gated):
     action items only. The ``guest`` role doesn't see
     the tools in their menu: the registry's
     :func:`get_tools(caller_role=...)` filter (see
-    ``magi/agent/tools/registry.py``) strips them out
+    ``magi/tools/registry.py``) strips them out
     before the LLM sees the schema.
   - Each tool also re-checks the caller's role inside
     ``run`` (belt-and-suspenders) — a future caller that
@@ -56,14 +57,14 @@ from typing import Any
 from sqlalchemy import select
 
 from magi.agent.db import ActionItem, open_session
-from magi.agent.tools.base import (
+from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
     caller_role_denied_reason,
 )
 
-logger = logging.getLogger("magi.agent.tools.action_item")
+logger = logging.getLogger("magi.tools.action_item")
 
 # Same gate as the WebUI API and as ``ScheduleTaskTool``:
 # only ``admin`` and ``assigned`` operators may operate
@@ -89,7 +90,7 @@ def _new_llm_action_item_kind() -> str:
 
 def _gate(ctx: ToolContext) -> str | None:
     """Thin wrapper around
-    :func:`magi.agent.tools.base.caller_role_denied_reason`
+    :func:`magi.tools.base.caller_role_denied_reason`
     — kept as a free function so the call sites in
     each tool class read the same (``denied = _gate(ctx)``)
     without needing ``self.ALLOWED_ROLES`` everywhere.

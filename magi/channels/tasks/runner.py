@@ -7,7 +7,7 @@ task's cron fires. Each invocation:
    credentials). The task's home :class:`ChatSession`
    (``channel="task"``) was allocated at task creation
    time (see :mod:`magi.channels.webui.api.tasks` and
-   :mod:`magi.agent.tools.schedule_task`); the runner
+   :mod:`magi.tools.schedule_task`); the runner
    just loads it via ``task.session_id`` and appends
    the prompt as a new user-message.
 
@@ -24,7 +24,7 @@ task's cron fires. Each invocation:
    a normal chat that happens to be triggered by a
    timer.
 
-3. Lets the agent's :class:`magi.agent.tools.send_message
+3. Lets the agent's :class:`magi.tools.send_message
    .SendMessageTool` route via the channel dispatcher
    (D.28). When ``task.delivery_to`` is a per-channel
    delivery address (a TG chat id today) and a bot is

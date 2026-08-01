@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from magi.agent.memory.contacts.store import ContactStore
-from magi.agent.tools.base import (
+from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,

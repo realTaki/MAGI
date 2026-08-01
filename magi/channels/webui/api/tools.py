@@ -1,11 +1,11 @@
 """Tools — list every tool the LLM can invoke.
 
 End-user-facing read-only view of
-:meth:`magi.agent.tools.registry.get_tools_grouped`.
+:meth:`magi.tools.registry.get_tools_grouped`.
 Useful for the operator to verify what their MAGI install
 can actually do — ``mcp.json`` loaded the right servers,
 no LLM tool wedge broke, etc. Also surfaces each tool's
-:attr:`magi.agent.tools.base.Tool.ALLOWED_ROLES` so the
+:attr:`magi.tools.base.Tool.ALLOWED_ROLES` so the
 operator can audit "who can call what" without reading
 code (D.universal-role-gate).
 
@@ -29,8 +29,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.agent.tools.base import Tool
-from magi.agent.tools.registry import get_tools_grouped
+from magi.tools.base import Tool
+from magi.tools.registry import get_tools_grouped
 
 router = APIRouter(tags=["tools"])
 
@@ -49,7 +49,7 @@ class ToolOut(BaseModel):
     these in two separate cards — when an operator can't find
     a tool, knowing which card it should be in cuts the
     debugging surface in half. ``"mcp"`` only appears if
-    :func:`magi.agent.tools.registry.bootstrap_mcp_tools`
+    :func:`magi.tools.registry.bootstrap_mcp_tools`
     has actually loaded something; on a fresh install this
     surface is naturally empty.
 
@@ -59,7 +59,7 @@ class ToolOut(BaseModel):
     structured input".
 
     ``allowed_roles`` is the per-tool
-    :attr:`magi.agent.tools.base.Tool.ALLOWED_ROLES`, sorted
+    :attr:`magi.tools.base.Tool.ALLOWED_ROLES`, sorted
     alphabetically so the dashboard renders a stable order.
     Empty list means the tool has no role restriction
     (``is_allowed_for_role(None) is True`` and the LLM sees it
@@ -156,7 +156,7 @@ def _serialize_tool(
     schema = tool.to_anthropic_schema()
     name = schema.get("name", "")
     # MCP tools are prefixed ``<server>__<tool>`` by the loader
-    # (see magi/agent/tools/mcp_loader.MCPTool); recover the
+    # (see magi/tools/mcp_loader.MCPTool); recover the
     # owning server so the dashboard can group tools per MCP server.
     server = name.split("__", 1)[0] if source == "mcp" and "__" in name else None
     return ToolOut(

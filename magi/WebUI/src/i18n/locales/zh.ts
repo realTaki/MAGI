@@ -187,7 +187,7 @@ export default {
     toolsInputs: "输入参数",
     toolsInputsNone: "无",
     // Per-card empty copy. The built-in card is empty only
-    // if :mod:`magi.agent.tools.registry` has nothing for
+    // if :mod:`magi.tools.registry` has nothing for
     // the current build (shouldn't happen in v0); the MCP
     // card is empty on a fresh install because no
     // ``mcp.json`` is configured.

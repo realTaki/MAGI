@@ -1,3 +1,4 @@
+
 """``load_skill`` tool — LLM-callable skill body fetcher.
 
 The tool is the second half of the skill injection. The
@@ -31,8 +32,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
-from magi.agent.tools.skill_loader import (
+from magi.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.skill_loader import (
     _process_skill_paths,
     _skill_root_dir_line,
     get_skill_loader,

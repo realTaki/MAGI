@@ -102,9 +102,9 @@ stubbed or absent.
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
 | LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
 | Memory subsystem (magi / contacts / session) | **Partial** | Tables + tools exist; agent loop doesn't render them yet |
-| Bash tool (run / output / kill) | **Done** | `magi/agent/tools/bash.py` |
-| File tools (read / write / list) | **Done** | `magi/agent/tools/{read_file,write_file,list_files}.py` |
-| `edit_file` tool (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| Bash tool (run / output / kill) | **Done** | `magi/tools/bash.py` |
+| File tools (read / write / list) | **Done** | `magi/tools/{read_file,write_file,list_files}.py` |
+| `edit_file` tool (precise string replacement) | **Done** | `magi/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
 | `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 
 **Not in C0 (deferred):**
@@ -297,7 +297,7 @@ worst-day operational scenarios.
 | Bash tool — structured result model / OpenAI schema | **Later** | See [bash-tool-evolution.md](memory/bash-tool-evolution.md) for the trigger conditions |
 | `tools/bash.py` one-file three-tool split | **Later** | Current threshold is 200 lines per class |
 | `tokens.py` to `llm/` | **Done** | (in this refactor series) |
-| File tools — `edit_file` (precise string replacement) | **Done** | `magi/agent/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
+| File tools — `edit_file` (precise string replacement) | **Done** | `magi/tools/edit_file.py` — `old_str` / `new_str`, requires unique match |
 | File tools — `read_file` windowed mode (offset / limit) | **Done** | Same file; line-numbered `N|content` output for paged reads |
 | File tools — `tiktoken` token-aware truncation | **Later** | Trigger: LLM complains "truncated but still too much" — adds a native dep |
 | File tools — `edit_file` `replace_globally` switch | **Later** | Trigger: real need for "rename var across whole file" workflows |
@@ -912,8 +912,8 @@ domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/
   the loop-bound `bot.send_message` bug. Auto-registers at import time.
 - `chat_sessions.tgid` → `delivery_address` column rename (migration entry in
   `_RENAME_COLUMN_MIGRATIONS`, data survives — SQLite rename is metadata-only).
-- `agent/tools/send_message.py` → `dispatcher.send_to_session`.
-- `agent/tools/schedule_task.py` → reads `session.delivery_address`.
+- `tools/send_message.py` → `dispatcher.send_to_session`.
+- `tools/schedule_task.py` → reads `session.delivery_address`.
 - `channels/tasks/runner.py` → `_tg_send_callback` closure removed; calls
   `dispatcher.send_to_session`.
 - `agent/loop.py` — zero `tgid` references.

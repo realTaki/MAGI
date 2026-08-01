@@ -1,3 +1,4 @@
+
 """LLM tools for managing MCP servers.
 
 Three tools:
@@ -32,14 +33,14 @@ from typing import Any
 from sqlalchemy import select
 
 from magi.agent.db import McpServer, open_session
-from magi.agent.tools.base import (
+from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
     caller_role_denied_reason,
 )
 
-logger = logging.getLogger("magi.agent.tools.mcp_manage")
+logger = logging.getLogger("magi.tools.mcp_manage")
 
 # Only admins may create / delete MCP servers.
 _ALLOWED_ROLES = frozenset({"admin"})

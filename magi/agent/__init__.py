@@ -1,7 +1,8 @@
 """MAGI runtime — shared between Adam and EVE.
 
-Holds the agent loop, dynamic context builder, skill runner,
-LLM provider abstraction and audit writers.
+Holds the agent loop, dynamic context builder, session/memory handling,
+LLM provider abstraction and audit writers. Tool implementations, Skills and
+MCP integration live in the separate :mod:`magi.tools` capability layer.
 Both node types run this package; the only differences live in
 (a) which ``channels.*`` adapter is mounted, (b) the
 permission scope, and (c) where each node sources its data

@@ -1,3 +1,4 @@
+
 """``search_sessions`` tool — full-text search across the
 operator's chat history, with N-turn context around each hit.
 
@@ -67,7 +68,7 @@ from magi.channels.webui.api.chat_search import (
 )
 from magi.agent.memory.session import SessionStore
 from magi.agent.db import ChatMessage, ChatSession, open_session
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 _MAX_HITS = 20
 _DEFAULT_CONTEXT_N = 5

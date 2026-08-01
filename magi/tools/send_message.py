@@ -1,3 +1,4 @@
+
 """``send_message`` tool — deliver a message to the
 operator without leaving the tool loop.
 
@@ -43,9 +44,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.agent.tools.send_message")
+logger = logging.getLogger("magi.tools.send_message")
 
 
 _MAX_TEXT_LEN = 4000  # matches common IM client caps (TG 4096, Slack 40k, ...)

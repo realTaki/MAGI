@@ -1,3 +1,4 @@
+
 """Shell command execution tools — bash + background-process lifecycle.
 
 Three tools the LLM uses together:
@@ -34,7 +35,7 @@ Security posture
   operator's container / deploy boundary (the
   runtime runs as the deployer's user; the workspace
   is operator-owned). See
-  :mod:`magi.agent.tools._safe_path` for the same
+  :mod:`magi.tools._safe_path` for the same
   trust model on the file tools.
 - **OS detection at construction.** We pick bash vs
   PowerShell once at import time and never branch at
@@ -67,10 +68,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 
-logger = logging.getLogger("magi.agent.tools.bash")
+logger = logging.getLogger("magi.tools.bash")
 
 # Cap on a foreground command. Mirrors the reference
 # implementation's ``max: 600`` — a deployer who wants

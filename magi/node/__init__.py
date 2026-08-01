@@ -150,7 +150,7 @@ def run() -> None:
 
     # D.X — bootstrap MCP servers declared in the ``mcp_servers`` table.
     try:
-        from magi.agent.tools.registry import bootstrap_mcp_tools
+        from magi.tools.registry import bootstrap_mcp_tools
         bootstrap_mcp_tools()
     except Exception as e:  # noqa: BLE001 — never block boot
         logger.warning("MCP bootstrap skipped: %s", e)
@@ -165,7 +165,7 @@ def run() -> None:
     # Force-initialise the SKILL.md loader so the boot log names
     # every registered skill in one place.
     try:
-        from magi.agent.tools.skill_loader import get_skill_loader
+        from magi.tools.skill_loader import get_skill_loader
         loader = get_skill_loader()
         logger.info(
             "skills: %d registered (workspace=%s)",

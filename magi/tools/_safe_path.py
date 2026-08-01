@@ -1,3 +1,4 @@
+
 """Internal helper for resolving a tool-supplied path
 safely against the workspace root.
 

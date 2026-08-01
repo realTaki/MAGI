@@ -82,9 +82,9 @@ from magi.agent.token_usage import record_token_usage
 # Note: prompt-block helpers (memory / contacts / skills)
 # live in :mod:`magi.agent.system_prompt` — not imported
 # here so this module stays focused on the chat loop.
-from magi.agent.tools.base import ToolContext
-from magi.agent.tools.edit_retry import EditRetryTracker
-from magi.agent.tools.registry import (
+from magi.tools.base import ToolContext
+from magi.tools.edit_retry import EditRetryTracker
+from magi.tools.registry import (
     get_tool,
     get_tool_schemas,
     maybe_reload_mcp_tools,
@@ -299,7 +299,7 @@ class _AgentContext:
     # context (not on a global) so a new chat turn starts
     # fresh — a long-running process serving many chats
     # never accumulates cross-chat state. See
-    # :mod:`magi.agent.tools.edit_retry` for the policy.
+    # :mod:`magi.tools.edit_retry` for the policy.
     edit_retry: EditRetryTracker
 
 

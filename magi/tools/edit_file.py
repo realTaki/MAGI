@@ -1,3 +1,4 @@
+
 """``edit_file`` tool — exact-string replacement in a workspace file.
 
 Why this exists as a separate tool from ``write_file``:
@@ -33,8 +34,8 @@ import os
 import tempfile
 from typing import Any
 
-from magi.agent.tools._safe_path import safe_resolve
-from magi.agent.tools.base import Tool, ToolContext, ToolResult
+from magi.tools._safe_path import safe_resolve
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 
 # Cap on the size of the matched ``old_str`` string the

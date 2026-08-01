@@ -358,7 +358,7 @@ format_contact_block:
 
 ## 11. MCP 工具加载
 
-**入口**: `magi/agent/tools/mcp_client.py` + `loop.py::maybe_reload_mcp_tools()`
+**入口**: `magi/tools/mcp_loader.py` + `loop.py::maybe_reload_mcp_tools()`
 
 ```
 启动时:

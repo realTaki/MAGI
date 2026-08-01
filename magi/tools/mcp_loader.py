@@ -1,5 +1,6 @@
+
 """MCP tool loader — bridges Model-Context-Protocol servers into the
-existing :mod:`magi.agent.tools` registry.
+existing :mod:`magi.tools` registry.
 
 Each upstream MCP server exposes a ``list_tools`` /
 ``call_tool`` pair; this module mirrors that surface as a
@@ -59,7 +60,7 @@ boot — ``registry.load_mcp_tools_into_registry`` blocks
 exactly one event loop on it. The hot path (every chat turn
 calling ``tool.run``) only ever touches the cached wrapper.
 The agent loop also calls
-:func:`magi.agent.tools.registry.maybe_reload_mcp_tools` on
+:func:`magi.tools.registry.maybe_reload_mcp_tools` on
 each chat turn so a freshly-edited server row takes effect
 on the next user message (lazy reload — no live reconnect
 mid-conversation).
@@ -79,7 +80,7 @@ from typing import Any, Literal, TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-logger = logging.getLogger("magi.agent.tools.mcp_loader")
+logger = logging.getLogger("magi.tools.mcp_loader")
 
 ConnectionType = Literal["stdio", "sse", "streamable_http"]
 
@@ -251,7 +252,7 @@ class MCPTool:
 
 
 # The agent loop reads ``ToolResult`` from
-# :mod:`magi.agent.tools.base`, which we don't import at the
+# :mod:`magi.tools.base`, which we don't import at the
 # top to dodge a circular path (mcp_loader → base → registry →
 # mcp_loader on some setups). We provide a thin factory that
 # produces whatever the local ``ToolResult`` looks like.
@@ -264,7 +265,7 @@ def _mcp_tool_result(*, success: bool, content: str, error: str | None) -> Any:
     regular tool output) and flip ``is_error=True`` so the
     loop can count failures for its bound.
     """
-    from magi.agent.tools.base import ToolResult
+    from magi.tools.base import ToolResult
     if success:
         return ToolResult(content=content, is_error=False)
     return ToolResult(
@@ -560,7 +561,7 @@ async def load_mcp_tools_async(
 
     Reads the table on every call — there is no in-memory
     cache at the loader level. The agent loop's
-    :func:`magi.agent.tools.registry.maybe_reload_mcp_tools`
+    :func:`magi.tools.registry.maybe_reload_mcp_tools`
     decides when to re-invoke this function (currently
     once per chat turn, when the table's max
     ``updated_at`` is newer than the last successful
@@ -718,7 +719,7 @@ def load_mcp_tools_blocking(
     """Synchronous wrapper around :func:`load_mcp_tools_async`.
 
     Called once at boot from the project-local sync code path
-    (see :func:`magi.agent.tools.registry.bootstrap_mcp_tools`).
+    (see :func:`magi.tools.registry.bootstrap_mcp_tools`).
     We must run on a fresh loop — the boot code is itself sync,
     so borrowing the FastAPI loop would deadlock the asyncio
     scheduler.
