@@ -95,7 +95,7 @@ export default function LandingPage(props: {
           </p>
         )}
         <label className="mt-7 block text-sm font-medium text-sky-deep">
-          Select a MAGI
+          {t("landing.selectMagi")}
           <select
             value={selectedMagicId ?? ""}
             onChange={(event) => setSelectedMagicId(Number(event.target.value))}
@@ -103,12 +103,16 @@ export default function LandingPage(props: {
             disabled={magiQuery.isLoading || !magiQuery.data?.magi.length}
           >
             {(magiQuery.data?.magi ?? []).map((magi) => (
-              <option key={magi.id} value={magi.id}>{magi.name ?? `MAGI ${magi.id}`}</option>
+              <option key={magi.id} value={magi.id}>
+                {magi.name ?? t("landing.defaultMagiName").replace("{id}", String(magi.id))}
+              </option>
             ))}
           </select>
         </label>
-        {magiQuery.isError && <p className="form-error mt-3">Unable to load running MAGI nodes.</p>}
-        {!magiQuery.isLoading && !magiQuery.data?.magi.length && <p className="mt-3 text-sm text-ink-soft">No MAGI is currently running.</p>}
+        {magiQuery.isError && <p className="form-error mt-3">{t("landing.loadMagiError")}</p>}
+        {!magiQuery.isLoading && !magiQuery.data?.magi.length && (
+          <p className="mt-3 text-sm text-ink-soft">{t("landing.noMagiRunning")}</p>
+        )}
         <button
           type="button"
           onClick={() => selectedMagicId !== null && props.onSelectMagic(selectedMagicId)}
