@@ -25,7 +25,18 @@ class AgentInbox(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     causation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Cross-channel idempotency triple (added by 0009_idempotency_keys).
+    # ``source_type`` discriminates the inbound channel
+    # ("tg" / "webui" / "a2a" / "task" / ...). ``source_id`` is a
+    # producer-side handle (TG chat_id, WebUI uid, A2A magic_id, etc.).
+    # ``external_event_id`` is the upstream's own stable id; the
+    # partial unique index
+    # ``ux_agent_inbox_source_external(source_type, source_id, external_event_id)``
+    # is the cross-process-redelivery dedupe boundary (Telegram
+    # webhook retries, A2A idempotent POSTs).
+    source_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    external_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     available_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
@@ -78,6 +89,13 @@ class RunInput(Base):
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Audit-only back-reference to the upstream's stable id (TG
+    # message_id, A2A event_id, ...). Indexed but NOT UNIQUE: a
+    # cross-channel redelivery can legitimately attach the same
+    # upstream id to multiple runs; ``event_id`` above is the
+    # strict de-duplication surface. See
+    # ``0009_idempotency_keys`` migration docstring.
+    source_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -98,6 +116,11 @@ class ToolJob(Base):
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     tool_call_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Producer-supplied idempotency key (e.g. the LLM-stable tool_call_id
+    # or a tool-specific "send this email once" handle). Partial
+    # unique index ``ux_tool_jobs_idempotency`` enforces at-least-once
+    # semantics across retries. NULL allowed for legacy/test jobs.
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     available_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
@@ -120,7 +143,17 @@ class DeliveryOutbox(Base):
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Optional correlation back to the inbound ``agent_inbox.event_id``
+    # (e.g. one TG reply per inbound message). Partial unique index
+    # ``ux_delivery_outbox_event_id`` enforces that the same
+    # correlation is never written twice.
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Producer-supplied idempotency key. Partial unique index
+    # ``ux_delivery_outbox_idempotency``. The actor transition defaults
+    # to ``f"reply:{run.run_id}"`` for the final reply and
+    # ``f"a2a:{invocation_id}"`` for A2A hops; producers may override.
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     available_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)

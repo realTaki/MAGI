@@ -102,22 +102,25 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
 
     # Now run init_orm — this is what production boot does — which calls
     # upgrade_head internally. With the fix it must walk 0006 → 0007 →
-    # 0008 and apply every column.
+    # 0008 → 0009 and apply every column.
     init_orm(str(tmp_path), seed_root=False)
-    assert _raw_alembic_version(db_path) == "0008_merge_actor_and_auth_heads"
+    assert _raw_alembic_version(db_path) == "0009_idempotency_keys"
 
-    # Spot-check that the critical columns added by 0006 and 0007 exist.
+    # Spot-check that the critical columns added by 0006/0007/0009 exist.
     # If any of these fail, the runtime would have crashed at first ORM
     # query against the column.
     inbox = _columns(db_path, "agent_inbox")
     assert "conversation_id" in inbox  # added by 0006
     assert "correlation_id" in inbox
     assert "causation_id" in inbox
+    assert "source_type" in inbox  # added by 0009
+    assert "external_event_id" in inbox
 
     run_inputs = _columns(db_path, "run_inputs")
     assert "received_seq" in run_inputs  # added by 0006
     assert "context_seq" in run_inputs
     assert "status" in run_inputs
+    assert "source_event_id" in run_inputs  # added by 0009
 
     llm = _columns(db_path, "llm_attempts")
     assert "inbox_event_id" in llm  # added by 0006
@@ -138,12 +141,19 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
     assert "deadline_at" in a2a
     assert "idempotency_key" in a2a
 
+    tool_jobs = _columns(db_path, "tool_jobs")
+    assert "idempotency_key" in tool_jobs  # added by 0009
+
+    delivery_outbox = _columns(db_path, "delivery_outbox")
+    assert "event_id" in delivery_outbox  # added by 0009
+    assert "idempotency_key" in delivery_outbox
+
 
 def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
-    """A clean init_orm must end at 0008, not at 0005."""
+    """A clean init_orm must end at 0009, not at 0005."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
     import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)
 
-    assert _raw_alembic_version(tmp_path / "magi.db") == "0008_merge_actor_and_auth_heads"
+    assert _raw_alembic_version(tmp_path / "magi.db") == "0009_idempotency_keys"

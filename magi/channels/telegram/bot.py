@@ -760,6 +760,12 @@ async def _handle_contact_message(
                     f"{update.effective_message.message_id}"
                 ),
                 source_id=str(update.effective_message.message_id),
+                # Cross-channel idempotency triple (0009_idempotency_keys):
+                # TG update_id is the upstream-stable id we dedupe on.
+                # Different ``event_id`` values (e.g. bot-restart re-runs
+                # of the same update) collapse to the same inbox row.
+                source_type="tg",
+                external_event_id=str(update.update_id),
                 text=text,
                 channel=Channel.TG,
                 session_id=session_id,

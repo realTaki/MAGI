@@ -16,6 +16,11 @@
   A2A 300 秒超时和 delivery 指数退避/死信均保留在本地 SQLite。
 - StreamHub 仅是 best-effort 的内存 SSE 增量。重连必须通过 run 状态和已提交
   transcript 恢复，`message.committed` 才是权威完成通知。
+- 私有 SQLite 走 Alembic（head `0008_merge_actor_and_auth_heads`）；
+  公共 PostgreSQL 仍走 `Base.metadata.create_all`
+  （[magi/db/magis/engine.py:60-64](../../magi/db/magis/engine.py#L60)），
+  尚未迁 Alembic；这是已知 deferred 项，与私有 SQLite 的 Alembic 链不对称。
+  替换方案见 §未来工作。
 
 ## 1. 目标
 

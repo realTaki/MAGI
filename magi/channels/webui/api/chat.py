@@ -355,6 +355,13 @@ async def send_chat(
                 # agent turn for that exact input.
                 event_id=f"webui:{session_id}:{inbound_message_id}",
                 source_id=inbound_message_id,
+                # Cross-channel idempotency triple (0009_idempotency_keys).
+                # The browser sends a stable client-generated UUID; if the
+                # same message is re-submitted (network retry, double
+                # click), the inbox row collapses to the same run.
+                source_type="webui",
+                source_id=str(uid),
+                external_event_id=inbound_message_id,
                 text=text,
                 channel=Channel.WEBUI,
                 session_id=session_id,

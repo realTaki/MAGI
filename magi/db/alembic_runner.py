@@ -17,15 +17,16 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 #: files have since been folded or renamed; normal upgrades run every
 #: committed revision through this head.
 #:
-#: Post-2026.08 fix: 0008 is the merged head of the actor-runtime branch
-#: (0006_actor_runtime_semantics → 0007_actor_runtime_completion) and the
+#: Post-2026.08 fix: 0009_idempotency_keys is the merged head of the
+#: actor-runtime branch (0006_actor_runtime_semantics → 0007_actor_runtime_completion
+#: → 0008_merge_actor_and_auth_heads → 0009_idempotency_keys) and the
 #: auth-credentials branch (0006_auth_credentials). Any DB whose
 #: ``alembic_version.version_num`` is missing one of the actor-runtime
 #: columns (``agent_inbox.conversation_id``, ``chat_messages.content_blocks``,
 #: ``a2a_invocations.tool_call_id`` etc.) was silently stuck because
 #: ``CANONICAL_HEAD`` pointed at 0005 and ``upgrade_head`` re-stamped newer
 #: DBs back to 0005 instead of running 0006/0007. Pin to the actual head.
-CANONICAL_HEAD = "0008_merge_actor_and_auth_heads"
+CANONICAL_HEAD = "0009_idempotency_keys"
 
 
 def _find_alembic_ini() -> Path:

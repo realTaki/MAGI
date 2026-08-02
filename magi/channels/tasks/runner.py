@@ -330,6 +330,12 @@ async def execute_task(
             AgentMessage(
                 event_id=f"task:{task_id}:{run_id}",
                 source_id=run_id,
+                # Cross-channel idempotency triple (0009_idempotency_keys):
+                # task_run_id is the upstream-stable id (one per scheduled
+                # fire). A redelivered cron tick with a different local
+                # event_id collapses to the same inbox row.
+                source_type="task",
+                external_event_id=run_id,
                 kind="task.triggered",
                 text=prompt,
                 channel="task",

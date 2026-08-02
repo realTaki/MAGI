@@ -85,6 +85,12 @@ async def receive(request: Request) -> JSONResponse:
         AgentMessage(
             event_id=f"a2a:{magic_id}:{event_id}",
             source_id=str(magic_id),
+            # Cross-channel idempotency triple (0009_idempotency_keys):
+            # the body-level ``event_id`` (the caller's stable id) is
+            # the upstream-stable handle. A redelivered request with a
+            # fresh local envelope collapses to the same inbox row.
+            source_type="a2a",
+            external_event_id=str(event_id),
             text=text,
             channel="a2a",
             kind="a2a.request",

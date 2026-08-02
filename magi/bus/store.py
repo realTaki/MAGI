@@ -47,6 +47,14 @@ class BusStore:
 
         Retrying the same producer event is safe: the unique ``event_id``
         returns the original run rather than creating another turn.
+
+        Cross-channel idempotency: when the producer supplies
+        ``(source_type, source_id, external_event_id)`` and a prior
+        inbox row already carries that triple, the same ``run_id`` is
+        returned instead of creating a new run. This handles Telegram
+        webhook retries, A2A idempotent POSTs, and other producer-side
+        redeliveries where the local ``event_id`` differs but the
+        upstream event is the same.
         """
         conversation_id = message.conversation_id or message.session_id or (
             f"{message.channel}:{message.uid}" if message.uid is not None else None
@@ -64,12 +72,28 @@ class BusStore:
         }
         run_id = _new_id("run")
         now = utcnow_naive()
+        idempotency_key = message.idempotency_key or message.event_id
         with open_session(self._state_dir) as session:
             existing = session.scalar(
                 select(AgentInbox).where(AgentInbox.event_id == message.event_id)
             )
             if existing is not None:
                 return existing.run_id
+
+            # Cross-channel idempotency: same upstream event may be
+            # published twice with different ``event_id`` values (e.g.
+            # TG update retry, A2A redelivery). Treat it as the same
+            # row. Only consulted when the producer supplied the triple.
+            if message.source_type and message.source_id and message.external_event_id:
+                cross = session.scalar(
+                    select(AgentInbox).where(
+                        AgentInbox.source_type == message.source_type,
+                        AgentInbox.source_id == message.source_id,
+                        AgentInbox.external_event_id == message.external_event_id,
+                    )
+                )
+                if cross is not None:
+                    return cross.run_id
 
             active_run = None
             if message.target_run_id:
@@ -116,7 +140,9 @@ class BusStore:
                     correlation_id=message.correlation_id or message.event_id,
                     causation_id=message.causation_id,
                     kind="run.steer" if is_steer else message.kind,
+                    source_type=message.source_type,
                     source_id=message.source_id,
+                    external_event_id=message.external_event_id,
                     payload=payload,
                     status="pending",
                     available_at=now,
@@ -129,6 +155,7 @@ class BusStore:
                     run_id=run_id,
                     event_id=message.event_id,
                     kind="run.steer" if is_steer else message.kind,
+                    source_event_id=message.external_event_id,
                     payload=payload,
                     received_seq=received_seq,
                     status="pending",
@@ -251,7 +278,9 @@ class BusStore:
                                 run_id=run.run_id,
                                 channel="tg",
                                 destination=delivery_destination,
+                                event_id=run.root_event_id,
                                 payload={"text": reply},
+                                idempotency_key=f"reply:{run.run_id}",
                                 status="pending",
                                 available_at=now,
                                 created_at=now,
@@ -432,11 +461,34 @@ class BusStore:
         payload: dict[str, Any],
         run_id: str | None = None,
         delivery_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> str:
-        """Write a generic delivery effect before any external I/O."""
+        """Write a generic delivery effect before any external I/O.
+
+        ``event_id`` and ``idempotency_key`` are partial-unique-index
+        de-duplication columns (see ``0009_idempotency_keys`` migration
+        docstring). When supplied and an existing row already carries
+        the same value, the existing ``delivery_id`` is returned
+        unchanged rather than creating a duplicate outbox row.
+        """
         delivery_id = delivery_id or _new_id("delivery")
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
+            if event_id is not None:
+                existing = session.scalar(
+                    select(DeliveryOutbox).where(DeliveryOutbox.event_id == event_id)
+                )
+                if existing is not None:
+                    return existing.delivery_id
+            if idempotency_key is not None:
+                existing = session.scalar(
+                    select(DeliveryOutbox).where(
+                        DeliveryOutbox.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is not None:
+                    return existing.delivery_id
             existing = session.scalar(
                 select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
             )
@@ -447,7 +499,9 @@ class BusStore:
                         run_id=run_id,
                         channel=channel,
                         destination=destination,
+                        event_id=event_id,
                         payload=payload,
+                        idempotency_key=idempotency_key,
                         status="pending",
                         available_at=now,
                         created_at=now,
@@ -571,7 +625,15 @@ class BusStore:
                     attempt.completed_at = now
             for job_data in jobs:
                 tool_call_id = str(job_data["tool_call_id"])
+                # tool_call_id is already UNIQUE; idempotency_key (added
+                # in 0009) is the partial unique index that producers
+                # supply when the LLM-stable id is not sufficient (e.g.
+                # "send this email once"). Default to the tool_call_id
+                # so the existing dedup path keeps working.
+                idempotency_key = job_data.get("idempotency_key") or f"tool:{run.run_id}:{tool_call_id}"
                 if session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)):
+                    continue
+                if session.scalar(select(ToolJob).where(ToolJob.idempotency_key == idempotency_key)):
                     continue
                 session.add(
                     ToolCall(
@@ -589,6 +651,7 @@ class BusStore:
                         run_id=run.run_id,
                         tool_call_id=tool_call_id,
                         tool_name=str(job_data["tool_name"]),
+                        idempotency_key=idempotency_key,
                         payload={
                             "arguments": dict(job_data["arguments"]),
                             "context": dict(job_data["context"]),
@@ -644,12 +707,14 @@ class BusStore:
                         run_id=run.run_id,
                         channel="a2a",
                         destination=str(request.target_magic_id),
+                        event_id=f"a2a:{invocation_id}",
                         payload={
                             "text": request.text,
                             "reply_to": invocation_id if request.expect_reply else None,
                             "a2a_kind": "request",
                             "correlation_id": run.correlation_id,
                         },
+                        idempotency_key=f"a2a:{invocation_id}",
                         status="pending",
                         available_at=now,
                         created_at=now,
@@ -1013,13 +1078,34 @@ class BusStore:
         tool_name: str,
         arguments: dict[str, Any],
         context: dict[str, Any],
+        idempotency_key: str | None = None,
     ) -> str:
-        """Durably schedule a tool effect exactly once by ``tool_call_id``."""
+        """Durably schedule a tool effect exactly once.
+
+        De-duplication order (first match wins):
+
+          1. ``idempotency_key`` if supplied (partial unique index).
+          2. ``tool_call_id`` (UNIQUE) — backwards-compatible path.
+
+        When a match is found, the existing ``job_id`` is returned
+        without creating a new row. The ``idempotency_key`` is
+        preferred by design §11.2 because tool implementations may
+        declare a more specific retry boundary than the LLM-stable
+        ``tool_call_id`` (e.g. "send this email once" handles).
+        """
         now = utcnow_naive()
         job_id = _new_id("tool")
         payload = {"arguments": arguments, "context": context}
         with open_session(self._state_dir) as session:
-            existing = session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id))
+            if idempotency_key is not None:
+                existing = session.scalar(
+                    select(ToolJob).where(ToolJob.idempotency_key == idempotency_key)
+                )
+                if existing is not None:
+                    return existing.job_id
+            existing = session.scalar(
+                select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)
+            )
             if existing is not None:
                 return existing.job_id
             session.add(
@@ -1038,6 +1124,7 @@ class BusStore:
                     run_id=run_id,
                     tool_call_id=tool_call_id,
                     tool_name=tool_name,
+                    idempotency_key=idempotency_key,
                     payload=payload,
                     status="pending",
                     available_at=now,

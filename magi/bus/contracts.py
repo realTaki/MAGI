@@ -9,6 +9,7 @@ consume it without importing a channel implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Protocol
 
 InboxKind = Literal[
@@ -49,6 +50,18 @@ class AgentMessage:
     durable bus creates a ``run_id`` for the turn, which callers can use to
     wait for a compatible synchronous response during the migration away from
     direct synchronous agent calls.
+
+    The cross-channel triple ``source_type`` + ``source_id`` +
+    ``external_event_id`` provides an *additional* idempotency boundary:
+    two different ``event_id`` values that share the same triple are
+    treated as the same upstream event (Telegram webhook retries, A2A
+    redeliveries, etc.). Producers that have a stable upstream id
+    MUST populate it.
+
+    ``idempotency_key`` (optional) overrides the default inbox-row
+    idempotency column (``event_id``); callers that need a different
+    unique key can pass it. ``deadline_at`` is the soft wall-clock
+    deadline checked by :class:`AgentWorker` before claiming.
     """
 
     event_id: str
@@ -59,6 +72,11 @@ class AgentMessage:
     caller_role: str | None = None
     kind: InboxKind = "channel.message.received"
     source_id: str | None = None
+    # Cross-channel idempotency triple (added 2026.08 by 0009_idempotency_keys).
+    source_type: str | None = None
+    external_event_id: str | None = None
+    idempotency_key: str | None = None
+    deadline_at: datetime | None = None
     # ``conversation_id`` is deliberately separate from a producer event.
     # A session is the normal conversation identity for WebUI/TG; producers
     # without sessions may supply their own stable identity.  Keeping it in
