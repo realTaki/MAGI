@@ -193,7 +193,7 @@ async def send_chat(
     # ``_resolve_caller_credentials`` re-checks the row
     # exists and surfaces the operator's role for the
     # agent-loop tool menu filter. LLM credentials are
-    # resolved inside :func:`handle_message` via the
+    # resolved inside the actor step via the
     # factory. The cookie is the cross-channel identity;
     # the per-channel delivery address (TG chat id) is
     # looked up separately by the channel dispatcher

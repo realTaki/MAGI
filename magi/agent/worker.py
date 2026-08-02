@@ -1,9 +1,7 @@
 """The single-turn consumer owned by :mod:`magi.agent`.
 
-This is the compatibility bridge from today's ``handle_message`` loop to the
-event-driven runtime. It serialises claims: one MAGI owns one active agent
-turn. Channels publish durable inputs and may temporarily wait for a result;
-later phases can replace the continuous tool loop without changing producers.
+It serialises claims: one MAGI owns one active agent turn. Channels publish
+durable inputs and never wait for the inference or a tool result.
 """
 
 from __future__ import annotations

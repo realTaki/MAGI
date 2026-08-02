@@ -1,18 +1,16 @@
 # 消息驱动的 MAGI Actor Runtime（讨论草案）
 
-> 状态：Phase 1–4 的核心已实现：私有 SQLite bus、lease recovery、串行
-> `AgentWorker`、单次 `agent.step`、异步 `ToolWorker` 和 Telegram delivery sender。
-> streaming 与 A2A transport 尚未实现；旧 `handle_message()` 仅保留给
-> 直接调用它的历史内部测试/兼容场景，Worker 不再依赖它。
-> 已审阅并吸收 v1.1 的首版实现决策；详细的 schema、streaming 和验收规范见
+> 状态：已实现。私有 SQLite bus、lease recovery、串行 `AgentWorker`、
+> 单次 `agent.step`、异步 Tool/Delivery worker、StreamHub/SSE、A2A outbox 和
+> invocation continuation 都已启用。Channel 不再调用或等待 `handle_message()`。
+> 详细的 schema、streaming 和验收规范见
 > [MAGI_single_agent_event_driven_runtime_design.md](MAGI_single_agent_event_driven_runtime_design.md)。
 
 ## 背景
 
-当前 Telegram、WebUI 和 scheduled-task channel 都会直接调用
-`magi.agent.loop.handle_message()`。该函数在一个连续调用栈中执行 LLM →
-tool → LLM 的多轮循环。这样在单个交互入口中很直接，但它使 channel 同时承担
-入站协议适配和 agent 执行调度两种职责。
+旧版 Telegram、WebUI 和 scheduled-task channel 会直接调用连续的
+`magi.agent.loop.handle_message()`。当前实现已改为先持久化输入，再由 Actor 执行
+单次 LLM step；tool/A2A 回执会进入同一 run 的后续 step。
 
 当 A2A 进入运行时，如果仍采用同步调用栈，容易变成：
 

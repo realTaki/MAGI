@@ -129,10 +129,9 @@ async def execute_task(
 
     # ── 1. Read task + operator + load home session ──
     # LLM credentials are resolved inside
-    # :func:`magi.agent.loop.handle_message` via
     # :func:`magi.agent.llm.factory.get_provider` — the
     # runner never reads them and never passes them as
-    # kwargs. The agent loop raises ``LLMNotConfiguredError``
+    # kwargs. The actor records ``LLMNotConfiguredError``
     # when the MAGI runtime isn't configured, which the
     # broad ``except Exception`` below logs as a
     # ``magi_missing_credentials`` task failure.
@@ -263,7 +262,7 @@ async def execute_task(
             )
             db.add(run)
         # Snapshot for the calling coroutine so the
-        # handle_message call doesn't need to keep its own
+        # actor publish doesn't need to keep its own
         # DB session open.
         task_name = task.name
         # ``prompt`` sent to the agent is the contextual
@@ -473,7 +472,7 @@ def _finalise_run_failure(
 
 
 def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tuple[int, int] | None:
-    """Sum (input, output) tokens for the rows :func:`agent.handle_message`
+    """Sum (input, output) tokens written by the actor
     just wrote. The ``token_usage`` schema is per-call so a
     single fire may produce 1+ rows; summing keeps the
     dashboard's "cost" view aligned with the per-session bill.

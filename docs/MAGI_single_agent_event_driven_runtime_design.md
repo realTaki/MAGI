@@ -1,8 +1,21 @@
 # MAGI 单 Agent 事件驱动 Runtime 设计方案
 
 > 版本：v1.1  
-> 状态：Phase 1–4 的核心执行链与 Telegram delivery outbox sender 已落地；streaming 与 A2A transport 仍为后续实现方案。
-> 本次更新：active run steering、Actor 内完整 LLM 调用、流式输出
+> 状态：已落地。Channel 统一 accept-then-process；Actor 每次只执行一个
+> provider step；tool、delivery 与 A2A 均通过 durable effect/outbox 恢复。
+> WebUI 使用 `202 + run_id + SSE`，最终 transcript 仅在 Actor transition
+> 内提交；`message_magi` 默认单向、可显式等待回复。
+
+## 实现状态（v1.1）
+
+- `BusStoreProtocol` 是 runtime 依赖边界，SQLite `BusStore` 是当前实现；
+  `commit_agent_transition()` 负责终态或等待 effect 的单次提交。
+- `AgentWorker` 保持单 active run；普通同会话输入是持久化 steering，只有
+  `POST /api/runs/{run_id}/cancel` 是显式取消。
+- `ToolWorker`、Telegram/A2A delivery worker 在事务外执行；lease recovery、
+  A2A 300 秒超时和 delivery 指数退避/死信均保留在本地 SQLite。
+- StreamHub 仅是 best-effort 的内存 SSE 增量。重连必须通过 run 状态和已提交
+  transcript 恢复，`message.committed` 才是权威完成通知。
 
 ## 1. 目标
 
