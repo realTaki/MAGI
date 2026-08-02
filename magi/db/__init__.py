@@ -85,6 +85,7 @@ from magi.db.models_magis_membership import MAGISMembership, MAGISRole
 from magi.db.models_mcp_server import McpServer
 from magi.db.models_setting import Setting
 from magi.db.models_token_usage import TokenUsage
+from magi.db.models_tool import ToolRegistry
 
 # The session/memory packages still accept historical ``magi.db.models_*``
 # imports while they are migrated. Alias only modules already loaded above, so
@@ -96,7 +97,7 @@ for _module_name in (
     "models_action_item", "models_contact", "models_control_plane",
     "models_eve_runtime", "models_magic", "models_magis", "models_magis_admin",
     "models_magis_membership", "models_mcp_server", "models_setting",
-    "models_token_usage",
+    "models_token_usage", "models_tool",
 ):
     _sys.modules[f"magi.db.{_module_name}"] = _sys.modules[
         f"magi.db.{_module_name}"
@@ -129,6 +130,7 @@ __all__ = [
     "MAGISRole",
     "EveRuntime",
     "McpServer",
+    "ToolRegistry",
     # dashboard
     "ActionItem",
     "TokenUsage",

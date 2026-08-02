@@ -21,6 +21,27 @@ from magi.tools.registry import get_tool
 logger = logging.getLogger("magi.tools.worker")
 
 
+def _seed_tools(state_dir: str) -> None:
+    """Upsert every registered tool's schema into the ``tools`` DB table.
+
+    Called once when the worker starts.  The ``tools`` table is the
+    single source of truth for the LLM's tool menu; this seed keeps it
+    in sync with whatever tool classes are actually importable.
+    """
+    try:
+        from magi.db.tool_schemas import seed_all_tool_schemas
+        from magi.tools.registry import get_tools
+
+        tools = get_tools()
+        inserted, updated = seed_all_tool_schemas(tools, state_dir)
+        logger.info(
+            "tool registry seeded: %d inserted, %d updated (%d total)",
+            inserted, updated, len(tools),
+        )
+    except Exception:
+        logger.exception("tool registry seed failed — agent may see stale schemas")
+
+
 class ToolWorker:
     """Single durable tool consumer for one MAGI process."""
 
@@ -35,6 +56,10 @@ class ToolWorker:
     async def start(self) -> None:
         if self._task is None:
             self._stopping = False
+            # Seed the tools table with every known tool's LLM schema
+            # before the poll loop starts.  Upsert is idempotent — code
+            # changes that add/modify tools are reflected on restart.
+            _seed_tools(self.state_dir)
             self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
 
     async def stop(self) -> None:

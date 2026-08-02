@@ -18,9 +18,9 @@ from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.agent.workspace import workspace_root
 from magi.channels import Channel
 from magi.prompts import load_bot_replies
-from magi.tools.base import ToolContext
+from magi.types import ToolContext
 from magi.tools.edit_retry import EditRetryTracker
-from magi.tools.registry import get_tool_schemas, maybe_reload_mcp_tools
+from magi.db.tool_schemas import get_tool_schemas as _get_tool_schemas
 
 logger = logging.getLogger("magi.agent.runtime_context")
 
@@ -84,7 +84,6 @@ def build_context(
     session_id: str | None,
     caller_role: str | None,
 ) -> AgentContext | None:
-    maybe_reload_mcp_tools()
     try:
         provider = get_provider()
     except LLMNotConfiguredError:
@@ -102,7 +101,7 @@ def build_context(
             channel=channel,
             session_id=session_id or "",
         ),
-        tool_schemas=get_tool_schemas(caller_role=caller_role),
+        tool_schemas=_get_tool_schemas(state_dir, caller_role=caller_role),
         messages=build_messages_from_session(state_dir, uid, session_id, text),
         # Actor turns are intentionally one step; durable continuations own
         # repeated tool use rather than this context owning a loop.

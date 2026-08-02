@@ -83,13 +83,12 @@ from magi.agent.token_usage import record_token_usage
 # Note: prompt-block helpers (memory / contacts / skills)
 # live in :mod:`magi.agent.system_prompt` — not imported
 # here so this module stays focused on the chat loop.
-from magi.tools.base import ToolContext
+from magi.types import ToolContext
 from magi.tools.edit_retry import EditRetryTracker
 from magi.tools.registry import (
     get_tool,
-    get_tool_schemas,
-    maybe_reload_mcp_tools,
 )
+from magi.db.tool_schemas import get_tool_schemas as _get_tool_schemas
 
 logger = logging.getLogger("magi.agent.agent")
 
@@ -397,7 +396,7 @@ def _build_context(
         provider=provider,
         soul=read_soul(state_dir),
         tool_ctx=tool_ctx,
-        tool_schemas=get_tool_schemas(caller_role=caller_role),
+        tool_schemas=_get_tool_schemas(state_dir, caller_role=caller_role),
         messages=messages,
         seen_message_ids=seen_message_ids,
         max_iter=max_iter,
@@ -660,11 +659,9 @@ async def handle_message(
     # subprocess list on a real change. The boot-time
     # ``bootstrap_mcp_tools`` is the only place that
     # populates the cache initially; this call is what
-    # makes a save in the WebUI take effect on the next
-    # chat turn. Swallowed failures (DB hiccup) leave the
-    # existing cache in place.
-    maybe_reload_mcp_tools()
-
+    # MCP tools are seeded into the tools table by the tool
+    # worker at startup; the get_tool_schemas call below reads
+    # from that table, so a reload check is no longer needed here.
     if not _validate_credentials(uid=uid, channel=channel):
         return _fallback_reply("agent_no_credentials")
 
