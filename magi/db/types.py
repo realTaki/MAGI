@@ -7,13 +7,16 @@ or pulling in SQLAlchemy, FastAPI, or any LLM provider.
 ``ToolContext`` and ``ToolResult`` were moved here from
 :mod:`magi.tools.base` so the agent loop can reference them
 without importing from the tools package.
+
+Lives under :mod:`magi.db` because ``state_dir`` / ``uid`` /
+``session_id`` are the coordinates that locate a MAGI's private
+state — the same concern as the rest of the ``db`` package.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from magi.channels import Channel
 
@@ -30,8 +33,6 @@ class ToolContext:
     workspace: Path
     uid: int
     channel: Channel | str
-    # The chat session's persisted id (``chat_sessions.session_id``).
-    # Empty string when there's no session-bound chat.
     session_id: str = ""
 
 
@@ -47,8 +48,3 @@ class ToolResult:
 
     content: str
     is_error: bool = False
-
-
-# Re-export from the old location so ``from magi.tools.base import
-# ToolContext, ToolResult`` still works during the transition.
-# New code should import from ``magi.types`` directly.

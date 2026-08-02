@@ -36,7 +36,7 @@ from typing import Any
 # Re-export from the shared types module so existing
 # ``from magi.tools.base import ToolContext, ToolResult``
 # imports keep working during the transition.
-from magi.types import ToolContext, ToolResult  # noqa: F401
+from magi.db.types import ToolContext, ToolResult  # noqa: F401
 
 
 class Tool(ABC):

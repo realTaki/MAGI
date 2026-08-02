@@ -18,7 +18,7 @@ from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.agent.workspace import workspace_root
 from magi.channels import Channel
 from magi.prompts import load_bot_replies
-from magi.types import ToolContext
+from magi.db.types import ToolContext
 from magi.tools.edit_retry import EditRetryTracker
 from magi.db.tool_schemas import get_tool_schemas as _get_tool_schemas
 
