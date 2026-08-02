@@ -47,10 +47,9 @@ from typing import Any
 from sqlalchemy import select
 
 from magi.db import McpServer, open_session
+from magi.db.types import ToolContext, ToolResult
 from magi.tools.base import (
     Tool,
-    ToolContext,
-    ToolResult,
     caller_role_denied_reason,
 )
 

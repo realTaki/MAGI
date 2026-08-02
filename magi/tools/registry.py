@@ -85,7 +85,7 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.search_sessions import SearchSessionsTool
     from magi.tools.send_message import SendMessageTool
     from magi.tools.write_file import WriteFileTool
-    from magi.agent.memory.contacts.tools import (
+    from magi.tools.memory_contacts import (
         AddContactNoteTool,
         AddContactTool,
         DeleteContactNoteTool,
@@ -93,7 +93,7 @@ def _build_tools() -> list["Tool"]:
         UpdateContactNoteTool,
         UpdateDailyNoteTool,
     )
-    from magi.agent.memory.self.tools import (
+    from magi.tools.memory_self import (
         AddMemoryTool,
         CompleteMemoryTool,
         DeleteMemoryTool,

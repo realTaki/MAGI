@@ -29,7 +29,7 @@ from magi.tools.base import (
 )
 
 
-logger = logging.getLogger("magi.agent.memory.contacts.tools")
+logger = logging.getLogger("magi.tools.memory_contacts")
 
 # Tool author gate. After the 2024 role/admin split,
 # ``role='admin'`` is no longer a reachable value — the

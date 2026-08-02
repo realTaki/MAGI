@@ -4,11 +4,9 @@ The unified ``contacts`` table (see :mod:`magi.db.models_contact`)
 holds every person row. Each ``Contact`` carries a ``notes``
 field (LLM-managed free-form markdown) and a ``source`` field.
 
-Layout:
-
-  - :mod:`.store`   — :class:`ContactStore` CRUD
-  - :mod:`.prompt`  — :func:`format_contact_block`
-  - :mod:`.tools`   — LLM-callable tools
+Tool classes live in :mod:`magi.tools.memory_contacts` — they
+were moved out of this package to break a dependency cycle
+(agent → memory → tools → memory).
 """
 
 from __future__ import annotations
@@ -23,14 +21,6 @@ from magi.agent.memory.contacts.prompt import (
     format_daily_note_block,
 )
 from magi.agent.memory.contacts.store import ContactStore, ContactView
-from magi.agent.memory.contacts.tools import (
-    AddContactNoteTool,
-    AddContactTool,
-    DeleteContactNoteTool,
-    SearchContactsTool,
-    UpdateContactNoteTool,
-    UpdateDailyNoteTool,
-)
 
 
 __all__ = [
@@ -40,9 +30,5 @@ __all__ = [
     "ContactStore",
     "ContactView",
     "format_contact_block",
-    "AddContactTool",
-    "AddContactNoteTool",
-    "UpdateContactNoteTool",
-    "DeleteContactNoteTool",
-    "SearchContactsTool",
+    "format_daily_note_block",
 ]

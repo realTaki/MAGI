@@ -48,7 +48,7 @@ from magi.tools.base import (
 )
 
 
-logger = logging.getLogger("magi.agent.memory.self.tools")
+logger = logging.getLogger("magi.tools.memory_self")
 
 _WRITE_ROLES = frozenset({"admin", "assigned"})
 

@@ -1,7 +1,7 @@
 """End-to-end TestClient tests for chat sessions (D.6).
 
 Mounts the real FastAPI app, drives ``/api/chat/sessions``
-CRUD + ``/api/chat/send`` with a seed admin + mocked LLM.
+CRUD + ``/api/chat/send`` with a seed admin + mocked durable submission.
 
 The session file persistence lives in a per-test temp
 workspace (the workspace root), so every test gets a
@@ -21,10 +21,6 @@ from sqlalchemy import select
 from magi.agent.memory.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import Contact, init_orm, open_session
-
-# A fake LLM reply used when we monkey-patch ``handle_message``
-# for the duration of a test that exercises ``/api/chat/send``.
-_FAKE_REPLY = "stubbed-from-mock"
 
 # ────────────────────────────────────────────────────────────────── #
 # fixtures
@@ -86,21 +82,13 @@ def admin(state) -> Contact:
 
 @pytest.fixture
 def client(state, admin, monkeypatch) -> TestClient:
-    """The app with ``handle_message`` stubbed so /chat/send doesn't
-    need a real LLM."""
+    """The app with durable agent submission stubbed."""
     from magi.channels.webui.api import chat as chat_mod
-    from magi.agent import loop as agent_mod
 
-    async def fake_handle_message(*args, **kwargs):
-        return _FAKE_REPLY
+    async def fake_submit(*args, **kwargs):
+        return "run-test"
 
-    monkeypatch.setattr(agent_mod, "handle_message", fake_handle_message)
-    # chat.py imported handle_message by name into its module
-    # namespace; the monkey-patch above rebinds the symbol in
-    # ``agent_mod`` so the *next* import would get the fake, but
-    # chat.py already has a reference to the original. Patch
-    # chat's namespace too.
-    monkeypatch.setattr(chat_mod, "handle_message", fake_handle_message)
+    monkeypatch.setattr(chat_mod, "submit_agent_message", fake_submit)
 
     from magi.channels.webui.app import app
     return TestClient(app)
@@ -218,37 +206,18 @@ def test_delete_idempotent(client, admin):
 # ────────────────────────────────────────────────────────────────── #
 
 def test_send_without_session_id_autocreates(client, admin):
-    """Sending without session_id returns a fresh id and persists
-    both user + assistant messages."""
+    """Sending without a session creates it and persists the inbound."""
     r = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
         json={"text": "hello LLM"})
-    # The mocked handle_message returns "" because we haven't
-    # configured credentials to actually flow through. Either
-    # way, the response shape and persistence are what we're
-    # checking.
-    assert r.status_code in (200, 403)  # 403 if creds gate kicks in
-    if r.status_code == 200:
-        body = r.json()
-        assert "reply" in body
-        assert "session_id" in body
-        sid = body["session_id"]
-        # The session file now has at least one user message.
-        store = SessionStore(Path(__file__).resolve().parents[3])
-        # session_path requires the workspace_root to match.
-        # Force-recompute via the global env-var path which
-        # is the one SessionStore uses.
-        # D.23: store key is the operator's uid,
-        # not the delivery_address string the admin cookie carries.
-        s = store.get(admin.id, sid)
-        assert s is not None
-        # Either one user message (if LLM was hit) or user+assistant
-        # (which is the production case). We accept any of those
-        # shapes — the meaningful assertion is that the file is
-        # there and contains at least one message we can identify.
-        roles = [m.role for m in s.messages]
-        assert "user" in roles
+    assert r.status_code == 202
+    body = r.json()
+    assert body["run_id"] == "run-test"
+    sid = body["session_id"]
+    s = SessionStore(os.environ["MAGI_STATE_DIR"]).get(admin.id, sid)
+    assert s is not None
+    assert [m.role for m in s.messages] == ["user"]
 
 def test_send_with_existing_session_id_appends(client, admin):
     """Sending with a known session_id appends to that session."""
@@ -259,19 +228,19 @@ def test_send_with_existing_session_id_appends(client, admin):
         "/api/chat/send",
         cookies=_admin_cookie(admin),
         json={"text": "first", "session_id": sid})
-    assert r.status_code == 200
+    assert r.status_code == 202
     assert r.json()["session_id"] == sid
 
     r2 = client.post(
         "/api/chat/send",
         cookies=_admin_cookie(admin),
         json={"text": "second", "session_id": sid})
-    assert r2.status_code == 200
+    assert r2.status_code == 202
     assert r2.json()["session_id"] == sid
 
     # Persisted: list should still show one session, with
-    # message_count ≥ 2 (or 4 if both inbound+outbound paths
-    # ran).
+    # message_count includes the two inbound messages. Replies are appended
+    # asynchronously by the delivery worker.
     listing = client.get(
         "/api/chat/sessions", cookies=_admin_cookie(admin)
     ).json()
@@ -287,7 +256,7 @@ def test_send_with_unknown_session_id_autocreates(client, admin):
         "/api/chat/send",
         cookies=_admin_cookie(admin),
         json={"text": "hi", "session_id": fake_sid})
-    assert r.status_code == 200
+    assert r.status_code == 202
     body = r.json()
     # New id is different from the supplied stale one.
     assert body["session_id"] != fake_sid

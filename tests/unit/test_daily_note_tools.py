@@ -55,7 +55,7 @@ def state_dir(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_update_daily_note_inserts_first_row(state_dir):
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
     from magi.db.models_contact import ContactNote
 
@@ -74,7 +74,7 @@ async def test_update_daily_note_inserts_first_row(state_dir):
 
 @pytest.mark.asyncio
 async def test_update_daily_note_appends_second_call(state_dir):
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
     from magi.db.models_contact import ContactNote
 
@@ -93,7 +93,7 @@ async def test_update_daily_note_appends_second_call(state_dir):
 
 @pytest.mark.asyncio
 async def test_update_daily_note_rejects_empty_body(state_dir):
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
 
     tool = UpdateDailyNoteTool()
     res = await tool.run(_ctx(str(state_dir)), body_delta="   ")
@@ -103,7 +103,7 @@ async def test_update_daily_note_rejects_empty_body(state_dir):
 
 @pytest.mark.asyncio
 async def test_update_daily_note_rejects_bad_date_format(state_dir):
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
 
     tool = UpdateDailyNoteTool()
     res = await tool.run(
@@ -123,7 +123,7 @@ async def test_update_daily_note_rejects_for_unassigned_contact(state_dir):
     ``admin`` bit so the DB-backed
     ``caller_role_denied_reason`` check sees a non-author."""
     from magi.db import Contact, open_session
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
 
     # Flip the seeded admin's role from "assigned" to "guest"
     # and clear ``admin`` so the in-run role check sees a
@@ -149,7 +149,7 @@ async def test_update_daily_note_admits_admin_with_role_guest(state_dir):
     """``admin=True`` overrides the role enum — a colleague
     operator (``role='guest', admin=True``) can still write
     their own daily notes."""
-    from magi.agent.memory.contacts.tools import UpdateDailyNoteTool
+    from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
     from magi.db.models_contact import ContactNote
 

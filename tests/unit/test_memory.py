@@ -37,7 +37,7 @@ from magi.agent.memory.self import (
     MemoryStore,
     format_memory_block)
 from magi.agent.memory.self.store import MemoryView
-from magi.agent.memory.self.tools import (
+from magi.tools.memory_self import (
     AddMemoryTool,
     CompleteMemoryTool,
     DeleteMemoryTool,

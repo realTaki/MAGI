@@ -19,7 +19,6 @@ from magi.agent.workspace import workspace_root
 from magi.channels import Channel
 from magi.prompts import load_bot_replies
 from magi.db.types import ToolContext
-from magi.tools.edit_retry import EditRetryTracker
 from magi.db.tool_schemas import get_tool_schemas as _get_tool_schemas
 
 logger = logging.getLogger("magi.agent.runtime_context")
@@ -35,8 +34,6 @@ class AgentContext:
     tool_ctx: ToolContext
     tool_schemas: list[dict]
     messages: list[ChatMessage]
-    max_iter: int
-    edit_retry: EditRetryTracker
 
 
 def fallback_reply(key: str = "agent_fallback") -> str:
@@ -103,10 +100,6 @@ def build_context(
         ),
         tool_schemas=_get_tool_schemas(state_dir, caller_role=caller_role),
         messages=build_messages_from_session(state_dir, uid, session_id, text),
-        # Actor turns are intentionally one step; durable continuations own
-        # repeated tool use rather than this context owning a loop.
-        max_iter=1,
-        edit_retry=EditRetryTracker(),
     )
 
 

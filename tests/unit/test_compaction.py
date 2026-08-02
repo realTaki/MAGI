@@ -13,7 +13,7 @@ Three surfaces pinned:
     the trigger heuristic returns plausible numbers for
     the inputs we expect (long session vs short).
 
-  - ``magi.agent.loop._build_messages_from_session``:
+  - ``magi.agent.runtime_context.build_messages_from_session``:
     loads prior-turn messages into ChatMessage order and
     maps roles correctly (system summary at messages[0]
     becomes a ``user`` ChatMessage so Anthropic's wire
@@ -276,11 +276,11 @@ def test_build_messages_from_session_no_session_returns_one_user_msg(
     """First turn of a brand-new conversation has no
     session yet → just the user message."""
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.loop import _build_messages_from_session
+    from magi.agent.runtime_context import build_messages_from_session
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
-    msgs, _seen = _build_messages_from_session(state_dir, 2, None, "hi")
+    msgs = build_messages_from_session(state_dir, 2, None, "hi")
     assert len(msgs) == 1
     assert msgs[0].role == "user"
     assert msgs[0].content == "hi"
@@ -294,7 +294,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     treats a leading user message as prior context.
     """
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.loop import _build_messages_from_session
+    from magi.agent.runtime_context import build_messages_from_session
     from magi.agent.memory.session import SessionStore, SessionMessage
     from magi.db import ChatMessage, open_session
 
@@ -324,7 +324,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
         ))
         db.commit()
 
-    msgs, _seen = _build_messages_from_session(str(fresh_db), 2, sess.session_id, "new")
+    msgs = build_messages_from_session(str(fresh_db), 2, sess.session_id, "new")
 
     # 3 active messages + 1 new = 4 total. Archive excluded.
     assert len(msgs) == 4
@@ -347,7 +347,7 @@ def test_build_messages_from_session_does_not_load_archive(
     """The archive list is NOT loaded — only the active
     ``messages`` list. Operators view archive via
     ``GET /api/chat/sessions/{id}``."""
-    from magi.agent.loop import _build_messages_from_session
+    from magi.agent.runtime_context import build_messages_from_session
     from magi.agent.memory.session import (
         SessionStore,
         SessionMessage,
@@ -371,7 +371,7 @@ def test_build_messages_from_session_does_not_load_archive(
     store._write(sess)
 
     # D.23: store key is uid (int).
-    msgs, _seen = _build_messages_from_session(state_dir, 2, sess.session_id, "new")
+    msgs = build_messages_from_session(state_dir, 2, sess.session_id, "new")
     # 1 active + 1 new = 2, NOT 4 (archive excluded).
     assert len(msgs) == 2
     joined = " ".join(m.content for m in msgs)
@@ -386,7 +386,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     builder still loads them as-is — no summary mapping,
     no archive rows to skip.
     """
-    from magi.agent.loop import _build_messages_from_session
+    from magi.agent.runtime_context import build_messages_from_session
     from magi.agent.memory.session import SessionStore, SessionMessage
 
     store = SessionStore(str(fresh_db))
@@ -397,7 +397,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
                        ts="t", message_id="m1"),
     ])
 
-    msgs, _seen = _build_messages_from_session(str(fresh_db), 2, sess.session_id, "new")
+    msgs = build_messages_from_session(str(fresh_db), 2, sess.session_id, "new")
     assert len(msgs) == 2
     assert msgs[0].role == "user"
     assert msgs[0].content == "legacy msg"
