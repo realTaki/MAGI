@@ -49,7 +49,7 @@ class ChannelMismatchError(SessionError):
     cross-channel by design — the same contact may browse
     their TG history from the WebUI console — but **writes**
     (append_messages, the inbound that triggers
-    handle_message) must come from the owner channel. The
+    agent message) must come from the owner channel. The
     cross-channel race ("two LLM loops writing the same
     session simultaneously") is the failure mode this guard
     closes.

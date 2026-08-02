@@ -351,7 +351,7 @@ class SessionStore:
             # (SessionStore.get) are deliberately NOT gated
             # so the same contact can browse TG history
             # from WebUI; only writes (append + the inbound
-            # that drives handle_message) need the check.
+            # that drives an agent message) need the check.
             if (
                 channel is not None
                 and sess_row.channel

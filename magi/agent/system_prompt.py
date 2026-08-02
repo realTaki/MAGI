@@ -138,10 +138,7 @@ def build_system_prompt(
     )
     from magi.agent.memory.self.prompt import format_memory_block
     from magi.agent.memory.self.store import MemoryStore
-    from magi.tools.skill_loader import (
-        format_skills_block,
-        get_skill_loader,
-    )
+    from magi.skills import format_skills_block, get_skill_metas
     from magi.channels.webui.api.system_settings import (
         get_show_daily_note,
         get_show_daily_note_prompt,
@@ -219,7 +216,7 @@ def build_system_prompt(
             parts.append(daily_block)
 
     # Skills block — last so it caps the prompt.
-    skills_block = format_skills_block(get_skill_loader().list())
+    skills_block = format_skills_block(get_skill_metas())
     if skills_block:
         parts.append(skills_block)
 

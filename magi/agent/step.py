@@ -1,7 +1,6 @@
 """One LLM inference step for the event-driven MAGI actor.
 
-Unlike the legacy ``handle_message`` loop, this module never executes a tool
-and never waits for another MAGI.  Its caller persists the returned assistant
+This module never executes a tool or waits for another MAGI. Its caller persists the returned assistant
 blocks and continuation before scheduling any effects.  Keeping the boundary
 here makes provider streaming and durable continuations an additive change.
 """

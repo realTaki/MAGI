@@ -259,13 +259,9 @@ def run() -> None:
     # Force-initialise the SKILL.md loader so the boot log names
     # every registered skill in one place.
     try:
-        from magi.tools.skill_loader import get_skill_loader
-        loader = get_skill_loader()
-        logger.info(
-            "skills: %d registered (workspace=%s)",
-            len(loader.list()),
-            loader._workspace_root,  # noqa: SLF001
-        )
+        from magi.skills import get_skill_metas
+        metas = get_skill_metas()
+        logger.info("skills: %d registered", len(metas))
     except Exception as e:  # noqa: BLE001
         logger.warning("skills bootstrap skipped: %s", e)
 

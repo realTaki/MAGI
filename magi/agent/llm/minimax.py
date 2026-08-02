@@ -44,7 +44,7 @@ _BASE_URLS: dict[str, str] = {
 # Default model. Operators can override per-contact
 # by extending the Contact model with a model
 # column (the ``contact_model`` argument passed to
-# ``handle_message`` already accepts this).
+# the durable agent message already carries this).
 _DEFAULT_MODEL = "MiniMax-M2.7"
 
 

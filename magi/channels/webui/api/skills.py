@@ -35,7 +35,7 @@ from magi.db import get_session
 from magi.db.settings import state_get, state_set
 from magi.db.engine import require_state_dir
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.tools.skill_loader import get_skill_loader
+from magi.skills import get_skill_metas
 
 logger = logging.getLogger("magi.channels.webui.api.skills")
 
@@ -88,7 +88,7 @@ def list_skills(
     session: Session = Depends(get_session),
 ) -> list[SkillOut]:
     """Enumerate every registered skill."""
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     disabled = _load_disabled()
     return [
         SkillOut(
@@ -113,7 +113,7 @@ def toggle_skill(
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     meta = loader.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
@@ -142,7 +142,7 @@ def get_skill_body(
     """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     meta = loader.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")

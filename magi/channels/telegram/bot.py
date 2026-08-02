@@ -576,7 +576,7 @@ async def _handle_contact_message(
     contact_separated: bool,
     contact_role: str,
 ) -> None:
-    """Route a message from a bound contact through the agent loop.
+    """Route a message from a bound contact into the durable agent inbox.
 
     LLM credentials are resolved from the runtime MAGI row in its direct
     MAGIS database rather than the Contact row — the MAGI owns the
@@ -621,7 +621,7 @@ async def _handle_contact_message(
 
     text = update.effective_message.text or ""
     if not text.strip():
-        # Sticker / photo / voice / etc — the agent loop
+        # Sticker / photo / voice / etc — the agent runtime
         # only handles text in v0. Acknowledge so the user
         # knows we got it but explain the limitation.
         await update.effective_message.reply_text(
@@ -738,7 +738,7 @@ async def _handle_contact_message(
     # back within ~5s — past that, the client hides the
     # indicator. So we fire an immediate ``typing`` then
     # start a 4-second refresh loop in the background;
-    # cancelled the moment ``handle_message`` returns.
+    # cancelled after the inbound has been durably published.
     typing_stop = asyncio.Event()
     typing_task = asyncio.create_task(
         _typing_indicator_loop(
@@ -862,7 +862,7 @@ def _resolve_or_create_tg_session(
 # TG "typing…" action expires after ~5s, so we refresh
 # every 4s while the LLM is thinking. The handler starts
 # this loop in the background just before
-# ``handle_message`` and signals it to stop via the returned
+# durable message publication and signals it to stop via the returned
 # ``stop_event`` — see ``_handle_contact_message``.
 _TYPING_REFRESH_SECONDS = 4.0
 
@@ -951,8 +951,7 @@ def start_bot(state_dir: str) -> threading.Thread | None:
     username = state_get(state_dir, "telegram.bot_username")
     # ``concurrent_updates=True`` lets a follow-up TG message
     # for the same chat enter ``_on_message`` **while** the
-    # previous turn's ``handle_message`` is still in flight
-    # (still looping on tool calls). Without this, the
+    # previous turn's durable run is still in flight. Without this, the
     # python-telegram-bot runtime serialises per-chat updates
     # at the dispatcher level, so a fresh user message that
     # arrives mid-tool-chain sits in the bot's queue until the

@@ -312,7 +312,7 @@ def put_tool_max_iterations(
 
 # D.17 - auto-compact configuration. Three meta keys
 # backed by three helpers. The compaction threshold check
-# happens inside agent.handle_message on every chat
+# happens inside the agent step before every provider
 # turn (before each LLM call); v0 reads the settings fresh
 # on each check so a Save in the UI takes effect
 # immediately on the next inbound message.

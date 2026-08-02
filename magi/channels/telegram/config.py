@@ -10,8 +10,7 @@ Two reactions, one each side of the LLM call
 --------------------------------------------
 ``tg.read_reaction_emoji`` is set on the user's inbound
 message **before** the LLM runs (the "I've seen this and
-I'm working on it" signal). Once ``handle_message`` returns
-and the reply is posted, we re-set the reaction on the
+I'm working on it" signal). Once delivery posts the reply, we re-set the reaction on the
 **same** message using ``tg.done_reaction_emoji`` — TG's
 bot reaction API replaces any prior reaction from the same
 bot on the same message, so the user sees the read-receipt

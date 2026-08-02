@@ -48,7 +48,7 @@ class AgentMessage:
     ``event_id`` is supplied by the producer and is the idempotency key.  The
     durable bus creates a ``run_id`` for the turn, which callers can use to
     wait for a compatible synchronous response during the migration away from
-    direct ``handle_message`` calls.
+    direct synchronous agent calls.
     """
 
     event_id: str
