@@ -1,15 +1,14 @@
 """Auto-compaction for long chat sessions (D.17).
 
-Extracted from :mod:`magi.agent.loop` for the same
-size-budget reason as :mod:`magi.agent.token_usage`:
-the loop module is otherwise dominated by prompt
-building / compaction / token accounting that don't
-read or write any state the loop keeps in locals.
+Kept separate from :mod:`magi.agent.step` for the same
+size-budget reason as :mod:`magi.agent.token_usage`: prompt
+building, compaction, and token accounting do not belong in
+the single provider-step implementation.
 
 Three surfaces pinned:
 
-  - :func:`maybe_compact` — entry called from the agent
-    loop on every chat turn. Estimates the in-memory
+  - :func:`maybe_compact` — entry called before a provider
+    step. Estimates the in-memory
     ``messages`` token cost; if over the configured
     threshold, calls the LLM for a summary and rewrites
     the on-disk session (archive the older entries,
@@ -73,7 +72,7 @@ async def maybe_compact(
     # Lazy import to avoid pulling settings.py at agent
     # module load (the SQLAlchemy dependency inside
     # settings.py would otherwise leak into tests that
-    # only want handle_message).
+    # only want the compaction helpers).
     from magi.channels.webui.api.system_settings import (
         get_compact_context_window,
         get_compact_threshold_pct,

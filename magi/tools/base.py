@@ -113,7 +113,7 @@ class Tool(ABC):
         to permissive (the caller sees the tool), matching
         the historic behaviour of :func:`registry.get_tools`
         before role filtering landed. The production path
-        in :func:`magi.agent.loop.handle_message` always
+        in :class:`magi.agent.worker.AgentWorker` always
         passes an explicit ``caller_role`` (resolved from
         the operator's ``Contact.role``), so an unfiltered
         ``None`` call from production would itself be a bug

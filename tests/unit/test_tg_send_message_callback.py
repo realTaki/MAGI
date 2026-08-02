@@ -1,22 +1,22 @@
 """Regression test for TG inbound → ``send_message`` tool wiring.
 
 D.28 refactor removed the per-call ``tg_send_callback``
-parameter from ``handle_message``. The ``send_message`` tool now
+parameter from the synchronous agent loop. The ``send_message`` tool now
 routes through :func:`magi.channels.dispatcher.send_to_session`,
 which uses the live TG bot instance registered at
 ``save-bot`` time. This test pins the post-refactor contract:
 
-  - The TG inbound handler (``_handle_contact_message``) hands
-    off to ``handle_message`` with the channel + delivery
-    address that the dispatcher needs to route a future
-    ``send_message`` push back to the right chat id.
+  - The TG inbound handler (``_handle_contact_message``) publishes an
+    ``AgentMessage`` with the channel + session metadata needed by the
+    durable workers to route a future ``send_message`` push back to the
+    right chat id.
   - The TG bot is reachable from the same process as the
     ``send_message`` tool (no cross-thread event-loop dance),
     so a tool call dispatched from a TG inbound lands on the
     same bot that received the inbound.
 
 The test:
-  1. Stubs ``handle_message`` itself to capture kwargs.
+  1. Stubs durable submission to capture the published message.
   2. Stubs the typing indicator loop (so we don't kick off a
      real 4-second background task).
   3. Stubs ``enqueue_title_job`` so we don't spawn the worker.
@@ -41,9 +41,8 @@ from magi.channels import Channel
 @pytest.fixture
 def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Real state + workspace dirs, real ORM + sqlite, one
-    contact seeded. The fake ``handle_message`` we install
-    below shortcuts the LLM call so the rest of the path
-    can run end-to-end without external services."""
+    contact seeded. Durable submission is stubbed below so the rest of the
+    path can run end-to-end without external services."""
     state = tmp_path / "state"
     state.mkdir()
     ws = tmp_path / "workspace"
@@ -70,34 +69,24 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_tg_handler_injects_tg_send_callback(
+async def test_tg_handler_publishes_durable_message(
     monkeypatch: pytest.MonkeyPatch, tg_state_dir
 ) -> None:
-    """``_handle_contact_message`` must pass a callable
-    ``tg_send_callback`` to ``handle_message`` — otherwise
-    the LLM's ``send_message`` tool returns the
-    "TG callback not wired" error.
-    """
+    """The inbound handler publishes channel/session context without a
+    synchronous callback into the legacy loop."""
     from magi.channels.telegram import bot as bot_mod
-    from magi.agent import step as step_mod
+    from magi.agent import worker as worker_mod
     from magi.agent.memory.session import auto_title as at_mod
 
-    # 1. Stub ``handle_message`` — capture kwargs.
+    # 1. Stub durable submission — capture the AgentMessage.
     captured: dict = {}
 
-    async def _fake_step(*args, **kwargs):
-        captured.update(kwargs)
-        return step_mod.AgentStepResult(
-            text="fake-reply",
-            tool_uses=(),
-            assistant_blocks=(),
-            provider="test",
-            model="test",
-            usage={},
-            messages=(),
-        )
+    async def _fake_submit(message, *, state_dir):
+        captured["message"] = message
+        captured["state_dir"] = state_dir
+        return "run-test"
 
-    monkeypatch.setattr(step_mod, "run_agent_step", _fake_step)
+    monkeypatch.setattr(worker_mod, "submit_agent_message", _fake_submit)
 
     # 2. Stub the typing loop (real one creates a 4s task).
     async def _fake_typing_loop(*_a, **_kw):
@@ -134,13 +123,9 @@ async def test_tg_handler_injects_tg_send_callback(
         contact_role="assigned",
     )
 
-    # 6. Post-D.28 contract: ``handle_message`` is called with
-    #    the channel + delivery_address that the dispatcher
-    #    needs to route a future ``send_message`` tool call
-    #    back to the right TG chat. No per-call callback.
-    assert captured["channel"] == Channel.TG
-    assert "tg_send_callback" not in captured, (
-        "tg_send_callback was removed in D.28 — the dispatcher "
-        "uses the live bot instance registered at save-bot "
-        "time, so the tool context no longer needs a callback."
-    )
+    # 6. The message carries the durable runtime's channel/session context;
+    #    there is no per-call Telegram callback.
+    message = captured["message"]
+    assert message.channel == Channel.TG
+    assert message.session_id
+    assert message.uid == 1

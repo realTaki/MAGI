@@ -7,7 +7,7 @@
 
 ## 1. Agent Loop — 消息处理主循环
 
-**入口**: `magi/agent/loop.py::handle_message()`
+**入口**: `magi.agent.worker.AgentWorker` → `magi.agent.step.run_agent_step()`
 
 ```
 1. MCP 懒重载 (maybe_reload_mcp_tools)
@@ -70,7 +70,7 @@
 调用链:
   TG bot:    _handle_contact_message → get_provider() (直属 MAGIS DB)
   WebUI:     _resolve_caller_credentials → get_provider() (直属 MAGIS DB)
-  Runner:    execute_task → handle_message → get_provider() (直属 MAGIS DB)
+  Runner:    execute_task → durable agent message → AgentWorker → get_provider() (直属 MAGIS DB)
 ```
 
 **不可改的守卫**:
@@ -138,7 +138,7 @@
 4. 通过后:
    ├─ resolve_or_create_tg_session → 一个 TG 对话一个持久 session
    ├─ SessionStore.append_messages(用户消息) → D.22 守卫
-   └─ handle_message(uid, session_id, channel="tg", caller_role=contact_role)
+   └─ publish AgentMessage(uid, session_id, channel="tg", caller_role=contact_role)
 ```
 
 **Contact.role 枚举 (2024 collapse)**:
@@ -151,7 +151,7 @@
 - `guest` 角色必须被拒绝 (不属于此 MAGI 服务范围,等待管理员提升)
 - `guest` 软自动创建时 admin 必须为 False
 - admin 必须能和 assigned 一样聊天 (不能退化为 v0 的 no-op)
-- 会话持久化必须在 `handle_message` 之前完成
+- 会话持久化必须在发布 `AgentMessage` 之前完成
 
 ---
 
@@ -207,7 +207,7 @@ TelegramAdapter.send(uid, text):
 1. 加载 Task 行 + Contact 凭证
    └─ 无 session_id 的旧行 → 首次触发时分配
 2. 追加 prompt 为新的用户消息到 task 的 session
-3. handle_message(uid, session_id, channel="task")
+3. publish AgentMessage(uid, session_id, channel="task")
 4. Agent 的 send_message 工具通过 dispatcher 推送到指定通道
    └─ 跑者不绑定回调 — 路由完全由工具内部处理
 5. 拉取最新 token_usage → 写入 TaskRun

@@ -338,8 +338,7 @@ def reset_mcp_cache() -> None:
 def maybe_reload_mcp_tools() -> list["Tool"] | None:
     """Re-bootstrap the MCP cache if the table changed.
 
-    Called at the top of every chat turn (see
-    :mod:`magi.agent.loop`). Cheap when the table is
+    Called when the tool worker starts. Cheap when the table is
     untouched — a single ``SELECT MAX(updated_at) FROM
     mcp_servers`` query, no reconnect, no subprocess.
 

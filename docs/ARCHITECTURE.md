@@ -56,7 +56,8 @@ Every architectural choice is an independent configuration axis:
 magi/
 ├── __main__.py     # sole service entry point (`magi runtime` / `magi webui`)
 ├── agent/          # The core runtime — what every MAGI runs
-│   ├── loop.py     # handle_message(): one turn of the agent loop
+│   ├── step.py     # one provider inference step
+│   ├── worker.py   # durable inbox consumer and transition owner
 │   ├── memory/     # Three-layer memory: session, contacts, self
 │   └── llm/        # Provider adapters (Anthropic, Minimax, OpenAI)
 ├── channels/       # How agents connect to the outside world
@@ -94,7 +95,8 @@ adapter and registering it. Core code never changes.
 
 ## Agent Loop
 
-`magi/agent/loop.py::handle_message()`:
+`magi.agent.worker.AgentWorker` consumes durable inputs and invokes
+`magi.agent.step.run_agent_step()`:
 
 1. Validate per-agent credentials (mandatory; no fallback)
 2. Assemble system prompt (SOUL.md persona + memory + contacts + skills)

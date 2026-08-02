@@ -501,7 +501,7 @@ class SessionStore:
 
     def _write(self, session: Session, *, bump_updated: bool = True) -> Session:
         """Persist a (possibly-mutated) ``Session`` back to
-        the DB. Used by :mod:`magi.agent.loop` after
+        the DB. Used by the durable agent runtime after
         auto-compaction rewrites ``session.messages`` and
         ``session.archive``.
 

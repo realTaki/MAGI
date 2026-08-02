@@ -114,6 +114,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "list_files",
         "search_sessions",
         "send_message",
+        "message_magi",
         "schedule_task",
         "load_skill",
         # Shell execution — three tools the LLM uses
@@ -153,6 +154,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         # Model-Context-Protocol servers.
         "add_mcp_server",
         "list_mcp_servers",
+        "update_mcp_server",
         "delete_mcp_server",
     ]
 

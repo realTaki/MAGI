@@ -1,20 +1,16 @@
 """System prompt assembly (D.4 / D.16 prompt-building).
 
-Extracted from :mod:`magi.agent.loop` for the same reason
-as :mod:`magi.agent.token_usage` and
-:mod:`magi.agent.compaction`: the agent loop module is the
-hot path of every chat turn, and prompt assembly
-dominates the file otherwise (a 165-line function that
-the loop only calls once per turn — but isn't readable
-in isolation because the loop's own 400+ lines share the
-file).
+Kept separate from :mod:`magi.agent.step`,
+:mod:`magi.agent.token_usage`, and :mod:`magi.agent.compaction`:
+prompt assembly is reusable and does not belong in the provider-step
+implementation.
 
 Two surfaces pinned:
 
   - :func:`read_soul` — loads ``SOUL.md`` from the
     workspace, falling back to the bundled fallback
     persona when the file is missing or empty. Used by
-    both the agent loop AND
+    both the agent runtime AND
     :mod:`magi.channels.webui.api.soul` (so this module
     is the single point of contact for "what does SOUL.md
     actually mean on disk").

@@ -1,14 +1,10 @@
-"""``token_usage`` row writer — extracted from the agent
-loop for size and testability.
+"""``token_usage`` row writer for the durable agent runtime.
 
 Each successful LLM call writes one row to the
 ``token_usage`` table so the
 ``/api/contacts/{uid}/token-usage`` endpoint can render
 weekly / monthly aggregates. The split from
-:mod:`magi.agent.loop` is purely about file size (the
-loop module was ~1100 lines, well over the 1000-line
-ceiling the team uses) — the function is a pure SQL
-insert with no hidden state from the loop's locals.
+is deliberately a pure SQL insert with no hidden runtime state.
 """
 
 from __future__ import annotations

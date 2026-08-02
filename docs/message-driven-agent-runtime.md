@@ -9,7 +9,7 @@
 ## 背景
 
 旧版 Telegram、WebUI 和 scheduled-task channel 会直接调用连续的
-`magi.agent.loop.handle_message()`。当前实现已改为先持久化输入，再由 Actor 执行
+同步 agent loop。当前实现已改为先持久化输入，再由 Actor 执行
 单次 LLM step；tool/A2A 回执会进入同一 run 的后续 step。
 
 当 A2A 进入运行时，如果仍采用同步调用栈，容易变成：
@@ -100,7 +100,7 @@ agent                        → LLM, memory, tool schemas, bus contracts
 因此禁止以下依赖：
 
 ```text
-channels → agent.handle_message
+channels → bus contracts → agent worker
 tools    → agent loop
 agent    → Telegram / WebUI / A2A 的具体实现
 ```
@@ -417,7 +417,7 @@ Agent A emits a2a.invoke
 ### 阶段 2：Compatibility worker，先解除 channel → agent 耦合
 
 - WebUI、Telegram 和 task channel 改为发布 inbox message；
-- Agent worker 暂时通过兼容 bridge 调用现有 `handle_message()`；
+- Agent worker 已直接调用单次 `agent.step`；
 - 将最终回复写入 delivery outbox，暂时复用现有 dispatcher；
 - 保持已有用户体验，同时验证单 Actor、inbox 和 delivery 语义。
 

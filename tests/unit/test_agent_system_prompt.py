@@ -1,4 +1,4 @@
-"""Tests for :func:`magi.agent.loop._build_system_prompt`.
+"""Tests for :func:`magi.agent.system_prompt.build_system_prompt`.
 
 The agent loop's system prompt is the single most important
 piece of context the LLM sees on every turn. It must
