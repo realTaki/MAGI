@@ -169,6 +169,8 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # exists, so it must not be mounted on the browser-facing control service.
     from magi.channels.webui.api import runtime_access
     app.include_router(runtime_access.router, prefix="/api")
+    from magi.channels.a2a.router import router as a2a_router
+    app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
     # They therefore see only that MAGI's direct MAGIS database, rather than
     # the singleton WebUI's bootstrap database connection.

@@ -11,7 +11,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-InboxKind = Literal["channel.message.received", "task.triggered", "tool.result", "a2a.result"]
+InboxKind = Literal[
+    "channel.message.received",
+    "task.triggered",
+    "tool.result",
+    "tool.failed",
+    "run.steer",
+    "run.cancel",
+    "a2a.request",
+    "a2a.result",
+]
 RunStatus = Literal[
     "queued", "running", "waiting_tool", "waiting_a2a", "completed", "failed", "cancelled"
 ]
@@ -35,6 +44,15 @@ class AgentMessage:
     caller_role: str | None = None
     kind: InboxKind = "channel.message.received"
     source_id: str | None = None
+    # ``conversation_id`` is deliberately separate from a producer event.
+    # A session is the normal conversation identity for WebUI/TG; producers
+    # without sessions may supply their own stable identity.  Keeping it in
+    # the envelope lets the store attach a later human message to a waiting
+    # run without importing a channel implementation.
+    conversation_id: str | None = None
+    correlation_id: str | None = None
+    causation_id: str | None = None
+    target_run_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -47,6 +65,7 @@ class BusClaim:
     kind: str
     payload: dict[str, Any]
     attempts: int
+    conversation_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

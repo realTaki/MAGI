@@ -9,11 +9,12 @@ later phases can replace the continuous tool loop without changing producers.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import uuid
 from contextlib import suppress
 
-from magi.bus import AgentMessage, BusClaim, BusStore, RunResult
+from magi.bus import AgentMessage, BusClaim, BusStore, RunResult, StreamEvent, get_stream_hub
 from magi.db import require_state_dir
 
 logger = logging.getLogger("magi.agent.worker")
@@ -82,6 +83,12 @@ class AgentWorker:
 
     async def _process(self, claim: BusClaim) -> None:
         try:
+            if claim.kind == "run.steer":
+                # Publication already atomically attached the input to its
+                # active run.  This inbox record is only an acknowledgement;
+                # it must not start another inference while tools are running.
+                self.store.complete_agent_input(claim.event_id)
+                return
             if claim.kind == "tool.result":
                 resumed = self.store.load_tool_continuation(claim.run_id)
                 if resumed is None:
@@ -89,11 +96,13 @@ class AgentWorker:
                     return
                 continuation, tool_results = resumed
                 payload = dict(continuation["input"])
+                steering_inputs = self.store.pending_steering_inputs(claim.run_id)
                 await self._advance(
                     claim,
                     payload,
                     continuation_messages=list(continuation["messages"]),
                     tool_results=tool_results,
+                    steering_inputs=steering_inputs or None,
                 )
                 return
             await self._advance(claim, claim.payload)
@@ -112,28 +121,79 @@ class AgentWorker:
         *,
         continuation_messages: list[dict] | None = None,
         tool_results: list[dict] | None = None,
+        steering_inputs: list[dict] | None = None,
     ) -> None:
         from magi.agent.loop import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
         from magi.agent.workspace import workspace_root
 
-        step = await run_agent_step(
-            self.state_dir,
-            text=str(payload.get("text") or ""),
-            channel=str(payload.get("channel") or ""),
-            session_id=payload.get("session_id"),
-            uid=payload.get("uid"),
-            caller_role=payload.get("caller_role"),
-            max_tokens=DEFAULT_MAX_TOKENS,
-            continuation_messages=continuation_messages,
-            tool_results=tool_results,
-        )
+        attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)
+        hub = get_stream_hub()
+        sequence = 1
+        streamed_text = False
+        hub.publish(StreamEvent(claim.run_id, attempt_id, sequence, "llm.started", {}))
+
+        async def _forward_stream_event(event) -> None:
+            nonlocal sequence, streamed_text
+            sequence += 1
+            if event.kind == "text.delta":
+                streamed_text = True
+            hub.publish(
+                StreamEvent(
+                    claim.run_id,
+                    attempt_id,
+                    sequence,
+                    f"llm.{event.kind}",
+                    dict(event.payload),
+                )
+            )
+
+        kwargs = {
+            "text": str(payload.get("text") or ""),
+            "channel": str(payload.get("channel") or ""),
+            "session_id": payload.get("session_id"),
+            "uid": payload.get("uid"),
+            "caller_role": payload.get("caller_role"),
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "continuation_messages": continuation_messages,
+            "tool_results": tool_results,
+        }
+        # Keep the compatibility step call byte-for-byte stable unless there
+        # is actual steering to append.  Older direct callers/tests therefore
+        # remain valid while the new path gets provider-valid ordering.
+        if steering_inputs:
+            kwargs["steering_inputs"] = steering_inputs
+        # Third-party/tests may still replace the compatibility step with the
+        # old call signature.  Native runtime code opts into streaming without
+        # making that migration surface a breaking change.
+        if "on_stream_event" in inspect.signature(run_agent_step).parameters:
+            kwargs["on_stream_event"] = _forward_stream_event
+        try:
+            step = await run_agent_step(self.state_dir, **kwargs)
+        except Exception as exc:
+            self.store.fail_llm_attempt(attempt_id, str(exc))
+            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "llm.failed", {"error": str(exc)}))
+            raise
+        if step.text and not streamed_text:
+            sequence += 1
+            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence, "llm.text.delta", {"text": step.text}))
+        attempt_result = {
+            "text": step.text,
+            "assistant_blocks": list(step.assistant_blocks),
+            "provider": step.provider,
+            "model": step.model,
+            "usage": step.usage,
+        }
         if not step.tool_uses:
             self.store.complete_agent_message(
                 claim.event_id,
                 step.text,
                 delivery_destination=_delivery_destination(self.state_dir, payload),
+                continuation={"messages": list(step.messages), "assistant_blocks": list(step.assistant_blocks)},
+                attempt_id=attempt_id,
+                attempt_result=attempt_result,
             )
+            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
             return
         context = {
             "workspace": str(workspace_root(self.state_dir)),
@@ -147,6 +207,7 @@ class AgentWorker:
             "input": payload,
             "messages": list(step.messages),
             "tool_call_ids": tool_call_ids,
+            "assistant_blocks": list(step.assistant_blocks),
         }
         jobs = [
             {
@@ -157,7 +218,14 @@ class AgentWorker:
             }
             for tool_use in step.tool_uses
         ]
-        self.store.wait_for_tools(claim.event_id, continuation=continuation, jobs=jobs)
+        self.store.wait_for_tools(
+            claim.event_id,
+            continuation=continuation,
+            jobs=jobs,
+            attempt_id=attempt_id,
+            attempt_result=attempt_result,
+        )
+        hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"tool_calls": tool_call_ids}))
 
 
 def _delivery_destination(state_dir: str, payload: dict) -> str | None:

@@ -13,11 +13,19 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from magi.bus.contracts import AgentMessage, BusClaim, DeliveryClaim, RunResult, ToolClaim
-from magi.bus.models import AgentInbox, AgentRun, DeliveryOutbox, RunInput, ToolCall, ToolJob
+from magi.bus.models import (
+    AgentInbox,
+    AgentRun,
+    DeliveryOutbox,
+    LLMAttempt,
+    RunInput,
+    ToolCall,
+    ToolJob,
+)
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
 
@@ -38,6 +46,9 @@ class BusStore:
         Retrying the same producer event is safe: the unique ``event_id``
         returns the original run rather than creating another turn.
         """
+        conversation_id = message.conversation_id or message.session_id or (
+            f"{message.channel}:{message.uid}" if message.uid is not None else None
+        )
         payload = {
             "text": message.text,
             "channel": message.channel,
@@ -45,6 +56,9 @@ class BusStore:
             "uid": message.uid,
             "caller_role": message.caller_role,
             "metadata": message.metadata,
+            "conversation_id": conversation_id,
+            "correlation_id": message.correlation_id or message.event_id,
+            "causation_id": message.causation_id,
         }
         run_id = _new_id("run")
         now = utcnow_naive()
@@ -55,21 +69,51 @@ class BusStore:
             if existing is not None:
                 return existing.run_id
 
-            session.add(
-                AgentRun(
-                    run_id=run_id,
-                    root_event_id=message.event_id,
-                    status="queued",
-                    continuation={"kind": message.kind},
-                    created_at=now,
-                    updated_at=now,
+            active_run = None
+            if message.target_run_id:
+                active_run = session.get(AgentRun, message.target_run_id)
+            elif conversation_id:
+                active_run = session.scalar(
+                    select(AgentRun)
+                    .where(
+                        AgentRun.conversation_id == conversation_id,
+                        AgentRun.status.in_(("running", "waiting_tool", "waiting_a2a")),
+                    )
+                    .order_by(AgentRun.created_at.desc())
+                    .limit(1)
                 )
-            )
+            # A normal message for an active conversation is steering input.
+            # Its inbox row remains a durable acknowledgement item, while the
+            # run_input is already attached in this same transaction so a
+            # tool result arriving first still sees it.
+            is_steer = active_run is not None and message.kind == "channel.message.received"
+            if active_run is not None:
+                run_id = active_run.run_id
+            else:
+                session.add(
+                    AgentRun(
+                        run_id=run_id,
+                        root_event_id=message.event_id,
+                        conversation_id=conversation_id,
+                        correlation_id=message.correlation_id or message.event_id,
+                        status="queued",
+                        continuation={"kind": message.kind},
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            received_seq = (
+                session.scalar(select(func.max(RunInput.received_seq)).where(RunInput.run_id == run_id))
+                or 0
+            ) + 1
             session.add(
                 AgentInbox(
                     event_id=message.event_id,
                     run_id=run_id,
-                    kind=message.kind,
+                    conversation_id=conversation_id,
+                    correlation_id=message.correlation_id or message.event_id,
+                    causation_id=message.causation_id,
+                    kind="run.steer" if is_steer else message.kind,
                     source_id=message.source_id,
                     payload=payload,
                     status="pending",
@@ -82,8 +126,10 @@ class BusStore:
                 RunInput(
                     run_id=run_id,
                     event_id=message.event_id,
-                    kind=message.kind,
+                    kind="run.steer" if is_steer else message.kind,
                     payload=payload,
+                    received_seq=received_seq,
+                    status="pending",
                     created_at=now,
                 )
             )
@@ -113,15 +159,25 @@ class BusStore:
         now = utcnow_naive()
         until = now + timedelta(seconds=lease_seconds)
         with open_session(self._state_dir) as session:
-            row = session.scalar(
-                select(AgentInbox)
-                .where(
-                    AgentInbox.status.in_(("pending", "retry")),
-                    AgentInbox.available_at <= now,
-                )
-                .order_by(AgentInbox.id)
+            active_run = session.scalar(
+                select(AgentRun)
+                .where(AgentRun.status.in_(("running", "waiting_tool", "waiting_a2a")))
+                .order_by(AgentRun.started_at, AgentRun.created_at)
                 .limit(1)
             )
+            query = select(AgentInbox).where(
+                AgentInbox.status.in_(("pending", "retry")),
+                AgentInbox.available_at <= now,
+            )
+            if active_run is not None:
+                query = query.where(AgentInbox.run_id == active_run.run_id)
+            else:
+                # Do not resurrect stale result/steering events from a run
+                # which is already terminal; only root queued runs may start.
+                query = query.outerjoin(AgentRun, AgentInbox.run_id == AgentRun.run_id).where(
+                    or_(AgentRun.status == "queued", AgentRun.run_id.is_(None))
+                )
+            row = session.scalar(query.order_by(AgentInbox.id).limit(1))
             if row is None:
                 return None
             row.status = "processing"
@@ -141,10 +197,18 @@ class BusStore:
                 kind=row.kind,
                 payload=dict(row.payload),
                 attempts=row.attempts,
+                conversation_id=row.conversation_id,
             )
 
     def complete_agent_message(
-        self, event_id: str, reply: str, *, delivery_destination: str | None = None
+        self,
+        event_id: str,
+        reply: str,
+        *,
+        delivery_destination: str | None = None,
+        continuation: dict[str, Any] | None = None,
+        attempt_id: str | None = None,
+        attempt_result: dict[str, Any] | None = None,
     ) -> None:
         """Mark a leased agent input and its run terminally successful."""
         now = utcnow_naive()
@@ -179,12 +243,64 @@ class BusStore:
                                 updated_at=now,
                             )
                         )
+                elif channel == "a2a":
+                    metadata = dict(row.payload.get("metadata") or {})
+                    target_magic_id = metadata.get("from_magic_id")
+                    if target_magic_id is not None:
+                        delivery_id = f"delivery:{run.run_id}"
+                        if session.scalar(
+                            select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
+                        ) is None:
+                            session.add(
+                                DeliveryOutbox(
+                                    delivery_id=delivery_id,
+                                    run_id=run.run_id,
+                                    channel="a2a",
+                                    destination=str(target_magic_id),
+                                    payload={
+                                        "text": reply,
+                                        "reply_to": metadata.get("reply_to"),
+                                        "correlation_id": run.correlation_id,
+                                    },
+                                    status="pending",
+                                    available_at=now,
+                                    created_at=now,
+                                    updated_at=now,
+                                )
+                            )
                 run.status = "completed"
                 run.result = {"reply": reply, "delivery_id": delivery_id}
+                if continuation is not None:
+                    run.continuation = continuation
+                run.version += 1
                 run.error_code = None
                 run.error_detail = None
                 run.completed_at = now
                 run.updated_at = now
+            if attempt_id:
+                attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
+                if attempt is not None:
+                    attempt.status = "completed"
+                    attempt.response = attempt_result or {"text": reply}
+                    attempt.completed_at = now
+            # Every durable input attached to this now-terminal run has been
+            # represented in the committed continuation.  Acknowledge them
+            # together so a duplicate late tool-result cannot start a new turn.
+            for pending in session.scalars(
+                select(AgentInbox).where(
+                    AgentInbox.run_id == row.run_id,
+                    AgentInbox.status.in_(("pending", "retry", "processing")),
+                )
+            ):
+                pending.status = "completed"
+                pending.leased_by = None
+                pending.leased_until = None
+                pending.updated_at = now
+            for input_row in session.scalars(
+                select(RunInput).where(RunInput.run_id == row.run_id, RunInput.status != "consumed")
+            ):
+                input_row.status = "consumed"
+                input_row.context_seq = input_row.received_seq
             session.commit()
 
     def claim_next_delivery(
@@ -218,6 +334,39 @@ class BusStore:
                 payload=dict(row.payload),
                 attempts=row.attempts,
             )
+
+    def enqueue_delivery(
+        self,
+        *,
+        channel: str,
+        destination: str | None,
+        payload: dict[str, Any],
+        run_id: str | None = None,
+        delivery_id: str | None = None,
+    ) -> str:
+        """Write a generic delivery effect before any external I/O."""
+        delivery_id = delivery_id or _new_id("delivery")
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            existing = session.scalar(
+                select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
+            )
+            if existing is None:
+                session.add(
+                    DeliveryOutbox(
+                        delivery_id=delivery_id,
+                        run_id=run_id,
+                        channel=channel,
+                        destination=destination,
+                        payload=payload,
+                        status="pending",
+                        available_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                session.commit()
+        return delivery_id
 
     def complete_delivery(self, delivery_id: str) -> None:
         now = utcnow_naive()
@@ -260,12 +409,30 @@ class BusStore:
             row.updated_at = utcnow_naive()
             session.commit()
 
+    def pending_steering_inputs(self, run_id: str) -> list[dict[str, Any]]:
+        """Return active-run user steering inputs in durable receive order.
+
+        This is intentionally read from ``run_inputs`` rather than inbox
+        claim order: a tool result may be claimed before its steering inbox
+        acknowledgement, but the provider transcript must still put every
+        tool result before every steering message.
+        """
+        with open_session(self._state_dir) as session:
+            rows = session.scalars(
+                select(RunInput)
+                .where(RunInput.run_id == run_id, RunInput.kind == "run.steer", RunInput.status == "pending")
+                .order_by(RunInput.received_seq, RunInput.id)
+            )
+            return [dict(row.payload) for row in rows]
+
     def wait_for_tools(
         self,
         event_id: str,
         *,
         continuation: dict[str, Any],
         jobs: list[dict[str, Any]],
+        attempt_id: str | None = None,
+        attempt_result: dict[str, Any] | None = None,
     ) -> None:
         """Atomically persist a continuation and enqueue its tool effects."""
         now = utcnow_naive()
@@ -282,7 +449,14 @@ class BusStore:
             row.updated_at = now
             run.status = "waiting_tool"
             run.continuation = continuation
+            run.version += 1
             run.updated_at = now
+            if attempt_id:
+                attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
+                if attempt is not None:
+                    attempt.status = "completed"
+                    attempt.response = attempt_result or {}
+                    attempt.completed_at = now
             for job_data in jobs:
                 tool_call_id = str(job_data["tool_call_id"])
                 if session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)):
@@ -314,6 +488,35 @@ class BusStore:
                     )
                 )
             session.commit()
+
+    def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
+        """Persist an inference lifecycle record before external LLM I/O."""
+        attempt_id = _new_id("llm")
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            session.add(
+                LLMAttempt(
+                    attempt_id=attempt_id,
+                    run_id=run_id,
+                    inbox_event_id=inbox_event_id,
+                    phase="agent.step",
+                    status="started",
+                    started_at=now,
+                )
+            )
+            session.commit()
+        return attempt_id
+
+    def fail_llm_attempt(self, attempt_id: str, error: str) -> None:
+        """Record a failed/incomplete inference without committing a draft."""
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
+            if attempt is not None:
+                attempt.status = "failed"
+                attempt.error = {"detail": error}
+                attempt.completed_at = now
+                session.commit()
 
     def load_tool_continuation(
         self, run_id: str
@@ -386,7 +589,7 @@ class BusStore:
             session.commit()
 
     def recover_expired_leases(self) -> int:
-        """Return abandoned work to the queue after a worker/process crash."""
+        """Return abandoned inbox, tool and delivery work after a crash."""
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
             rows = list(
@@ -408,9 +611,43 @@ class BusStore:
                 if run is not None and run.status == "running":
                     run.status = "queued"
                     run.updated_at = now
-            if rows:
+            tool_rows = list(
+                session.scalars(
+                    select(ToolJob).where(
+                        ToolJob.status == "processing",
+                        ToolJob.leased_until.is_not(None),
+                        ToolJob.leased_until < now,
+                    )
+                )
+            )
+            for row in tool_rows:
+                row.status = "retry"
+                row.leased_by = None
+                row.leased_until = None
+                row.available_at = now
+                row.updated_at = now
+            delivery_rows = list(
+                session.scalars(
+                    select(DeliveryOutbox).where(
+                        DeliveryOutbox.status == "processing",
+                        DeliveryOutbox.leased_until.is_not(None),
+                        DeliveryOutbox.leased_until < now,
+                    )
+                )
+            )
+            for row in delivery_rows:
+                row.status = "retry"
+                row.leased_by = None
+                row.leased_until = None
+                row.available_at = now
+                row.updated_at = now
+            for attempt in session.scalars(select(LLMAttempt).where(LLMAttempt.status.in_(("started", "streaming")))):
+                attempt.status = "interrupted"
+                attempt.error = {"detail": "runtime restarted before commit"}
+                attempt.completed_at = now
+            if rows or tool_rows or delivery_rows:
                 session.commit()
-            return len(rows)
+            return len(rows) + len(tool_rows) + len(delivery_rows)
 
     def get_run_result(self, run_id: str) -> RunResult | None:
         """Read a run state without coupling callers to SQLAlchemy models."""
@@ -530,10 +767,19 @@ class BusStore:
                 tool_call.completed_at = now
             existing = session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id))
             if existing is None:
+                run = session.get(AgentRun, claim.run_id)
+                received_seq = (
+                    session.scalar(
+                        select(func.max(RunInput.received_seq)).where(RunInput.run_id == claim.run_id)
+                    )
+                    or 0
+                ) + 1
                 session.add(
                     AgentInbox(
                         event_id=event_id,
                         run_id=claim.run_id,
+                        conversation_id=run.conversation_id if run is not None else None,
+                        correlation_id=run.correlation_id if run is not None else None,
                         kind="tool.result",
                         source_id=claim.tool_call_id,
                         payload=payload,
@@ -549,6 +795,8 @@ class BusStore:
                         event_id=event_id,
                         kind="tool.result",
                         payload=payload,
+                        received_seq=received_seq,
+                        status="pending",
                         created_at=now,
                     )
                 )

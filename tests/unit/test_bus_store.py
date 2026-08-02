@@ -80,3 +80,42 @@ def test_failure_is_visible_to_a_waiting_producer(bus_store: BusStore) -> None:
     assert result is not None
     assert result.status == "failed"
     assert result.error_code == "magi.llm_credentials_required"
+
+
+def test_same_conversation_message_is_durable_steering_input(bus_store: BusStore) -> None:
+    run_id = bus_store.publish_agent_message(_message("root"))
+    root = bus_store.claim_next_agent_message("agent-worker")
+    assert root is not None
+    bus_store.wait_for_tools(
+        root.event_id,
+        continuation={"input": root.payload, "messages": [], "tool_call_ids": ["call-1"]},
+        jobs=[
+            {
+                "tool_call_id": "call-1",
+                "tool_name": "fake_tool",
+                "arguments": {},
+                "context": {},
+            }
+        ],
+    )
+
+    steered_run = bus_store.publish_agent_message(
+        AgentMessage(
+            event_id="steer-1",
+            text="change the goal",
+            channel="webui",
+            session_id="session-1",
+            uid=7,
+        )
+    )
+    assert steered_run == run_id
+    assert [row["text"] for row in bus_store.pending_steering_inputs(run_id)] == ["change the goal"]
+
+    # A different conversation cannot run in parallel with this actor.
+    bus_store.publish_agent_message(
+        AgentMessage(event_id="other", text="later", channel="webui", session_id="session-2", uid=7)
+    )
+    steer_claim = bus_store.claim_next_agent_message("agent-worker")
+    assert steer_claim is not None
+    assert steer_claim.kind == "run.steer"
+    assert steer_claim.run_id == run_id

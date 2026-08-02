@@ -14,7 +14,9 @@ from magi.bus.contracts import (
     ToolClaim,
 )
 from magi.bus.store import BusStore
+from magi.bus.stream import StreamEvent, StreamHub, get_stream_hub
 
 __all__ = [
-    "AgentMessage", "BusClaim", "BusStore", "DeliveryClaim", "RunResult", "ToolClaim"
+    "AgentMessage", "BusClaim", "BusStore", "DeliveryClaim", "RunResult", "ToolClaim",
+    "StreamEvent", "StreamHub", "get_stream_hub",
 ]

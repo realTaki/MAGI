@@ -47,15 +47,20 @@ class DeliveryWorker:
 
     async def _send(self, claim: DeliveryClaim) -> None:
         try:
-            if claim.channel != "tg" or not claim.destination:
-                raise ValueError(f"unsupported delivery channel: {claim.channel!r}")
-            from magi.channels.telegram.bot import send_text_raw
-            from magi.db.settings import state_get
+            if claim.channel == "tg" and claim.destination:
+                from magi.channels.telegram.bot import send_text_raw
+                from magi.db.settings import state_get
 
-            token = state_get(self.state_dir, "telegram.bot_token")
-            if not token:
-                raise RuntimeError("Telegram is not configured")
-            await send_text_raw(token, int(claim.destination), str(claim.payload.get("text") or ""))
+                token = state_get(self.state_dir, "telegram.bot_token")
+                if not token:
+                    raise RuntimeError("Telegram is not configured")
+                await send_text_raw(token, int(claim.destination), str(claim.payload.get("text") or ""))
+            elif claim.channel == "a2a" and claim.destination:
+                from magi.channels.a2a.transport import send_a2a_delivery
+
+                await send_a2a_delivery(int(claim.destination), claim.delivery_id, claim.payload)
+            else:
+                raise ValueError(f"unsupported delivery channel: {claim.channel!r}")
         except Exception:
             logger.exception("delivery %s failed", claim.delivery_id)
             self.store.retry_delivery(claim.delivery_id)

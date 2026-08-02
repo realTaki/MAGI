@@ -21,6 +21,9 @@ class AgentInbox(Base):
     # A run receives its root input plus later steering/tool/A2A result
     # events, so this is intentionally indexed rather than unique.
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    causation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -38,6 +41,7 @@ class AgentInbox(Base):
         Index("ix_agent_inbox_claim", "status", "available_at", "id"),
         Index("ix_agent_inbox_lease", "status", "leased_until"),
         Index("ix_agent_inbox_run", "run_id", "id"),
+        Index("ix_agent_inbox_conversation", "conversation_id", "id"),
     )
 
 
@@ -46,6 +50,9 @@ class AgentRun(Base):
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     root_event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
     continuation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -58,7 +65,10 @@ class AgentRun(Base):
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
-    __table_args__ = (Index("ix_agent_runs_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_agent_runs_status_created", "status", "created_at"),
+        Index("ix_agent_runs_conversation_status", "conversation_id", "status", "created_at"),
+    )
 
 
 class RunInput(Base):
@@ -69,9 +79,15 @@ class RunInput(Base):
     event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     created_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
-    __table_args__ = (Index("ix_run_inputs_run_created", "run_id", "created_at", "id"),)
+    __table_args__ = (
+        Index("ix_run_inputs_run_created", "run_id", "created_at", "id"),
+        Index("ix_run_inputs_run_status_seq", "run_id", "status", "received_seq"),
+    )
 
 
 class ToolJob(Base):
@@ -158,6 +174,10 @@ class LLMAttempt(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     attempt_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    inbox_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_stream_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     phase: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="started")
     request: Mapped[dict | None] = mapped_column(JSON, nullable=True)

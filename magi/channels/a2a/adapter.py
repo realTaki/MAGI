@@ -37,6 +37,7 @@ scheduled in the deferred-work list in the package docstring.
 from __future__ import annotations
 
 import logging
+import os
 
 from magi.channels import Channel
 
@@ -58,15 +59,21 @@ class A2AAdapter:
     async def send(self, uid: int, text: str) -> None:
         """Push ``text`` to peer ``uid`` (a ``magic.id``).
 
-        Deferred. When implemented, resolves the peer's
-        cluster DNS via ``lookup_im_id`` and POSTs to
-        ``{peer}/a2a/inbox`` with the HMAC-signed body
-        described in the package docstring.
+        Queue a durable A2A delivery.  The delivery worker owns the HTTP
+        request/retry path, so callers never hold an agent stack open while a
+        peer thinks.
         """
-        raise NotImplementedError(
-            "A2AAdapter.send is not implemented yet — see "
-            "magi.channels.a2a docstring for the design and "
-            "deferred work list"
+        from magi.bus import BusStore
+        from magi.db import require_state_dir
+
+        if not text:
+            raise ValueError("A2A messages cannot be empty")
+        if not os.environ.get("MAGI_RUNTIME_ID", "").isdigit():
+            raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
+        BusStore(require_state_dir()).enqueue_delivery(
+            channel=Channel.A2A,
+            destination=str(uid),
+            payload={"text": text, "reply_to": None},
         )
 
     def lookup_im_id(self, uid: int) -> str | None:

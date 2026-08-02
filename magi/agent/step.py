@@ -8,6 +8,7 @@ here makes provider streaming and durable continuations an additive change.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,8 @@ async def run_agent_step(
     max_tokens: int,
     continuation_messages: list[dict[str, Any]] | None = None,
     tool_results: list[dict[str, Any]] | None = None,
+    steering_inputs: list[dict[str, Any]] | None = None,
+    on_stream_event: Callable[[Any], Awaitable[None]] | None = None,
 ) -> AgentStepResult:
     """Run one inference and return effects for the actor to persist.
 
@@ -90,17 +93,27 @@ async def run_agent_step(
             context.messages.append(
                 loop.ChatMessage(role="user", content="", content_blocks=tool_results)
             )
+        # The provider transcript must close every tool_use before an active
+        # run's later human message is added.  The durable bus supplies these
+        # in receive order; no channel-specific intent classification occurs
+        # here.
+        for steering in steering_inputs or ():
+            context.messages.append(
+                loop.ChatMessage(role="user", content=str(steering.get("text") or ""))
+            )
     await loop.maybe_compact(  # noqa: SLF001
         state_dir, uid, session_id, context.messages
     )
-    result = await context.provider.chat(
-        system=loop.build_system_prompt(  # noqa: SLF001
-            state_dir, uid=uid, soul=context.soul
-        ),
-        messages=context.messages,
-        max_tokens=max_tokens,
-        tools=context.tool_schemas,
-    )
+    request = {
+        "system": loop.build_system_prompt(state_dir, uid=uid, soul=context.soul),  # noqa: SLF001
+        "messages": context.messages,
+        "max_tokens": max_tokens,
+        "tools": context.tool_schemas,
+    }
+    if on_stream_event is None:
+        result = await context.provider.chat(**request)
+    else:
+        result = await context.provider.stream(**request, on_event=on_stream_event)
     context.messages.append(
         loop.ChatMessage(
             role="assistant", content=result.text or "", content_blocks=result.raw_blocks or None
