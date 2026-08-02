@@ -516,9 +516,9 @@ def _resolve_system_tz() -> str:
             logger.warning(
                 "schedule_task: stored system.timezone %r is "
                 "not a valid IANA tz; falling back to %s",
-                raw, _system_default_timezone(),
+                raw, system_default_timezone(),
             )
-    return _system_default_timezone()
+    return system_default_timezone()
 
 
 def _now_iso() -> str:

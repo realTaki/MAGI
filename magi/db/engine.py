@@ -162,6 +162,13 @@ def _register_sqlite_pragmas(engine: Engine) -> None:
             # is already in WAL mode; safe to call
             # repeatedly.
             cur.execute("PRAGMA journal_mode=WAL")
+            # ``synchronous=NORMAL`` (design §15): the WAL
+            # frame is fsync'd at commit but the main DB file
+            # is not. SQLite resets ``synchronous`` whenever
+            # ``journal_mode`` changes, so the order matters.
+            # Re-asserting on every new connection is a no-op
+            # on subsequent calls once the value is cached.
+            cur.execute("PRAGMA synchronous=NORMAL")
         finally:
             cur.close()
 
