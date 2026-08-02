@@ -81,7 +81,7 @@ def _build_tools() -> list["Tool"]:
         ReadRecentEmailsTool,
         ReadUpcomingMeetingsTool,
     )
-    from magi.tools.skill_loader_tool import SkillLoaderTool
+    from magi.skills.loader_tool import SkillLoaderTool
     from magi.tools.search_sessions import SearchSessionsTool
     from magi.tools.send_message import SendMessageTool
     from magi.tools.write_file import WriteFileTool

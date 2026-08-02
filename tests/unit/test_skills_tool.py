@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from magi.tools.skill_loader import _reset_for_tests
-from magi.tools.skill_loader_tool import SkillLoaderTool
+from magi.skills.loader import _reset_for_tests
+from magi.skills.loader_tool import SkillLoaderTool
 from magi.tools.base import ToolContext, ToolResult
 
 @pytest.fixture

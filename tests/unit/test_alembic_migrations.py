@@ -15,11 +15,12 @@ fail every ORM operation that touches a column the migration had added.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from magi.db import init_orm, open_session
+from magi.db import init_orm
 
 
 def test_canonical_head_equals_real_head() -> None:
@@ -30,26 +31,45 @@ def test_canonical_head_equals_real_head() -> None:
     new migration un-applied on every boot — the same class of bug
     P0.1 fixed.
     """
-    from magi.db.alembic_runner import CANONICAL_HEAD, _find_alembic_ini
-    from magi.db.engine import _state_dir_from_env
+    from magi.db.alembic_runner import CANONICAL_HEAD, _ALEMBIC_SCRIPT_LOCATION
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    config = Config(str(_find_alembic_ini()))
+    config = Config()
     config.set_main_option(
         "script_location",
-        str(Path(_find_alembic_ini()).parent / "alembic"),
-    )
-    # Set a dummy sqlalchemy.url so Config doesn't choke on an unset URL.
-    config.set_main_option(
-        "sqlalchemy.url",
-        f"sqlite:///{Path(_state_dir_from_env()) / 'magi.db'}",
+        str(_ALEMBIC_SCRIPT_LOCATION),
     )
     heads = set(ScriptDirectory.from_config(config).get_heads())
     assert CANONICAL_HEAD in heads, (
         f"CANONICAL_HEAD={CANONICAL_HEAD!r} is not a terminal revision; "
         f"real heads are {sorted(heads)}. Update the constant."
     )
+
+
+def _raw_alembic_version(db_path: Path) -> str | None:
+    """Read ``alembic_version.version_num`` via a raw sqlite3 connection.
+
+    Bypasses the SQLAlchemy engine so a test can probe the migration
+    state without triggering ``init_orm`` to apply outstanding
+    migrations.
+    """
+    raw = sqlite3.connect(str(db_path))
+    try:
+        row = raw.execute("SELECT version_num FROM alembic_version").fetchone()
+        return row[0] if row is not None else None
+    finally:
+        raw.close()
+
+
+def _columns(db_path: Path, table: str) -> set[str]:
+    raw = sqlite3.connect(str(db_path))
+    try:
+        return {row[1] for row in raw.execute(
+            f"PRAGMA table_info({table})"
+        ).fetchall()}
+    finally:
+        raw.close()
 
 
 def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -> None:
@@ -67,98 +87,56 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
     import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
 
-    # Bootstrap at 0005 (the pre-fix head). The simplest way to land there
-    # is to upgrade just to 0005 and stop — alembic's normal upgrade
-    # would race past it on a fresh DB.
     from alembic.command import upgrade as alembic_upgrade
-    from magi.db.alembic_runner import _find_alembic_ini, _config_for_state_dir
+    from magi.db.alembic_runner import _config_for_state_dir
 
     config = _config_for_state_dir(tmp_path)
     alembic_upgrade(config, "0005_agent_bus")
 
-    # Confirm we are at 0005 before running the full upgrade.
-    with open_session() as db:
-        row = db.execute(
-            __import__("sqlalchemy").text(
-                "SELECT version_num FROM alembic_version"
-            )
-        ).first()
-    assert row is not None and row[0] == "0005_agent_bus"
+    # Confirm we are at 0005 BEFORE any runtime code touches the DB.
+    db_path = tmp_path / "magi.db"
+    assert _raw_alembic_version(db_path) == "0005_agent_bus", (
+        "pre-fix fixture failed: alembic upgrade to 0005 did not land "
+        "where expected"
+    )
 
     # Now run init_orm — this is what production boot does — which calls
     # upgrade_head internally. With the fix it must walk 0006 → 0007 →
     # 0008 and apply every column.
     init_orm(str(tmp_path), seed_root=False)
-
-    with open_session() as db:
-        heads = db.execute(
-            __import__("sqlalchemy").text(
-                "SELECT version_num FROM alembic_version"
-            )
-        ).first()
-    assert heads is not None and heads[0] == "0008_merge_actor_and_auth_heads"
+    assert _raw_alembic_version(db_path) == "0008_merge_actor_and_auth_heads"
 
     # Spot-check that the critical columns added by 0006 and 0007 exist.
     # If any of these fail, the runtime would have crashed at first ORM
     # query against the column.
-    with open_session() as db:
-        cols = {
-            row[1]
-            for row in db.execute(
-                __import__("sqlalchemy").text("PRAGMA table_info(agent_inbox)")
-            ).fetchall()
-        }
-    assert "conversation_id" in cols  # added by 0006
-    assert "correlation_id" in cols
-    assert "causation_id" in cols
+    inbox = _columns(db_path, "agent_inbox")
+    assert "conversation_id" in inbox  # added by 0006
+    assert "correlation_id" in inbox
+    assert "causation_id" in inbox
 
-    with open_session() as db:
-        cols = {
-            row[1]
-            for row in db.execute(
-                __import__("sqlalchemy").text("PRAGMA table_info(run_inputs)")
-            ).fetchall()
-        }
-    assert "received_seq" in cols  # added by 0006
-    assert "context_seq" in cols
-    assert "status" in cols
+    run_inputs = _columns(db_path, "run_inputs")
+    assert "received_seq" in run_inputs  # added by 0006
+    assert "context_seq" in run_inputs
+    assert "status" in run_inputs
 
-    with open_session() as db:
-        cols = {
-            row[1]
-            for row in db.execute(
-                __import__("sqlalchemy").text("PRAGMA table_info(llm_attempts)")
-            ).fetchall()
-        }
-    assert "inbox_event_id" in cols  # added by 0006
-    assert "provider" in cols
-    assert "model" in cols
-    assert "last_stream_seq" in cols
+    llm = _columns(db_path, "llm_attempts")
+    assert "inbox_event_id" in llm  # added by 0006
+    assert "provider" in llm
+    assert "model" in llm
+    assert "last_stream_seq" in llm
 
-    with open_session() as db:
-        cols = {
-            row[1]
-            for row in db.execute(
-                __import__("sqlalchemy").text("PRAGMA table_info(chat_messages)")
-            ).fetchall()
-        }
-    assert "content_blocks" in cols  # added by 0007
-    assert "run_id" in cols
-    assert "llm_attempt_id" in cols
+    chat = _columns(db_path, "chat_messages")
+    assert "content_blocks" in chat  # added by 0007
+    assert "run_id" in chat
+    assert "llm_attempt_id" in chat
 
-    with open_session() as db:
-        cols = {
-            row[1]
-            for row in db.execute(
-                __import__("sqlalchemy").text("PRAGMA table_info(a2a_invocations)")
-            ).fetchall()
-        }
-    assert "tool_call_id" in cols  # added by 0007
-    assert "request_event_id" in cols
-    assert "reply_to" in cols
-    assert "expect_reply" in cols
-    assert "deadline_at" in cols
-    assert "idempotency_key" in cols
+    a2a = _columns(db_path, "a2a_invocations")
+    assert "tool_call_id" in a2a  # added by 0007
+    assert "request_event_id" in a2a
+    assert "reply_to" in a2a
+    assert "expect_reply" in a2a
+    assert "deadline_at" in a2a
+    assert "idempotency_key" in a2a
 
 
 def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
@@ -168,10 +146,4 @@ def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)
 
-    with open_session() as db:
-        row = db.execute(
-            __import__("sqlalchemy").text(
-                "SELECT version_num FROM alembic_version"
-            )
-        ).first()
-    assert row is not None and row[0] == "0008_merge_actor_and_auth_heads"
+    assert _raw_alembic_version(tmp_path / "magi.db") == "0008_merge_actor_and_auth_heads"

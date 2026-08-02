@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.skill_loader import (
+from magi.skills.loader import (
     _process_skill_paths,
     _skill_root_dir_line,
     get_skill_loader,
