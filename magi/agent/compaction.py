@@ -73,7 +73,7 @@ async def maybe_compact(
     # module load (the SQLAlchemy dependency inside
     # settings.py would otherwise leak into tests that
     # only want the compaction helpers).
-    from magi.channels.webui.api.system_settings import (
+    from magi.db.runtime_settings import (
         get_compact_context_window,
         get_compact_threshold_pct,
         get_compact_keep_recent,

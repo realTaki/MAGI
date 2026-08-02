@@ -62,7 +62,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.channels.webui.api.chat_search import (
+from magi.agent.memory.session.search import (
     SearchUnavailable,
     search_chat_history,
 )

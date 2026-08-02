@@ -497,8 +497,8 @@ def _resolve_system_tz() -> str:
     """
     import os
 
-    from magi.channels.webui.api.system_settings import (
-        _system_default_timezone,
+    from magi.db.runtime_settings import (
+        system_default_timezone,
     )
 
     raw = state_get(

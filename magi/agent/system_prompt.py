@@ -139,7 +139,7 @@ def build_system_prompt(
     from magi.agent.memory.self.prompt import format_memory_block
     from magi.agent.memory.self.store import MemoryStore
     from magi.skills import format_skills_block, get_skill_metas
-    from magi.channels.webui.api.system_settings import (
+    from magi.db.runtime_settings import (
         get_show_daily_note,
         get_show_daily_note_prompt,
     )
