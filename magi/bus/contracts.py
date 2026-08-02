@@ -62,6 +62,18 @@ class ToolClaim:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryClaim:
+    """A leased committed reply awaiting channel delivery."""
+
+    delivery_id: str
+    run_id: str | None
+    channel: str
+    destination: str | None
+    payload: dict[str, Any]
+    attempts: int
+
+
+@dataclass(frozen=True, slots=True)
 class RunResult:
     """The terminal or in-progress state of an agent run."""
 

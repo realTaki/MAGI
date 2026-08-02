@@ -129,7 +129,11 @@ class AgentWorker:
             tool_results=tool_results,
         )
         if not step.tool_uses:
-            self.store.complete_agent_message(claim.event_id, step.text)
+            self.store.complete_agent_message(
+                claim.event_id,
+                step.text,
+                delivery_destination=_delivery_destination(self.state_dir, payload),
+            )
             return
         context = {
             "workspace": str(workspace_root(self.state_dir)),
@@ -154,6 +158,16 @@ class AgentWorker:
             for tool_use in step.tool_uses
         ]
         self.store.wait_for_tools(claim.event_id, continuation=continuation, jobs=jobs)
+
+
+def _delivery_destination(state_dir: str, payload: dict) -> str | None:
+    """Resolve a TG session address without importing a Telegram client."""
+    if payload.get("channel") != "tg" or not payload.get("session_id"):
+        return None
+    from magi.agent.memory.session import SessionStore
+
+    session = SessionStore(state_dir).get(payload.get("uid"), payload["session_id"])
+    return session.delivery_address if session is not None else None
 
 
 def _error_code(exc: Exception) -> str:

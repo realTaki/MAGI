@@ -16,8 +16,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from magi.bus.contracts import AgentMessage, BusClaim, RunResult, ToolClaim
-from magi.bus.models import AgentInbox, AgentRun, RunInput, ToolCall, ToolJob
+from magi.bus.contracts import AgentMessage, BusClaim, DeliveryClaim, RunResult, ToolClaim
+from magi.bus.models import AgentInbox, AgentRun, DeliveryOutbox, RunInput, ToolCall, ToolJob
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
 
@@ -143,7 +143,9 @@ class BusStore:
                 attempts=row.attempts,
             )
 
-    def complete_agent_message(self, event_id: str, reply: str) -> None:
+    def complete_agent_message(
+        self, event_id: str, reply: str, *, delivery_destination: str | None = None
+    ) -> None:
         """Mark a leased agent input and its run terminally successful."""
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
@@ -156,12 +158,94 @@ class BusStore:
             row.updated_at = now
             run = session.get(AgentRun, row.run_id)
             if run is not None:
+                delivery_id = None
+                channel = str(row.payload.get("channel") or "")
+                if channel == "tg" and delivery_destination:
+                    delivery_id = f"delivery:{run.run_id}"
+                    existing_delivery = session.scalar(
+                        select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
+                    )
+                    if existing_delivery is None:
+                        session.add(
+                            DeliveryOutbox(
+                                delivery_id=delivery_id,
+                                run_id=run.run_id,
+                                channel="tg",
+                                destination=delivery_destination,
+                                payload={"text": reply},
+                                status="pending",
+                                available_at=now,
+                                created_at=now,
+                                updated_at=now,
+                            )
+                        )
                 run.status = "completed"
-                run.result = {"reply": reply}
+                run.result = {"reply": reply, "delivery_id": delivery_id}
                 run.error_code = None
                 run.error_detail = None
                 run.completed_at = now
                 run.updated_at = now
+            session.commit()
+
+    def claim_next_delivery(
+        self, worker_id: str, *, lease_seconds: int = 60
+    ) -> DeliveryClaim | None:
+        """Lease one committed channel delivery for external I/O."""
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(
+                select(DeliveryOutbox)
+                .where(
+                    DeliveryOutbox.status.in_(("pending", "retry")),
+                    DeliveryOutbox.available_at <= now,
+                )
+                .order_by(DeliveryOutbox.id)
+                .limit(1)
+            )
+            if row is None:
+                return None
+            row.status = "processing"
+            row.leased_by = worker_id
+            row.leased_until = now + timedelta(seconds=lease_seconds)
+            row.attempts += 1
+            row.updated_at = now
+            session.commit()
+            return DeliveryClaim(
+                delivery_id=row.delivery_id,
+                run_id=row.run_id,
+                channel=row.channel,
+                destination=row.destination,
+                payload=dict(row.payload),
+                attempts=row.attempts,
+            )
+
+    def complete_delivery(self, delivery_id: str) -> None:
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(
+                select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
+            )
+            if row is None:
+                raise KeyError(f"unknown delivery: {delivery_id}")
+            row.status = "delivered"
+            row.leased_by = None
+            row.leased_until = None
+            row.updated_at = now
+            session.commit()
+
+    def retry_delivery(self, delivery_id: str, *, delay_seconds: int = 5) -> None:
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(
+                select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
+            )
+            if row is None:
+                raise KeyError(f"unknown delivery: {delivery_id}")
+            row.status = "retry"
+            row.leased_by = None
+            row.leased_until = None
+            row.available_at = now + timedelta(seconds=delay_seconds)
+            row.updated_at = now
             session.commit()
 
     def complete_agent_input(self, event_id: str) -> None:

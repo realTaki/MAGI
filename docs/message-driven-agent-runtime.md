@@ -1,8 +1,8 @@
 # 消息驱动的 MAGI Actor Runtime（讨论草案）
 
 > 状态：Phase 1–4 的核心已实现：私有 SQLite bus、lease recovery、串行
-> `AgentWorker`、单次 `agent.step` 和异步 `ToolWorker`。streaming、可靠
-> delivery sender 与 A2A transport 尚未实现；旧 `handle_message()` 仅保留给
+> `AgentWorker`、单次 `agent.step`、异步 `ToolWorker` 和 Telegram delivery sender。
+> streaming 与 A2A transport 尚未实现；旧 `handle_message()` 仅保留给
 > 直接调用它的历史内部测试/兼容场景，Worker 不再依赖它。
 > 已审阅并吸收 v1.1 的首版实现决策；详细的 schema、streaming 和验收规范见
 > [MAGI_single_agent_event_driven_runtime_design.md](MAGI_single_agent_event_driven_runtime_design.md)。

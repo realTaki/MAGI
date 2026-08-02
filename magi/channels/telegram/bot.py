@@ -23,9 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
-from typing import Optional
 
 from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
@@ -40,9 +38,9 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # lazy import + per-process cache in ``prompts/__init__.py``
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
-from magi.prompts import load_bot_replies  # noqa: E402
-from magi.db.engine import require_state_dir  # noqa: E402
 from magi.channels import Channel  # noqa: E402
+from magi.db.engine import require_state_dir  # noqa: E402
+from magi.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
 # messages, which is fine — values are templates, not
@@ -60,12 +58,12 @@ _BOT_REPLIES: dict[str, str] | None = None
 # ``set_telegram_bot`` is called once at the start of
 # :func:`start_bot`; ``clear_telegram_bot`` at the matching
 # shutdown so a re-bind doesn't hold a stale reference.
-_telegram_bot_instance: "telegram.Bot | None" = None
+_telegram_bot_instance: telegram.Bot | None = None
 _telegram_bot_lock = threading.Lock()
 _telegram_start_lock = threading.Lock()
 _telegram_bot_thread: threading.Thread | None = None
-_telegram_app: "Application | None" = None
-_telegram_shutdown_event: "asyncio.Event | None" = None
+_telegram_app: Application | None = None
+_telegram_shutdown_event: asyncio.Event | None = None
 
 
 def set_telegram_bot(bot) -> None:
@@ -421,7 +419,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 def _auto_create_stranger_contact(
-    state_dir: str, tgid: str, display_name: Optional[str],
+    state_dir: str, tgid: str, display_name: str | None,
 ) -> tuple[int, str, str, bool, str | None, str | None] | None:
     """Create a Contact row for an unknown tgid on first message.
 
@@ -438,7 +436,7 @@ def _auto_create_stranger_contact(
     """
     from sqlalchemy.exc import IntegrityError
 
-    from magi.db import Contact, open_session, require_state_dir
+    from magi.db import Contact, open_session
     from magi.db.base import utcnow_naive
     from magi.db.models_contact import SOURCE_SYSTEM
 
@@ -514,7 +512,7 @@ def _find_contact_by_telegram_id(
     """
     from sqlalchemy import select
 
-    from magi.db import Contact, open_session, require_state_dir
+    from magi.db import Contact, open_session
     from magi.db.settings import state_get
 
     try:
@@ -600,14 +598,14 @@ async def _handle_contact_message(
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.agent.worker import submit_and_wait_agent_message
-    from magi.bus import AgentMessage
     from magi.agent.memory.session import (
         SessionMessage,
         SessionStore,
         new_session_id,
         utcnow_iso,
     )
+    from magi.agent.worker import submit_and_wait_agent_message
+    from magi.bus import AgentMessage
 
     # LLM credentials remain local to the agent. Telegram only publishes a
     # durable input and never receives provider credentials.
@@ -817,7 +815,10 @@ async def _handle_contact_message(
             session_id,
         )
 
-    await update.effective_message.reply_text(reply)
+    # The committed reply is now delivered by ``DeliveryWorker`` from the
+    # durable outbox. Do not send it directly here: a crash after a direct
+    # Bot API call but before a DB acknowledgement would otherwise duplicate
+    # or lose the reply on recovery.
 
     # -- done-receipt reaction -----------------------------------------
     # Telegram replaces any prior bot reaction on the same
@@ -853,7 +854,7 @@ async def _handle_contact_message(
 
 
 def _resolve_or_create_tg_session(
-    store: "SessionStore",
+    store: SessionStore,
     delivery_address: str,
     uid: int,
 ) -> str:
@@ -930,7 +931,7 @@ _TYPING_REFRESH_SECONDS = 4.0
 async def _typing_indicator_loop(
     bot,
     chat_id: int,
-    stop_event: "asyncio.Event",  # noqa: F821 — forward ref avoids an extra import
+    stop_event: asyncio.Event,  # noqa: F821 — forward ref avoids an extra import
 ) -> None:
     """Send ``send_chat_action(typing)`` every 4s until
     ``stop_event`` is set, or 30s elapses, whichever comes
@@ -974,12 +975,12 @@ async def _typing_indicator_loop(
             )
             # stop_event set → reply ready, exit.
             return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Refresh period elapsed; loop and re-send.
             continue
 
 
-def start_bot(state_dir: str) -> Optional[threading.Thread]:
+def start_bot(state_dir: str) -> threading.Thread | None:
     """Start the Telegram bot in a daemon thread. Returns the thread, or
     ``None`` if no bot token is saved yet (so the user hasn't completed
     step 1 of the onboarding wizard).
