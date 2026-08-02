@@ -309,6 +309,13 @@ class MeResponse(BaseModel):
     admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
     assigned: bool = False
     selected_magic_id: int | None = None
+    # ``login_methods`` + ``password_set`` mirror the
+    # :class:`AuthCredential` table + the bound IM. The
+    # Settings → Security card renders the form from
+    # these; the LoginPage uses ``/api/auth/login-methods``
+    # so it doesn't need a valid session.
+    login_methods: list[str] = []
+    password_set: bool = False
 
     # D.24: the cookie is keyed by ``uid``, not
     # the per-channel delivery address. The response
@@ -856,6 +863,8 @@ async def me(
             telegram_id=contact.telegram_id,
             display_name=contact.name,
             admin=bool(contact.admin),
+            login_methods=_login_methods_for(contact.id)[0],
+            password_set="password" in _login_methods_for(contact.id)[0],
         )
     except Exception:
         # Defensive: a transient DB hiccup shouldn't

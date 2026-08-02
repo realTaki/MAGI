@@ -29,7 +29,16 @@ export function Step2View(props: {
   initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;
   onBack: () => void;
   onComplete: (data: OnboardingData) => void;
+  /** ``"with_tg"`` (default) runs the original TG-code flow.
+   *  ``"webui_only"`` shows a name + password form, calls
+   *  ``/api/onboarding/set-admin-password``, and lands on
+   *  the same Step3 summary. */
+  mode?: "with_tg" | "webui_only";
 }) {
+  if (props.mode === "webui_only") {
+    return <Step2WebUIOnly onBack={props.onBack} onComplete={props.onComplete} />;
+  }
+
   const sendMut = useSendAdminCode();
   const verifyMut = useVerifyAdminCode();
   const saveMut = useSaveAdmin();
@@ -368,3 +377,146 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
       );
   }
 }
+
+
+// -- WebUI-only variant ---------------------------------------------------
+//
+// Collects the first admin's name + password and writes
+// them via ``/api/onboarding/set-admin-password``. The
+// resulting Step 3 data carries the chosen admin name so
+// the dashboard's greeting lands on something useful.
+
+function Step2WebUIOnly(props: {
+  onBack: () => void;
+  onComplete: (data: OnboardingData) => void;
+}) {
+  const t = useT();
+  const setMut = useSetAdminPassword();
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const tooShort = !!password && password.length < 8;
+  const mismatch = !!confirm && confirm !== password;
+  const canSubmit = !!name.trim() && !!password && !tooShort && !mismatch && !busy;
+
+  async function handleSubmit() {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await setMut.mutateAsync({
+        name: name.trim(),
+        password,
+      });
+      if (res.ok) {
+        // The wizard's Step3 carries an empty bot +
+        // superAdmins to satisfy the existing shape;
+        // a separate render path on Step3 handles the
+        // "webui_only" case. The unused fields are
+        // ok — the App-level `onComplete` uses the
+        // data argument only as a "wizard done" signal.
+        props.onComplete({
+          bot: { token: "", username: "" },
+          superAdmins: [
+            { telegramId: "", displayName: name.trim() },
+          ],
+        });
+      } else {
+        setError(res.error ?? t("onboarding.webuiOnlySaveFailed"));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("onboarding.webuiOnlySaveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink">
+        {t("onboarding.step2WebuiOnlyTitle")}
+      </h1>
+      <p className="mt-2 text-ink-soft">
+        {t("onboarding.step2WebuiOnlyDesc")}
+      </p>
+
+      <div className="mt-6 space-y-4 max-w-md">
+        <div>
+          <label htmlFor="admin-name" className="block text-sm font-medium text-sky-deep mb-1">
+            {t("onboarding.webuiOnlyNameLabel")}
+          </label>
+          <input
+            id="admin-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
+            className="form-input w-full text-base py-3 px-4"
+          />
+        </div>
+        <div>
+          <label htmlFor="admin-password" className="block text-sm font-medium text-sky-deep mb-1">
+            {t("onboarding.webuiOnlyPasswordLabel")}
+          </label>
+          <input
+            id="admin-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
+            autoComplete="new-password"
+            className="form-input w-full text-base py-3 px-4"
+          />
+          <p className="mt-1 text-xs text-ink-soft">
+            {t("onboarding.webuiOnlyPasswordHint")}
+          </p>
+        </div>
+        <div>
+          <label htmlFor="admin-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
+            {t("onboarding.webuiOnlyConfirmLabel")}
+          </label>
+          <input
+            id="admin-password-confirm"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+            className="form-input w-full text-base py-3 px-4"
+          />
+        </div>
+        {tooShort && (
+          <p className="text-xs text-amber-700">
+            {t("onboarding.webuiOnlyPasswordHint")}
+          </p>
+        )}
+        {mismatch && (
+          <p className="form-error">
+            {t("onboarding.webuiOnlyPasswordMismatch")}
+          </p>
+        )}
+        {error && <p className="form-error">✗ {error}</p>}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="btn btn-primary px-5 py-2.5"
+          >
+            {busy ? t("onboarding.webuiOnlySaving") : t("onboarding.webuiOnlySave")}
+          </button>
+          <button
+            type="button"
+            onClick={props.onBack}
+            className="btn btn-ghost px-4 py-2.5"
+          >
+            {t("common.back")}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+

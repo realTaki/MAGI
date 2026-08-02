@@ -504,6 +504,25 @@ export function useSendAdminCode() {
   });
 }
 
+// WebUI-only onboarding step 2 — write the first admin
+// row + a password credential in one shot. Used when
+// the wizard's first step picked "WebUI only" instead of
+// "Telegram". The response carries the new admin uid so
+// the wizard's Step3 summary can render the real name.
+export function useSetAdminPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; password: string }) =>
+      apiFetch<{ ok: boolean; error?: string; admin_uid?: number | null }>(
+        "/api/onboarding/set-admin-password",
+        { method: "POST", body: payload },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
+    },
+  });
+}
+
 export function useVerifyAdminCode() {
   return useMutation({
     mutationFn: (payload: { tgid: string; code: string }) =>
@@ -1026,3 +1045,47 @@ export function useDeleteTaskPreset() {
     },
   });
 }
+
+// -- Password login helpers (single-runtime / direct WebUI) --
+//
+// The control-plane login flow lives in
+// ``useTargetLoginAccounts`` / ``useSendTargetLoginCode``
+// above — those proxy to a target MAGI runtime. The
+// password login endpoints live in the WebUI process —
+// they don't go through ``runtime_proxy`` because the
+// cookie is created on the WebUI side, not the target.
+// The two surfaces co-exist: a control-plane deployment
+// can still let the operator choose password (on the
+// target runtime) once a target-version of these
+// endpoints lands.
+
+export interface LoginMethodsResponse {
+  uid: number;
+  methods: string[];
+  is_webui_only: boolean;
+}
+
+export function useLoginMethods(uid: number | null) {
+  return useQuery({
+    queryKey: ["auth", "login-methods", uid] as const,
+    queryFn: () =>
+      apiFetch<LoginMethodsResponse>(
+        `/api/auth/login-methods?uid=${uid ?? 0}`,
+      ),
+    enabled: uid != null && uid > 0,
+  });
+}
+
+export function useLoginPassword() {
+  return useMutation({
+    mutationFn: (vars: { uid: number; password: string }) =>
+      apiFetch<{ ok: boolean; error?: string; retry_after?: number | null }>(
+        "/api/auth/login-password",
+        {
+          method: "POST",
+          body: JSON.stringify(vars),
+        },
+      ),
+  });
+}
+
