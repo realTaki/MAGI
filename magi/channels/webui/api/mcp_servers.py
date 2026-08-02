@@ -354,7 +354,7 @@ def list_mcp_server_tools(
     """List the live tools exposed by a single MCP server.
 
     Goes through the loader's
-    :func:`magi.tools.mcp_loader.list_tools_for_server`
+    :func:`magi.mcp.loader.list_tools_for_server`
     — which prefers the active subprocess connection
     (fast) and falls back to a one-shot connect → list →
     disconnect (slow) when the operator opens the detail
@@ -367,7 +367,7 @@ def list_mcp_server_tools(
         the subprocess couldn't connect (the row is
         misconfigured, or the binary is missing).
     """
-    from magi.tools import mcp_loader
+    from magi.mcp import loader as mcp_loader
 
     tools = mcp_loader.list_tools_for_server(name)
     if tools is None:

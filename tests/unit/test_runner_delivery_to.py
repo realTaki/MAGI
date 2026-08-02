@@ -47,12 +47,11 @@ from magi.db import (
 )
 from magi.channels.tasks.runner import execute_task
 from magi.agent.memory.session import new_session_id
-from magi.channels.tasks.scheduler import (
-    _reset_for_tests,
-    stop_scheduler)
+from magi.channels.tasks.scheduler import _reset_for_tests, stop_scheduler
 from magi.channels.tasks.models import Task, TaskRun
 
 # -- fixtures --------------------------------------------------------------
+
 
 @pytest.fixture
 def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -63,8 +62,9 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
-    
+
     import magi.db.engine as _orm_mod
+
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None
 
@@ -76,7 +76,8 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
                 # ``id`` auto, so we look it up later.
                 name="runner-delivery-test",
                 telegram_id=9101,
-                admin=True, role="assigned"
+                admin=True,
+                role="assigned",
             )
         )
         s.commit()
@@ -88,13 +89,15 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         pass
     _reset_for_tests()
 
+
 def _seed_task(
     state_dir: Path,
     name: str,
     *,
     target_channel: str = "webui",
     delivery_to: str | None = None,
-    with_session: bool = True) -> tuple[str, str | None]:
+    with_session: bool = True,
+) -> tuple[str, str | None]:
     """Insert a Task row + return ``(task_id, session_id)``.
 
     Mirrors what the API + schedule_task tool do: at
@@ -106,22 +109,23 @@ def _seed_task(
     the runner's legacy-row fallback will backfill
     on first fire.
     """
-    task_id_seed = (
-        "T" + name[:24].ljust(24, "0")
-    )
+    task_id_seed = "T" + name[:24].ljust(24, "0")
     with open_session() as db:
         contact = db.query(Contact).filter_by(telegram_id=9101).one()
         session_id: str | None = None
         if with_session:
             session_id = new_session_id()
-            db.add(ChatSession(
-                session_id=session_id,
-                delivery_address=str(contact.telegram_id or ""),
-                uid=contact.id,
-                channel="task",
-                title=f"[定时] {name}",
-                created_at="2026-07-20T12:00:00Z",
-                updated_at="2026-07-20T12:00:00Z"))
+            db.add(
+                ChatSession(
+                    session_id=session_id,
+                    delivery_address=str(contact.telegram_id or ""),
+                    uid=contact.id,
+                    channel="task",
+                    title=f"[定时] {name}",
+                    created_at="2026-07-20T12:00:00Z",
+                    updated_at="2026-07-20T12:00:00Z",
+                )
+            )
             db.flush()
         t = Task(
             id=task_id_seed,
@@ -137,16 +141,18 @@ def _seed_task(
             enabled=1,
             consecutive_failures=0,
             created_at="2026-07-20T12:00:00Z",
-            updated_at="2026-07-20T12:00:00Z")
+            updated_at="2026-07-20T12:00:00Z",
+        )
         db.add(t)
         db.commit()
         db.refresh(t)
     return t.id, session_id
 
+
 # -- single session per task (channel="task") ----------------------------
 
-async def test_fire_appends_prompt_and_reply_to_task_session(
-    state_dir: Path) -> None:
+
+async def test_fire_appends_prompt_and_reply_to_task_session(state_dir: Path) -> None:
     """The runner loads ``task.session_id`` (allocated
     at task creation) and persists BOTH the prompt and
     the agent's reply via ``SessionStore.append_messages``
@@ -158,18 +164,13 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
     sessions → cross-task pollution impossible by
     construction.
     """
-    task_id, session_id = _seed_task(
-        state_dir, "fresh-every-fire", delivery_to=None)
+    task_id, session_id = _seed_task(state_dir, "fresh-every-fire", delivery_to=None)
     assert session_id is not None
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         # The task's session is exactly one row.
-        task_sessions = (
-            db.query(ChatSession)
-            .filter_by(session_id=session_id)
-            .all()
-        )
+        task_sessions = db.query(ChatSession).filter_by(session_id=session_id).all()
         assert len(task_sessions) == 1
         task_sess = task_sessions[0]
         assert task_sess.channel == "task"
@@ -179,11 +180,7 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
         # reply ("fake reply" from _fake_fire). Cross-
         # channel guard D.22 is satisfied because
         # runner passes channel="task".
-        msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=session_id)
-            .all()
-        )
+        msgs = db.query(ChatMessage).filter_by(session_id=session_id).all()
         user_msgs = [m for m in msgs if m.role == "user"]
         assistant_msgs = [m for m in msgs if m.role == "assistant"]
         assert len(user_msgs) == 1
@@ -191,8 +188,8 @@ async def test_fire_appends_prompt_and_reply_to_task_session(
         assert len(assistant_msgs) == 1
         assert assistant_msgs[0].text == "fake reply"
 
-async def test_two_tasks_have_independent_sessions(
-    state_dir: Path) -> None:
+
+async def test_two_tasks_have_independent_sessions(state_dir: Path) -> None:
     """Two tasks → two sessions. The runner never
     touches another task's session, so the two
     agents never see each other's history. This is
@@ -208,16 +205,8 @@ async def test_two_tasks_have_independent_sessions(
     await _fake_fire(id_b, state_dir)
 
     with open_session() as db:
-        sess_a_msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=sess_a)
-            .all()
-        )
-        sess_b_msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=sess_b)
-            .all()
-        )
+        sess_a_msgs = db.query(ChatMessage).filter_by(session_id=sess_a).all()
+        sess_b_msgs = db.query(ChatMessage).filter_by(session_id=sess_b).all()
         # Each session only has its own task's prompt.
         # No leakage across sessions.
         assert any("task-aaaa" in m.text for m in sess_a_msgs)
@@ -225,8 +214,8 @@ async def test_two_tasks_have_independent_sessions(
         assert any("task-bbbb" in m.text for m in sess_b_msgs)
         assert not any("task-aaaa" in m.text for m in sess_b_msgs)
 
-async def test_multiple_fires_accumulate_in_same_session(
-    state_dir: Path) -> None:
+
+async def test_multiple_fires_accumulate_in_same_session(state_dir: Path) -> None:
     """Two fires of the same task → both prompts and
     both replies land in the same session (NOT two new
     sessions). The agent's "this is a continuing
@@ -237,25 +226,16 @@ async def test_multiple_fires_accumulate_in_same_session(
     reply, so the session grows by 2 rows per fire and
     the runs drawer renders 4 bubbles (prompt/reply,
     prompt/reply)."""
-    task_id, session_id = _seed_task(
-        state_dir, "recurring", delivery_to=None)
+    task_id, session_id = _seed_task(state_dir, "recurring", delivery_to=None)
     await _fake_fire(task_id, state_dir)
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         # Still exactly ONE session for this task.
-        all_sessions = (
-            db.query(ChatSession)
-            .filter_by(session_id=session_id)
-            .all()
-        )
+        all_sessions = db.query(ChatSession).filter_by(session_id=session_id).all()
         assert len(all_sessions) == 1
         # Two fires × (user + assistant) = 4 messages.
-        msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=session_id)
-            .all()
-        )
+        msgs = db.query(ChatMessage).filter_by(session_id=session_id).all()
         user_msgs = [m for m in msgs if m.role == "user"]
         assistant_msgs = [m for m in msgs if m.role == "assistant"]
         assert len(user_msgs) == 2
@@ -265,10 +245,11 @@ async def test_multiple_fires_accumulate_in_same_session(
         # _fake_fire).
         assert all(m.text == "fake reply" for m in assistant_msgs)
 
+
 # -- legacy rows: session_id None at fire time ---------------------------
 
-async def test_legacy_task_without_session_id_backfills_on_first_fire(
-    state_dir: Path) -> None:
+
+async def test_legacy_task_without_session_id_backfills_on_first_fire(state_dir: Path) -> None:
     """Legacy rows that pre-date the ``session_id``
     column ship with ``task.session_id = None``. The
     runner allocates a fresh channel="task" session
@@ -276,9 +257,7 @@ async def test_legacy_task_without_session_id_backfills_on_first_fire(
     task still gets a thread for the agent and the
     operator's chat history. Subsequent fires reuse
     it."""
-    task_id, _ = _seed_task(
-        state_dir, "legacy-row", delivery_to=None,
-        with_session=False)
+    task_id, _ = _seed_task(state_dir, "legacy-row", delivery_to=None, with_session=False)
     with open_session() as db:
         t = db.get(Task, task_id)
         assert t.session_id is None
@@ -292,17 +271,14 @@ async def test_legacy_task_without_session_id_backfills_on_first_fire(
         sess = db.get(ChatSession, t.session_id)
         assert sess is not None
         assert sess.channel == "task"
-        msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=t.session_id)
-            .all()
-        )
+        msgs = db.query(ChatMessage).filter_by(session_id=t.session_id).all()
         assert any("legacy-row" in m.text for m in msgs)
+
 
 # -- delivery_to=ULID: obsolete, runner ignores it ---------------------
 
-async def test_legacy_delivery_to_ulid_is_ignored(
-    state_dir: Path) -> None:
+
+async def test_legacy_delivery_to_ulid_is_ignored(state_dir: Path) -> None:
     """Legacy rows with ``delivery_to="<ULID>"`` (the
     pre-refactor "join my chat" semantic) are now
     inert — the runner ignores the value and uses
@@ -318,45 +294,43 @@ async def test_legacy_delivery_to_ulid_is_ignored(
             channel="webui",
             title="operator's ongoing chat",
             created_at="2026-07-20T09:00:00Z",
-            updated_at="2026-07-20T11:00:00Z")
+            updated_at="2026-07-20T11:00:00Z",
+        )
         db.add(legacy)
         db.flush()
-        db.add(ChatMessage(
-            session_id=legacy.session_id,
-            message_id="m_prior",
-            role="user",
-            text="earlier question",
-            ts="2026-07-20T10:00:00Z"))
+        db.add(
+            ChatMessage(
+                session_id=legacy.session_id,
+                message_id="m_prior",
+                role="user",
+                text="earlier question",
+                ts="2026-07-20T10:00:00Z",
+            )
+        )
         db.commit()
 
     task_id, task_session_id = _seed_task(
-        state_dir, "legacy-ulid",
+        state_dir,
+        "legacy-ulid",
         delivery_to=legacy.session_id,  # legacy shape
     )
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         # The legacy chat is untouched.
-        msgs_legacy = (
-            db.query(ChatMessage)
-            .filter_by(session_id=legacy.session_id)
-            .all()
-        )
+        msgs_legacy = db.query(ChatMessage).filter_by(session_id=legacy.session_id).all()
         assert len(msgs_legacy) == 1
         assert msgs_legacy[0].text == "earlier question"
         # The task's prompt landed in the task's session,
         # NOT in the legacy chat.
-        msgs_task = (
-            db.query(ChatMessage)
-            .filter_by(session_id=task_session_id)
-            .all()
-        )
+        msgs_task = db.query(ChatMessage).filter_by(session_id=task_session_id).all()
         assert any("legacy-ulid" in m.text for m in msgs_task)
+
 
 # -- cross-contact: delivery_to=None / task.session_id is task-owned ------
 
-async def test_cross_contact_does_not_inject_into_other(
-    state_dir: Path) -> None:
+
+async def test_cross_contact_does_not_inject_into_other(state_dir: Path) -> None:
     """Task A's session is owned by contact A; the
     runner never writes to a session belonging to a
     different contact. With the new model this is
@@ -365,19 +339,14 @@ async def test_cross_contact_does_not_inject_into_other(
     ownership holds."""
     with open_session() as db:
         contact_a = db.query(Contact).filter_by(telegram_id=9101).one()
-        contact_b = Contact(
-            name="Other Operator",
-            telegram_id=9202,
-            admin=True, role="assigned"
-        )
+        contact_b = Contact(name="Other Operator", telegram_id=9202, admin=True, role="assigned")
         db.add(contact_b)
         db.commit()
         db.refresh(contact_b)
 
     # Task owned by contact_a; the runner's session is
     # stamped to contact_a only.
-    task_id, session_id = _seed_task(
-        state_dir, "a-owns", delivery_to=None)
+    task_id, session_id = _seed_task(state_dir, "a-owns", delivery_to=None)
     with open_session() as db:
         sess = db.get(ChatSession, session_id)
         assert sess is not None
@@ -388,17 +357,14 @@ async def test_cross_contact_does_not_inject_into_other(
     with open_session() as db:
         # Only contact_b's seeded rows + contact_a's task
         # session exist; no spill into contact_b's rows.
-        other_sessions = (
-            db.query(ChatSession)
-            .filter_by(uid=contact_b.id)
-            .all()
-        )
+        other_sessions = db.query(ChatSession).filter_by(uid=contact_b.id).all()
         assert len(other_sessions) == 0
+
 
 # -- TG delivery_to: wires callback --------------------------------------
 
-async def test_tg_delivery_to_dispatches_via_channel_adapter(
-    state_dir: Path) -> None:
+
+async def test_tg_delivery_to_dispatches_via_channel_adapter(state_dir: Path) -> None:
     """When ``task.target_channel='tg'`` and the user has a
     ``user_im_bindings`` row, the agent's reply is
     pushed to TG via the channel dispatcher + TG adapter.
@@ -426,10 +392,7 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
 
     _tg.bot.set_telegram_bot(_StubBot())
     try:
-        task_id, _ = _seed_task(
-            state_dir, "tg-callback",
-            target_channel="tg",
-            delivery_to="9101")
+        task_id, _ = _seed_task(state_dir, "tg-callback", target_channel="tg", delivery_to="9101")
         # Post-refactor: there is no separate
         # ``user_im_bindings`` table; the dispatcher reads
         # ``Contact.telegram_id`` directly as the per-channel
@@ -437,9 +400,13 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
         # has ``telegram_id=9101`` so the dispatch can find
         # them — nothing extra to seed.
 
-        # Patch handle_message to capture the kwargs.
+        # The AgentWorker resolves the loop dynamically after it claims the
+        # durable task event, so patch the loop module rather than the task
+        # producer.
+        import magi.agent.step as step_mod
         import magi.channels.tasks.runner as runner_mod
-        real = runner_mod.handle_message
+
+        real = step_mod.run_agent_step
 
         async def _capture(*_args, **kwargs):
             captured["channel"] = kwargs.get("channel")
@@ -448,13 +415,21 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
             # D.28: ``tg_send_callback`` is gone. The agent
             # loop no longer takes it.
             captured["tg_send_callback"] = kwargs.get("tg_send_callback")
-            return "fake reply"
+            return step_mod.AgentStepResult(
+                text="fake reply",
+                tool_uses=(),
+                assistant_blocks=(),
+                provider="test",
+                model="test",
+                usage={},
+                messages=(),
+            )
 
-        runner_mod.handle_message = _capture  # type: ignore[assignment]
+        step_mod.run_agent_step = _capture  # type: ignore[assignment]
         try:
             await runner_mod.execute_task(str(state_dir), task_id, manual=True)
         finally:
-            runner_mod.handle_message = real
+            step_mod.run_agent_step = real
 
         # The runner no longer threads a TG callback into
         # the loop. The dispatch happens via
@@ -470,8 +445,8 @@ async def test_tg_delivery_to_dispatches_via_channel_adapter(
     finally:
         _tg.bot.clear_telegram_bot()
 
-async def test_tg_session_is_not_modified_by_task_fire(
-    state_dir: Path) -> None:
+
+async def test_tg_session_is_not_modified_by_task_fire(state_dir: Path) -> None:
     """The runner never touches the TG chat session
     (``channel='tg'``) — task fires accumulate into
     the task's own ``channel='task'`` session. The
@@ -486,70 +461,66 @@ async def test_tg_session_is_not_modified_by_task_fire(
             channel="tg",
             title="operator's TG chat",
             created_at="2026-07-20T09:00:00Z",
-            updated_at="2026-07-20T11:00:00Z")
+            updated_at="2026-07-20T11:00:00Z",
+        )
         db.add(tg_chat)
         db.flush()
-        db.add(ChatMessage(
-            session_id=tg_chat.session_id,
-            message_id="m_tg_prior",
-            role="user",
-            text="hi bot",
-            ts="2026-07-20T10:00:00Z"))
+        db.add(
+            ChatMessage(
+                session_id=tg_chat.session_id,
+                message_id="m_tg_prior",
+                role="user",
+                text="hi bot",
+                ts="2026-07-20T10:00:00Z",
+            )
+        )
         db.commit()
 
     task_id, task_session_id = _seed_task(
-        state_dir, "tg-keeps-clean",
-        target_channel="tg",
-        delivery_to="9101")
+        state_dir, "tg-keeps-clean", target_channel="tg", delivery_to="9101"
+    )
 
     await _fake_fire(task_id, state_dir)
 
     with open_session() as db:
         # TG chat session: exactly one message (the
         # prior turn), the runner didn't append anything.
-        tg_msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=tg_chat.session_id)
-            .all()
-        )
+        tg_msgs = db.query(ChatMessage).filter_by(session_id=tg_chat.session_id).all()
         assert len(tg_msgs) == 1
         assert tg_msgs[0].text == "hi bot"
         # Task session: has the prompt.
-        task_msgs = (
-            db.query(ChatMessage)
-            .filter_by(session_id=task_session_id)
-            .all()
-        )
+        task_msgs = db.query(ChatMessage).filter_by(session_id=task_session_id).all()
         assert any("tg-keeps-clean" in m.text for m in task_msgs)
         # The TG chat session and the task session are
         # different rows; the TG session was untouched.
         assert tg_chat.session_id != task_session_id
 
+
 # -- helper: stand-in for the agent loop so we exercise the runner --------
 
+
 async def _fake_fire(task_id: str, state_dir: Path) -> None:
-    """Patch ``handle_message`` to a no-op so the runner's
-    own dispatch logic is exercised without needing an
-    LLM provider.
+    """Stub the worker's compatibility loop without requiring an LLM."""
+    import magi.agent.step as step_mod
 
-    We swap the agent-loop entry point on the runner's
-    module (the runner does ``from magi.agent.loop import
-    handle_message``, so the symbol resolves through
-    runner.handle_message). The no-op accepts every
-    positional + keyword shape (``state_dir`` is
-    positional in the real signature; everything else
-    is kw-only)."""
-    import magi.channels.tasks.runner as runner_mod
-
-    real = runner_mod.handle_message
+    real = step_mod.run_agent_step
 
     async def _noop(*_args, **_kwargs):
-        return "fake reply"
+        return step_mod.AgentStepResult(
+            text="fake reply",
+            tool_uses=(),
+            assistant_blocks=(),
+            provider="test",
+            model="test",
+            usage={},
+            messages=(),
+        )
 
-    runner_mod.handle_message = _noop  # type: ignore[assignment]
+    step_mod.run_agent_step = _noop  # type: ignore[assignment]
     try:
         await execute_task(str(state_dir), task_id, manual=True)
     finally:
-        runner_mod.handle_message = real  # restore
+        step_mod.run_agent_step = real
+
 
 # -- TG delivery_to: reuses operator's existing TG chat session ----------

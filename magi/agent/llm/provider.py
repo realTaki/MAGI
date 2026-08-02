@@ -28,7 +28,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal
 
 
 MessageRole = Literal["user", "assistant"]
@@ -112,6 +113,19 @@ class ChatResult:
     tool_uses: list[dict] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class LLMStreamEvent:
+    """A normalized, non-durable provider stream event.
+
+    Providers may emit fine-grained text/tool-argument deltas.  The base
+    implementation below provides a compatible one-final-delta fallback for
+    providers that currently expose only a complete-response API.
+    """
+
+    kind: Literal["text.delta", "tool_arguments.delta", "usage.updated"]
+    payload: dict[str, Any]
+
+
 class LLMProvider(ABC):
     """Abstract base for every chat-completion provider.
 
@@ -163,3 +177,25 @@ class LLMProvider(ABC):
         means "no tools available" — the model falls back to
         a plain-text reply.
         """
+
+    async def stream(
+        self,
+        system: str | None,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int = 1024,
+        tools: list[dict] | None = None,
+        on_event: Callable[[LLMStreamEvent], Awaitable[None]],
+    ) -> ChatResult:
+        """Stream a response, with a safe complete-response fallback.
+
+        This keeps the Actor boundary independent of a particular SDK.  A
+        provider can override it with native SSE support; until then callers
+        still receive a normalized delta and never need a second LLM worker.
+        """
+        result = await self.chat(system, messages, max_tokens=max_tokens, tools=tools)
+        if result.text:
+            await on_event(LLMStreamEvent("text.delta", {"text": result.text}))
+        if result.usage:
+            await on_event(LLMStreamEvent("usage.updated", dict(result.usage)))
+        return result

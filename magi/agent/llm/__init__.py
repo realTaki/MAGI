@@ -40,6 +40,7 @@ from magi.agent.llm.provider import (
     LLMProvider,
     ChatMessage,
     ChatResult,
+    LLMStreamEvent,
 )
 from magi.agent.llm.factory import get_provider, is_known_provider, known_providers
 
@@ -47,6 +48,7 @@ __all__ = [
     "LLMProvider",
     "ChatMessage",
     "ChatResult",
+    "LLMStreamEvent",
     "LLMError",
     "LLMAuthError",
     "LLMRateLimitError",

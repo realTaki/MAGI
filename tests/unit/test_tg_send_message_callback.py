@@ -37,6 +37,7 @@ import pytest
 
 from magi.channels import Channel
 
+
 @pytest.fixture
 def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """Real state + workspace dirs, real ORM + sqlite, one
@@ -48,63 +49,64 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    
+
     import magi.db.engine as orm_mod
+
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact,
-        init_orm,
-        init_sqlite,
-        open_session)
+    from magi.db import Contact, init_orm, init_sqlite, open_session
+
     init_sqlite(str(state))
     init_orm(str(state))
 
     with open_session() as s:
-        contact = Contact(
-            id=1,
-            name="Taki",
-            telegram_id=6240201712,
-            admin=True, role="assigned"
-        )
+        contact = Contact(id=1, name="Taki", telegram_id=6240201712, admin=True, role="assigned")
         s.add(contact)
         s.commit()
         s.refresh(contact)
 
     return state
 
+
 @pytest.mark.asyncio
 async def test_tg_handler_injects_tg_send_callback(
-    monkeypatch: pytest.MonkeyPatch, tg_state_dir) -> None:
+    monkeypatch: pytest.MonkeyPatch, tg_state_dir
+) -> None:
     """``_handle_contact_message`` must pass a callable
     ``tg_send_callback`` to ``handle_message`` — otherwise
     the LLM's ``send_message`` tool returns the
     "TG callback not wired" error.
     """
     from magi.channels.telegram import bot as bot_mod
-    from magi.agent import loop as loop_mod
+    from magi.agent import step as step_mod
     from magi.agent.memory.session import auto_title as at_mod
 
     # 1. Stub ``handle_message`` — capture kwargs.
     captured: dict = {}
 
-    async def _fake_handle_message(*args, **kwargs):
+    async def _fake_step(*args, **kwargs):
         captured.update(kwargs)
-        return "fake-reply"
+        return step_mod.AgentStepResult(
+            text="fake-reply",
+            tool_uses=(),
+            assistant_blocks=(),
+            provider="test",
+            model="test",
+            usage={},
+            messages=(),
+        )
 
-    monkeypatch.setattr(loop_mod, "handle_message", _fake_handle_message)
+    monkeypatch.setattr(step_mod, "run_agent_step", _fake_step)
 
     # 2. Stub the typing loop (real one creates a 4s task).
     async def _fake_typing_loop(*_a, **_kw):
         return None
 
-    monkeypatch.setattr(
-        bot_mod, "_typing_indicator_loop", _fake_typing_loop)
+    monkeypatch.setattr(bot_mod, "_typing_indicator_loop", _fake_typing_loop)
 
     # 3. Stub the auto-title enqueue (real one spawns a worker).
-    monkeypatch.setattr(
-        at_mod, "enqueue_title_job", AsyncMock(return_value=None))
+    monkeypatch.setattr(at_mod, "enqueue_title_job", AsyncMock(return_value=None))
 
     # 4. Build a fake update + bot.
     bot = MagicMock()
@@ -115,12 +117,10 @@ async def test_tg_handler_injects_tg_send_callback(
 
     fake_update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=6240201712),
-        effective_message=SimpleNamespace(
-            text="hi",
-            message_id=1,
-            reply_text=AsyncMock()),
+        effective_message=SimpleNamespace(text="hi", message_id=1, reply_text=AsyncMock()),
         message=SimpleNamespace(text="hi"),
-        get_bot=lambda: bot)
+        get_bot=lambda: bot,
+    )
 
     # 5. Call the real handler.
     await bot_mod._handle_contact_message(

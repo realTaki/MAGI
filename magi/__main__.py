@@ -210,6 +210,45 @@ def run() -> None:
     except Exception as e:  # noqa: BLE001 — never block boot
         logger.warning("MCP bootstrap skipped: %s", e)
 
+    # Install plugins + wire connector events into the
+    # plugin bus. Idempotent — the audit_log plugin and
+    # calendar connector install themselves on import;
+    # we install_all + start the connector bridge here.
+    try:
+        from magi.plugins.bus import (
+            get_bus,
+            install_all,
+            list_plugins,
+            reset_bus,
+        )
+        from magi.plugins.samples.audit_log import (
+            install_audit_log_plugin,
+        )
+        from magi.connectors.bridge import (
+            start_connector_bridge,
+            stop_connector_bridge,
+        )
+        reset_bus()  # fresh per-boot singleton
+        install_audit_log_plugin()
+        install_all(get_bus())
+        start_connector_bridge(get_bus())
+        try:
+            import atexit
+            atexit.register(stop_connector_bridge)
+        except Exception:  # noqa: BLE001
+            pass
+        logger.info("plugins installed: %s", list_plugins())
+    except Exception as e:  # noqa: BLE001 — never block boot
+        logger.warning("plugin bootstrap skipped: %s", e)
+
+    # Load connector instances from ``connector_configs``.
+    # Reads the private SQLite; absent table → no-op.
+    try:
+        from magi.connectors.boot import load_connectors_from_db
+        load_connectors_from_db(state_dir)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("connector bootstrap skipped: %s", e)
+
     # Start the scheduled-task channel.
     try:
         from magi.channels.tasks.scheduler import start_scheduler
