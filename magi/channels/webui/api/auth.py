@@ -48,7 +48,7 @@ import hmac
 import asyncio
 from base64 import urlsafe_b64encode, urlsafe_b64decode
 import httpx
-from fastapi import APIRouter, Cookie, Response
+from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -857,6 +857,409 @@ async def me(
             display_name=contact.name,
             admin=bool(contact.admin),
         )
+
+
+# -- Password login + credential management -------------------------------
+#
+# Four endpoints plus a helper used by the LoginPage to
+# pick which tab to render. The TG code flow above is
+# unchanged; password login is a parallel route that
+# co-exists with the code route so an operator can switch
+# back and forth. The 60s cooldown is shared per-uid
+# (success or failure both reset the timer) so a typo
+# followed by a successful retry still has to wait a
+# minute — same UX as the TG code path.
+
+
+class LoginMethodsResponse(BaseModel):
+    """Which login methods are available for ``uid``.
+
+    The frontend uses this to decide whether to show a
+    "password" tab, a "TG code" tab, or both. Steered by
+    the :class:`AuthCredential` table on the single-MAGI
+    path and the ``ControlOperator`` / IM binding on the
+    control-plane path.
+    """
+
+    uid: int
+    methods: list[str] = []
+    # True when the user has a Contact row with no
+    # telegram_id — i.e. they're a WebUI-only operator.
+    is_webui_only: bool = False
+
+
+class LoginPasswordRequest(BaseModel):
+    uid: int
+    password: str
+
+
+class LoginPasswordResponse(BaseModel):
+    ok: bool
+    error: str | None = None
+    # ``retry_after`` is set when the cooldown is active
+    # so the frontend can disable the button for the
+    # remaining seconds instead of letting the user spam
+    # retries.
+    retry_after: int | None = None
+
+
+class SetPasswordRequest(BaseModel):
+    uid: int
+    password: str
+    # ``old_password`` is required for self-service change
+    # and ignored when the caller is admin and changing
+    # someone else's password (the admin path is gated by
+    # ``AdminGate``).
+    old_password: str | None = None
+
+
+class SetPasswordResponse(BaseModel):
+    ok: bool
+    error: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+def _resolve_password_credential(uid: int) -> str | None:
+    """Return the stored ``secret_hash`` for ``uid``'s password row, or ``None``."""
+    from magi.db.models_auth_credential import AuthCredential
+    with open_session() as session:
+        row = session.scalar(
+            select(AuthCredential).where(
+                AuthCredential.uid == uid,
+                AuthCredential.kind == "password",
+            )
+        )
+    return row.secret_hash if row else None
+
+
+def _set_password_credential(uid: int, new_hash: str) -> None:
+    """Upsert the password credential for ``uid``."""
+    from magi.db.models_auth_credential import AuthCredential
+    with open_session() as session:
+        row = session.scalar(
+            select(AuthCredential).where(
+                AuthCredential.uid == uid,
+                AuthCredential.kind == "password",
+            )
+        )
+        if row is None:
+            session.add(AuthCredential(uid=uid, kind="password", secret_hash=new_hash))
+        else:
+            row.secret_hash = new_hash
+            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.commit()
+
+
+def _delete_password_credential(uid: int) -> bool:
+    """Drop the password credential. Returns ``True`` if a row was removed."""
+    from magi.db.models_auth_credential import AuthCredential
+    with open_session() as session:
+        row = session.scalar(
+            select(AuthCredential).where(
+                AuthCredential.uid == uid,
+                AuthCredential.kind == "password",
+            )
+        )
+        if row is None:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+
+
+def _login_methods_for(uid: int) -> tuple[list[str], bool]:
+    """Return ``(methods, is_webui_only)`` for ``uid``.
+
+    Used by both the new ``GET /auth/login-methods`` route
+    and the onboarding wizard's "is setup complete?"
+    check. The two paths (single-MAGI vs control-plane)
+    disagree on the data source — control-plane uses
+    ControlOperator + the runtime's IM binding table; the
+    single-MAGI path uses Contact + auth_credentials.
+    """
+    methods: list[str] = []
+    is_webui_only = True
+
+    if control_store.enabled():
+        from magi.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operator = session.get(ControlOperator, uid)
+        if operator is None or not operator.admin:
+            return ([], True)
+        # Control-plane side: TG delivery is the only path
+        # today. Once we add a password store for
+        # ControlOperator, check it here too.
+        if operator.telegram_id is not None:
+            methods.append("tg_code")
+        return (methods, True)
+
+    from magi.db.models_auth_credential import AuthCredential
+    with open_session() as session:
+        contact = session.get(Contact, uid)
+        has_password = session.scalar(
+            select(AuthCredential).where(
+                AuthCredential.uid == uid,
+                AuthCredential.kind == "password",
+            )
+        ) is not None
+    if contact is None:
+        return ([], True)
+    if has_password:
+        methods.append("password")
+    if contact.telegram_id is not None:
+        methods.append("tg_code")
+        is_webui_only = False
+    return (methods, is_webui_only)
+
+
+@router.get("/login-methods", response_model=LoginMethodsResponse)
+async def login_methods(uid: int) -> LoginMethodsResponse:
+    """Public probe — returns the available login methods for ``uid``.
+
+    Used by the LoginPage to decide which tabs to render.
+    Anti-enumeration: returns ``methods=[]`` rather than
+    404 when the uid doesn't exist (the LoginPage then
+    shows "no login methods" and the operator can ping
+    the admin). A future tightening can flip this to a
+    404 once the WebUI treats uid as public knowledge.
+    """
+    methods, webui_only = _login_methods_for(uid)
+    return LoginMethodsResponse(
+        uid=uid,
+        methods=methods,
+        is_webui_only=webui_only,
+    )
+
+
+@router.post("/login-password", response_model=LoginPasswordResponse)
+async def login_password(
+    payload: LoginPasswordRequest,
+    response: Response,
+) -> LoginPasswordResponse:
+    """Verify password and set the session cookie.
+
+    The 60s cooldown is enforced per-uid, regardless of
+    the verify outcome. A successful verify calls
+    :func:`password_utils.clear_attempt` so the user
+    isn't locked out of their next login by the current
+    one. The cooldown store is the same settings KV the
+    TG-code path uses, just a different sub-prefix.
+
+    Anti-enumeration: a uid that is not an admin
+    responds as "ok" but never sets a cookie. Same shape
+    as the ``send_login_code`` short-circuit.
+    """
+    if not payload.uid or not isinstance(payload.uid, int):
+        return LoginPasswordResponse(ok=False, error="invalid uid")
+    if not payload.password:
+        return LoginPasswordResponse(ok=False, error="password required")
+
+    if control_store.enabled():
+        # Control-plane side doesn't have a password
+        # store yet — out of scope for this PR.
+        return LoginPasswordResponse(
+            ok=False,
+            error="password login is not supported by the control plane",
+        )
+
+    if payload.uid not in _super_admins():
+        # Anti-enumeration: respond as if the password
+        # were wrong, but don't burn the cooldown.
+        return LoginPasswordResponse(
+            ok=False, error="password does not match",
+        )
+
+    from magi.channels.webui.api import password_utils
+
+    state_dir = _state_dir()
+    if not password_utils.check_cooldown(
+        state_dir, payload.uid, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
+    ):
+        record = password_utils._store_get(state_dir, payload.uid) or {}
+        last = float(record.get("last_attempt_at", 0))
+        remaining = max(1, int(_RESEND_COOLDOWN_SECONDS - (_now_ts() - last)))
+        return LoginPasswordResponse(
+            ok=False,
+            error=f"Wait {remaining}s before trying again.",
+            retry_after=remaining,
+        )
+
+    # Always record the attempt — even on success — so
+    # the post-login window is honest. The verify helper
+    # clears the row on success below.
+    password_utils.record_attempt(state_dir, payload.uid)
+
+    stored = _resolve_password_credential(payload.uid)
+    if not stored or not password_utils.verify_password(stored, payload.password):
+        return LoginPasswordResponse(
+            ok=False,
+            error="password does not match",
+            retry_after=_RESEND_COOLDOWN_SECONDS,
+        )
+
+    password_utils.clear_attempt(state_dir, payload.uid)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=_sign_uid(payload.uid),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    logger.info("user signed in via password", extra={"uid": payload.uid})
+    return LoginPasswordResponse(ok=True)
+
+
+def _now_ts() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+@router.post("/set-password", response_model=SetPasswordResponse)
+async def set_password(
+    payload: SetPasswordRequest,
+    request: Request,
+    _admin: "AdminGate",
+) -> SetPasswordResponse:
+    """Set or replace a user's password.
+
+    Both flows go through one endpoint:
+
+      - **Self-service**: ``uid`` is the calling user's
+        uid, ``old_password`` is required. The ``AdminGate``
+        ensures the caller is signed in; the body check
+        proves they own the row.
+      - **Admin override**: an admin can set a password
+        for any ``uid`` without ``old_password``. Used
+        by the onboarding wizard's "set the first admin's
+        password" path and the Settings → Security card
+        "reset another admin's password".
+
+    Control-plane side is out of scope (no
+    password store yet).
+    """
+    if control_store.enabled():
+        return SetPasswordResponse(
+            ok=False,
+            error="password login is not supported by the control plane",
+        )
+
+    from magi.channels.webui.api import password_utils
+
+    if not payload.uid or not isinstance(payload.uid, int):
+        return SetPasswordResponse(ok=False, error="invalid uid")
+
+    caller_uid = _verify_signed_uid(
+        request.cookies.get(SESSION_COOKIE_NAME) or "",
+    )
+    if caller_uid is None:
+        return SetPasswordResponse(ok=False, error="not signed in")
+
+    if caller_uid != payload.uid:
+        # Admin override — AdminGate already proved the
+        # caller is admin, so we skip the old_password
+        # check.
+        is_admin = False
+        with open_session() as session:
+            row = session.get(Contact, caller_uid)
+            is_admin = bool(row and row.admin)
+        if not is_admin:
+            return SetPasswordResponse(
+                ok=False,
+                error="only admins can set another user's password",
+            )
+    else:
+        # Self-service: must know the existing password,
+        # unless they're setting one for the first time.
+        existing = _resolve_password_credential(payload.uid)
+        if existing is not None:
+            if not payload.old_password:
+                return SetPasswordResponse(
+                    ok=False,
+                    error="old_password required",
+                )
+            if not password_utils.verify_password(existing, payload.old_password):
+                return SetPasswordResponse(
+                    ok=False,
+                    error="old_password does not match",
+                )
+
+    try:
+        new_hash = password_utils.hash_password(payload.password)
+    except ValueError as exc:
+        return SetPasswordResponse(ok=False, error=str(exc))
+
+    _set_password_credential(payload.uid, new_hash)
+    logger.info("password set", extra={"uid": payload.uid, "by": caller_uid})
+    return SetPasswordResponse(ok=True)
+
+
+@router.post("/change-password", response_model=SetPasswordResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+) -> SetPasswordResponse:
+    """Self-service: change the signed-in user's password.
+
+    Thin wrapper around :func:`set_password` that always
+    uses the caller's uid as the target and requires
+    ``old_password`` unconditionally. The frontend hits
+    this from the Settings → Security card; the unified
+    :func:`set_password` endpoint serves the admin
+    override flow.
+    """
+    from magi.channels.webui.api import password_utils
+
+    caller_uid = _verify_signed_uid(
+        request.cookies.get(SESSION_COOKIE_NAME) or "",
+    )
+    if caller_uid is None:
+        return SetPasswordResponse(ok=False, error="not signed in")
+    try:
+        new_hash = password_utils.hash_password(payload.new_password)
+    except ValueError as exc:
+        return SetPasswordResponse(ok=False, error=str(exc))
+
+    existing = _resolve_password_credential(caller_uid)
+    if existing is None:
+        return SetPasswordResponse(
+            ok=False,
+            error="no password set yet — use set-password instead",
+        )
+    if not password_utils.verify_password(existing, payload.old_password):
+        return SetPasswordResponse(ok=False, error="old_password does not match")
+
+    _set_password_credential(caller_uid, new_hash)
+    logger.info("password changed", extra={"uid": caller_uid})
+    return SetPasswordResponse(ok=True)
+
+
+@router.delete("/credentials/password/{uid}", status_code=204)
+async def revoke_password(
+    uid: int,
+    _admin: "AdminGate",
+) -> Response:
+    """Revoke a user's password login.
+
+    After this call the user can only sign in via the
+    remaining methods (TG code today). Admin-only — an
+    operator who revokes their own password without
+    another active method locks themselves out of the
+    WebUI; the frontend warns before firing.
+    """
+    if control_store.enabled():
+        return Response(status_code=204)
+    if not _delete_password_credential(uid):
+        raise MagiHTTPException(
+            status_code=404,
+            code="auth.no_password_credential",
+            detail=f"uid {uid} has no password credential",
+        )
+    logger.info("password revoked", extra={"uid": uid})
+    return Response(status_code=204)
     except Exception:
         logger.exception("me: contact lookup failed for cookie value")
         return MeResponse(uid=uid, admin=False)

@@ -9,7 +9,7 @@ consume it without importing a channel implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 InboxKind = Literal[
     "channel.message.received",
@@ -24,6 +24,21 @@ InboxKind = Literal[
 RunStatus = Literal[
     "queued", "running", "waiting_tool", "waiting_a2a", "completed", "failed", "cancelled"
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class A2AInvocationRequest:
+    """An actor-owned peer message effect.
+
+    ``expect_reply`` is deliberately explicit: ordinary MAGI communication is
+    one-way; only a caller that asks for a response parks its run.
+    """
+
+    tool_call_id: str
+    target_magic_id: int
+    text: str
+    expect_reply: bool = False
+    timeout_seconds: int = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,3 +116,12 @@ class RunResult:
     reply: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
+
+
+class BusStoreProtocol(Protocol):
+    """Runtime-facing store boundary; SQLite is an implementation detail."""
+
+    def publish_agent_message(self, message: AgentMessage) -> str: ...
+    def claim_next_agent_message(self, worker_id: str, *, lease_seconds: int = 60) -> BusClaim | None: ...
+    def recover_expired_leases(self) -> int: ...
+    def get_run_result(self, run_id: str) -> RunResult | None: ...

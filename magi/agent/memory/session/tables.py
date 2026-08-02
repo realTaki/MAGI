@@ -33,6 +33,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -158,6 +159,11 @@ class ChatMessage(Base):
     ts: Mapped[str] = mapped_column(String(32), nullable=False)
     # 0 = active (LLM sees), 1 = archived (compressed out).
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Provider-native blocks are required to resume an interrupted tool/A2A
+    # turn. ``text`` remains the WebUI/FTS projection for compatibility.
+    content_blocks: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
         # Primary lookup pattern: "give me the active tail of

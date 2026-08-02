@@ -311,6 +311,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # a given module don't pay its import cost until something
     # asks for a row from that table.
     import magi.db.models_action_item  # noqa: F401
+    import magi.db.models_auth_credential  # noqa: F401 — password + future credentials
     import magi.db.models_contact  # noqa: F401 — unified contact directory
     import magi.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
     import magi.db.models_magic  # noqa: F401 — individual MAGI rows
