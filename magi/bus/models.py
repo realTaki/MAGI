@@ -69,6 +69,16 @@ class AgentRun(Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(96), nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Metadata projection columns added by 0011_agent_run_metadata.
+    # All nullable except ``iteration_count`` which has a
+    # server_default so pre-0011 rows still load cleanly.
+    expected_tool_call_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expected_a2a_invocation_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    iteration_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    deadline_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     started_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
@@ -79,6 +89,7 @@ class AgentRun(Base):
     __table_args__ = (
         Index("ix_agent_runs_status_created", "status", "created_at"),
         Index("ix_agent_runs_conversation_status", "conversation_id", "status", "created_at"),
+        Index("ix_agent_runs_deadline", "deadline_at"),
     )
 
 
@@ -178,10 +189,22 @@ class ToolCall(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="requested")
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Within-run ordinal assigned at ToolCall write time
+    # (BusStore.wait_for_tools / enqueue_tool_job). Used by
+    # load_tool_continuation to rebuild the provider-valid
+    # tool_use → tool_result transcript in the exact order the
+    # LLM emitted the tool_calls (design §6.6). Nullable so
+    # pre-0010 rows survive; load_tool_continuation falls back
+    # to ``continuation["tool_call_ids"]`` order when ordinal IS NULL.
+    ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ordered_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     completed_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
 
-    __table_args__ = (Index("ix_tool_calls_run_created", "run_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_tool_calls_run_created", "run_id", "created_at"),
+        Index("ix_tool_calls_run_ordinal", "run_id", "ordinal"),
+    )
 
 
 class A2AInvocation(Base):

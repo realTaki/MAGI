@@ -16,11 +16,19 @@
   A2A 300 秒超时和 delivery 指数退避/死信均保留在本地 SQLite。
 - StreamHub 仅是 best-effort 的内存 SSE 增量。重连必须通过 run 状态和已提交
   transcript 恢复，`message.committed` 才是权威完成通知。
-- 私有 SQLite 走 Alembic（head `0008_merge_actor_and_auth_heads`）；
+- 私有 SQLite 走 Alembic（head `0011_agent_run_metadata`）；
   公共 PostgreSQL 仍走 `Base.metadata.create_all`
   （[magi/db/magis/engine.py:60-64](../../magi/db/magis/engine.py#L60)），
   尚未迁 Alembic；这是已知 deferred 项，与私有 SQLite 的 Alembic 链不对称。
   替换方案见 §未来工作。
+- Phase 6 清理（v1.1 旧 §19 / Phase 6）：`magi/agent/loop.py`
+  已删除；`magi/agent/__init__.py` 不再有 PEP 562 `__getattr__`
+  把 `handle_message` / `_build_messages_from_session` 等
+  老符号 re-export 出去。生产代码（channels / orchestrator
+  / proactive）全部走 `magi.agent.worker.submit_agent_message`
+  + `wait_for_agent_run` + `magi.agent.step.run_agent_step`。
+  锁死在 [tests/unit/test_agent_legacy_reexport.py](../../tests/unit/test_agent_legacy_reexport.py)：
+  任何重新引入老符号的提交都会在 CI 阶段被拦截。
 
 ## 1. 目标
 

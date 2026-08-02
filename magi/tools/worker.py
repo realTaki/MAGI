@@ -85,6 +85,10 @@ class ToolWorker:
             self.store.complete_tool_job(
                 claim, content=f"unknown or unauthorized tool: {claim.tool_name!r}", is_error=True
             )
+            # Unknown tool can't be retried — same dead-letter path
+            # as exhausted retries below. Synthetic failure
+            # unblocks the run.
+            self.store.retry_tool_job(claim.job_id)
             return
         try:
             result = await tool.run(
@@ -104,6 +108,14 @@ class ToolWorker:
             content = f"tool {claim.tool_name!r} crashed: {exc}"[:8000]
             is_error = True
         self.store.complete_tool_job(claim, content=content, is_error=is_error)
+        # Retry / dead-letter policy: ``retry_tool_job`` owns the
+        # attempt budget (see BusStore._MAX_TOOL_JOB_ATTEMPTS). A
+        # job with attempts < cap goes back to ``retry``; once the
+        # cap is hit, the job is dead-lettered and the actor
+        # worker unblocks the run with a synthetic tool.failed
+        # event.
+        if is_error:
+            self.store.retry_tool_job(claim.job_id)
 
 
 _worker: ToolWorker | None = None

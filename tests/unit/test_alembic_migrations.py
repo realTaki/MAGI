@@ -102,9 +102,9 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
 
     # Now run init_orm — this is what production boot does — which calls
     # upgrade_head internally. With the fix it must walk 0006 → 0007 →
-    # 0008 → 0009 and apply every column.
+    # 0008 → 0009 → 0010 and apply every column.
     init_orm(str(tmp_path), seed_root=False)
-    assert _raw_alembic_version(db_path) == "0009_idempotency_keys"
+    assert _raw_alembic_version(db_path) == "0011_agent_run_metadata"
 
     # Spot-check that the critical columns added by 0006/0007/0009 exist.
     # If any of these fail, the runtime would have crashed at first ORM
@@ -148,12 +148,23 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
     assert "event_id" in delivery_outbox  # added by 0009
     assert "idempotency_key" in delivery_outbox
 
+    tool_calls = _columns(db_path, "tool_calls")
+    assert "ordinal" in tool_calls  # added by 0010
+    assert "ordered_at" in tool_calls
+
+    agent_runs = _columns(db_path, "agent_runs")
+    assert "expected_tool_call_ids" in agent_runs  # added by 0011
+    assert "expected_a2a_invocation_ids" in agent_runs
+    assert "iteration_count" in agent_runs
+    assert "token_usage" in agent_runs
+    assert "deadline_at" in agent_runs
+
 
 def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
-    """A clean init_orm must end at 0009, not at 0005."""
+    """A clean init_orm must end at 0011, not at 0005."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
     import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)
 
-    assert _raw_alembic_version(tmp_path / "magi.db") == "0009_idempotency_keys"
+    assert _raw_alembic_version(tmp_path / "magi.db") == "0011_agent_run_metadata"

@@ -42,8 +42,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.channels.webui.api.system_settings import get_system_timezone
 from magi.db import TokenUsage, open_session, require_state_dir
+from magi.db.runtime_settings import get_system_timezone
 
 logger = logging.getLogger("magi.api.token_metrics")
 

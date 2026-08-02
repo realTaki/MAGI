@@ -65,7 +65,7 @@ def env(monkeypatch, tmp_path):
     # MDT or CST) shifts the Monday-00:00-local anchor and
     # rows that the test thinks are "1 day ago in UTC"
     # fall outside the configured window.
-    from magi.channels.webui.api.system_settings import set_system_timezone
+    from magi.db.runtime_settings import set_system_timezone
     set_system_timezone(str(state), "UTC")
 
     with open_session() as db:

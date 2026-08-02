@@ -354,7 +354,6 @@ async def send_chat(
                 # idempotency key. A network retry cannot create a second
                 # agent turn for that exact input.
                 event_id=f"webui:{session_id}:{inbound_message_id}",
-                source_id=inbound_message_id,
                 # Cross-channel idempotency triple (0009_idempotency_keys).
                 # The browser sends a stable client-generated UUID; if the
                 # same message is re-submitted (network retry, double

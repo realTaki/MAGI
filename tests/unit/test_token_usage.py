@@ -212,7 +212,7 @@ def test_timezone_put_round_trip(token_env, client):
 
     # Subprocess-equivalent: a fresh get_system_timezone
     # call reads the new value back.
-    from magi.channels.webui.api.system_settings import get_system_timezone
+    from magi.db.runtime_settings import get_system_timezone
     assert get_system_timezone(str(token_env[0])) == "Asia/Shanghai"
 
 def test_timezone_put_rejects_unknown_tz(token_env, client):
@@ -349,7 +349,7 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     Pinned to verify that the aggregation actually reads
     the configured tz and doesn't silently default to UTC.
     """
-    from magi.channels.webui.api.system_settings import set_system_timezone
+    from magi.db.runtime_settings import set_system_timezone
 
     set_system_timezone(str(token_env[0]), "Asia/Shanghai")
 

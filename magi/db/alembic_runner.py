@@ -26,7 +26,7 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 #: ``a2a_invocations.tool_call_id`` etc.) was silently stuck because
 #: ``CANONICAL_HEAD`` pointed at 0005 and ``upgrade_head`` re-stamped newer
 #: DBs back to 0005 instead of running 0006/0007. Pin to the actual head.
-CANONICAL_HEAD = "0009_idempotency_keys"
+CANONICAL_HEAD = "0011_agent_run_metadata"
 
 
 def _find_alembic_ini() -> Path:

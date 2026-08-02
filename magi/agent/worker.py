@@ -82,6 +82,25 @@ class AgentWorker:
         """Wake the local poller after an in-process producer publishes."""
         self._wake.set()
 
+    def _is_within_deadline(self, claim: BusClaim) -> bool:
+        """Return True iff the run's deadline (if any) is still in the future.
+
+        Reads ``agent_runs.deadline_at`` (set by
+        :class:`AgentMessage.deadline_at` at publish time). A
+        deadline in the past means the run is expired and should
+        fail rather than invoke the LLM. A row with no deadline
+        (None) is always considered within-deadline.
+        """
+        from magi.db import open_session
+        from magi.bus.models import AgentRun
+        from magi.db.base import utcnow_naive
+
+        with open_session(self.state_dir) as session:
+            row = session.get(AgentRun, claim.run_id)
+        if row is None or row.deadline_at is None:
+            return True
+        return row.deadline_at > utcnow_naive()
+
     async def _run(self) -> None:
         while not self._stopping:
             expire_a2a = getattr(self.store, "expire_a2a_invocations", None)
@@ -99,6 +118,22 @@ class AgentWorker:
 
     async def _process(self, claim: BusClaim) -> None:
         try:
+            # Deadline gate (added 0011_agent_run_metadata): a run
+            # whose ``deadline_at`` has passed is terminally failed
+            # without invoking the LLM. The producer may pass a
+            # deadline via AgentMessage.deadline_at; a scheduler tick
+            # that schedules a long-running tool chain is the
+            # canonical use case.
+            if not self._is_within_deadline(claim):
+                self.store.fail_agent_message(
+                    claim.event_id,
+                    error_code="magi.run_deadline_exceeded",
+                    error_detail=(
+                        f"run deadline exceeded before claim "
+                        f"({claim.kind} for run {claim.run_id})"
+                    ),
+                )
+                return
             if claim.kind == "run.steer":
                 # Publication already atomically attached the input to its
                 # active run.  This inbox record is only an acknowledgement;

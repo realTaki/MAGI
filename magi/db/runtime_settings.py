@@ -50,32 +50,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.db.runtime_settings")
 
 # ────────────────────────────────────────────────────────────────── #
-# Settings keys — owned by system_settings.py for back-compat;
-# re-exported here so writes via webui API and reads via this module
-# share the same row.
+# Settings keys + bounds + defaults — single source of truth.
+#
+# The HTTP layer (``magi.channels.webui.api.system_settings``)
+# imports these constants back from here so a Save via the
+# dashboard writes the same row a runtime read sees. The reverse
+# direction would be a circular import — keep them here.
 # ────────────────────────────────────────────────────────────────── #
 
-from magi.channels.webui.api.system_settings import (  # noqa: E402
-    COMPACT_CONTEXT_WINDOW_KEY,
-    COMPACT_KEEP_RECENT_KEY,
-    COMPACT_THRESHOLD_PCT_KEY,
-    DEFAULT_COMPACT_CONTEXT_WINDOW,
-    DEFAULT_COMPACT_KEEP_RECENT,
-    DEFAULT_COMPACT_THRESHOLD_PCT,
-    DEFAULT_TOOL_MAX_ITERATIONS,
-    MAX_COMPACT_CONTEXT_WINDOW,
-    MAX_COMPACT_KEEP_RECENT,
-    MAX_COMPACT_THRESHOLD_PCT,
-    MAX_TOOL_MAX_ITERATIONS,
-    MIN_COMPACT_CONTEXT_WINDOW,
-    MIN_COMPACT_KEEP_RECENT,
-    MIN_COMPACT_THRESHOLD_PCT,
-    MIN_TOOL_MAX_ITERATIONS,
-    SHOW_DAILY_NOTE_KEY,
-    SHOW_DAILY_NOTE_PROMPT_KEY,
-    SYSTEM_TZ_KEY,
-    TOOL_MAX_ITERATIONS_KEY,
-)
+SYSTEM_TZ_KEY = "system.timezone"
+TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
+COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
+COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
+COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
+SHOW_DAILY_NOTE_KEY = "system.show_daily_note"
+SHOW_DAILY_NOTE_PROMPT_KEY = "system.show_daily_note_prompt"
+
+DEFAULT_TOOL_MAX_ITERATIONS = 10
+MAX_TOOL_MAX_ITERATIONS = 50
+MIN_TOOL_MAX_ITERATIONS = 1
+
+DEFAULT_COMPACT_CONTEXT_WINDOW = 100000
+DEFAULT_COMPACT_THRESHOLD_PCT = 80
+DEFAULT_COMPACT_KEEP_RECENT = 20
+
+MIN_COMPACT_CONTEXT_WINDOW = 16000
+MAX_COMPACT_CONTEXT_WINDOW = 200000
+MIN_COMPACT_THRESHOLD_PCT = 50
+MAX_COMPACT_THRESHOLD_PCT = 95
+MIN_COMPACT_KEEP_RECENT = 5
+MAX_COMPACT_KEEP_RECENT = 100
 
 
 # ────────────────────────────────────────────────────────────────── #

@@ -28,6 +28,9 @@ from pydantic import BaseModel, Field
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.db.engine import require_state_dir
 from magi.db.runtime_settings import (
+    COMPACT_CONTEXT_WINDOW_KEY,
+    COMPACT_KEEP_RECENT_KEY,
+    COMPACT_THRESHOLD_PCT_KEY,
     DEFAULT_COMPACT_CONTEXT_WINDOW,
     DEFAULT_COMPACT_KEEP_RECENT,
     DEFAULT_COMPACT_THRESHOLD_PCT,
@@ -40,6 +43,10 @@ from magi.db.runtime_settings import (
     MIN_COMPACT_KEEP_RECENT,
     MIN_COMPACT_THRESHOLD_PCT,
     MIN_TOOL_MAX_ITERATIONS,
+    SHOW_DAILY_NOTE_KEY,
+    SHOW_DAILY_NOTE_PROMPT_KEY,
+    SYSTEM_TZ_KEY,
+    TOOL_MAX_ITERATIONS_KEY,
     get_compact_context_window as _get_compact_context_window,
     get_compact_keep_recent as _get_compact_keep_recent,
     get_compact_threshold_pct as _get_compact_threshold_pct,
@@ -56,16 +63,10 @@ logger = logging.getLogger("magi.api.system_settings")
 
 router = APIRouter(tags=["system-settings"])
 
-# Meta key constants — single source of truth for the API writer
-# and the neutral reader module. Changes here must be reflected in
-# :mod:`magi.db.runtime_settings` (which re-exports them).
-SYSTEM_TZ_KEY = "system.timezone"
-TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
-COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
-COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
-COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
-SHOW_DAILY_NOTE_KEY = "system.show_daily_note"
-SHOW_DAILY_NOTE_PROMPT_KEY = "system.show_daily_note_prompt"
+# All KV key / bounds / default constants are owned by
+# ``magi.db.runtime_settings`` and re-exported above so the webui
+# API writes the same row the runtime reads. Keep that as the
+# single source of truth.
 
 
 def _state_dir() -> str:
