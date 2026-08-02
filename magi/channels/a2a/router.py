@@ -13,12 +13,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
-
 from magi.bus import AgentMessage
 from magi.channels.a2a.protocol import PROTOCOL_VERSION, verify_signature
 from magi.db.magis import open_magis_session
-from magi.db.models_magis_membership import MAGISMembership
+from magi.db.models_magis_membership import can_route_a2a
 
 router = APIRouter(tags=["a2a"])
 
@@ -27,18 +25,12 @@ def _error(status: int, code: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": code})
 
 
-def _same_direct_magis(sender_magic_id: int) -> bool:
+def _can_receive_from(sender_magic_id: int) -> bool:
     value = os.environ.get("MAGI_RUNTIME_ID")
     if not value or not value.isdigit():
         return False
     with open_magis_session() as session:
-        sender = session.scalar(
-            select(MAGISMembership.magis_id).where(MAGISMembership.magic_id == sender_magic_id)
-        )
-        own = session.scalar(
-            select(MAGISMembership.magis_id).where(MAGISMembership.magic_id == int(value))
-        )
-    return sender is not None and sender == own
+        return can_route_a2a(session, sender_magic_id, int(value))
 
 
 @router.post("/a2a/inbox", status_code=202)
@@ -55,7 +47,7 @@ async def receive(request: Request) -> JSONResponse:
         return _error(400, "bad_request")
     if not verify_signature(magic_id=magic_id, timestamp=timestamp, body=raw, signature=signature):
         return _error(401, "auth.invalid_signature")
-    if not _same_direct_magis(magic_id):
+    if not _can_receive_from(magic_id):
         return _error(403, "auth.out_of_scope")
     try:
         body = json.loads(raw)
@@ -91,4 +83,3 @@ async def receive(request: Request) -> JSONResponse:
             "received_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-
