@@ -77,6 +77,17 @@ class ContactOut(BaseModel):
     last_seen_at: str = ""
     created_at: str = ""
     updated_at: str = ""
+    # ``password_set`` is a boolean flag — the operator
+    # never sees the hash, only whether the contact has
+    # a credential row. Looks at the ``auth_credentials``
+    # table; computed per-call so a row added via the
+    # onboarding wizard appears immediately.
+    password_set: bool = False
+    # ``login_methods`` mirrors the AuthCredential table
+    # + the bound IM. The frontend uses this to render
+    # the Settings → Security card without a second
+    # query round-trip.
+    login_methods: list[str] = []
 
 
 class ContactListOut(BaseModel):
@@ -119,7 +130,18 @@ class ContactUpdate(BaseModel):
 def _serialize(
     c: Contact,
     notes_count: int = 0,
+    login_methods: list[str] | None = None,
 ) -> ContactOut:
+    """Render a :class:`Contact` row to the wire shape.
+
+    ``login_methods`` is computed by the caller (via
+    :func:`_login_methods_for`) to avoid an N+1 query. A
+    ``None`` value means "didn't compute — fall back to a
+    single-row lookup", which is fine for the single
+    ``GET /api/contacts/{id}`` path.
+    """
+    if login_methods is None:
+        login_methods = _login_methods_for(c)
     return ContactOut(
         id=c.id,
         name=c.name,
@@ -134,7 +156,66 @@ def _serialize(
         last_seen_at=_iso(c.last_seen_at),
         created_at=_iso(c.created_at),
         updated_at=_iso(c.updated_at),
+        password_set="password" in login_methods,
+        login_methods=login_methods,
     )
+
+
+def _login_methods_for(contact: Contact) -> list[str]:
+    """Compute the login methods for a single contact.
+
+    Mirrors the same logic the auth endpoints use, kept
+    inline so the contact route doesn't pay a round-trip
+    through the auth module. Side-effect free.
+    """
+    methods: list[str] = []
+    if contact.telegram_id is not None:
+        methods.append("tg_code")
+    # password_set is queried separately by the bulk
+    # helper below — we let the caller pass the
+    # precomputed set when batching a list response.
+    return methods
+
+
+def _bulk_login_methods(
+    session: Session,
+    contacts: list[Contact],
+) -> dict[int, list[str]]:
+    """Batch-fetch the password-set flag for a list of contacts.
+
+    Returns ``{uid: methods}``. The tg_code leg is
+    computed from the already-loaded contact row.
+    """
+    from magi.db.models_auth_credential import AuthCredential
+
+    if not contacts:
+        return {}
+    uids = [c.id for c in contacts]
+    password_uids: set[int] = set(
+        session.scalars(
+            select(AuthCredential.uid).where(
+                AuthCredential.uid.in_(uids),
+                AuthCredential.kind == "password",
+            )
+        ).all()
+    )
+    out: dict[int, list[str]] = {}
+    for c in contacts:
+        methods: list[str] = []
+        if c.telegram_id is not None:
+            methods.append("tg_code")
+        if c.id in password_uids:
+            methods.append("password")
+        out[c.id] = methods
+    return out
+
+
+def _single_login_methods(
+    session: Session,
+    contact: Contact,
+) -> list[str]:
+    """Single-row helper for the by-id endpoints."""
+    return _bulk_login_methods(session, [contact]).get(contact.id, [])
 
 
 # -- routes -----------------------------------------------------------------
@@ -210,8 +291,16 @@ def list_contacts(
                 .group_by(ContactNote.contact_id)
             ).all()
             note_counts = {c: int(n) for c, n in counts}
+        login_methods = _bulk_login_methods(session, rows)
         return ContactListOut(
-            items=[_serialize(r, notes_count=note_counts.get(r.id, 0)) for r in rows],
+            items=[
+                _serialize(
+                    r,
+                    notes_count=note_counts.get(r.id, 0),
+                    login_methods=login_methods.get(r.id, []),
+                )
+                for r in rows
+            ],
             total=len(rows),
             page=1,
             page_size=len(rows),
@@ -229,8 +318,9 @@ def list_contacts(
         .limit(page_size)
     )
     rows = session.scalars(page_q).all()
+    login_methods = _bulk_login_methods(session, rows)
     return ContactListOut(
-        items=[_serialize(r) for r in rows],
+        items=[_serialize(r, login_methods=login_methods.get(r.id, [])) for r in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -314,7 +404,7 @@ def create_contact(
                 contact.id, exc,
             )
 
-    return _serialize(contact)
+    return _serialize(contact, login_methods=_single_login_methods(session, contact))
 
 
 # -- notes sub-resource ---------------------------------------------------
@@ -377,7 +467,7 @@ def get_contact(
             status_code=404, code="not_found.contact",
             detail="contact not found",
         )
-    return _serialize(contact)
+    return _serialize(contact, login_methods=_single_login_methods(session, contact))
 
 
 # -- notes sub-resource ---------------------------------------------------
@@ -529,7 +619,7 @@ def update_contact(
                 contact.id, exc,
             )
 
-    return _serialize(contact)
+    return _serialize(contact, login_methods=_single_login_methods(session, contact))
 
 
 # -- notes sub-resource ---------------------------------------------------

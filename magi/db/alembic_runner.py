@@ -12,13 +12,11 @@ logger = logging.getLogger("magi.db.alembic_runner")
 
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
-#: The single revision every MAGI database should be at.
-#: The codebase is in dev mode (no production upgrade story);
-#: older follow-on revisions (0002..0007) were folded back
-#: into ``0001_baseline`` and deleted. Any database whose
-#: ``alembic_version`` row names a now-deleted revision is
-#: stamped back to this head before Alembic runs.
-CANONICAL_HEAD = "0004_magis_admins"
+#: The single revision every current MAGI database should be at. The rebase
+#: guard below is only for historical development snapshots whose revision
+#: files have since been folded or renamed; normal upgrades run every
+#: committed revision through this head.
+CANONICAL_HEAD = "0005_agent_bus"
 
 
 def _find_alembic_ini() -> Path:

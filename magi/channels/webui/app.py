@@ -87,8 +87,8 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
 
     if start_telegram:
         _log.getLogger(__name__).info("create_app: starting TG bot")
-        from magi.db import require_state_dir
         from magi.channels.telegram.bot import start_bot
+        from magi.db import require_state_dir
 
         # Importing the ASGI module in a CLI/test process must not require the
         # container-only ``/workspace`` mount to exist. Node.run() initialises
@@ -113,14 +113,23 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
             start_title_worker,
             stop_title_worker,
         )
+        from magi.agent.worker import start_agent_worker, stop_agent_worker
+        from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
+        from magi.tools.worker import start_tool_worker, stop_tool_worker
 
+        await start_agent_worker()
+        await start_tool_worker()
+        await start_delivery_worker()
         await start_title_worker()
-        logger.info("auto-title worker started")
+        logger.info("agent, tool, and auto-title workers started")
         try:
             yield
         finally:
             await stop_title_worker()
-            logger.info("auto-title worker stopped")
+            await stop_delivery_worker()
+            await stop_tool_worker()
+            await stop_agent_worker()
+            logger.info("agent, tool, and auto-title workers stopped")
 
     app = FastAPI(
         title="MAGI",
@@ -160,6 +169,8 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # exists, so it must not be mounted on the browser-facing control service.
     from magi.channels.webui.api import runtime_access
     app.include_router(runtime_access.router, prefix="/api")
+    from magi.channels.a2a.router import router as a2a_router
+    app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
     # They therefore see only that MAGI's direct MAGIS database, rather than
     # the singleton WebUI's bootstrap database connection.
@@ -192,6 +203,8 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     from magi.channels.webui.api import chat
 
     app.include_router(chat.router, prefix="/api")
+    from magi.channels.webui.api import runs
+    app.include_router(runs.router, prefix="/api")
     # Chat session CRUD — file-backed per-user conversation
     # history (D.6). Each operator's sessions live under
     # ``<workspace>/memories/<state>.db`` (D.18) and the

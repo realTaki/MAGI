@@ -3,7 +3,7 @@
 
 Each row is one Model-Context-Protocol server the operator
 opted to surface. The ``MCP loader``
-(:mod:`magi.tools.mcp_loader`) reads these rows on
+(:mod:`magi.mcp.loader`) reads these rows on
 demand and turns each into a :class:`MCPServerConnection`.
 
 Why env / headers live as JSON columns

@@ -17,9 +17,8 @@ task's cron fires. Each invocation:
    ensures every task ends up with one home session
    without requiring a separate migration.
 
-2. Calls :func:`magi.agent.loop.handle_message` with the
-   contact credentials already in scope, against the
-   task's home session. The agent loop sees the full
+2. Publishes a durable ``task.triggered`` input with the
+   contact identity and task's home session. The agent worker sees the full
    history of prior fires' prompts + replies — same as
    a normal chat that happens to be triggered by a
    timer.
@@ -35,7 +34,7 @@ task's cron fires. Each invocation:
    (system-prompt-mandated): a "report-if-changed,
    otherwise-stay-silent" task shouldn't push anything.
 
-4. Pulls the latest TokenUsage row (the agent loop just
+4. Pulls the latest TokenUsage row (the agent worker just
    wrote one) onto the :class:`TaskRun` for cost-roll-up.
 
 5. On failure, increments ``consecutive_failures``; if the
@@ -62,7 +61,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.loop import handle_message
+from magi.agent.worker import submit_agent_message
+from magi.bus import AgentMessage
 from magi.channels.tasks.models import Task, TaskRun
 from magi.agent.memory.session import (
     SessionMessage,
@@ -129,10 +129,9 @@ async def execute_task(
 
     # ── 1. Read task + operator + load home session ──
     # LLM credentials are resolved inside
-    # :func:`magi.agent.loop.handle_message` via
     # :func:`magi.agent.llm.factory.get_provider` — the
     # runner never reads them and never passes them as
-    # kwargs. The agent loop raises ``LLMNotConfiguredError``
+    # kwargs. The actor records ``LLMNotConfiguredError``
     # when the MAGI runtime isn't configured, which the
     # broad ``except Exception`` below logs as a
     # ``magi_missing_credentials`` task failure.
@@ -263,7 +262,7 @@ async def execute_task(
             )
             db.add(run)
         # Snapshot for the calling coroutine so the
-        # handle_message call doesn't need to keep its own
+        # actor publish doesn't need to keep its own
         # DB session open.
         task_name = task.name
         # ``prompt`` sent to the agent is the contextual
@@ -312,7 +311,7 @@ async def execute_task(
         channel="task",
     )
 
-    # ── 2. Run the agent loop ──
+    # ── 2. Publish the actor input ──
     # D.28: TG push is now handled by the channel
     # dispatcher. The agent loop never sees the TG
     # client API directly — it calls the dispatcher's
@@ -327,104 +326,35 @@ async def execute_task(
     # time. No callback injection here.
 
     try:
-        reply = await asyncio.wait_for(
-            handle_message(
-                state_dir,
+        await submit_agent_message(
+            AgentMessage(
+                event_id=f"task:{task_id}:{run_id}",
+                source_id=run_id,
+                kind="task.triggered",
                 text=prompt,
-                # Task runner is the third channel after
-                # WebUI / TG. The agent loop uses this to
-                # gate send_message tool activation —
-                # the tool returns is_error for non-tg
-                # channels. Passing Channel.SCHEDULED here (a
-                # leftover from when the runner was a
-                # one-off subsystem) would silently
-                # disable the tool, so the agent's
-                # "deliver via send_message" directive
-                # in the user-message wouldn't reach TG.
-                # LLM credentials are resolved inside
-                # ``handle_message`` via
-                # :func:`magi.agent.llm.factory.get_provider`
-                # — we don't pass them as kwargs.
                 channel="task",
                 uid=contact.id,
                 session_id=session_id,
                 caller_role=contact.role,
+                metadata={
+                    "task_id": task_id,
+                    "task_run_id": run_id,
+                    "task_started_at": started,
+                },
             ),
-            timeout=_RUN_TIMEOUT_SECONDS,
+            state_dir=state_dir,
         )
-    except asyncio.TimeoutError:
+    except Exception as exc:  # noqa: BLE001 — durable publish failure
+        logger.exception("task %s failed to publish actor input", task_id)
         return _mark_failed(
             state_dir=state_dir, task_id=task_id, run_id=run_id,
             uid=contact.id, task_name=task_name,
             started_iso=started,
-            error=f"timeout_after_{_RUN_TIMEOUT_SECONDS}s",
-        )
-    except Exception as exc:  # noqa: BLE001 — broad catch on purpose
-        logger.exception("task %s crashed in handle_message", task_id)
-        return _mark_failed(
-            state_dir=state_dir, task_id=task_id, run_id=run_id,
-            uid=contact.id, task_name=task_name,
-            started_iso=started,
-            error=f"unexpected:{type(exc).__name__}:{exc}",
+            error=f"publish:{type(exc).__name__}:{exc}",
         )
 
-    # Persist the assistant reply via the same store API
-    # the WebUI + TG channels use — mirrors the channel
-    # pattern exactly. This is what the runs drawer's chat
-    # bubbles render: the operator sees both the prompt
-    # we appended above AND this reply in one scrollable
-    # thread, identical to the main chat pane. Without
-    # this append the assistant turn lived only in
-    # SessionStore's in-memory model and the runs drawer
-    # saw a one-sided conversation.
-    finished_msg = datetime.now(timezone.utc).isoformat()
-    try:
-        SessionStore(state_dir).append_messages(
-            contact.id, session_id,
-            [SessionMessage(
-                role="assistant", text=reply or "",
-                ts=finished_msg,
-                message_id=new_session_id(),
-            )],
-            channel="task",
-        )
-    except Exception:  # noqa: BLE001 — never fail the run for a missing history row
-        logger.exception(
-            "task %s: failed to append assistant reply to session %s",
-            task_id, session_id,
-        )
-
-    # ── 3. Finalise ──
-    # Reuse ``finished_msg`` so the assistant ChatMessage
-    # row and the TaskRun row share the exact same
-    # timestamp — keeps the chat-history bubble aligned
-    # with the run row's "✓ 成功 · <time>" pill.
-    finished = finished_msg
-    with open_session() as db:
-        run = db.get(TaskRun, run_id)
-        task = db.get(Task, task_id)
-        if run is None or task is None:
-            logger.info("execute_task: row vanished on success path (run=%s task=%s)",
-                        run_id, task_id)
-            return run_id
-        run.session_id = session_id
-        run.status = "success"
-        run.finished_at = finished
-        run.latency_ms = _ms_between(started, finished)
-        run.reply_excerpt = (reply or "")[:_REPLY_EXCERPT_CHARS]
-        last_token = _latest_token_usage(
-            db,
-            session_id=session_id,
-            started_iso=started,
-        )
-        if last_token is not None:
-            run.input_tokens = last_token[0]
-            run.output_tokens = last_token[1]
-        task.consecutive_failures = 0
-        task.last_run_at = finished
-        task.last_status = "success"
-        task.last_error = None
-        db.commit()
+    # Completion/failure is projected by BusStore in the same transaction as
+    # the actor transition.  This runner deliberately never waits for a reply.
     return run_id
 
 
@@ -542,7 +472,7 @@ def _finalise_run_failure(
 
 
 def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tuple[int, int] | None:
-    """Sum (input, output) tokens for the rows :func:`agent.handle_message`
+    """Sum (input, output) tokens written by the actor
     just wrote. The ``token_usage`` schema is per-call so a
     single fire may produce 1+ rows; summing keeps the
     dashboard's "cost" view aligned with the per-session bill.

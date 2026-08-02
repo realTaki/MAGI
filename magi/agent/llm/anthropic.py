@@ -41,6 +41,7 @@ from magi.agent.llm.errors import (
 from magi.agent.llm.provider import (
     ChatMessage,
     ChatResult,
+    LLMStreamEvent,
     LLMProvider,
 )
 
@@ -275,3 +276,87 @@ class AnthropicProvider(LLMProvider):
             stop_reason=getattr(response, "stop_reason", None),
             tool_uses=tool_uses,
         )
+
+    async def stream(
+        self,
+        system: str | None,
+        messages: list[ChatMessage],
+        *,
+        max_tokens: int = _MAX_TOKENS_DEFAULT,
+        tools: list[dict] | None = None,
+        on_event,
+    ) -> ChatResult:
+        """Use the Anthropic SDK stream without blocking the actor loop."""
+        sdk_messages = [
+            {"role": message.role, "content": message.content_blocks or message.content}
+            for message in messages
+        ]
+        kwargs: dict[str, Any] = {"model": self.model, "max_tokens": max_tokens, "messages": sdk_messages}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = tools
+        loop = asyncio.get_running_loop()
+
+        def _emit(kind: str, payload: dict[str, Any]) -> None:
+            future = asyncio.run_coroutine_threadsafe(
+                on_event(LLMStreamEvent(kind, payload)), loop
+            )
+            future.result()
+
+        def _read() -> Any:
+            with self._client.messages.stream(**kwargs) as stream:
+                for event in stream:
+                    if getattr(event, "type", "") != "content_block_delta":
+                        continue
+                    delta = getattr(event, "delta", None)
+                    delta_type = getattr(delta, "type", "")
+                    if delta_type == "text_delta":
+                        _emit("text.delta", {"text": getattr(delta, "text", "")})
+                    elif delta_type in {"input_json_delta", "json_delta"}:
+                        _emit("tool_arguments.delta", {"partial_json": getattr(delta, "partial_json", "")})
+                return stream.get_final_message()
+
+        try:
+            response = await asyncio.to_thread(_read)
+        except anthropic.AuthenticationError as exc:
+            raise LLMAuthError(f"{self._ERROR_LABEL} auth failed: {exc}") from exc
+        except anthropic.RateLimitError as exc:
+            raise LLMRateLimitError(f"{self._ERROR_LABEL} rate limited: {exc}") from exc
+        except (anthropic.APITimeoutError, anthropic.APIConnectionError) as exc:
+            raise LLMNetworkError(f"{self._ERROR_LABEL} stream failed: {exc}") from exc
+        return _response_to_result(response, self.model)
+
+
+def _response_to_result(response: Any, default_model: str) -> ChatResult:
+    """Convert a streamed final SDK response to the regular provider result."""
+    text_parts: list[str] = []
+    thinking_parts: list[str] = []
+    raw_blocks: list[dict[str, Any]] = []
+    tool_uses: list[dict[str, Any]] = []
+    for block in response.content:
+        if hasattr(block, "model_dump"):
+            raw = block.model_dump()
+        elif hasattr(block, "dict"):
+            raw = block.dict()
+        else:
+            raw = {"type": getattr(block, "type", "unknown")}
+        raw_blocks.append(raw)
+        block_type = getattr(block, "type", None)
+        if block_type == "text":
+            text_parts.append(getattr(block, "text", ""))
+        elif block_type == "thinking":
+            thinking_parts.append(getattr(block, "thinking", ""))
+        elif block_type == "tool_use":
+            tool_uses.append({"id": getattr(block, "id", ""), "name": getattr(block, "name", ""), "input": dict(getattr(block, "input", {}) or {})})
+    usage_obj = getattr(response, "usage", None)
+    usage = usage_obj.model_dump() if hasattr(usage_obj, "model_dump") else (usage_obj.dict() if hasattr(usage_obj, "dict") else None)
+    return ChatResult(
+        text="\n".join(part for part in text_parts if part).strip() or "(empty reply)",
+        thinking="\n".join(part for part in thinking_parts if part).strip() or None,
+        model=getattr(response, "model", default_model),
+        usage=usage,
+        raw_blocks=raw_blocks,
+        stop_reason=getattr(response, "stop_reason", None),
+        tool_uses=tool_uses,
+    )

@@ -32,6 +32,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -131,6 +132,16 @@ class OnboardingStatus(BaseModel):
     # can still get back into the wizard (and so a deployer can
     # "Restart onboarding" without nuking the saved data).
     onboarding_complete: bool = False
+    # ``login_methods`` summarises which login options
+    # the wizard's owner (the first admin) currently has.
+    # "" means "no admin row yet" — pre-step-2 the wizard
+    # is still collecting the operator's identity.
+    login_methods: list[str] = []
+    # ``mode`` is the wizard's chosen branch — empty until
+    # step 1 commits to "webui_only" or "with_tg". The
+    # /complete endpoint accepts either branch as long as
+    # the matching credentials are saved.
+    mode: str | None = None
 
 
 class CompleteRequest(BaseModel):
@@ -139,6 +150,7 @@ class CompleteRequest(BaseModel):
 
 class CompleteResponse(BaseModel):
     ok: bool
+    error: str | None = None
 
 
 class RestartRequest(BaseModel):
@@ -147,6 +159,26 @@ class RestartRequest(BaseModel):
 
 class RestartResponse(BaseModel):
     ok: bool
+
+
+class SetAdminPasswordRequest(BaseModel):
+    """WebUI-only onboarding step 2 input.
+
+    The wizard collects a name + password for the
+    operator's first admin row. The endpoint upserts the
+    :class:`Contact` row with ``admin=True`` and writes a
+    hashed :class:`AuthCredential` (kind=password) so the
+    operator can sign in without a Telegram binding.
+    """
+
+    name: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=8, max_length=256)
+
+
+class SetAdminPasswordResponse(BaseModel):
+    ok: bool
+    error: str | None = None
+    admin_uid: int | None = None
 
 
 # -- endpoints ---------------------------------------------------------
@@ -175,9 +207,12 @@ async def get_status() -> OnboardingStatus:
             bot_saved=bool(username), bot_username=username,
             super_admins_count=len(admins), super_admins=[str(a.telegram_id) for a in admins],
             onboarding_complete=(control_store.get("onboarding.complete") or "").lower() in {"true", "1"},
+            login_methods=["tg_code"] if admins else [],
+            mode="with_tg" if admins else None,
         )
     from magi.db import Contact, open_session
     from magi.db.settings import state_get
+    from magi.db.models_auth_credential import AuthCredential
 
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
@@ -191,13 +226,36 @@ async def get_status() -> OnboardingStatus:
     # ``telegram.super_admins`` key, but the operator can
     # always re-save the admin list to clean that up.
     admins: list[str] = []
+    login_methods: list[str] = []
+    chosen_mode: str | None = None
     try:
         with open_session() as session:
-            for admin in session.scalars(
+            admin_rows = list(session.scalars(
                 select(Contact).where(Contact.admin == 1)
-            ).all():
+            ).all())
+            for admin in admin_rows:
                 if admin.telegram_id is not None:
                     admins.append(str(admin.telegram_id))
+            # ``login_methods`` summarises the wizard's
+            # owner (the first admin row). The wizard
+            # only ever sets up one admin's credentials
+            # during onboarding, so the first row is the
+            # source of truth.
+            if admin_rows:
+                first = admin_rows[0]
+                has_password = session.scalar(
+                    select(AuthCredential).where(
+                        AuthCredential.uid == first.id,
+                        AuthCredential.kind == "password",
+                    )
+                ) is not None
+                if has_password:
+                    login_methods.append("password")
+                if first.telegram_id is not None:
+                    login_methods.append("tg_code")
+                chosen_mode = "with_tg" if first.telegram_id else (
+                    "webui_only" if has_password else None
+                )
     except Exception:
         # If the table is unreachable (very early boot) the
         # wizard still loads; admins stays empty until the
@@ -248,7 +306,94 @@ async def get_status() -> OnboardingStatus:
         super_admins_count=len(admins),
         super_admins=admins,
         onboarding_complete=onboarding_complete,
+        login_methods=login_methods,
+        mode=chosen_mode,
     )
+
+
+@router.post("/set-admin-password", response_model=SetAdminPasswordResponse)
+async def set_admin_password_onboarding(
+    payload: SetAdminPasswordRequest,
+) -> SetAdminPasswordResponse:
+    """WebUI-only onboarding step 2: create the first admin.
+
+    The TG wizard's step 2 collects TG chat ids via
+    :func:`save_admin`; this endpoint is the parallel
+    flow for operators who picked "WebUI only" in step 1.
+    It upserts a ``Contact`` row with ``admin=True`` and
+    ``role='assigned'`` (the operator is the person
+    being served, which is the single-MAGI default) and
+    writes a hashed :class:`AuthCredential`. There is no
+    telegram_id — the row is a WebUI-only admin.
+
+    If a previous admin row exists (an operator who
+    abandoned the wizard and re-entered the password
+    step), the first admin row is reused so the onboarding
+    flow doesn't strand the original row's chat history.
+    """
+    if control_store.enabled():
+        # Control-plane side is out of scope for this PR.
+        return SetAdminPasswordResponse(
+            ok=False,
+            error="password login is not supported by the control plane",
+        )
+
+    name = payload.name.strip()
+    if not name:
+        return SetAdminPasswordResponse(ok=False, error="name is required")
+
+    from magi.channels.webui.api import password_utils
+
+    try:
+        new_hash = password_utils.hash_password(payload.password)
+    except ValueError as exc:
+        return SetAdminPasswordResponse(ok=False, error=str(exc))
+
+    from magi.db import Contact, open_session
+    from magi.db.models_auth_credential import AuthCredential
+
+    with open_session() as session:
+        existing_admin = session.scalar(
+            select(Contact).where(Contact.admin == 1).order_by(Contact.id)
+        )
+        if existing_admin is None:
+            # First admin — fresh insert. ``role='assigned'``
+            # mirrors the typical single-MAGI operator.
+            row = Contact(name=name, admin=True, role="assigned")
+            session.add(row)
+            session.flush()
+            admin_uid = row.id
+        else:
+            # Subsequent admin renames (operator re-entered
+            # the wizard) reuse the row so chat history
+            # survives. If a password row already exists,
+            # we overwrite the hash — the operator is
+            # explicitly setting a new password.
+            existing_admin.name = name
+            admin_uid = existing_admin.id
+
+        # Upsert the password credential.
+        cred = session.scalar(
+            select(AuthCredential).where(
+                AuthCredential.uid == admin_uid,
+                AuthCredential.kind == "password",
+            )
+        )
+        if cred is None:
+            session.add(AuthCredential(
+                uid=admin_uid, kind="password", secret_hash=new_hash,
+            ))
+        else:
+            cred.secret_hash = new_hash
+            cred.updated_at = datetime.utcnow()
+
+        session.commit()
+
+    logger.info(
+        "onboarding: admin password set",
+        extra={"uid": admin_uid, "name": name},
+    )
+    return SetAdminPasswordResponse(ok=True, admin_uid=admin_uid)
 
 
 @router.post("/complete", response_model=CompleteResponse)
@@ -312,6 +457,35 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
             len(admins) if 'admins' in locals() else 0, inserted if 'inserted' in locals() else 0,
         )
         return CompleteResponse(ok=False)
+
+        # 1.5. Branch-aware credential check. A WebUI-only
+    #      wizard must have at least one admin with a
+    #      password credential before ``/complete`` is
+    #      allowed to flip the flag — otherwise the
+    #      operator couldn't sign in. The TG branch
+    #      relies on the existing admin-row check above.
+    if admins:
+        from magi.db.models_auth_credential import AuthCredential
+        with open_session() as session:
+            admin_ids = [a.id for a in admins]
+            password_rows = session.scalars(
+                select(AuthCredential).where(
+                    AuthCredential.uid.in_(admin_ids),
+                    AuthCredential.kind == "password",
+                )
+            ).all()
+            has_password = bool(password_rows)
+            # ``has_tg`` = any admin has a telegram_id.
+            has_tg = any(a.telegram_id for a in admins)
+        if not has_tg and not has_password:
+            return CompleteResponse(
+                ok=False,
+                error=(
+                    "no login method configured: pick WebUI-only "
+                    "(set a password) or with-TG (bind a chat id) "
+                    "before completing onboarding"
+                ),
+            )
 
     # 2. Flip the flag only after the inserts succeeded.
     try:

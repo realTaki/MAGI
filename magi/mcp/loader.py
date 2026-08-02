@@ -11,6 +11,17 @@ same connection transports (``stdio`` / ``sse`` /
 fit a single-process host where ``async`` work runs in one
 ``asyncio.run`` call at boot.
 
+Subsystem location
+------------------
+
+This module lives in :mod:`magi.mcp` (top-level MCP
+subsystem), not under ``magi.tools``. The agent loop
+reaches the loader through its own package — tools
+end up in the registry via :func:`magi.tools.registry.bootstrap_mcp_tools`,
+which imports :mod:`magi.mcp.loader` directly. The loader
+itself still depends on :mod:`magi.tools.base` for the
+:class:`Tool` / :class:`ToolResult` shapes.
+
 Configuration
 -------------
 
@@ -56,10 +67,10 @@ Lifecycle
    shutdown to close STDIO transports cleanly.
 
 The registry calls :func:`load_mcp_tools_async` once at
-boot — ``registry.load_mcp_tools_into_registry`` blocks
-exactly one event loop on it. The hot path (every chat turn
-calling ``tool.run``) only ever touches the cached wrapper.
-The agent loop also calls
+boot — ``registry.MCP bootstrap`` blocks exactly one
+event loop on it. The hot path (every chat turn calling
+``tool.run``) only ever touches the cached wrapper. The
+agent loop also calls
 :func:`magi.tools.registry.maybe_reload_mcp_tools` on
 each chat turn so a freshly-edited server row takes effect
 on the next user message (lazy reload — no live reconnect
@@ -80,7 +91,7 @@ from typing import Any, Literal, TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-logger = logging.getLogger("magi.tools.mcp_loader")
+logger = logging.getLogger("magi.mcp.loader")
 
 ConnectionType = Literal["stdio", "sse", "streamable_http"]
 

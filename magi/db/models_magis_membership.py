@@ -75,3 +75,49 @@ def adam_manages_magis(session, magic_id: int, target_magis_id: int) -> bool:
 
     target = session.get(MAGIS, target_magis_id)
     return target is not None and target.adam_id == magic_id
+
+
+def can_route_a2a(session, from_magic_id: int, to_magic_id: int) -> bool:
+    """Apply MAGIS-tree routing rules for internal Agent-to-Agent messages.
+
+    This is a message-routing rule, not WebUI authority or resource access:
+    peers in one MAGIS may communicate; an ancestor MAGIS may delegate to a
+    descendant's Adam; that descendant Adam may report to members of an
+    ancestor MAGIS. Sibling MAGIS do not communicate directly.
+    """
+    from sqlalchemy import select
+    from magi.db.models_magis import MAGIS
+
+    memberships = {
+        row.magic_id: row.magis_id
+        for row in session.scalars(
+            select(MAGISMembership).where(
+                MAGISMembership.magic_id.in_((from_magic_id, to_magic_id))
+            )
+        )
+    }
+    source_id = memberships.get(from_magic_id)
+    target_id = memberships.get(to_magic_id)
+    if source_id is None or target_id is None:
+        return False
+    if source_id == target_id:
+        return True
+
+    target = session.get(MAGIS, target_id)
+    if target is not None and target.adam_id == to_magic_id:
+        current = target.parent_id
+        while current is not None:
+            if current == source_id:
+                return True
+            parent = session.get(MAGIS, current)
+            current = parent.parent_id if parent is not None else None
+
+    source = session.get(MAGIS, source_id)
+    if source is not None and source.adam_id == from_magic_id:
+        current = source.parent_id
+        while current is not None:
+            if current == target_id:
+                return True
+            parent = session.get(MAGIS, current)
+            current = parent.parent_id if parent is not None else None
+    return False

@@ -2,8 +2,8 @@
 
 A channel receives inbound messages from a user surface (Telegram chat,
 WebUI console, future email / calendar) and sends outbound messages back.
-Both Adam and EVE mount one or more channels and feed messages into the
-same ``magi.agent`` agent loop.
+Both Adam and EVE mount one or more channels. They publish messages to the
+private ``magi.bus``; the MAGI-owned agent worker consumes them sequentially.
 
 ``channels/base.py`` defines the abstract ``Channel`` interface
 (receive / send / identify_sender). Concrete adapters:
@@ -18,7 +18,7 @@ __all__ = ["base", "Channel"]
 
 
 class Channel(StrEnum):
-    """Typed channel identifiers used across the agent loop,
+    """Typed channel identifiers used across bus payloads,
     session store, and dispatcher.
 
     Replaces free-form ``channel: str`` with a compile-time-
