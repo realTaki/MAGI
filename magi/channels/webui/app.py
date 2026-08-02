@@ -203,6 +203,8 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     from magi.channels.webui.api import chat
 
     app.include_router(chat.router, prefix="/api")
+    from magi.channels.webui.api import runs
+    app.include_router(runs.router, prefix="/api")
     # Chat session CRUD — file-backed per-user conversation
     # history (D.6). Each operator's sessions live under
     # ``<workspace>/memories/<state>.db`` (D.18) and the

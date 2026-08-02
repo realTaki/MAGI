@@ -54,24 +54,48 @@ async def receive(request: Request) -> JSONResponse:
         event_id = str(body["event_id"])
         text = str(body["text"])
         from_magic_id = int(body["from_magic_id"])
+        kind = str(body.get("kind") or "request")
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return _error(400, "bad_request")
     if from_magic_id != magic_id or not event_id or not text:
         return _error(400, "bad_request")
 
-    from magi.agent.worker import submit_agent_message
+    from magi.agent.worker import _worker, submit_agent_message
+    from magi.bus import BusStore
 
     reply_to = body.get("reply_to")
+    if kind == "result":
+        if not isinstance(reply_to, str) or not reply_to:
+            return _error(400, "bad_request")
+        state_dir = None
+        completed_run = BusStore(state_dir).complete_a2a_invocation(
+            reply_to=reply_to,
+            content=text,
+            is_error=bool(body.get("is_error", False)),
+        )
+        if completed_run and _worker is not None:
+            _worker.notify()
+        return JSONResponse(
+            status_code=202,
+            content={"accepted": True, "event_id": event_id, "run_id": completed_run},
+        )
+    if kind != "request":
+        return _error(400, "bad_request")
     run_id = await submit_agent_message(
         AgentMessage(
             event_id=f"a2a:{magic_id}:{event_id}",
             source_id=str(magic_id),
             text=text,
             channel="a2a",
-            kind="a2a.result" if reply_to else "a2a.request",
+            kind="a2a.request",
             conversation_id=f"a2a:{magic_id}:{reply_to or event_id}",
             correlation_id=str(body.get("correlation_id") or event_id),
-            metadata={"from_magic_id": magic_id, "reply_to": reply_to, "a2a_event_id": event_id},
+            metadata={
+                "from_magic_id": magic_id,
+                "reply_to": reply_to,
+                "expect_reply": bool(reply_to),
+                "a2a_event_id": event_id,
+            },
         )
     )
     return JSONResponse(

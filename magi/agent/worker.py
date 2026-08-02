@@ -14,7 +14,16 @@ import logging
 import uuid
 from contextlib import suppress
 
-from magi.bus import AgentMessage, BusClaim, BusStore, RunResult, StreamEvent, get_stream_hub
+from magi.bus import (
+    A2AInvocationRequest,
+    AgentMessage,
+    BusClaim,
+    BusStore,
+    BusStoreProtocol,
+    RunResult,
+    StreamEvent,
+    get_stream_hub,
+)
 from magi.db import require_state_dir
 
 logger = logging.getLogger("magi.agent.worker")
@@ -35,9 +44,15 @@ class AgentRunTimedOut(TimeoutError):
 class AgentWorker:
     """Sequential consumer of one MAGI's ``agent_inbox`` stream."""
 
-    def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
+    def __init__(
+        self,
+        state_dir: str | None = None,
+        *,
+        poll_seconds: float = 0.25,
+        store: BusStoreProtocol | None = None,
+    ) -> None:
         self.state_dir = state_dir or require_state_dir()
-        self.store = BusStore(self.state_dir)
+        self.store: BusStoreProtocol = store or BusStore(self.state_dir)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._wake = asyncio.Event()
@@ -71,6 +86,9 @@ class AgentWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
+            expire_a2a = getattr(self.store, "expire_a2a_invocations", None)
+            if expire_a2a is not None:
+                expire_a2a()
             claim = self.store.claim_next_agent_message(self.worker_id)
             if claim is None:
                 self._wake.clear()
@@ -89,7 +107,7 @@ class AgentWorker:
                 # it must not start another inference while tools are running.
                 self.store.complete_agent_input(claim.event_id)
                 return
-            if claim.kind == "tool.result":
+            if claim.kind in {"tool.result", "a2a.result"}:
                 resumed = self.store.load_tool_continuation(claim.run_id)
                 if resumed is None:
                     self.store.complete_agent_input(claim.event_id)
@@ -123,7 +141,7 @@ class AgentWorker:
         tool_results: list[dict] | None = None,
         steering_inputs: list[dict] | None = None,
     ) -> None:
-        from magi.agent.loop import DEFAULT_MAX_TOKENS
+        from magi.agent.runtime_context import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
         from magi.agent.workspace import workspace_root
 
@@ -185,9 +203,9 @@ class AgentWorker:
             "usage": step.usage,
         }
         if not step.tool_uses:
-            self.store.complete_agent_message(
+            self.store.commit_agent_transition(
                 claim.event_id,
-                step.text,
+                reply=step.text,
                 delivery_destination=_delivery_destination(self.state_dir, payload),
                 continuation={"messages": list(step.messages), "assistant_blocks": list(step.assistant_blocks)},
                 attempt_id=attempt_id,
@@ -202,6 +220,35 @@ class AgentWorker:
             "session_id": payload.get("session_id"),
             "caller_role": payload.get("caller_role"),
         }
+        a2a_requests: list[A2AInvocationRequest] = []
+        regular_tool_uses = []
+        for tool_use in step.tool_uses:
+            if tool_use.get("name") != "message_magi":
+                regular_tool_uses.append(tool_use)
+                continue
+            arguments = dict(tool_use.get("input") or {})
+            try:
+                target_magic_id = int(arguments["magic_id"])
+                text = str(arguments["text"])
+                if target_magic_id <= 0 or not text.strip():
+                    raise ValueError("magic_id and text are required")
+            except (KeyError, TypeError, ValueError) as exc:
+                # Preserve provider-valid transcript even for malformed model
+                # output; the next step receives an ordinary failed result.
+                regular_tool_uses.append({
+                    "id": tool_use["id"],
+                    "name": "message_magi",
+                    "input": {"_validation_error": str(exc)},
+                })
+                continue
+            a2a_requests.append(
+                A2AInvocationRequest(
+                    tool_call_id=str(tool_use["id"]),
+                    target_magic_id=target_magic_id,
+                    text=text,
+                    expect_reply=bool(arguments.get("expect_reply", False)),
+                )
+            )
         tool_call_ids = [str(tool_use["id"]) for tool_use in step.tool_uses]
         continuation = {
             "input": payload,
@@ -216,12 +263,13 @@ class AgentWorker:
                 "arguments": dict(tool_use.get("input") or {}),
                 "context": context,
             }
-            for tool_use in step.tool_uses
+            for tool_use in regular_tool_uses
         ]
-        self.store.wait_for_tools(
+        self.store.commit_agent_transition(
             claim.event_id,
             continuation=continuation,
             jobs=jobs,
+            a2a_requests=a2a_requests,
             attempt_id=attempt_id,
             attempt_result=attempt_result,
         )
@@ -298,26 +346,3 @@ async def wait_for_agent_run(
         if asyncio.get_running_loop().time() >= deadline:
             raise AgentRunTimedOut(f"agent run {run_id} did not complete in time")
         await asyncio.sleep(poll_seconds)
-
-
-async def submit_and_wait_agent_message(
-    message: AgentMessage,
-    *,
-    state_dir: str | None = None,
-    timeout_seconds: float = 180.0,
-) -> str:
-    """Compatibility helper for request/response channels during migration."""
-    # Production owns the long-lived worker in the runtime FastAPI lifespan.
-    # A bounded fallback keeps CLI/test callers safe without leaving a worker
-    # task attached to an arbitrary temporary event loop.
-    started_here = _worker is None
-    if started_here:
-        await start_agent_worker(state_dir)
-    try:
-        run_id = await submit_agent_message(message, state_dir=state_dir)
-        return await wait_for_agent_run(
-            run_id, state_dir=state_dir, timeout_seconds=timeout_seconds
-        )
-    finally:
-        if started_here:
-            await stop_agent_worker()

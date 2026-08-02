@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from magi.bus import AgentMessage, BusStore
+from magi.bus import A2AInvocationRequest, AgentMessage, BusStore
 from magi.bus.models import AgentInbox
 from magi.db import init_orm, open_session
 from magi.db.base import utcnow_naive
@@ -119,3 +119,65 @@ def test_same_conversation_message_is_durable_steering_input(bus_store: BusStore
     assert steer_claim is not None
     assert steer_claim.kind == "run.steer"
     assert steer_claim.run_id == run_id
+
+
+def test_a2a_reply_parks_then_resumes_only_matching_run(bus_store: BusStore) -> None:
+    run_id = bus_store.publish_agent_message(_message("a2a-root"))
+    root = bus_store.claim_next_agent_message("agent-worker")
+    assert root is not None
+    bus_store.commit_agent_transition(
+        root.event_id,
+        continuation={"input": root.payload, "messages": [], "tool_call_ids": ["peer-call"]},
+        jobs=[],
+        a2a_requests=[
+            A2AInvocationRequest(
+                tool_call_id="peer-call", target_magic_id=9, text="please reply", expect_reply=True,
+            )
+        ],
+    )
+    assert bus_store.get_run_result(run_id).status == "waiting_a2a"  # type: ignore[union-attr]
+    assert bus_store.complete_a2a_invocation(reply_to="unknown", content="ignored") is None
+
+    from magi.bus.models import A2AInvocation
+    with open_session() as session:
+        invocation = session.query(A2AInvocation).filter_by(run_id=run_id).one()
+        invocation_id = invocation.invocation_id
+    assert bus_store.complete_a2a_invocation(reply_to=invocation_id, content="peer reply") == run_id
+    result_event = bus_store.claim_next_agent_message("agent-worker")
+    assert result_event is not None and result_event.kind == "a2a.result"
+    resumed = bus_store.load_tool_continuation(run_id)
+    assert resumed is not None
+    assert resumed[1] == [{"type": "tool_result", "tool_use_id": "peer-call", "content": "peer reply", "is_error": False}]
+
+
+def test_one_way_a2a_queues_delivery_and_continues(bus_store: BusStore) -> None:
+    run_id = bus_store.publish_agent_message(_message("one-way"))
+    root = bus_store.claim_next_agent_message("agent-worker")
+    assert root is not None
+    bus_store.commit_agent_transition(
+        root.event_id,
+        continuation={"input": root.payload, "messages": [], "tool_call_ids": ["notify-call"]},
+        jobs=[],
+        a2a_requests=[
+            A2AInvocationRequest(
+                tool_call_id="notify-call", target_magic_id=9, text="notice", expect_reply=False,
+            )
+        ],
+    )
+    assert bus_store.get_run_result(run_id).status == "waiting_tool"  # type: ignore[union-attr]
+    continuation_event = bus_store.claim_next_agent_message("agent-worker")
+    assert continuation_event is not None and continuation_event.kind == "tool.result"
+    resumed = bus_store.load_tool_continuation(run_id)
+    assert resumed is not None
+    assert resumed[1][0]["content"] == "message queued for delivery"
+
+
+def test_explicit_cancel_is_terminal_and_late_completion_is_discarded(bus_store: BusStore) -> None:
+    run_id = bus_store.publish_agent_message(_message("cancel-root"))
+    claim = bus_store.claim_next_agent_message("agent-worker")
+    assert claim is not None
+    assert bus_store.cancel_run(run_id)
+    bus_store.commit_agent_transition(claim.event_id, reply="must not be committed")
+    result = bus_store.get_run_result(run_id)
+    assert result is not None and result.status == "cancelled"
+    assert result.reply is None

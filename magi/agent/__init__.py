@@ -11,14 +11,10 @@ from.
 Filled in across C3-C8. The package exists now so subsequent
 checkpoints import against a stable layout.
 
-Public surface (re-exported from :mod:`magi.agent.loop`):
-
-- :func:`handle_message` — the agent loop entry point. WebUI
-  / TG / scheduled-task callers all reach it through
-  ``magi.agent.handle_message``.
-- :func:`_record_token_usage` / :func:`_build_messages_from_session`
-  / :func:`_maybe_compact` — internal helpers exposed to
-  tests; loop.py is the canonical home.
+Runtime channels publish to :mod:`magi.bus`; the actor worker owns one
+provider step at a time.  Legacy loop helpers remain isolated in
+``magi.agent.loop`` only while historical unit tests are migrated, and are not
+part of the runtime entry point.
 """
 
 from __future__ import annotations

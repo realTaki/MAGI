@@ -68,6 +68,7 @@ def _build_tools() -> list["Tool"]:
     )
     from magi.tools.edit_file import EditFileTool
     from magi.tools.list_files import ListFilesTool
+    from magi.tools.message_magi import MessageMagiTool
     from magi.mcp.manage import (
         AddMcpServerTool,
         DeleteMcpServerTool,
@@ -106,6 +107,7 @@ def _build_tools() -> list["Tool"]:
         ListFilesTool(),
         SearchSessionsTool(),
         SendMessageTool(),
+        MessageMagiTool(),
         ScheduleTaskTool(),
         SkillLoaderTool(),
         # Shell execution — three tools the LLM uses

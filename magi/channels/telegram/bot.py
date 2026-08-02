@@ -604,7 +604,7 @@ async def _handle_contact_message(
         new_session_id,
         utcnow_iso,
     )
-    from magi.agent.worker import submit_and_wait_agent_message
+    from magi.agent.worker import submit_agent_message
     from magi.bus import AgentMessage
 
     # LLM credentials remain local to the agent. Telegram only publishes a
@@ -750,7 +750,7 @@ async def _handle_contact_message(
     )
 
     try:
-        reply = await submit_and_wait_agent_message(
+        await submit_agent_message(
             AgentMessage(
                 # Telegram message ids are stable per chat, and the inbound
                 # session message is separately persisted above. Together
@@ -787,70 +787,9 @@ async def _handle_contact_message(
                 # operator — keep the reply path alive.
                 pass
 
-    # Telegram has a 4096-char message limit. The agent
-    # loop's reply is well under that in practice, but a
-    # long SOUL.md + verbose model could overflow. Truncate
-    # defensively with a note so the user knows there's
-    # more.
-    if len(reply) > 4000:
-        reply = reply[:3990] + "\n\n…(回复过长，已截断)"
-
-    # Outbound append. Failure is logged but does NOT
-    # raise — the TG user already got the reply via
-    # ``reply_text`` below; a missing history row is worse
-    # than a console error.
-    ts_out = utcnow_iso()
-    try:
-        store.append_messages(
-            uid, session_id,
-            [SessionMessage(
-                role="assistant", text=reply, ts=ts_out,
-                message_id=new_session_id(),
-            )],
-            channel=Channel.TG,
-        )
-    except Exception:
-        logger.exception(
-            "telegram: failed to append assistant message for session %s",
-            session_id,
-        )
-
-    # The committed reply is now delivered by ``DeliveryWorker`` from the
-    # durable outbox. Do not send it directly here: a crash after a direct
-    # Bot API call but before a DB acknowledgement would otherwise duplicate
-    # or lose the reply on recovery.
-
-    # -- done-receipt reaction -----------------------------------------
-    # Telegram replaces any prior bot reaction on the same
-    # message when the bot calls ``set_message_reaction``
-    # again, so this single call "upgrades" the read receipt
-    # to a done indicator the moment the reply lands. The
-    # operator sees: eyes 👀 immediately, then trophy 🏆
-    # (or whatever they configured) once the assistant
-    # replies.
-    #
-    # Same failure-mode handling as the read receipt above:
-    # a misconfigured chat (no reaction permission, bot
-    # blocked, transient network blip) is logged and
-    # swallowed — the actual reply has already been sent
-    # by this point, so dropping the reaction on the floor
-    # is the lesser evil.
-    from magi.channels.telegram.config import get_done_reaction_emoji
-    try:
-        done_reaction = get_done_reaction_emoji(state_dir)
-        if done_reaction:
-            await update.get_bot().set_message_reaction(
-                chat_id=update.effective_chat.id,
-                message_id=update.effective_message.message_id,
-                reaction=done_reaction,
-            )
-    except Exception:
-        logger.exception(
-            "telegram: set_message_reaction (done) failed (chat=%s "
-            "msg=%s); reply already sent",
-            update.effective_chat.id,
-            update.effective_message.message_id,
-        )
+    # DeliveryWorker appends the committed response and sends Telegram only
+    # after the actor transition commits.  The inbound handler intentionally
+    # returns now; a slow provider/tool must not occupy Telegram's update task.
 
 
 def _resolve_or_create_tg_session(

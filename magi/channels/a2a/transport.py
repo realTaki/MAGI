@@ -26,6 +26,7 @@ async def send_a2a_delivery(target_magic_id: int, event_id: str, payload: dict[s
         "text": str(payload.get("text") or ""),
         "ts": datetime.now(timezone.utc).isoformat(),
         "reply_to": payload.get("reply_to"),
+        "kind": str(payload.get("a2a_kind") or "request"),
         "correlation_id": payload.get("correlation_id"),
     }
     encoded = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")

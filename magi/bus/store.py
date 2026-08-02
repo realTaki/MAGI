@@ -10,7 +10,7 @@ the Telegram thread and the scheduler's event loop alike.
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -20,6 +20,7 @@ from magi.bus.contracts import AgentMessage, BusClaim, DeliveryClaim, RunResult,
 from magi.bus.models import (
     AgentInbox,
     AgentRun,
+    A2AInvocation,
     DeliveryOutbox,
     LLMAttempt,
     RunInput,
@@ -27,6 +28,7 @@ from magi.bus.models import (
     ToolJob,
 )
 from magi.db.base import utcnow_naive
+from magi.bus.contracts import A2AInvocationRequest
 from magi.db.engine import open_session
 
 
@@ -222,6 +224,19 @@ class BusStore:
             row.updated_at = now
             run = session.get(AgentRun, row.run_id)
             if run is not None:
+                if run.status == "cancelled":
+                    row.status = "completed"
+                    row.leased_by = None
+                    row.leased_until = None
+                    row.updated_at = now
+                    if attempt_id:
+                        attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
+                        if attempt is not None:
+                            attempt.status = "discarded"
+                            attempt.response = attempt_result or {"text": reply}
+                            attempt.completed_at = now
+                    session.commit()
+                    return
                 delivery_id = None
                 channel = str(row.payload.get("channel") or "")
                 if channel == "tg" and delivery_destination:
@@ -246,7 +261,7 @@ class BusStore:
                 elif channel == "a2a":
                     metadata = dict(row.payload.get("metadata") or {})
                     target_magic_id = metadata.get("from_magic_id")
-                    if target_magic_id is not None:
+                    if target_magic_id is not None and metadata.get("expect_reply"):
                         delivery_id = f"delivery:{run.run_id}"
                         if session.scalar(
                             select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
@@ -260,6 +275,7 @@ class BusStore:
                                     payload={
                                         "text": reply,
                                         "reply_to": metadata.get("reply_to"),
+                                        "a2a_kind": "result",
                                         "correlation_id": run.correlation_id,
                                     },
                                     status="pending",
@@ -272,11 +288,44 @@ class BusStore:
                 run.result = {"reply": reply, "delivery_id": delivery_id}
                 if continuation is not None:
                     run.continuation = continuation
+                session_id = row.payload.get("session_id")
+                if session_id:
+                    # The final provider response becomes user-visible in the
+                    # same transition that marks the run complete.  Channels
+                    # must not append a second, non-authoritative copy later.
+                    from magi.agent.memory.session.tables import ChatMessage, ChatSession
+
+                    message_id = run.run_id[-26:]
+                    session_exists = session.get(ChatSession, str(session_id)) is not None
+                    existing_message = None
+                    if session_exists:
+                        existing_message = session.scalar(
+                            select(ChatMessage).where(
+                                ChatMessage.session_id == session_id,
+                                ChatMessage.message_id == message_id,
+                            )
+                        )
+                    if existing_message is None and session_exists:
+                        from magi.agent.memory.session.ids import utcnow_iso
+
+                        session.add(
+                            ChatMessage(
+                                session_id=str(session_id),
+                                message_id=message_id,
+                                role="assistant",
+                                text=reply,
+                                ts=utcnow_iso(),
+                                content_blocks=list((continuation or {}).get("assistant_blocks") or []),
+                                run_id=run.run_id,
+                                llm_attempt_id=attempt_id,
+                            )
+                        )
                 run.version += 1
                 run.error_code = None
                 run.error_detail = None
                 run.completed_at = now
                 run.updated_at = now
+                self._project_task_run(session, row.payload, reply=reply, completed_at=now)
             if attempt_id:
                 attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
                 if attempt is not None:
@@ -302,6 +351,46 @@ class BusStore:
                 input_row.status = "consumed"
                 input_row.context_seq = input_row.received_seq
             session.commit()
+
+    def commit_agent_transition(
+        self,
+        event_id: str,
+        *,
+        reply: str | None = None,
+        delivery_destination: str | None = None,
+        continuation: dict[str, Any] | None = None,
+        jobs: list[dict[str, Any]] | None = None,
+        a2a_requests: list[A2AInvocationRequest] | None = None,
+        attempt_id: str | None = None,
+        attempt_result: dict[str, Any] | None = None,
+    ) -> None:
+        """Commit one actor decision atomically.
+
+        A transition is either terminal (``reply`` is supplied) or parks the
+        run while durable effects are enqueued.  Each branch uses one SQLite
+        transaction; callers never compose inbox acknowledgement, transcript,
+        attempt state, tool/A2A effects, and delivery on their own.
+        """
+        if reply is not None:
+            self.complete_agent_message(
+                event_id,
+                reply,
+                delivery_destination=delivery_destination,
+                continuation=continuation,
+                attempt_id=attempt_id,
+                attempt_result=attempt_result,
+            )
+            return
+        if continuation is None:
+            raise ValueError("non-terminal agent transition requires continuation")
+        self.wait_for_tools(
+            event_id,
+            continuation=continuation,
+            jobs=jobs or [],
+            a2a_requests=a2a_requests,
+            attempt_id=attempt_id,
+            attempt_result=attempt_result,
+        )
 
     def claim_next_delivery(
         self, worker_id: str, *, lease_seconds: int = 60
@@ -382,7 +471,7 @@ class BusStore:
             row.updated_at = now
             session.commit()
 
-    def retry_delivery(self, delivery_id: str, *, delay_seconds: int = 5) -> None:
+    def retry_delivery(self, delivery_id: str, *, delay_seconds: int | None = None) -> None:
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
             row = session.scalar(
@@ -390,10 +479,18 @@ class BusStore:
             )
             if row is None:
                 raise KeyError(f"unknown delivery: {delivery_id}")
+            if row.attempts >= 8:
+                row.status = "dead"
+                row.leased_by = None
+                row.leased_until = None
+                row.updated_at = now
+                session.commit()
+                return
             row.status = "retry"
             row.leased_by = None
             row.leased_until = None
-            row.available_at = now + timedelta(seconds=delay_seconds)
+            backoff = delay_seconds if delay_seconds is not None else min(300, 5 * (2 ** max(0, row.attempts - 1)))
+            row.available_at = now + timedelta(seconds=backoff)
             row.updated_at = now
             session.commit()
 
@@ -431,6 +528,7 @@ class BusStore:
         *,
         continuation: dict[str, Any],
         jobs: list[dict[str, Any]],
+        a2a_requests: list[A2AInvocationRequest] | None = None,
         attempt_id: str | None = None,
         attempt_result: dict[str, Any] | None = None,
     ) -> None:
@@ -443,11 +541,25 @@ class BusStore:
             run = session.get(AgentRun, row.run_id)
             if run is None:
                 raise KeyError(f"unknown agent run: {row.run_id}")
+            if run.status == "cancelled":
+                row.status = "completed"
+                row.leased_by = None
+                row.leased_until = None
+                row.updated_at = now
+                if attempt_id:
+                    attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
+                    if attempt is not None:
+                        attempt.status = "discarded"
+                        attempt.response = attempt_result or {}
+                        attempt.completed_at = now
+                session.commit()
+                return
             row.status = "completed"
             row.leased_by = None
             row.leased_until = None
             row.updated_at = now
-            run.status = "waiting_tool"
+            waiting_for_a2a = bool(a2a_requests and any(item.expect_reply for item in a2a_requests))
+            run.status = "waiting_a2a" if waiting_for_a2a else "waiting_tool"
             run.continuation = continuation
             run.version += 1
             run.updated_at = now
@@ -487,6 +599,81 @@ class BusStore:
                         updated_at=now,
                     )
                 )
+            for request in a2a_requests or ():
+                invocation_id = _new_id("a2a")
+                existing = session.scalar(
+                    select(A2AInvocation).where(A2AInvocation.tool_call_id == request.tool_call_id)
+                )
+                if existing is not None:
+                    continue
+                session.add(
+                    ToolCall(
+                        tool_call_id=request.tool_call_id,
+                        run_id=run.run_id,
+                        tool_name="message_magi",
+                        arguments={
+                            "magic_id": request.target_magic_id,
+                            "text": request.text,
+                            "expect_reply": request.expect_reply,
+                        },
+                        status="requested" if request.expect_reply else "completed",
+                        result=None if request.expect_reply else {"content": "message queued for delivery", "is_error": False},
+                        created_at=now,
+                        completed_at=None if request.expect_reply else now,
+                    )
+                )
+                session.add(
+                    A2AInvocation(
+                        invocation_id=invocation_id,
+                        run_id=run.run_id,
+                        target=str(request.target_magic_id),
+                        tool_call_id=request.tool_call_id,
+                        request_event_id=f"a2a-request:{invocation_id}",
+                        reply_to=invocation_id,
+                        expect_reply=request.expect_reply,
+                        deadline_at=now + timedelta(seconds=request.timeout_seconds) if request.expect_reply else None,
+                        idempotency_key=f"a2a:{run.run_id}:{request.tool_call_id}",
+                        request={"text": request.text},
+                        status="pending",
+                        created_at=now,
+                    )
+                )
+                session.add(
+                    DeliveryOutbox(
+                        delivery_id=f"delivery:{invocation_id}",
+                        run_id=run.run_id,
+                        channel="a2a",
+                        destination=str(request.target_magic_id),
+                        payload={
+                            "text": request.text,
+                            "reply_to": invocation_id if request.expect_reply else None,
+                            "a2a_kind": "request",
+                            "correlation_id": run.correlation_id,
+                        },
+                        status="pending",
+                        available_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            if not jobs and not waiting_for_a2a and a2a_requests:
+                continue_event_id = f"run-continue:{run.run_id}:{run.version}"
+                if session.scalar(select(AgentInbox).where(AgentInbox.event_id == continue_event_id)) is None:
+                    session.add(
+                        AgentInbox(
+                            event_id=continue_event_id,
+                            run_id=run.run_id,
+                            conversation_id=run.conversation_id,
+                            correlation_id=run.correlation_id,
+                            kind="tool.result",
+                            source_id="message_magi",
+                            payload={"text": "", "internal": True},
+                            status="pending",
+                            available_at=now,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
             session.commit()
 
     def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
@@ -524,7 +711,7 @@ class BusStore:
         """Return a resumable continuation only after all expected tools settle."""
         with open_session(self._state_dir) as session:
             run = session.get(AgentRun, run_id)
-            if run is None or run.status != "waiting_tool" or not run.continuation:
+            if run is None or run.status not in {"waiting_tool", "waiting_a2a"} or not run.continuation:
                 return None
             continuation = dict(run.continuation)
             call_ids = list(continuation.get("tool_call_ids") or [])
@@ -550,6 +737,83 @@ class BusStore:
                 )
             return continuation, results
 
+    def complete_a2a_invocation(
+        self,
+        *,
+        reply_to: str,
+        content: str,
+        is_error: bool = False,
+    ) -> str | None:
+        """Atomically attach a peer result to the invocation that requested it.
+
+        Unknown/late ``reply_to`` values are intentionally ignored.  This is
+        the correlation boundary that prevents one peer reply resuming an
+        unrelated run.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            invocation = session.scalar(
+                select(A2AInvocation).where(
+                    A2AInvocation.invocation_id == reply_to,
+                    A2AInvocation.expect_reply.is_(True),
+                    A2AInvocation.status.in_(("pending", "accepted")),
+                )
+            )
+            if invocation is None or not invocation.tool_call_id:
+                return None
+            invocation.status = "failed" if is_error else "completed"
+            invocation.result = {"content": content, "is_error": is_error}
+            invocation.completed_at = now
+            call = session.scalar(
+                select(ToolCall).where(ToolCall.tool_call_id == invocation.tool_call_id)
+            )
+            if call is not None:
+                call.status = "failed" if is_error else "completed"
+                call.result = {"content": content, "is_error": is_error}
+                call.completed_at = now
+            event_id = f"a2a-result:{reply_to}"
+            if session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id)) is None:
+                run = session.get(AgentRun, invocation.run_id)
+                session.add(
+                    AgentInbox(
+                        event_id=event_id,
+                        run_id=invocation.run_id,
+                        conversation_id=run.conversation_id if run is not None else None,
+                        correlation_id=run.correlation_id if run is not None else None,
+                        kind="a2a.result",
+                        source_id=reply_to,
+                        payload={"text": content, "reply_to": reply_to, "is_error": is_error},
+                        status="pending",
+                        available_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            session.commit()
+            return invocation.run_id
+
+    def expire_a2a_invocations(self) -> int:
+        """Convert elapsed expected peer replies into ordinary failed results."""
+        now = utcnow_naive()
+        expired: list[str] = []
+        with open_session(self._state_dir) as session:
+            for invocation in session.scalars(
+                select(A2AInvocation).where(
+                    A2AInvocation.expect_reply.is_(True),
+                    A2AInvocation.status.in_(("pending", "accepted")),
+                    A2AInvocation.deadline_at.is_not(None),
+                    A2AInvocation.deadline_at < now,
+                )
+            ):
+                expired.append(invocation.invocation_id)
+        for invocation_id in expired:
+            self.complete_a2a_invocation(
+                reply_to=invocation_id,
+                content="A2A peer response timed out",
+                is_error=True,
+            )
+        return len(expired)
+
     def fail_agent_message(self, event_id: str, *, error_code: str, error_detail: str) -> None:
         """Terminally fail a turn while preserving a user-safe error record."""
         now = utcnow_naive()
@@ -568,7 +832,53 @@ class BusStore:
                 run.error_detail = error_detail
                 run.completed_at = now
                 run.updated_at = now
+            self._project_task_run(
+                session,
+                row.payload,
+                error=f"{error_code}: {error_detail}",
+                completed_at=now,
+            )
             session.commit()
+
+    @staticmethod
+    def _project_task_run(
+        session: Any,
+        payload: dict[str, Any],
+        *,
+        completed_at: datetime,
+        reply: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Project a task-originated actor terminal state in the same commit."""
+        metadata = dict(payload.get("metadata") or {})
+        task_run_id = metadata.get("task_run_id")
+        task_id = metadata.get("task_id")
+        if not task_run_id or not task_id:
+            return
+        from magi.channels.tasks.models import Task, TaskRun
+
+        task_run = session.get(TaskRun, str(task_run_id))
+        task = session.get(Task, str(task_id))
+        if task_run is None or task is None:
+            return
+        finished = completed_at.isoformat()
+        task_run.status = "failed" if error else "success"
+        task_run.finished_at = finished
+        task_run.error = error[:500] if error else None
+        task_run.reply_excerpt = (reply or "")[:500] if error is None else None
+        started = metadata.get("task_started_at")
+        if isinstance(started, str):
+            try:
+                task_run.latency_ms = max(
+                    0,
+                    int((completed_at - datetime.fromisoformat(started)).total_seconds() * 1000),
+                )
+            except (TypeError, ValueError):
+                pass
+        task.last_run_at = finished
+        task.last_status = task_run.status
+        task.last_error = task_run.error
+        task.consecutive_failures = (task.consecutive_failures + 1) if error else 0
 
     def retry_agent_message(self, event_id: str, *, delay_seconds: int = 0) -> None:
         """Release a transiently failed event for a later claim."""
@@ -636,10 +946,10 @@ class BusStore:
                 )
             )
             for row in delivery_rows:
-                row.status = "retry"
+                row.status = "dead" if row.attempts >= 8 else "retry"
                 row.leased_by = None
                 row.leased_until = None
-                row.available_at = now
+                row.available_at = now + timedelta(seconds=min(300, 5 * (2 ** max(0, row.attempts - 1))))
                 row.updated_at = now
             for attempt in session.scalars(select(LLMAttempt).where(LLMAttempt.status.in_(("started", "streaming")))):
                 attempt.status = "interrupted"
@@ -664,6 +974,36 @@ class BusStore:
                 error_code=run.error_code,
                 error_detail=run.error_detail,
             )
+
+    def cancel_run(self, run_id: str, *, reason: str = "cancelled_by_user") -> bool:
+        """Terminally cancel a run without treating ordinary input as cancel.
+
+        Effects already leased by another worker are not forcibly interrupted;
+        their late completions are retained for audit but cannot resume this
+        terminal run.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            run = session.get(AgentRun, run_id)
+            if run is None:
+                return False
+            if run.status in {"completed", "failed", "cancelled"}:
+                return run.status == "cancelled"
+            run.status = "cancelled"
+            run.error_code = "run.cancelled"
+            run.error_detail = reason
+            run.completed_at = now
+            run.updated_at = now
+            for inbox in session.scalars(
+                select(AgentInbox).where(
+                    AgentInbox.run_id == run_id,
+                    AgentInbox.status.in_(("pending", "retry")),
+                )
+            ):
+                inbox.status = "completed"
+                inbox.updated_at = now
+            session.commit()
+            return True
 
     def enqueue_tool_job(
         self,

@@ -48,11 +48,11 @@ async def run_agent_step(
     it preserves the current SOUL, memory, role-gated tool schemas, session
     history and compaction behaviour.  No tool is run in this function.
     """
-    from magi.agent import loop
+    from magi.agent import runtime_context
 
-    if not loop._validate_credentials(uid=uid, channel=channel):  # noqa: SLF001
+    if not runtime_context.validate_credentials(uid=uid, channel=channel):
         return AgentStepResult(
-            text=loop._fallback_reply("agent_no_credentials"),  # noqa: SLF001
+            text=runtime_context.fallback_reply("agent_no_credentials"),
             tool_uses=(),
             assistant_blocks=(),
             provider="",
@@ -60,18 +60,17 @@ async def run_agent_step(
             usage={},
             messages=(),
         )
-    context = loop._build_context(  # noqa: SLF001
+    context = runtime_context.build_context(
         state_dir,
         text=text,
         channel=channel,
         uid=uid,
         session_id=session_id,
         caller_role=caller_role,
-        max_tool_iterations=None,
     )
     if context is None:
         return AgentStepResult(
-            text=loop._fallback_reply(),  # noqa: SLF001
+            text=runtime_context.fallback_reply(),
             tool_uses=(),
             assistant_blocks=(),
             provider="",
@@ -82,7 +81,7 @@ async def run_agent_step(
 
     if continuation_messages is not None:
         context.messages = [
-            loop.ChatMessage(
+            runtime_context.ChatMessage(
                 role=item["role"],
                 content=item["content"],
                 content_blocks=item.get("content_blocks"),
@@ -91,7 +90,7 @@ async def run_agent_step(
         ]
         if tool_results:
             context.messages.append(
-                loop.ChatMessage(role="user", content="", content_blocks=tool_results)
+                runtime_context.ChatMessage(role="user", content="", content_blocks=tool_results)
             )
         # The provider transcript must close every tool_use before an active
         # run's later human message is added.  The durable bus supplies these
@@ -99,13 +98,13 @@ async def run_agent_step(
         # here.
         for steering in steering_inputs or ():
             context.messages.append(
-                loop.ChatMessage(role="user", content=str(steering.get("text") or ""))
+                runtime_context.ChatMessage(role="user", content=str(steering.get("text") or ""))
             )
-    await loop.maybe_compact(  # noqa: SLF001
+    await runtime_context.maybe_compact(
         state_dir, uid, session_id, context.messages
     )
     request = {
-        "system": loop.build_system_prompt(state_dir, uid=uid, soul=context.soul),  # noqa: SLF001
+        "system": runtime_context.build_system_prompt(state_dir, uid=uid, soul=context.soul),
         "messages": context.messages,
         "max_tokens": max_tokens,
         "tools": context.tool_schemas,
@@ -115,7 +114,7 @@ async def run_agent_step(
     else:
         result = await context.provider.stream(**request, on_event=on_stream_event)
     context.messages.append(
-        loop.ChatMessage(
+        runtime_context.ChatMessage(
             role="assistant", content=result.text or "", content_blocks=result.raw_blocks or None
         )
     )

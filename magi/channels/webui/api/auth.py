@@ -857,6 +857,18 @@ async def me(
             display_name=contact.name,
             admin=bool(contact.admin),
         )
+    except Exception:
+        # Defensive: a transient DB hiccup shouldn't
+        # lock the operator out of ``/me``. We saw the
+        # cookie is valid (uid in _super_admins); the
+        # metadata lookup is best-effort.
+        logger.exception("me: contact lookup failed for uid=%s", uid)
+        return MeResponse(
+            uid=uid,
+            telegram_id=None,
+            display_name=None,
+            admin=False,
+        )
 
 
 # -- Password login + credential management -------------------------------
@@ -1260,6 +1272,3 @@ async def revoke_password(
         )
     logger.info("password revoked", extra={"uid": uid})
     return Response(status_code=204)
-    except Exception:
-        logger.exception("me: contact lookup failed for cookie value")
-        return MeResponse(uid=uid, admin=False)

@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -41,11 +41,7 @@ from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
-from magi.agent.worker import (
-    AgentRunFailed,
-    AgentRunTimedOut,
-    submit_and_wait_agent_message,
-)
+from magi.agent.worker import submit_agent_message
 from magi.bus import AgentMessage
 from magi.agent.memory.session import (
     ChannelMismatchError,
@@ -146,7 +142,8 @@ class ChatSendRequest(BaseModel):
 
 
 class ChatSendResponse(BaseModel):
-    reply: str
+    run_id: str
+    status: str = "accepted"
     # Always returned so the frontend can stash it on a
     # fresh chat. For an existing-session send it equals
     # what was sent in.
@@ -154,13 +151,13 @@ class ChatSendResponse(BaseModel):
     messages: list[SessionMessageOut] = []
 
 
-@router.post("/chat/send", response_model=ChatSendResponse)
+@router.post("/chat/send", response_model=ChatSendResponse, status_code=status.HTTP_202_ACCEPTED)
 async def send_chat(
     payload: ChatSendRequest,
     request: Request,
     _admin: AdminGate,
 ) -> ChatSendResponse:
-    """Send ``text`` to the LLM and return the reply.
+    """Persist input and return a run handle without waiting for inference.
 
     The LLM is selected from the operator's Contact row
     (``provider`` + ``api_key`` set during onboarding or
@@ -351,9 +348,8 @@ async def send_chat(
             uid=uid,
         )
 
-    try:
-        reply = await submit_and_wait_agent_message(
-            AgentMessage(
+    run_id = await submit_agent_message(
+        AgentMessage(
                 # The persisted inbound session-message id is the producer's
                 # idempotency key. A network retry cannot create a second
                 # agent turn for that exact input.
@@ -364,109 +360,7 @@ async def send_chat(
                 session_id=session_id,
                 uid=uid,
                 caller_role=contact_role,
-            ),
-            state_dir=_state_dir(),
-        )
-    except AgentRunFailed as e:
-        if e.result.error_code != "magi.llm_credentials_required":
-            logger.exception(
-                "chat: agent run failed for session=%s uid=%s", session_id, uid,
-            )
-            raise MagiHTTPException(
-                status_code=500,
-                code=e.result.error_code or "chat.agent_crashed",
-                detail=(
-                    f"agent run failed: {e} — try again. "
-                    "If the problem persists, check server logs."
-                ),
-            )
-        # The MAGI runtime has no provider / API key
-        # configured. Surface this as 503 (system-side
-        # misconfiguration) so the frontend can show a
-        # "configure in 智能体管理" banner.
-        logger.warning(
-            "chat: MAGI has no LLM credentials: %s", e,
-        )
-        raise MagiHTTPException(
-            status_code=503,
-            code="magi.llm_credentials_required",
-            detail=(
-                "MAGI runtime has no LLM provider / API key "
-                "configured; set them via PATCH "
-                "/api/magic/{adam_id}"
-            ),
-        )
-    except AgentRunTimedOut as e:
-        raise MagiHTTPException(
-            status_code=504,
-            code="chat.agent_timeout",
-            detail=(
-                f"agent run timed out: {e} — it may still finish in the background."
-            ),
-        )
-
-    # Defensive truncation — the agent worker should already
-    # cap via the LLM's max_tokens, but a misbehaving model
-    # could still send a multi-megabyte response. We trim
-    # here so the WebUI doesn't choke rendering a 5MB
-    # string.
-    if len(reply) > _MAX_OUTPUT_CHARS:
-        reply = reply[: _MAX_OUTPUT_CHARS - 20] + "\n\n…(回复过长，已截断)"
-
-    # Outbound audit-aligned append. A failure here is
-    # logged but does NOT raise — the operator already
-    # got the reply and a missing history line is worse
-    # than a console line. The same ``channel=Channel.WEBUI``
-    # guard applies (D.22); a mismatch here would mean
-    # the worker somehow ran against a TG-owned
-    # session, which the inbound check above already
-    # blocked. Belt and braces.
-    ts_out = _utcnow_iso()
-    try:
-        store.append_messages(
-            uid, session_id,
-            [SessionMessage(
-                role="assistant", text=reply, ts=ts_out,
-                message_id=new_session_id(),
-            )],
-            channel=Channel.WEBUI,
-        )
-    except Exception:
-        logger.exception(
-            "chat: failed to append assistant message for session %s",
-            session_id,
-        )
-
-    # Load the full session so the frontend sees messages
-    # appended by tools (e.g. ``send_message``) in the same
-    # turn. Without this, tool-side messages land in the DB
-    # but never render until the next page refresh.
-    #
-    # This is intentionally best-effort — if the session
-    # store hiccups during the read-back, we still return the
-    # reply. A missing ``messages`` list on the response is
-    # a minor glitch (frontend falls back to its own
-    # scroll), whereas a 500 swallows everything.
-    messages: list[SessionMessageOut] = []
-    try:
-        post = store.get(uid, session_id)
-        if post is not None:
-            messages = [
-                SessionMessageOut(
-                    message_id=m.message_id,
-                    role=m.role,
-                    ts=m.ts,
-                    text=m.text,
-                )
-                for m in post.messages
-            ]
-    except Exception:
-        logger.exception(
-            "chat: failed to load session %s for response; "
-            "reply was delivered, messages list omitted",
-            session_id,
-        )
-
-    return ChatSendResponse(
-        reply=reply, session_id=session_id, messages=messages,
+        ),
+        state_dir=_state_dir(),
     )
+    return ChatSendResponse(run_id=run_id, session_id=session_id)
