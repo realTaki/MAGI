@@ -415,6 +415,11 @@ export type OnboardingStatus = {
   super_admins_count: number;
   super_admins: string[];
   onboarding_complete: boolean;
+  // ``login_methods`` / ``mode`` mirror the new WebUI-only
+  // onboarding path. The wizard uses them to decide whether
+  // to resume on the "with TG" or "WebUI only" branch.
+  login_methods?: string[];
+  mode?: "with_tg" | "webui_only" | null;
 };
 
 /** GET /api/onboarding/status — shared between App boot and OnboardingPage. */

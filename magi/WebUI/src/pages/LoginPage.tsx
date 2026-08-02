@@ -30,7 +30,7 @@
  * machine stays in ``useState`` (UI flow, not data).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "../i18n/index";
 import {
   useLoginMethods,

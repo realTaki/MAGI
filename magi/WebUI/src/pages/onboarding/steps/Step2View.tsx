@@ -3,6 +3,7 @@ import { useT } from '../../../i18n/index';
 import {
   useSaveAdmin,
   useSendAdminCode,
+  useSetAdminPassword,
   useVerifyAdminCode,
 } from '../../../lib/queries';
 

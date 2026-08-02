@@ -100,7 +100,7 @@ export function SettingsSecurityCard() {
   }
 
   async function handleRevoke() {
-    if (!confirm(t("security.revokeConfirm"))) return;
+    if (!window.confirm(t("security.revokeConfirm"))) return;
     setBusy(true);
     setError(null);
     try {
@@ -127,7 +127,6 @@ export function SettingsSecurityCard() {
   return (
     <ConsoleCard
       title={t("security.heading")}
-      subtitle={t("security.subtitle")}
     >
       <div className="space-y-6">
         <section>
@@ -143,7 +142,7 @@ export function SettingsSecurityCard() {
           </header>
           <p className="text-sm text-ink-soft mb-3">
             {t("security.passwordHint")}
-            <InfoTip>{t("security.passwordInfoTip")}</InfoTip>
+            <InfoTip text={t("security.passwordInfoTip")} />
           </p>
 
           {!isAdmin && (
