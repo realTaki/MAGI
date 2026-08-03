@@ -7,7 +7,7 @@ def test_each_magis_gets_reserved_roles(monkeypatch, tmp_path):
     import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     from magi.db import MAGIS, MAGISRole, init_orm, open_session
-    from magi.db.models_magis_membership import ensure_default_roles
+    from magi.bus.models.magis.magis_membership import ensure_default_roles
     init_orm(str(tmp_path))
     with open_session() as db:
         society = MAGIS(name="Research", parent_id=None)
@@ -21,7 +21,7 @@ def test_adam_does_not_manage_descendant_without_direct_membership(monkeypatch, 
     import magi.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     from magi.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
-    from magi.db.models_magis_membership import adam_manages_magis, ensure_default_roles
+    from magi.bus.models.magis.magis_membership import adam_manages_magis, ensure_default_roles
     init_orm(str(tmp_path), seed_root=False)
     with open_session() as db:
         root, child, adam = MAGIS(name="Root"), MAGIS(name="Child", parent_id=None), MAGIC(name="Adam")

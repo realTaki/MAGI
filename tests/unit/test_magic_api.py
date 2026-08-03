@@ -43,7 +43,7 @@ def test_magic_has_only_one_direct_magis_membership(monkeypatch, tmp_path):
     engine_mod._engine = engine_mod._SessionLocal = None
     from sqlalchemy.exc import IntegrityError
     from magi.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
-    from magi.db.models_magis_membership import ensure_default_roles
+    from magi.bus.models.magis.magis_membership import ensure_default_roles
     init_orm(str(tmp_path), seed_root=False)
     with open_session() as db:
         one, two, magic = MAGIS(name="One"), MAGIS(name="Two"), MAGIC(name="Only one home")

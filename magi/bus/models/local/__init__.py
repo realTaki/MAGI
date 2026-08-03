@@ -9,7 +9,7 @@ from magi.bus.models.local.action_item import ActionItem
 from magi.bus.models.local.contact import Contact, ContactNote
 from magi.bus.models.local.control_plane import ControlOperator
 from magi.bus.models.local.mcp_server import McpServer
-from magi.bus.models.local.setting import StateKV
+from magi.bus.models.local.setting import Setting as StateKV
 from magi.bus.models.local.token_usage import TokenUsage
 
 
@@ -20,5 +20,6 @@ __all__ = [
     "ControlOperator",
     "McpServer",
     "StateKV",
+    "Setting",
     "TokenUsage",
 ]

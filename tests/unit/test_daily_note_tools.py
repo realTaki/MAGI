@@ -57,7 +57,7 @@ def state_dir(monkeypatch, tmp_path):
 async def test_update_daily_note_inserts_first_row(state_dir):
     from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     tool = UpdateDailyNoteTool()
     ctx = _ctx(str(state_dir))
@@ -76,7 +76,7 @@ async def test_update_daily_note_inserts_first_row(state_dir):
 async def test_update_daily_note_appends_second_call(state_dir):
     from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     tool = UpdateDailyNoteTool()
     ctx = _ctx(str(state_dir))
@@ -151,7 +151,7 @@ async def test_update_daily_note_admits_admin_with_role_guest(state_dir):
     their own daily notes."""
     from magi.tools.memory_contacts import UpdateDailyNoteTool
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     # Need a contact row at uid=2 with role='guest' so the FK resolves.
     from magi.db import Contact, open_session as _open
