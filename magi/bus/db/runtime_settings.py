@@ -3,10 +3,10 @@
 This module is the **package-neutral** home for KV-backed runtime
 settings that ``magi.agent``, ``magi.tools`` and ``magi.proactive``
 read on every chat turn. They are *not* HTTP handlers — those live
-in :mod:`magi.channels.webui.api.system_settings` and wrap these
+in :mod:`magi.channels.api.system_settings` and wrap these
 helpers with FastAPI dependencies.
 
-Why this lives in :mod:`magi.db` (not under ``magi.channels.webui``):
+Why this lives in :mod:`magi.db` (not under ``magi.channels.api``):
 
   The runtime config is read by the agent loop, the tool loop and the
   scheduled-task runner — none of which should reach back into the
@@ -28,7 +28,7 @@ Settings owned here:
     the system-prompt builder)
 
 The constant string keys (``SYSTEM_TZ_KEY`` etc.) are re-exported
-from :mod:`magi.channels.webui.api.system_settings` so writes via
+from :mod:`magi.channels.api.system_settings` so writes via
 the WebUI API and reads via this module agree on the same row.
 """
 
@@ -52,7 +52,7 @@ logger = logging.getLogger("magi.db.runtime_settings")
 # ────────────────────────────────────────────────────────────────── #
 # Settings keys + bounds + defaults — single source of truth.
 #
-# The HTTP layer (``magi.channels.webui.api.system_settings``)
+# The HTTP layer (``magi.channels.api.system_settings``)
 # imports these constants back from here so a Save via the
 # dashboard writes the same row a runtime read sees. The reverse
 # direction would be a circular import — keep them here.

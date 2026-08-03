@@ -55,8 +55,8 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 @pytest.fixture
 def client(state):
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
     app = create_app()
     c = TestClient(app)
     c.cookies.set("magi_session", _sign_uid(state["admin"].id))
@@ -147,6 +147,6 @@ def test_toggle_without_webui_in_payload_auto_pins_webui(state, client):
 def test_toggle_requires_admin(state, client):
     """Cookie-less request → 401, like every other
     admin-gated endpoint."""
-    bare = TestClient(__import__("magi.channels.webui.app", fromlist=["create_app"]).create_app())
+    bare = TestClient(__import__("magi.channels.api.app", fromlist=["create_app"]).create_app())
     r = bare.post("/api/channels", json={"enabled": ["webui"]})
     assert r.status_code == 401

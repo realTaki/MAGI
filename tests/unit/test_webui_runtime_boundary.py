@@ -20,7 +20,7 @@ def _request(headers: dict[str, str]) -> Request:
 
 
 def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> None:
-    from magi.channels.webui.proxy_auth import build_proxy_headers, verified_proxy_operator
+    from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator
 
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
     monkeypatch.setenv("MAGI_RUNTIME_ID", "7")
@@ -39,7 +39,7 @@ def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> Non
 
 
 def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
-    from magi.channels.webui.app import create_runtime_app
+    from magi.channels.api.app import create_runtime_app
 
     app = create_runtime_app()
     paths = {route.path for route in app.routes if hasattr(route, "path")}

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from magi.channels.webui.api import password_utils
+from magi.channels.api import password_utils
 
 
 # -- password_utils --------------------------------------------------------
@@ -155,7 +155,7 @@ def auth_state(monkeypatch, tmp_path):
 
 def test_login_methods_empty_for_unknown_uid(auth_state):
     """Anti-enumeration: unknown uid returns empty methods, not 404."""
-    from magi.channels.webui.api.auth import _login_methods_for
+    from magi.channels.api.auth import _login_methods_for
     methods, webui_only = _login_methods_for(999)
     assert methods == []
     assert webui_only is True
@@ -164,7 +164,7 @@ def test_login_methods_empty_for_unknown_uid(auth_state):
 def test_login_methods_for_password_only_admin(auth_state):
     auth_state.seed_admin(uid=1)
     auth_state.set_password(1, "hello12345")
-    from magi.channels.webui.api.auth import _login_methods_for
+    from magi.channels.api.auth import _login_methods_for
     methods, webui_only = _login_methods_for(1)
     assert methods == ["password"]
     assert webui_only is True
@@ -177,8 +177,8 @@ def test_hash_password_endpoints_2xx_path(auth_state):
     FastAPI `Request` response-shape side by directly exercising
     the inner helpers.
     """
-    from magi.channels.webui.api import password_utils
-    from magi.channels.webui.api.auth import (
+    from magi.channels.api import password_utils
+    from magi.channels.api.auth import (
         _resolve_password_credential,
         _set_password_credential,
         _login_methods_for,
@@ -197,7 +197,7 @@ def test_hash_password_endpoints_2xx_path(auth_state):
 
 def test_password_cooldown_blocks_2nd_attempt(auth_state):
     """After one record_attempt, the next check_cooldown is False."""
-    from magi.channels.webui.api import password_utils
+    from magi.channels.api import password_utils
 
     auth_state.seed_admin(uid=1)
     auth_state.set_password(1, "hello12345")
@@ -212,11 +212,11 @@ def test_password_cooldown_blocks_2nd_attempt(auth_state):
 
 
 def test_set_password_upsert_replaces_hash(auth_state):
-    from magi.channels.webui.api.auth import (
+    from magi.channels.api.auth import (
         _resolve_password_credential,
         _set_password_credential,
     )
-    from magi.channels.webui.api import password_utils
+    from magi.channels.api import password_utils
 
     auth_state.seed_admin(uid=1)
     _set_password_credential(1, password_utils.hash_password("firstpass1"))
@@ -231,12 +231,12 @@ def test_set_password_upsert_replaces_hash(auth_state):
 
 
 def test_delete_password_credential_removes_row(auth_state):
-    from magi.channels.webui.api.auth import (
+    from magi.channels.api.auth import (
         _delete_password_credential,
         _resolve_password_credential,
         _set_password_credential,
     )
-    from magi.channels.webui.api import password_utils
+    from magi.channels.api import password_utils
 
     auth_state.seed_admin(uid=1)
     _set_password_credential(1, password_utils.hash_password("hello12345"))
@@ -256,8 +256,8 @@ def test_delete_password_credential_removes_row(auth_state):
 def test_onboarding_set_admin_password_creates_admin_row(auth_state):
     """The WebUI-only onboarding step 2 endpoint creates a
     Contact + AuthCredential pair."""
-    from magi.channels.webui.api import password_utils
-    from magi.channels.webui.api.auth import (
+    from magi.channels.api import password_utils
+    from magi.channels.api.auth import (
         _resolve_password_credential,
     )
 

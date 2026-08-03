@@ -1,7 +1,7 @@
 """Static package-boundary guard.
 
 Locks the design §18 rule: agent/tools must not import from
-``magi.channels.webui.api.*`` (the channels-specific HTTP surface).
+``magi.channels.api.*`` (the channels-specific HTTP surface).
 The P1.1 refactor moved read helpers to ``magi.db.runtime_settings``
 and search to ``magi.agent.memory.session.search`` precisely to
 break this cycle. A future change that re-introduces the reverse
@@ -16,10 +16,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Modules that are allowed to import from magi.channels.webui.api.
-# Today only the test suite and the webui api layer itself.
+# Modules that are allowed to import from magi.channels.api.
+# Today only the test suite and the api layer itself.
 EXEMPT_PREFIXES: tuple[str, ...] = (
-    "magi/channels/webui/",
+    "magi/channels/api/",
     "tests/",
 )
 
@@ -59,11 +59,11 @@ def _collect_imports(py_path: Path) -> list[tuple[str, int]]:
         return out
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("magi.channels.webui.api"):
+            if node.module and node.module.startswith("magi.channels.api"):
                 out.append((node.module, node.lineno))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("magi.channels.webui.api"):
+                if alias.name.startswith("magi.channels.api"):
                     out.append((alias.name, node.lineno))
     return out
 
@@ -106,7 +106,7 @@ def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
     assert not offenders, "Migrated runtime paths must cross domains through magi.bus:\n  " + "\n  ".join(offenders)
 
 
-def test_agent_module_does_not_import_webui_api() -> None:
+def test_agent_module_does_not_import_api() -> None:
     offenders: list[str] = []
     for prefix in ("magi/agent/",):
         for path in (REPO_ROOT / prefix).rglob("*.py"):
@@ -116,14 +116,14 @@ def test_agent_module_does_not_import_webui_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/agent/ imports from magi.channels.webui.api.* — this "
+        "magi/agent/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
         "(magi.db.runtime_settings or magi.agent.memory.session.search):\n  "
         + "\n  ".join(offenders)
     )
 
 
-def test_tools_module_does_not_import_webui_api() -> None:
+def test_tools_module_does_not_import_api() -> None:
     offenders: list[str] = []
     for prefix in ("magi/tools/",):
         for path in (REPO_ROOT / prefix).rglob("*.py"):
@@ -133,14 +133,14 @@ def test_tools_module_does_not_import_webui_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/tools/ imports from magi.channels.webui.api.* — this "
+        "magi/tools/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
         "(magi.db.runtime_settings or magi.agent.memory.session.search):\n  "
         + "\n  ".join(offenders)
     )
 
 
-def test_proactive_module_does_not_import_webui_api() -> None:
+def test_proactive_module_does_not_import_api() -> None:
     """Same rule for the proactive subsystem (future workers will live here)."""
     offenders: list[str] = []
     for path in (REPO_ROOT / "magi/proactive/").rglob("*.py"):
@@ -150,6 +150,6 @@ def test_proactive_module_does_not_import_webui_api() -> None:
             rel = path.relative_to(REPO_ROOT)
             offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/proactive/ imports from magi.channels.webui.api.* — this "
+        "magi/proactive/ imports from magi.channels.api.* — this "
         "violates design §18:\n  " + "\n  ".join(offenders)
     )

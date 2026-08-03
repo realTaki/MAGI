@@ -11,7 +11,7 @@ Two surfaces pinned:
     workspace, falling back to the bundled fallback
     persona when the file is missing or empty. Used by
     both the agent runtime AND
-    :mod:`magi.channels.webui.api.soul` (so this module
+    :mod:`magi.channels.api.soul` (so this module
     is the single point of contact for "what does SOUL.md
     actually mean on disk").
   - :func:`build_system_prompt` — assembles the full prompt

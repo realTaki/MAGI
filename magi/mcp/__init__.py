@@ -52,7 +52,7 @@ Configuration surface
 The single source of truth is the ``mcp_servers`` table
 (:class:`magi.bus.models.local.mcp_server.McpServer`). The
 WebUI ``/api/mcp-servers`` endpoints
-(:mod:`magi.channels.webui.api.mcp_servers`) and the LLM
+(:mod:`magi.channels.api.mcp_servers`) and the LLM
 manage tools (:mod:`magi.mcp.manage`) both write to it.
 The loader reads it on every ``maybe_reload_mcp_tools``
 trigger. No JSON file, no ``MAGI_MCP_*`` env vars — the

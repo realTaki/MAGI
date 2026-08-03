@@ -214,12 +214,12 @@ def client(state: Path, admin: Contact, monkeypatch):
     A channel mismatch must fail before it appends an inbound message or
     publishes work to the agent inbox.
     """
-    from magi.channels.webui.api import chat as chat_mod
+    from magi.channels.api import chat as chat_mod
 
     fake = AsyncMock(return_value="run-test")
     monkeypatch.setattr(chat_mod, "submit_agent_message", fake)
 
-    from magi.channels.webui.app import app
+    from magi.channels.api.app import app
 
     test_client = TestClient(app)
     # Stash the mock so tests can assert against it.

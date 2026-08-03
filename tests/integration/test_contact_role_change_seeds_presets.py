@@ -1,7 +1,7 @@
 """End-to-end test: contacts API role-change seeds presets.
 
 The "preset scheduled tasks" feature's two entry points
-live in :mod:`magi.channels.webui.api.contacts`:
+live in :mod:`magi.channels.api.contacts`:
 
   - ``create_contact``  — when the initial ``role`` is
     ``"assigned"``, the helper fires post-commit.
@@ -87,8 +87,8 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 @pytest.fixture
 def client(state):
     """TestClient signed in as the seeded admin."""
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
 
     app = create_app()
     c = TestClient(app)

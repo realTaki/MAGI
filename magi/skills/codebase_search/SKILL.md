@@ -23,7 +23,7 @@ version: "1.0"
 - `magi/agent/agent.py` — chat turn 主入口
 - `magi/tools/registry.py` — 内置工具枚举
 - `magi/agent/state/orm.py` — SQLAlchemy tables
-- `magi/channels/webui/api/` — FastAPI endpoints
+- `magi/channels/api/` — FastAPI endpoints
 - `magi/agent/skills/` — SKILL.md 装载器
 
 ## 推荐 reply 模板

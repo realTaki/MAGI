@@ -225,7 +225,7 @@ TelegramAdapter.send(uid, text):
 
 ## 7. Onboarding 三步骤流程
 
-**入口**: `magi/channels/webui/api/onboarding.py`
+**入口**: `magi/channels/api/onboarding.py`
 
 ### Step 1: 验证并保存 Bot Token
 ```
@@ -272,7 +272,7 @@ POST /save-admin { tgids: list[str] }
 
 ## 8. 登录与 Cookie 身份
 
-**入口**: `magi/channels/webui/api/auth.py`
+**入口**: `magi/channels/api/auth.py`
 
 ### 两步骤登录
 ```

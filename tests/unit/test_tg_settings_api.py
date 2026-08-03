@@ -58,7 +58,7 @@ def client(tg_settings_env):
         )
         s.commit()
 
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -231,7 +231,7 @@ def test_put_rejects_empty_emoji(client):
 
 def test_get_requires_admin(client):
     """Cookie-less caller → 401."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())
@@ -241,7 +241,7 @@ def test_get_requires_admin(client):
 
 def test_put_requires_admin(client):
     """Same gate on PUT."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())
@@ -379,7 +379,7 @@ def test_done_put_rejects_empty_emoji(client):
 
 def test_done_get_requires_admin(client):
     """Cookie-less caller → 401."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())
@@ -389,7 +389,7 @@ def test_done_get_requires_admin(client):
 
 def test_done_put_requires_admin(client):
     """Same admin gate on PUT."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())

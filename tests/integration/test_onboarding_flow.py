@@ -107,7 +107,7 @@ def mocked_telegram(monkeypatch):
 @pytest.fixture
 def client(state, mocked_telegram):
     """TestClient with no auth cookie — onboarding is pre-auth."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     with TestClient(app) as c:
@@ -363,7 +363,7 @@ def test_onboarded_admins_show_up_in_contacts_directory(
     # Mint a signed cookie for the just-created admin so we
     # can hit /api/contacts as them.
     from magi.db import Contact, open_session
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.auth import _sign_uid
     with open_session() as db:
         admin = db.query(Contact).filter_by(telegram_id=91001).one()
         signed = _sign_uid(admin.id)

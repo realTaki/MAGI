@@ -106,7 +106,7 @@ def client(state) -> TestClient:
     # Each test starts with a clean tool cache and may
     # rewrite it below. The autouse``_reset_tool_cache``
     # fixture enforces isolation.
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -263,7 +263,7 @@ def test_tools_response_calls_get_tools_grouped_with_no_role_filter(
     (builtin, mcp) tuple helper) rather than :func:`get_tools`
     — the spy patches the helper the route actually calls.
     """
-    from magi.channels.webui.api import tools as tools_api
+    from magi.channels.api import tools as tools_api
     seen: list = []
     real = tools_api.get_tools_grouped
 

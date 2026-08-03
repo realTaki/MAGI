@@ -55,7 +55,7 @@ import {
 
 // One row of the search result list. Mirrors the
 // backend's ``SearchHit`` shape (see
-// ``magi.channels.webui.api.chat_search.SearchHit``).
+// ``magi.channels.api.chat_search.SearchHit``).
 // Lives here as a named alias so the row component
 // doesn't have to thread the parent type through.
 type SearchHit = ChatSearchResult["items"][number];

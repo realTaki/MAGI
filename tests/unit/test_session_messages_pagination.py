@@ -267,7 +267,7 @@ def test_get_messages_page_respects_uid_scope(admin_env):
 @pytest.fixture
 def client(admin_env):
     """TestClient with admin-A's cookie (delivery_address 9001)."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -337,7 +337,7 @@ def test_messages_route_400_for_malformed_session_id(client):
 
 
 def test_messages_route_401_without_cookie(admin_env):
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     c = TestClient(create_app())

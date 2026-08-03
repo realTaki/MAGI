@@ -80,8 +80,8 @@ def client(state):
     lifespan keeps the pool empty between client requests and
     the runner's sessions.
     """
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
 
     app = create_app()
     c = TestClient(app)
@@ -292,8 +292,8 @@ def test_create_tg_task_without_telegram_binding_returns_400(state):
     with no valid destination.
     """
     from magi.db import Contact, open_session
-    from magi.channels.webui.api.auth import _sign_uid
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
 
     # An admin WITHOUT a bound telegram_id.
     with open_session() as db:

@@ -225,7 +225,7 @@ def get_tools_grouped(
 
     Surfaces that want to render the two registries
     distinctly (audit dashboards, status pages,
-    :mod:`magi.channels.webui.api.tools`) reach for this
+    :mod:`magi.channels.api.tools`) reach for this
     helper instead of touching :data:`_tools_cache` /
     :data:`_mcp_tools_cache` directly. The MCP cache is
     :data:`None` before :func:`bootstrap_mcp_tools` has

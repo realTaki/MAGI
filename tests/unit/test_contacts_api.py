@@ -87,14 +87,14 @@ def _signed_session_cookie(uid: int) -> str:
     ``MAGI_STATE_DIR`` (so ``_signing_key`` derives a stable
     key per test).
     """
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.auth import _sign_uid
 
     return _sign_uid(uid)
 
 @pytest.fixture
 def client(env):
     """TestClient with Alice's signed cookie (admin)."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -106,7 +106,7 @@ def charlie_client(env):
     """TestClient with Charlie's signed cookie (role='guest',
     not admin). Used to verify AdminGate rejects non-admin
     callers."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)

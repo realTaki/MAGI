@@ -12,7 +12,7 @@ Why env / headers live as JSON columns
 MCP server config is small (a handful of vars per server)
 and tightly coupled to the row — there's no value in
 splitting it across a secrets sub-table. The API layer
-(:mod:`magi.channels.webui.api.mcp_servers`) validates the
+(:mod:`magi.channels.api.mcp_servers`) validates the
 shape via Pydantic before serialising into the JSON
 column, so a malformed row can only land if someone
 hand-writes a row outside the API (which is fine —

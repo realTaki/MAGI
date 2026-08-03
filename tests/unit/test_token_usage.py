@@ -81,7 +81,7 @@ def token_env(monkeypatch, tmp_path):
 @pytest.fixture
 def client(token_env):
     """TestClient with admin cookie."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -233,7 +233,7 @@ def test_timezone_put_empty_rejected_by_pydantic(token_env, client):
 def test_timezone_get_requires_admin(token_env):
     """Cookie-less → 401, same gate as the other admin
     settings surfaces."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())
@@ -388,7 +388,7 @@ def test_token_usage_separates_per_contact(token_env, client):
 
 def test_token_usage_requires_admin(token_env):
     """Cookie-less → 401."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     bare = TestClient(create_app())

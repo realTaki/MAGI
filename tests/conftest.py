@@ -1,7 +1,7 @@
 """Shared pytest fixtures + test-mode hooks.
 
 The test suite pre-dates the signed-cookie layer in
-:meth:`magi.channels.webui.api.auth._sign_uid`. Many
+:meth:`magi.channels.api.auth._sign_uid`. Many
 fixtures set ``c.cookies.set("magi_session", "1")`` with a
 naked int — production rejects this (good) but tests need
 it to work transparently.
@@ -15,7 +15,7 @@ Lazy install
 ------------
 
 ``pytest_configure`` runs very early in pytest startup;
-importing ``magi.channels.webui.api.auth`` here would pull
+importing ``magi.channels.api.auth`` here would pull
 in the ``telegram`` channel module (and its third-party
 deps). We therefore wrap the import in a try/except so a
 test environment without ``python-telegram-bot`` can still
@@ -45,7 +45,7 @@ def _install_signed_uid_relaxation() -> bool:
         return True
 
     try:
-        from magi.channels.webui.api import auth as _auth
+        from magi.channels.api import auth as _auth
     except Exception:
         return False
 

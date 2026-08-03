@@ -89,8 +89,8 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 @pytest.fixture
 def client(state):
     """TestClient signed in as the seeded admin."""
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
 
     app = create_app()
     c = TestClient(app)
@@ -230,7 +230,7 @@ def test_newly_added_contact_visible_in_chat_session_owner_resolution(
     bob_id = bob.json()["id"]
 
     # Create a chat session as Bob (signed in via cookie).
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.auth import _sign_uid
     bob_client = TestClient(client.app)
     bob_client.cookies.set("magi_session", _sign_uid(bob_id))
 

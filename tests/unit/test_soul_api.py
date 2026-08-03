@@ -73,7 +73,7 @@ def client(soul_env):
         )
         s.commit()
 
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -200,7 +200,7 @@ def test_get_soul_without_cookie_is_403(soul_env):
     The semantic shift matters: 401 = "who are you?" (log
     in); 403 = "I know who you are, you can't do this".
     """
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -211,7 +211,7 @@ def test_get_soul_without_cookie_is_403(soul_env):
 
 def test_put_soul_without_cookie_is_403(soul_env):
     """Same gate covers PUT."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -256,7 +256,7 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
         s.refresh(contact)
         uid = contact.id
 
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -323,7 +323,7 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
         s.add(contact)
         s.commit()
 
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()

@@ -154,6 +154,6 @@ export function SettingsSystemTimezoneCard() {
 // also bounds the wall-clock cost of one turn.
 //
 // Bound is enforced server-side in
-// ``magi.channels.webui.api.system_settings`` (MIN=1 MAX=50);
+// ``magi.channels.api.system_settings`` (MIN=1 MAX=50);
 // the form here mirrors those bounds so the operator can't
 // even type a value that the API would 422 on.

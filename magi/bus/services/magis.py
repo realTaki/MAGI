@@ -260,7 +260,7 @@ class MagisService:
         """Return the http(s) URL for a MAGIC's runtime, or raise ``RuntimeError``.
 
         Mirrors the pre-refactor helper in
-        :mod:`magi.channels.webui.api.runtime_proxy` so the WebUI
+        :mod:`magi.channels.api.runtime_proxy` so the WebUI
         target-login flow has one place to ask for the upstream URL
         of a selected MAGIC.  Used by the channels layer to forward
         the pre-login /api/access/* call; ``RuntimeError`` is mapped

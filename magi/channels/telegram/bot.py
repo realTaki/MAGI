@@ -603,7 +603,7 @@ async def _handle_contact_message(
         )
 
     # -- session lifecycle (D.10) --------------------------------------
-    # Same shape as ``magi/channels/webui/api/chat.py``:
+    # Same shape as ``magi/channels/api/chat.py``:
     #
     #   1. Try the *latest* session for this delivery_address
     #      (``list_summaries(limit=1)`` returns most recent

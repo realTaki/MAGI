@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from magi.channels.webui.app import create_app
+from magi.channels.api.app import create_app
 from magi.skills.loader import _reset_for_tests
 from magi.db import init_sqlite
 from magi.db import Contact, init_orm, open_session
@@ -120,7 +120,7 @@ def test_list_skills_empty_when_no_skills(client):
 
 def test_list_skills_requires_admin(env, workspace):
     """No cookie → 401 (AdminGate)."""
-    from magi.channels.webui.app import create_app as _ca
+    from magi.channels.api.app import create_app as _ca
     app = _ca()
     c = TestClient(app)
     r = c.get("/api/skills")

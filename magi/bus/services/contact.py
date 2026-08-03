@@ -70,7 +70,7 @@ class ContactsService:
     ) -> int:
         """Idempotent upsert of the WebUI's runtime-operator contact row.
 
-        Used by ``magi.channels.webui.proxy_auth.verified_proxy_operator``
+        Used by ``magi.channels.api.proxy_auth.verified_proxy_operator``
         to lazily create the local contact row for a WebUI
         control-plane operator signing in for the first time.
 
@@ -136,7 +136,7 @@ class ContactsService:
 
         Used by the runtime-access login flow to enumerate sign-in
         candidates.  ``assigned`` + ``telegram_id IS NOT NULL`` is
-        the same predicate ``magi.channels.webui.api.runtime_access``
+        the same predicate ``magi.channels.api.runtime_access``
         applied pre-refactor; surfaced through the bus so the
         channel layer doesn't reach into ``magi.db``.
         """

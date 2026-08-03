@@ -26,7 +26,7 @@ from fastapi.testclient import TestClient
 
 def _signed_session_cookie(uid: int) -> str:
     """Mint an HMAC-signed ``magi_session`` cookie value."""
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.auth import _sign_uid
 
     return _sign_uid(uid)
 
@@ -92,7 +92,7 @@ def env(monkeypatch, tmp_path):
 
 @pytest.fixture
 def client(env):
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)

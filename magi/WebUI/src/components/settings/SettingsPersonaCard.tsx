@@ -54,7 +54,7 @@ export function SettingsPersonaCard() {
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // 8 KB cap mirrors the backend's
-  // ``magi.channels.webui.api.soul._MAX_SOUL_CHARS``.
+  // ``magi.channels.api.soul._MAX_SOUL_CHARS``.
   const SOUL_MAX = 8000;
   // Warning at 80% so the operator gets a visual cue before
   // the textarea overflows the layout.

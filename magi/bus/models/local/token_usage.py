@@ -2,7 +2,7 @@
 """ORM table ``token_usage`` — one row per outbound LLM call.
 
 Powers the per-contact token-bill aggregation endpoint
-(see ``magi.channels.webui.api.token_metrics``).
+(see ``magi.channels.api.token_metrics``).
 Permanent: this table is meant to grow indefinitely so
 week/month aggregates stay accurate. The operator-
 facing endpoint ``/api/contacts/{uid}/token-usage`` 

@@ -49,7 +49,7 @@ _WRITE_ROLES = frozenset({"assigned"})
 def _gate(ctx: ToolContext) -> str | None:
     """Author check: ``admin=True`` OR ``role='assigned'``.
 
-    Mirrors :func:`magi.channels.webui.api.tasks._enforce_creator_can_create`
+    Mirrors :func:`magi.channels.api.tasks._enforce_creator_can_create`
     so the LLM-side tool and the API-side task gate agree
     on who can drive write operations. ``role='guest'``
     alone (no admin) is rejected; ``role='assigned'`` alone

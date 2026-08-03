@@ -83,14 +83,14 @@ def admin(state) -> Contact:
 @pytest.fixture
 def client(state, admin, monkeypatch) -> TestClient:
     """The app with durable agent submission stubbed."""
-    from magi.channels.webui.api import chat as chat_mod
+    from magi.channels.api import chat as chat_mod
 
     async def fake_submit(*args, **kwargs):
         return "run-test"
 
     monkeypatch.setattr(chat_mod, "submit_agent_message", fake_submit)
 
-    from magi.channels.webui.app import app
+    from magi.channels.api.app import app
     return TestClient(app)
 
 @pytest.fixture(autouse=True)
@@ -118,7 +118,7 @@ def _admin_cookie(admin: Contact) -> dict:
 # ────────────────────────────────────────────────────────────────── #
 
 def test_list_requires_auth(state):
-    from magi.channels.webui.app import app
+    from magi.channels.api.app import app
     c = TestClient(app)
     r = c.get("/api/chat/sessions")
     assert r.status_code == 401
@@ -376,7 +376,7 @@ def test_delete_unauth_state_no_leak(state, admin):
     """Deleting files under the workspace doesn't break the next
     request. Sanity check that there are no path-leak issues
     between requests."""
-    c = TestClient(__import__("magi.channels.webui.app", fromlist=["app"]).app)
+    c = TestClient(__import__("magi.channels.api.app", fromlist=["app"]).app)
     # Make 3 sessions, then delete 1.
     sids = []
     for _ in range(3):

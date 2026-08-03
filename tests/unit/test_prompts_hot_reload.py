@@ -198,7 +198,7 @@ def test_admin_reload_endpoint_clears_cache(
     and drops the in-memory cache."""
     import magi.prompts as prompts
     from fastapi.testclient import TestClient
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from magi.db import Contact, init_orm, init_sqlite, open_session
 
     # Need a state dir + admin cookie for the AdminGate
@@ -243,7 +243,7 @@ def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     the change in a test."""
     import magi.prompts as prompts
     from fastapi.testclient import TestClient
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     # Minimal env so the app boots.
     import os

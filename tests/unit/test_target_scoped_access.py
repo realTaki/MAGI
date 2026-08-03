@@ -18,7 +18,7 @@ def _fresh(monkeypatch, tmp_path):
 def test_target_login_accounts_union_direct_magis_admin_and_local_assignee(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     from magi.db import Contact, MAGIC, MAGIS, MAGISAdmin, open_session
-    from magi.channels.webui.api.runtime_access import _accounts
+    from magi.channels.api.runtime_access import _accounts
 
     with open_session() as db:
         root = db.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)))
@@ -36,7 +36,7 @@ def test_target_login_accounts_union_direct_magis_admin_and_local_assignee(monke
 def test_selected_session_is_bound_to_one_magic(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-secret")
-    from magi.channels.webui.api.auth import _sign_selected_session, selected_session
+    from magi.channels.api.auth import _sign_selected_session, selected_session
 
     token = _sign_selected_session(
         magic_id=7, telegram_id=1001, display_name="Admin", admin=True, assigned=False,

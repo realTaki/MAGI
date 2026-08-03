@@ -8,7 +8,7 @@ rejected before the write happens.
 
 Atomicity: write is via ``tempfile.mkstemp`` in the same
 directory, ``fsync``, then ``os.replace`` — mirroring the
-SOUL.md editor ([`magi/channels/webui/api/soul.py`]).
+SOUL.md editor ([`magi/channels/api/soul.py`]).
 A crash mid-write leaves the old file intact.
 
 Content cap: 256 KB. Larger writes are rejected — the

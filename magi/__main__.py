@@ -154,7 +154,7 @@ def run_webui() -> None:
     port = int(os.environ.get("MAGI_PORT", str(WEBUI_PORT)))
     reload = os.environ.get("MAGI_RELOAD", "0") == "1"
     uvicorn.run(
-        "magi.channels.webui.app:create_control_app",
+        "magi.channels.api.app:create_control_app",
         factory=True,
         host=WEBUI_HOST,
         port=port,
@@ -288,7 +288,7 @@ def _launch_runtime_api(cfg: NodeConfig) -> None:
     reload_dirs = ["/app/magi"] if cfg.reload else None
 
     uvicorn.run(
-        "magi.channels.webui.app:create_runtime_app",
+        "magi.channels.api.app:create_runtime_app",
         factory=True,
         host=cfg.host,
         port=cfg.port,

@@ -6,7 +6,7 @@ task's cron fires. Each invocation:
 1. Reads the Task row (and the operator's Contact row for
    credentials). The task's home :class:`ChatSession`
    (``channel="task"``) was allocated at task creation
-   time (see :mod:`magi.channels.webui.api.tasks` and
+   time (see :mod:`magi.channels.api.tasks` and
    :mod:`magi.tools.schedule_task`); the runner
    just loads it via ``task.session_id`` and appends
    the prompt as a new user-message.

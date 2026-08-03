@@ -107,7 +107,7 @@ def client(search_env):
     """TestClient with admin-A's cookie by default. Tests
     that want admin B's cookie just ``cookies.set()`` on
     the client after creation (TestClient supports it)."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     app = create_app()
@@ -123,7 +123,7 @@ def client(search_env):
 
 def test_search_requires_admin(search_env):
     """No cookie → 401 (AdminGate), no DB hit."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     c = TestClient(create_app())
@@ -230,7 +230,7 @@ def test_search_scoped_when_admin_b_signs_in(search_env, seed_messages):
     seed_messages("9001", "alpha shared-key-123 alpha", uid=1)
     seed_messages("9001", "beta  shared-key-123 beta",  uid=2)
 
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     from fastapi.testclient import TestClient
 
     c = TestClient(create_app())

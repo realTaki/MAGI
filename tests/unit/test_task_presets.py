@@ -7,7 +7,7 @@ feature:
      same contact must not duplicate the rows.
   2. **Role gate** — only ``role='assigned'`` contacts
      get seeded; ``admin`` / ``contact`` / ``guest`` are
-     skipped (the call sites in :mod:`magi.channels.webui.api.contacts`
+     skipped (the call sites in :mod:`magi.channels.api.contacts`
      also gate, but a defensive guard inside the helper
      means a future caller can't accidentally seed the
      wrong role).

@@ -341,7 +341,7 @@ class ScheduleTaskTool(Tool):
             return ToolResult(content="caller not found", is_error=True)
         # Author gate: ``admin=True`` (WebUI operator)
         # OR ``role='assigned'`` (the served user).
-        # Mirrors ``magi.channels.webui.api.tasks.
+        # Mirrors ``magi.channels.api.tasks.
         # _enforce_creator_can_create`` so the API
         # and the LLM-side tool agree on who can
         # author a scheduled task. Re-read from the DB

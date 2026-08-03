@@ -15,6 +15,14 @@
 - `Employee` → `Contact` across the entire codebase
 - `departments` concept fully removed
 - All route imports now use `auth_gates` instead of `departments`
+- Renamed Python package `magi.channels.webui` → `magi.channels.api` and
+  flattened its inner `api/` subpackage into the parent. The FastAPI app,
+  every router, and the `magi/channels/api/` module now serve the generic
+  MAGI HTTP API (browsers, the A2A peer ingress, and future non-web
+  clients) — not only the WebUI frontend. The `magi webui` CLI subcommand,
+  the `magi-webui` Kubernetes Service, `WEBUI_PORT`/`WEBUI_HOST` env vars,
+  and the `magi/WebUI/` React frontend are unchanged: those refer to the
+  frontend service, not the renamed Python package.
 
 ### Removed
 - `departments` table and all related code

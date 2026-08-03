@@ -42,8 +42,8 @@ from magi.db import (
     init_sqlite,
     open_session)
 from magi.channels.tasks.models import Task
-from magi.channels.webui.api.errors import MagiHTTPException
-from magi.channels.webui.api.tasks import (
+from magi.channels.api.errors import MagiHTTPException
+from magi.channels.api.tasks import (
     TaskIn,
     TaskPatch,
     _resolve_delivery_to)
@@ -319,7 +319,7 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
     from magi.channels.tasks.cron_utils import (
         validate_run_at,
         validate_run_at_future)
-    from magi.channels.webui.api.errors import MagiHTTPException
+    from magi.channels.api.errors import MagiHTTPException
 
     # 1 hour in the past — clearly outside the grace window.
     past_iso = (

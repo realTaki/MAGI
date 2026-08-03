@@ -26,7 +26,7 @@ Identity
 Transport
 ---------
 HTTP + JSON. Each MAGI container exposes a single FastAPI surface
-already (``magi.channels.webui``); the a2a adapter reuses the
+already (``magi.channels.api``); the a2a adapter reuses the
 **private runtime API** mount on that surface. Three endpoints:
 
   POST /a2a/inbox

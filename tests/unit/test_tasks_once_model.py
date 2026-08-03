@@ -25,12 +25,12 @@ from __future__ import annotations
 
 import pytest
 
-from magi.channels.webui.api.tasks import (
+from magi.channels.api.tasks import (
     TaskIn,
     TaskOut,
     _render_cron_from_payload,
 )
-from magi.channels.webui.api.errors import MagiHTTPException
+from magi.channels.api.errors import MagiHTTPException
 
 
 # -- model-level: once + run_at field shape ---------------------------------

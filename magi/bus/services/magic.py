@@ -266,7 +266,7 @@ class MagicService:
             return result
 
     # ------------------------------------------------------------------
-    # CRUD operations exposed for ``magi.channels.webui.api.magic``.
+    # CRUD operations exposed for ``magi.channels.api.magic``.
     # All methods accept primitive args (no FastAPI ``Request``) and return
     # frozen DTOs so callers never bind to ORM internals.
     # ------------------------------------------------------------------

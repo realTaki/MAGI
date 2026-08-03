@@ -148,9 +148,9 @@ discipline C0 deliberately punted on).
 
 | Item | Status | Notes |
 |---|---|---|
-| `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/webui/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
+| `api/contacts` router: full CRUD + assign role | **Done** | `magi/channels/api/contacts.py` (formerly `employees.py`; the dept picker went away with the `departments` table) |
 | Contact lifecycle fields (email, status, quiet hours) | **Later** | Referenced in `models_contact.py` docstring |
-| `/api/magis` + `/api/magic` for MAGIS + MAGIC rows | **Done** | `magi/channels/webui/api/magis.py` manages the MAGIS tree; `magic.py` manages MAGICs; replaces the old `api/departments`. |
+| `/api/magis` + `/api/magic` for MAGIS + MAGIC rows | **Done** | `magi/channels/api/magis.py` manages the MAGIS tree; `magic.py` manages MAGICs; replaces the old `api/departments`. |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source until C3 wires the dispatcher properly |
 
 ### C1.3 — Alembic baseline + WebUI completion
@@ -173,7 +173,7 @@ end-to-end.
 |---|---|---|
 | `/start <code>` self-serve binding flow | **Next** | `app.py: "C2 will replace with a /start <code> flow"` |
 | Per-User telegram_id binding on the User row | **Done** | C1.1 added the column; binding is operator-only until C2 lands |
-| `api/chat/sessions` CRUD (D.6) | **Done** | `magi/channels/webui/api/chat_sessions.py` — full session lifecycle (list, get, create, delete, search, message pagination) |
+| `api/chat/sessions` CRUD (D.6) | **Done** | `magi/channels/api/chat_sessions.py` — full session lifecycle (list, get, create, delete, search, message pagination) |
 | `chat_messages` table + FTS5 search (D.18) | **Done** | `memory/session/tables.py` + `migrations.py` FTS5 sync |
 | Auto-compact (D.17) — `archive` table + tail count | **Done** | `_maybe_compact` in `loop.py`; `archive` field on `Session`; `active_tail_count` snapshot |
 | Auto-title worker (D.7) | **Done** | `memory/session/auto_title.py` |
@@ -924,7 +924,7 @@ domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/
 
 **Remaining stragglers** (tgid still appears outside `channels/telegram/`):
 
-- `channels/webui/api/onboarding.py` — Pydantic schemas still have `tgid`
+- `channels/api/onboarding.py` — Pydantic schemas still have `tgid`
   field names; error messages say "tgid must be numeric".
 - `agent/memory/contacts/store.py` — `find_by_telegram_id(tgid)` parameter name.
 - `agent/memory/session/ids.py` — `_validate_tgid`, `session_lock(tgid, ...)`.

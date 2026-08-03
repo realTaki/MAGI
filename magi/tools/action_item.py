@@ -118,7 +118,7 @@ def _ok(payload: Any) -> ToolResult:
 
 def _iso(dt: datetime | None) -> str | None:
     """ISO-8601 UTC string. Mirrors
-    :func:`magi.channels.webui.api.action_items._iso` —
+    :func:`magi.channels.api.action_items._iso` —
     duplicated here to avoid pulling the WebUI router
     import graph into the agent loop's tool path
     (agent tools run without an HTTP request).

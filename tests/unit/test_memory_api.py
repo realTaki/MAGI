@@ -87,7 +87,7 @@ def env(monkeypatch, tmp_path):
 @pytest.fixture
 def client(env):
     """TestClient with Alice's cookie (admin)."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -99,7 +99,7 @@ def client(env):
 def bob_client(env):
     """TestClient with Bob's cookie (also admin, different
     uid). Used to verify scope isolation."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -111,7 +111,7 @@ def charlie_client(env):
     """TestClient with Charlie's cookie (role=guest, not
     admin). Used to verify the AdminGate rejects non-admin
     callers."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     c = TestClient(app)
@@ -173,7 +173,7 @@ def test_list_memory_returns_empty_when_no_rows(client):
 def test_list_memory_requires_admin(env):
     """No cookie → 401 (``AdminGate``). The auth check
     runs before the ORM query — no memory data leaks."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
 
     app = create_app()
     bare = TestClient(app)

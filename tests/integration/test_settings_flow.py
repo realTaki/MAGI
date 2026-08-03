@@ -73,8 +73,8 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 @pytest.fixture
 def client(state):
     """TestClient signed in as Alice (admin)."""
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
 
     app = create_app()
     c = TestClient(app)

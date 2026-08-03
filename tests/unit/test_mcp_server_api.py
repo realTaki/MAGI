@@ -50,8 +50,8 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 @pytest.fixture
 def client(state):
-    from magi.channels.webui.app import create_app
-    from magi.channels.webui.api.auth import _sign_uid
+    from magi.channels.api.app import create_app
+    from magi.channels.api.auth import _sign_uid
     app = create_app()
     c = TestClient(app)
     c.cookies.set("magi_session", _sign_uid(state["admin"].id))
@@ -62,7 +62,7 @@ def client(state):
 def bare_client(state):
     """Cookie-less TestClient — used for the auth-gate
     test below."""
-    from magi.channels.webui.app import create_app
+    from magi.channels.api.app import create_app
     return TestClient(create_app())
 
 
