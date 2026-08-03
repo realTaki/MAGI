@@ -166,3 +166,36 @@ class ToolCatalogService:
             if source is not None: stmt = stmt.where(ToolDefinitionRecord.source == source)
             row = session.scalar(stmt.order_by(ToolDefinitionRecord.id).limit(1))
             return _as_contract(row) if row is not None else None
+
+    def mcp_reload_if_stale(self) -> bool:
+        """Best-effort refresh of MCP-sourced definitions.
+
+        Compares the catalog's recorded MCP revision stamp against
+        ``bus.mcp.revision_stamp()``; when they differ (a fresh MCP
+        server row landed in the local SQLite ``mcp_servers`` table),
+        publishes a new snapshot built from whatever the loader
+        surfaces through the bus ``mcp`` service.  Used by channel
+        bootstrap paths that must not import :mod:`magi.tools`
+        directly.
+
+        Returns ``True`` when the snapshot was republished; ``False``
+        when no reload was needed or the underlying loader was
+        unavailable (the latter is treated as a no-op so the channel
+        side never crashes).
+        """
+        try:
+            current = self.get_snapshot()
+            from magi.bus import bootstrap
+            bus = bootstrap(self._state_dir)
+            stamp = bus.mcp.revision_stamp()
+            if stamp == current.snapshot_hash:
+                return False
+            # Snapshot is stale; ask ``bus.mcp`` for a fresh list
+            # of MCP tool definitions.  The mcp service owns the
+            # loader boundary (it imports the registry); the bus
+            # tool_catalog stays free of any ``magi.tools`` import.
+            definitions = bus.mcp.list_tool_definitions()
+            self.replace_snapshot(source="mcp", definitions=definitions)
+            return True
+        except Exception:
+            return False

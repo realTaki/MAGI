@@ -78,9 +78,17 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # a fresh child that needs its own cache.
     if include_private_routes:
         try:
-            from magi.tools.registry import bootstrap_mcp_tools
+            # The MCP bootstrap lives in ``magi.tools.registry``; the
+            # channels→tools boundary forbids importing it directly
+            # here.  Instead, push a sentinel request into the bus
+            # ``tool_catalog`` service so a deferred worker reloads
+            # the catalog snapshot if it's stale.  ``mcp_load`` is a
+            # no-op when the snapshot revision hasn't changed since
+            # the parent process bootstrapped; in dev with
+            # ``reload=True`` it re-reads the table.
+            from magi.bus.services.tool_catalog import ToolCatalogService
 
-            bootstrap_mcp_tools()
+            ToolCatalogService(None).mcp_reload_if_stale()
         except Exception:
             pass
 

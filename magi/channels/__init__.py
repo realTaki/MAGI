@@ -10,32 +10,13 @@ private ``magi.bus``; the MAGI-owned agent worker consumes them sequentially.
 
 - ``channels.telegram`` — EVE side, python-telegram-bot v21+ (C3).
 - ``channels.webui``    — Adam side, FastAPI + HTMX + WS (C1 for CRUD, C7 for chat console).
+
+The :class:`Channel` enum is owned by the bus (see
+:mod:`magi.bus.contracts.channels`); this module re-exports it for
+back-compat with code that still does ``from magi.channels import Channel``.
 """
 
-from enum import StrEnum
+from magi.bus.contracts.channels import Channel
 
 __all__ = ["base", "Channel"]
 
-
-class Channel(StrEnum):
-    """Typed channel identifiers used across bus payloads,
-    session store, and dispatcher.
-
-    Replaces free-form ``channel: str`` with a compile-time-
-    checkable enum. A typo like ``"telegram"`` instead of
-    ``"tg"`` is now caught by the type checker.
-    """
-
-    TG = "tg"
-    """Telegram bot channel (EVE → user)."""
-
-    WEBUI = "webui"
-    """WebUI chat console (ADAM → operator)."""
-
-    A2A = "a2a"
-    """Agent-to-Agent channel — MAGI peers exchange messages via
-    HMAC-signed HTTP, scoped to peers in the same MAGIS by
-    default. See ``magi.channels.a2a`` for the design."""
-
-    SCHEDULED = "scheduled"
-    """Internal scheduled-task channel — fires persisted tasks on a schedule."""

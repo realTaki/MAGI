@@ -43,3 +43,105 @@ class ProviderConfiguration:
     provider: str
     api_key: str
     model: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class MagisView:
+    """MAGIS Society row as a value object.
+
+    Returned by :class:`magi.bus.services.magis.MagisService` instead of the
+    ORM ``MAGIS`` row so callers never bind to ORM internals.
+    """
+
+    id: int
+    name: str
+    parent_id: Optional[int]
+    instruction: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class MagisAdminView:
+    """MAGIS administrator row as a value object."""
+
+    id: int
+    group_id: int
+    magic_id: int
+    created_at: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class MagisRoleView:
+    """MAGIS role row as a value object."""
+
+    id: int
+    name: str
+    instruction: str
+    created_at: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class MagisMembershipView:
+    """MAGIS membership row as a value object."""
+
+    id: int
+    magic_id: int
+    group_id: int
+    role_id: int
+    created_at: Optional[str]
+
+
+@dataclass(frozen=True, slots=True)
+class MembershipBrief:
+    """Brief view of one MAGI's direct MAGIS membership.
+
+    Returned by :class:`magi.bus.services.magic.MagicService` as part of
+    :class:`MagicView` instead of leaking the ORM ``MAGISMembership`` /
+    ``MAGIS`` / ``MAGISRole`` rows.
+    """
+
+    magis_id: int
+    magis_name: str
+    role_id: int
+    role_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class EveRuntimeView:
+    """View of a MAGIC's EVE runtime state.
+
+    Mirrors the WebUI's ``EveRuntimeOut`` Pydantic model.  Returned to
+    callers instead of leaking the ORM ``EveRuntime`` row.
+    """
+
+    desired_state: str
+    observed_state: str
+    namespace: Optional[str]
+    deployment_name: Optional[str]
+    workspace_claim_name: Optional[str]
+    credential_secret_name: Optional[str]
+    last_error: Optional[str]
+    updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class MagicView:
+    """View of a public MAGIC identity row.
+
+    ``api_key_set`` indicates whether a credential is configured; the raw
+    key is never returned to callers.  ``api_key_last4`` exposes only the
+    last four characters for verification.  ``memberships`` is the
+    MAGIC's direct MAGIS rows with their assigned role; ``runtime`` is
+    the EVE deployment state when one exists.
+    """
+
+    id: int
+    name: Optional[str]
+    provider: Optional[str]
+    api_key_set: bool
+    api_key_last4: Optional[str]
+    memberships: list[MembershipBrief]
+    runtime: Optional[EveRuntimeView]
+    created_at: str
+    updated_at: str
