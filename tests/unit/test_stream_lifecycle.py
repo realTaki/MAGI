@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from magi.bus import AgentMessage, BusStore, StreamEvent, get_stream_hub
-from magi.bus.models import AgentRun
+from magi.bus.models.queue import AgentRun
 from magi.db import init_orm, open_session
 
 

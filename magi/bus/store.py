@@ -24,7 +24,7 @@ from magi.bus.contracts.agent import (
     RunResult,
 )
 from magi.bus.contracts.tools import ToolClaim
-from magi.bus.models import (
+from magi.bus.models.queue import (
     AgentInbox,
     AgentRun,
     A2AInvocation,
@@ -35,7 +35,6 @@ from magi.bus.models import (
     ToolJob,
 )
 from magi.db.base import utcnow_naive
-from magi.bus.contracts import A2AInvocationRequest
 from magi.db.engine import open_session
 from magi.db.models_tool import ToolDefinitionRecord
 

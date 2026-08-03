@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.contracts import DeliveryClaim
+from magi.bus.contracts.agent import DeliveryClaim
 from magi.bus.store import BusStore
 
 

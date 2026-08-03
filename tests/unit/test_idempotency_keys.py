@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.bus.models import AgentInbox, DeliveryOutbox, ToolJob
-from magi.bus.contracts import A2AInvocationRequest
+from magi.bus.models.queue import AgentInbox, DeliveryOutbox, ToolJob
+from magi.bus.contracts.agent import A2AInvocationRequest
 from magi.db import init_orm, open_session
 
 

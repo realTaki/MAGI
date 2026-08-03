@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.bus.models import AgentRun
+from magi.bus.models.queue import AgentRun
 from magi.db import init_orm, open_session
 from magi.db.base import utcnow_naive
 

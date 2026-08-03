@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.contracts import AgentMessage, BusClaim, RunResult
+from magi.bus.contracts.agent import AgentMessage, BusClaim, RunResult
 from magi.bus.store import BusStore
 
 

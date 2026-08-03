@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.bus.models import AgentInbox, DeliveryOutbox, LLMAttempt
+from magi.bus.models.queue import AgentInbox, DeliveryOutbox, LLMAttempt
 from magi.db import init_orm, open_session
 from magi.db.base import utcnow_naive
 

@@ -69,7 +69,7 @@ def test_concurrent_publish_agent_message_preserves_idempotency(
 ) -> None:
     """Two threads publishing the same ``event_id`` produce one inbox row."""
     from magi.db import open_session
-    from magi.bus.models import AgentInbox
+    from magi.bus.models.queue import AgentInbox
 
     store = _setup(tmp_path, monkeypatch)
     errors: list[Exception] = []

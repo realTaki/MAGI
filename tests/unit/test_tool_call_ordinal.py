@@ -62,7 +62,7 @@ def test_ordinal_assigned_monotonically_within_run(store: BusStore) -> None:
     run_id = _seed_run_with_tool_calls(store, ["a", "b", "c"])
 
     from magi.db import open_session
-    from magi.bus.models import ToolCall
+    from magi.bus.models.queue import ToolCall
 
     with open_session() as session:
         rows = (
@@ -91,7 +91,7 @@ def test_load_tool_continuation_orders_by_ordinal(store: BusStore) -> None:
     ) if False else None  # No-op, we'll do explicit writes below
     # Actually claim in array order and complete out of order.
     from magi.db import open_session
-    from magi.bus.models import ToolCall, ToolJob
+    from magi.bus.models.queue import ToolCall, ToolJob
 
     with open_session() as session:
         tool_jobs = (
@@ -137,7 +137,7 @@ def test_legacy_continuation_falls_back_to_array_order(
 
     # Wipe ordinals on this run's rows to simulate pre-0010 data.
     from magi.db import open_session
-    from magi.bus.models import ToolCall, ToolJob, ToolCall as TC
+    from magi.bus.models.queue import ToolCall, ToolJob, ToolCall as TC
     from sqlalchemy import update
 
     with open_session() as session:

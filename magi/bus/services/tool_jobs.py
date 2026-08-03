@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from magi.bus.contracts import ToolClaim
+from magi.bus.contracts.tools import ToolClaim
 from magi.bus.store import BusStore
 
 
