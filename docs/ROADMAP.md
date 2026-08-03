@@ -8,11 +8,11 @@
 > current API or database contract. See [Architecture](ARCHITECTURE.md) and
 > [database migrations](database-migrations.md) for the current implementation.
 
-> **Posture (2026-07-23 refresh):** MAGI is reframed as **Modular Agentic
+> **Posture (2026-07-23 refresh; 2026-08 rename):** MAGI is reframed as **Modular Agentic
 > Group Intelligence** — a system composed of autonomous agents ("MAGIs")
 > coordinating as a group. Today we ship two **archetypes**: a manager
-> archetype (`adam`, *Adaptive Distributed Agent Matrix*) and a worker
-> archetype (`eve`, *Enhanced Virtual Expert*). The runtime is the same;
+> archetype (ADAM = *Autonomous Dispatch Agent Manager*) and a worker
+> archetype (EVA = *Extended Virtual Agent*). The runtime is the same;
 > the archetype is configuration. The body of this file still talks about
 > checkpoints C0–C8 and the work that lives behind them; the
 > "Post-refactor follow-ups" section at the end is the backlog for
@@ -643,7 +643,7 @@ feature.
 
 | Surface | Action |
 |---|---|
-| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; replace "EVA 是 Everyday Virtual Employee" with "EVA 是 worker-archetype MAGI" |
+| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; reflect the 2026-08 ADAM/EVA rename in any remaining "Adam/EVE" strings |
 | Persona / onboarding copy | reflect new archetype language |
 
 ### F4 — Glossary + module docstrings

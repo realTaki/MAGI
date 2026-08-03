@@ -367,20 +367,162 @@ class TaskService:
             return True
 
     def seed_presets_for_contact(self, contact_id: int) -> int:
-        """Trigger the preset-seed pass for one contact.
+        """Trigger the preset-seed policy for one contact.
 
-        Wraps ``magi.proactive.task_presets.seed_presets_for_contact``
-        in a bus-managed session so the WebUI route can fire the
-        seed hook after a contact is created / promoted without
-        crossing back to the db layer. Idempotent; returns the
-        number of NEW task rows inserted (``0`` on a no-op).
+        Reads the operator-curated ``TaskPreset`` rows + the contact
+        row, hands them to :func:`magi.proactive.task_presets.plan_presets_for_contact`
+        (a pure-function policy — no ORM, no I/O), then inserts the
+        plan's ``Task`` rows in this bus-managed session.
+
+        Idempotent: presets that already have a per-user row are
+        skipped.  Returns the number of NEW ``Task`` rows inserted.
+
+        Architecture
+        ------------
+
+        The split is deliberate.  ``magi.proactive`` is the policy
+        layer where future developers add new hooks ("每日晨报",
+        "周报", heartbeat injections — anything that should
+        materialise into the schedule when a contact is created
+        or promoted).  Keeping the policy as a pure function
+        means:
+
+          * the policy never touches ``magi.bus.models.*`` /
+            ``magi.bus.db.*`` directly — the boundary test
+            allows it without exceptions,
+          * the bus owns the transaction boundary and the
+            idempotency check (SELECT before INSERT), so a buggy
+            policy can't leak partial writes,
+          * tests for the policy are pure-data tests, no DB.
+
+        The bus exposes this method as ``bus.seed_presets_for_contact(contact_id)``
+        so the WebUI contacts API stays one-liner-clean.
         """
+        from sqlalchemy import select
+
+        from magi.bus.contracts.session import new_session_id, utcnow_iso
         from magi.bus.db import open_session
-        from magi.proactive.task_presets import seed_presets_for_contact as _seed
+        from magi.bus.models.local.contact import Contact
+        from magi.bus.models.local.session import ChatSession
+        from magi.bus.models.local.task import Task
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.proactive.task_presets import (
+            ContactSnapshot,
+            TaskPresetSnapshot,
+            plan_presets_for_contact,
+        )
+
         with open_session(self._state_dir) as session:
-            inserted = _seed(session, contact_id)
+            contact = session.get(Contact, contact_id)
+            if contact is None:
+                logger.warning(
+                    "seed_presets_for_contact: contact %d vanished mid-flight",
+                    contact_id,
+                )
+                return 0
+
+            contact_snapshot = ContactSnapshot(
+                id=int(contact.id),
+                name=str(contact.name or ""),
+                display_name=contact.display_name,
+                role=str(contact.role or "guest"),
+            )
+
+            preset_rows = session.scalars(
+                select(TaskPreset).order_by(TaskPreset.key.asc())
+            ).all()
+            preset_snapshots = [
+                TaskPresetSnapshot(
+                    id=str(p.id),
+                    key=str(p.key),
+                    name=str(p.name),
+                    prompt=str(p.prompt),
+                    frequency=str(p.frequency),
+                    hour=int(p.hour or 0),
+                    minute=int(p.minute or 0),
+                    day_of_week=p.day_of_week,
+                    day_of_month=p.day_of_month,
+                    run_at=p.run_at,
+                    target_channel=str(p.target_channel or "webui"),
+                    enabled=int(p.enabled or 0),
+                )
+                for p in preset_rows
+            ]
+
+            plan = plan_presets_for_contact(
+                contact_snapshot,
+                preset_snapshots,
+                system_timezone=self.system_timezone(),
+            )
+
+            inserted = 0
+            now_iso = utcnow_iso()
+            for seed in plan.seeds:
+                existing = session.scalar(
+                    select(Task.id).where(
+                        Task.uid == contact_id,
+                        Task.preset_id == seed.preset_id,
+                    ).limit(1)
+                )
+                if existing is not None:
+                    continue
+
+                # Allocate the home ChatSession for this task's fires
+                # — mirrors create_task's allocation: fresh ULID,
+                # channel="task", delivery_address left empty so
+                # the runner's fire-time lookup can fall back to
+                # the contact's bound TG chat id.
+                new_session_id_str = new_session_id()
+                chat_session = ChatSession(
+                    session_id=new_session_id_str,
+                    delivery_address="",
+                    uid=contact_id,
+                    channel="task",
+                    title=f"[定时] {seed.name}",
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+                session.add(chat_session)
+                session.flush()
+
+                task_row = Task(
+                    id=new_session_id_str,  # task id doubles as session id (legacy shape)
+                    name=seed.name,
+                    prompt=seed.prompt,
+                    cron=seed.cron,
+                    run_at=seed.run_at,
+                    delivery_to=seed.delivery_to,
+                    tz=seed.tz,
+                    target_channel=seed.target_channel,
+                    uid=contact_id,
+                    enabled=1,
+                    consecutive_failures=0,
+                    last_run_at=None,
+                    last_status=None,
+                    last_error=None,
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                    session_id=new_session_id_str,
+                    preset_id=seed.preset_id,
+                    preset_key=seed.preset_key,
+                )
+                session.add(task_row)
+                inserted += 1
+
+            if inserted > 0:
+                logger.info(
+                    "seed_presets_for_contact: contact=%d role=assigned "
+                    "inserted %d preset task(s)",
+                    contact_id, inserted,
+                )
+            for preset_key, reason in plan.skipped:
+                logger.warning(
+                    "seed_presets_for_contact: preset %r skipped (%s)",
+                    preset_key, reason,
+                )
+
             session.commit()
-        return inserted
+            return inserted
 
     def create_task_run(
         self,

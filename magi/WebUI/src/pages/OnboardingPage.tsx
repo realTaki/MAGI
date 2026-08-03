@@ -25,6 +25,7 @@ import { Step1View } from "./onboarding/steps/Step1View";
 import { Step2View } from "./onboarding/steps/Step2View";
 import { Step3View } from "./onboarding/steps/Step3View";
 import { useOnboardingStatus } from "../lib/queries";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 type Mode = "with_tg" | "webui_only";
 
@@ -110,10 +111,18 @@ function Header() {
   const t = useT();
   return (
     <header className="px-2 py-2">
-      <div className="max-w-2xl mx-auto flex items-center gap-3">
-        <img src="/assets/favicon.svg" alt="MAGI" width={28} height={28} className="rounded" />
-        <span className="text-sm font-semibold tracking-wide text-sky-deep">MAGI</span>
-        <span className="text-xs text-ink-soft ml-2">{t("onboarding.header")}</span>
+      <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <img src="/assets/favicon.svg" alt="MAGI" width={28} height={28} className="rounded" />
+          <span className="text-sm font-semibold tracking-wide text-sky-deep">MAGI</span>
+          <span className="text-xs text-ink-soft ml-2">{t("onboarding.header")}</span>
+        </div>
+        {/* Language picker — the wizard spans 3 steps and
+            several minutes; the deployer should be able to
+            switch UI language mid-flow without losing their
+            place.  Same globe button as the landing + dashboard
+            topbars; selection persists across reloads. */}
+        <LanguageSwitcher />
       </div>
     </header>
   );

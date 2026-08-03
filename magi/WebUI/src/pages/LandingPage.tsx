@@ -8,6 +8,7 @@
 import { useT } from "../i18n/index";
 import { useEffect, useState } from "react";
 import { useAvailableMagi } from "../lib/queries";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 function FeaturePill(props: { color: string; title: string; desc: string }) {
   return (
@@ -42,18 +43,27 @@ export default function LandingPage(props: {
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-10">
       <div className="glass-card w-full max-w-lg px-8 py-10 sm:px-10 sm:py-12">
-        {/* Logo + name lockup */}
-        <div className="flex items-center gap-3 mb-8">
-          <img
-            src="/assets/favicon.svg"
-            alt="MAGI"
-            width={36}
-            height={36}
-            className="rounded-md"
-          />
-          <span className="font-serif text-xl tracking-wide text-ink">
-            MAGI
-          </span>
+        {/* Logo + name lockup + language picker.
+            The deployer hasn't signed in yet, so this is the
+            only place to switch UI language before onboarding
+            finishes.  Switcher uses the same globe button as
+            the dashboard topbar; selection persists to
+            ``localStorage[magi.locale]`` and renders the page
+            in the new locale on the next tick. */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <img
+              src="/assets/favicon.svg"
+              alt="MAGI"
+              width={36}
+              height={36}
+              className="rounded-md"
+            />
+            <span className="font-serif text-xl tracking-wide text-ink">
+              MAGI
+            </span>
+          </div>
+          <LanguageSwitcher />
         </div>
 
         {/* Tagline */}
