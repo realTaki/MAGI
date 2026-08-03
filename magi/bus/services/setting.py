@@ -70,18 +70,18 @@ class SettingsService:
         self._state_dir = state_dir
 
     def get(self, key: str) -> str | None:
-        from magi.bus._persistence.settings import state_get
+        from magi.bus.db.settings import state_get
 
         return state_get(self._state_dir, key)
 
     def set(self, key: str, value: str) -> None:
-        from magi.bus._persistence.settings import state_set
+        from magi.bus.db.settings import state_set
 
         return state_set(self._state_dir, key, value)
 
     def delete(self, key: str) -> None:
         """Delete one runtime setting through the BUS persistence boundary."""
-        from magi.bus._persistence.settings import state_delete
+        from magi.bus.db.settings import state_delete
 
         state_delete(self._state_dir, key)
 
@@ -93,7 +93,7 @@ class SettingsService:
         point; tools and workers that don't receive ``state_dir`` on
         their context fall back to this.
         """
-        from magi.bus._persistence.engine import require_state_dir
+        from magi.bus.db.engine import require_state_dir
         return require_state_dir()
 
     def system_timezone(self) -> str:

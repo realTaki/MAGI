@@ -25,26 +25,26 @@ class McpService:
     def __init__(self, state_dir: str) -> None: self._state_dir = state_dir
     def list(self) -> list[McpServerView]:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s: return [_view(r) for r in s.scalars(select(McpServer).order_by(McpServer.name))]
     def enabled_configs(self) -> list[McpServerConfig]:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s: return [_config(r) for r in s.scalars(select(McpServer).where(McpServer.enabled.is_(True)))]
     def get(self, name: str) -> McpServerView | None:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s:
             row = s.get(McpServer, name)
             return _view(row) if row else None
     def get_config(self, name: str) -> McpServerConfig | None:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s:
             row=s.get(McpServer,name); return _config(row) if row else None
     def upsert(self, *, name: str, connection_type: str, command: str | None=None, args: list[str] | None=None, url: str | None=None, enabled: bool=True, env: dict | None=None, headers: dict | None=None, connect_timeout: float | None=None, execute_timeout: float | None=None, sse_read_timeout: float | None=None) -> McpServerView:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s:
             row=s.get(McpServer,name)
             if row is None:
@@ -55,14 +55,14 @@ class McpService:
             s.commit(); s.refresh(row); return _view(row)
     def delete(self, name: str) -> bool:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s:
             row=s.get(McpServer,name)
             if row is None: return False
             s.delete(row); s.commit(); return True
     def toggle(self, name: str) -> McpServerView | None:
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s:
             row = s.get(McpServer, name)
             if row is None:
@@ -72,5 +72,5 @@ class McpService:
             return _view(row)
     def revision_stamp(self):
         from magi.bus.models.local.mcp_server import McpServer
-        from magi.bus._persistence import open_session
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as s: return s.scalar(select(McpServer.updated_at).order_by(McpServer.updated_at.desc()).limit(1))

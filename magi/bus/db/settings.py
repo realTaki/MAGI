@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from magi.bus._persistence.engine import open_session
+from magi.bus.db.engine import open_session
 from magi.bus.models.local.setting import Setting
 
 

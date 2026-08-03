@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from magi.bus._persistence.base import utcnow_naive
+from magi.bus.db.base import utcnow_naive
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -44,7 +44,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus._persistence.base import Base
+from magi.bus.db.base import Base
 
 
 if TYPE_CHECKING:

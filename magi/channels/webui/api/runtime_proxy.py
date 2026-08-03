@@ -17,9 +17,9 @@ router = APIRouter(tags=["runtime-proxy"])
 def _runtime_url(magic_id: int) -> str:
     """Resolve the upstream URL for the chosen MAGI's runtime.
 
-    Returns either ``http://<deployment>:42069`` when the EVE runtime
+    Returns either ``http://<deployment>:42069`` when the EVA runtime
     is observed running, the root runtime URL when the requested
-    MAGIC is the root MAGIS's Adam, or raises 409 if the runtime
+    MAGIC is the root MAGIS's ADAM, or raises 409 if the runtime
     isn't running.
     """
     bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))

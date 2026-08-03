@@ -459,7 +459,7 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
 
 @router.get("/allowed-accounts", response_model=AllowedLoginAccountsResponse)
 async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
-    """The list of UIDs that can log in to Adam.
+    """The list of UIDs that can log in to ADAM.
 
     UID is the row's identity; the dropdown's primary key is
     the UID, not the IM chat id. We still include
@@ -480,20 +480,20 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     1. ``role='admin'`` rows in ``contacts`` — the
        wizard-configured deployer list. role =
        ``super_admin``.
-    2. Contacts with a bound TG chat + an active EVE
+    2. Contacts with a bound TG chat + an active EVA
        assignment. role = ``assigned_contact``. C2 wires
        the TG binding (the contact proves ownership of the
        chat from TG by replying to a code); C6 wires the
-       EVE dispatch (Adam spawns a container for the
+       EVA dispatch (ADAM spawns a container for the
        contact). The two together mean "this person has a
-       live EVE they manage" — they should be able to sign
+       live EVA they manage" — they should be able to sign
        in to see its logs, change its skills, etc., without
        needing deployer-level access.
 
     For C0 the contacts side is empty (the tables don't
     exist yet — C1.1 lands the ORM). The path is wired so
     the frontend can show "0 assigned contacts" today and
-    start populating as soon as C6 dispatches the first EVE.
+    start populating as soon as C6 dispatches the first EVA.
 
     Display names come from the local ``Contact`` row only.
     We intentionally avoid Telegram ``getChat`` network calls here:
@@ -550,7 +550,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     # We skip the join and rely on the frontend to de-dupe
     # super_admins from the visible list (super admins should
     # not also appear under "assigned contacts" — they manage
-    # the system, not a single EVE).
+    # the system, not a single EVA).
 
     return AllowedLoginAccountsResponse(accounts=accounts)
 

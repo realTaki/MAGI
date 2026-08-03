@@ -76,7 +76,7 @@ def _state_dir() -> str:
     """Resolve the runtime state directory without going through the bus.
 
     Skills are part of the loader path (imported at startup before
-    services exist); they cannot reach into ``magi.bus._persistence``
+    services exist); they cannot reach into ``magi.bus.db``
     without breaking the load-time boundary.  The same env-var
     contract the bus uses is inlined here as a one-liner.
     """

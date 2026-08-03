@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus._persistence.base import Base
+from magi.bus.db.base import Base
 
 
 class ChatSession(Base):

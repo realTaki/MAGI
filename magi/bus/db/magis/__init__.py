@@ -7,14 +7,14 @@ mounts it from the MAGIS database Secret, rather than passing provider or
 instruction values as environment variables.
 
 This module is **internal to the bus**.  External callers (agent, tools,
-channels, orchestrator, etc.) must not import from ``magi.bus._persistence``
+channels, orchestrator, etc.) must not import from ``magi.bus.db``
 directly — use the bus service façades
 (``bus.magis``, ``bus.magic``, ``bus.contacts``, ...).  The lone
 exceptions are the composition root (``magi.__main__``) and the Alembic
 migration runner, which legitimately own the engine + metadata at startup.
 """
 
-from magi.bus._persistence.magis.engine import (
+from magi.bus.db.magis.engine import (
     get_magis_engine,
     get_magis_session,
     init_magis_public_db,

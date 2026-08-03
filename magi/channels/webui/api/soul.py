@@ -3,7 +3,7 @@
 The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
 :meth:`magi.agent.system_prompt.read_soul`. There is one
-``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
+``SOUL.md`` per **MAGI node** (ADAM container, EVA container) —
 not one per contact. Per-contact personas are C4+ and out
 of scope here.
 

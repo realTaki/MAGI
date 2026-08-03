@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING
 
 from tzlocal import get_localzone
 
-from magi.bus._persistence.engine import require_state_dir
-from magi.bus._persistence.settings import state_get, state_set
+from magi.bus.db.engine import require_state_dir
+from magi.bus.db.settings import state_get, state_set
 
 if TYPE_CHECKING:
     pass

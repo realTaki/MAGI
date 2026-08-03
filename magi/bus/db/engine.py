@@ -4,7 +4,7 @@
 Lives in the same SQLite file as the small ``meta`` bootstrap table.
 Private application tables, including the legacy ``settings`` KV table, are
 accessed through SQLAlchemy via this module. MAGIS public PostgreSQL access
-lives in :mod:`magi.bus._persistence.magis`. ``meta`` remains a raw-SQL
+lives in :mod:`magi.bus.db.magis`. ``meta`` remains a raw-SQL
 bootstrap table because it only carries schema hand-off metadata.
 
 Schema ownership is now Alembic. ``init_orm`` runs ``alembic upgrade head``
@@ -32,11 +32,11 @@ from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.bus._persistence.alembic_runner import stamp_baseline, upgrade_head
-from magi.bus._persistence.base import Base
-from magi.bus._persistence.migrations import _run_inline_migrations
+from magi.bus.db.alembic_runner import stamp_baseline, upgrade_head
+from magi.bus.db.base import Base
+from magi.bus.db.migrations import _run_inline_migrations
 
-logger = logging.getLogger("magi.bus._persistence.engine")
+logger = logging.getLogger("magi.bus.db.engine")
 
 
 def require_state_dir() -> str:
@@ -368,7 +368,7 @@ def get_session() -> Generator[Session, None, None]:
     Usage in a route::
 
         from fastapi import Depends
-        from magi.bus._persistence.engine import get_session
+        from magi.bus.db.engine import get_session
 
         @router.get(...)
         def list_magis(session: Session = Depends(get_session)):

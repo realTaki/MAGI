@@ -332,7 +332,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Dispatch accepts the caller if EITHER:
         #   - ``contact_admin=True`` (a WebUI operator — any role)
         #   - ``contact_role == 'assigned'`` (the served user —
-        #     the EVE they're chatting with is theirs).
+        #     the EVA they're chatting with is theirs).
         # ``role='guest'`` is NOT accepted here — a soft-
         # auto-created stranger still has to ask their
         # admin for promotion (handled in the "no contact
@@ -358,7 +358,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             return
         # ``admin`` and ``assigned`` both flow through the
-        # same handler. Good — TG chat-with-EVE is a real
+        # same handler. Good — TG chat-with-EVA is a real
         # affordance for mobile operators too.
         await _handle_contact_message(
             update,
@@ -543,7 +543,7 @@ async def _handle_contact_message(
     The session is auto-created on the first inbound
     message and reused for every subsequent turn in that
     chat, so the file grows into the contact's complete
-    history with this EVE. Per-chat / per-topic session
+    history with this EVA. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
     from magi.bus import bootstrap
@@ -554,7 +554,7 @@ async def _handle_contact_message(
     # durable input and never receives provider credentials.
 
     if contact_separated:
-        # Separated contacts can't chat with their EVE —
+        # Separated contacts can't chat with their EVA —
         # the org marked them as 离职, so the agent is
         # paused. Admin can restore via the dashboard.
         await update.effective_message.reply_text(
@@ -613,7 +613,7 @@ async def _handle_contact_message(
     #      also seeds the auto-title worker.
     #
     # The "reuse the last session" policy is intentionally
-    # implicit: the TG client never tells the EVE "I want
+    # implicit: the TG client never tells the EVA "I want
     # a new thread"; if a future affordance (C7 command like
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.

@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from sqlalchemy import String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus._persistence.base import Base
+from magi.bus.db.base import Base
 
 
 def _utcnow_sqlite_text() -> str:

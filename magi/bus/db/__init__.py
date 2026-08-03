@@ -5,7 +5,7 @@ Python convention; the *enforcement* is the AST import-boundary test
 (``tests/architecture/test_import_boundaries.py``) which forbids
 ``magi.agent``, ``magi.tools``, ``magi.channels``, ``magi.proactive``,
 ``magi.connectors``, ``magi.orchestrator``, ``magi.mcp``, and ``magi.skills``
-from importing anything under ``magi.bus._persistence``.
+from importing anything under ``magi.bus.db``.
 
 External callers (agent, tools, channels, mcp, proactive, orchestrator,
 skills, etc.) must use the bus service façades
@@ -19,7 +19,7 @@ engine + metadata at process startup, before any service exists.
 
 ORM models are NOT re-exported here.  Bus services import them from
 their canonical homes under :mod:`magi.bus.models.{local,magis,queue}`
-(those modules declare ``from magi.bus._persistence.base import Base``
+(those modules declare ``from magi.bus.db.base import Base``
 — no cycle).  Keeping ORM tables out of ``_persistence.__init__`` avoids
 the import-time cycle that would otherwise form
 (``_persistence.__init__`` → ``models.queue.a2a_invocation`` →
@@ -42,23 +42,23 @@ ORM tables are imported from ``magi.bus.models.{local,magis,queue}``
 directly — the bus services already use these paths.
 """
 
-from magi.bus._persistence.base import Base, utcnow_naive
-from magi.bus._persistence.engine import (
+from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.engine import (
     get_engine,
     get_session,
     init_orm,
     open_session,
     require_state_dir,
 )
-from magi.bus._persistence.local_db import init_sqlite
-from magi.bus._persistence.settings import (
+from magi.bus.db.local_db import init_sqlite
+from magi.bus.db.settings import (
     state_delete,
     state_get,
     state_set,
 )
 
 # MAGIS PostgreSQL access
-from magi.bus._persistence.magis import (
+from magi.bus.db.magis import (
     get_magis_engine,
     get_magis_session,
     init_magis_public_db,

@@ -34,8 +34,8 @@ from magi.bus.models.queue import (
     ToolCall,
     ToolJob,
 )
-from magi.bus._persistence.base import utcnow_naive
-from magi.bus._persistence.engine import open_session
+from magi.bus.db.base import utcnow_naive
+from magi.bus.db.engine import open_session
 from magi.bus.models.local.tool import ToolDefinitionRecord
 
 

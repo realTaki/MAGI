@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus._persistence.base import Base, utcnow_naive
+from magi.bus.db.base import Base, utcnow_naive
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
 DEFAULT_ROLE_INSTRUCTIONS = {

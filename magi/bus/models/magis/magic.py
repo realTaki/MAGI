@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus._persistence.base import Base, utcnow_naive
+from magi.bus.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, 
     keeps root-runtime callers simple while avoiding a global role lookup.
     """
     from sqlalchemy import select
-    from magi.bus._persistence.magis import open_magis_session
+    from magi.bus.db.magis import open_magis_session
 
     with open_magis_session() as db:
         if magic_id is not None:

@@ -153,7 +153,7 @@ async def _send_code(magic_id: int, magis_id: int, telegram_id: int, text: str) 
         raise MagiHTTPException(
             409,
             "access.no_delivery_bot",
-            "This MAGI has no Bot and its direct MAGIS Adam Bot is unavailable",
+            "This MAGI has no Bot and its direct MAGIS ADAM Bot is unavailable",
         )
     adam_id, base = fallback
     path = "/api/control/telegram/send"
@@ -164,7 +164,7 @@ async def _send_code(magic_id: int, magis_id: int, telegram_id: int, text: str) 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(base + path, json={"telegram_id": telegram_id, "text": text}, headers=headers)
     if response.is_error:
-        raise MagiHTTPException(503, "access.fallback_delivery_failed", "Adam Bot could not deliver the login code")
+        raise MagiHTTPException(503, "access.fallback_delivery_failed", "ADAM Bot could not deliver the login code")
     return "adam_fallback"
 
 

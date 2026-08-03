@@ -86,7 +86,7 @@ class SearchSessionsTool(Tool):
     # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Search the operator's past conversations with EVE "
+        "Search the operator's past conversations with EVA "
         "for messages containing a query string. Returns each "
         "match with up to ``context_n`` preceding + following "
         "messages so the model sees what was actually said "

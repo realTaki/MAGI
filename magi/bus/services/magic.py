@@ -117,7 +117,7 @@ class MagicService:
         return session.get(MAGIC, root.adam_id) if root and root.adam_id else None
 
     def provider_configuration(self) -> ProviderConfiguration | None:
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = self._runtime_magic(session)
@@ -133,7 +133,7 @@ class MagicService:
         """Return only serialisable instruction facts for the active MAGIC."""
         from sqlalchemy import select
 
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
         from magi.bus.models.magis.magis import MAGIS
         from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
 
@@ -158,7 +158,7 @@ class MagicService:
 
     def can_receive_a2a(self, sender_magic_id: int) -> bool:
         """Apply MAGIS routing policy for ingress to this runtime."""
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
         from magi.bus.models.magis.magis_membership import can_route_a2a
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
@@ -178,7 +178,7 @@ class MagicService:
         from sqlalchemy import select
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             row = session.scalar(
@@ -199,7 +199,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
@@ -219,7 +219,7 @@ class MagicService:
     def get_instruction(self, magic_id: int) -> str | None:
         """Return the MAGIC's personal instruction text, or ``None`` when missing."""
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
             return None if magic is None else str(magic.instruction or "")
@@ -243,7 +243,7 @@ class MagicService:
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.models.magis.magis import MAGIS
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
@@ -289,7 +289,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         direct = set(direct_ids) if direct_ids is not None else set()
         with open_magis_session() as session:
@@ -318,7 +318,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
@@ -336,7 +336,7 @@ class MagicService:
         api_key: str | None,
     ) -> MagicView:
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = MAGIC(name=name, provider=provider, api_key=api_key)
@@ -361,7 +361,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
@@ -392,7 +392,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
@@ -425,7 +425,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
@@ -440,7 +440,7 @@ class MagicService:
 
     def list_memberships(self, magic_id: int) -> list[MembershipBrief]:
         """Return the MAGIC's direct MAGIS memberships with role names."""
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             return _memberships_for(session, magic_id)
@@ -467,7 +467,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         if desired_state not in {"running", "stopped", "draft", "deleted"}:
             raise ValueError(f"unsupported desired_state: {desired_state!r}")
@@ -559,7 +559,7 @@ class MagicService:
         — kept here so the API can resolve WebUI-bound MAGIs without
         reaching into the MAGIS table on its own.
         """
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
         from magi.bus.models.magis.magis import MAGIS
         from sqlalchemy import select
 
@@ -578,7 +578,7 @@ class MagicService:
 
         from magi.bus.models.magis.eve_runtime import EveRuntime
         from magi.bus.models.magis.magic import MAGIC
-        from magi.bus._persistence.magis import open_magis_session
+        from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             if session.get(MAGIC, magic_id) is None:

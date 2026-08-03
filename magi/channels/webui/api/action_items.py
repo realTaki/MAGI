@@ -10,7 +10,7 @@ screen — no payload blob, no kind-specific column.
 
 Created by system paths (currently ``onboarding/complete``
 inserts one ``llm_credentials_missing`` row per admin). From
-C4, EVE-driven rows land via a future ``POST /api/action_items``
+C4, EVA-driven rows land via a future ``POST /api/action_items``
 endpoint — schema already accommodates them (``source='eve'``,
 ``priority='high'``).
 

@@ -40,7 +40,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus._persistence.base import Base, utcnow_naive
+from magi.bus.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:

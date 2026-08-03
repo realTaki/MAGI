@@ -599,7 +599,7 @@ def upgrade() -> None:
 
     if has_fts5:
         try:
-            from magi.bus._persistence.migrations import _FTS_MIGRATIONS
+            from magi.bus.db.migrations import _FTS_MIGRATIONS
             for _name, ddl in _FTS_MIGRATIONS:
                 bind.execute(text(ddl))
             bind.execute(

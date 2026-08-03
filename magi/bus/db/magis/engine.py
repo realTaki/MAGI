@@ -36,7 +36,7 @@ def get_magis_engine() -> Engine:
     global _engine, _session_factory
     url = _url()
     if url is None:
-        from magi.bus._persistence.engine import get_engine
+        from magi.bus.db.engine import get_engine
 
         return get_engine()
     if _engine is None or str(_engine.url) != url:
@@ -68,7 +68,7 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
             tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__, MAGISAdmin.__table__, EveRuntime.__table__, ControlSetting.__table__, ControlOperator.__table__],
         )
     if seed_root:
-        from magi.bus._persistence.engine import _seed_default_root
+        from magi.bus.db.engine import _seed_default_root
 
         _seed_default_root(engine)
     return engine
@@ -81,7 +81,7 @@ def get_magis_session() -> Generator[Session, None, None]:
     if _url() is not None and _session_factory is None:
         _session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
     if _url() is None:
-        from magi.bus._persistence.engine import get_session
+        from magi.bus.db.engine import get_session
 
         yield from get_session()
         return
@@ -99,7 +99,7 @@ def open_magis_session() -> Generator[Session, None, None]:
     global _session_factory
     engine = get_magis_engine()
     if _url() is None:
-        from magi.bus._persistence.engine import open_session
+        from magi.bus.db.engine import open_session
 
         with open_session() as session:
             yield session

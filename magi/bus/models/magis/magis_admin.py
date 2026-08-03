@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus._persistence.base import Base, utcnow_naive
+from magi.bus.db.base import Base, utcnow_naive
 
 
 class MAGISAdmin(Base):

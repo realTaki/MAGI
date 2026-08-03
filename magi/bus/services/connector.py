@@ -17,7 +17,7 @@ class ConnectorService:
 
     def list_configurations(self) -> list[ConnectorConfiguration] | None:
         """Return configs, or ``None`` while the optional table is absent."""
-        from magi.bus._persistence.engine import get_engine
+        from magi.bus.db.engine import get_engine
 
         try:
             with get_engine().connect() as connection:

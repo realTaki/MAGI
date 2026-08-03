@@ -57,7 +57,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus._persistence.base import Base, utcnow_naive
+from magi.bus.db.base import Base, utcnow_naive
 
 
 # Allowed kinds. ``tg_code`` is a placeholder for the future

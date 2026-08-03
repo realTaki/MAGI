@@ -24,7 +24,7 @@ import magi.bus.models.local.session  # noqa: F401,E402
 import magi.bus.models.local.token_usage  # noqa: F401,E402
 import magi.bus.models.local.tool  # noqa: F401,E402
 import magi.bus.models.local.task_preset  # noqa: F401,E402
-from magi.bus._persistence.base import Base
+from magi.bus.db.base import Base
 
 config = context.config
 if config.config_file_name is not None:
