@@ -67,7 +67,7 @@ def mcp_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.db import init_orm, open_session
-    from magi.db.models_mcp_server import McpServer
+    from magi.bus.models.local.mcp_server import McpServer
 
     init_orm(str(state))
 
@@ -184,7 +184,7 @@ def test_load_servers_malformed_json_falls_back_to_empty(mcp_db, caplog):
     loader logs a warning and treats the column as
     empty."""
     from magi.db import open_session
-    from magi.db.models_mcp_server import McpServer
+    from magi.bus.models.local.mcp_server import McpServer
 
     with open_session() as s:
         s.add(McpServer(
@@ -368,7 +368,7 @@ def test_maybe_reload_fires_on_table_edit(mcp_db):
     # so we touch ``enabled``.
     import time as _t
     from magi.db import open_session
-    from magi.db.models_mcp_server import McpServer
+    from magi.bus.models.local.mcp_server import McpServer
 
     # The datetime resolution on sqlite is second-level,
     # so a sub-second edit may not bump the stamp. Sleep

@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from magi.channels.webui.app import create_app
-from magi.tools.skill_loader import _reset_for_tests
+from magi.skills.loader import _reset_for_tests
 from magi.db import init_sqlite
 from magi.db import Contact, init_orm, open_session
 

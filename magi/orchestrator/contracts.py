@@ -1,4 +1,4 @@
-"""Wire contracts shared by Adam's client and the orchestrator service."""
+"""Wire contracts shared by ADAM's client and the orchestrator service."""
 
 from __future__ import annotations
 

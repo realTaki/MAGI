@@ -44,13 +44,9 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import select
-
-from magi.db import McpServer, open_session
+from magi.bus import ToolContext, ToolResult, bootstrap
 from magi.tools.base import (
     Tool,
-    ToolContext,
-    ToolResult,
     caller_role_denied_reason,
 )
 
@@ -73,12 +69,12 @@ def _ok(payload: Any) -> ToolResult:
     return ToolResult(content=body, is_error=False)
 
 
-def _serialize(r: McpServer) -> dict[str, Any]:
+def _serialize(r) -> dict[str, Any]:
     return {
         "name": r.name,
         "connection_type": r.connection_type,
         "command": r.command,
-        "args": json.loads(r.args_json) if r.args_json else [],
+        "args": list(r.args),
         "url": r.url,
         "enabled": r.enabled,
         "connect_timeout": r.connect_timeout,
@@ -197,35 +193,10 @@ class AddMcpServerTool(Tool):
         if not isinstance(enabled, bool):
             enabled = True
 
-        with open_session() as s:
-            existing = s.execute(
-                select(McpServer).where(McpServer.name == name)
-            ).scalar_one_or_none()
-            if existing:
-                return _err(
-                    f"server '{name}' already exists. Delete it first "
-                    f"with delete_mcp_server if you want to recreate it."
-                )
-
-            row = McpServer(
-                name=name,
-                connection_type=conn_type,
-                command=kwargs.get("command"),
-                args_json=json.dumps(kwargs.get("args") or []),
-                url=kwargs.get("url"),
-                enabled=enabled,
-                connect_timeout=kwargs.get("connect_timeout"),
-                execute_timeout=kwargs.get("execute_timeout"),
-                sse_read_timeout=kwargs.get("sse_read_timeout"),
-                env_json=json.dumps(kwargs.get("env") or {}),
-                headers_json=json.dumps(kwargs.get("headers") or {}),
-            )
-            s.add(row)
-            s.commit()
-            logger.info(
-                "added MCP server %s (type=%s, enabled=%s)",
-                name, conn_type, enabled,
-            )
+        bus = bootstrap(context.state_dir)
+        if any(server.name == name for server in bus.mcp.list()):
+            return _err(f"server '{name}' already exists")
+        row = bus.mcp.upsert(name=name, connection_type=conn_type, command=kwargs.get("command"), args=kwargs.get("args"), url=kwargs.get("url"), enabled=enabled, env=kwargs.get("env"), headers=kwargs.get("headers"), connect_timeout=kwargs.get("connect_timeout"), execute_timeout=kwargs.get("execute_timeout"), sse_read_timeout=kwargs.get("sse_read_timeout"))
 
         return _ok({
             "status": "created",
@@ -256,10 +227,7 @@ class ListMcpServersTool(Tool):
         if denied:
             return _err(denied)
 
-        with open_session() as s:
-            rows = s.execute(
-                select(McpServer).order_by(McpServer.name)
-            ).scalars().all()
+        rows = bootstrap(context.state_dir).mcp.list()
 
         if not rows:
             return _ok({"servers": [], "hint": "No MCP servers configured yet."})
@@ -305,20 +273,8 @@ class DeleteMcpServerTool(Tool):
         if not name:
             return _err("missing required field: name")
 
-        with open_session() as s:
-            row = s.execute(
-                select(McpServer).where(McpServer.name == name)
-            ).scalar_one_or_none()
-
-            if row is None:
-                return _ok({
-                    "status": "not_found",
-                    "hint": f"No server named '{name}' — nothing to delete.",
-                })
-
-            s.delete(row)
-            s.commit()
-            logger.info("deleted MCP server %s", name)
+        if not bootstrap(context.state_dir).mcp.delete(name):
+            return _ok({"status": "not_found", "hint": f"No server named '{name}' — nothing to delete."})
 
         return _ok({
             "status": "deleted",
@@ -460,61 +416,20 @@ class UpdateMcpServerTool(Tool):
         if conn_type in ("sse", "streamable_http") and "url" in kwargs and not kwargs.get("url"):
             return _err(f"{conn_type} servers require 'url'")
 
-        with open_session() as s:
-            row = s.execute(
-                select(McpServer).where(McpServer.name == name)
-            ).scalar_one_or_none()
-            if row is None:
+        bus = bootstrap(context.state_dir)
+        current = bus.mcp.get_config(name)
+        if current is None:
                 return _err(
                     f"server '{name}' does not exist. "
                     f"Create it with add_mcp_server first."
                 )
 
-            # Apply each field that was supplied. The
-            # Pydantic-style ``"key in kwargs"`` check
-            # lets the LLM patch a single field by
-            # passing just that key.
-            if conn_type:
-                row.connection_type = conn_type
-            if "command" in kwargs:
-                row.command = kwargs.get("command")
-            if "args" in kwargs:
-                row.args_json = json.dumps(kwargs.get("args") or [])
-            if "url" in kwargs:
-                row.url = kwargs.get("url")
-            if "enabled" in kwargs:
-                enabled = kwargs.get("enabled")
-                if isinstance(enabled, bool):
-                    row.enabled = enabled
-            if "env" in kwargs:
-                row.env_json = json.dumps(kwargs.get("env") or {})
-            if "headers" in kwargs:
-                row.headers_json = json.dumps(kwargs.get("headers") or {})
-            if "connect_timeout" in kwargs:
-                row.connect_timeout = kwargs.get("connect_timeout")
-            if "execute_timeout" in kwargs:
-                row.execute_timeout = kwargs.get("execute_timeout")
-            if "sse_read_timeout" in kwargs:
-                row.sse_read_timeout = kwargs.get("sse_read_timeout")
-
-            # Final invariant check on the merged row —
-            # some combos (e.g. switching transport from
-            # stdio to sse without setting ``url``) leave
-            # the row in an invalid state.
-            if row.connection_type == "stdio" and not (row.command and row.command.strip()):
-                return _err(
-                    "row is now stdio with no 'command' — "
-                    "supply command=... in the same call"
-                )
-            if row.connection_type in ("sse", "streamable_http") and not (row.url and row.url.strip()):
-                return _err(
-                    f"row is now {row.connection_type} with no 'url' — "
-                    "supply url=... in the same call"
-                )
-
-            s.commit()
-            logger.info("updated MCP server %s", name)
-
+        values = {"connection_type": current.connection_type, "command": current.command, "args": list(current.args), "url": current.url, "enabled": current.enabled, "env": current.env, "headers": current.headers, "connect_timeout": current.connect_timeout, "execute_timeout": current.execute_timeout, "sse_read_timeout": current.sse_read_timeout}
+        values.update({key: kwargs[key] for key in values if key in kwargs})
+        try:
+            row = bus.mcp.upsert(name=name, **values)
+        except ValueError as exc:
+            return _err(str(exc))
         return _ok({
             "status": "updated",
             "server": _serialize(row),

@@ -36,7 +36,7 @@ HEAD = `0003_single_direct_magis_membership`。
 |---|---|---|
 | `0001_baseline` | `None` | 新数据库的完整基础 schema。 |
 | `0002_magis_membership_instructions` | `0001_baseline` | 将旧的单 MAGIS / 固定职位 MAGI 迁移为独立 `magic`、`magis_memberships` 和 `magis_roles`；增加个人、团队、角色 instructions，并将 `eve_runtimes.magi_id` 改为 `magic_id`。新库的 baseline 已含最终结构，因此此 revision 对新库是 no-op。 |
-| `0003_single_direct_magis_membership` | `0002_magis_membership_instructions` | 收敛为每个 MAGI 一个直接 MAGIS Membership；若旧开发库存在多个 Membership，保留最早的一条。Adam 对子树的管理权由 MAGIS tree 推导，不再通过额外 Membership 表示。 |
+| `0003_single_direct_magis_membership` | `0002_magis_membership_instructions` | 收敛为每个 MAGI 一个直接 MAGIS Membership；若旧开发库存在多个 Membership，保留最早的一条。ADAM 对子树的管理权由 MAGIS tree 推导，不再通过额外 Membership 表示。 |
 
 ### collapsed baseline（开发策略）
 
@@ -52,7 +52,7 @@ HEAD = `0003_single_direct_magis_membership`。
 - 原 `0005_mcp_servers` → `mcp_servers` 表，现 baseline 已含该表。
 - 原 `0006_contact_notes` → `contact_notes` 表，现 baseline 已含。
 - 原 `0007_eve_runtimes` → `eve_runtimes` 表与索引，现 baseline 已含。
-- 原 `0007_swap_magic_magis_tables` → `magic` / `magis` 表命名对调 + EVE runtime 外键目标修正，现 baseline 已直接用最终形态。
+- 原 `0007_swap_magic_magis_tables` → `magic` / `magis` 表命名对调 + EVA runtime 外键目标修正，现 baseline 已直接用最终形态。
 
 新增 schema 变化的纪律见下文「添加新的 schema 变化」。
 
@@ -96,10 +96,10 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
    - `stamp_baseline` 把库 stamp 到 `0001_baseline`；
 3. 若数据库**有** `alembic_version` 但指向一个 Alembic 已不认识的 revision（典型：以前升级到了 `0007_swap_magic_magis_tables`，本次 rebase 后该文件已删除），`upgrade_head` 入口的 `_rebase_to_canonical_head` 会先 `DELETE FROM alembic_version` 再 stamp 到 `0001_baseline`。DB schema 不动（folded migration 的效果已在 baseline 里），只刷新 bookkeeping 行；
 4. 始终执行 `upgrade_head`（= `alembic command.upgrade head`），把库升到最新 revision；
-5. 节点随后调用 `magi.db.magis.init_magis_public_db()`；仅初始 Adam
+5. 节点随后调用 `magi.db.magis.init_magis_public_db()`；仅初始 ADAM
    会在其直属 MAGIS PostgreSQL 中调用 `_seed_default_root`，确保有且仅有一个
    根 MAGI Society（Genesis），创建首个 MAGI（默认名 `EVA-00 PROTO TYPE`），
-   并以 Adam 角色加入 Genesis。
+   并以 ADAM 角色加入 Genesis。
 
 因此容器启动、滚动更新或新 Pod 创建时，数据库会先完成迁移，再启动 WebUI、Telegram
 和 scheduler。应用代码启动即自动升级，**不需要在容器里手动调用 Alembic**。
@@ -141,7 +141,7 @@ Kubernetes 运行时的组织事实来源；组织 API、instructions、provider
 
 - 生产镜像必须包含 `alembic.ini` 和 `magi/db/alembic/`；
 - `deploy/Dockerfile` 已将 `alembic.ini` 复制到 `/app/alembic.ini`；
-- Alembic 已经是核心 runtime dependency，不再只属于 Adam extra；
+- Alembic 已经是核心 runtime dependency，不再只属于 ADAM extra；
 - 每个 MAGI 的私有 SQLite 默认单副本运行，避免多个 Pod 同时执行 migration
   或写入同一个私有数据库；
 - MAGIS PostgreSQL 是独立单副本数据库 Deployment；其 schema 由运行时

@@ -29,7 +29,7 @@ from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db.engine import require_state_dir
+from magi.constants import STATE_DIR
 from magi.channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,
     DEFAULT_READ_REACTION_EMOJI,
@@ -46,7 +46,8 @@ router = APIRouter(tags=["tg-settings"])
 
 
 def _state_dir() -> str:
-    return require_state_dir()
+    import os
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 class ReactionChoice(BaseModel):

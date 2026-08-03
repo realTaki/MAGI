@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.bus.models import DeliveryOutbox
+from magi.bus.models.queue import DeliveryOutbox
 from magi.db import init_orm, open_session
 
 

@@ -1,4 +1,4 @@
-"""Run the EVE orchestrator as the dedicated control-plane process."""
+"""Run the EVA orchestrator as the dedicated control-plane process."""
 
 import uvicorn
 

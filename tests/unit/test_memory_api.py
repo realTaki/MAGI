@@ -138,7 +138,7 @@ def _seed_memory(
     the test must control timestamps directly.
     """
     from magi.db import open_session
-    from magi.agent.memory.self.models import (
+    from magi.bus.contracts.memory import (
         SOURCE_MANUAL,
         MemoryEntry)
 

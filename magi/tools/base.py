@@ -1,5 +1,5 @@
 
-"""Tool base class + the per-call context.
+"""Tool base class.
 
 A :class:`Tool` is a callable the LLM can ask the agent
 loop to run. v0 ships four (see ``registry.py``); future
@@ -17,18 +17,9 @@ The protocol is intentionally tiny:
                       the model emits the input)
   - ``run(ctx, **kwargs)`` — actually execute
 
-``ToolContext`` carries the state the tool needs to do
-its work without each tool having to reach into globals.
-v0 fields:
-  - ``state_dir``    — ``MAGI_STATE_DIR`` value
-  - ``workspace``    — the resolved workspace root
-  - ``uid``          — who is on the other end (for audit
-                        / future per-contact limits)
-  - ``channel``      — ``"webui"`` / ``"tg"`` / ``"scheduled"``
-  - ``session_id``   — current chat session id (empty when
-                        the tool runs outside a chat; the
-                        ``send_message`` tool uses this to
-                        route back to the right channel)
+``ToolContext`` and ``ToolResult`` moved to :mod:`magi.types`
+so agent, tools, and other packages can all import them
+without pulling in the tools package.
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
@@ -40,52 +31,11 @@ without importing the whole batch).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from magi.channels import Channel
-
-
-@dataclass(frozen=True)
-class ToolContext:
-    """Per-call state passed to every tool.
-
-    Frozen so a tool can't accidentally mutate the context
-    mid-run (the agent loop shares one ``ToolContext``
-    instance across all iterations of one chat turn).
-    """
-
-    state_dir: str
-    workspace: Path
-    uid: int
-    channel: Channel | str
-    # The chat session's persisted id (``chat_sessions.session_id``).
-    # Empty string when there's no session-bound chat — e.g.
-    # scheduled-task fires that were never part of a chat, or
-    # a tool call from a one-off admin action that has no chat
-    # attached. ``ScheduleTaskTool`` consults this to default
-    # ``delivery_to`` to the current chat when called from inside
-    # a session (vs. ``"new"`` from a manual WebUI create).
-    session_id: str = ""
-
-
-@dataclass
-class ToolResult:
-    """What a tool returns to the agent loop.
-
-    ``content`` is what the LLM sees next turn (as a
-    ``tool_result`` block). ``is_error=True`` tells the LLM
-    "this didn't work, here's why; pick a different
-    approach" — the loop doesn't change its behavior
-    otherwise (the LLM decides what to do based on the
-    content). v0 truncates ``content`` to 8 KB before
-    feeding it back so a runaway shell command or 50 MB
-    log file can't blow up the next LLM call.
-    """
-
-    content: str
-    is_error: bool = False
+# Re-export BUS contracts so implementations keep their historical import
+# path without taking a direct dependency on ``magi.db``.
+from magi.bus.contracts.tools import ToolContext, ToolResult  # noqa: F401
 
 
 class Tool(ABC):
@@ -162,7 +112,7 @@ class Tool(ABC):
         to permissive (the caller sees the tool), matching
         the historic behaviour of :func:`registry.get_tools`
         before role filtering landed. The production path
-        in :func:`magi.agent.loop.handle_message` always
+        in :class:`magi.agent.worker.AgentWorker` always
         passes an explicit ``caller_role`` (resolved from
         the operator's ``Contact.role``), so an unfiltered
         ``None`` call from production would itself be a bug
@@ -254,14 +204,14 @@ def caller_role_denied_reason(
             "caller did not authenticate through a "
             "cookie / TG binding."
         )
-    from magi.db import Contact, open_session
-    with open_session() as db:
-        contact = db.get(Contact, ct_id)
-    if contact is None:
+    from magi.bus import bootstrap
+
+    role = bootstrap(ctx.state_dir).contacts.role_for(ct_id)
+    if role is None:
         return f"contact {ct_id!r} not found"
-    if contact.role not in allowed_roles:
+    if role not in allowed_roles:
         return (
-            f"role {contact.role!r} is not permitted for this "
+            f"role {role!r} is not permitted for this "
             f"tool (allowed: {', '.join(sorted(allowed_roles))})"
         )
     return None

@@ -31,7 +31,7 @@ PostgreSQL 保存组织事实：MAGIS 树、MAGI 注册表、直接 Membership�
 - 它启动时连接的公共数据库；
 - 它挂载的唯一 MAGIS 公共 PVC。
 
-MAGIS Admin 仅管理该 MAGIS 的直接 MAGI；权限不会沿树向上或向下继承。Adam 可作为
+MAGIS Admin 仅管理该 MAGIS 的直接 MAGI；权限不会沿树向上或向下继承。ADAM 可作为
 其直接 MAGIS 的团队领导，但不会因为父/子关系读取另一个 MAGIS 的 instructions、公共
 PVC 或管理员数据。子 MAGIS 的成员同样不会继承父 MAGIS 的 instructions。
 
@@ -54,7 +54,7 @@ Genesis 使用：
 
 1. 创建 namespace、Genesis DB Secret、Genesis PostgreSQL/PVC；
 2. 等待 Genesis PostgreSQL Ready；
-3. 启动初始节点；它在公共数据库创建 Genesis、`eva-00`、保留 Adam/EVE 角色及直接 Membership；
+3. 启动初始节点；它在公共数据库创建 Genesis、`eva-00`、保留 ADAM/EVA 角色及直接 Membership；
 4. onboarding 完成后，Genesis 的 MAGIS Admin 可创建子 MAGIS；控制面为其创建 PostgreSQL 与公共 PVC；
 5. 创建 MAGI、将其分配到一个直属 MAGIS、配置 provider 后才可启动容器。
 

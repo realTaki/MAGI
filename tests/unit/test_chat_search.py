@@ -72,7 +72,8 @@ def _seed_chat_message(delivery_address: str, text: str) -> str:
     )
 @pytest.fixture
 def seed_messages(search_env):
-    from magi.agent.memory.session import SessionStore, new_session_id
+    from bus.services.session import new_session_id
+    from bus.contracts.session import SessionStore
     from magi.db import ChatMessage, open_session
 
     counter = {"n": 0}

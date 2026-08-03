@@ -12,7 +12,7 @@ Files:
                              loop passes as the system prompt.
                              Read by
                              :mod:`magi.agent.workspace` /
-                             :mod:`magi.agent.loop`.
+                             :mod:`magi.agent.agent_context`.
   - ``fallback_persona.md`` : last-resort persona used when
                              both the workspace ``SOUL.md`` and
                              the bundled ``soul.md`` are
@@ -27,7 +27,7 @@ Files:
   - ``chat_titles.md``     : the system prompt for the
                              background "summarize a conversation
                              into a 3-5 word title" job. Read by
-                             :mod:`magi.agent.memory.session.auto_title`.
+                             :mod:`magi.agent.auto_title`.
   - ``context/``           : static blocks that are assembled
                              into an LLM system context: contact,
                              daily-note, memory, and skills.
@@ -177,7 +177,7 @@ def load_soul() -> str:
 def load_fallback_persona() -> str:
     """Return the bundled ``fallback_persona.md``.
 
-    Used by :mod:`magi.agent.loop` only when the
+    Used by :mod:`magi.agent.agent_context` only when the
     workspace's ``SOUL.md`` and the bundled ``soul.md`` are
     both missing. Kept as its own file so the operator can
     tune the *fallback* wording without touching the
@@ -190,7 +190,7 @@ def load_chat_title_prompt() -> str:
     """The system prompt for the auto-title worker (D.7).
 
     Reads the bundled ``chat_titles.md``. Used by
-    :mod:`magi.agent.memory.session.auto_title` to summarise each
+    :mod:`magi.agent.auto_title` to summarise each
     session's first user message into a 3-5 word title
     written back to ``Session.title``.
     """

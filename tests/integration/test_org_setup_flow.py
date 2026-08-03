@@ -163,10 +163,10 @@ def test_full_org_setup_flow_add_contact_create_team_add_adam(
     ml_id = ml.json()["id"]
     assert ml.json()["parent_id"] == eng_id
 
-    # 5. Add the adam (manager MAGIC) to Engineering.
+    # 5. Add the ADAM (manager MAGIC) to Engineering.
     adam = client.post("/api/magic", json={
         "magis_id": eng_id,
-        "name": "Eng-Adam",
+        "name": "Eng-ADAM",
         "magic_position": "adam",
         "provider": "minimax",
         "api_key": "sk-eng-adam",

@@ -1,4 +1,4 @@
-"""Authenticated FastAPI service that owns EVE Kubernetes operations."""
+"""Authenticated FastAPI service that owns EVA Kubernetes operations."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MAGI EVE Orchestrator", version="0.1.0")
+    app = FastAPI(title="MAGI EVA Orchestrator", version="0.1.0")
 
     @app.get("/health")
     def health() -> dict[str, str]:

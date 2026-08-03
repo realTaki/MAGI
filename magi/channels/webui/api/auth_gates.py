@@ -24,23 +24,22 @@ logger = logging.getLogger("magi.api.auth_gates")
 def _is_admin_uid(uid: int) -> bool:
     from magi.channels.webui import control_store
     if control_store.enabled():
-        from magi.db import ControlOperator
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            operator = session.get(ControlOperator, uid)
-            return operator is not None and bool(operator.admin)
-    from magi.db import Contact, open_session
-
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        import os
+        return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).magis.is_control_admin(uid)
     try:
-        with open_session() as session:
-            c = session.get(Contact, uid)
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        import os
+        c = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).contacts.get(uid)
             # ``admin`` is the WebUI sign-in bit. Independent
             # of ``role`` — an assigned user with admin=True
             # is their own operator; a contact with admin=True
             # is the classic operator role. The split
             # replaces the pre-2024 ``role == 'admin'``
             # check.
-            return c is not None and bool(c.admin)
+        return c is not None and c.admin
     except Exception:
         logger.exception("admin_gate: ORM read failed; denying access")
         return False
@@ -94,16 +93,15 @@ def admin_or_assigned_gate(request: Request) -> str:
     ``role='assigned', admin=False`` is the served user who
     should also pass.
     """
-    from magi.db import Contact, open_session
-
     from magi.channels.webui.proxy_auth import ensure_runtime_operator
 
     proxied_uid = ensure_runtime_operator(request)
     if proxied_uid is not None:
-        from magi.db import Contact, open_session
-        with open_session() as session:
-            contact = session.get(Contact, proxied_uid)
-        if contact is not None and (bool(contact.admin) or contact.role == "assigned"):
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        import os
+        contact = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).contacts.get(proxied_uid)
+        if contact is not None and (contact.admin or contact.role == "assigned"):
             return str(proxied_uid)
         raise MagiHTTPException(status_code=403, code="auth.soul_edit_forbidden", detail="This action requires node access")
 
@@ -116,8 +114,10 @@ def admin_or_assigned_gate(request: Request) -> str:
             detail="SOUL.md editing requires admin or assigned role",
         )
     try:
-        with open_session() as session:
-            c = session.get(Contact, uid)
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        import os
+        c = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).contacts.get(uid)
     except Exception:
         logger.exception("admin_or_assigned_gate: ORM read failed")
         raise MagiHTTPException(
@@ -125,7 +125,7 @@ def admin_or_assigned_gate(request: Request) -> str:
             code="auth.soul_edit_forbidden",
             detail="internal error verifying role",
         )
-    if c is None or not (bool(c.admin) or c.role == "assigned"):
+    if c is None or not (c.admin or c.role == "assigned"):
         raise MagiHTTPException(
             status_code=403,
             code="auth.soul_edit_forbidden",

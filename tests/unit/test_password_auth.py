@@ -116,8 +116,8 @@ def auth_state(monkeypatch, tmp_path):
 
     from magi.db import init_orm
     from magi.db import open_session as _open_session
-    from magi.db.models_contact import Contact as _Contact
-    from magi.db.models_auth_credential import AuthCredential as _AuthCredential
+    from magi.bus.models.local.contact import Contact as _Contact
+    from magi.bus.models.magis.auth_credential import AuthCredential as _AuthCredential
 
     init_orm(str(state))
 
@@ -267,8 +267,8 @@ def test_onboarding_set_admin_password_creates_admin_row(auth_state):
     ) is True
     # Manually run the same logic the endpoint does:
     from magi.db import open_session
-    from magi.db.models_contact import Contact
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.models.magis.auth_credential import AuthCredential
 
     with open_session() as s:
         admin = s.scalar(

@@ -10,7 +10,7 @@
 >
 > MAGIS（一个 MAGI Society）不是一次性的群聊或任务流水线，而是由独立 MAGI
 > 组成的组织。每个 MAGI 都有自己的运行时、工作区、记忆、工具、模型提供方凭证，
-> 以及在 Society 中的角色。它们由 Adam 协调、由 EVE 执行工作，保留经验，逐步成长为
+> 以及在 Society 中的角色。它们由 ADAM 协调、由 EVA 执行工作，保留经验，逐步成长为
 > 持久的群体智能。
 
 MAGI 要回答的不只是「怎样把一个任务分配给多个 Agent」，而是：
@@ -27,7 +27,7 @@ MAGI 要回答的不只是「怎样把一个任务分配给多个 Agent」，而
 | Agent 是工作流中的步骤 | MAGI 是组织中持久存在的成员 |
 | 协作随任务结束 | 上下文、记忆、技能和关系会保留 |
 | 多个 Agent 往往共用一个进程 | 每个 MAGI 都有独立的容器化运行时和工作区 |
-| 管理者派发预定义任务 | Adam 协调 Society，EVE 可被独立配置、启动与停止 |
+| 管理者派发预定义任务 | ADAM 协调 Society，EVA 可被独立配置、启动与停止 |
 | 扩展是增加 MAGI 和相互连接的 Society |
 
 MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以运行、学习与演化的基础。
@@ -39,11 +39,11 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
 
 - MAGI 从工作结果、失败和观察中学习；
 - 有用的流程沉淀为可复用 Skills，而不是消失在一次对话中；
-- Adam 识别能力缺口，组织专业 EVE，并随着工作变化调整 Society；
+- ADAM 识别能力缺口，组织专业 EVA，并随着工作变化调整 Society；
 - Society 可以共享知识、互相协作，而不把成员简化为无状态 API 调用；
 - 操作者始终能够检查组织、记忆、工具，以及改变组织时使用的权限。
 
-> **实现状态：**持久记忆、Skills、MAGIS/MAGI 模型和隔离的 EVE 生命周期管理
+> **实现状态：**持久记忆、Skills、MAGIS/MAGI 模型和隔离的 EVA 生命周期管理
 > 已经构成当前基础。跨 MAGI 的自主学习、能力评估、自主组织重构，以及 Society 间
 > 知识交换都是正在设计的目标，**目前尚未实现**。
 
@@ -56,8 +56,8 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
 | **MAGI** | 系统中自主 Agent 的总称。 |
 | **MAGIS** | **MAGI Society**：由 MAGI 组成的组织；Society 可以形成树。 |
 | **MAGIC** | 内部表/API 中单个 MAGI 的名称，不是另一个产品概念。 |
-| **Adam** | Society 的领导 MAGI，提供控制面并协调其他 MAGI。 |
-| **EVE** | 执行工作的 MAGI 角色；一个 Society 可以创建、配置、启动、停止和退役多个 EVE。 |
+| **ADAM** | Society 的领导 MAGI，提供控制面并协调其他 MAGI。 |
+| **EVA** | 执行工作的 MAGI 角色；一个 Society 可以创建、配置、启动、停止和退役多个 EVA。 |
 
 ```text
 操作者
@@ -65,23 +65,23 @@ MAGI 不取代工作流引擎；它提供让长期存在的 Agent 组织得以�
    ▼
 MAGIS：Engineering
    │
-   ├── Adam / MAGI                     控制面与协调者
+   ├── ADAM / MAGI                     控制面与协调者
    │      └── Society 的持久记忆、策略与关系
    │
-   ├── EVE / MAGI                      独立运行时 + 工作区
-   ├── EVE / MAGI                      独立运行时 + 工作区
-   └── 子 MAGIS：Research               自己的 Adam 与 MAGI
+   ├── EVA / MAGI                      独立运行时 + 工作区
+   ├── EVA / MAGI                      独立运行时 + 工作区
+   └── 子 MAGIS：Research               自己的 ADAM 与 MAGI
 ```
 
-Adam 不会获得宿主机 Docker socket 或宽泛的 Kubernetes 权限。它通过受限、认证的
+ADAM 不会获得宿主机 Docker socket 或宽泛的 Kubernetes 权限。它通过受限、认证的
 orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围内的私有 Deployment/PVC，
 并按需创建 MAGIS 的 PostgreSQL 与公共工作区。
 
 ## 当前已具备的能力
 
-- **独立运行时**：Adam 与每个 EVE 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
-- **组织管理**：WebUI 管理 MAGIS 树与 MAGI，包括 Adam 指派和 EVE provider 配置。
-- **EVE 生命周期控制**：Adam 可经由集群内 orchestrator 请求启动、停止与删除 EVE。
+- **独立运行时**：ADAM 与每个 EVA 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
+- **组织管理**：WebUI 管理 MAGIS 树与 MAGI，包括 ADAM 指派和 EVA provider 配置。
+- **EVA 生命周期控制**：ADAM 可经由集群内 orchestrator 请求启动、停止与删除 EVA。
 - **持久化运行记忆**：会话历史、联系人知识、任务状态和可搜索记忆跨会话保留。
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
 - **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
@@ -100,7 +100,7 @@ cd MAGI
 
 打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成 onboarding。系统初始化时，
 会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI（**EVA-00 PROTO TYPE**），
-并让它担任 Genesis 的 Adam。
+并让它担任 Genesis 的 ADAM。
 
 本地开发部署会挂载：
 
@@ -122,10 +122,10 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 ## 从第一个 MAGIS 到组织成长
 
 1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGI
-   （**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 Adam。
+   （**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 ADAM。
 2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
-3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 Adam MAGI。
-4. **增加能力**：配置 EVE 的 provider 与凭证，然后让 Adam 通过 orchestrator 启动或停止它。
+3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 ADAM MAGI。
+4. **增加能力**：配置 EVA 的 provider 与凭证，然后让 ADAM 通过 orchestrator 启动或停止它。
 5. **积累智能**：对话、任务结果、联系人、记忆和可复用 Skills 留在 Society 中，而非随一次请求丢弃。
 
 ## 架构
@@ -137,7 +137,7 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
                         └──────────────┬──────────────┘
                                        │
                         ┌──────────────▼──────────────┐
-                        │         Adam / MAGI                  │
+                        │         ADAM / MAGI                  │
                         │       Society 控制面          │
                         └──────────────┬──────────────┘
                                        │ 经认证的生命周期请求
@@ -147,14 +147,14 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVE / MAGI          │  │ EVE / MAGI              │
+                     │ EVA / MAGI          │  │ EVA / MAGI              │
                      │ Deployment   │  │ Deployment      │
                      │ PVC + Secret │  │ PVC + Secret    │
                      └──────────────┘  └─────────────────┘
 ```
 
 Kubernetes 是当前部署目标：它为每个 MAGI 提供明确的运行边界，也让 orchestrator
-能管理隔离资源，而不必让 Adam 成为集群管理员。每个 MAGI 保留私有、单副本的 SQLite
+能管理隔离资源，而不必让 ADAM 成为集群管理员。每个 MAGI 保留私有、单副本的 SQLite
 工作区；每个 MAGIS 则有独立 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。
 精确边界见[存储设计](docs/magi-magis-storage.md)。
 
@@ -168,7 +168,7 @@ MAGI，并只提供集群内 Runtime API；`magi webui` 则运行唯一的 React
 落地页先选择正在运行的 MAGI，再只显示该 MAGI 的直接 MAGIS Admin 与 assigned user。
 代理用 `MAGI_CONTROL_SECRET` 为每个内部请求签名；签名同时绑定目标 MAGI 与已认证身份。
 运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 必须重新登录，不能在已登录页面直接切换。
-MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS 的 Adam
+MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS 的 ADAM
 Bot 代发验证码。
 
 深入实现请阅读：
@@ -183,7 +183,7 @@ Bot 代发验证码。
 ## 项目状态
 
 MAGI 仍处于实验阶段并在持续构建。现有代码已提供 Society 建模、onboarding、隔离节点部署
-和 EVE 生命周期控制；上文的群体智能机制是公开的项目愿景，并已明确标注其尚未实现，
+和 EVA 生命周期控制；上文的群体智能机制是公开的项目愿景，并已明确标注其尚未实现，
 以避免混淆路线图和已交付能力。
 
 ## 参与贡献

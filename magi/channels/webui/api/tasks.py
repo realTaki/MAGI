@@ -13,7 +13,7 @@ Surface
 
 Auth
 ----
-Same ``AdminGate`` every other Adam endpoint uses
+Same ``AdminGate`` every other ADAM endpoint uses
 (``magi.channels.webui.api.auth_gates.admin_gate``). The
 operator must be a signed-in admin contact; the
 ``_admin_uid`` helper from
@@ -38,26 +38,54 @@ via ``_rehydrate_from_db``.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
-from typing import Annotated, List, Literal, Optional
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.orm import Session
 
-from magi.channels.webui.api.auth_gates import AdminGate
+from magi.bus.contracts.session import new_session_id
+from magi.bus.contracts.task import TaskFullView, TaskRunView
+from magi.bus.services.contact import ContactsService
+from magi.bus.services.session import SessionService
+from magi.bus.services.setting import SettingsService
+from magi.bus.services.task import TaskService
+from magi.bus.task_schedule import (
+    preset_to_cron,
+    validate_cron,
+    validate_run_at,
+    validate_run_at_future,
+)
 from magi.channels import Channel
-from magi.db import get_session
-from magi.channels.webui.api.errors import MagiHTTPException
-from magi.channels.tasks.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
-from magi.channels.tasks.models import Task, TaskRun
 from magi.channels.tasks.scheduler import get_scheduler
-from magi.agent.memory.session import new_session_id
-from magi.db import ChatSession, Contact, require_state_dir
+from magi.channels.webui.api.auth_gates import AdminGate
+from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")
 
 router = APIRouter(tags=["tasks"])
+
+
+def _state_dir() -> str:
+    from magi.constants import STATE_DIR
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
+
+
+def _task_service() -> TaskService:
+    return TaskService(_state_dir())
+
+
+def _settings() -> SettingsService:
+    return SettingsService(_state_dir())
+
+
+def _contacts() -> ContactsService:
+    return ContactsService(_state_dir())
+
+
+def _sessions() -> SessionService:
+    return SessionService(_state_dir())
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -239,11 +267,11 @@ class RunResponse(BaseModel):
 
 
 # ──────────────────────────────────────────────────────────────────────── #
-# ORM → Pydantic
+# DTO → Pydantic
 # ──────────────────────────────────────────────────────────────────────── #
 
 
-def _task_to_out(t: Task) -> TaskOut:
+def _task_to_out(t: TaskFullView) -> TaskOut:
     return TaskOut(
         id=t.id,
         name=t.name,
@@ -254,7 +282,7 @@ def _task_to_out(t: Task) -> TaskOut:
         tz=_resolve_system_tz(),
         target_channel=t.target_channel,
         uid=t.uid,
-        enabled=bool(t.enabled),
+        enabled=t.enabled,
         consecutive_failures=t.consecutive_failures,
         last_run_at=t.last_run_at,
         last_status=t.last_status,
@@ -267,7 +295,7 @@ def _task_to_out(t: Task) -> TaskOut:
     )
 
 
-def _run_to_out(r: TaskRun) -> TaskRunOut:
+def _run_to_out(r: TaskRunView) -> TaskRunOut:
     return TaskRunOut(
         id=r.id, task_id=r.task_id, session_id=r.session_id,
         trigger=r.trigger, started_at=r.started_at,
@@ -292,7 +320,6 @@ def _now_iso() -> str:
 def list_tasks(
     request: Request,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
     enabled: Optional[bool] = None,
     uid: Optional[int] = None,
     kind: Optional[Literal["preset", "custom"]] = Query(
@@ -312,16 +339,8 @@ def list_tasks(
     — useful for the audit pane); ``kind`` filters by
     preset-derived vs operator-authored.
     """
-    q = session.query(Task).order_by(Task.created_at.desc())
-    if enabled is not None:
-        q = q.filter(Task.enabled == (1 if enabled else 0))
-    if uid is not None:
-        q = q.filter(Task.uid == uid)
-    if kind == "preset":
-        q = q.filter(Task.preset_key.is_not(None))
-    elif kind == "custom":
-        q = q.filter(Task.preset_key.is_(None))
-    return [_task_to_out(t) for t in q.all()]
+    views = _task_service().list(enabled=enabled, uid=uid, kind=kind)
+    return [_task_to_out(t) for t in views]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskOut)
@@ -329,15 +348,14 @@ def get_task(
     request: Request,
     task_id: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> TaskOut:
-    t = session.get(Task, task_id)
-    if t is None:
+    view = _task_service().get(task_id)
+    if view is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.task",
             detail=f"task {task_id} not found",
         )
-    return _task_to_out(t)
+    return _task_to_out(view)
 
 
 @router.post("/tasks", response_model=TaskOut, status_code=201)
@@ -345,7 +363,6 @@ def create_task(
     request: Request,
     payload: TaskIn,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> TaskOut:
     """Create a new task.
 
@@ -460,10 +477,9 @@ def create_task(
         uid=operator_id,
         explicit=payload.delivery_to,
     )
-    existing = (
-        session.query(Task).filter(Task.name == payload.name).one_or_none()
-    )
-    if existing is not None:
+    # Validate the name isn't taken before opening the
+    # SessionService transaction.
+    if _task_service().get_schedule_for_name(payload.name) is not None:
         raise MagiHTTPException(
             status_code=409,
             code="task.name_conflict",
@@ -487,52 +503,26 @@ def create_task(
     # — nested BEGIN IMMEDIATE in the outer txn), so the
     # lookup happens OUTSIDE the with block (above) and
     # is passed in as ``task_session_delivery_address``.
-    task_session_id = new_session_id()
-    now = _now_iso()
-    task_session = ChatSession(
-        session_id=task_session_id,
-        # The IM target as a breadcrumb so the runner's
-        # ``_resolve_session_for_task`` lookup (for
-        # legacy rows that pre-date this column) can
-        # recover. For webui tasks the value is harmless
-        # — no routing depends on it because channel=
-        # "webui" disables the send_message tool.
-        delivery_address=task_session_delivery_address,
+    task_session_id = _sessions().create_task_session(
         uid=operator_id,
-        channel="task",
         title=f"[定时] {payload.name}",
-        created_at=now,
-        updated_at=now,
+        delivery_address=task_session_delivery_address,
     )
-    session.add(task_session)
-    # Flush so the chat_sessions row's PK is in the DB
-    # before the FK reference from Task.session_id below.
-    session.flush()
     task_id = new_session_id()
-    t = Task(
-        id=task_id,
+    view = _task_service().create_task(
+        task_id=task_id,
         name=payload.name,
         prompt=payload.prompt,
         cron=cron,
         run_at=run_at_iso,
         delivery_to=delivery_to,
-        # Wire the freshly-allocated session as the
-        # task's home; the runner reads this column at
-        # fire time and appends to it.
-        session_id=task_session_id,
-        tz=system_tz,
         target_channel=payload.target_channel,
         uid=operator_id,
-        enabled=1,
-        consecutive_failures=0,
-        created_at=now,
-        updated_at=now,
+        session_id=task_session_id,
+        tz=system_tz,
     )
-    session.add(t)
-    session.commit()
-    session.refresh(t)
-    _register_with_scheduler(t)
-    return _task_to_out(t)
+    _register_with_scheduler_view(view)
+    return _task_to_out(view)
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskOut)
@@ -541,10 +531,9 @@ def update_task(
     task_id: str,
     payload: TaskPatch,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> TaskOut:
-    t = session.get(Task, task_id)
-    if t is None:
+    existing = _task_service().get(task_id)
+    if existing is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.task",
             detail=f"task {task_id} not found",
@@ -553,10 +542,10 @@ def update_task(
     # ``cron`` / ``run_at`` field, atomically replacing
     # what the model stored.
     preset_fields = ("frequency", "hour", "minute", "day_of_week", "day_of_month")
+    cron: Optional[str] = None
+    run_at_iso: Optional[str] = None
     if any(getattr(payload, f, None) is not None for f in preset_fields):
         cron, run_at_iso, _ = _render_cron_from_payload(_PatchProxy(payload))
-        t.cron = cron
-        t.run_at = run_at_iso
     data = payload.model_dump(exclude_unset=True)
     # Drop the preset bits — they were translated into
     # ``cron``/``run_at`` above; persisting both would
@@ -573,8 +562,6 @@ def update_task(
     # may have been updated since the row was created).
     patch_target_channel = data.pop("target_channel", None)
     data.pop("delivery_to", None)
-    if patch_target_channel is not None:
-        t.target_channel = patch_target_channel
     # Always re-derive. The helper reads the row's current
     # channel + the operator's current bound chat id (via
     # the channel dispatcher, D.28); an unchanged channel
@@ -586,28 +573,29 @@ def update_task(
     # ``_resolve_delivery_to``) inside that open txn would
     # deadlock SQLite. The cache in :func:`_resolve_system_tz`
     # keeps the second-pass write below cheap too.
-    t.delivery_to = _resolve_delivery_to(
-        target_channel=t.target_channel,
-        uid=t.uid, explicit=None,
+    new_target_channel = patch_target_channel or existing.target_channel
+    new_delivery_to = _resolve_delivery_to(
+        target_channel=new_target_channel,
+        uid=existing.uid, explicit=None,
     )
-    for k, v in data.items():
-        setattr(t, k, v)
+    patch_kwargs = dict(data)
     if "enabled" in data:
-        t.enabled = 1 if t.enabled else 0
-    # ``tz`` is now always derived from system settings on
-    # fire; we keep the column stamped to the latest system
-    # tz so the row's audit info stays useful. Cached
-    # globally so the ``state_get`` round-trip happens at
-    # most once per process (a route that holds an outer
-    # session open can't issue that call inside this
-    # handler — it would deadlock on nested BEGIN
-    # IMMEDIATE).
-    t.tz = _resolve_system_tz()
-    t.updated_at = _now_iso()
-    session.commit()
-    session.refresh(t)
-    _register_with_scheduler(t)
-    return _task_to_out(t)
+        patch_kwargs["enabled"] = bool(data["enabled"])
+    if cron is not None:
+        patch_kwargs["cron"] = cron
+    if run_at_iso is not None:
+        patch_kwargs["run_at"] = run_at_iso
+    if patch_target_channel is not None:
+        patch_kwargs["target_channel"] = patch_target_channel
+    patch_kwargs["delivery_to"] = new_delivery_to
+    view = _task_service().update_task(task_id, **patch_kwargs)
+    if view is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.task",
+            detail=f"task {task_id} not found",
+        )
+    _register_with_scheduler_view(view)
+    return _task_to_out(view)
 
 
 class _PatchProxy:
@@ -630,21 +618,17 @@ def delete_task(
     request: Request,
     task_id: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> None:
-    t = session.get(Task, task_id)
-    if t is None:
-        raise MagiHTTPException(
-            status_code=404, code="not_found.task",
-            detail=f"task {task_id} not found",
-        )
     # Unregister first — see plan §11.5 (scheduler job
     # could tick in the next second). The in-flight
     # fire, if any, re-reads the DB inside ``execute_task``
     # and short-circuits on ``task is None``.
     _unregister_from_scheduler(task_id)
-    session.delete(t)
-    session.commit()
+    if not _task_service().delete_task(task_id):
+        raise MagiHTTPException(
+            status_code=404, code="not_found.task",
+            detail=f"task {task_id} not found",
+        )
     return None
 
 
@@ -653,7 +637,6 @@ def run_task_now(
     request: Request,
     task_id: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> RunResponse:
     """Fire the task immediately, bypassing cron.
 
@@ -663,27 +646,22 @@ def run_task_now(
     synchronous fallback below) updates the row to
     ``success`` / ``failed`` once the runner completes.
     """
-    t = session.get(Task, task_id)
-    if t is None:
+    view = _task_service().get(task_id)
+    if view is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.task",
             detail=f"task {task_id} not found",
         )
-    if not t.enabled:
+    if not view.enabled:
         raise MagiHTTPException(
             status_code=409, code="task.disabled",
             detail="task is disabled; re-enable before manually firing",
         )
     run_id = new_session_id()
-    run = TaskRun(
-        id=run_id, task_id=task_id,
-        session_id=None,
-        trigger="manual",
-        started_at=_now_iso(),
-        status="running",
+    _task_service().create_task_run(
+        task_id=task_id, run_id=run_id, trigger="manual",
+        started_at=_now_iso(), session_id=view.session_id,
     )
-    session.add(run)
-    session.commit()
     try:
         get_scheduler().submit_now(task_id, run_id=run_id)
     except RuntimeError:
@@ -708,17 +686,10 @@ def list_task_runs(
     request: Request,
     task_id: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TaskRunOut]:
-    rows = (
-        session.query(TaskRun)
-        .filter(TaskRun.task_id == task_id)
-        .order_by(TaskRun.started_at.desc())
-        .limit(limit)
-        .all()
-    )
-    return [_run_to_out(r) for r in rows]
+    views = _task_service().list_runs(task_id, limit=limit)
+    return [_run_to_out(r) for r in views]
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -757,35 +728,23 @@ def _resolve_creator_id(request: Request, _payload) -> int:
                 status_code=400, code="validation.uid",
                 detail="X-Contact-Id must be an integer",
             ) from exc
-        # Open our own short-lived session so the
-        # ``Contact`` lookup doesn't begin a transaction
-        # on the route's session (the dispatcher call in
-        # :func:`create_task` would deadlock against that
-        # outer txn).
-        from magi.db import open_session as _open
-        with _open() as db:
-            contact = db.get(Contact, cand)
+        contact = _contacts().get(cand)
         if contact is None:
             raise MagiHTTPException(
                 status_code=404, code="not_found.contact",
                 detail=f"contact {cand} not found",
             )
-        _enforce_creator_can_create(admin=bool(contact.admin), role=contact.role)
+        _enforce_creator_can_create(admin=contact.admin, role=contact.role or "")
         return contact.id
     # Fall back to the cookie: D.24 made ``magi_session``
     # carry the uid directly, so the lookup is
-    # ``db.get(Contact, uid)`` — no telegram_id
-    # detour. The creator gate passes ``admin=True`` OR
+    # ``contacts.get(uid)`` — no telegram_id detour. The
+    # creator gate passes ``admin=True`` OR
     # ``role='assigned'`` (replaces the pre-2024
-    # ``role in {"admin", "assigned"}`` check). Same
-    # ``open_session`` rationale as above — we don't want
-    # to begin a transaction on the route's session before
-    # the dispatcher lookup fires.
+    # ``role in {"admin", "assigned"}`` check).
     from magi.channels.webui.api.chat_sessions import _resolve_uid
     uid = _resolve_uid(request)
-    from magi.db import open_session as _open
-    with _open() as db:
-        contact = db.get(Contact, uid)
+    contact = _contacts().get(uid) if uid is not None else None
     if contact is None:
         raise MagiHTTPException(
             status_code=401, code="chat.unknown_sender",
@@ -794,7 +753,7 @@ def _resolve_creator_id(request: Request, _payload) -> int:
                 f"(uid={uid}); sign in first"
             ),
         )
-    _enforce_creator_can_create(admin=bool(contact.admin), role=contact.role)
+    _enforce_creator_can_create(admin=contact.admin, role=contact.role or "")
     return contact.id
 
 
@@ -824,19 +783,23 @@ def _enforce_creator_can_create(*, admin: bool, role: str) -> None:
     )
 
 
-def _register_with_scheduler(task: Task) -> None:
-    """Best-effort nudge. Swallow + log on failure."""
+def _register_with_scheduler_view(view: TaskFullView) -> None:
+    """Best-effort nudge using the bus view. Swallow + log on failure."""
+    from magi.bus.contracts.task import TaskScheduleView
+    schedule_view = TaskScheduleView(
+        id=view.id, enabled=view.enabled, cron=view.cron, run_at=view.run_at,
+    )
     try:
-        get_scheduler().register(task)
+        get_scheduler().register(schedule_view)
     except RuntimeError:
         logger.info(
             "scheduler not running yet; task %s will activate on next start",
-            task.id,
+            view.id,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "scheduler.register(%s) failed (DB row is still authoritative): %s",
-            task.id, exc,
+            view.id, exc,
         )
 
 
@@ -847,11 +810,6 @@ def _unregister_from_scheduler(task_id: str) -> None:
         pass
     except Exception as exc:  # noqa: BLE001
         logger.warning("scheduler.unregister(%s) failed: %s", task_id, exc)
-
-
-def _state_dir() -> str:
-    import os
-    return require_state_dir()
 
 
 # The creator-role gate moved from a constant to a helper
@@ -890,9 +848,7 @@ def _resolve_system_tz() -> str:
     global _SYSTEM_TZ_CACHE
     if _SYSTEM_TZ_CACHE is not None:
         return _SYSTEM_TZ_CACHE
-    from magi.db.settings import state_get
-    raw = state_get(_state_dir(), "system.timezone")
-    val = raw if raw else "UTC"
+    val = _settings().system_timezone() or "UTC"
     _SYSTEM_TZ_CACHE = val
     return val
 

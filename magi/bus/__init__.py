@@ -1,24 +1,91 @@
 """Durable, local message bus for one MAGI runtime.
 
-The bus is intentionally a transport-neutral SQLite middleware.  It owns
-durable publication, claiming, leases, retries and recovery; it does *not*
-own an agent, channel or tool worker.  Those workers live in their respective
-domain packages and use :class:`BusStore` as their coordination boundary.
+The bus is the only cross-module boundary: agent / channels / tools
+all see it as the application core (read/write protocol + queue).
+The :class:`Bus` facade exposes a per-domain service namespace
+(``bus.session``, ``bus.memory``, ``bus.tool_jobs``, ...).
 """
 
+from magi.bus.bootstrap import Bus, bootstrap
 from magi.bus.contracts import (
-    AgentMessage,
     A2AInvocationRequest,
-    BusStoreProtocol,
+    ActionItemView,
+    AgentMessage,
     BusClaim,
+    BusStoreProtocol,
+    CallerIdentity,
+    Channel,
+    ChannelEnum,
+    ContactView,
     DeliveryClaim,
+    DeliveryResult,
+    EveRuntimeView,
+    InboundMessage,
+    MagisAdminView,
+    MagisMembershipView,
+    MagisRoleView,
+    MagisView,
+    MagicView,
+    MemberRole,
+    MembershipBrief,
+    MemoryView,
+    NoteView,
+    OperatorView,
+    OutboundDelivery,
+    ProviderConfiguration,
     RunResult,
+    RuntimeIdentity,
+    SearchHit,
+    Session,
+    SessionMessage,
+    SessionSummary,
+    ToolCatalogSnapshot,
     ToolClaim,
+    ToolContext,
+    ToolDefinition,
+    ToolResult,
 )
 from magi.bus.store import BusStore
 from magi.bus.stream import StreamEvent, StreamHub, get_stream_hub
 
+
 __all__ = [
-    "AgentMessage", "A2AInvocationRequest", "BusClaim", "BusStore", "BusStoreProtocol", "DeliveryClaim", "RunResult", "ToolClaim",
-    "StreamEvent", "StreamHub", "get_stream_hub",
+    # public domain facade
+    "Bus",
+    "bootstrap",
+    # queue + transport
+    "BusStore",
+    "BusStoreProtocol",
+    "StreamEvent",
+    "StreamHub",
+    "get_stream_hub",
+    # agent-side DTOs
+    "AgentMessage",
+    "A2AInvocationRequest",
+    "BusClaim",
+    "DeliveryClaim",
+    "RunResult",
+    # tool-side DTOs
+    "ToolClaim",
+    "ToolCatalogSnapshot",
+    "ToolContext",
+    "ToolDefinition",
+    "ToolResult",
+    # channel-side DTOs
+    "Channel", "ChannelEnum", "DeliveryResult", "InboundMessage", "OutboundDelivery",
+    # session DTOs
+    "Session", "SessionMessage", "SessionSummary", "SearchHit",
+    # contact DTOs
+    "ContactView", "NoteView",
+    # memory DTOs
+    "MemoryView",
+    # magis DTOs
+    "MagisView", "MagisAdminView", "MagisRoleView", "MagisMembershipView",
+    "MagicView", "MembershipBrief", "EveRuntimeView", "OperatorView",
+    "MemberRole", "RuntimeIdentity", "ProviderConfiguration",
+    # auth DTOs
+    "CallerIdentity",
+    # action_item DTOs
+    "ActionItemView",
 ]
+

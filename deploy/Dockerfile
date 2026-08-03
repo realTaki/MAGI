@@ -64,7 +64,7 @@ WORKDIR /workspace
 USER magi
 # NOTE: we deliberately do NOT declare a VOLUME for /workspace/memories
 # (or any subdir of /workspace). The compose file already bind-mounts
-# the host's <MAGI_WORKSPACE_DIR>/Adam onto /workspace, and a nested
+# the host's <MAGI_WORKSPACE_DIR>/ADAM onto /workspace, and a nested
 # VOLUME directive would create an anonymous volume that shadows
 # the bind-mounted subdirectory — making the host's data invisible
 # to the container.
@@ -73,7 +73,7 @@ EXPOSE 42069
 
 # `magi --check` is role-aware (prints the resolved config for whichever
 # role this container is playing) and exits 0 — safe liveness probe for
-# both Adam and EVE until role-specific probes land in C3+.
+# both ADAM and EVA until role-specific probes land in C3+.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD magi --check >/dev/null || exit 1
 

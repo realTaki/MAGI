@@ -44,18 +44,12 @@ filtering.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from magi.agent.memory.self.models import MemoryEntry
-from magi.channels.webui.api.action_items import _current_admin_id
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db import get_session
+from magi.channels.webui.api.chat_sessions import _admin_uid, _state_dir
 
 logger = logging.getLogger("magi.api.memory")
 
@@ -100,20 +94,7 @@ class MemoryListOut(BaseModel):
 # -- helpers ---------------------------------------------------------------
 
 
-def _iso(dt: datetime | None) -> str:
-    """Render a naive-UTC datetime as ``YYYY-MM-DDTHH:MM:SSZ``.
-
-    All four timestamps on ``MemoryEntry`` are created
-    via ``datetime.utcnow`` (per the model docstring);
-    no tzinfo means we strip the suffix and append ``Z``
-    explicitly so the JS side never has to guess.
-    """
-    if dt is None:
-        return ""
-    return dt.isoformat().replace("+00:00", "Z")
-
-
-def _serialize(row: MemoryEntry) -> MemoryOut:
+def _serialize(row) -> MemoryOut:
     return MemoryOut(
         id=row.id,
         kind=row.kind,
@@ -121,9 +102,9 @@ def _serialize(row: MemoryEntry) -> MemoryOut:
         body=row.body,
         importance=row.importance,
         source=row.source,
-        completed_at=_iso(row.completed_at) or None,
-        created_at=_iso(row.created_at),
-        updated_at=_iso(row.updated_at),
+        completed_at=row.completed_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
@@ -134,7 +115,6 @@ def _serialize(row: MemoryEntry) -> MemoryOut:
 def list_memory(
     request: Request,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> MemoryListOut:
     """Enumerate the calling admin's memory rows.
 
@@ -154,18 +134,10 @@ def list_memory(
     completion state — the operator view is the audit
     trail.
     """
-    admin_id = _current_admin_id(request, session)
-
-    stmt = (
-        select(MemoryEntry)
-        .where(MemoryEntry.uid == admin_id)
-        .order_by(
-            MemoryEntry.importance.desc(),
-            MemoryEntry.updated_at.desc(),
-        )
-        .limit(_MAX_ROWS)
+    admin_id = _admin_uid(request)
+    rows = bootstrap(_state_dir()).memory.list_for_owner(
+        admin_id, include_completed=True, limit=_MAX_ROWS,
     )
-    rows = list(session.scalars(stmt).all())
     return MemoryListOut(
         items=[_serialize(r) for r in rows],
         total=len(rows),

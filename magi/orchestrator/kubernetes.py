@@ -1,6 +1,6 @@
 """Minimal Kubernetes API adapter used only by the orchestrator service.
 
-It intentionally supports the narrow resource vocabulary required for an EVE:
+It intentionally supports the narrow resource vocabulary required for an EVA:
 Secret, PVC, and Deployment.  There is no generic manifest endpoint and no
 pod exec capability.
 """
@@ -47,7 +47,7 @@ def _secret_data(values: dict[str, str]) -> dict[str, str]:
 
 
 class KubernetesEveBackend:
-    """Apply the fixed EVE resource template to one configured namespace."""
+    """Apply the fixed EVA resource template to one configured namespace."""
 
     def __init__(self) -> None:
         host = os.environ.get("KUBERNETES_SERVICE_HOST")
@@ -171,59 +171,32 @@ class KubernetesEveBackend:
     def _project_runtime_configuration(self, spec: EveSpec) -> None:
         """Write a MAGI's direct-MAGIS configuration before Pod creation.
 
-        The target database is a runtime projection. The Adam control plane
+        The target database is a runtime projection. The ADAM control plane
         remains the authority for the MAGIS tree; a container only receives
         the one direct MAGIS record it needs to operate.
         """
         if spec.magis is None or spec.configuration is None:
             return
-        from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-        from magi.db.models_magis_membership import ensure_default_roles
+        from magi.bus import bootstrap
+        from magi.bus.services.magis import MagisService
 
-        engine = create_engine(self._magis_database_url(spec.magis), pool_pre_ping=True, future=True)
-        try:
-            # PostgreSQL may still be starting just after provision. Retry a
-            # bounded amount here so the MAGI never boots against an empty DB.
-            last_error: Exception | None = None
-            for _attempt in range(20):
-                try:
-                    MAGIS.metadata.create_all(engine, tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__])
-                    with Session(engine) as session:
-                        society = session.get(MAGIS, spec.magis.id)
-                        if society is None:
-                            society = MAGIS(id=spec.magis.id, name=spec.magis.name, instruction=spec.configuration.magis_instruction)
-                            session.add(society)
-                        else:
-                            society.name, society.instruction = spec.magis.name, spec.configuration.magis_instruction
-                        session.flush()
-                        ensure_default_roles(session, society.id)
-                        magic = session.get(MAGIC, spec.magic_id)
-                        if magic is None:
-                            magic = MAGIC(id=spec.magic_id)
-                            session.add(magic)
-                        magic.name, magic.instruction = spec.configuration.magic_name, spec.configuration.personal_instruction
-                        magic.provider, magic.api_key = spec.configuration.provider, spec.configuration.api_key
-                        role = session.scalar(select(MAGISRole).where(MAGISRole.magis_id == society.id, MAGISRole.name == spec.configuration.role_name))
-                        if role is None:
-                            role = MAGISRole(magis_id=society.id, name=spec.configuration.role_name, instruction=spec.configuration.role_instruction, is_reserved=spec.configuration.role_name in {"Adam", "EVE"})
-                            session.add(role); session.flush()
-                        else:
-                            role.instruction = spec.configuration.role_instruction
-                        membership = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == magic.id))
-                        if membership is None:
-                            session.add(MAGISMembership(magis_id=society.id, magic_id=magic.id, role_id=role.id))
-                        else:
-                            membership.magis_id, membership.role_id = society.id, role.id
-                        if role.name == "Adam": society.adam_id = magic.id
-                        session.commit()
-                    return
-                except Exception as exc:  # database Deployment may not be Ready yet
-                    last_error = exc
-                    import time
-                    time.sleep(1)
-            raise RuntimeError(f"MAGIS database did not become ready: {last_error}")
-        finally:
-            engine.dispose()
+        projection = MagisService.RuntimeConfigurationProjection(
+            magis_id=spec.magis.id,
+            magis_name=spec.magis.name,
+            magic_id=spec.magic_id,
+            magic_name=spec.configuration.magic_name,
+            personal_instruction=spec.configuration.personal_instruction,
+            provider=spec.configuration.provider,
+            api_key=spec.configuration.api_key,
+            role_name=spec.configuration.role_name,
+            role_instruction=spec.configuration.role_instruction,
+            magis_instruction=spec.configuration.magis_instruction,
+        )
+        MagisService.project_runtime_configuration(
+            projection,
+            self._magis_database_url(spec.magis),
+        )
+        _ = bootstrap  # noqa: F841  # composition-root convention: import kept for explicit traceability
 
     def start(self, spec: EveSpec) -> EveOperationResult:
         name = _resource_name(spec)

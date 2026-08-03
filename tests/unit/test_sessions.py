@@ -24,14 +24,9 @@ from __future__ import annotations
 
 import pytest
 
-from magi.agent.memory.session import (
-    Session,
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    summary_from_session,
-)
+from bus.services.session import Session, SessionMessage, new_session_id, summary_from_session
 
+from bus.contracts.session import SessionStore
 
 # Crockford base32 alphabet — used to assert ULID shape.
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -108,7 +103,7 @@ def test_session_id_safe_via_path(store):
     contract). A valid ULID-shape session_id that just doesn't
     exist raises ``SessionNotFoundError`` instead.
     """
-    from magi.agent.memory.session import SessionNotFoundError, SessionPathError
+    from bus.services.session import SessionNotFoundError, SessionPathError
     s = store.create(1, )
     # Bad shape → ``SessionPathError`` (the shape guard).
     with pytest.raises(SessionPathError):
@@ -144,14 +139,14 @@ def test_append_and_get(store):
 
 def test_append_to_missing_raises(store):
     """Appending to a non-existent session raises SessionNotFoundError."""
-    from magi.agent.memory.session import SessionNotFoundError
+    from bus.services.session import SessionNotFoundError
     with pytest.raises(SessionNotFoundError):
         store.append_messages(124, new_session_id(), [_msg("user")])
 
 
 def test_append_validates_role(store):
     """Bad role values are rejected before any DB write."""
-    from magi.agent.memory.session import SessionCorruptError
+    from bus.services.session import SessionCorruptError
     s = store.create(7, )
     bad = SessionMessage(role="admin", text="x", ts="t", message_id=new_session_id())
     with pytest.raises(SessionCorruptError):
@@ -246,7 +241,7 @@ def test_list_summaries_message_count_excludes_archive(store):
 
 def test_uids_isolated(store):
     """Two contacts do not see each other's sessions."""
-    from magi.agent.memory.session import SessionNotFoundError
+    from bus.services.session import SessionNotFoundError
     a = store.create(1, )
     b = store.create(2, )
     assert store.get(1, a.session_id) is not None
@@ -355,7 +350,7 @@ def test_rename_clear(store):
 
 
 def test_rename_missing_session_raises_not_found(store):
-    from magi.agent.memory.session import SessionNotFoundError
+    from bus.services.session import SessionNotFoundError
     with pytest.raises(SessionNotFoundError):
         store.rename(1, new_session_id(), "orphan")
 
@@ -438,7 +433,7 @@ def test_session_lock_is_now_a_noop():
     migrated yet (none should remain, but the contract is
     explicitly a no-op) get a safe AttributeError-free no-op.
     """
-    from magi.agent.memory.session import session_lock
+    from bus.services.session import session_lock
     assert session_lock("any-chat", "any-session") is None
 
 

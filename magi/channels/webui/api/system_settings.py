@@ -1,37 +1,14 @@
-"""System-level config: timezone.
+"""System-level config: timezone + tool-iterations + compact + daily-note.
 
-Per-MAGI-node setting (Adam has its own, every EVE has
-its own). Stored in the same ``settings`` meta-key
-table that already holds ``tg.read_reaction_emoji`` and
-the bot token, so it inherits the existing ``state_get``
-/ ``state_set`` / WAL concurrency story.
+Per-MAGI-node settings (ADAM has its own, every EVA has its own).
+Stored in the same ``settings`` meta-key table that already holds
+``tg.read_reaction_emoji`` and the bot token, so it inherits the
+existing ``state_get`` / ``state_set`` / WAL concurrency story.
 
-Today the only consumer is the token-bill aggregation
-endpoint, which needs the tz to compute "this week" /
-"this month" boundaries. A future C4+ setting
-("default LLM model", "max token cap", etc.) lands
-here under the same shape.
-
-Why ``zoneinfo`` and not pytz:
-
-- Py 3.9+ stdlib — no dep, no deprecation warnings.
-- ``zoneinfo.ZoneInfo(tz)`` raises
-  ``ZoneInfoNotFoundError`` on an unknown name, which
-  is the exact validation the API endpoint needs; no
-  extra logic.
-- pytz's localise() footgun (where naive datetimes
-  silently get the wrong UTC offset) doesn't apply to
-  zoneinfo.
-
-Default timezone: used to be a hard-coded
-``"UTC"``, forcing every deployer to override
-``system.timezone`` before weekly/monthly
-aggregations lined up with their wall-clock. Now
-resolves lazily to the **server's** local timezone
-via :func:`_system_default_timezone` (uses
-:mod:`tzlocal`). Operators in other timezones can
-still set this once during setup via
-``PUT /api/system-settings/timezone``.
+This module owns only the **HTTP surface** — the FastAPI router,
+Pydantic request/response models, and the constants for the KV
+keys.  Reads and writes go through :mod:`magi.bus.services.setting`
+so the API layer never crosses the channels → db boundary.
 """
 
 from __future__ import annotations
@@ -41,104 +18,50 @@ import os
 import zoneinfo
 from typing import Annotated
 
-from tzlocal import get_localzone
-
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
+from magi.bus.services.setting import (
+    COMPACT_CONTEXT_WINDOW_KEY,
+    COMPACT_KEEP_RECENT_KEY,
+    COMPACT_THRESHOLD_PCT_KEY,
+    DEFAULT_COMPACT_CONTEXT_WINDOW,
+    DEFAULT_COMPACT_KEEP_RECENT,
+    DEFAULT_COMPACT_THRESHOLD_PCT,
+    DEFAULT_TOOL_MAX_ITERATIONS,
+    MAX_COMPACT_CONTEXT_WINDOW,
+    MAX_COMPACT_KEEP_RECENT,
+    MAX_COMPACT_THRESHOLD_PCT,
+    MAX_TOOL_MAX_ITERATIONS,
+    MIN_COMPACT_CONTEXT_WINDOW,
+    MIN_COMPACT_KEEP_RECENT,
+    MIN_COMPACT_THRESHOLD_PCT,
+    MIN_TOOL_MAX_ITERATIONS,
+    SHOW_DAILY_NOTE_KEY,
+    SHOW_DAILY_NOTE_PROMPT_KEY,
+    SYSTEM_TZ_KEY,
+    TOOL_MAX_ITERATIONS_KEY,
+)
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db.settings import state_get, state_set
-from magi.db.engine import require_state_dir
 
 logger = logging.getLogger("magi.api.system_settings")
 
 router = APIRouter(tags=["system-settings"])
 
-# Meta key. Single global key (the system itself only has
-# one timezone); future "default LLM model" or similar
-# settings get their own key in this same module.
-SYSTEM_TZ_KEY = "system.timezone"
+
+def _settings():
+    """Return the bus settings service for the active state dir."""
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).settings
 
 
-def _system_default_timezone() -> str:
-    """Resolve the timezone used when ``system.timezone``
-    hasn't been set explicitly.
-
-    Resolution order:
-      1. ``TZ`` environment variable (set by the deployer in
-         the k8s manifest / ``ConfigMap``).
-      2. ``get_localzone()`` from ``tzlocal`` (reads
-         ``/etc/localtime``).
-      3. ``Etc/UTC`` as a well-formed IANA fallback.
-    """
-    import os
-    # 1. TZ env var — the deployer's explicit choice.
-    tz_env = os.environ.get("TZ", "").strip()
-    if tz_env:
-        try:
-            zoneinfo.ZoneInfo(tz_env)  # validate
-            return tz_env
-        except Exception:
-            logger.debug("TZ env %r is not a valid IANA name", tz_env)
-    # 2. Server localtime via tzlocal.
-    try:
-        return get_localzone().key
-    except Exception:
-        pass
-    # 3. Fallback.
-    return "Etc/UTC"
-
-
-def _state_dir() -> str:
-    return require_state_dir()
-
-
-def get_system_timezone(state_dir: str) -> str:
-    """Return the configured timezone name (e.g. ``"UTC"``,
-    ``"Asia/Shanghai"``).
-
-    Falls back to :func:`_system_default_timezone`
-    (server's local timezone) when the stored value is
-    empty / invalid. Validation runs through
-    :class:`zoneinfo.ZoneInfo` so a hand-edited garbage
-    value can't crash the aggregation endpoint.
-    """
-    raw = state_get(state_dir, SYSTEM_TZ_KEY)
-    if not raw:
-        return _system_default_timezone()
-    try:
-        zoneinfo.ZoneInfo(raw)
-    except Exception:
-        logger.warning(
-            "system.timezone stored value %r is not a valid IANA tz; "
-            "falling back to %s",
-            raw, _system_default_timezone(),
-        )
-        return _system_default_timezone()
-    return raw
-
-
-def set_system_timezone(state_dir: str, tz: str) -> None:
-    """Persist a new timezone.
-
-    Validates via :class:`zoneinfo.ZoneInfo`; raises
-    :class:`zoneinfo.ZoneInfoNotFoundError` on an unknown
-    name. Caller (the API handler) maps that to a 400.
-    """
-    zoneinfo.ZoneInfo(tz)  # raises on invalid
-    state_set(state_dir, SYSTEM_TZ_KEY, tz)
+# ────────────────────────────────────────────────────────────────── #
+# Timezone
+# ────────────────────────────────────────────────────────────────── #
 
 
 class TimezoneOut(BaseModel):
-    """``GET /api/system-settings/timezone`` response.
-
-    ``current`` is what the aggregation endpoint will read
-    on the next request — a Save here affects the next
-    ``GET /api/contacts/{uid}/token-usage`` call. ``choices``
-    is the dropdown the UI renders; the full IANA tz
-    database, sorted, no grouping (v0 doesn't have a
-    preferences panel to organise them by region).
-    """
+    """``GET /api/system-settings/timezone`` response."""
 
     current: str
     default: str
@@ -153,12 +76,10 @@ class TimezoneUpdateRequest(BaseModel):
 
 @router.get("/system-settings/timezone", response_model=TimezoneOut)
 def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
+    svc = _settings()
     return TimezoneOut(
-        current=get_system_timezone(_state_dir()),
-        default=_system_default_timezone(),
-        # Sort so the UI dropdown has a stable, alphabetical
-        # order — no preference for "common first", v0 keeps
-        # the surface uniform.
+        current=svc.system_timezone(),
+        default=svc.system_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -170,33 +91,30 @@ def put_system_timezone(
 ) -> TimezoneOut:
     """Persist a new system timezone.
 
-    Validates against the IANA tz database; an unknown
-    name returns 400 ``validation.unknown_timezone`` so the
-    operator gets a clear hint instead of a silent fall-
-    back to UTC.
+    Validates against the IANA tz database; an unknown name returns
+    400 ``validation.unknown_timezone`` so the operator gets a clear
+    hint instead of a silent fallback to UTC.
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
     tz = payload.timezone
+    svc = _settings()
     try:
-        set_system_timezone(_state_dir(), tz)
+        svc.set_system_timezone(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         raise MagiHTTPException(
             status_code=400,
             code="validation.unknown_timezone",
             detail=f"timezone {tz!r} is not a valid IANA tz name",
         )
-    # Drop the cached value in ``tasks._resolve_system_tz``
-    # so the next task read picks up the new value. The
-    # cache exists to avoid nested BEGIN IMMEDIATE on every
-    # /api/tasks call; the Settings → timezone card is the
-    # only writer so this invalidation is rare and cheap.
+    # Drop the cached value in ``tasks._resolve_system_tz`` so the
+    # next task read picks up the new value.
     from magi.channels.webui.api.tasks import _invalidate_system_tz_cache
     _invalidate_system_tz_cache()
     logger.info("system.timezone set to %r", tz)
     return TimezoneOut(
         current=tz,
-        default=_system_default_timezone(),
+        default=svc.system_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -204,57 +122,6 @@ def put_system_timezone(
 # ────────────────────────────────────────────────────────────────── #
 # Tool-loop max iterations (D.16)
 # ────────────────────────────────────────────────────────────────── #
-#
-# Caps how many times the agent loop will call the LLM
-# inside a single chat turn when the model keeps asking
-# for more tools. Each iteration is one round-trip
-# (Anthropic call + tool execution + next request), so the
-# cap also bounds the wall-clock cost of one chat turn.
-#
-# Default 10: enough for a typical "read X, then Y, then
-# reply" tool chain (3-4 iterations typical); high enough
-# that an ambitious "search the codebase and write a
-# summary" flow isn't artificially clipped.
-#
-# Hard cap 50 in the API: a runaway agent calling 100+
-# tools would burn through the LLM quota; even 50 is on
-# the order of 100s of seconds, which is way past
-# reasonable for a single chat reply.
-
-TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
-DEFAULT_TOOL_MAX_ITERATIONS = 10
-MAX_TOOL_MAX_ITERATIONS = 50
-MIN_TOOL_MAX_ITERATIONS = 1
-
-
-def get_tool_max_iterations(state_dir: str) -> int:
-    """Return the configured max tool iterations.
-
-    Falls back to :data:`DEFAULT_TOOL_MAX_ITERATIONS` (10)
-    when the stored value is missing / non-numeric /
-    outside ``[MIN, MAX]``. The bounds-clamp is defensive
-    — a hand-edited 0 would mean "agent can never call
-    any tool", which would silently break the LLM's
-    tool-use loop. We don't want that.
-    """
-    raw = state_get(state_dir, TOOL_MAX_ITERATIONS_KEY)
-    try:
-        value = int(raw) if raw is not None else DEFAULT_TOOL_MAX_ITERATIONS
-    except (TypeError, ValueError):
-        logger.warning(
-            "system.tool_max_iterations stored value %r is not a number; "
-            "falling back to default %d",
-            raw, DEFAULT_TOOL_MAX_ITERATIONS,
-        )
-        return DEFAULT_TOOL_MAX_ITERATIONS
-    if value < MIN_TOOL_MAX_ITERATIONS or value > MAX_TOOL_MAX_ITERATIONS:
-        logger.warning(
-            "system.tool_max_iterations stored value %d is outside "
-            "[%d, %d]; clamping",
-            value, MIN_TOOL_MAX_ITERATIONS, MAX_TOOL_MAX_ITERATIONS,
-        )
-        return max(MIN_TOOL_MAX_ITERATIONS, min(MAX_TOOL_MAX_ITERATIONS, value))
-    return value
 
 
 class ToolMaxIterationsOut(BaseModel):
@@ -277,8 +144,9 @@ class ToolMaxIterationsUpdateRequest(BaseModel):
     response_model=ToolMaxIterationsOut,
 )
 def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
+    svc = _settings()
     return ToolMaxIterationsOut(
-        current=get_tool_max_iterations(_state_dir()),
+        current=svc.tool_max_iterations(),
         default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
@@ -293,15 +161,9 @@ def put_tool_max_iterations(
     payload: ToolMaxIterationsUpdateRequest,
     _admin: AdminGate,
 ) -> ToolMaxIterationsOut:
-    """Persist a new max tool iterations value.
-
-    Validation is Pydantic-side (``Field(ge=MIN, le=MAX)``):
-    a value outside the bounds returns 422 with Pydantic's
-    structured error before this handler runs. We don't
-    need to re-validate here.
-    """
-    from magi.db.settings import state_set as _state_set
-    _state_set(_state_dir(), TOOL_MAX_ITERATIONS_KEY, str(payload.value))
+    """Persist a new max tool iterations value."""
+    svc = _settings()
+    svc.set(TOOL_MAX_ITERATIONS_KEY, str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(
         current=payload.value,
@@ -310,79 +172,10 @@ def put_tool_max_iterations(
         max=MAX_TOOL_MAX_ITERATIONS,
     )
 
-# D.17 - auto-compact configuration. Three meta keys
-# backed by three helpers. The compaction threshold check
-# happens inside agent.handle_message on every chat
-# turn (before each LLM call); v0 reads the settings fresh
-# on each check so a Save in the UI takes effect
-# immediately on the next inbound message.
 
-COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
-COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
-COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
-
-DEFAULT_COMPACT_CONTEXT_WINDOW = 100000
-DEFAULT_COMPACT_THRESHOLD_PCT = 80
-DEFAULT_COMPACT_KEEP_RECENT = 20
-
-MIN_COMPACT_CONTEXT_WINDOW = 16000
-MAX_COMPACT_CONTEXT_WINDOW = 200000
-MIN_COMPACT_THRESHOLD_PCT = 50
-MAX_COMPACT_THRESHOLD_PCT = 95
-MIN_COMPACT_KEEP_RECENT = 5
-MAX_COMPACT_KEEP_RECENT = 100
-
-
-def _clamp_int(raw, *, default, lo, hi, label):
-    """Parse an int from a meta-key string and clamp to [lo, hi]."""
-    if raw is None or raw == "":
-        return default
-    try:
-        v = int(raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "compact config: %s stored value %r is not a number; "
-            "falling back to default %d",
-            label, raw, default,
-        )
-        return default
-    if v < lo or v > hi:
-        logger.warning(
-            "compact config: %s stored value %d is outside [%d, %d]; clamping",
-            label, v, lo, hi,
-        )
-        return max(lo, min(hi, v))
-    return v
-
-
-def get_compact_context_window(state_dir):
-    return _clamp_int(
-        state_get(state_dir, COMPACT_CONTEXT_WINDOW_KEY),
-        default=DEFAULT_COMPACT_CONTEXT_WINDOW,
-        lo=MIN_COMPACT_CONTEXT_WINDOW,
-        hi=MAX_COMPACT_CONTEXT_WINDOW,
-        label="context_window",
-    )
-
-
-def get_compact_threshold_pct(state_dir):
-    return _clamp_int(
-        state_get(state_dir, COMPACT_THRESHOLD_PCT_KEY),
-        default=DEFAULT_COMPACT_THRESHOLD_PCT,
-        lo=MIN_COMPACT_THRESHOLD_PCT,
-        hi=MAX_COMPACT_THRESHOLD_PCT,
-        label="threshold_pct",
-    )
-
-
-def get_compact_keep_recent(state_dir):
-    return _clamp_int(
-        state_get(state_dir, COMPACT_KEEP_RECENT_KEY),
-        default=DEFAULT_COMPACT_KEEP_RECENT,
-        lo=MIN_COMPACT_KEEP_RECENT,
-        hi=MAX_COMPACT_KEEP_RECENT,
-        label="keep_recent",
-    )
+# ────────────────────────────────────────────────────────────────── #
+# Compaction (D.17)
+# ────────────────────────────────────────────────────────────────── #
 
 
 class CompactConfigOut(BaseModel):
@@ -408,11 +201,11 @@ class CompactConfigUpdateRequest(BaseModel):
 
 @router.get("/system-settings/compact-config", response_model=CompactConfigOut)
 def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
-    state = _state_dir()
+    svc = _settings()
     return CompactConfigOut(
-        context_window=get_compact_context_window(state),
-        threshold_pct=get_compact_threshold_pct(state),
-        keep_recent=get_compact_keep_recent(state),
+        context_window=svc.compact_context_window(),
+        threshold_pct=svc.compact_threshold_pct(),
+        keep_recent=svc.compact_keep_recent(),
         default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
         default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
         default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
@@ -425,10 +218,10 @@ def put_compact_config(
     _admin: AdminGate,
 ) -> CompactConfigOut:
     """Persist a new compact-config triple."""
-    state = _state_dir()
-    state_set(state, COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
-    state_set(state, COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
-    state_set(state, COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
+    svc = _settings()
+    svc.set(COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
+    svc.set(COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
+    svc.set(COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
     logger.info(
         "compact-config set: window=%d threshold=%d%% keep=%d",
         payload.context_window, payload.threshold_pct, payload.keep_recent,
@@ -443,53 +236,19 @@ def put_compact_config(
     )
 
 
-# Daily-note toggle — gates whether the agent loop folds
-# today's running log (the body the LLM appends to via
-# ``update_daily_note``) into the system prompt. Default
-# ON — the operator can mute it if the running-log noise
-# becomes distracting. A second toggle (``show_daily_note_prompt``)
-# folds the capture rules from ``prompts/context/daily_note.md`` into
-# the block header; default OFF (the tool description
-# already restates the core intent, and the full rules add
-# ~30 lines of system-prompt weight per turn).
-
-SHOW_DAILY_NOTE_KEY = "system.show_daily_note"
-SHOW_DAILY_NOTE_PROMPT_KEY = "system.show_daily_note_prompt"
+# ────────────────────────────────────────────────────────────────── #
+# Daily-note toggle
+# ────────────────────────────────────────────────────────────────── #
 
 
-def _read_bool_setting(state_dir: str, key: str, *, default: bool) -> bool:
-    """Parse a bool from a meta-key string.
-
-    Accepts ``"true"`` / ``"1"`` (case-insensitive) as True;
-    everything else (including missing and empty) falls
-    back to ``default``. Same shape as the
-    :func:`_system_default_timezone` parser — the rest of
-    the codebase persists "true" / "false" as the literal
-    string, so a hand-edited state file or a stale legacy
-    value never blows up the loader.
-    """
-    raw = state_get(state_dir, key)
-    if raw is None or raw == "":
-        return default
-    return raw.strip().lower() in {"true", "1", "yes", "on"}
-
-
+# Re-export the read helpers so any code that imported them from this
+# module keeps working without changes (the implementation moved but
+# the public surface is identical).
 def get_show_daily_note(state_dir: str) -> bool:
-    """Whether today's daily note body is rendered into the
-    agent loop's system prompt. Default ON.
-    """
-    return _read_bool_setting(state_dir, SHOW_DAILY_NOTE_KEY, default=True)
+    from magi.bus import bootstrap
+    return bootstrap(state_dir).settings.show_daily_note()
 
 
 def get_show_daily_note_prompt(state_dir: str) -> bool:
-    """Whether the capture-rules text from
-    ``prompts/context/daily_note.md`` folds into the daily-note
-    block header. Default OFF — the ``update_daily_note``
-    tool description restates the core intent, and the
-    full rules add ~30 lines of system-prompt weight per
-    turn. Operators who want tighter capture discipline
-    flip this on.
-    """
-    return _read_bool_setting(
-        state_dir, SHOW_DAILY_NOTE_PROMPT_KEY, default=False
-    )
+    from magi.bus import bootstrap
+    return bootstrap(state_dir).settings.show_daily_note_prompt()

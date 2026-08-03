@@ -16,8 +16,15 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from magi.bus.contracts import AgentMessage, BusClaim, DeliveryClaim, RunResult, ToolClaim
-from magi.bus.models import (
+from magi.bus.contracts.agent import (
+    AgentMessage,
+    A2AInvocationRequest,
+    BusClaim,
+    DeliveryClaim,
+    RunResult,
+)
+from magi.bus.contracts.tools import ToolClaim
+from magi.bus.models.queue import (
     AgentInbox,
     AgentRun,
     A2AInvocation,
@@ -27,9 +34,9 @@ from magi.bus.models import (
     ToolCall,
     ToolJob,
 )
-from magi.db.base import utcnow_naive
-from magi.bus.contracts import A2AInvocationRequest
-from magi.db.engine import open_session
+from magi.bus.db.base import utcnow_naive
+from magi.bus.db.engine import open_session
+from magi.bus.models.local.tool import ToolDefinitionRecord
 
 
 def _new_id(prefix: str) -> str:
@@ -47,6 +54,14 @@ class BusStore:
 
         Retrying the same producer event is safe: the unique ``event_id``
         returns the original run rather than creating another turn.
+
+        Cross-channel idempotency: when the producer supplies
+        ``(source_type, source_id, external_event_id)`` and a prior
+        inbox row already carries that triple, the same ``run_id`` is
+        returned instead of creating a new run. This handles Telegram
+        webhook retries, A2A idempotent POSTs, and other producer-side
+        redeliveries where the local ``event_id`` differs but the
+        upstream event is the same.
         """
         conversation_id = message.conversation_id or message.session_id or (
             f"{message.channel}:{message.uid}" if message.uid is not None else None
@@ -64,12 +79,28 @@ class BusStore:
         }
         run_id = _new_id("run")
         now = utcnow_naive()
+        idempotency_key = message.idempotency_key or message.event_id
         with open_session(self._state_dir) as session:
             existing = session.scalar(
                 select(AgentInbox).where(AgentInbox.event_id == message.event_id)
             )
             if existing is not None:
                 return existing.run_id
+
+            # Cross-channel idempotency: same upstream event may be
+            # published twice with different ``event_id`` values (e.g.
+            # TG update retry, A2A redelivery). Treat it as the same
+            # row. Only consulted when the producer supplied the triple.
+            if message.source_type and message.source_id and message.external_event_id:
+                cross = session.scalar(
+                    select(AgentInbox).where(
+                        AgentInbox.source_type == message.source_type,
+                        AgentInbox.source_id == message.source_id,
+                        AgentInbox.external_event_id == message.external_event_id,
+                    )
+                )
+                if cross is not None:
+                    return cross.run_id
 
             active_run = None
             if message.target_run_id:
@@ -100,6 +131,7 @@ class BusStore:
                         correlation_id=message.correlation_id or message.event_id,
                         status="queued",
                         continuation={"kind": message.kind},
+                        deadline_at=message.deadline_at,
                         created_at=now,
                         updated_at=now,
                     )
@@ -116,7 +148,9 @@ class BusStore:
                     correlation_id=message.correlation_id or message.event_id,
                     causation_id=message.causation_id,
                     kind="run.steer" if is_steer else message.kind,
+                    source_type=message.source_type,
                     source_id=message.source_id,
+                    external_event_id=message.external_event_id,
                     payload=payload,
                     status="pending",
                     available_at=now,
@@ -129,6 +163,7 @@ class BusStore:
                     run_id=run_id,
                     event_id=message.event_id,
                     kind="run.steer" if is_steer else message.kind,
+                    source_event_id=message.external_event_id,
                     payload=payload,
                     received_seq=received_seq,
                     status="pending",
@@ -148,6 +183,12 @@ class BusStore:
                     raise
                 return existing.run_id
         return run_id
+
+    def is_run_within_deadline(self, run_id: str) -> bool:
+        """Return whether a run has no deadline or has not expired yet."""
+        with open_session(self._state_dir) as session:
+            row = session.get(AgentRun, run_id)
+            return row is None or row.deadline_at is None or row.deadline_at > utcnow_naive()
 
     def claim_next_agent_message(
         self, worker_id: str, *, lease_seconds: int = 60
@@ -251,7 +292,9 @@ class BusStore:
                                 run_id=run.run_id,
                                 channel="tg",
                                 destination=delivery_destination,
+                                event_id=run.root_event_id,
                                 payload={"text": reply},
+                                idempotency_key=f"reply:{run.run_id}",
                                 status="pending",
                                 available_at=now,
                                 created_at=now,
@@ -288,12 +331,18 @@ class BusStore:
                 run.result = {"reply": reply, "delivery_id": delivery_id}
                 if continuation is not None:
                     run.continuation = continuation
+                # Iteration count + token usage (added 0011).
+                run.iteration_count = (run.iteration_count or 0) + 1
+                if attempt_result:
+                    usage = attempt_result.get("usage") if isinstance(attempt_result, dict) else None
+                    if usage is not None:
+                        run.token_usage = usage
                 session_id = row.payload.get("session_id")
                 if session_id:
                     # The final provider response becomes user-visible in the
                     # same transition that marks the run complete.  Channels
                     # must not append a second, non-authoritative copy later.
-                    from magi.agent.memory.session.tables import ChatMessage, ChatSession
+                    from magi.bus.models.local.session import ChatMessage, ChatSession
 
                     message_id = run.run_id[-26:]
                     session_exists = session.get(ChatSession, str(session_id)) is not None
@@ -306,7 +355,7 @@ class BusStore:
                             )
                         )
                     if existing_message is None and session_exists:
-                        from magi.agent.memory.session.ids import utcnow_iso
+                        from magi.bus.contracts.session import utcnow_iso
 
                         session.add(
                             ChatMessage(
@@ -432,11 +481,34 @@ class BusStore:
         payload: dict[str, Any],
         run_id: str | None = None,
         delivery_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> str:
-        """Write a generic delivery effect before any external I/O."""
+        """Write a generic delivery effect before any external I/O.
+
+        ``event_id`` and ``idempotency_key`` are partial-unique-index
+        de-duplication columns (see ``0009_idempotency_keys`` migration
+        docstring). When supplied and an existing row already carries
+        the same value, the existing ``delivery_id`` is returned
+        unchanged rather than creating a duplicate outbox row.
+        """
         delivery_id = delivery_id or _new_id("delivery")
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
+            if event_id is not None:
+                existing = session.scalar(
+                    select(DeliveryOutbox).where(DeliveryOutbox.event_id == event_id)
+                )
+                if existing is not None:
+                    return existing.delivery_id
+            if idempotency_key is not None:
+                existing = session.scalar(
+                    select(DeliveryOutbox).where(
+                        DeliveryOutbox.idempotency_key == idempotency_key
+                    )
+                )
+                if existing is not None:
+                    return existing.delivery_id
             existing = session.scalar(
                 select(DeliveryOutbox).where(DeliveryOutbox.delivery_id == delivery_id)
             )
@@ -447,7 +519,9 @@ class BusStore:
                         run_id=run_id,
                         channel=channel,
                         destination=destination,
+                        event_id=event_id,
                         payload=payload,
+                        idempotency_key=idempotency_key,
                         status="pending",
                         available_at=now,
                         created_at=now,
@@ -563,16 +637,68 @@ class BusStore:
             run.continuation = continuation
             run.version += 1
             run.updated_at = now
+            # Iteration count + expected ids (added 0011).
+            run.iteration_count = (run.iteration_count or 0) + 1
+            run.expected_tool_call_ids = [
+                str(job["tool_call_id"]) for job in (jobs or [])
+            ]
+            run.expected_a2a_invocation_ids = [
+                str(req.tool_call_id) for req in (a2a_requests or [])
+            ]
+            if attempt_result:
+                usage = (
+                    attempt_result.get("usage")
+                    if isinstance(attempt_result, dict)
+                    else None
+                )
+                if usage is not None:
+                    run.token_usage = usage
             if attempt_id:
                 attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
                 if attempt is not None:
                     attempt.status = "completed"
                     attempt.response = attempt_result or {}
                     attempt.completed_at = now
-            for job_data in jobs:
+            for ordinal, job_data in enumerate(jobs):
                 tool_call_id = str(job_data["tool_call_id"])
+                # tool_call_id is already UNIQUE; idempotency_key (added
+                # in 0009) is the partial unique index that producers
+                # supply when the LLM-stable id is not sufficient (e.g.
+                # "send this email once"). Default to the tool_call_id
+                # so the existing dedup path keeps working.
+                idempotency_key = job_data.get("idempotency_key") or f"tool:{run.run_id}:{tool_call_id}"
                 if session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)):
                     continue
+                if session.scalar(select(ToolJob).where(ToolJob.idempotency_key == idempotency_key)):
+                    continue
+                # Within-run monotonic ordinal (design §6.6). The
+                # loop counter is the canonical source: jobs is a
+                # Python list passed by the actor transition in the
+                # order the LLM emitted the tool_uses, and the actor
+                # never reorders it. Using a Python counter (not a
+                # SQL MAX query) avoids the
+                # ``max-on-uncommitted-inserts`` problem where the
+                # MAX inside one transaction can't see rows added
+                # earlier in the same loop.
+                next_ordinal = ordinal + 1
+                tool_source = job_data.get("tool_source")
+                catalog_revision = job_data.get("catalog_revision")
+                schema_hash = job_data.get("schema_hash")
+                # Resolve the definition in the same transition that creates
+                # the effect. The stored fields let the worker refuse a
+                # deleted or incompatible implementation later without
+                # consulting the agent-visible registry.
+                if tool_source is None or catalog_revision is None or schema_hash is None:
+                    definition = session.scalar(
+                        select(ToolDefinitionRecord).where(
+                            ToolDefinitionRecord.name == str(job_data["tool_name"]),
+                            ToolDefinitionRecord.enabled.is_(True),
+                        )
+                    )
+                    if definition is not None:
+                        tool_source = definition.source
+                        catalog_revision = definition.revision
+                        schema_hash = definition.schema_hash
                 session.add(
                     ToolCall(
                         tool_call_id=tool_call_id,
@@ -580,6 +706,8 @@ class BusStore:
                         tool_name=str(job_data["tool_name"]),
                         arguments=dict(job_data["arguments"]),
                         status="requested",
+                        ordinal=next_ordinal,
+                        ordered_at=now,
                         created_at=now,
                     )
                 )
@@ -589,6 +717,10 @@ class BusStore:
                         run_id=run.run_id,
                         tool_call_id=tool_call_id,
                         tool_name=str(job_data["tool_name"]),
+                        tool_source=tool_source,
+                        catalog_revision=catalog_revision,
+                        schema_hash=schema_hash,
+                        idempotency_key=idempotency_key,
                         payload={
                             "arguments": dict(job_data["arguments"]),
                             "context": dict(job_data["context"]),
@@ -644,12 +776,14 @@ class BusStore:
                         run_id=run.run_id,
                         channel="a2a",
                         destination=str(request.target_magic_id),
+                        event_id=f"a2a:{invocation_id}",
                         payload={
                             "text": request.text,
                             "reply_to": invocation_id if request.expect_reply else None,
                             "a2a_kind": "request",
                             "correlation_id": run.correlation_id,
                         },
+                        idempotency_key=f"a2a:{invocation_id}",
                         status="pending",
                         available_at=now,
                         created_at=now,
@@ -708,25 +842,59 @@ class BusStore:
     def load_tool_continuation(
         self, run_id: str
     ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
-        """Return a resumable continuation only after all expected tools settle."""
+        """Return a resumable continuation only after all expected tools settle.
+
+        Ordering (design §6.6 + §10.4):
+
+          - The canonical order is ``tool_calls.ordinal`` ASC
+            (within a run). Pre-0010 rows have ``ordinal IS NULL``
+            and fall back to ``continuation["tool_call_ids"]`` array
+            order; this preserves the legacy path while new writes
+            always populate ordinal.
+          - When all rows in the run have ordinal populated,
+            ``continuation["tool_call_ids"]`` is ignored (its order
+            is redundant with the column).
+          - When rows have mixed ordinal / NULL, we order by
+            ``ordinal NULLS LAST`` so legacy rows still sort to the
+            end and the new rows keep their strict LLM-emit order.
+        """
         with open_session(self._state_dir) as session:
             run = session.get(AgentRun, run_id)
             if run is None or run.status not in {"waiting_tool", "waiting_a2a"} or not run.continuation:
                 return None
             continuation = dict(run.continuation)
             call_ids = list(continuation.get("tool_call_ids") or [])
-            calls = {
-                row.tool_call_id: row
-                for row in session.scalars(select(ToolCall).where(ToolCall.run_id == run_id))
-            }
+            rows = list(
+                session.scalars(select(ToolCall).where(ToolCall.run_id == run_id))
+            )
+            calls_by_id = {row.tool_call_id: row for row in rows}
             if any(
-                call_id not in calls or calls[call_id].status not in {"completed", "failed"}
+                call_id not in calls_by_id
+                or calls_by_id[call_id].status not in {"completed", "failed"}
                 for call_id in call_ids
             ):
                 return None
+
+            # Decide ordering: ordinal wins when every expected call
+            # has a non-null ordinal; otherwise fall back to the
+            # legacy array order so pre-0010 runs don't change shape.
+            every_ordinal_present = all(
+                calls_by_id[cid].ordinal is not None for cid in call_ids
+            )
+            if every_ordinal_present:
+                ordered_call_ids = [
+                    row.tool_call_id
+                    for row in sorted(
+                        [calls_by_id[cid] for cid in call_ids],
+                        key=lambda r: (r.ordinal, r.id),
+                    )
+                ]
+            else:
+                ordered_call_ids = list(call_ids)
+
             results = []
-            for call_id in call_ids:
-                result = calls[call_id].result or {}
+            for call_id in ordered_call_ids:
+                result = calls_by_id[call_id].result or {}
                 results.append(
                     {
                         "type": "tool_result",
@@ -855,7 +1023,7 @@ class BusStore:
         task_id = metadata.get("task_id")
         if not task_run_id or not task_id:
             return
-        from magi.channels.tasks.models import Task, TaskRun
+        from magi.bus.models.local.task import Task, TaskRun
 
         task_run = session.get(TaskRun, str(task_run_id))
         task = session.get(Task, str(task_id))
@@ -1005,6 +1173,148 @@ class BusStore:
             session.commit()
             return True
 
+    # ───────────────────────────────────────────────────────────── #
+    # Tool-job retry (design §11.2 — at-least-once + idempotency)
+    # ───────────────────────────────────────────────────────────── #
+
+    # Cap on retries for a single tool call. After this many
+    # attempts the job moves to ``status='dead'`` and the actor
+    # worker unblocks the run with a synthetic tool.failed event.
+    # Matches the design's at-least-once + bounded-retry contract.
+    _MAX_TOOL_JOB_ATTEMPTS = 3
+
+    def retry_tool_job(
+        self,
+        job_id: str,
+        *,
+        delay_seconds: int | None = None,
+    ) -> None:
+        """Mark a failed tool job for retry, or dead-letter past the cap.
+
+        Transitions:
+          - ``status='failed'`` + ``attempts < _MAX_TOOL_JOB_ATTEMPTS``
+            → ``status='retry'``, lease reset, ``available_at`` set
+            to ``now + backoff`` so the next ``claim_next_tool_job``
+            picks it up.
+          - ``status='failed'`` + ``attempts >= _MAX_TOOL_JOB_ATTEMPTS``
+            → ``status='dead'`` plus a synthetic ``tool.failed``
+            AgentInbox event so the actor worker unblocks the run
+            instead of hanging in ``waiting_tool``.
+
+        Backoff matches ``retry_delivery`` / ``retry_agent_message``:
+        ``min(300, 5 * 2 ** max(0, row.attempts - 1))`` seconds.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.scalar(select(ToolJob).where(ToolJob.job_id == job_id))
+            if row is None:
+                raise KeyError(f"unknown tool job: {job_id}")
+            if row.attempts >= self._MAX_TOOL_JOB_ATTEMPTS:
+                row.status = "dead"
+                row.leased_by = None
+                row.leased_until = None
+                row.updated_at = now
+                session.commit()
+                # Unblock the run with a synthetic failed result so
+                # ``load_tool_continuation`` sees all expected tool
+                # calls terminated and ``commit_agent_transition``
+                # can resume the actor.
+                self._enqueue_synthetic_tool_failure(
+                    session, row, reason="dead_lettered"
+                )
+                session.commit()
+                return
+            row.status = "retry"
+            row.leased_by = None
+            row.leased_until = None
+            backoff = (
+                delay_seconds
+                if delay_seconds is not None
+                else min(300, 5 * (2 ** max(0, row.attempts - 1)))
+            )
+            row.available_at = now + timedelta(seconds=backoff)
+            row.updated_at = now
+            session.commit()
+
+    def _enqueue_synthetic_tool_failure(
+        self,
+        session,
+        row: "ToolJob",
+        *,
+        reason: str,
+    ) -> None:
+        """Write a ``tool.failed`` AgentInbox + RunInput for a dead-lettered job.
+
+        Called from :meth:`retry_tool_job` when the tool has exhausted
+        its retry budget. The synthetic result is identical in
+        shape to a real tool completion's ``tool.result`` event, so
+        the actor worker resumes with a normal provider-valid
+        ``tool_result`` block listing the dead-letter reason.
+        """
+        event_id = f"tool-failed:{row.tool_call_id}"
+        if session.scalar(select(AgentInbox).where(AgentInbox.event_id == event_id)) is not None:
+            return  # already enqueued by a prior dead-letter pass
+        received_seq = (
+            session.scalar(
+                select(func.coalesce(func.max(RunInput.received_seq), 0)).where(
+                    RunInput.run_id == row.run_id
+                )
+            )
+            or 0
+        ) + 1
+        session.add(
+            AgentInbox(
+                event_id=event_id,
+                run_id=row.run_id,
+                correlation_id=row.run_id,
+                kind="tool.failed",
+                source_id=row.tool_call_id,
+                payload={
+                    "text": f"tool {row.tool_name!r} {reason} after "
+                    f"{row.attempts} attempts",
+                    "tool_call_id": row.tool_call_id,
+                    "tool_name": row.tool_name,
+                    "is_error": True,
+                    "dead_lettered": True,
+                },
+                status="pending",
+                available_at=utcnow_naive(),
+                created_at=utcnow_naive(),
+                updated_at=utcnow_naive(),
+            )
+        )
+        # Mirror the tool_call row to ``completed`` so the actor's
+        # ``load_tool_continuation`` view sees all expected tool
+        # calls in a terminal state. The actual failure detail is
+        # already in the agent_inbox payload above; here we just
+        # flip the per-row status so the run can advance.
+        tool_call = session.scalar(
+            select(ToolCall).where(ToolCall.tool_call_id == row.tool_call_id)
+        )
+        if tool_call is not None and tool_call.status not in {"completed", "failed"}:
+            tool_call.status = "failed"
+            tool_call.result = {
+                "content": f"tool {row.tool_name!r} dead-lettered",
+                "is_error": True,
+            }
+            tool_call.completed_at = utcnow_naive()
+        session.add(
+            RunInput(
+                run_id=row.run_id,
+                event_id=event_id,
+                kind="tool.failed",
+                payload={
+                    "text": f"tool {row.tool_name!r} {reason}",
+                    "tool_call_id": row.tool_call_id,
+                    "tool_name": row.tool_name,
+                    "is_error": True,
+                },
+                received_seq=received_seq,
+                status="pending",
+                created_at=utcnow_naive(),
+            )
+        )
+
     def enqueue_tool_job(
         self,
         *,
@@ -1013,15 +1323,48 @@ class BusStore:
         tool_name: str,
         arguments: dict[str, Any],
         context: dict[str, Any],
+        idempotency_key: str | None = None,
+        tool_source: str | None = None,
+        catalog_revision: int | None = None,
+        schema_hash: str | None = None,
     ) -> str:
-        """Durably schedule a tool effect exactly once by ``tool_call_id``."""
+        """Durably schedule a tool effect exactly once.
+
+        De-duplication order (first match wins):
+
+          1. ``idempotency_key`` if supplied (partial unique index).
+          2. ``tool_call_id`` (UNIQUE) — backwards-compatible path.
+
+        When a match is found, the existing ``job_id`` is returned
+        without creating a new row. The ``idempotency_key`` is
+        preferred by design §11.2 because tool implementations may
+        declare a more specific retry boundary than the LLM-stable
+        ``tool_call_id`` (e.g. "send this email once" handles).
+        """
         now = utcnow_naive()
         job_id = _new_id("tool")
         payload = {"arguments": arguments, "context": context}
         with open_session(self._state_dir) as session:
-            existing = session.scalar(select(ToolJob).where(ToolJob.tool_call_id == tool_call_id))
+            if idempotency_key is not None:
+                existing = session.scalar(
+                    select(ToolJob).where(ToolJob.idempotency_key == idempotency_key)
+                )
+                if existing is not None:
+                    return existing.job_id
+            existing = session.scalar(
+                select(ToolJob).where(ToolJob.tool_call_id == tool_call_id)
+            )
             if existing is not None:
                 return existing.job_id
+            # Within-run ordinal (added 0010). Same monotonic
+            # semantics as wait_for_tools: max+1 in this txn.
+            next_ordinal = (
+                session.scalar(
+                    select(func.coalesce(func.max(ToolCall.ordinal), 0))
+                    .where(ToolCall.run_id == run_id)
+                )
+                or 0
+            ) + 1
             session.add(
                 ToolCall(
                     tool_call_id=tool_call_id,
@@ -1029,6 +1372,8 @@ class BusStore:
                     tool_name=tool_name,
                     arguments=arguments,
                     status="requested",
+                    ordinal=next_ordinal,
+                    ordered_at=now,
                     created_at=now,
                 )
             )
@@ -1038,6 +1383,10 @@ class BusStore:
                     run_id=run_id,
                     tool_call_id=tool_call_id,
                     tool_name=tool_name,
+                    tool_source=tool_source,
+                    catalog_revision=catalog_revision,
+                    schema_hash=schema_hash,
+                    idempotency_key=idempotency_key,
                     payload=payload,
                     status="pending",
                     available_at=now,
@@ -1078,10 +1427,20 @@ class BusStore:
                 tool_name=row.tool_name,
                 payload=dict(row.payload),
                 attempts=row.attempts,
+                source=row.tool_source,
+                catalog_revision=row.catalog_revision,
+                schema_hash=row.schema_hash,
             )
 
     def complete_tool_job(self, claim: ToolClaim, *, content: str, is_error: bool) -> None:
-        """Commit a tool result and return it through the agent mailbox."""
+        """Commit a tool result and return it through the agent mailbox.
+
+        The job's status mirrors ``tool_call.status`` (``completed`` on
+        success, ``failed`` on error). Retry / dead-letter is the
+        caller's responsibility — :meth:`retry_tool_job` is the
+        follow-up path; ToolWorker calls it when ``is_error`` and
+        the attempt budget has not been exhausted.
+        """
         now = utcnow_naive()
         event_id = f"tool-result:{claim.tool_call_id}"
         payload = {
@@ -1094,7 +1453,11 @@ class BusStore:
             job = session.scalar(select(ToolJob).where(ToolJob.job_id == claim.job_id))
             if job is None:
                 raise KeyError(f"unknown tool job: {claim.job_id}")
-            job.status = "completed"
+            # Mirror tool_call.status semantics: errored jobs are
+            # ``failed``; successful ones are ``completed``. The
+            # follow-up retry path flips this back to ``retry`` (or
+            # ``dead`` if the budget is exhausted).
+            job.status = "failed" if is_error else "completed"
             job.leased_by = None
             job.leased_until = None
             job.updated_at = now

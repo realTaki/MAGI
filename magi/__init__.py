@@ -3,24 +3,24 @@
 A group-intelligence system built from autonomous, independently-deployable
 agents — every one of them is a **MAGI**. Two **archetypes** ship today:
 
-- **Adam** — *Adaptive Distributed Agent Matrix*, the **manager-archetype**
+- **ADAM** — *Autonomous Dispatch Agent Manager*, the **manager-archetype**
   MAGI. Runs the FastAPI control plane + Web frontend for the operator;
   owns workspace state; can dispatch / create / recall worker MAGIs.
-- **EVE** — *Enhanced Virtual Expert*, the **worker-archetype** MAGI.
+- **EVA** — *Extended Virtual Agent*, the **worker-archetype** MAGI.
   One per assigned User; default channel Telegram; pulls workspace-wide
-  data from its Adam and caches locally.
+  data from its ADAM and caches locally.
 
 Worker MAGIs do not call each other by default; coordination goes through
 the manager MAGI. The runtime is the same; the archetype is configured
-per-process via the ``magis`` table — Adam = Genesis MAGIC creator,
-Eve = assigned to a parent MAGIC. New archetypes can be added without
+per-process via the ``magis`` table — ADAM = Genesis MAGIC creator,
+EVA = assigned to a parent MAGIC. New archetypes can be added without
 forking the runtime.
 
-Naming: ``operator`` (lowercase) is the user role running Adam's web UI —
-it replaces the older "admin / HR / IT" framing. The people EVEs serve
+Naming: ``operator`` (lowercase) is the user role running ADAM's web UI —
+it replaces the older "admin / HR / IT" framing. The people EVAs serve
 are **assigned Users** (replaces the older "contact" framing so the
 system can serve both B2B and B2C). There is intentionally **no CLI** —
-all operator work goes through Adam's web UI.
+all operator work goes through ADAM's web UI.
 """
 
 # sqlite3 driver swap (D.18 — FTS5 / trigram).

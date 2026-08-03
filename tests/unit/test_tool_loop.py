@@ -114,6 +114,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         "list_files",
         "search_sessions",
         "send_message",
+        "message_magi",
         "schedule_task",
         "load_skill",
         # Shell execution — three tools the LLM uses
@@ -153,6 +154,7 @@ def test_tool_registry_returns_expected_schemas(tmp_path, monkeypatch):
         # Model-Context-Protocol servers.
         "add_mcp_server",
         "list_mcp_servers",
+        "update_mcp_server",
         "delete_mcp_server",
     ]
 
@@ -693,115 +695,3 @@ def test_edit_file_appears_in_registry(tmp_path, monkeypatch):
     assert "edit_file" in names
 
 # ───────────────────────────────────────────────────────────────── #
-# edit_file retry hint — integration with _run_tool_calls
-# ───────────────────────────────────────────────────────────────── #
-
-@pytest.mark.asyncio
-async def test_run_tool_calls_appends_retry_hint_on_repeated_edit_file_failures(
-    workspace_ctx,
-):
-    """End-to-end: when ``edit_file`` fails on the
-    same path twice, the second ``tool_result`` the
-    LLM sees carries the agent hint appended to the
-    tool's own error content. The first failure does
-    NOT carry the hint (the tool's own message is
-    enough).
-
-    This pins the contract the agent loop relies on:
-    the hint is a suffix on the existing
-    ``tool_result`` content, not a separate channel.
-    """
-    from magi.agent.llm.provider import ChatResult
-    from magi.agent.loop import _run_tool_calls
-    from magi.tools.edit_retry import EditRetryTracker
-
-    target = workspace_ctx.workspace / "drift.py"
-    target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
-
-    # Two consecutive edit_file calls with a stale
-    # ``old_str`` — both will fail with ``old_str not
-    # found``.
-    result = ChatResult(
-        text="",
-        stop_reason="tool_use",
-        tool_uses=[
-            {"id": "t1", "name": "edit_file",
-             "input": {"path": "drift.py",
-                       "old_str": "stale-content",
-                       "new_str": "x"}},
-            {"id": "t2", "name": "edit_file",
-             "input": {"path": "drift.py",
-                       "old_str": "another-stale",
-                       "new_str": "y"}},
-        ],
-    )
-
-    tracker = EditRetryTracker()
-    tool_results = await _run_tool_calls(
-        result,
-        tool_ctx=workspace_ctx,
-        uid=42,
-        session_id="",
-        edit_retry=tracker,
-    )
-
-    assert len(tool_results) == 2
-    # First failure: only the tool's own error.
-    assert tool_results[0]["is_error"] is True
-    assert "not found" in tool_results[0]["content"]
-    assert "[agent hint]" not in tool_results[0]["content"]
-    # Second failure: tool error + agent hint appended.
-    assert tool_results[1]["is_error"] is True
-    assert "not found" in tool_results[1]["content"]
-    assert "[agent hint]" in tool_results[1]["content"]
-    assert "drift.py" in tool_results[1]["content"]
-    assert "read_file" in tool_results[1]["content"]
-    # File unchanged after both failures.
-    assert target.read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
-
-
-@pytest.mark.asyncio
-async def test_run_tool_calls_no_hint_on_successful_edit_then_failure(
-    workspace_ctx,
-):
-    """A successful edit_file on a path resets the
-    counter; the next failure on that same path is
-    silent again (the LLM is back on track).
-    """
-    from magi.agent.llm.provider import ChatResult
-    from magi.agent.loop import _run_tool_calls
-    from magi.tools.edit_retry import EditRetryTracker
-
-    target = workspace_ctx.workspace / "ok.py"
-    target.write_text("a\nb\nc\n", encoding="utf-8")
-
-    result = ChatResult(
-        text="",
-        stop_reason="tool_use",
-        tool_uses=[
-            # First call: succeeds — resets streak.
-            {"id": "ok", "name": "edit_file",
-             "input": {"path": "ok.py",
-                       "old_str": "b",
-                       "new_str": "B"}},
-            # Second call on the same path: fails —
-            # silent (fresh streak).
-            {"id": "fail", "name": "edit_file",
-             "input": {"path": "ok.py",
-                       "old_str": "stale",
-                       "new_str": "x"}},
-        ],
-    )
-
-    tracker = EditRetryTracker()
-    tool_results = await _run_tool_calls(
-        result,
-        tool_ctx=workspace_ctx,
-        uid=42,
-        session_id="",
-        edit_retry=tracker,
-    )
-
-    assert tool_results[0]["is_error"] is False
-    assert tool_results[1]["is_error"] is True
-    assert "[agent hint]" not in tool_results[1]["content"]

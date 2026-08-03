@@ -1,4 +1,4 @@
-"""Adam's chat endpoint — the WebUI channel's "send a
+"""ADAM's chat endpoint — the WebUI channel's "send a
 message to the LLM" route.
 
 The frontend POSTs text into the private durable bus, then
@@ -35,23 +35,17 @@ import os
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-
+from magi.bus import bootstrap
+from magi.bus.contracts.session import (
+    ChannelMismatchError, SessionMessage, SessionPathError, new_session_id,
+    utcnow_iso as _utcnow_iso,
+)
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
-from magi.agent.worker import submit_agent_message
 from magi.bus import AgentMessage
-from magi.agent.memory.session import (
-    ChannelMismatchError,
-    SessionMessage,
-    SessionPathError,
-    SessionStore,
-    new_session_id,
-    utcnow_iso as _utcnow_iso,
-)
-from magi.db import Contact, open_session, require_state_dir
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -67,7 +61,7 @@ _MAX_OUTPUT_CHARS = 4000
 
 
 def _state_dir() -> str:
-    return require_state_dir()
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 def _resolve_caller_credentials(
@@ -77,7 +71,7 @@ def _resolve_caller_credentials(
     ``uid`` (the cookie value post-D.24) and return
     ``(uid, role)``.
 
-    LLM credentials live on ``magic`` (the Adam MAGIC
+    LLM credentials live on ``magic`` (the ADAM MAGIC
     owns the provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
     the agent worker reads them
@@ -97,18 +91,7 @@ def _resolve_caller_credentials(
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
     """
-    try:
-        with open_session() as session:
-            contact = session.get(Contact, uid)
-    except Exception:
-        logger.exception(
-            "chat: ORM lookup failed for uid %s", uid,
-        )
-        raise MagiHTTPException(
-            status_code=500,
-            code="chat.lookup_failed",
-            detail="could not load operator's Contact record",
-        )
+    contact = bootstrap(state_dir).contacts.get(uid)
 
     if contact is None:
         raise MagiHTTPException(
@@ -117,7 +100,7 @@ def _resolve_caller_credentials(
             detail="no Contact row bound to this cookie",
         )
 
-    return contact.id, contact.role
+    return contact.id, contact.role or "guest"
 
 
 class ChatSendRequest(BaseModel):
@@ -225,7 +208,7 @@ async def send_chat(
     # — NOT the per-channel delivery address. The store
     # resolves rows by uid; the channel adapter interprets
     # the delivery address when it has to push a reply.
-    store = SessionStore(_state_dir())
+    store = bootstrap(_state_dir()).session
     session_id = payload.session_id
     # The per-channel delivery address stamped on the
     # session row. ``""`` if the operator never bound TG.
@@ -273,8 +256,8 @@ async def send_chat(
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
-        from magi.channels import dispatcher as channel_dispatcher
-        tg_im_id = channel_dispatcher.lookup_im_id(uid, Channel.TG) or ""
+        contact = bootstrap(_state_dir()).contacts.get(uid)
+        tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.create(
             uid, channel=Channel.WEBUI, delivery_address=tg_im_id,
         )
@@ -332,35 +315,24 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    # D.7: fire the auto-title job once per session — when
-    # ``post.messages`` is exactly the user message we just
-    # appended (so this is the inaugural user message of a
-    # fresh session). Subsequent user messages
-    # (``len(messages) >= 3`` — user, assistant, user) don't
-    # re-enqueue. ``enqueue_title_job`` is fire-and-forget;
-    # no slow work happens on the request path here.
-    # LLM credentials are resolved inside the worker.
-    if len(post.messages) == 1:
-        from magi.agent.memory.session.auto_title import enqueue_title_job
-        await enqueue_title_job(
-            delivery_address=delivery_address,
-            session_id=session_id,
-            uid=uid,
-        )
-
-    run_id = await submit_agent_message(
+    run_id = bootstrap(_state_dir()).agent_runs.publish_input(
         AgentMessage(
                 # The persisted inbound session-message id is the producer's
                 # idempotency key. A network retry cannot create a second
                 # agent turn for that exact input.
                 event_id=f"webui:{session_id}:{inbound_message_id}",
-                source_id=inbound_message_id,
+                # Cross-channel idempotency triple (0009_idempotency_keys).
+                # The browser sends a stable client-generated UUID; if the
+                # same message is re-submitted (network retry, double
+                # click), the inbox row collapses to the same run.
+                source_type="webui",
+                source_id=str(uid),
+                external_event_id=inbound_message_id,
                 text=text,
                 channel=Channel.WEBUI,
                 session_id=session_id,
                 uid=uid,
                 caller_role=contact_role,
         ),
-        state_dir=_state_dir(),
     )
     return ChatSendResponse(run_id=run_id, session_id=session_id)

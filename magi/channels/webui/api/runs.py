@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from magi.bus import BusStore, get_stream_hub
+from magi.bus import bootstrap, get_stream_hub
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db import require_state_dir
 
 router = APIRouter(tags=["runs"])
+
+
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
 
 
 class RunStatusResponse(BaseModel):
@@ -26,7 +30,7 @@ class RunStatusResponse(BaseModel):
 
 @router.get("/runs/{run_id}", response_model=RunStatusResponse)
 async def get_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
-    result = BusStore(require_state_dir()).get_run_result(run_id)
+    result = _bus().agent_runs.result(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="run not found")
     return RunStatusResponse(
@@ -41,12 +45,12 @@ async def get_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
 @router.post("/runs/{run_id}/cancel", response_model=RunStatusResponse, status_code=status.HTTP_202_ACCEPTED)
 async def cancel_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
     """Explicit cancellation endpoint; ordinary chat input is always steering."""
-    store = BusStore(require_state_dir())
-    if not store.cancel_run(run_id):
-        result = store.get_run_result(run_id)
+    agent_runs = _bus().agent_runs
+    if not agent_runs.cancel(run_id):
+        result = agent_runs.result(run_id)
         if result is None:
             raise HTTPException(status_code=404, detail="run not found")
-    result = store.get_run_result(run_id)
+    result = agent_runs.result(run_id)
     assert result is not None
     return RunStatusResponse(
         run_id=result.run_id,
@@ -68,7 +72,7 @@ async def run_events(run_id: str, _admin: AdminGate) -> StreamingResponse:
                     event = await asyncio.wait_for(queue.get(), timeout=15)
                 except TimeoutError:
                     yield ": keepalive\n\n"
-                    result = BusStore(require_state_dir()).get_run_result(run_id)
+                    result = _bus().agent_runs.result(run_id)
                     if result is not None and result.status in {"completed", "failed", "cancelled"}:
                         return
                     continue

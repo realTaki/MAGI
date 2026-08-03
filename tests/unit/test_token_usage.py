@@ -174,16 +174,8 @@ def test_record_token_usage_partial_dict(token_env):
     assert rows[0].cache_creation_tokens == 0
     assert rows[0].cache_read_tokens == 0
 
-# (Full end-to-end ``handle_message`` test omitted on
-# purpose. ``test_tg_admin_routes`` patches
-# ``magi.agent.loop.handle_message`` with an ``AsyncMock``
-# whose effect persists across tests (monkeypatch only
-# restores during that test's lifetime), so a later test
-# that imports the real ``handle_message`` sees the
-# mocked one. The direct ``_record_token_usage`` tests
-# above already pin the helper's behaviour; the chat
-# path is end-to-end-tested by the live smoke
-# (real chat → row in ``token_usage``).)
+# The direct tests above pin the accounting helper. Durable agent-worker
+# coverage verifies that a provider step is committed asynchronously.
 
 # ────────────────────────────────────────────────────────────────── #
 # /api/system-settings/timezone
@@ -220,7 +212,7 @@ def test_timezone_put_round_trip(token_env, client):
 
     # Subprocess-equivalent: a fresh get_system_timezone
     # call reads the new value back.
-    from magi.channels.webui.api.system_settings import get_system_timezone
+    from magi.db.runtime_settings import get_system_timezone
     assert get_system_timezone(str(token_env[0])) == "Asia/Shanghai"
 
 def test_timezone_put_rejects_unknown_tz(token_env, client):
@@ -357,7 +349,7 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     Pinned to verify that the aggregation actually reads
     the configured tz and doesn't silently default to UTC.
     """
-    from magi.channels.webui.api.system_settings import set_system_timezone
+    from magi.db.runtime_settings import set_system_timezone
 
     set_system_timezone(str(token_env[0]), "Asia/Shanghai")
 

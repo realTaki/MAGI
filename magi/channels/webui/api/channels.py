@@ -14,18 +14,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated
+import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.channels import Channel
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.db import get_session
-from magi.db.settings import state_get, state_set
-from magi.db import require_state_dir
-from magi.__main__ import start_channel, stop_channel, is_channel_running
+from magi.bus import bootstrap
+from magi.constants import STATE_DIR
+from magi.runtime import is_channel_running, start_channel, stop_channel
 
 logger = logging.getLogger("magi.api.channels")
 
@@ -49,7 +48,7 @@ _REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
 
 
 def _read_enabled(state_dir: str) -> list[str]:
-    raw = state_get(state_dir, _SETTINGS_KEY)
+    raw = bootstrap(state_dir).settings.get(_SETTINGS_KEY)
     if not raw:
         return [Channel.WEBUI]
     try:
@@ -67,12 +66,12 @@ def _read_enabled(state_dir: str) -> list[str]:
 
 
 def _write_enabled(state_dir: str, channels: list[str]) -> None:
-    state_set(state_dir, _SETTINGS_KEY, json.dumps(channels))
+    bootstrap(state_dir).settings.set(_SETTINGS_KEY, json.dumps(channels))
 
 
 def _has_credentials(state_dir: str, channel: str) -> bool:
     if channel == Channel.TG:
-        return bool(state_get(state_dir, "telegram.bot_token"))
+        return bool(bootstrap(state_dir).settings.get("telegram.bot_token"))
     return True  # webui always has creds; unimplemented channels defer
 
 
@@ -110,7 +109,7 @@ def list_channels(
     _admin: AdminGate,
     request: Request,
 ) -> ChannelsResponse:
-    state_dir = require_state_dir()
+    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
     enabled = _read_enabled(state_dir)
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
@@ -132,7 +131,7 @@ def update_channels(
     _admin: AdminGate,
     request: Request,
 ) -> ChannelsResponse:
-    state_dir = require_state_dir()
+    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
     # Validate all names are known Channel values
     unknown = [c for c in payload.enabled if c not in Channel]

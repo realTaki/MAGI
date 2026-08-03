@@ -1,20 +1,16 @@
 """System prompt assembly (D.4 / D.16 prompt-building).
 
-Extracted from :mod:`magi.agent.loop` for the same reason
-as :mod:`magi.agent.token_usage` and
-:mod:`magi.agent.compaction`: the agent loop module is the
-hot path of every chat turn, and prompt assembly
-dominates the file otherwise (a 165-line function that
-the loop only calls once per turn — but isn't readable
-in isolation because the loop's own 400+ lines share the
-file).
+Kept separate from :mod:`magi.agent.step`,
+:mod:`magi.agent.token_usage`, and :mod:`magi.agent.compaction`:
+prompt assembly is reusable and does not belong in the provider-step
+implementation.
 
 Two surfaces pinned:
 
   - :func:`read_soul` — loads ``SOUL.md`` from the
     workspace, falling back to the bundled fallback
     persona when the file is missing or empty. Used by
-    both the agent loop AND
+    both the agent runtime AND
     :mod:`magi.channels.webui.api.soul` (so this module
     is the single point of contact for "what does SOUL.md
     actually mean on disk").
@@ -48,6 +44,25 @@ logger = logging.getLogger("magi.agent.system_prompt")
 # module constant so a deployer renaming the file can
 # override it in one place.
 SOUL_FILENAME = "SOUL.md"
+
+
+def _format_memory_block(rows) -> str:
+    return "" if not rows else "## Long-term memory\n" + "\n".join(f"- [{r.kind}] {r.subject}: {r.body}" for r in rows)
+
+
+def _format_contact_block(contact, notes) -> str:
+    if contact is None:
+        return ""
+    name = contact.display_name or contact.name
+    lines = [f"## Current chatter\nName: {name}"]
+    if contact.notes:
+        lines.append(contact.notes)
+    lines.extend(f"- {note.note}" for note in notes or [])
+    return "\n".join(lines)
+
+
+def _format_daily_note_block(note) -> str:
+    return f"## Daily note\n{note.note}" if note is not None and note.note else ""
 
 
 def read_soul(state_dir: str) -> str:
@@ -128,28 +143,15 @@ def build_system_prompt(
     a sensible prompt. The result is just the SOUL when
     nothing else is registered yet.
 
-    Side effects: this calls ``MemoryStore.list_for_owner``
+    Side effects: this calls ``bus.memory.list_for_owner``
     (one SELECT, capped at 50 rows), ``ContactStore.find_by_person``
     (single primary-key lookup), a one-row ``Contact``
     read for the chatter's display_name, and
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.agent.memory.contacts.store import ContactStore
-    from magi.agent.memory.contacts.prompt import (
-        format_contact_block,
-        format_daily_note_block,
-    )
-    from magi.agent.memory.self.prompt import format_memory_block
-    from magi.agent.memory.self.store import MemoryStore
-    from magi.tools.skill_loader import (
-        format_skills_block,
-        get_skill_loader,
-    )
-    from magi.channels.webui.api.system_settings import (
-        get_show_daily_note,
-        get_show_daily_note_prompt,
-    )
+    from magi.skills import format_skills_block, get_skill_metas
+    from magi.bus import bootstrap
 
     # SOUL first — establishes the persona for the rest
     # of the system prompt.
@@ -162,8 +164,8 @@ def build_system_prompt(
 
     # Memory block — User-wide facts + in-flight work.
     try:
-        memory_rows = MemoryStore(state_dir).list_for_owner(uid)
-        memory_block = format_memory_block(memory_rows)
+        memory_rows = bootstrap(state_dir).memory.list_for_owner(uid)
+        memory_block = _format_memory_block(memory_rows)
     except Exception:
         logger.exception(
             "agent: memory block load failed for uid=%s; "
@@ -182,13 +184,10 @@ def build_system_prompt(
     # "Current chatter" header.
     contact_block = ""
     try:
-        store = ContactStore(state_dir)
-        contact = store.get(uid)
-        display_name = contact.display_name or contact.name if contact else None
-        notes = store.list_notes(uid) if contact else None
-        contact_block = format_contact_block(
-            contact, display_name=display_name, notes=notes,
-        )
+        contacts = bootstrap(state_dir).contacts
+        contact = contacts.get(uid)
+        notes = contacts.list_notes(uid) if contact else None
+        contact_block = _format_contact_block(contact, notes)
     except Exception:
         logger.exception(
             "agent: contact block load failed for uid=%s; "
@@ -204,15 +203,12 @@ def build_system_prompt(
     # in via ``system.show_daily_note_prompt`` (default
     # OFF — the tool description already restates the
     # core intent).
-    if get_show_daily_note(state_dir):
+    show_daily_note, show_daily_note_prompt = bootstrap(state_dir).settings.show_daily_note()
+    if show_daily_note:
         daily_block = ""
         try:
-            store = ContactStore(state_dir)
-            note = store.read_daily_note(uid)
-            daily_block = format_daily_note_block(
-                note,
-                show_prompt_rules=get_show_daily_note_prompt(state_dir),
-            )
+            note = bootstrap(state_dir).contacts.read_daily_note(uid)
+            daily_block = _format_daily_note_block(note)
         except Exception:
             logger.exception(
                 "agent: daily note block load failed for uid=%s; "
@@ -223,7 +219,7 @@ def build_system_prompt(
             parts.append(daily_block)
 
     # Skills block — last so it caps the prompt.
-    skills_block = format_skills_block(get_skill_loader().list())
+    skills_block = format_skills_block(get_skill_metas())
     if skills_block:
         parts.append(skills_block)
 

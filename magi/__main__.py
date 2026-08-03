@@ -11,8 +11,8 @@ database an isolated runtime may read. The orchestrator injects only that URL
 and the non-secret runtime identity, never an instruction bundle or provider
 credential environment variable.
 
-Boot flow: the first Adam workspace seeds Genesis.  An EVE workspace never
-seeds a Council or a second Adam; it only initialises its local runtime state.
+Boot flow: the first ADAM workspace seeds Genesis.  An EVA workspace never
+seeds a Council or a second ADAM; it only initialises its local runtime state.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class NodeConfig:
         # Log level: read from settings if available, fall back to "info".
         log_level = DEFAULT_LOG_LEVEL
         try:
-            from magi.db.settings import state_get
+            from magi.bus.db.settings import state_get
             db_level = state_get(STATE_DIR, "system.log_level")
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
@@ -81,7 +81,7 @@ class NodeConfig:
             raise ValueError("MAGI_NODE_ROLE must be 'adam' or 'eve'")
         runtime_id = os.environ.get("MAGI_RUNTIME_ID") or None
         if role == "eve" and not runtime_id:
-            raise ValueError("MAGI_RUNTIME_ID is required for an EVE runtime")
+            raise ValueError("MAGI_RUNTIME_ID is required for an EVA runtime")
 
         return cls(
             channels=(),
@@ -146,7 +146,7 @@ def run_webui() -> None:
         level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    from magi.db.magis import init_magis_public_db
+    from magi.bus.db.magis import init_magis_public_db
 
     # Seeding is idempotent and lets the control plane start before the first
     # runtime without maintaining a second service-entry module.
@@ -175,28 +175,17 @@ def run() -> None:
 
     state_dir = cfg.state_dir
 
-    # SQLite init — always SQLite, no Postgres switch.
-    from magi.db import init_sqlite
-    db_path = init_sqlite(state_dir)
-    logger.info("sqlite initialised", extra={"path": str(db_path)})
-
-    # Initialise private SQLite tables. Organisation facts deliberately do
-    # not seed here: a MAGI's private PVC must never become a shadow MAGIS.
-    from magi.db import init_orm
-    init_orm(state_dir, seed_root=False)
+    # The composition root is the only place that initialises local storage.
+    # Workers and channels receive the public BUS facade after this point.
+    from magi.bus import bootstrap
+    bootstrap(state_dir, initialise_local=True)
+    logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
-    # lifecycle state. The initial Adam seeds Genesis there; an EVE only
+    # lifecycle state. The initial ADAM seeds Genesis there; an EVA only
     # opens the public schema assigned by its one direct MAGIS binding.
-    from magi.db.magis import init_magis_public_db
+    from magi.bus.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")
-
-    # D.18 — one-shot import of any leftover pre-D.18 JSON
-    # session files. Idempotent.
-    from pathlib import Path
-    from magi.agent.memory.session import migrate_from_json
-    from magi.agent.workspace import workspace_root
-    migrate_from_json(Path(workspace_root(state_dir)))
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
@@ -259,13 +248,9 @@ def run() -> None:
     # Force-initialise the SKILL.md loader so the boot log names
     # every registered skill in one place.
     try:
-        from magi.tools.skill_loader import get_skill_loader
-        loader = get_skill_loader()
-        logger.info(
-            "skills: %d registered (workspace=%s)",
-            len(loader.list()),
-            loader._workspace_root,  # noqa: SLF001
-        )
+        from magi.skills import get_skill_metas
+        metas = get_skill_metas()
+        logger.info("skills: %d registered", len(metas))
     except Exception as e:  # noqa: BLE001
         logger.warning("skills bootstrap skipped: %s", e)
 
@@ -290,7 +275,7 @@ def run() -> None:
 
 def _init_state(state_dir: str) -> None:
     """Create the SQLite file under ``state_dir``.  Always SQLite."""
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
@@ -347,7 +332,7 @@ def _read_channels_from_db(state_dir: str) -> list[str]:
     always on.  The operator can then toggle TG on via the Settings →
     Channels card.
     """
-    from magi.db.settings import state_get, state_set
+    from magi.bus.db.settings import state_get, state_set
     raw = state_get(state_dir, _CHANNELS_SETTINGS_KEY)
     if not raw:
         # Seed on first boot

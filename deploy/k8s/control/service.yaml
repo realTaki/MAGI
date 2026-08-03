@@ -8,7 +8,7 @@ metadata:
 spec:
   # The local Kind control plane can lag EndpointSlice readiness updates after
   # a container restart. The orchestrator still exposes its own health probe;
-  # publishing this internal-only endpoint keeps Adam's control path stable.
+  # publishing this internal-only endpoint keeps ADAM's control path stable.
   publishNotReadyAddresses: true
   selector:
     app.kubernetes.io/name: magi

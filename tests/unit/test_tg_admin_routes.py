@@ -5,7 +5,7 @@ admin branch is the most regression-prone — v0 originally
 short-circuited admins to ``logger.info(... return)`` so
 they wouldn't burn their API key on TG chitchat. Once D.4
 required per-contact credentials anyway, and D.10/D.11
-made TG chat-with-EVE a real affordance, admins needed the
+made TG chat-with-EVA a real affordance, admins needed the
 full handler path so their TG messages actually got a
 reply + emoji reaction.
 """
@@ -66,38 +66,32 @@ def _make_update(*, delivery_address: int, message_id: int, text: str):
     return update
 
 @pytest.mark.asyncio
-async def test_admin_message_reaches_handler(tg_admin_env):
+async def test_admin_message_reaches_handler(tg_admin_env, monkeypatch):
     """D.11 fix: ``admin`` role messages are NOT short-
     circuited. They must reach ``_handle_contact_message``,
-    which means ``reply_text`` is called (the handler's
-    success path) and ``set_message_reaction`` is called
-    (the read-receipt).
+    which means a durable agent message is published and
+    ``set_message_reaction`` is called (the read-receipt).
     """
     _seed_contact(str(tg_admin_env), delivery_address=9001, admin=True, role="assigned")
 
     from magi.channels.telegram.bot import _on_message
     update = _make_update(message_id=42, delivery_address=9001, text="在吗")
 
-    # Run the dispatcher; it will block on the LLM call.
-    # We don't want the real provider — mock the agent loop
-    # by short-circuiting ``handle_message`` to return a
-    # canned string. (Patching at the import location is
-    # needed because ``bot.py`` does
-    # ``from magi.agent.loop import handle_message``
-    # inside the handler.)
-    import magi.agent.loop as agent_mod
-    agent_mod.handle_message = AsyncMock(return_value="hi back")
+    from magi.agent import worker as worker_mod
+    published = AsyncMock(return_value="run-admin")
+    monkeypatch.setattr(worker_mod, "submit_agent_message", published)
 
     await _on_message(update, MagicMock())
 
-    # The handler ran — a reply was sent.
-    update.effective_message.reply_text.assert_awaited()
+    # The handler ran — it published work and returned without waiting for
+    # inference. DeliveryWorker sends the eventual reply.
+    published.assert_awaited_once()
     # And the read-reaction was set on the inbound message.
     bot = update.get_bot.return_value
     bot.set_message_reaction.assert_awaited()
 
 @pytest.mark.asyncio
-async def test_assigned_message_reaches_handler(tg_admin_env):
+async def test_assigned_message_reaches_handler(tg_admin_env, monkeypatch):
     """``assigned`` role is the historical happy path;
     pinned here so the admin fix doesn't regress it."""
     _seed_contact(str(tg_admin_env), delivery_address=9001, role="assigned")
@@ -105,12 +99,13 @@ async def test_assigned_message_reaches_handler(tg_admin_env):
     from magi.channels.telegram.bot import _on_message
     update = _make_update(message_id=43, delivery_address=9001, text="hello")
 
-    import magi.agent.loop as agent_mod
-    agent_mod.handle_message = AsyncMock(return_value="hi back")
+    from magi.agent import worker as worker_mod
+    published = AsyncMock(return_value="run-assigned")
+    monkeypatch.setattr(worker_mod, "submit_agent_message", published)
 
     await _on_message(update, MagicMock())
 
-    update.effective_message.reply_text.assert_awaited()
+    published.assert_awaited_once()
     update.get_bot.return_value.set_message_reaction.assert_awaited()
 
 @pytest.mark.asyncio

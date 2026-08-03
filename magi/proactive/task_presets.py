@@ -1,219 +1,222 @@
-"""Proactive task-preset policy — materialise per-user task snapshots.
+"""Proactive task-preset policy — pure functions, no ORM.
 
-When a contact transitions to ``role='assigned'`` (either via
-the initial ``POST /api/contacts`` create or via a
-``PATCH /api/contacts/{id}`` that flips the role), the
-:func:`seed_presets_for_contact` helper walks the operator's
-enabled ``TaskPreset`` rows and ensures a corresponding
-``Task`` row exists for the new owner. The result is a small
-suite of operator-curated scheduled tasks waiting for the
-assigned user without the operator having to author each one
-by hand.
+Dependency chain (per ROADMAP):
 
-Idempotent
-----------
+    contacts API  →  proactive (this module, policy)  →  bus.task (writes)
+                        ↑                                  ↑
+                        pure function                   persistence
 
-The policy checks for an existing row per ``(uid,
-preset_id)`` pair BEFORE inserting — repeating the hook
-against the same contact (e.g. role assigned → admin →
-assigned again) is a no-op, not a duplicate. This is the same
-pattern :func:`magi.channels.webui.api.action_items._ensure_llm_credentials_item`
-uses for the "set your LLM credentials" action item: SELECT
-short-circuit + caller commits.
+This module is the **policy layer**.  It decides *what* task rows should
+exist for a freshly-assigned contact; it does NOT touch the database.
+``bus.task.seed_presets_for_contact`` owns the actual inserts and
+passes the bus-owned DTO snapshots back into this module's pure
+planner.
+
+The planner is intentionally a pure function:
+
+  * inputs are dataclasses (``TaskPresetView``-shaped, ``ContactView``)
+  * outputs are ``PresetSeedPlan`` — a list of ``PresetSeed`` DTOs
+    ready to be inserted by the bus
+  * no ``Session``, no ``select``, no SQLAlchemy, no I/O
+
+That separation lets the policy evolve (operator-curated templates,
+new frequencies, conditional seeding) without dragging the storage
+layer into the change.  It also means the boundary test naturally
+allows this module — it never imports ``magi.bus.models`` or
+``magi.bus.db``; the bus calls in.
+
+Idempotency
+-----------
+
+The planner is asked for a plan; the bus checks for existing rows
+(``uid + preset_id``) BEFORE inserting, so re-running the policy on
+the same contact is a no-op.  The check lives in the bus because it
+needs the storage; the policy is pure.
 
 Snapshot semantics
 ------------------
 
-The per-user ``Task`` row is built from the preset's fields
-verbatim (``prompt``, ``frequency`` / moment fields → 5-field
-``cron``, ``target_channel``, …). Editing the preset
-template later does NOT rewrite existing per-user rows —
-they keep their snapshotted config. New assigned contacts
-seeded after the edit pick up the new config; existing ones
-don't.
-
-Why bypass ``create_task``
---------------------------
-
-The HTTP ``create_task`` route stamps ``uid`` from the
-signed-in cookie via
-:meth:`magi.channels.webui.api.tasks._resolve_creator_id`. In
-the seed hook, ``uid`` must be the *assigned contact*, not
-the admin who triggered the role change. Bypassing the
-route avoids the cookie lookup and lets us set ``uid``
-directly on the new ``Task`` row.
-
-A ``ChatSession`` row is allocated for the task's "home" —
-the per-fire conversation the runner appends to — using the
-same shape :class:`magi.channels.webui.api.tasks.create_task`
-already does at its allocation step (channel="task",
-``delivery_address`` stamped via the dispatcher). The
-allocation is inlined here rather than imported from
-``create_task`` because that helper is part of the FastAPI
-route surface (it pulls a ``Request``, opens a
-``Depends(get_session)`` transaction, etc.).
+The per-user ``Task`` row is built from the preset's fields verbatim
+(``prompt``, ``frequency`` / moment fields → 5-field ``cron``,
+``target_channel``, …).  Editing the preset template later does NOT
+rewrite existing per-user rows — they keep their snapshotted config.
+New assigned contacts seeded after the edit pick up the new config;
+existing ones don't.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from typing import Optional
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from magi.db import ChatSession, Contact
-from magi.agent.memory.session import new_session_id
-from magi.channels.tasks.cron_utils import (
+from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.channels.tasks.models import Task
-from magi.proactive.models import TaskPreset
 
 logger = logging.getLogger("magi.proactive.task_presets")
 
 
-def seed_presets_for_contact(session: Session, contact_id: int) -> int:
-    """For each enabled ``TaskPreset``, ensure a ``Task`` row
-    exists for the contact.
+# --- DTOs (pure data, no ORM) -----------------------------------------------
 
-    Returns the number of NEW ``Task`` rows inserted. The
-    caller is responsible for ``session.commit()`` — the
-    surrounding contact-route handlers have their own commit
-    points and we don't want to introduce a second one that
-    could collide with the contact-row transaction.
 
-    Idempotent: skips presets that already have a per-user
-    row (matching on ``uid + preset_id``). Safe to call from
-    both ``create_contact`` (when the initial role is
-    ``assigned``) and ``update_contact`` (when role
-    transitions TO assigned).
+@dataclass(frozen=True, slots=True)
+class TaskPresetSnapshot:
+    """One operator-curated preset template, as the policy sees it.
 
-    Skips the entire batch if the contact's role isn't
-    ``assigned`` — guards against accidental calls from
-    admin→assigned→admin patches (we only seed on the
-    *first* transition into assigned; the call site is
-    responsible for detecting that boundary).
+    Mirrors the bus-side ``TaskPresetView`` columns the policy
+    actually needs.  The bus service translates its view rows into
+    this dataclass before handing the list to the planner.
     """
-    contact = session.get(Contact, contact_id)
-    if contact is None:
-        logger.warning(
-            "seed_presets_for_contact: contact %d vanished mid-flight",
-            contact_id,
-        )
-        return 0
+
+    id: str
+    key: str
+    name: str
+    prompt: str
+    frequency: str
+    hour: int
+    minute: int
+    day_of_week: Optional[int]
+    day_of_month: Optional[int]
+    run_at: Optional[str]
+    target_channel: str
+    enabled: int  # 0 / 1
+
+
+@dataclass(frozen=True, slots=True)
+class ContactSnapshot:
+    """One contact, as the policy sees it.
+
+    The bus's ``ContactView`` carries more fields; the policy only
+    needs the bits that show up in seeded rows (uid, display name
+    for the per-user label disambiguation, role to gate seeding).
+    """
+
+    id: int
+    name: str
+    display_name: Optional[str]
+    role: str
+
+
+@dataclass(frozen=True, slots=True)
+class PresetSeed:
+    """One planned Task row to be inserted by the bus.
+
+    The bus translates each ``PresetSeed`` into a real ``Task`` row
+    inside its own transaction; this DTO carries every value the
+    builder needs (cron / run_at already rendered by the planner).
+    """
+
+    preset_id: str
+    preset_key: str
+    name: str
+    prompt: str
+    cron: str
+    run_at: Optional[str]
+    target_channel: str
+    delivery_to: Optional[str]
+    tz: str  # forensic breadcrumb — runtime reads system.timezone, not this
+
+
+@dataclass(frozen=True, slots=True)
+class PresetSeedPlan:
+    """The planner's complete output for one contact.
+
+    ``seeds`` is the list of rows to insert; ``skipped`` records
+    presets the policy chose not to schedule (e.g. malformed
+    ``run_at``) so the bus can log them without losing the
+    operator's intent.
+    """
+
+    contact_id: int
+    seeds: list[PresetSeed] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # (preset_key, reason)
+
+
+# --- Policy entry point ------------------------------------------------------
+
+
+def plan_presets_for_contact(
+    contact: ContactSnapshot,
+    presets: list[TaskPresetSnapshot],
+    *,
+    system_timezone: str = "UTC",
+) -> PresetSeedPlan:
+    """Decide which ``Task`` rows an assigned contact should own.
+
+    Pure function: no I/O, no globals, deterministic given the same
+    inputs.  The bus feeds the ``presets`` list (the operator-enabled
+    subset) and ``system_timezone`` (a forensic breadcrumb stamped
+    at write time, not consulted by the runtime); the planner
+    returns a :class:`PresetSeedPlan` the bus commits.
+
+    The function is **always safe to call**: it never raises for a
+    single bad preset — that row is recorded in ``skipped`` instead,
+    so one malformed template doesn't block the rest.  Callers can
+    surface ``skipped`` in the WebUI's "what just happened" panel.
+    """
     if contact.role != "assigned":
-        # Caller should have gated on this; the second-line
-        # guard keeps the helper a no-op even if a future
-        # caller forgets the role-transition check.
-        return 0
+        # Caller should gate on this; the second-line guard keeps
+        # the helper a no-op even if a future caller forgets the
+        # role-transition check.
+        return PresetSeedPlan(contact_id=contact.id)
 
-    # Iterate presets in stable key order so the seeded
-    # task names line up across runs (helpful for the
-    # operator eyeballing the "预设任务" list).
-    presets = session.scalars(
-        select(TaskPreset)
-        .where(TaskPreset.enabled == 1)
-        .order_by(TaskPreset.key.asc())
-    ).all()
-
-    inserted = 0
-    for preset in presets:
-        # Per-preset existence check. ``preset_id`` is
-        # nullable, but we never seed a row with
-        # ``preset_id IS NULL`` here — the seed always
-        # carries the back-pointer so the UI grouping
-        # reads correctly.
-        existing = session.scalar(
-            select(Task.id).where(
-                Task.uid == contact_id,
-                Task.preset_id == preset.id,
-            ).limit(1)
-        )
-        if existing is not None:
+    seeds: list[PresetSeed] = []
+    skipped: list[tuple[str, str]] = []
+    # Iterate presets in stable key order so the seeded task names
+    # line up across runs (helpful for the operator eyeballing the
+    # "预设任务" list).
+    for preset in sorted(presets, key=lambda p: p.key):
+        if not preset.enabled:
             continue
-
-        task_row = _build_task_from_preset(preset, contact)
-        if task_row is None:
-            # Skip-and-log rather than raise: a single bad
-            # preset shouldn't block the rest from seeding.
-            # The operator sees the missing row in the UI
-            # and can inspect logs / fix the template.
+        seed = _build_seed(preset, contact, system_timezone=system_timezone)
+        if seed is None:
+            skipped.append((preset.key, "invalid scheduling config"))
             continue
-
-        # Allocate the home ChatSession for this task's
-        # fires. Mirrors create_task's allocation: a
-        # fresh ULID, channel="task", the assigned
-        # user's TG chat id (if any) carried as a
-        # breadcrumb for the runner's TG-push wiring.
-        task_session_id, task_session = _allocate_home_session(
-            contact_id=contact_id,
-        )
-        if task_session is not None:
-            session.add(task_session)
-            session.flush()  # so task_row.session_id FK resolves
-            task_row.session_id = task_session_id
-
-        session.add(task_row)
-        inserted += 1
-
-    if inserted > 0:
-        logger.info(
-            "seed_presets_for_contact: contact=%d role=assigned "
-            "inserted %d preset task(s)",
-            contact_id, inserted,
-        )
-        # The scheduler's _rehydrate_from_db path picks up
-        # the new rows on its next cycle, so we don't need
-        # to nudge it here. Calling ``get_scheduler()`` from
-        # inside a route-handler session is also fragile —
-        # the scheduler module pulls in ``apscheduler`` +
-        # ``magi.channels.tasks.runner`` and importing those
-        # while a SQLite ``BEGIN IMMEDIATE`` is already held
-        # has historically tripped the "database is locked"
-        # on tests that share a single connection across
-        # the FastAPI request and the scheduler helper.
-        # The DB row is authoritative; ``_rehydrate_from_db``
-        # covers the (rare) case of a long-running process
-        # that wouldn't otherwise restart.
-
-    return inserted
+        seeds.append(seed)
+    return PresetSeedPlan(contact_id=contact.id, seeds=seeds, skipped=skipped)
 
 
-def _build_task_from_preset(
-    preset: TaskPreset, contact: Contact,
-) -> Optional[Task]:
-    """Render a preset into a fresh ``Task`` row.
+# --- Helpers -----------------------------------------------------------------
 
-    Returns ``None`` if the preset's scheduling config is
-    invalid (logged so the operator can debug). The
-    snapshotted fields are:
 
-    - ``name``         — preset.name (operator-facing label)
-    - ``prompt``       — preset.prompt verbatim
-    - ``cron``         — rendered via :func:`preset_to_cron`
-                        (or empty for ``once``)
-    - ``run_at``       — preset.run_at verbatim for ``once``
+def _build_seed(
+    preset: TaskPresetSnapshot,
+    contact: ContactSnapshot,
+    *,
+    system_timezone: str,
+) -> Optional[PresetSeed]:
+    """Render a preset into a single planned ``Task`` row.
+
+    Returns ``None`` if the preset's scheduling config is invalid
+    (logged so the operator can debug).  The snapshotted fields are:
+
+    - ``name``           — preset.name + contact label (disambiguates
+                          the per-user name; ``tasks.name`` carries a
+                          global UNIQUE constraint, so two assigned
+                          users can't both own a row literally named
+                          "每日晨报".  Appending the contact's label
+                          keeps the preset's identity visible at a
+                          glance while preventing the UNIQUE
+                          collision.)
+    - ``prompt``         — preset.prompt verbatim
+    - ``cron``           — rendered via :func:`preset_to_cron`
+                          (or empty for ``once``)
+    - ``run_at``         — preset.run_at verbatim for ``once``
     - ``target_channel`` — preset.target_channel
-    - ``uid``          — contact_id (the assigned user)
-    - ``enabled``      — preset.enabled (so an operator
-                        who disables a template doesn't
-                        immediately disable already-seeded
-                        rows either way — they keep
-                        running)
-    - ``preset_id``    — preset.id (back-pointer)
-    - ``preset_key``   — preset.key (immutable snapshot)
-
-    The ``enabled`` default is a deliberate semantic
-    choice: ``preset.enabled`` is the operator's
-    "should new contacts get this preset" knob, NOT a
-    global mute for existing rows. A per-user ``Task``
-    can still be toggled individually from the WebUI
-    after seed.
+    - ``delivery_to``    — ``None`` for the seed path.  ``channel="webui"``
+                          ignores this; ``channel="tg"`` falls back
+                          to the contact's bound chat id at fire
+                          time via the dispatcher.
+    - ``tz``             — the operator's current ``system.timezone``,
+                          stamped at seed time as a forensic
+                          breadcrumb.  The runtime reads
+                          ``system.timezone`` on every fire so a
+                          later tz change moves the row to the new
+                          local schedule without touching this
+                          column.
     """
-    now_iso = _now_iso()
     cron = ""
     run_at_iso: Optional[str] = None
     if preset.frequency == "once":
@@ -247,112 +250,15 @@ def _build_task_from_preset(
             )
             return None
 
-    return Task(
-        id=new_session_id(),
-        # Disambiguate the per-user name by appending the
-        # contact's display label. ``tasks.name`` carries a
-        # global UNIQUE constraint (set up for the
-        # ``schedule_task`` LLM tool's idempotent-upsert
-        # contract), so two assigned users can't both own
-        # a row literally named "每日晨报". Appending the
-        # contact's label keeps the preset's identity
-        # visible at a glance while preventing the UNIQUE
-        # collision. The operator-facing cell renders the
-        # full string; the badge column carries
-        # ``preset_key`` so the source is still
-        # machine-readable.
-        name=f"{preset.name} ({contact.name})",
+    contact_label = (contact.display_name or contact.name or f"contact {contact.id}").strip()
+    return PresetSeed(
+        preset_id=preset.id,
+        preset_key=preset.key,
+        name=f"{preset.name} ({contact_label})",
         prompt=preset.prompt,
         cron=cron,
         run_at=run_at_iso,
-        # Per the ``Task`` model: ``tz`` is a forensic
-        # breadcrumb stamped at write-time. The runtime
-        # reads ``system.timezone`` on every fire so a
-        # later tz change moves the row to the new local
-        # schedule without touching this column.
-        # ``tz`` is a forensic breadcrumb (audit-trail) — the
-        # runtime reads ``system.timezone`` on every fire so a
-        # later tz change moves the row to the new local schedule
-        # without touching this column. Stamping it at seed time
-        # is best-effort; we hardcode UTC here rather than calling
-        # ``state_get`` inside the seed transaction (same D.28
-        # deadlock pattern that ``create_task`` documents —
-        # ``state_get`` opens its own SQLite session, and a
-        # nested ``BEGIN IMMEDIATE`` against our already-open
-        # outer txn deadlocks). The runtime never reads this
-        # column, so a stale-at-seed value is harmless.
-        tz="UTC",
         target_channel=preset.target_channel,
-        # ``delivery_to`` for channel="tg" would normally
-        # be the operator's bound TG chat id, but the seed
-        # helper doesn't have the dispatcher handy without
-        # pulling in the channel runtime — and a TG
-        # task can resolve its own destination at fire
-        # time via the runner's existing fallback path.
-        # Leaving ``None`` lets the runner fall back to
-        # the contact's bound chat id at fire time, which
-        # is the correct semantic for "preset for an
-        # assigned user". channel="webui" ignores
-        # ``delivery_to`` entirely.
         delivery_to=None,
-        session_id=None,  # set after the ChatSession row is flushed
-        uid=contact.id,
-        enabled=int(preset.enabled),
-        consecutive_failures=0,
-        last_run_at=None,
-        last_status=None,
-        last_error=None,
-        created_at=now_iso,
-        updated_at=now_iso,
-        preset_id=preset.id,
-        preset_key=preset.key,
+        tz=system_timezone,
     )
-
-
-def _allocate_home_session(
-    *, contact_id: int,
-) -> tuple[str, Optional[ChatSession]]:
-    """Allocate the ``ChatSession`` row a seeded task
-    accumulates its fires into.
-
-    Returns ``(session_id, ChatSession_or_None)``.
-
-    ``delivery_address`` is left empty here on purpose. The
-    dispatcher's :func:`lookup_im_id` opens its own SQLite
-    session internally (same D.28 deadlock concern
-    documented on :func:`magi.channels.webui.api.tasks.create_task`);
-    calling it inside a route-scoped ``Depends(get_session)``
-    transaction — which is exactly the context the contacts
-    hook fires from — would deadlock on ``BEGIN IMMEDIATE``.
-    Instead the runner resolves the contact's bound TG chat
-    id at fire time via the dispatcher; an empty
-    ``delivery_address`` is the documented sentinel that
-    triggers that fallback.
-
-    The session's channel is always ``"task"`` — the runner
-    branches on ``Task.target_channel`` for delivery, and
-    the session itself never needs to route through TG.
-    """
-    session_id = new_session_id()
-    chat_session = ChatSession(
-        session_id=session_id,
-        # Empty on purpose — see the docstring above. The
-        # runner's fire-time lookup resolves the actual
-        # bound chat id from the contact row.
-        delivery_address="",
-        uid=contact_id,
-        channel="task",
-        # The chat-history pane reads this title; the
-        # "[定时]" prefix matches what ``create_task``
-        # writes so the per-user preset tasks render the
-        # same way as operator-authored ones in the
-        # session list.
-        title="[定时] 预设任务",
-        created_at=_now_iso(),
-        updated_at=_now_iso(),
-    )
-    return session_id, chat_session
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
