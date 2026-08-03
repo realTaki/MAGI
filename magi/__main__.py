@@ -175,15 +175,11 @@ def run() -> None:
 
     state_dir = cfg.state_dir
 
-    # SQLite init — always SQLite, no Postgres switch.
-    from magi.db import init_sqlite
-    db_path = init_sqlite(state_dir)
-    logger.info("sqlite initialised", extra={"path": str(db_path)})
-
-    # Initialise private SQLite tables. Organisation facts deliberately do
-    # not seed here: a MAGI's private PVC must never become a shadow MAGIS.
-    from magi.db import init_orm
-    init_orm(state_dir, seed_root=False)
+    # The composition root is the only place that initialises local storage.
+    # Workers and channels receive the public BUS facade after this point.
+    from magi.bus import bootstrap
+    bootstrap(state_dir, initialise_local=True)
+    logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
     # lifecycle state. The initial Adam seeds Genesis there; an EVE only

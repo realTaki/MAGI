@@ -30,6 +30,25 @@ SCAN_PREFIXES: tuple[str, ...] = (
     "magi/proactive/",
 )
 
+# These are the production Actor/Tool/Delivery entry paths already migrated
+# to the public BUS facade.  The rest of the historical API/memory surface is
+# intentionally covered by later migration phases; this guard prevents the
+# newly clean execution path from regressing while those adapters are moved.
+BUS_ONLY_PATHS: tuple[str, ...] = (
+    "magi/agent/worker.py",
+    "magi/agent/runtime_context.py",
+    "magi/agent/step.py",
+    "magi/tools/base.py",
+    "magi/tools/worker.py",
+    "magi/channels/delivery.py",
+)
+
+_FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {
+    "magi/agent/": ("magi.db", "magi.tools", "magi.channels"),
+    "magi/tools/": ("magi.db", "magi.agent", "magi.channels"),
+    "magi/channels/": ("magi.db", "magi.agent", "magi.tools"),
+}
+
 
 def _collect_imports(py_path: Path) -> list[tuple[str, int]]:
     """Return ``(module, lineno)`` for every ``ImportFrom`` / ``Import`` in a file."""
@@ -47,6 +66,44 @@ def _collect_imports(py_path: Path) -> list[tuple[str, int]]:
                 if alias.name.startswith("magi.channels.webui.api"):
                     out.append((alias.name, node.lineno))
     return out
+
+
+def _collect_forbidden_imports(py_path: Path, forbidden: tuple[str, ...]) -> list[tuple[str, int]]:
+    """Find static and known dynamic imports of forbidden package roots."""
+    tree = ast.parse(py_path.read_text(encoding="utf-8"))
+    offenders: list[tuple[str, int]] = []
+
+    def matches(module: str) -> bool:
+        return any(module == root or module.startswith(root + ".") for root in forbidden)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            offenders.extend((alias.name, node.lineno) for alias in node.names if matches(alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and matches(node.module):
+                offenders.append((node.module, node.lineno))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "__import__":
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                if matches(node.args[0].value):
+                    offenders.append((node.args[0].value, node.lineno))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module":
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                if matches(node.args[0].value):
+                    offenders.append((node.args[0].value, node.lineno))
+    return offenders
+
+
+def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
+    """Enforce the BUS boundary on the migrated durable execution path."""
+    offenders: list[str] = []
+    for relative in BUS_ONLY_PATHS:
+        path = REPO_ROOT / relative
+        forbidden = next(
+            roots for prefix, roots in _FORBIDDEN_BY_PATH.items() if relative.startswith(prefix)
+        )
+        for module, lineno in _collect_forbidden_imports(path, forbidden):
+            offenders.append(f"{relative}:{lineno} imports {module!r}")
+    assert not offenders, "Migrated runtime paths must cross domains through magi.bus:\n  " + "\n  ".join(offenders)
 
 
 def test_agent_module_does_not_import_webui_api() -> None:

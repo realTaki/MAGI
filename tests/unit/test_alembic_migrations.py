@@ -104,7 +104,7 @@ def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -
     # upgrade_head internally. With the fix it must walk 0006 → 0007 →
     # 0008 → 0009 → 0010 and apply every column.
     init_orm(str(tmp_path), seed_root=False)
-    assert _raw_alembic_version(db_path) == "0011_agent_run_metadata"
+    assert _raw_alembic_version(db_path) == "0013_tool_job_catalog_snapshot"
 
     # Spot-check that the critical columns added by 0006/0007/0009 exist.
     # If any of these fail, the runtime would have crashed at first ORM
@@ -167,4 +167,4 @@ def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)
 
-    assert _raw_alembic_version(tmp_path / "magi.db") == "0011_agent_run_metadata"
+    assert _raw_alembic_version(tmp_path / "magi.db") == "0013_tool_job_catalog_snapshot"

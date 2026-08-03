@@ -80,3 +80,17 @@ class SettingsService:
         from magi.db.settings import state_set
 
         state_set(self._state_dir, key, value)
+
+
+class ContactsService:
+    """Read-only contact facts needed for durable worker authorization."""
+
+    def __init__(self, state_dir: str) -> None:
+        self._state_dir = state_dir
+
+    def role_for(self, uid: int) -> str | None:
+        from magi.db import Contact, open_session
+
+        with open_session(self._state_dir) as session:
+            contact = session.get(Contact, uid)
+            return contact.role if contact is not None else None
