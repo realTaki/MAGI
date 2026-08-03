@@ -167,9 +167,7 @@ def upgrade() -> None:
         sa.Column("secret_hash", sa.String(length=255), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "ux_auth_credentials_uid_kind", "auth_credentials", ["uid", "kind"]
+        sa.UniqueConstraint("uid", "kind", name="ux_auth_credentials_uid_kind"),
     )
     op.create_index("ix_auth_credentials_uid", "auth_credentials", ["uid"])
 
@@ -220,9 +218,7 @@ def upgrade() -> None:
         sa.Column("content_blocks", sa.JSON()),
         sa.Column("run_id", sa.String(length=64), index=True),
         sa.Column("llm_attempt_id", sa.String(length=128)),
-    )
-    op.create_unique_constraint(
-        "uq_chat_messages_session_msg", "chat_messages", ["session_id", "message_id"]
+        sa.UniqueConstraint("session_id", "message_id", name="uq_chat_messages_session_msg"),
     )
     op.create_index(
         "ix_chat_messages_session_archived",
@@ -310,8 +306,8 @@ def upgrade() -> None:
         sa.Column("last_error", sa.String(length=500)),
         sa.Column("created_at", sa.String(length=32), nullable=False),
         sa.Column("updated_at", sa.String(length=32), nullable=False),
+        sa.UniqueConstraint("name", name="uq_tasks_name"),
     )
-    op.create_unique_constraint("uq_tasks_name", "tasks", ["name"])
     op.create_index("ix_tasks_enabled_last_run", "tasks", ["enabled", "last_run_at"])
     op.create_index("ix_tasks_contact", "tasks", ["uid"])
     op.create_index("ix_tasks_preset_key", "tasks", ["preset_key"])
@@ -589,9 +585,7 @@ def upgrade() -> None:
         sa.Column("revision", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "uq_tool_definitions_source_name", "tool_definitions", ["source", "name"]
+        sa.UniqueConstraint("source", "name", name="uq_tool_definitions_source_name"),
     )
     op.create_index(
         "ix_tool_definitions_enabled",
@@ -647,9 +641,7 @@ def upgrade() -> None:
         sa.Column("is_reserved", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "uq_magis_roles_magis_name", "magis_roles", ["magis_id", "name"]
+        sa.UniqueConstraint("magis_id", "name", name="uq_magis_roles_magis_name"),
     )
 
     op.create_table(
