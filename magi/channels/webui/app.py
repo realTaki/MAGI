@@ -72,25 +72,17 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     login/onboarding and MAGIS registry routes and never mounts React assets.
     The runtime remains an internal HTTP API for the one WebUI service.
     """
-    # Bootstrap MCP tools synchronously inside the uvicorn
-    # child process.  The node-level ``run()`` call bootstraps
-    # in the reloader process; uvicorn's ``reload=True`` spawns
-    # a fresh child that needs its own cache.
-    if include_private_routes:
-        try:
-            # The MCP bootstrap lives in ``magi.tools.registry``; the
-            # channels→tools boundary forbids importing it directly
-            # here.  Instead, push a sentinel request into the bus
-            # ``tool_catalog`` service so a deferred worker reloads
-            # the catalog snapshot if it's stale.  ``mcp_load`` is a
-            # no-op when the snapshot revision hasn't changed since
-            # the parent process bootstrapped; in dev with
-            # ``reload=True`` it re-reads the table.
-            from magi.bus.services.tool_catalog import ToolCatalogService
-
-            ToolCatalogService(None).mcp_reload_if_stale()
-        except Exception:
-            pass
+    # The MCP bootstrap is handled by the composition root in
+    # ``magi.__main__`` (``bootstrap_mcp_tools`` is called before
+    # ``uvicorn`` is started).  Under ``reload=True`` uvicorn spawns
+    # a child process; the child inherits the same on-disk SQLite
+    # catalog snapshot, so a re-bootstrap is unnecessary — the
+    # catalog is the single source of truth and the child's
+    # ``bus.tool_catalog.get_snapshot()`` returns the same rows.
+    # The legacy in-app re-bootstrap was removed because channels
+    # must not depend on tools directly (boundary test); the
+    # composition root owns the cross-package wiring.
+    _ = include_private_routes  # keep the parameter's historical gate
 
     # Start TG bot in the uvicorn child process.
     import logging as _log
