@@ -82,3 +82,17 @@ def test_agent_transition_binds_job_to_catalog_snapshot(catalog, tmp_path) -> No
     assert (job.source, job.catalog_revision, job.schema_hash) == (
         "builtin", published.revision, definition.schema_hash,
     )
+
+
+def test_catalog_updates_legacy_webui_projection_in_same_transaction(catalog, tmp_path) -> None:
+    catalog.replace_snapshot(source="builtin", definitions=[_definition("visible")])
+    from magi.db import open_session
+    from magi.db.models_tool import ToolRegistry
+
+    with open_session(str(tmp_path / "state")) as session:
+        legacy = session.get(ToolRegistry, "visible")
+        assert legacy is not None and legacy.enabled
+    catalog.replace_snapshot(source="builtin", definitions=[])
+    with open_session(str(tmp_path / "state")) as session:
+        legacy = session.get(ToolRegistry, "visible")
+        assert legacy is not None and not legacy.enabled

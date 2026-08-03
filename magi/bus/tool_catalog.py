@@ -15,7 +15,7 @@ from sqlalchemy import select
 from magi.bus.contracts import ToolCatalogSnapshot, ToolDefinition
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
-from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord
+from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord, ToolRegistry
 
 
 class CatalogRevisionConflict(RuntimeError):
@@ -173,6 +173,41 @@ class ToolCatalogService:
                 row.enabled = False
                 row.revision = revision
                 row.updated_at = now
+
+            # ``tools`` is retained only as a compatibility projection for
+            # historical WebUI readers. It is written here, inside the same
+            # transaction, rather than by the tools domain, so there is still
+            # exactly one public writer and one durable source of truth.
+            legacy_rows = {
+                row.name: row
+                for row in session.scalars(select(ToolRegistry).where(ToolRegistry.source == source))
+            }
+            for priority, definition in enumerate(normalized):
+                legacy = legacy_rows.pop(definition.name, None)
+                if legacy is None:
+                    session.add(
+                        ToolRegistry(
+                            name=definition.name,
+                            description=definition.description,
+                            input_schema=dict(definition.input_schema),
+                            allowed_roles=list(definition.allowed_roles) or None,
+                            source=source,
+                            enabled=definition.enabled,
+                            priority=priority,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+                else:
+                    legacy.description = definition.description
+                    legacy.input_schema = dict(definition.input_schema)
+                    legacy.allowed_roles = list(definition.allowed_roles) or None
+                    legacy.enabled = definition.enabled
+                    legacy.priority = priority
+                    legacy.updated_at = now
+            for legacy in legacy_rows.values():
+                legacy.enabled = False
+                legacy.updated_at = now
 
             session.flush()
             all_rows = session.scalars(
