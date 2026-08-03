@@ -135,7 +135,7 @@ def build_system_prompt(
         format_contact_block,
         format_daily_note_block,
     )
-    from magi.agent.memory.self.prompt import format_memory_block
+    from bus.services.memory import format_memory_block
     from magi.skills import format_skills_block, get_skill_metas
     from magi.bus import bootstrap
 

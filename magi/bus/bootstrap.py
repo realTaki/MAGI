@@ -13,6 +13,7 @@ from magi.bus.services import (
     MagicService,
     MagisService,
     MemoryService,
+    McpService,
     SessionService,
     SettingsService,
     TaskService,
@@ -34,6 +35,7 @@ class Bus:
     contacts: ContactsService
     session: SessionService
     memory: MemoryService
+    mcp: McpService
     task: TaskService
     action_item: ActionItemService
     auth: AuthService
@@ -59,6 +61,7 @@ def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
         contacts=ContactsService(state_dir),
         session=SessionService(state_dir),
         memory=MemoryService(state_dir),
+        mcp=McpService(state_dir),
         task=TaskService(state_dir),
         action_item=ActionItemService(state_dir),
         auth=AuthService(state_dir),

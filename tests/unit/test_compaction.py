@@ -47,7 +47,8 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
     round-trip — now lives in the SQLAlchemy ORM. This test
     pins that.
     """
-    from magi.agent.memory.session import SessionStore, SessionMessage
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(fresh_db))
     s = store.create(2, )
@@ -74,7 +75,8 @@ def test_session_archive_round_trip_via_orm(fresh_db):
     ``SessionStore.get()`` and end up in ``Session.archive``,
     not in ``Session.messages`` (the active view).
     """
-    from magi.agent.memory.session import SessionStore, SessionMessage
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(fresh_db))
     s = store.create(2, )
@@ -126,7 +128,7 @@ def test_session_from_dict_backward_compatible(fresh_db):
     missing the D.17 fields. The parser still defaults them
     so the migration importer doesn't reject partial files.
     """
-    from magi.agent.memory.session import session_from_dict
+    from bus.services.session import session_from_dict
 
     old = {
         "schema_version": 1,
@@ -150,7 +152,7 @@ def test_session_active_tail_count_clamped_on_load():
     clamps back to 20 in the legacy-file parser (used by
     the migration importer).
     """
-    from magi.agent.memory.session import session_from_dict
+    from bus.services.session import session_from_dict
 
     bad = {
         "schema_version": 1,
@@ -173,7 +175,7 @@ def test_session_invalid_archive_role_rejected():
     allowed set) is a hard load error in the legacy-file
     parser — better to fail closed than to silently coerce
     on a corrupt pre-D.18 file."""
-    from magi.agent.memory.session import SessionCorruptError, session_from_dict
+    from bus.services.session import SessionCorruptError, session_from_dict
 
     bad = {
         "schema_version": 1,
@@ -295,7 +297,8 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     """
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.runtime_context import build_messages_from_session
-    from magi.agent.memory.session import SessionStore, SessionMessage
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
     from magi.db import ChatMessage, open_session
 
     store = SessionStore(str(fresh_db))
@@ -387,7 +390,8 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     no archive rows to skip.
     """
     from magi.agent.runtime_context import build_messages_from_session
-    from magi.agent.memory.session import SessionStore, SessionMessage
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(fresh_db))
     sess = store.create(2, )

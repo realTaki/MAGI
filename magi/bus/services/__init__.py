@@ -17,6 +17,7 @@ from magi.bus.services.delivery import DeliveryService
 from magi.bus.services.magic import MagicService
 from magi.bus.services.magis import MagisService
 from magi.bus.services.memory import MemoryService
+from magi.bus.services.mcp import McpService
 from magi.bus.services.session import SessionService
 from magi.bus.services.setting import SettingsService
 from magi.bus.services.task import TaskService
@@ -42,6 +43,7 @@ __all__ = [
     "MagicService",
     "MagisService",
     "MemoryService",
+    "McpService",
     "SessionService",
     "SettingsService",
     "TaskService",

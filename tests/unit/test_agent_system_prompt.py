@@ -136,7 +136,7 @@ def test_prompt_includes_memory_block_when_rows_exist(
     Pinning this catches a future "memory block silently
     dropped" regression."""
     from magi.db import open_session
-    from magi.agent.memory.self.models import (
+    from magi.bus.contracts.memory import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
         MemoryEntry)
@@ -172,7 +172,7 @@ def test_prompt_memory_block_scoped_to_caller_contact(
     (uid=2) gets Alice's (uid=1) memory
     when Bob's loop is the caller."""
     from magi.db import open_session
-    from magi.agent.memory.self.models import (
+    from magi.bus.contracts.memory import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
         MemoryEntry)
@@ -218,7 +218,7 @@ def test_prompt_excludes_completed_ongoing_rows(
     from datetime import datetime, timezone
 
     from magi.db import open_session
-    from magi.agent.memory.self.models import (
+    from magi.bus.contracts.memory import (
         KIND_ONGOING,
         SOURCE_MANUAL,
         MemoryEntry)
@@ -427,7 +427,7 @@ def test_prompt_block_order_is_soul_memory_contact_skills(
     block renders the chatter's own row by id, not a
     separate ``ContactEntry`` row keyed by ``person_id``."""
     from magi.db import Contact, open_session
-    from magi.agent.memory.self.models import (
+    from magi.bus.contracts.memory import (
         KIND_IMPORTANT,
         SOURCE_MANUAL,
         MemoryEntry)
@@ -466,7 +466,7 @@ def test_prompt_continues_when_memory_load_fails(
     not crash the inbound path — the prompt falls back to
     the soul alone rather than 500-ing the request."""
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.memory.self import store as store_mod
+    from bus.contracts.memory import store as store_mod
 
     def _boom(_state_dir):
         raise RuntimeError("simulated ORM hiccup")
@@ -491,7 +491,7 @@ def test_prompt_continues_when_contact_load_fails(
     silently and render the prompt without a contact
     block rather than 500-ing the inbound path."""
     from magi.agent.system_prompt import build_system_prompt
-    from magi.agent.memory.contacts import store as cstore_mod
+    from bus.contracts.contact import store as cstore_mod
 
     def _boom(self, contact_id):
         raise RuntimeError("simulated contact ORM hiccup")

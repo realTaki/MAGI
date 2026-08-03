@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.memory.session import SessionStore
+from bus.contracts.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import ChatMessage, init_orm, open_session
 from magi.tools.base import ToolContext
@@ -66,7 +66,7 @@ def _seed(
     append order. Returns the auto-generated session_id.
     """
     from datetime import datetime, timezone
-    from magi.agent.memory.session import SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     store = SessionStore(str(state_dir))

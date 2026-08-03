@@ -53,7 +53,7 @@ def store_env(monkeypatch, tmp_path):
 
 
 def _store(state):
-    from magi.agent.memory.contacts.store import ContactStore
+    from bus.services.contact import ContactStore
     return ContactStore(str(state))
 
 

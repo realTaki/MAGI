@@ -290,7 +290,8 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     ``load_mcp_tools_blocking`` for the loop mechanics.
     """
     global _mcp_tools_cache, _mcp_loaded_at_db
-    from magi.db import McpServer, open_session
+    from magi.bus import bootstrap
+    from magi.constants import STATE_DIR
     from magi.mcp.loader import load_mcp_tools_blocking
 
     tools = load_mcp_tools_blocking()
@@ -302,11 +303,7 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     # "did the table change?" check below handles that
     # path explicitly.
     try:
-        with open_session() as s:
-            stamp = s.query(McpServer.updated_at).order_by(
-                McpServer.updated_at.desc()
-            ).first()
-        _mcp_loaded_at_db = stamp[0] if stamp is not None else None
+        _mcp_loaded_at_db = bootstrap(STATE_DIR).mcp.revision_stamp()
     except Exception:
         # Don't let a DB read failure poison the cache
         # load. The next chat turn will retry the stamp
@@ -348,13 +345,11 @@ def maybe_reload_mcp_tools() -> list["Tool"] | None:
     tools". Returns ``None`` when the cache was up to date
     — no logging, no churn.
     """
-    from magi.db import McpServer, open_session
+    from magi.bus import bootstrap
+    from magi.constants import STATE_DIR
 
     try:
-        with open_session() as s:
-            latest = s.query(McpServer.updated_at).order_by(
-                McpServer.updated_at.desc()
-            ).first()
+        latest = bootstrap(STATE_DIR).mcp.revision_stamp()
     except Exception:
         # Missing table (pre-init) or DB hiccup — leave
         # the cache alone. The next chat turn will try
@@ -363,7 +358,7 @@ def maybe_reload_mcp_tools() -> list["Tool"] | None:
         # turn anyway.
         return None
 
-    latest_stamp = latest[0] if latest is not None else None
+    latest_stamp = latest
 
     if latest_stamp == _mcp_loaded_at_db:
         # No row has been touched since the last load

@@ -18,7 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from magi.agent.memory.session import SessionStore
+from bus.contracts.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import Contact, init_orm, open_session
 

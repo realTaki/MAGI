@@ -36,7 +36,7 @@ from magi.agent.memory.self import (
     KIND_ONGOING,
     MemoryStore,
     format_memory_block)
-from magi.agent.memory.self.store import MemoryView
+from bus.services.memory import MemoryView
 from magi.tools.memory_self import (
     AddMemoryTool,
     CompleteMemoryTool,

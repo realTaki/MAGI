@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.memory.session import SessionStore
+from bus.contracts.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import ChatSession, init_orm, open_session
 
@@ -165,7 +165,7 @@ def test_messages_persist_to_session(tg_session_env):
     """End-to-end: helper creates a session, append_messages
     persists the inbound + outbound rows, get sees them."""
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
-    from magi.agent.memory.session import SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
 
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)

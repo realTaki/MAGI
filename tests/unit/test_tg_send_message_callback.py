@@ -76,7 +76,7 @@ async def test_tg_handler_publishes_durable_message(
     synchronous callback into the legacy loop."""
     from magi.channels.telegram import bot as bot_mod
     from magi.agent import worker as worker_mod
-    from magi.agent.memory.session import auto_title as at_mod
+    from bus.contracts.session import auto_title as at_mod
 
     # 1. Stub durable submission — capture the AgentMessage.
     captured: dict = {}

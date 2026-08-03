@@ -106,7 +106,7 @@ def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled ch
     """
     # Late import — so the patch lands after the real symbol
     # is bound at module import time.
-    import magi.agent.memory.session.auto_title as at_mod
+    from bus.services.session import * as at_mod
 
     instances: list[FakeProvider] = []
 
@@ -137,26 +137,26 @@ def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled ch
 # ────────────────────────────────────────────────────────────────── #
 
 def test_cleanse_strips_quotes_and_whitespace():
-    from magi.agent.memory.session.auto_title import _cleanse_title
+    from magi.bus.services.session import _cleanse_title
 
     assert _cleanse_title('  "Acme 会议"  ') == "Acme 会议"
     assert _cleanse_title("'hello world'") == "hello world"
     assert _cleanse_title("`code`") == "code"
 
 def test_cleanse_keeps_first_line_only():
-    from magi.agent.memory.session.auto_title import _cleanse_title
+    from magi.bus.services.session import _cleanse_title
 
     assert _cleanse_title("first line\nsecond line\nthird") == "first line"
 
 def test_cleanse_clamps_to_80_chars():
-    from magi.agent.memory.session.auto_title import _cleanse_title
+    from magi.bus.services.session import _cleanse_title
 
     long = "x" * 200
     out = _cleanse_title(long)
     assert len(out) == 80
 
 def test_cleanse_returns_empty_for_blank():
-    from magi.agent.memory.session.auto_title import _cleanse_title
+    from magi.bus.services.session import _cleanse_title
 
     assert _cleanse_title("") == ""
     assert _cleanse_title("   ") == ""
@@ -193,7 +193,7 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
             ts="2026-07-03T10:00:00Z",
             message_id=msg_id)])
 
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from magi.bus.services.session import _summarize_to_title, TitleJob
 
     await _summarize_to_title(
         TitleJob(
@@ -216,7 +216,8 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
 async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     """Second invocation sees ``title`` set and bails without
     calling the provider again."""
-    from magi.agent.memory.session import SessionMessage, SessionStore
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(
@@ -224,7 +225,7 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     )
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    from magi.agent.memory.session import new_session_id as _mk_id
+    from bus.services.session import new_session_id as _mk_id
     sess = store.create(admin.id)
     sid = sess.session_id
 
@@ -234,7 +235,7 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
             role="user", text="hi", ts="2026-07-03T10:00:00Z",
             message_id=_mk_id())])
 
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from magi.bus.services.session import _summarize_to_title, TitleJob
     job = TitleJob(
         delivery_address="9001",
         session_id=sid,
@@ -254,8 +255,9 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
 async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     """A session with only assistant messages (or empty)
     shouldn't fire the LLM."""
-    from magi.agent.memory.session import SessionStore, new_session_id as _mk_id
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from bus.services.session import new_session_id as _mk_id
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(monkeypatch, title_text="x")
@@ -278,8 +280,8 @@ session_id=sess.session_id, uid=admin.id,
 async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
     """A deleted-mid-job session is silently ignored. Title
     worker must not raise into the consumer loop."""
-    from magi.agent.memory.session import SessionStore
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(monkeypatch)
@@ -299,9 +301,10 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     swallows it and never reaches the ``rename`` step."""
     from magi.agent.llm.errors import LLMAuthError
     from magi.agent.llm.provider import ChatMessage as _CM  # noqa: F401
-    from magi.agent.memory.session import SessionMessage, SessionStore
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
-    import magi.agent.memory.session.auto_title as at_mod
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
+    from bus.services.session import * as at_mod
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(monkeypatch, title_text="x")
@@ -335,9 +338,10 @@ session_id=sid, uid=admin.id,
 async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch):
     """If the worker fails to construct a provider (some
     ad-hoc bug), the worker still survives."""
-    from magi.agent.memory.session import SessionMessage, SessionStore
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
-    import magi.agent.memory.session.auto_title as at_mod
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
+    from bus.services.session import * as at_mod
 
     admin = _seed_admin()
 
@@ -364,8 +368,9 @@ session_id=sid, uid=admin.id,
 
 @pytest.mark.asyncio
 async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
-    from magi.agent.memory.session import SessionMessage, SessionStore
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     _install_fake_provider(monkeypatch, title_text="x" * 200)
@@ -388,8 +393,9 @@ session_id=sid, uid=admin.id,
 @pytest.mark.asyncio
 async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     """Empty / cleansed-empty responses don't set a title."""
-    from magi.agent.memory.session import SessionMessage, SessionStore
-    from magi.agent.memory.session.auto_title import _summarize_to_title, TitleJob
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     _install_fake_provider(monkeypatch, title_text="")
@@ -416,8 +422,9 @@ session_id=sid, uid=admin.id,
 @pytest.mark.asyncio
 async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     """The worker loop processes enqueued jobs."""
-    from magi.agent.memory.session import SessionMessage, SessionStore
-    from magi.agent.memory.session.auto_title import (
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+    from magi.bus.services.session import (
         TitleJob,
         enqueue_title_job,
         start_title_worker,
@@ -429,7 +436,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     await start_title_worker()
 
     store = SessionStore(os.environ["MAGI_STATE_DIR"])
-    from magi.agent.memory.session import new_session_id as _mk_id
+    from bus.services.session import new_session_id as _mk_id
     for _ in range(2):
         sess = store.create(admin.id)
         sid = sess.session_id
@@ -469,7 +476,7 @@ async def test_start_stop_worker_lifecycle(state_dir, monkeypatch):
     ... import`` would capture the value at collection time,
     which is always ``None`` (the module default).
     """
-    import magi.agent.memory.session.auto_title as at_mod
+    from bus.services.session import * as at_mod
 
     await at_mod.start_title_worker()
     assert at_mod._worker_task is not None
@@ -487,7 +494,7 @@ async def test_start_stop_worker_lifecycle(state_dir, monkeypatch):
 async def test_enqueue_does_not_block(state_dir, monkeypatch):
     """``enqueue_title_job`` returns immediately even if the
     worker is not running."""
-    from magi.agent.memory.session.auto_title import enqueue_title_job, _title_jobs
+    from magi.bus.services.session import enqueue_title_job, _title_jobs
 
     # Drain any backlog from earlier tests.
     while not _title_jobs.empty():
@@ -505,7 +512,7 @@ async def test_enqueue_captures_job_metadata(state_dir, monkeypatch):
     """The job struct carries the metadata verbatim — uid +
     session_id + delivery_address — so a later key rotation
     doesn't affect the worker."""
-    from magi.agent.memory.session.auto_title import enqueue_title_job, _title_jobs, TitleJob
+    from magi.bus.services.session import enqueue_title_job, _title_jobs, TitleJob
 
     while not _title_jobs.empty():
         _title_jobs.get_nowait()

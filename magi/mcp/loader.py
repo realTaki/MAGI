@@ -118,9 +118,9 @@ class MCPTimeoutConfig:
 def _timeout_from_settings(key: str, default: float) -> float:
     """Read a float setting, falling back to *default*."""
     try:
-        from magi.db.settings import state_get
+        from magi.bus import bootstrap
         from magi.constants import STATE_DIR
-        raw = state_get(STATE_DIR, key)
+        raw = bootstrap(STATE_DIR).settings.get(key)
         if raw:
             return float(raw)
     except (ValueError, Exception):
@@ -501,15 +501,10 @@ def _load_servers_from_db() -> list[MCPServerConnection]:
     Returns ``[]`` if the table is empty (no operators
     have added servers yet) or the DB read fails.
     """
-    from magi.db import McpServer, open_session
-
     try:
-        with open_session() as session:
-            rows = (
-                session.query(McpServer)
-                .filter(McpServer.enabled.is_(True))
-                .all()
-            )
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        rows = bootstrap(STATE_DIR).mcp.enabled_configs()
     except Exception:
         # Defensive: a missing table (pre-init) or a busy
         # DB on a parallel thread should not crash the
@@ -546,10 +541,10 @@ def _load_servers_from_db() -> list[MCPServerConnection]:
                 name=r.name,
                 connection_type=connection_type,
                 command=r.command,
-                args=r.to_args_list(),
-                env=r.to_env_dict(),
+                args=list(r.args),
+                env=r.env,
                 url=r.url,
-                headers=r.to_headers_dict(),
+                headers=r.headers,
                 connect_timeout=r.connect_timeout,
                 execute_timeout=r.execute_timeout,
                 sse_read_timeout=r.sse_read_timeout,
@@ -667,8 +662,6 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
         endpoint surfaces a 200 + empty list.
       - ``list[MCPTool]`` on success.
     """
-    from magi.db import McpServer, open_session
-
     # 1. Active connection? Use it.
     for conn in _connections:
         if conn.name == name:
@@ -676,8 +669,9 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
 
     # 2. Row still in the table? On-demand connect.
     try:
-        with open_session() as session:
-            row = session.get(McpServer, name)
+        from magi.bus import bootstrap
+        from magi.constants import STATE_DIR
+        row = bootstrap(STATE_DIR).mcp.get_config(name)
     except Exception:
         logger.exception(
             "list_tools_for_server: db read failed for %r", name
@@ -690,10 +684,10 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
         name=row.name,
         connection_type=row.connection_type,  # type: ignore[arg-type]
         command=row.command,
-        args=row.to_args_list(),
-        env=row.to_env_dict(),
+        args=list(row.args),
+        env=row.env,
         url=row.url,
-        headers=row.to_headers_dict(),
+        headers=row.headers,
         connect_timeout=row.connect_timeout,
         execute_timeout=row.execute_timeout,
         sse_read_timeout=row.sse_read_timeout,
