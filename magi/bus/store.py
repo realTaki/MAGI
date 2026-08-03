@@ -30,6 +30,7 @@ from magi.bus.models import (
 from magi.db.base import utcnow_naive
 from magi.bus.contracts import A2AInvocationRequest
 from magi.db.engine import open_session
+from magi.db.models_tool import ToolDefinitionRecord
 
 
 def _new_id(prefix: str) -> str:
@@ -176,6 +177,12 @@ class BusStore:
                     raise
                 return existing.run_id
         return run_id
+
+    def is_run_within_deadline(self, run_id: str) -> bool:
+        """Return whether a run has no deadline or has not expired yet."""
+        with open_session(self._state_dir) as session:
+            row = session.get(AgentRun, run_id)
+            return row is None or row.deadline_at is None or row.deadline_at > utcnow_naive()
 
     def claim_next_agent_message(
         self, worker_id: str, *, lease_seconds: int = 60
@@ -668,6 +675,24 @@ class BusStore:
                 # MAX inside one transaction can't see rows added
                 # earlier in the same loop.
                 next_ordinal = ordinal + 1
+                tool_source = job_data.get("tool_source")
+                catalog_revision = job_data.get("catalog_revision")
+                schema_hash = job_data.get("schema_hash")
+                # Resolve the definition in the same transition that creates
+                # the effect. The stored fields let the worker refuse a
+                # deleted or incompatible implementation later without
+                # consulting the agent-visible registry.
+                if tool_source is None or catalog_revision is None or schema_hash is None:
+                    definition = session.scalar(
+                        select(ToolDefinitionRecord).where(
+                            ToolDefinitionRecord.name == str(job_data["tool_name"]),
+                            ToolDefinitionRecord.enabled.is_(True),
+                        )
+                    )
+                    if definition is not None:
+                        tool_source = definition.source
+                        catalog_revision = definition.revision
+                        schema_hash = definition.schema_hash
                 session.add(
                     ToolCall(
                         tool_call_id=tool_call_id,
@@ -686,6 +711,9 @@ class BusStore:
                         run_id=run.run_id,
                         tool_call_id=tool_call_id,
                         tool_name=str(job_data["tool_name"]),
+                        tool_source=tool_source,
+                        catalog_revision=catalog_revision,
+                        schema_hash=schema_hash,
                         idempotency_key=idempotency_key,
                         payload={
                             "arguments": dict(job_data["arguments"]),
@@ -1290,6 +1318,9 @@ class BusStore:
         arguments: dict[str, Any],
         context: dict[str, Any],
         idempotency_key: str | None = None,
+        tool_source: str | None = None,
+        catalog_revision: int | None = None,
+        schema_hash: str | None = None,
     ) -> str:
         """Durably schedule a tool effect exactly once.
 
@@ -1346,6 +1377,9 @@ class BusStore:
                     run_id=run_id,
                     tool_call_id=tool_call_id,
                     tool_name=tool_name,
+                    tool_source=tool_source,
+                    catalog_revision=catalog_revision,
+                    schema_hash=schema_hash,
                     idempotency_key=idempotency_key,
                     payload=payload,
                     status="pending",
@@ -1387,6 +1421,9 @@ class BusStore:
                 tool_name=row.tool_name,
                 payload=dict(row.payload),
                 attempts=row.attempts,
+                source=row.tool_source,
+                catalog_revision=row.catalog_revision,
+                schema_hash=row.schema_hash,
             )
 
     def complete_tool_job(self, claim: ToolClaim, *, content: str, is_error: bool) -> None:

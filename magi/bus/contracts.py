@@ -111,6 +111,57 @@ class ToolClaim:
     tool_name: str
     payload: dict[str, Any]
     attempts: int
+    source: str | None = None
+    catalog_revision: int | None = None
+    schema_hash: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDefinition:
+    """The durable, LLM-visible definition of one executable tool.
+
+    This is deliberately data rather than a ``Tool`` object. It can cross
+    between the worker, actor and HTTP handlers without exposing a registry,
+    ORM object, or callable implementation.
+    """
+
+    name: str
+    source: str
+    description: str
+    input_schema: dict[str, Any]
+    allowed_roles: tuple[str, ...] = ()
+    enabled: bool = True
+    implementation_version: str | None = None
+    schema_hash: str = ""
+    revision: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCatalogSnapshot:
+    """Observable state returned after an atomic catalog replacement."""
+
+    revision: int
+    snapshot_hash: str
+    definitions: tuple[ToolDefinition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolContext:
+    """JSON-safe execution context supplied to a tool worker."""
+
+    state_dir: str
+    workspace: str
+    uid: int
+    channel: str
+    session_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ToolResult:
+    """A provider-valid result emitted by a tool worker."""
+
+    content: str
+    is_error: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +193,7 @@ class BusStoreProtocol(Protocol):
     def publish_agent_message(self, message: AgentMessage) -> str: ...
     def claim_next_agent_message(self, worker_id: str, *, lease_seconds: int = 60) -> BusClaim | None: ...
     def recover_expired_leases(self) -> int: ...
+    def is_run_within_deadline(self, run_id: str) -> bool: ...
     def expire_a2a_invocations(self) -> int: ...
     def get_run_result(self, run_id: str) -> RunResult | None: ...
     def cancel_run(self, run_id: str, *, reason: str = "cancelled_by_user") -> bool: ...

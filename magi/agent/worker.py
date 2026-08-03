@@ -22,7 +22,7 @@ from magi.bus import (
     StreamEvent,
     get_stream_hub,
 )
-from magi.db import require_state_dir
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -49,7 +49,7 @@ class AgentWorker:
         poll_seconds: float = 0.25,
         store: BusStoreProtocol | None = None,
     ) -> None:
-        self.state_dir = state_dir or require_state_dir()
+        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
         self.store: BusStoreProtocol = store or BusStore(self.state_dir)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
@@ -91,15 +91,10 @@ class AgentWorker:
         fail rather than invoke the LLM. A row with no deadline
         (None) is always considered within-deadline.
         """
-        from magi.db import open_session
-        from magi.bus.models import AgentRun
-        from magi.db.base import utcnow_naive
-
-        with open_session(self.state_dir) as session:
-            row = session.get(AgentRun, claim.run_id)
-        if row is None or row.deadline_at is None:
-            return True
-        return row.deadline_at > utcnow_naive()
+        checker = getattr(self.store, "is_run_within_deadline", None)
+        # Third-party protocol fakes written before the deadline API are
+        # still safe: they have no persisted deadline to evaluate.
+        return True if checker is None else bool(checker(claim.run_id))
 
     async def _run(self) -> None:
         while not self._stopping:
@@ -348,7 +343,7 @@ async def stop_agent_worker() -> None:
 
 async def submit_agent_message(message: AgentMessage, *, state_dir: str | None = None) -> str:
     """Durably publish a turn from any async channel context."""
-    resolved_state_dir = state_dir or require_state_dir()
+    resolved_state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
     store = BusStore(resolved_state_dir)
     run_id = store.publish_agent_message(message)
     if _worker is not None and _worker.state_dir == resolved_state_dir:
@@ -364,7 +359,7 @@ async def wait_for_agent_run(
     poll_seconds: float = 0.1,
 ) -> str:
     """Wait for a durable run result without depending on the worker's loop."""
-    store = BusStore(state_dir or require_state_dir())
+    store = BusStore(state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR)
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while True:
         result = store.get_run_result(run_id)

@@ -7,8 +7,8 @@ import logging
 import uuid
 from contextlib import suppress
 
-from magi.bus import BusStore, DeliveryClaim
-from magi.db import require_state_dir
+from magi.bus import DeliveryClaim, bootstrap
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.channels.delivery")
 
@@ -17,8 +17,8 @@ class DeliveryWorker:
     """Send durable outbox records without blocking the agent actor."""
 
     def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
-        self.state_dir = state_dir or require_state_dir()
-        self.store = BusStore(self.state_dir)
+        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
+        self.bus = bootstrap(self.state_dir)
         self.worker_id = f"delivery-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None
@@ -39,7 +39,7 @@ class DeliveryWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
-            claim = self.store.claim_next_delivery(self.worker_id)
+            claim = self.bus.delivery.claim_next(self.worker_id)
             if claim is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
@@ -49,9 +49,7 @@ class DeliveryWorker:
         try:
             if claim.channel == "tg" and claim.destination:
                 from magi.channels.telegram.bot import send_text_raw
-                from magi.db.settings import state_get
-
-                token = state_get(self.state_dir, "telegram.bot_token")
+                token = self.bus.settings.get("telegram.bot_token")
                 if not token:
                     raise RuntimeError("Telegram is not configured")
                 await send_text_raw(token, int(claim.destination), str(claim.payload.get("text") or ""))
@@ -63,9 +61,9 @@ class DeliveryWorker:
                 raise ValueError(f"unsupported delivery channel: {claim.channel!r}")
         except Exception:
             logger.exception("delivery %s failed", claim.delivery_id)
-            self.store.retry_delivery(claim.delivery_id)
+            self.bus.delivery.retry(claim.delivery_id)
             return
-        self.store.complete_delivery(claim.delivery_id)
+        self.bus.delivery.complete(claim.delivery_id)
 
 
 _worker: DeliveryWorker | None = None

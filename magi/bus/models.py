@@ -127,6 +127,12 @@ class ToolJob(Base):
     run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     tool_call_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Snapshot fields bind execution to exactly the catalog definition the
+    # actor offered to the provider.  Nullable keeps pre-catalog jobs
+    # recoverable; new jobs always receive these through BusStore.
+    tool_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    catalog_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Producer-supplied idempotency key (e.g. the LLM-stable tool_call_id
     # or a tool-specific "send this email once" handle). Partial
     # unique index ``ux_tool_jobs_idempotency`` enforces at-least-once

@@ -11,9 +11,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from magi.channels import Channel
-
-
 @dataclass(frozen=True, slots=True)
 class AgentStepResult:
     """The committed outcome of exactly one provider invocation."""
@@ -31,7 +28,7 @@ async def run_agent_step(
     state_dir: str,
     *,
     text: str,
-    channel: Channel | str,
+    channel: str,
     uid: int | None,
     session_id: str | None,
     caller_role: str | None,

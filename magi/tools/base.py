@@ -33,10 +33,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-# Re-export from the shared types module so existing
-# ``from magi.tools.base import ToolContext, ToolResult``
-# imports keep working during the transition.
-from magi.db.types import ToolContext, ToolResult  # noqa: F401
+# Re-export BUS contracts so implementations keep their historical import
+# path without taking a direct dependency on ``magi.db``.
+from magi.bus.contracts import ToolContext, ToolResult  # noqa: F401
 
 
 class Tool(ABC):

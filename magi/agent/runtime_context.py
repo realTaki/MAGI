@@ -9,17 +9,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 from magi.agent.compaction import maybe_compact
 from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.memory.session import SessionStore
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.agent.workspace import workspace_root
-from magi.channels import Channel
+from magi.bus import ToolContext, bootstrap
 from magi.prompts import load_bot_replies
-from magi.db.types import ToolContext
-from magi.db.tool_schemas import get_tool_schemas as _get_tool_schemas
 
 logger = logging.getLogger("magi.agent.runtime_context")
 
@@ -44,7 +41,7 @@ def fallback_reply(key: str = "agent_fallback") -> str:
     return cached
 
 
-def validate_credentials(*, uid: int | None, channel: Channel | str) -> bool:
+def validate_credentials(*, uid: int | None, channel: str) -> bool:
     try:
         get_provider()
     except LLMNotConfiguredError as exc:
@@ -76,7 +73,7 @@ def build_context(
     state_dir: str,
     *,
     text: str,
-    channel: Channel | str,
+    channel: str,
     uid: int | None,
     session_id: str | None,
     caller_role: str | None,
@@ -93,12 +90,13 @@ def build_context(
         soul=read_soul(state_dir),
         tool_ctx=ToolContext(
             state_dir=state_dir,
-            workspace=Path(workspace_root(state_dir)),
+            workspace=str(workspace_root(state_dir)),
             uid=uid or 0,
             channel=channel,
             session_id=session_id or "",
         ),
-        tool_schemas=_get_tool_schemas(state_dir, caller_role=caller_role),
+        # The agent sees only the durable catalog, never the tools registry.
+        tool_schemas=bootstrap(state_dir).tool_catalog.list_schemas(caller_role=caller_role),
         messages=build_messages_from_session(state_dir, uid, session_id, text),
     )
 

@@ -85,7 +85,7 @@ from magi.db.models_magis_membership import MAGISMembership, MAGISRole
 from magi.db.models_mcp_server import McpServer
 from magi.db.models_setting import Setting
 from magi.db.models_token_usage import TokenUsage
-from magi.db.models_tool import ToolRegistry
+from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord, ToolRegistry
 
 # The session/memory packages still accept historical ``magi.db.models_*``
 # imports while they are migrated. Alias only modules already loaded above, so
@@ -131,6 +131,8 @@ __all__ = [
     "EveRuntime",
     "McpServer",
     "ToolRegistry",
+    "ToolDefinitionRecord",
+    "ToolCatalogState",
     # dashboard
     "ActionItem",
     "TokenUsage",

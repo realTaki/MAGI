@@ -14,11 +14,17 @@ from magi.bus.contracts import (
     DeliveryClaim,
     RunResult,
     ToolClaim,
+    ToolCatalogSnapshot,
+    ToolContext,
+    ToolDefinition,
+    ToolResult,
 )
+from magi.bus.bootstrap import Bus, bootstrap
 from magi.bus.store import BusStore
 from magi.bus.stream import StreamEvent, StreamHub, get_stream_hub
 
 __all__ = [
-    "AgentMessage", "A2AInvocationRequest", "BusClaim", "BusStore", "BusStoreProtocol", "DeliveryClaim", "RunResult", "ToolClaim",
+    "AgentMessage", "A2AInvocationRequest", "Bus", "BusClaim", "BusStore", "BusStoreProtocol", "DeliveryClaim", "RunResult", "ToolClaim",
+    "ToolCatalogSnapshot", "ToolContext", "ToolDefinition", "ToolResult", "bootstrap",
     "StreamEvent", "StreamHub", "get_stream_hub",
 ]
