@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from magi.bus.services import AgentRunsService, ContactsService, DeliveryService, SettingsService, ToolJobsService
+from magi.bus.services import (
+    AgentRunsService, ContactsService, DeliveryService, RuntimeIdentityService,
+    SettingsService, TokenUsageService, ToolJobsService,
+)
 from magi.bus.store import BusStore
 from magi.bus.tool_catalog import ToolCatalogService
 
@@ -19,6 +22,8 @@ class Bus:
     delivery: DeliveryService
     settings: SettingsService
     contacts: ContactsService
+    runtime_identity: RuntimeIdentityService
+    token_usage: TokenUsageService
 
 
 def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
@@ -36,4 +41,6 @@ def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
         delivery=DeliveryService(store),
         settings=SettingsService(state_dir),
         contacts=ContactsService(state_dir),
+        runtime_identity=RuntimeIdentityService(),
+        token_usage=TokenUsageService(state_dir),
     )

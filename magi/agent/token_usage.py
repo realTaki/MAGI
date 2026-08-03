@@ -9,15 +9,13 @@ is deliberately a pure SQL insert with no hidden runtime state.
 
 from __future__ import annotations
 
-from magi.db import TokenUsage, open_session
-from magi.channels import Channel
 
 
 def record_token_usage(
     state_dir: str,
     *,
     uid: int,
-    channel: Channel | str,
+    channel: str,
     provider: str,
     model: str | None,
     usage: dict,
@@ -48,24 +46,11 @@ def record_token_usage(
     for swallowing (we don't want a transient DB hiccup to
     break a chat that already succeeded).
     """
-    del state_dir  # see docstring above; signature parity only
-    in_t = int(usage.get("input_tokens") or 0)
-    out_t = int(usage.get("output_tokens") or 0)
-    cc_t = int(usage.get("cache_creation_input_tokens") or 0)
-    cr_t = int(usage.get("cache_read_input_tokens") or 0)
+    from magi.bus import bootstrap
 
-    with open_session() as session:
-        session.add(TokenUsage(
-            uid=uid,
-            channel=channel,
-            provider=provider,
-            model=model,
-            input_tokens=in_t,
-            output_tokens=out_t,
-            cache_creation_tokens=cc_t,
-            cache_read_tokens=cr_t,
-        ))
-        session.commit()
+    bootstrap(state_dir).token_usage.record(
+        uid=uid, channel=channel, provider=provider, model=model, usage=usage
+    )
 
 
 __all__ = ["record_token_usage"]

@@ -69,25 +69,17 @@ async def maybe_compact(
     if not session_id:
         return
 
-    # Lazy import to avoid pulling settings.py at agent
-    # module load (the SQLAlchemy dependency inside
-    # settings.py would otherwise leak into tests that
-    # only want the compaction helpers).
-    from magi.db.runtime_settings import (
-        get_compact_context_window,
-        get_compact_threshold_pct,
-        get_compact_keep_recent,
-    )
+    from magi.bus import bootstrap
 
-    keep = get_compact_keep_recent(state_dir)
+    context_window, threshold_pct, keep = bootstrap(state_dir).settings.compaction_policy()
     # Already short enough: nothing to compact.
     if len(messages) <= keep:
         return
 
     total = estimate_messages_tokens(messages)
     threshold = (
-        get_compact_context_window(state_dir)
-        * get_compact_threshold_pct(state_dir)
+        context_window
+        * threshold_pct
         // 100
     )
     if total <= threshold:

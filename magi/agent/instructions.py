@@ -34,28 +34,10 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
 def runtime_instruction_block() -> str:
     """Load only this MAGI's direct MAGIS instruction from public database."""
     try:
-        from sqlalchemy import select
-        import os
-        from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            runtime_id = os.environ.get("MAGI_RUNTIME_ID")
-            if runtime_id and runtime_id.isdigit():
-                magic = session.get(MAGIC, int(runtime_id))
-            else:
-                root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-                magic = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
-            if magic is None:
-                return ""
-            row = session.execute(
-                select(MAGISMembership, MAGISRole, MAGIS)
-                .join(MAGISRole, MAGISRole.id == MAGISMembership.role_id)
-                .join(MAGIS, MAGIS.id == MAGISMembership.magis_id)
-                .where(MAGISMembership.magic_id == magic.id)
-                .order_by(MAGISMembership.id)
-            ).first()
-            memberships = ([{"magis_name": row[2].name, "team_instruction": row[2].instruction, "role_name": row[1].name, "role_instruction": row[1].instruction}] if row else [])
-            return _render(magic.instruction, memberships)
+        from magi.bus import bootstrap
+
+        personal, memberships = bootstrap("").runtime_identity.instruction_context()
+        return _render(personal, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")
         return ""

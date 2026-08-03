@@ -328,10 +328,6 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.db.models_setting  # noqa: F401 — legacy settings KV model
     import magi.db.models_token_usage  # noqa: F401
     import magi.db.models_tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
-    import magi.bus.models  # noqa: F401 — durable local message bus
-    import magi.agent.memory.self.models  # noqa: F401 — self-memory table
-    import magi.agent.memory.session.tables  # noqa: F401 — sessions-owned tables
-    import magi.channels.tasks.models  # noqa: F401 — scheduled-task channel
     import magi.proactive.models  # noqa: F401 — proactive task templates
     application_tables = set(Base.metadata.tables)
     existing_tables = set(inspect(engine).get_table_names())

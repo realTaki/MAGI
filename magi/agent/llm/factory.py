@@ -103,26 +103,17 @@ def get_provider(model: str | None = None) -> LLMProvider:
         The configured provider id is not in
         :func:`known_providers` (typo, stale value).
     """
-    from sqlalchemy import select
+    from magi.bus import bootstrap
 
-    from magi.db import MAGIS, MAGIC
-    from magi.db.magis import open_magis_session
-
-    runtime_id = os.environ.get("MAGI_RUNTIME_ID")
-    with open_magis_session() as session:
-        if runtime_id and runtime_id.isdigit():
-            magi = session.get(MAGIC, int(runtime_id))
-        else:
-            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-            magi = session.get(MAGIC, root.adam_id) if root and root.adam_id else None
-        if magi is None or not magi.provider or not magi.api_key:
-            logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
-            raise LLMNotConfiguredError(
-                "MAGI runtime has no LLM provider / API key configured; set it in MAGI management"
-            )
-        provider_name = magi.provider
-        api_key = magi.api_key
-        effective_model = model if model is not None else getattr(magi, "model", None)
+    config = bootstrap("").runtime_identity.provider_configuration()
+    if config is None:
+        logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
+        raise LLMNotConfiguredError(
+            "MAGI runtime has no LLM provider / API key configured; set it in MAGI management"
+        )
+    provider_name = config.provider
+    api_key = config.api_key
+    effective_model = model if model is not None else config.model
 
     if not provider_name:
         raise LLMError("provider name is required")
