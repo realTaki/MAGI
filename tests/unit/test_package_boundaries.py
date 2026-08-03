@@ -36,7 +36,7 @@ SCAN_PREFIXES: tuple[str, ...] = (
 # newly clean execution path from regressing while those adapters are moved.
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "magi/agent/worker.py",
-    "magi/agent/runtime_context.py",
+    "magi/agent/agent_context.py",
     "magi/agent/step.py",
     "magi/tools/base.py",
     "magi/tools/worker.py",

@@ -38,7 +38,7 @@ Tables (in dependency order):
   - contact_notes          per-fact notes about a contact
                            (kind='permanent'|'daily', with the
                            partial unique index for daily rows)
-  - eve_runtimes           desired/observed EVE lifecycle state
+  - eve_runtimes           desired/observed EVA lifecycle state
                            (magi_id → magic.id CASCADE)
   - tasks                  per-user scheduled tasks
                            (with preset_id / preset_key back-pointers)
@@ -145,8 +145,8 @@ def upgrade() -> None:
     # endpoint re-parents children before deleting a
     # MAGIS, so the DB-level guard is belt-and-braces.
     # ``adam_id`` points at the manager ``magic`` row
-    # (the MAGI assigned the reserved ``Adam`` role for this
-    # MAGIS); SET NULL because deleting the Adam
+    # (the MAGI assigned the reserved ``ADAM`` role for this
+    # MAGIS); SET NULL because deleting the ADAM
     # MAGIC shouldn't cascade through the society.
     op.create_table(
         "magis",
@@ -380,9 +380,9 @@ def upgrade() -> None:
         sqlite_where=sa.text("kind = 'daily'"),
     )
 
-    # ### eve_runtimes (desired/observed EVE lifecycle state) ──────── #
+    # ### eve_runtimes (desired/observed EVA lifecycle state) ──────── #
     # ``magic_id`` references ``magic.id`` (the individual
-    # MAGIC this EVE runs for) with CASCADE — deleting a
+    # MAGIC this EVA runs for) with CASCADE — deleting a
     # MAGIC row also drops its lifecycle row.
     op.create_table(
         "eve_runtimes",

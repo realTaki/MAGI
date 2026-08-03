@@ -51,7 +51,7 @@ class Bus:
 def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
     """Create the public BUS facade after optionally initialising SQLite."""
     if initialise_local:
-        from magi.db import init_orm, init_sqlite
+        from magi.bus._persistence import init_orm, init_sqlite
 
         init_sqlite(state_dir)
         init_orm(state_dir, seed_root=False)

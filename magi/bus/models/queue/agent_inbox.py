@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy import JSON, DateTime, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 
 class AgentInbox(Base):

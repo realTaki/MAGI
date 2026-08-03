@@ -13,7 +13,7 @@ Three surfaces pinned:
     the trigger heuristic returns plausible numbers for
     the inputs we expect (long session vs short).
 
-  - ``magi.agent.runtime_context.build_messages_from_session``:
+  - ``magi.agent.agent_context.build_messages_from_session``:
     loads prior-turn messages into ChatMessage order and
     maps roles correctly (system summary at messages[0]
     becomes a ``user`` ChatMessage so Anthropic's wire
@@ -278,7 +278,7 @@ def test_build_messages_from_session_no_session_returns_one_user_msg(
     """First turn of a brand-new conversation has no
     session yet → just the user message."""
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.runtime_context import build_messages_from_session
+    from magi.agent.agent_context import build_messages_from_session
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
@@ -296,7 +296,7 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     treats a leading user message as prior context.
     """
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.runtime_context import build_messages_from_session
+    from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
     from magi.db import ChatMessage, open_session
@@ -350,7 +350,7 @@ def test_build_messages_from_session_does_not_load_archive(
     """The archive list is NOT loaded — only the active
     ``messages`` list. Operators view archive via
     ``GET /api/chat/sessions/{id}``."""
-    from magi.agent.runtime_context import build_messages_from_session
+    from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
 
@@ -387,7 +387,7 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     builder still loads them as-is — no summary mapping,
     no archive rows to skip.
     """
-    from magi.agent.runtime_context import build_messages_from_session
+    from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
 

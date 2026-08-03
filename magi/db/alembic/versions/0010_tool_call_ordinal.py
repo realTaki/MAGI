@@ -3,7 +3,7 @@
 Revision ID: 0010_tool_call_ordinal
 Revises: 0009_idempotency_keys
 
-Design §6.6 of docs/MAGI_single_agent_event_driven_runtime_design.md
+Architecture §7.2 of docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md
 requires ``tool_calls.ordinal`` so that, after a crash, the runtime
 can rebuild the provider-valid tool_use → tool_result transcript in
 the exact order the LLM emitted the tool_calls — independent of the

@@ -52,7 +52,7 @@ class MagisView:
     Returned by :class:`magi.bus.services.magis.MagisService` instead of the
     ORM ``MAGIS`` row so callers never bind to ORM internals.
 
-    ``adam_id`` is the optional Adam MAGI assigned to this MAGIS.
+    ``adam_id`` is the optional ADAM MAGI assigned to this MAGIS.
     ``child_ids`` lists the ids of MAGISes whose ``parent_id`` points here.
     ``member_count`` is the number of MAGISMembership rows attached to this
     MAGIS — included so the WebUI doesn't have to count them itself.
@@ -90,7 +90,7 @@ class MagisRoleView:
     """MAGIS role row as a value object.
 
     ``magis_id`` is the parent MAGIS; ``is_reserved`` flags the
-    built-in Adam/EVE roles that the API refuses to edit or delete.
+    built-in ADAM/EVA roles that the API refuses to edit or delete.
     """
 
     id: int
@@ -136,7 +136,7 @@ class MembershipBrief:
 
 @dataclass(frozen=True, slots=True)
 class EveRuntimeView:
-    """View of a MAGIC's EVE runtime state.
+    """View of a MAGIC's EVA runtime state.
 
     Mirrors the WebUI's ``EveRuntimeOut`` Pydantic model.  Returned to
     callers instead of leaking the ORM ``EveRuntime`` row.
@@ -160,7 +160,7 @@ class MagicView:
     key is never returned to callers.  ``api_key_last4`` exposes only the
     last four characters for verification.  ``memberships`` is the
     MAGIC's direct MAGIS rows with their assigned role; ``runtime`` is
-    the EVE deployment state when one exists.
+    the EVA deployment state when one exists.
     """
 
     id: int

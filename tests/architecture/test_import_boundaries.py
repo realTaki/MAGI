@@ -3,8 +3,7 @@
 Walks every Python file under ``magi/`` and fails if any file in
 ``magi/agent``, ``magi/tools``, ``magi/channels``, or ``magi/db`` imports
 from a package it must not depend on, per the BUS-centric architecture
-(plan: docs/MAGI_BUS_CENTRIC_ARCHITECTURE_REFACTOR_PLAN.md +
-declarative-crafting-moth.md).
+(``docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md``).
 
 The rule is encoded as ``(source_package_prefix, forbidden_target_prefixes)``.
 Internal subpackage references (e.g. ``magi.agent.llm`` from ``magi.agent.*``)

@@ -63,7 +63,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.db import ChatSession, Contact
+from magi.bus.models.local.session import ChatSession
+from magi.bus.models.local.contact import Contact
 from magi.bus.contracts.session import new_session_id
 from magi.bus.task_schedule import (
     preset_to_cron,

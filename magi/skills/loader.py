@@ -63,7 +63,6 @@ templates and won't cover quirks. We pin PyYAML in
 """
 
 from __future__ import annotations
-from magi.db.engine import require_state_dir
 
 import logging
 import os
@@ -71,6 +70,18 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+
+def _state_dir() -> str:
+    """Resolve the runtime state directory without going through the bus.
+
+    Skills are part of the loader path (imported at startup before
+    services exist); they cannot reach into ``magi.bus._persistence``
+    without breaking the load-time boundary.  The same env-var
+    contract the bus uses is inlined here as a one-liner.
+    """
+    from magi.constants import STATE_DIR
+    return os.environ.get("MAGI_STATE_DIR") or STATE_DIR
 
 logger = logging.getLogger("magi.agent.skills.loader")
 
@@ -132,7 +143,7 @@ def _workspace_root() -> Path:
     (the host-side mount path is a k8s PVC concern, not a runtime
     concern).
     """
-    state_dir = require_state_dir()
+    state_dir = _state_dir()
     return Path(state_dir).parent
 
 

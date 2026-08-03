@@ -3,7 +3,7 @@
 
 A :class:`MAGIS` row is the org container: one group of
 MAGI agents (``magic`` table, see :mod:`.models_magic`)
-optionally coordinated by one MAGI assigned the reserved ``Adam`` role.
+optionally coordinated by one MAGI assigned the reserved ``ADAM`` role.
 The tree shape is maintained via
 ``parent_id`` self-FK.
 
@@ -40,7 +40,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:

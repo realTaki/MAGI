@@ -44,11 +44,11 @@ async def run_agent_step(
     it preserves the current SOUL, memory, role-gated tool schemas, session
     history and compaction behaviour.  No tool is run in this function.
     """
-    from magi.agent import runtime_context
+    from magi.agent import agent_context
 
-    if not runtime_context.validate_credentials(uid=uid, channel=channel):
+    if not agent_context.validate_credentials(uid=uid, channel=channel):
         return AgentStepResult(
-            text=runtime_context.fallback_reply("agent_no_credentials"),
+            text=agent_context.fallback_reply("agent_no_credentials"),
             tool_uses=(),
             assistant_blocks=(),
             provider="",
@@ -56,7 +56,7 @@ async def run_agent_step(
             usage={},
             messages=(),
         )
-    context = runtime_context.build_context(
+    context = agent_context.build_context(
         state_dir,
         text=text,
         channel=channel,
@@ -66,7 +66,7 @@ async def run_agent_step(
     )
     if context is None:
         return AgentStepResult(
-            text=runtime_context.fallback_reply(),
+            text=agent_context.fallback_reply(),
             tool_uses=(),
             assistant_blocks=(),
             provider="",
@@ -77,7 +77,7 @@ async def run_agent_step(
 
     if continuation_messages is not None:
         context.messages = [
-            runtime_context.ChatMessage(
+            agent_context.ChatMessage(
                 role=item["role"],
                 content=item["content"],
                 content_blocks=item.get("content_blocks"),
@@ -86,7 +86,7 @@ async def run_agent_step(
         ]
         if tool_results:
             context.messages.append(
-                runtime_context.ChatMessage(role="user", content="", content_blocks=tool_results)
+                agent_context.ChatMessage(role="user", content="", content_blocks=tool_results)
             )
         # The provider transcript must close every tool_use before an active
         # run's later human message is added.  The durable bus supplies these
@@ -94,13 +94,13 @@ async def run_agent_step(
         # here.
         for steering in steering_inputs or ():
             context.messages.append(
-                runtime_context.ChatMessage(role="user", content=str(steering.get("text") or ""))
+                agent_context.ChatMessage(role="user", content=str(steering.get("text") or ""))
             )
-    await runtime_context.maybe_compact(
+    await agent_context.maybe_compact(
         state_dir, uid, session_id, context.messages
     )
     request = {
-        "system": runtime_context.build_system_prompt(state_dir, uid=uid, soul=context.soul),
+        "system": agent_context.build_system_prompt(state_dir, uid=uid, soul=context.soul),
         "messages": context.messages,
         "max_tokens": max_tokens,
         "tools": context.tool_schemas,
@@ -110,7 +110,7 @@ async def run_agent_step(
     else:
         result = await context.provider.stream(**request, on_event=on_stream_event)
     context.messages.append(
-        runtime_context.ChatMessage(
+        agent_context.ChatMessage(
             role="assistant", content=result.text or "", content_blocks=result.raw_blocks or None
         )
     )

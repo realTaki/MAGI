@@ -14,7 +14,7 @@ Endpoints
 - ``PATCH /api/skills/{name}``             → toggle enabled
 - ``GET /api/skills/{name}/raw``           → markdown body
 
-Auth: admin-gated like every other Adam endpoint.
+Auth: admin-gated like every other ADAM endpoint.
 """
 
 from __future__ import annotations

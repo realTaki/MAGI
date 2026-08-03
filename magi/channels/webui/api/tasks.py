@@ -13,7 +13,7 @@ Surface
 
 Auth
 ----
-Same ``AdminGate`` every other Adam endpoint uses
+Same ``AdminGate`` every other ADAM endpoint uses
 (``magi.channels.webui.api.auth_gates.admin_gate``). The
 operator must be a signed-in admin contact; the
 ``_admin_uid`` helper from

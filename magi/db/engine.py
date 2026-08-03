@@ -202,7 +202,7 @@ _DEFAULT_MAGI_NAME = "EVA-00 PROTO TYPE"
 
 
 def _seed_default_root(engine: Engine) -> None:
-    """Ensure the workspace has exactly one root MAGIS + its Adam.
+    """Ensure the workspace has exactly one root MAGIS + its ADAM.
 
     The *root* of the society tree is identified by ``parent_id IS NULL``
     (not by the literal name ``"Genesis"``). On first boot, if no root
@@ -210,10 +210,10 @@ def _seed_default_root(engine: Engine) -> None:
     the society anchor. If the deployer later renames or deletes the root,
     the next boot seeds a fresh Genesis only when no root row remains —
     so a renamed root stays renamed and we never accumulate duplicate
-    roots. The root receives reserved Adam/EVE roles. On a fresh workspace,
+    roots. The root receives reserved ADAM/EVA roles. On a fresh workspace,
     the seed MAGIC (default name ``EVA-00 PROTO TYPE``) is created
-    independently, assigned the Adam role on Genesis via
-    :class:`MAGISMembership`, and recorded as Genesis's Adam.
+    independently, assigned the ADAM role on Genesis via
+    :class:`MAGISMembership`, and recorded as Genesis's ADAM.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
@@ -258,7 +258,7 @@ def _seed_default_root(engine: Engine) -> None:
             session.add(MAGISMembership(
                 magis_id=existing_root.id,
                 magic_id=adam.id,
-                role_id=roles["Adam"].id,
+                role_id=roles["ADAM"].id,
             ))
             existing_root.adam_id = adam.id
             logger.info(
@@ -320,7 +320,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.bus.models.local.action_item  # noqa: F401
     import magi.bus.models.magis.auth_credential  # noqa: F401 — password + future credentials
     import magi.bus.models.local.contact  # noqa: F401 — unified contact directory
-    import magi.bus.models.magis.eve_runtime  # noqa: F401 — EVE lifecycle state
+    import magi.bus.models.magis.eve_runtime  # noqa: F401 — EVA lifecycle state
     import magi.bus.models.magis.magic  # noqa: F401 — individual MAGI rows
     import magi.bus.models.magis.magis  # noqa: F401 — MAGIS tree
     import magi.bus.models.magis.magis_membership  # noqa: F401 — roles + memberships

@@ -37,7 +37,8 @@ class ActionItemService:
         self, *, uid: int, kind: str, title: str, description: str | None,
         target_url: str | None, priority: str, due_date: datetime | None,
     ) -> ActionItemView:
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             row = ActionItem(
@@ -55,7 +56,8 @@ class ActionItemService:
         The open-item lookup and insert share one BUS-owned transaction.  The
         database partial unique index remains the final concurrency guard.
         """
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             existing = session.scalar(select(ActionItem).where(
@@ -81,7 +83,8 @@ class ActionItemService:
     def complete_for_owner(
         self, *, action_item_id: int, owner_uid: int, note: str | None,
     ) -> ActionItemView | None:
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             row = session.get(ActionItem, action_item_id)
@@ -98,7 +101,8 @@ class ActionItemService:
 
     def get(self, action_item_id: int) -> ActionItemView | None:
         """Return one action item without exposing its ORM row."""
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             row = session.get(ActionItem, action_item_id)
@@ -115,7 +119,9 @@ class ActionItemService:
         """List an owner's open items and optionally their recent completions."""
         from datetime import timedelta
 
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             stmt = select(ActionItem).where(ActionItem.uid == owner_uid)
@@ -142,7 +148,8 @@ class ActionItemService:
             return [_view(row) for row in rows]
 
     def list_llm_for_owner(self, *, owner_uid: int, include_completed: bool) -> list[ActionItemView]:
-        from magi.db import ActionItem, open_session
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus._persistence import open_session
 
         with open_session(self._state_dir) as session:
             stmt = select(ActionItem).where(

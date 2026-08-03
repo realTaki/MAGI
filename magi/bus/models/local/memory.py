@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 KIND_IMPORTANT = "important"
 KIND_ONGOING = "ongoing"

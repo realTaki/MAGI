@@ -82,7 +82,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
 
     The factory opens its own short-lived ORM session,
     resolves the runtime MAGI by ``MAGI_RUNTIME_ID`` (or the direct MAGIS's
-    Adam for the initial node),
+    ADAM for the initial node),
     and uses that row's ``provider`` / ``api_key`` /
     ``model`` columns to build the provider.
 

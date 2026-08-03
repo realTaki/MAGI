@@ -14,7 +14,7 @@ Mounting order (matters for routing precedence):
 
 Subsequent checkpoints layer on:
 - C1.2 — more routers (contacts / eves / skills / audit / login).
-- C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVE → Adam ingest).
+- C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVA → ADAM ingest).
 - C6 — ``/api/eves/{id}/dispatch``, ``/api/eves/{id}/recall``.
 - C7 — WebSocket console stream (``/ws/console``).
 """
@@ -55,7 +55,7 @@ def _find_spa_dist() -> Path | None:
 class HealthResponse(BaseModel):
     """Liveness payload for ``GET /health``.
 
-    Kept intentionally small — richer status (DB pool, EVE heartbeats,
+    Kept intentionally small — richer status (DB pool, EVA heartbeats,
     audit outbox lag) is added in C8 alongside the hardened degraded-mode
     story.
     """
@@ -185,7 +185,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     from magi.channels.webui.api import tg_bindings
 
     app.include_router(tg_bindings.router, prefix="/api")
-    # Adam → system LLM chat (operator types into the WebUI,
+    # ADAM → system LLM chat (operator types into the WebUI,
     # gets a synchronous reply). v0 non-streaming; C7 swaps
     # in SSE / WebSocket.
     from magi.channels.webui.api import chat

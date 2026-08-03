@@ -14,7 +14,8 @@ class AuthService:
         self._state_dir = state_dir
 
     def caller_role(self, uid: int) -> Optional[str]:
-        from magi.db import Contact, open_session
+        from magi.bus.models.local.contact import Contact
+        from magi.bus._persistence import open_session
         with open_session(self._state_dir) as session:
             contact = session.get(Contact, uid)
             return contact.role if contact is not None else None
@@ -38,7 +39,7 @@ class AuthService:
         if not uids:
             return False
         from magi.bus.models.magis.auth_credential import AuthCredential
-        from magi.db.magis import open_magis_session
+        from magi.bus._persistence.magis import open_magis_session
 
         with open_magis_session() as session:
             return session.scalar(select(AuthCredential.id).where(
@@ -64,7 +65,7 @@ class AuthService:
         from datetime import datetime, timezone
 
         from magi.bus.models.magis.auth_credential import AuthCredential
-        from magi.db.magis import open_magis_session
+        from magi.bus._persistence.magis import open_magis_session
 
         if not secret_hash:
             raise ValueError("secret_hash is required")
@@ -95,7 +96,7 @@ class AuthService:
         cookie.
         """
         from magi.bus.models.magis.auth_credential import AuthCredential
-        from magi.db.magis import open_magis_session
+        from magi.bus._persistence.magis import open_magis_session
 
         with open_magis_session() as session:
             row = session.scalar(
@@ -115,7 +116,7 @@ class AuthService:
         flow.
         """
         from magi.bus.models.magis.auth_credential import AuthCredential
-        from magi.db.magis import open_magis_session
+        from magi.bus._persistence.magis import open_magis_session
 
         with open_magis_session() as session:
             row = session.scalar(

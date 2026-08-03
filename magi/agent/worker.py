@@ -173,7 +173,7 @@ class AgentWorker:
         tool_results: list[dict] | None = None,
         steering_inputs: list[dict] | None = None,
     ) -> None:
-        from magi.agent.runtime_context import DEFAULT_MAX_TOKENS
+        from magi.agent.agent_context import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
         from magi.agent.workspace import workspace_root
 

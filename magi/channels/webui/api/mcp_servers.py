@@ -28,7 +28,7 @@ and the reload behaviour centralised in one place.
 Auth
 ----
 
-Same ``AdminGate`` every other Adam endpoint uses
+Same ``AdminGate`` every other ADAM endpoint uses
 (:mod:`magi.channels.webui.api.auth_gates`). MCP server
 config is admin-only by design: an operator with
 write access to a "fetch" or "github" MCP server can

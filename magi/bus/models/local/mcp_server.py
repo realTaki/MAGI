@@ -49,7 +49,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 
 # Defaults baked into the JSON columns so a freshly-created

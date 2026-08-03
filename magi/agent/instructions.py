@@ -26,7 +26,7 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
     return (
         "# Instructions\n"
         "These instructions are part of your operating context. Try to comply with all of them. "
-        "If they conflict irreconcilably, explain the conflict to the MAGIS Adam or administrator instead of silently choosing one.\n\n"
+        "If they conflict irreconcilably, explain the conflict to the MAGIS ADAM or administrator instead of silently choosing one.\n\n"
         + "\n\n".join(parts)
     )
 

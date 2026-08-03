@@ -5,8 +5,8 @@
 > For the build plan, see [ROADMAP.md](ROADMAP.md).
 > For the current production storage boundary and remaining work, see
 > [production-persistence.md](production-persistence.md).
-> For the proposed actor-based execution model, see
-> [MAGI_single_agent_event_driven_runtime_design.md](MAGI_single_agent_event_driven_runtime_design.md).
+> For the BUS-centric durable Actor runtime and module boundaries, see
+> [MAGI_BUS_CENTRIC_ARCHITECTURE.md](MAGI_BUS_CENTRIC_ARCHITECTURE.md).
 
 ---
 

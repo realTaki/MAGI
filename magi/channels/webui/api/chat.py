@@ -1,4 +1,4 @@
-"""Adam's chat endpoint — the WebUI channel's "send a
+"""ADAM's chat endpoint — the WebUI channel's "send a
 message to the LLM" route.
 
 The frontend POSTs text into the private durable bus, then
@@ -71,7 +71,7 @@ def _resolve_caller_credentials(
     ``uid`` (the cookie value post-D.24) and return
     ``(uid, role)``.
 
-    LLM credentials live on ``magic`` (the Adam MAGIC
+    LLM credentials live on ``magic`` (the ADAM MAGIC
     owns the provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
     the agent worker reads them

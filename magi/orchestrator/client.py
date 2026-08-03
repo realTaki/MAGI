@@ -1,4 +1,4 @@
-"""Adam-side client for the restricted orchestrator API."""
+"""ADAM-side client for the restricted orchestrator API."""
 
 from __future__ import annotations
 
@@ -32,9 +32,9 @@ def _headers(body: bytes) -> dict[str, str]:
 
 
 def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
-    """Request a start or stop without exposing Kubernetes credentials to Adam."""
+    """Request a start or stop without exposing Kubernetes credentials to ADAM."""
     if action not in {"start", "stop", "delete"}:
-        raise ValueError(f"unsupported EVE lifecycle action: {action}")
+        raise ValueError(f"unsupported EVA lifecycle action: {action}")
     url = os.environ.get("MAGI_ORCHESTRATOR_URL", "http://magi-orchestrator:42100")
     body = spec.model_dump_json(exclude_none=True).encode()
     try:

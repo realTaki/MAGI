@@ -35,7 +35,7 @@ def test_loop_module_does_not_exist() -> None:
     assert not loop_path.exists(), (
         f"{loop_path} re-introduces the legacy single-turn loop; "
         "this is the post-Phase-6 cleanup. Move all logic to "
-        "magi/agent/{worker,step,runtime_context}.py."
+        "magi/agent/{worker,step,agent_context}.py."
     )
 
 

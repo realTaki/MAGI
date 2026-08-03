@@ -14,13 +14,13 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 
 class MAGISAdmin(Base):
     """A person allowed to administer one MAGI Society.
 
-    Membership is intentionally direct: neither the MAGIS tree nor an Adam
+    Membership is intentionally direct: neither the MAGIS tree nor an ADAM
     role creates an inherited administrator grant.
     """
 

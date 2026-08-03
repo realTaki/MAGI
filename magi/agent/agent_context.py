@@ -17,7 +17,7 @@ from magi.agent.workspace import workspace_root
 from magi.bus import ToolContext, bootstrap
 from magi.prompts import load_bot_replies
 
-logger = logging.getLogger("magi.agent.runtime_context")
+logger = logging.getLogger("magi.agent.agent_context")
 
 DEFAULT_MAX_TOKENS = 1024
 _FALLBACK_REPLY_CACHE: dict[str, str] = {}

@@ -1,11 +1,11 @@
 
-"""Persistent desired/observed state for an EVE runtime.
+"""Persistent desired/observed state for an EVA runtime.
 
 ``Magi`` models the organisational identity of an agent.  This module models
-the separately managed execution resource for an EVE: a Kubernetes
+the separately managed execution resource for an EVA: a Kubernetes
 Deployment and private workspace PVC. Provider configuration is resolved from
 the direct MAGIS database. Keeping these concerns in a dedicated one-to-one
-table means an EVE can be configured while
+table means an EVA can be configured while
 it is stopped without treating a missing Pod as a missing Magi.
 """
 
@@ -16,7 +16,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 EVE_DESIRED_STATES = frozenset({"draft", "running", "stopped", "deleted"})
 EVE_OBSERVED_STATES = frozenset(
@@ -25,11 +25,11 @@ EVE_OBSERVED_STATES = frozenset(
 
 
 class EveRuntime(Base):
-    """Desired and observed runtime state for one EVE ``Magi`` row.
+    """Desired and observed runtime state for one EVA ``Magi`` row.
 
     Resource names are persisted after the orchestrator accepts a request so
     retries remain idempotent and an operator can diagnose orphaned resources.
-    The controller, not the Adam container, owns the actual Kubernetes API
+    The controller, not the ADAM container, owns the actual Kubernetes API
     calls.
     """
 

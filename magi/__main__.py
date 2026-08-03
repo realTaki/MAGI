@@ -11,8 +11,8 @@ database an isolated runtime may read. The orchestrator injects only that URL
 and the non-secret runtime identity, never an instruction bundle or provider
 credential environment variable.
 
-Boot flow: the first Adam workspace seeds Genesis.  An EVE workspace never
-seeds a Council or a second Adam; it only initialises its local runtime state.
+Boot flow: the first ADAM workspace seeds Genesis.  An EVA workspace never
+seeds a Council or a second ADAM; it only initialises its local runtime state.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ class NodeConfig:
             raise ValueError("MAGI_NODE_ROLE must be 'adam' or 'eve'")
         runtime_id = os.environ.get("MAGI_RUNTIME_ID") or None
         if role == "eve" and not runtime_id:
-            raise ValueError("MAGI_RUNTIME_ID is required for an EVE runtime")
+            raise ValueError("MAGI_RUNTIME_ID is required for an EVA runtime")
 
         return cls(
             channels=(),
@@ -182,7 +182,7 @@ def run() -> None:
     logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
-    # lifecycle state. The initial Adam seeds Genesis there; an EVE only
+    # lifecycle state. The initial ADAM seeds Genesis there; an EVA only
     # opens the public schema assigned by its one direct MAGIS binding.
     from magi.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")

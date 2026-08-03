@@ -3,7 +3,7 @@
 Revision ID: 0011_agent_run_metadata
 Revises: 0010_tool_call_ordinal
 
-Design §6.4 of docs/MAGI_single_agent_event_driven_runtime_design.md
+Architecture §7.3 of docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md
 asks for these fields on ``agent_runs`` so the actor worker's
 accounting surfaces can answer:
 

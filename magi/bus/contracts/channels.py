@@ -35,7 +35,7 @@ class Channel(StrEnum):
     """
 
     TG = "tg"
-    """Telegram bot channel (EVE → user)."""
+    """Telegram bot channel (EVA → user)."""
 
     WEBUI = "webui"
     """WebUI chat console (ADAM → operator)."""

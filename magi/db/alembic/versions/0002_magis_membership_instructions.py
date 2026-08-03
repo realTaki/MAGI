@@ -63,17 +63,17 @@ def upgrade() -> None:
     now = "datetime('now')"
     op.execute(
         "INSERT INTO magis_roles (magis_id, name, instruction, is_reserved, created_at, updated_at) "
-        f"SELECT id, 'Adam', 'You are the team leader for this MAGIS. Coordinate work, clarify goals, and surface conflicts or risks to the administrator.', 1, {now}, {now} FROM magis"
+        f"SELECT id, 'ADAM', 'You are the team leader for this MAGIS. Coordinate work, clarify goals, and surface conflicts or risks to the administrator.', 1, {now}, {now} FROM magis"
     )
     op.execute(
         "INSERT INTO magis_roles (magis_id, name, instruction, is_reserved, created_at, updated_at) "
-        f"SELECT id, 'EVE', 'You are a general-purpose member of this MAGIS. Collaborate with the team, carry out assigned work carefully, and report blockers clearly.', 1, {now}, {now} FROM magis"
+        f"SELECT id, 'EVA', 'You are a general-purpose member of this MAGIS. Collaborate with the team, carry out assigned work carefully, and report blockers clearly.', 1, {now}, {now} FROM magis"
     )
     op.execute(
         "INSERT INTO magis_memberships (magis_id, magic_id, role_id, created_at, updated_at) "
         "SELECT m.magis_id, m.id, r.id, m.created_at, m.updated_at FROM magic m "
         "JOIN magis_roles r ON r.magis_id = m.magis_id "
-        "AND r.name = CASE WHEN lower(m.magic_position) = 'adam' THEN 'Adam' ELSE 'EVE' END"
+        "AND r.name = CASE WHEN lower(m.magic_position) = 'adam' THEN 'ADAM' ELSE 'EVA' END"
     )
 
     with op.batch_alter_table("magic") as batch:

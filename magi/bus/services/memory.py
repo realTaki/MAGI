@@ -34,7 +34,8 @@ class MemoryService:
     def list_for_owner(
         self, uid: int, *, kind: str | None = None, include_completed: bool = False, limit: int = 50,
     ) -> list[MemoryView]:
-        from magi.db import MemoryEntry, open_session
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
         with open_session(self._state_dir) as session:
             stmt = select(MemoryEntry).where(MemoryEntry.uid == uid)
             if kind is not None:
@@ -50,7 +51,8 @@ class MemoryService:
         return self.list_for_owner(uid, include_completed=True, limit=limit)
 
     def get(self, memory_id: int) -> MemoryView | None:
-        from magi.db import MemoryEntry, open_session
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
             return _view(row) if row is not None else None
@@ -58,7 +60,8 @@ class MemoryService:
     def add(
         self, uid: int, *, kind: str, subject: str, body: str, importance: int = 3, source: str = "eve",
     ) -> MemoryView:
-        from magi.db import MemoryEntry, open_session
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
         if kind not in ALL_KINDS:
             raise ValueError(f"kind {kind!r} not in {sorted(ALL_KINDS)}")
         subject = subject.strip()[:200]
@@ -79,7 +82,8 @@ class MemoryService:
         self, memory_id: int, *, subject: str | None = None, body: str | None = None,
         importance: int | None = None,
     ) -> MemoryView:
-        from magi.db import MemoryEntry, open_session
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
             if row is None:
@@ -99,8 +103,9 @@ class MemoryService:
             return _view(row)
 
     def complete(self, memory_id: int) -> MemoryView:
-        from magi.db import MemoryEntry, open_session
-        from magi.db.base import utcnow_naive
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
+        from magi.bus._persistence.base import utcnow_naive
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
             if row is None:
@@ -111,7 +116,8 @@ class MemoryService:
             return _view(row)
 
     def delete(self, memory_id: int) -> bool:
-        from magi.db import MemoryEntry, open_session
+        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus._persistence import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
             if row is None:

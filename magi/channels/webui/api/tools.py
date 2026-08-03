@@ -4,7 +4,7 @@ Reads from the ``tools`` database table (seeded by the tool worker on
 startup).  Reflects the same data the agent loop uses to build the LLM's
 tool menu, so the operator sees exactly what the model can call.
 
-Auth: admin-gated like every other Adam endpoints (read-only
+Auth: admin-gated like every other ADAM endpoints (read-only
 data; non-sensitive — same gate as ``/api/contacts``).
 """
 

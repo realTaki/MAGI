@@ -1,7 +1,7 @@
 """BUS-owned ORM tables for the public MAGIS PostgreSQL database.
 
 These tables back the public MAGI Society: magic runtimes, group
-membership, admin roles, auth credentials, and the EVE runtime
+membership, admin roles, auth credentials, and the EVA runtime
 registry.  Only the bus services touch them directly; everything
 outside :mod:`magi.bus` sees DTOs.
 """

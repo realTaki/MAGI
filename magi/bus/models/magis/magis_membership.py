@@ -3,7 +3,7 @@
 
 Roles belong to one MAGIS. A membership is the MAGI's one direct MAGIS
 home. MAGIS administration is direct-only; a parent/child tree relationship
-does not add another MAGIS's instructions, workspace, or authority to Adam.
+does not add another MAGIS's instructions, workspace, or authority to ADAM.
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
-RESERVED_ROLE_NAMES = frozenset({"Adam", "EVE"})
+RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
 DEFAULT_ROLE_INSTRUCTIONS = {
-    "Adam": "You are the team leader for this MAGIS. Coordinate work, clarify goals, and surface conflicts or risks to the administrator.",
-    "EVE": "You are a general-purpose member of this MAGIS. Collaborate with the team, carry out assigned work carefully, and report blockers clearly.",
+    "ADAM": "You are the team leader for this MAGIS. Coordinate work, clarify goals, and surface conflicts or risks to the administrator.",
+    "EVA": "You are a general-purpose member of this MAGIS. Collaborate with the team, carry out assigned work carefully, and report blockers clearly.",
 }
 
 
@@ -64,9 +64,9 @@ def ensure_default_roles(session, magis_id: int) -> dict[str, MAGISRole]:
 
 
 def adam_manages_magis(session, magic_id: int, target_magis_id: int) -> bool:
-    """Whether ``magic_id`` is the Adam of exactly ``target_magis_id``.
+    """Whether ``magic_id`` is the ADAM of exactly ``target_magis_id``.
 
-    Adam may administer child MAGIS from the WebUI in a future, separately
+    ADAM may administer child MAGIS from the WebUI in a future, separately
     granted capability, but tree ancestry must never silently give it a child
     MAGIS's data, instructions, or administrator scope.  The current access
     model is deliberately direct-only.
@@ -82,7 +82,7 @@ def can_route_a2a(session, from_magic_id: int, to_magic_id: int) -> bool:
 
     This is a message-routing rule, not WebUI authority or resource access:
     peers in one MAGIS may communicate; an ancestor MAGIS may delegate to a
-    descendant's Adam; that descendant Adam may report to members of an
+    descendant's ADAM; that descendant ADAM may report to members of an
     ancestor MAGIS. Sibling MAGIS do not communicate directly.
     """
     from sqlalchemy import select

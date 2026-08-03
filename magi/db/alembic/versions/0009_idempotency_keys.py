@@ -3,7 +3,7 @@
 Revision ID: 0009_idempotency_keys
 Revises: 0008_merge_actor_and_auth_heads
 
-Design §6 of docs/MAGI_single_agent_event_driven_runtime_design.md requires
+Architecture §7 of docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md requires
 the bus tables to expose stable producer-supplied idempotency keys so that
 the at-least-once delivery + idempotent-consumption contract holds across
 process restarts and producer retries.

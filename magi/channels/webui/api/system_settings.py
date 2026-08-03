@@ -1,6 +1,6 @@
 """System-level config: timezone + tool-iterations + compact + daily-note.
 
-Per-MAGI-node settings (Adam has its own, every EVE has its own).
+Per-MAGI-node settings (ADAM has its own, every EVA has its own).
 Stored in the same ``settings`` meta-key table that already holds
 ``tg.read_reaction_emoji`` and the bot token, so it inherits the
 existing ``state_get`` / ``state_set`` / WAL concurrency story.

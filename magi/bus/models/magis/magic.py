@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.db.base import Base, utcnow_naive
+from magi.bus._persistence.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
@@ -83,11 +83,11 @@ def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, 
     ``token_usage`` table keyed by the Contact's ``uid``
     — the billing identity is the person, not the agent.
 
-    When ``magic_id`` is omitted, resolve the root MAGIS's Adam.  This
+    When ``magic_id`` is omitted, resolve the root MAGIS's ADAM.  This
     keeps root-runtime callers simple while avoiding a global role lookup.
     """
     from sqlalchemy import select
-    from magi.db.magis import open_magis_session
+    from magi.bus._persistence.magis import open_magis_session
 
     with open_magis_session() as db:
         if magic_id is not None:

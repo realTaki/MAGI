@@ -1,6 +1,6 @@
 """Minimal Kubernetes API adapter used only by the orchestrator service.
 
-It intentionally supports the narrow resource vocabulary required for an EVE:
+It intentionally supports the narrow resource vocabulary required for an EVA:
 Secret, PVC, and Deployment.  There is no generic manifest endpoint and no
 pod exec capability.
 """
@@ -47,7 +47,7 @@ def _secret_data(values: dict[str, str]) -> dict[str, str]:
 
 
 class KubernetesEveBackend:
-    """Apply the fixed EVE resource template to one configured namespace."""
+    """Apply the fixed EVA resource template to one configured namespace."""
 
     def __init__(self) -> None:
         host = os.environ.get("KUBERNETES_SERVICE_HOST")
@@ -171,7 +171,7 @@ class KubernetesEveBackend:
     def _project_runtime_configuration(self, spec: EveSpec) -> None:
         """Write a MAGI's direct-MAGIS configuration before Pod creation.
 
-        The target database is a runtime projection. The Adam control plane
+        The target database is a runtime projection. The ADAM control plane
         remains the authority for the MAGIS tree; a container only receives
         the one direct MAGIS record it needs to operate.
         """
@@ -205,7 +205,7 @@ class KubernetesEveBackend:
                         magic.provider, magic.api_key = spec.configuration.provider, spec.configuration.api_key
                         role = session.scalar(select(MAGISRole).where(MAGISRole.magis_id == society.id, MAGISRole.name == spec.configuration.role_name))
                         if role is None:
-                            role = MAGISRole(magis_id=society.id, name=spec.configuration.role_name, instruction=spec.configuration.role_instruction, is_reserved=spec.configuration.role_name in {"Adam", "EVE"})
+                            role = MAGISRole(magis_id=society.id, name=spec.configuration.role_name, instruction=spec.configuration.role_instruction, is_reserved=spec.configuration.role_name in {"ADAM", "EVA"})
                             session.add(role); session.flush()
                         else:
                             role.instruction = spec.configuration.role_instruction
@@ -214,7 +214,7 @@ class KubernetesEveBackend:
                             session.add(MAGISMembership(magis_id=society.id, magic_id=magic.id, role_id=role.id))
                         else:
                             membership.magis_id, membership.role_id = society.id, role.id
-                        if role.name == "Adam": society.adam_id = magic.id
+                        if role.name == "ADAM": society.adam_id = magic.id
                         session.commit()
                     return
                 except Exception as exc:  # database Deployment may not be Ready yet

@@ -6,8 +6,8 @@ the "Action Items" sidebar entry. The first concrete
 use case is ``kind='llm_credentials_missing'``: every
 new admin gets one so the dashboard nudges them to
 set their provider + API key before they chat. C4
-will reuse the same table for EVE-driven follow-ups
-(kind strings like ``eve_followup_meeting``).
+will reuse the same table for EVA-driven follow-ups
+(kind strings like ``eva_followup_meeting``).
 
 Schema is intentionally kind-agnostic — every row
 carries a stable ``kind`` + human-readable ``title`` /
@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from magi.db.base import utcnow_naive
+from magi.bus._persistence.base import utcnow_naive
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -44,7 +44,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.db.base import Base
+from magi.bus._persistence.base import Base
 
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ class ActionItem(Base):
     """A to-do surfaced to an admin in the dashboard.
 
     Created by system paths (``save_admin`` etc.) and,
-    from C4, by EVEs that want to nudge the operator
+    from C4, by EVAs that want to nudge the operator
     about a follow-up. Dismissed / completed by the
     operator via
     ``POST /api/action_items/{id}/complete`` — auto-
@@ -95,13 +95,13 @@ class ActionItem(Base):
     )
     # Optional due date — when the to-do is expected to be
     # completed. Null means "no deadline / whenever". C4
-    # EVE-driven rows can use this for time-sensitive
+    # EVA-driven rows can use this for time-sensitive
     # follow-ups; operator-authored rows may leave it null.
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )
     # Who created the row. "system" for save_admin /
-    # similar, "eve" when C4 EVE-driven rows land, "user"
+    # similar, "eve" when C4 EVA-driven rows land, "user"
     # for future operator-authored reminders. Useful for
     # grouping + filtering later.
     source: Mapped[str] = mapped_column(
@@ -119,8 +119,8 @@ class ActionItem(Base):
         nullable=True,
     )
     # Optional reason captured at complete-time; useful
-    # for C4 EVE-driven rows where the operator may say
-    # "I'll do it next week" (the EVE then reads it back).
+    # for C4 EVA-driven rows where the operator may say
+    # "I'll do it next week" (the EVA then reads it back).
     completion_note: Mapped[str | None] = mapped_column(String(500))
     # Hidden without recording "I did it". Distinct from
     # completed_at IS NOT NULL — both remove from the

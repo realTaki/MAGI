@@ -1,9 +1,9 @@
 """SQLite local store — created on every MAGI container boot.
 
-Independent of role: Adam uses SQLite for its (small / dev) system-of-record
-state and Eve uses it for personal working state. A Postgres store lands
+Independent of role: ADAM uses SQLite for its (small / dev) system-of-record
+state and EVA uses it for personal working state. A Postgres store lands
 in C1 alongside the ORM; this module is the SQLite counterpart and stays
-useful for Eve forever.
+useful for EVA forever.
 
 The file bootstrap creates only the legacy ``meta`` table for schema-version
 hand-off. Application tables are created by Alembic in ``init_orm``; the
