@@ -32,21 +32,19 @@ them.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Annotated, Literal, Optional
+import os
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
 
-from magi.db import get_session
+from magi.bus import bootstrap
 from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.bus.models.local.task_preset import TaskPreset
-from magi.bus.contracts.session import new_session_id
 from magi.channels.webui.api.auth_gates import AdminGate
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.task_presets")
 
@@ -130,7 +128,7 @@ class TaskPresetIn(BaseModel):
 # ──────────────────────────────────────────────────────────────────────── #
 
 
-def _preset_to_out(p: TaskPreset) -> TaskPresetOut:
+def _preset_to_out(p) -> TaskPresetOut:
     return TaskPresetOut(
         id=p.id,
         key=p.key,
@@ -150,8 +148,8 @@ def _preset_to_out(p: TaskPreset) -> TaskPresetOut:
     )
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -162,7 +160,6 @@ def _now_iso() -> str:
 @router.get("/task-presets", response_model=list[TaskPresetOut])
 def list_task_presets(
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> list[TaskPresetOut]:
     """List every preset (enabled or not).
 
@@ -170,8 +167,7 @@ def list_task_presets(
     can see disabled templates and re-enable them. Sorted
     by ``key`` for a stable order.
     """
-    rows = session.query(TaskPreset).order_by(TaskPreset.key.asc()).all()
-    return [_preset_to_out(p) for p in rows]
+    return [_preset_to_out(preset) for preset in _bus().task.list_presets()]
 
 
 @router.post(
@@ -182,7 +178,6 @@ def list_task_presets(
 def create_task_preset(
     payload: TaskPresetIn,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> TaskPresetOut:
     """Create a new preset template.
 
@@ -193,15 +188,6 @@ def create_task_preset(
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
-    existing = session.query(TaskPreset).filter(
-        TaskPreset.key == payload.key,
-    ).one_or_none()
-    if existing is not None:
-        raise MagiHTTPException(
-            status_code=409,
-            code="task_presets.key_conflict",
-            detail=f"a preset with key {payload.key!r} already exists",
-        )
     # Validate the scheduling config eagerly so a 400
     # surfaces at create-time rather than as a cryptic
     # scheduler error at the next fire.
@@ -213,27 +199,14 @@ def create_task_preset(
         day_of_month=payload.day_of_month,
         run_at=payload.run_at,
     )
-    now_iso = _now_iso()
-    preset = TaskPreset(
-        id=new_session_id(),
-        key=payload.key,
-        name=payload.name,
-        description=payload.description,
-        prompt=payload.prompt,
-        frequency=payload.frequency,
-        hour=payload.hour,
-        minute=payload.minute,
-        day_of_week=payload.day_of_week,
-        day_of_month=payload.day_of_month,
-        run_at=_canonicalise_run_at(payload.frequency, payload.run_at),
-        target_channel=payload.target_channel,
-        enabled=1 if payload.enabled else 0,
-        created_at=now_iso,
-        updated_at=now_iso,
-    )
-    session.add(preset)
-    session.commit()
-    session.refresh(preset)
+    values = payload.model_dump()
+    values["run_at"] = _canonicalise_run_at(payload.frequency, payload.run_at)
+    preset = _bus().task.create_preset(**values)
+    if preset is None:
+        raise MagiHTTPException(
+            status_code=409, code="task_presets.key_conflict",
+            detail=f"a preset with key {payload.key!r} already exists",
+        )
     return _preset_to_out(preset)
 
 
@@ -242,7 +215,6 @@ def update_task_preset(
     preset_id: str,
     payload: TaskPresetPatch,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> TaskPresetOut:
     """Edit a preset template.
 
@@ -254,7 +226,8 @@ def update_task_preset(
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
-    preset = session.get(TaskPreset, preset_id)
+    service = _bus().task
+    preset = service.get_preset(preset_id)
     if preset is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.task_preset",
@@ -289,13 +262,12 @@ def update_task_preset(
             data["run_at"] = _canonicalise_run_at(
                 merged_freq, merged_run_at,
             )
-    for k, v in data.items():
-        setattr(preset, k, v)
-    if "enabled" in data:
-        preset.enabled = 1 if data["enabled"] else 0
-    preset.updated_at = _now_iso()
-    session.commit()
-    session.refresh(preset)
+    preset = service.update_preset(preset_id, **data)
+    if preset is None:  # deleted after the initial read
+        raise MagiHTTPException(
+            status_code=404, code="not_found.task_preset",
+            detail=f"preset {preset_id} not found",
+        )
     return _preset_to_out(preset)
 
 
@@ -303,7 +275,6 @@ def update_task_preset(
 def delete_task_preset(
     preset_id: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> None:
     """Remove a preset template.
 
@@ -317,14 +288,11 @@ def delete_task_preset(
     """
     from magi.channels.webui.api.errors import MagiHTTPException
 
-    preset = session.get(TaskPreset, preset_id)
-    if preset is None:
+    if not _bus().task.delete_preset(preset_id):
         raise MagiHTTPException(
             status_code=404, code="not_found.task_preset",
             detail=f"preset {preset_id} not found",
         )
-    session.delete(preset)
-    session.commit()
     return None
 
 

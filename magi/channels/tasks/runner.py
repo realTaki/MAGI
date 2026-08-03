@@ -53,19 +53,11 @@ decouples the two. See :class:`TaskScheduler` for the bridge.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from magi.bus import AgentMessage, bootstrap
-from magi.bus.models.local.task import Task, TaskRun
-from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
-from magi.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
-from magi.db.settings import state_get
+from magi.bus.contracts.session import SessionMessage, new_session_id
 
 # D.28: the runner no longer touches the TG client API
 # directly. The channel dispatcher is the single dispatch
@@ -75,7 +67,6 @@ from magi.db.settings import state_get
 # does whatever IM-client wiring it needs. Importing the
 # dispatcher is enough; we never reach for
 # ``get_telegram_bot`` directly.
-from magi.channels import dispatcher as channel_dispatcher
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.tasks.runner")
@@ -190,7 +181,7 @@ async def execute_task(
     # time. No callback injection here.
 
     try:
-        bootstrap(state_dir).agent_runs.publish_input(
+        bus.agent_runs.publish_input(
             AgentMessage(
                 event_id=f"task:{task_id}:{run_id}",
                 source_id=run_id,
@@ -201,11 +192,11 @@ async def execute_task(
                 source_type="task",
                 external_event_id=run_id,
                 kind="task.triggered",
-                text=prompt,
+                text=contextual_prompt,
                 channel="task",
-                uid=contact.id,
-                session_id=session_id,
-                caller_role=contact.role,
+                uid=execution.uid,
+                session_id=execution.session_id,
+                caller_role=execution.caller_role,
                 metadata={
                     "task_id": task_id,
                     "task_run_id": run_id,
@@ -215,203 +206,15 @@ async def execute_task(
         )
     except Exception as exc:  # noqa: BLE001 — durable publish failure
         logger.exception("task %s failed to publish actor input", task_id)
-        return _mark_failed(
-            state_dir=state_dir, task_id=task_id, run_id=run_id,
-            uid=contact.id, task_name=task_name,
-            started_iso=started,
+        bus.task.mark_execution_failure(
+            task_id=task_id, run_id=run_id, started_at=started,
             error=f"publish:{type(exc).__name__}:{exc}",
         )
+        return run_id
 
     # Completion/failure is projected by BusStore in the same transaction as
     # the actor transition.  This runner deliberately never waits for a reply.
     return run_id
-
-
-# -- helpers ---------------------------------------------------------------
-
-
-
-
-def _mark_failed(
-    *,
-    state_dir: str,
-    task_id: str,
-    run_id: str,
-    uid: int,
-    task_name: str,
-    started_iso: str,
-    error: str,
-) -> str:
-    """Single shared failure path.
-
-    Writes the ``failed`` row + the body's error on the
-    task + (maybe) an ActionItem. Kept as a function
-    instead of inlined so both the timeout / unexpected
-    branches above share one definition site.
-    """
-    finished = datetime.now(timezone.utc).isoformat()
-    with open_session() as db:
-        run = db.get(TaskRun, run_id)
-        task = db.get(Task, task_id)
-        if run is not None:
-            run.status = "failed"
-            run.finished_at = finished
-            run.latency_ms = _ms_between(started_iso, finished)
-            run.error = error[:_LAST_ERROR_CHARS]
-        if task is not None:
-            _bump_failure(db, task, error)
-            _maybe_disable_and_alert(db, task, error)
-        db.commit()
-    return run_id
-
-
-def _bump_failure(db: Session, task: Task, error: str) -> None:
-    """Increment ``consecutive_failures`` + persist last_error."""
-    task.consecutive_failures = (task.consecutive_failures or 0) + 1
-    task.last_status = "failed"
-    task.last_run_at = datetime.now(timezone.utc).isoformat()
-    task.last_error = error[:_LAST_ERROR_CHARS]
-
-
-def _maybe_disable_and_alert(db: Session, task: Task, error: str) -> None:
-    """Cross the configured threshold → disable + post ActionItem.
-
-    Idempotent: the threshold is a one-way edge (a
-    success later resets ``consecutive_failures`` but
-    does NOT re-enable — the operator has to flip the
-    switch after they've read the ActionItem; that's
-    the point of the alert).
-    """
-    threshold = _failure_threshold()
-    if task.consecutive_failures < threshold:
-        return
-    if not task.enabled:
-        # Already disabled — don't duplicate the alert.
-        return
-    task.enabled = 0
-    db.add(ActionItem(
-        uid=task.uid,
-        kind="task_disabled",
-        title=f"定时任务已自动停用：{task.name}",
-        description=(
-            f"连续失败 {task.consecutive_failures} 次（阈值 {threshold}）。"
-            f"最后一次错误：{_truncate(error, 200)}"
-        ),
-        target_url=f"/chat/scheduled-tasks?task={task.id}",
-        priority="high",
-        source="system",
-    ))
-    logger.warning(
-        "task %s auto-disabled after %d consecutive failures",
-        task.name, task.consecutive_failures,
-    )
-
-
-def _finalise_run_failure(
-    db: Session, *,
-    run_id: str,
-    task_id: str,
-    uid: int,
-    task_name: str,
-    error: str,
-    started_iso: str,
-) -> None:
-    """First-half failure: task missing credentials, no session
-    yet created. Distinct from :func:`_mark_failed` because
-    there's no session_id to attach the run to."""
-    finished = datetime.now(timezone.utc).isoformat()
-    db.add(TaskRun(
-        id=run_id, task_id=task_id, session_id=None,
-        trigger="cron", started_at=started_iso, finished_at=finished,
-        status="failed",
-        error=error[:_LAST_ERROR_CHARS],
-        latency_ms=_ms_between(started_iso, finished),
-    ))
-    # Surface the alert directly because the failure
-    # didn't go through the standard path.
-    db.add(ActionItem(
-        uid=uid,
-        kind="task_disabled",
-        title=f"定时任务无法执行：{task_name}",
-        description=f"任务 \"{task_name}\" 对应的 EVE MAGI 没有设置 provider/api_key。",
-        target_url=f"/chat/scheduled-tasks?task={task_id}",
-        priority="high",
-        source="system",
-    ))
-
-
-def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tuple[int, int] | None:
-    """Sum (input, output) tokens written by the actor
-    just wrote. The ``token_usage`` schema is per-call so a
-    single fire may produce 1+ rows; summing keeps the
-    dashboard's "cost" view aligned with the per-session bill.
-
-    Filters by ``uid`` (the operator the LLM was
-    billed against) + ``ts >= started_iso`` (the fire's
-    wall-clock start). ``session_id`` is kept in the
-    signature for compatibility but isn't a column on
-    :class:`TokenUsage` — the token table is per-contact,
-    not per-session. Multiple concurrent fires for the
-    same contact would over-count, but that's a row
-    collision the scheduler's ``max_instances=1`` already
-    prevents.
-
-    ``None`` if no rows landed yet (e.g. the agent returned
-    before any LLM call — shouldn't happen in practice but
-    keeps the helper defensive).
-    """
-    del session_id  # not a column on TokenUsage; see docstring
-    rows = db.execute(
-        select(TokenUsage.input_tokens, TokenUsage.output_tokens)
-        .where(
-            TokenUsage.ts >= started_iso,
-        )
-    ).all()
-    if not rows:
-        return None
-    return (
-        sum(int(r[0]) for r in rows),
-        sum(int(r[1]) for r in rows),
-    )
-
-
-def _ms_between(started_iso: str, finished_iso: str) -> int:
-    """Subtract two ISO-8601 UTC strings → integer ms.
-
-    Falls back to 0 on parse failure (the row still
-    records finished_at correctly; the latency cell is
-    best-effort UX, not an SLA-critical value).
-    """
-    try:
-        s = datetime.fromisoformat(started_iso)
-        f = datetime.fromisoformat(finished_iso)
-    except ValueError:
-        return 0
-    return max(0, int((f - s).total_seconds() * 1000))
-
-
-def _failure_threshold() -> int:
-    """Read the configurable threshold from the KV store.
-
-    Falls back to the hard-coded default if the key
-    is unset or malformed. Lazy read on every call —
-    never cached at module import — so an operator
-    editing the value in the Settings API takes effect
-    on the very next failed run.
-    """
-    state_dir = require_state_dir()
-    raw = state_get(state_dir, "task.failure_threshold")
-    if raw is None or not raw.strip():
-        return _DEFAULT_FAILURE_THRESHOLD
-    try:
-        v = int(raw.strip())
-    except ValueError:
-        return _DEFAULT_FAILURE_THRESHOLD
-    return max(1, v)
-
-
-def _truncate(s: str, n: int) -> str:
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 # Public re-exports for the API / tests.

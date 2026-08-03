@@ -5,12 +5,22 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from magi.bus.contracts.task import TaskExecution, TaskScheduleView
+from magi.bus.contracts.task import TaskExecution, TaskPresetView, TaskScheduleView
 
 
 def _schedule_view(row) -> TaskScheduleView:
     return TaskScheduleView(
         id=str(row.id), enabled=bool(row.enabled), cron=str(row.cron), run_at=row.run_at,
+    )
+
+
+def _preset_view(row) -> TaskPresetView:
+    return TaskPresetView(
+        id=str(row.id), key=str(row.key), name=str(row.name), description=str(row.description),
+        prompt=str(row.prompt), frequency=str(row.frequency), hour=int(row.hour), minute=int(row.minute),
+        day_of_week=row.day_of_week, day_of_month=row.day_of_month, run_at=row.run_at,
+        target_channel=str(row.target_channel), enabled=bool(row.enabled),
+        created_at=str(row.created_at), updated_at=str(row.updated_at),
     )
 
 
@@ -38,6 +48,78 @@ class TaskService:
                 select(Task).where(Task.enabled.is_(True))
             ).all()
             return [_schedule_view(row) for row in rows]
+
+    # -- preset templates ----------------------------------------------
+
+    def list_presets(self) -> list[TaskPresetView]:
+        from sqlalchemy import select
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            return [_preset_view(row) for row in session.scalars(
+                select(TaskPreset).order_by(TaskPreset.key)
+            )]
+
+    def get_preset(self, preset_id: str) -> TaskPresetView | None:
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            row = session.get(TaskPreset, preset_id)
+            return _preset_view(row) if row is not None else None
+
+    def create_preset(self, **values) -> TaskPresetView | None:
+        from sqlalchemy import select
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.contracts.session import new_session_id
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            if session.scalar(select(TaskPreset.id).where(TaskPreset.key == values["key"])) is not None:
+                return None
+            now = datetime.utcnow().isoformat()
+            row = TaskPreset(
+                id=new_session_id(), key=values["key"], name=values["name"],
+                description=values["description"], prompt=values["prompt"],
+                frequency=values["frequency"], hour=values["hour"], minute=values["minute"],
+                day_of_week=values.get("day_of_week"), day_of_month=values.get("day_of_month"),
+                run_at=values.get("run_at"), target_channel=values["target_channel"],
+                enabled=int(bool(values["enabled"])), created_at=now, updated_at=now,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return _preset_view(row)
+
+    def update_preset(self, preset_id: str, **changes) -> TaskPresetView | None:
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            row = session.get(TaskPreset, preset_id)
+            if row is None:
+                return None
+            for field, value in changes.items():
+                if field == "enabled":
+                    value = int(bool(value))
+                setattr(row, field, value)
+            row.updated_at = datetime.utcnow().isoformat()
+            session.commit()
+            session.refresh(row)
+            return _preset_view(row)
+
+    def delete_preset(self, preset_id: str) -> bool:
+        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            row = session.get(TaskPreset, preset_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
 
     # -- write ----------------------------------------------------------
 

@@ -29,3 +29,22 @@ class TaskExecution:
     tz: str
     target_channel: str
     delivery_to: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskPresetView:
+    id: str
+    key: str
+    name: str
+    description: str
+    prompt: str
+    frequency: str
+    hour: int
+    minute: int
+    day_of_week: int | None
+    day_of_month: int | None
+    run_at: str | None
+    target_channel: str
+    enabled: bool
+    created_at: str
+    updated_at: str
