@@ -36,7 +36,7 @@ from magi.bus.models.queue import (
 )
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
-from magi.db.models_tool import ToolDefinitionRecord
+from magi.bus.models.local.tool import ToolDefinitionRecord
 
 
 def _new_id(prefix: str) -> str:
@@ -342,7 +342,7 @@ class BusStore:
                     # The final provider response becomes user-visible in the
                     # same transition that marks the run complete.  Channels
                     # must not append a second, non-authoritative copy later.
-                    from magi.db.models_session import ChatMessage, ChatSession
+                    from magi.bus.models.local.session import ChatMessage, ChatSession
 
                     message_id = run.run_id[-26:]
                     session_exists = session.get(ChatSession, str(session_id)) is not None

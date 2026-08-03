@@ -11,7 +11,7 @@ class MagisService:
 
     def list_members(self, group_id: int) -> list:
         from magi.db.magis import open_magis_session
-        from magi.db.models_magis_membership import MAGISMembership
+        from magi.bus.models.magis.magis_membership import MAGISMembership
         from sqlalchemy import select
         with open_magis_session() as session:
             return list(session.scalars(
@@ -19,5 +19,12 @@ class MagisService:
             ).all())
 
     def can_route_a2a(self, *, from_magic_id: int, to_magic_id: int) -> bool:
-        from magi.db.models_magis_membership import can_route_a2a
+        from magi.bus.models.magis.magis_membership import can_route_a2a
         return can_route_a2a(from_magic_id=from_magic_id, to_magic_id=to_magic_id)
+
+    def is_control_admin(self, uid: int) -> bool:
+        from magi.db import ControlOperator
+        from magi.db.magis import open_magis_session
+        with open_magis_session() as session:
+            operator = session.get(ControlOperator, uid)
+            return operator is not None and bool(operator.admin)

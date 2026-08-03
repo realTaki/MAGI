@@ -19,8 +19,8 @@ class MagicService:
         """Resolve the runtime MAGIC row inside the BUS-owned PG session."""
         from sqlalchemy import select
 
-        from magi.db.models_magic import MAGIC
-        from magi.db.models_magis import MAGIS
+        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.models.magis.magis import MAGIS
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         if runtime_id and runtime_id.isdigit():
@@ -46,8 +46,8 @@ class MagicService:
         from sqlalchemy import select
 
         from magi.db.magis import open_magis_session
-        from magi.db.models_magis import MAGIS
-        from magi.db.models_magis_membership import MAGISMembership, MAGISRole
+        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
 
         with open_magis_session() as session:
             magic = self._runtime_magic(session)
@@ -71,7 +71,7 @@ class MagicService:
     def can_receive_a2a(self, sender_magic_id: int) -> bool:
         """Apply MAGIS routing policy for ingress to this runtime."""
         from magi.db.magis import open_magis_session
-        from magi.db.models_magis_membership import can_route_a2a
+        from magi.bus.models.magis.magis_membership import can_route_a2a
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         if not runtime_id or not runtime_id.isdigit():

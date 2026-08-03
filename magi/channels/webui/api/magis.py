@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from magi.db import MAGIC, MAGIS, MAGISAdmin, MAGISMembership, MAGISRole
 from magi.db.magis import get_magis_session
-from magi.db.models_magis_membership import (
+from magi.bus.models.magis.magis_membership import (
     RESERVED_ROLE_NAMES,
     adam_manages_magis,
     ensure_default_roles,

@@ -21,7 +21,7 @@ Naming convention
 After the 2026-07 naming refresh, this class is named
 ``MAGIC`` (one row = one individual MAGI agent). The Python
 class ``MAGIC`` represents an individual; the Python class
-``MAGIS`` (in :mod:`magi.db.models_magis`) represents
+``MAGIS`` (in :mod:`magi.bus.models.magis.magis`) represents
 a group of MAGI. ``__tablename__ = "magic"``.
 """
 
@@ -38,7 +38,7 @@ from magi.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.db.models_magis import MAGIS
+    from magi.bus.models.magis.magis import MAGIS
 
 
 class MAGIC(Base):
@@ -93,7 +93,7 @@ def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, 
         if magic_id is not None:
             row = db.get(MAGIC, magic_id)
         else:
-            from magi.db.models_magis import MAGIS
+            from magi.bus.models.magis.magis import MAGIS
             root = db.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
             row = db.get(MAGIC, root.adam_id) if root and root.adam_id else None
     if row is None:

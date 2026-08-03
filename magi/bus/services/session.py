@@ -22,7 +22,7 @@ from magi.bus.contracts.session import (
     validate_uid,
 )
 from magi.db import open_session
-from magi.db.models_session import ChatMessage, ChatSession
+from magi.bus.models.local.session import ChatMessage, ChatSession
 
 _ALLOWED_ROLES = frozenset({"user", "assistant", "system"})
 _TITLE_MAX_LEN = 80

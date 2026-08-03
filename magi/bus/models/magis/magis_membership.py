@@ -71,7 +71,7 @@ def adam_manages_magis(session, magic_id: int, target_magis_id: int) -> bool:
     MAGIS's data, instructions, or administrator scope.  The current access
     model is deliberately direct-only.
     """
-    from magi.db.models_magis import MAGIS
+    from magi.bus.models.magis.magis import MAGIS
 
     target = session.get(MAGIS, target_magis_id)
     return target is not None and target.adam_id == magic_id
@@ -86,7 +86,7 @@ def can_route_a2a(session, from_magic_id: int, to_magic_id: int) -> bool:
     ancestor MAGIS. Sibling MAGIS do not communicate directly.
     """
     from sqlalchemy import select
-    from magi.db.models_magis import MAGIS
+    from magi.bus.models.magis.magis import MAGIS
 
     memberships = {
         row.magic_id: row.magis_id

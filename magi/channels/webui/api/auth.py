@@ -946,7 +946,7 @@ class ChangePasswordRequest(BaseModel):
 
 def _resolve_password_credential(uid: int) -> str | None:
     """Return the stored ``secret_hash`` for ``uid``'s password row, or ``None``."""
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
     with open_session() as session:
         row = session.scalar(
             select(AuthCredential).where(
@@ -959,7 +959,7 @@ def _resolve_password_credential(uid: int) -> str | None:
 
 def _set_password_credential(uid: int, new_hash: str) -> None:
     """Upsert the password credential for ``uid``."""
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
     with open_session() as session:
         row = session.scalar(
             select(AuthCredential).where(
@@ -977,7 +977,7 @@ def _set_password_credential(uid: int, new_hash: str) -> None:
 
 def _delete_password_credential(uid: int) -> bool:
     """Drop the password credential. Returns ``True`` if a row was removed."""
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
     with open_session() as session:
         row = session.scalar(
             select(AuthCredential).where(
@@ -1018,7 +1018,7 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
             methods.append("tg_code")
         return (methods, True)
 
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
     with open_session() as session:
         contact = session.get(Contact, uid)
         has_password = session.scalar(

@@ -1,9 +1,24 @@
-from magi.bus.models.local.session import ChatMessage, ChatSession
-from magi.bus.models.local.memory import (
-    ALL_KINDS, KIND_IMPORTANT, KIND_ONGOING, SOURCE_EVE, SOURCE_MANUAL, SOURCE_SYSTEM, MemoryEntry,
-)
+"""BUS-owned ORM tables for the local SQLite database.
+
+These tables are private to one MAGI runtime and form the durable
+storage for sessions, contacts, memory, tasks, action items,
+tooling, and operational settings.
+"""
+
+from magi.bus.models.local.action_item import ActionItem
+from magi.bus.models.local.contact import Contact, ContactNote
+from magi.bus.models.local.control_plane import ControlOperator
+from magi.bus.models.local.mcp_server import McpServer
+from magi.bus.models.local.setting import StateKV
+from magi.bus.models.local.token_usage import TokenUsage
+
 
 __all__ = [
-    "ChatMessage", "ChatSession", "ALL_KINDS", "KIND_IMPORTANT", "KIND_ONGOING",
-    "SOURCE_EVE", "SOURCE_MANUAL", "SOURCE_SYSTEM", "MemoryEntry",
+    "ActionItem",
+    "Contact",
+    "ContactNote",
+    "ControlOperator",
+    "McpServer",
+    "StateKV",
+    "TokenUsage",
 ]

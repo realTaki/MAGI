@@ -178,7 +178,7 @@ class KubernetesEveBackend:
         if spec.magis is None or spec.configuration is None:
             return
         from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole
-        from magi.db.models_magis_membership import ensure_default_roles
+        from magi.bus.models.magis.magis_membership import ensure_default_roles
 
         engine = create_engine(self._magis_database_url(spec.magis), pool_pre_ping=True, future=True)
         try:

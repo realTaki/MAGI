@@ -212,7 +212,7 @@ async def get_status() -> OnboardingStatus:
         )
     from magi.db import Contact, open_session
     from magi.db.settings import state_get
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
 
     state_dir = _state_dir()
     bot_username = state_get(state_dir, "telegram.bot_username")
@@ -350,7 +350,7 @@ async def set_admin_password_onboarding(
         return SetAdminPasswordResponse(ok=False, error=str(exc))
 
     from magi.db import Contact, open_session
-    from magi.db.models_auth_credential import AuthCredential
+    from magi.bus.models.magis.auth_credential import AuthCredential
 
     with open_session() as session:
         existing_admin = session.scalar(
@@ -465,7 +465,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     #      operator couldn't sign in. The TG branch
     #      relies on the existing admin-row check above.
     if admins:
-        from magi.db.models_auth_credential import AuthCredential
+        from magi.bus.models.magis.auth_credential import AuthCredential
         with open_session() as session:
             admin_ids = [a.id for a in admins]
             password_rows = session.scalars(

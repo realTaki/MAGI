@@ -15,7 +15,7 @@ from sqlalchemy import select
 from magi.bus.contracts.tools import ToolCatalogSnapshot, ToolDefinition
 from magi.db.base import utcnow_naive
 from magi.db.engine import open_session
-from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord
+from magi.bus.models.local.tool import ToolCatalogState, ToolDefinitionRecord
 
 
 class CatalogRevisionConflict(RuntimeError):

@@ -26,7 +26,7 @@ Configuration
 -------------
 
 The single source of truth is the ``mcp_servers`` table
-(:class:`magi.db.models_mcp_server.McpServer`).
+(:class:`magi.bus.models.local.mcp_server.McpServer`).
 Operators add / edit / toggle / delete rows from the
 WebUI Settings → MCP card. The loader reads the table on
 demand — no JSON file, no env var, no deploy manifest.

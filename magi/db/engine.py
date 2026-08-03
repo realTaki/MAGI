@@ -218,9 +218,9 @@ def _seed_default_root(engine: Engine) -> None:
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
-    from magi.db.models_magic import MAGIC
-    from magi.db.models_magis import MAGIS
-    from magi.db.models_magis_membership import MAGISMembership, ensure_default_roles
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_membership import MAGISMembership, ensure_default_roles
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
@@ -317,17 +317,17 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.db.models_action_item  # noqa: F401
-    import magi.db.models_auth_credential  # noqa: F401 — password + future credentials
-    import magi.db.models_contact  # noqa: F401 — unified contact directory
-    import magi.db.models_eve_runtime  # noqa: F401 — EVE lifecycle state
-    import magi.db.models_magic  # noqa: F401 — individual MAGI rows
-    import magi.db.models_magis  # noqa: F401 — MAGIS tree
-    import magi.db.models_magis_membership  # noqa: F401 — roles + memberships
-    import magi.db.models_mcp_server  # noqa: F401 — operator-configured MCP servers
-    import magi.db.models_setting  # noqa: F401 — legacy settings KV model
-    import magi.db.models_token_usage  # noqa: F401
-    import magi.db.models_tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
+    import magi.bus.models.local.action_item  # noqa: F401
+    import magi.bus.models.magis.auth_credential  # noqa: F401 — password + future credentials
+    import magi.bus.models.local.contact  # noqa: F401 — unified contact directory
+    import magi.bus.models.magis.eve_runtime  # noqa: F401 — EVE lifecycle state
+    import magi.bus.models.magis.magic  # noqa: F401 — individual MAGI rows
+    import magi.bus.models.magis.magis  # noqa: F401 — MAGIS tree
+    import magi.bus.models.magis.magis_membership  # noqa: F401 — roles + memberships
+    import magi.bus.models.local.mcp_server  # noqa: F401 — operator-configured MCP servers
+    import magi.bus.models.local.setting  # noqa: F401 — legacy settings KV model
+    import magi.bus.models.local.token_usage  # noqa: F401
+    import magi.bus.models.local.tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
     import magi.proactive.models  # noqa: F401 — proactive task templates
     application_tables = set(Base.metadata.tables)
     existing_tables = set(inspect(engine).get_table_names())

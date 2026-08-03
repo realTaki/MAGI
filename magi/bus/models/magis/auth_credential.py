@@ -1,7 +1,7 @@
 """ORM table ``auth_credentials`` — per-UID login credentials.
 
 Stores the secret material the runtime needs to authenticate
-a :class:`magi.db.models_contact.Contact` row when the
+a :class:`magi.bus.models.local.contact.Contact` row when the
 user signs in via WebUI. Today there is one ``kind`` value:
 
   - ``"password"`` — the user has a password they can type

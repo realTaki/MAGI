@@ -37,7 +37,7 @@ insert will surface that gap at write time rather
 than silently dropping the row.
 
 FKs reference :class:`Contact` in
-:mod:`magi.db.models_contact`. Type-only
+:mod:`magi.bus.models.local.contact`. Type-only
 import under TYPE_CHECKING — FK strings resolve at
 mapper config time.
 """
@@ -62,7 +62,7 @@ from magi.db.base import Base
 
 
 if TYPE_CHECKING:
-    from magi.db.models_contact import Contact
+    from magi.bus.models.local.contact import Contact
 
 
 class TokenUsage(Base):

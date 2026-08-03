@@ -476,7 +476,7 @@ def _find_contact_by_telegram_id(
     sign-in bit) and ``role`` (the served-by relationship)
     independently — ``admin=True`` is the canonical
     operator flag since the 2024 split (see
-    :mod:`magi.db.models_contact`).
+    :mod:`magi.bus.models.local.contact`).
 
     LLM credentials come from the direct MAGIS ``magic`` table,
     not from ``contacts``. Provider resolution happens in the agent loop.
