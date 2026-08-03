@@ -20,8 +20,8 @@ The society is composed of three layers:
 
 ```
   MAGIS                       One MAGI Society; it may have child MAGIS.
-    ├── Adam                  Leading MAGI and control-plane runtime.
-    ├── MAGI                  Individual runtimes, including MAGI with the EVE role.
+    ├── ADAM                  Leading MAGI and control-plane runtime.
+    ├── MAGI                  Individual runtimes, including MAGI with the EVA role.
     └── Contacts              People known to a MAGI's private runtime.
 ```
 
@@ -45,7 +45,7 @@ Every architectural choice is an independent configuration axis:
 | Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
 | Private state | `/workspace/memories/magi.db` | SQLite, one replica per MAGI |
 | MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL Secret |
-| Adam peer | `MAGI_ADAM_URL` | `http://adam:42069` |
+| ADAM peer | `MAGI_ADAM_URL` | `http://adam:42069` |
 | LLM provider | direct MAGIS PostgreSQL | per-MAGI configuration; not injected as an env var |
 
 ---
@@ -110,7 +110,7 @@ adapter and registering it. Core code never changes.
 ## Persistence
 
 There are two storage domains. A MAGI's private SQLite is for local runtime state;
-its one direct MAGIS PostgreSQL database is for organization facts. Adam's child-tree
+its one direct MAGIS PostgreSQL database is for organization facts. ADAM's child-tree
 management permission does not grant it a second runtime database or public mount.
 
 | Domain | Tables / files | Owner |
@@ -195,8 +195,8 @@ operator into its local contact/session scope.
 - **MAGI** — The general kind of autonomous agent in this system.
 - **MAGIS** — A MAGI Society. A group of MAGI that forms a tree via `parent_id`.
 - **MAGIC** — Internal table/API name for an individual MAGI; not a separate product term.
-- **Adam** — Leading MAGI role for its direct MAGIS. MAGIS administrator grants
+- **ADAM** — Leading MAGI role for its direct MAGIS. MAGIS administrator grants
   are direct-only and do not inherit across the society tree.
-- **EVE** — Default working MAGI role. Executes tasks and collaborates.
-- **Role** — Adam and EVE are reserved roles; a MAGIS can also define custom roles.
+- **EVA** — Default working MAGI role. Executes tasks and collaborates.
+- **Role** — ADAM and EVA are reserved roles; a MAGIS can also define custom roles.
 - **Contact** — A person known to the society. Role: `admin` (WebUI operator), `assigned` (the served user), or `guest` (everyone else).

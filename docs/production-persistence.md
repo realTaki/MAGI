@@ -25,7 +25,7 @@ Kubernetes Secret
 ```
 
 一个 MAGI 只拥有一个**直接** MAGIS Membership，因此运行时只读取一个
-`MAGIS_DATABASE_URL`，也只挂载一个 `/magis`。Adam 可以管理所在 MAGIS 的子树，
+`MAGIS_DATABASE_URL`，也只挂载一个 `/magis`。ADAM 可以管理所在 MAGIS 的子树，
 但不会因管理权限而读取子 MAGIS 的 instructions 或挂载其公共 PVC。
 
 ## 数据边界
@@ -69,9 +69,9 @@ PostgreSQL，然后才创建该 MAGI 的 Deployment 和私有 PVC。
 注入。真实密码、控制面密钥、机器人 token、数据库文件和 kubeconfig 都不得提交 Git、
 写进 ConfigMap 或日志。
 
-Adam 不获得 Docker socket 或 Kubernetes API token。只有 orchestrator 的
+ADAM 不获得 Docker socket 或 Kubernetes API token。只有 orchestrator 的
 ServiceAccount 能创建、缩放和删除受限的 Deployment、PVC、Service、Secret 与
-PostgreSQL Deployment；Adam 仅调用经 HMAC 认证的内部 API。
+PostgreSQL Deployment；ADAM 仅调用经 HMAC 认证的内部 API。
 
 ## 后续生产化工作
 

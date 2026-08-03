@@ -16,7 +16,7 @@
 
 2. 凭证校验 (get_provider, _validate_credentials 已被删除)
    └─ get_provider() 在 magi/agent/llm/factory.py 内自己读当前 MAGI 行
-     （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVE 不再通过 provider/API key 环境变量绕过数据库）
+     （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVA 不再通过 provider/API key 环境变量绕过数据库）
    └─ 凭证来自 magic 表（每行对应一个 MAGI 的 LLM 配置），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
    └─ MAGI 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
    └─ 严格模式，绝不回退系统默认凭证
@@ -130,7 +130,7 @@
 
 3. 角色分发:
    ├─ contact_admin=True OR role=="assigned" → 通过，走 agent loop
-   │   └─ admin 和 assigned 共享同一处理器 (admin 可在 TG 上与 EVE 聊天)
+   │   └─ admin 和 assigned 共享同一处理器 (admin 可在 TG 上与 EVA 聊天)
    ├─ role=="guest" → 拒绝，发送 tgid 发现消息
    └─ 无绑定 → 软自动创建 Contact (role="guest"，admin=False)
        └─ 仍发送 tgid 发现消息，等待管理员提升角色

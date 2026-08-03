@@ -51,7 +51,7 @@ file.
    wire per-User LLM routing through the
    dispatcher (currently bypassed via the cookie
    resolution path), and stand up `/ingest/audit` +
-   `/ingest/heartbeat` for Adam↔EVE.
+   `/ingest/heartbeat` for ADAM↔EVA.
 2. **C4 memory-to-prompt** — call
    `format_memory_block()` +
    `format_contact_block()` + the session active
@@ -117,7 +117,7 @@ stubbed or absent.
 - /start binding flow — currently operator-driven only
   (`onboarding.py`); C2 adds the self-serve
   `/start <code>` path.
-- EVE → Adam ingest RPC — the `NodeConfig` knows about
+- EVA → ADAM ingest RPC — the `NodeConfig` knows about
   `MAGI_ADAM_URL` / `MAGI_SHARED_SECRET` but the
   `/ingest/audit` and `/ingest/heartbeat` routes
   don't exist yet.
@@ -199,32 +199,32 @@ end-to-end.
 
 ## C3 — Cross-channel dispatcher + audit ingest
 
-The slice where EVE and Adam are distinct node archetypes
+The slice where EVA and ADAM are distinct node archetypes
 that talk to each other.
 
 | Item | Status | Notes |
 |---|---|---|
 | Real agent-loop dispatcher (replace C0 first-touch handler) | **Next** | `main.py: "C3 will replace this with the real agent-loop dispatcher"` |
 | Multi-channel asyncio.gather for the runtime | **Partial** | TG already runs in a daemon thread with `concurrent_updates=True`; channels share the same process but aren't yet gathered as concurrent tasks in `main.py` |
-| `/ingest/audit` route (EVE → Adam) | **Next** | `app.py: "C3 — /ingest/audit, /ingest/heartbeat"` |
-| `/ingest/heartbeat` route (EVE → Adam) | **Next** | Same |
-| Adam ↔ EVE auth via `MAGI_SHARED_SECRET` | **Done** | `NodeConfig` knows the env vars; HTTP client + server impl lands in C3 |
+| `/ingest/audit` route (EVA → ADAM) | **Next** | `app.py: "C3 — /ingest/audit, /ingest/heartbeat"` |
+| `/ingest/heartbeat` route (EVA → ADAM) | **Next** | Same |
+| ADAM ↔ EVA auth via `MAGI_SHARED_SECRET` | **Done** | `NodeConfig` knows the env vars; HTTP client + server impl lands in C3 |
 | Per-User LLM provider routing (assigned → own key) | **Done** | `User.provider` + `User.api_key` are read by `loop.py` on each `handle_message`; operator row currently doubles as the per-User key source |
 | Per-channel channel + dept policy (dept must be non-NULL) | **Later** | `engine.py: "C3 / C6 will likely require every User to belong to a non-root department"` |
 
 ---
 
-## C4 — Per-MAGI persona + proactive EVE follow-ups
+## C4 — Per-MAGI persona + proactive EVA follow-ups
 
-The slice where EVE starts to feel less like a tool and
+The slice where EVA starts to feel less like a tool and
 more like a colleague. SOUL moves from a global
-file to per-MAGI, and the operator can see EVE-
+file to per-MAGI, and the operator can see EVA-
 driven action items.
 
 | Item | Status | Notes |
 |---|---|---|
 | Per-MAGI SOUL.md (replacing workspace-global) | **Next** | `loop.py: "C4 will move this to a per-MAGI"`, `soul.py: "Per-MAGI personas are C4+"` |
-| `action_items.source = "eve"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVE side writes them |
+| `action_items.source = "eve"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVA side writes them |
 | `action_items.priority = "high"` for time-sensitive follow-ups | **Done** | Same |
 | `action_items.payload_json` per-kind structured fields | **Later** | YAGNI for the rows we can foresee (per the model docstring); add when C4 needs structured per-kind fields |
 | Memory subsystem fully wired into `loop.py` prompt assembly | **Done** | `_build_system_prompt` in `loop.py` renders SOUL → memory (important + ongoing in-flight) → contact (per-chat, real display_name) → skills; tests in `test_agent_system_prompt.py` pin ordering + scope + resilience |
@@ -235,7 +235,7 @@ driven action items.
 
 ## C5 — More channels (Email + Calendar)
 
-The slice where EVE is no longer a Telegram-only bot.
+The slice where EVA is no longer a Telegram-only bot.
 
 | Item | Status | Notes |
 |---|---|---|
@@ -247,23 +247,23 @@ The slice where EVE is no longer a Telegram-only bot.
 
 ## C6 — Cross-MAGI + cross-User semantics
 
-The slice where multiple EVE nodes can talk (through
-Adam) and the workspace has more than one User
+The slice where multiple EVA nodes can talk (through
+ADAM) and the workspace has more than one User
 that needs to be visible across them.
 
 | Item | Status | Notes |
 |---|---|---|
 | `Contact.role` = `"user"` / `"guest"` semantics (not just `"admin"` / `"assigned"`) | **Done** | `models_contact.py` (formerly `models_employee.py`) already supports all four; C1.1 writes `admin` / `assigned`, C6 fills the rest |
-| Eve-of-another-MAGI bot refusal ("you can talk to your own EVE, not mine") | **Later** | `models_contact.py: "C6+ (cross-MAGI access, public visitors)"` |
+| Eva-of-another-MAGI bot refusal ("you can talk to your own EVA, not mine") | **Later** | `models_contact.py: "C6+ (cross-MAGI access, public visitors)"` |
 | `api/eves/{id}/dispatch`, `api/eves/{id}/recall` | **Next** | `app.py: "C6 — /api/eves/{id}/dispatch, /api/eves/{id}/recall"` |
-| Cross-User query / summary (operator-side, in Adam) | **Later** | Per the product spec: "汇总 / 跨 User 查询 in Adam, not EVE → EVE" |
+| Cross-User query / summary (operator-side, in ADAM) | **Later** | Per the product spec: "汇总 / 跨 User 查询 in ADAM, not EVA → EVA" |
 | Per-User LLM key per assigned User enforced everywhere | **Next** | C3 wires the dispatcher; C6 closes the loop on cross-User queries |
 
 ---
 
 ## C7 — WebSocket stream console
 
-The slice where the operator watches EVE think in
+The slice where the operator watches EVA think in
 real time.
 
 | Item | Status | Notes |
@@ -285,7 +285,7 @@ worst-day operational scenarios.
 | Symlink / path-traversal containment for file tools (replace current `Path.resolve()` trust model) | **Next** | `_safe_path.py: "C8 hardening can swap in realpath() plus a containment check"` |
 | Audit outbox lag monitoring + degraded-mode alert | **Next** | `app.py: "audit outbox lag) is added in C8 alongside the hardened degraded-mode"` |
 | Operator up-time SLO dashboard | **Unconfirmed** | Inferred from the same C8 comment block |
-| Multi-region failover (Adam HA) | **Unconfirmed** | Inferred from "degraded-mode" — concrete shape TBD |
+| Multi-region failover (ADAM HA) | **Unconfirmed** | Inferred from "degraded-mode" — concrete shape TBD |
 
 ---
 
@@ -335,7 +335,7 @@ The schema collapses to **three tables**:
 `magis.position` and `users.role` are **orthogonal axes**:
 
 - A `MAGIC`'s `position` is intrinsic to the agent's role in the
-  MAGIS's org structure (1 ADAM + N EVE per MAGIS). It is **not**
+  MAGIS's org structure (1 ADAM + N EVA per MAGIS). It is **not**
   derived from which User logs in or which User is being served.
 - A `User`'s `role` describes the person's service relationship
   to a specific MAGI (`admin` = operator; `assigned` = the person
@@ -373,7 +373,7 @@ class MAGIS(Base):
     """一群 MAGI 组成的 Agentic Society。
 
     一个 MAGIS 不是单个容器 — 它是组织树里的容器节点,持有一个
-    Adam container + N Eve containers（每个 MAGI 跑在
+    ADAM container + N Eva containers（每个 MAGI 跑在
     自己的 Pod 里）。MAGIS 通过 parent_id self-FK 形成树结构。
     """
     __tablename__ = "magics"
@@ -392,7 +392,7 @@ class MAGIC(Base):
     每个 MAGIC 在它所在的 MAGIS 里持有一个 position：
       - position='adam' → 这个 MAGIS 的 ADAM（leader / operator）。
                          每个 MAGIS 恰好一个（partial UNIQUE）。
-      - position='eve'  → 这个 MAGIS 的 EVE（普通 member）。N 个。
+      - position='eve'  → 这个 MAGIS 的 EVA（普通 member）。N 个。
     """
     __tablename__ = "magis"
     id            : int            # PK
@@ -485,7 +485,7 @@ class MagiImBinding(Base):
   to `magis` rows; process state is runtime-local, not DB.
 - `agent_assignments` table — never shipped; not needed.
 - `departments` table — gone. The org structure is now "one MAGI
-  + 1 ADAM + N EVE", with no sub-org tree.
+  + 1 ADAM + N EVA", with no sub-org tree.
 - `agents.department_id` column — gone.
 - `users.department_id` column — gone.
 - `archetype=manager` / `archetype=worker` — gone. Replaced by
@@ -496,7 +496,7 @@ class MagiImBinding(Base):
 | Old concept | New concept |
 |---|---|
 | `Employee.role` (admin/assigned/employee/guest) | **`users.role`** (4-value enum, unchanged in values) |
-| "Adam" / "EVE" = MAGI runtime archetypes | **"ADAM" / "EVE" = `magis.position`** |
+| "ADAM" / "EVA" = MAGI runtime archetypes | **"ADAM" / "EVA" = `magis.position`** |
 | `agents` table (MAGI process rows) | **`magis`** table (now also holds the MAGI agent itself, not the person) |
 | `agents.parent_id` self-FK (org tree) | gone (no org tree; org = MAGIC) |
 | `user_im_bindings` (uid-based) | **`magi_im_bindings`** (magi_id-based; binding on the MAGI side) |
@@ -506,10 +506,10 @@ class MagiImBinding(Base):
 
 #### Cardinality rules
 
-- **1 MAGIC** → **exactly 1 ADAM** + **N EVE** (N ≥ 0). Enforced by
+- **1 MAGIC** → **exactly 1 ADAM** + **N EVA** (N ≥ 0). Enforced by
   `UNIQUE(magic_id) WHERE position='adam'`.
 - **Many MAGICs** possible (multi-tenant). Each has its own 1 ADAM +
-  N EVE.
+  N EVA.
 - A **Magi** belongs to exactly one MAGIC (`magic_id` is a single
   FK).
 - A **MAGI process** binds to exactly one Magi.
@@ -562,7 +562,7 @@ class MagiImBinding(Base):
 | `/api/users/*` | new; list / create / update / archive User rows; `role` is a required field; `magi_id` is required iff `role IN {'admin','assigned'}` |
 | `/api/eves/*` | now a view onto `magis` filtered by `position='eve'` |
 | `dispatcher.lookup_im_id` | reads `magi_im_bindings.magi_id`; the lookup's "owner of this IM id" is a Magi, not a User |
-| EVE ↔ Adam dispatch RPC | resolved by reading the bound Magi row's `magic_id` (parent MAGIC) and that MAGIC's ADAM-position Magi |
+| EVA ↔ ADAM dispatch RPC | resolved by reading the bound Magi row's `magic_id` (parent MAGIC) and that MAGIC's ADAM-position Magi |
 | Runtime MAGI process boot | reads `MAGI_NODE_ROLE` env (still the position selector); looks up the corresponding `Magi` row in DB by IM binding; verifies `position` matches the env; loads position-specific policy from there |
 
 #### Migration order (dev, 1 Alembic revision; prod, multi-step)
@@ -584,9 +584,9 @@ that does the whole thing in one transaction:
      with `position='eve'` under the default MAGIC.
 7. Backfill `users`:
    - From each `Employee.role='admin'` row → create a `User` with
-     `role='admin'`, `magi_id=<the Adam magi row's id>`.
+     `role='admin'`, `magi_id=<the ADAM magi row's id>`.
    - From each `Employee.role='assigned'` row → create a `User` with
-     `role='assigned'`, `magi_id=<the matching EVE magi row's id>`.
+     `role='assigned'`, `magi_id=<the matching EVA magi row's id>`.
    - From each `Employee.role='employee'` row → create a `User` with
      `role='user'`, `magi_id=NULL`.
    - From each `Employee.role='guest'` row → create a `User` with
@@ -633,7 +633,7 @@ the operator wants archetype-named columns / settings.
 |---|---|---|
 | `MAGI_NODE_ROLE` | keep `adam` / `eve`; add docstring "manager / worker archetype" mapping | **Done in doc; code docstring next** |
 | `MAGI_NODE_ROLE` future values | register new archetype by adding a tuple to `VALID_ROLES` + a `scope` policy entry | when third archetype ships |
-| Per-MAGI SOUL.md location | `workspace/<magi_id>/SOUL.md` (was `workspace/Adam/SOUL.md` — bundled default) | C4 |
+| Per-MAGI SOUL.md location | `workspace/<magi_id>/SOUL.md` (was `workspace/ADAM/SOUL.md` — bundled default) | C4 |
 | `eve-<id>` Docker service naming | rename to `magi-<id>` when next dispatch lands | C6 dispatch PR |
 
 ### F3 — i18n + copy cleanups
@@ -643,7 +643,7 @@ feature.
 
 | Surface | Action |
 |---|---|
-| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; replace "EVE 是 Everyday Virtual Employee" with "EVE 是 worker-archetype MAGI" |
+| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; replace "EVA 是 Everyday Virtual Employee" with "EVA 是 worker-archetype MAGI" |
 | Persona / onboarding copy | reflect new archetype language |
 
 ### F4 — Glossary + module docstrings
@@ -653,7 +653,7 @@ feature.
 | Surface | Action |
 |---|---|
 | `magi/__init__.py` | update module docstring to the new framing (done 2026-07-23) |
-| `magi/__main__.py` | update docstring to talk about archetype, not "Adam vs EVE" |
+| `magi/__main__.py` | update docstring to talk about archetype, not "ADAM vs EVA" |
 | `magi/db/models_employee.py` | replaced by F1's `models_user.py` + `models_agent.py` + `models_agent_assignment.py` |
 
 ---

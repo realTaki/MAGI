@@ -35,24 +35,27 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MAGI_ROOT = REPO_ROOT / "magi"
 
 # (source_prefix, [forbidden_target_prefixes])
-# A file under "magi.agent.*" must not import from "magi.db", "magi.tools",
-# or "magi.channels". It MAY import from "magi.bus" and its own
-# subpackages ("magi.agent.llm" etc.).
+#
+# Per the BUS-centric architecture: ``magi.bus`` owns every cross-package
+# boundary.  Domain code (agent / tools / channels / mcp / proactive /
+# connectors / orchestrator / skills) talks only to the bus façade
+# (``bus.<subdomain>.<method>(...)``).  Storage lives inside the bus at
+# ``magi.bus.db`` — the *only* callers of ``magi.bus.db`` are the bus
+# services themselves (and the composition root + Alembic migration
+# runner, both of which are exempted below).
 RULES: list[tuple[str, list[str]]] = [
-    ("magi.agent", ["magi.db", "magi.tools", "magi.channels"]),
-    ("magi.tools", ["magi.agent", "magi.db", "magi.channels"]),
-    ("magi.channels", ["magi.agent", "magi.tools", "magi.db"]),
-    # db is the lowest layer — must not import from anything above.
-    # ``magi.bus.models`` is the lone permitted target: the plan explicitly
-    # says ORM tables are bus-owned (plan §"Bus models" lists the file
-    # tree at magi/bus/models/{local,magis,queue}) and ``magi/db/__init__``
-    # re-exports them, ``magi/db/alembic/env.py`` imports each module so
-    # ``alembic revision --autogenerate`` sees complete metadata, and
-    # ``magi/db/engine.py`` calls ``Base.metadata.create_all`` via the
-    # same import set. Models are passive data definitions; they have no
-    # business logic to hide from the db layer. The exception is
-    # enforced in ``_rule_violations`` via ``ALLOWED_BUS_SUBDOMAINS_*``.
-    ("magi.db", ["magi.bus", "magi.agent", "magi.tools", "magi.channels"]),
+    # Domain packages — must not reach into storage or sibling domain
+    # code.  They MAY import ``magi.bus`` (services + contracts + the
+    # façade itself); they MUST NOT import ``magi.bus.db`` (storage) or
+    # ``magi.bus.models.*`` (raw ORM tables).
+    ("magi.agent", ["magi.tools", "magi.channels", "magi.bus.db", "magi.bus.models"]),
+    ("magi.tools", ["magi.agent", "magi.channels", "magi.bus.db", "magi.bus.models"]),
+    ("magi.channels", ["magi.agent", "magi.tools", "magi.bus.db", "magi.bus.models"]),
+    ("magi.mcp", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.proactive", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.connectors", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.orchestrator", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.skills", ["magi.bus.db", "magi.bus.models"]),
     # bus is the application core — must not import tool/channel/agent
     # implementations, LLM providers, or Telegram clients.
     (
@@ -66,6 +69,13 @@ RULES: list[tuple[str, list[str]]] = [
         ],
     ),
 ]
+
+# ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
+# ``magi.bus.models.*`` — that's the whole point of the consolidation.
+# The boundary rule's `_is_internal` check already lets a file under
+# ``magi.bus.*`` import any ``magi.bus.X`` submodule, so no additional
+# exception is needed here.
+ALLOWED_BUS_SUBDOMAINS_FOR_LOWER_LAYERS: dict[str, set[str]] = {}
 
 # Allowlist of (source_file, forbidden_prefix) tuples that are explicitly
 # permitted during migration. Each entry MUST be removed before the
@@ -138,13 +148,6 @@ def _rule_violations() -> list[tuple[Path, int, str, str, str]]:
 
     Each entry: (file, lineno, source_module, target_module, forbidden_prefix)
     """
-    # Sources that may import ``magi.bus.models.*`` (passive data
-    # tables — see plan §"Bus models"). These are the ONLY ``magi.bus``
-    # submodules that the lowest layer is allowed to touch.
-    ALLOWED_BUS_SUBDOMAINS_FOR_LOWER_LAYERS: dict[str, set[str]] = {
-        "magi.db": {"magi.bus.models"},
-    }
-
     violations: list[tuple[Path, int, str, str, str]] = []
     for py_path in _iter_python_files():
         source_module = _module_name_from_path(py_path)

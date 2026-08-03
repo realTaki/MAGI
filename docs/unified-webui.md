@@ -54,7 +54,7 @@ ID 作用域。映射使用 Telegram ID；MAGI 私有 SQLite 主键不会跨节�
   父 MAGIS 或子 MAGIS。
 - `contacts.role='assigned'` 位于目标 MAGI 本地 SQLite：一个 MAGI 最多一个 assigned user。
 - 登录验证码位于**被登录 MAGI**的本地 SQLite。该 MAGI 有自己的 Bot 时由自己投递；尚未
-  配置 Bot 时，仅可由其**直接所属 MAGIS**的 Adam Bot 代发。Adam 只投递，不保存验证码，
+  配置 Bot 时，仅可由其**直接所属 MAGIS**的 ADAM Bot 代发。ADAM 只投递，不保存验证码，
   也不获得子节点登录权限。
 - Bot Token 始终只写入目标 MAGI 的本地 SQLite。WebUI 不持有 Token。
 

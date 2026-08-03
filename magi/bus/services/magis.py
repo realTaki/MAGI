@@ -1088,3 +1088,130 @@ class MagisService:
                 select(ControlSetting).where(ControlSetting.key.startswith(prefix))
             ).all()
             return {row.key: row.value for row in rows}
+
+
+class RuntimeConfigurationProjection:
+    """Snapshot for a runtime container's direct-MAGIS view.
+
+    Carries the inputs the control-plane orchestrator hands the bus when
+    provisioning a fresh MAGIS database for an MAGI Pod.  Kept as a
+    dataclass so :class:`MagisService.project_runtime_configuration`
+    can be called from non-FastAPI code (the orchestrator service,
+    tests, recovery scripts) without dragging in Pydantic or HTTP
+    types.
+    """
+
+    magis_id: int
+    magis_name: str
+    magic_id: int
+    magic_name: str | None = None
+    personal_instruction: str | None = None
+    provider: str | None = None
+    api_key: str | None = None
+    role_name: str = "EVA"
+    role_instruction: str | None = None
+    magis_instruction: str | None = None
+
+
+def _project_runtime_configuration(spec: RuntimeConfigurationProjection, database_url: str) -> None:
+    """Boot a runtime container's direct-MAGIS database.
+
+    This is the control-plane equivalent of "create the row, seed the
+    role, attach the membership".  Used by
+    :class:`magi.orchestrator.kubernetes.KubernetesOrchestrator` when
+    provisioning a fresh MAGI Pod so the container starts against a
+    pre-populated PostgreSQL instead of an empty schema.  Bounded
+    retry handles the case where the database Deployment hasn't
+    finished becoming Ready yet.
+    """
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from magi.bus.models.magis.eve_runtime import EveRuntime  # noqa: F401  # ensure table is registered
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_admin import MAGISAdmin  # noqa: F401
+    from magi.bus.models.magis.magis_membership import (
+        MAGISMembership,
+        MAGISRole,
+        ensure_default_roles,
+    )
+
+    engine = create_engine(database_url, pool_pre_ping=True, future=True)
+    try:
+        import time
+
+        last_error: Exception | None = None
+        for _attempt in range(20):
+            try:
+                MAGIS.metadata.create_all(
+                    engine,
+                    tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__],
+                )
+                with Session(engine) as session:
+                    society = session.get(MAGIS, spec.magis_id)
+                    if society is None:
+                        society = MAGIS(
+                            id=spec.magis_id,
+                            name=spec.magis_name,
+                            instruction=spec.magis_instruction or "",
+                        )
+                        session.add(society)
+                    else:
+                        society.name = spec.magis_name
+                        society.instruction = spec.magis_instruction or ""
+                    session.flush()
+                    ensure_default_roles(session, society.id)
+
+                    magic = session.get(MAGIC, spec.magic_id)
+                    if magic is None:
+                        magic = MAGIC(id=spec.magic_id)
+                        session.add(magic)
+                    magic.name = spec.magic_name
+                    magic.instruction = spec.personal_instruction
+                    magic.provider = spec.provider
+                    magic.api_key = spec.api_key
+
+                    role = session.scalar(
+                        select(MAGISRole).where(
+                            MAGISRole.magis_id == society.id,
+                            MAGISRole.name == spec.role_name,
+                        )
+                    )
+                    if role is None:
+                        role = MAGISRole(
+                            magis_id=society.id,
+                            name=spec.role_name,
+                            instruction=spec.role_instruction or "",
+                            is_reserved=spec.role_name in {"ADAM", "EVA"},
+                        )
+                        session.add(role)
+                        session.flush()
+                    else:
+                        role.instruction = spec.role_instruction or ""
+
+                    membership = session.scalar(
+                        select(MAGISMembership).where(MAGISMembership.magic_id == magic.id)
+                    )
+                    if membership is None:
+                        session.add(MAGISMembership(magis_id=society.id, magic_id=magic.id, role_id=role.id))
+                    else:
+                        membership.magis_id = society.id
+                        membership.role_id = role.id
+
+                    if role.name == "ADAM":
+                        society.adam_id = magic.id
+
+                    session.commit()
+                return
+            except Exception as exc:  # database Deployment may not be Ready yet
+                last_error = exc
+                time.sleep(1)
+        raise RuntimeError(f"MAGIS database did not become ready: {last_error}")
+    finally:
+        engine.dispose()
+
+
+# Bind to the service class so callers reach it via ``bus.magis``.
+MagisService.project_runtime_configuration = staticmethod(_project_runtime_configuration)
+MagisService.RuntimeConfigurationProjection = RuntimeConfigurationProjection
