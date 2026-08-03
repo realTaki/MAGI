@@ -65,12 +65,12 @@ from sqlalchemy.orm import Session
 
 from magi.db import ChatSession, Contact
 from magi.bus.contracts.session import new_session_id
-from magi.channels.tasks.cron_utils import (
+from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.channels.tasks.models import Task
-from magi.proactive.models import TaskPreset
+from magi.bus.models.local.task import Task
+from magi.bus.models.local.task_preset import TaskPreset
 
 logger = logging.getLogger("magi.proactive.task_presets")
 

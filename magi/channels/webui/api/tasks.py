@@ -49,8 +49,8 @@ from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels import Channel
 from magi.db import get_session
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.channels.tasks.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
-from magi.channels.tasks.models import Task, TaskRun
+from magi.bus.task_schedule import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
+from magi.bus.models.local.task import Task, TaskRun
 from magi.channels.tasks.scheduler import get_scheduler
 from magi.bus.contracts.session import new_session_id
 from magi.db import ChatSession, Contact, require_state_dir

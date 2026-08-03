@@ -24,7 +24,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.proactive.models import TaskPreset
+from magi.bus.models.local.task_preset import TaskPreset
 
 logger = logging.getLogger("magi.proactive.task_preset_templates")
 

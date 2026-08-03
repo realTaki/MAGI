@@ -62,7 +62,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from magi.bus import AgentMessage, bootstrap
-from magi.channels.tasks.models import Task, TaskRun
+from magi.bus.models.local.task import Task, TaskRun
 from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
 from magi.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
 from magi.db.settings import state_get

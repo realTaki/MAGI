@@ -11,6 +11,8 @@ from magi.bus.models.local.control_plane import ControlOperator
 from magi.bus.models.local.mcp_server import McpServer
 from magi.bus.models.local.setting import Setting as StateKV
 from magi.bus.models.local.token_usage import TokenUsage
+from magi.bus.models.local.task import Task, TaskRun
+from magi.bus.models.local.task_preset import TaskPreset
 
 
 __all__ = [
@@ -22,4 +24,7 @@ __all__ = [
     "StateKV",
     "Setting",
     "TokenUsage",
+    "Task",
+    "TaskRun",
+    "TaskPreset",
 ]

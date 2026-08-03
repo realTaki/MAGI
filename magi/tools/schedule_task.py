@@ -400,20 +400,6 @@ class ScheduleTaskTool(Tool):
             tz=resolved_tz,
         )
 
-        # ── Live-register with the apscheduler singleton ───────────────
-        if not bus.task.live_register_from_db(task_id):
-            logger.info(
-                "schedule_task: scheduler not running; task %s stored in DB only",
-                task_id,
-            )
-            return ToolResult(
-                content=(
-                    f"{'updated' if is_update else 'created'} task "
-                    f"{name!r} (id={task_id}). Note: scheduler is "
-                    f"not running; the task activates on next "
-                    f"node start."
-                )
-            )
         return ToolResult(
             content=(
                 f"{'updated' if is_update else 'created'} task "

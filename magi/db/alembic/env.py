@@ -23,7 +23,7 @@ import magi.bus.models.local.setting  # noqa: F401,E402
 import magi.bus.models.local.session  # noqa: F401,E402
 import magi.bus.models.local.token_usage  # noqa: F401,E402
 import magi.bus.models.local.tool  # noqa: F401,E402
-import magi.proactive.models  # noqa: F401,E402
+import magi.bus.models.local.task_preset  # noqa: F401,E402
 from magi.db.base import Base
 
 config = context.config

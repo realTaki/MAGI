@@ -40,11 +40,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from magi.db import get_session
-from magi.channels.tasks.cron_utils import (
+from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
 )
-from magi.proactive.models import TaskPreset
+from magi.bus.models.local.task_preset import TaskPreset
 from magi.bus.contracts.session import new_session_id
 from magi.channels.webui.api.auth_gates import AdminGate
 

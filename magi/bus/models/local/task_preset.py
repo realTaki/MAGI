@@ -1,8 +1,8 @@
 """Persistence model for system-proactive task templates.
 
 ``TaskPreset`` describes a system policy that may seed an individual MAGI's
-ordinary scheduled tasks.  The resulting ``Task`` rows live in
-:mod:`magi.channels.tasks.models` and are managed and executed by that channel.
+ordinary scheduled tasks.  The resulting ``Task`` rows are BUS-owned local
+models and are executed by the task channel.
 """
 
 from __future__ import annotations

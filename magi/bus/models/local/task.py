@@ -69,7 +69,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 # Re-use the project's shared Base so ``init_orm`` /
 # ``create_all`` see these tables on the same MetaData —
 # critical for SQLite's single-file-per-DB layout.
-from magi.db import Base
+from magi.db.base import Base
 
 
 class Task(Base):

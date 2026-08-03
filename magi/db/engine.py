@@ -328,7 +328,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.bus.models.local.setting  # noqa: F401 — legacy settings KV model
     import magi.bus.models.local.token_usage  # noqa: F401
     import magi.bus.models.local.tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
-    import magi.proactive.models  # noqa: F401 — proactive task templates
+    import magi.bus.models.local.task_preset  # noqa: F401 — proactive task templates
     application_tables = set(Base.metadata.tables)
     existing_tables = set(inspect(engine).get_table_names())
     is_legacy = "alembic_version" not in existing_tables

@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
 
-logger = logging.getLogger("magi.channels.tasks.cron_utils")
+logger = logging.getLogger("magi.bus.task_schedule")
 
 
 def validate_cron(expr: str) -> None:

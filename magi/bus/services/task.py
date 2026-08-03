@@ -1,60 +1,45 @@
-"""Bus service: task (CRUD on Task / TaskRun + live scheduler registration)."""
+"""BUS-owned durable task storage and scheduling validation."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
 
-from magi.bus.contracts.session import Session, SessionMessage
+from magi.bus.contracts.task import TaskScheduleView
+
+
+def _schedule_view(row) -> TaskScheduleView:
+    return TaskScheduleView(
+        id=str(row.id), enabled=bool(row.enabled), cron=str(row.cron), run_at=row.run_at,
+    )
 
 
 class TaskService:
-    """Task entity façade; live scheduler is in :mod:`magi.channels.tasks.scheduler`."""
+    """Task persistence façade; channel schedulers observe committed rows."""
 
     def __init__(self, state_dir: str) -> None:
         self._state_dir = state_dir
 
     # -- read -----------------------------------------------------------
 
-    def get(self, task_id: str):
+    def get_schedule(self, task_id: str) -> TaskScheduleView | None:
         from magi.db import open_session
-        from magi.channels.tasks.models import Task
+        from magi.bus.models.local.task import Task
         with open_session(self._state_dir) as session:
-            return session.get(Task, str(task_id))
+            row = session.get(Task, str(task_id))
+            return _schedule_view(row) if row is not None else None
 
-    def list_enabled(self):
+    def list_enabled_schedules(self) -> list[TaskScheduleView]:
         from magi.db import open_session
-        from magi.channels.tasks.models import Task
+        from magi.bus.models.local.task import Task
         from sqlalchemy import select
         with open_session(self._state_dir) as session:
-            return list(session.scalars(
+            rows = session.scalars(
                 select(Task).where(Task.enabled.is_(True))
-            ).all())
-
-    def get_by_name(self, name: str):
-        from magi.db import open_session
-        from magi.channels.tasks.models import Task
-        from sqlalchemy import select
-        with open_session(self._state_dir) as session:
-            return session.execute(
-                select(Task).where(Task.name == name)
-            ).scalar_one_or_none()
+            ).all()
+            return [_schedule_view(row) for row in rows]
 
     # -- write ----------------------------------------------------------
-
-    def upsert(self, task) -> None:
-        """Persist a Task row; the live scheduler is the caller's job to register."""
-        from magi.db import open_session
-        from magi.channels.tasks.models import Task
-        with open_session(self._state_dir) as session:
-            existing = session.get(Task, str(task.id))
-            if existing is None:
-                session.add(task)
-            else:
-                # Copy fields from incoming onto existing
-                for col in task.__table__.columns:
-                    setattr(existing, col.name, getattr(task, col.name))
-            session.commit()
 
     def upsert_by_name(
         self,
@@ -78,7 +63,7 @@ class TaskService:
         / delivery_to / session_id / tz fields.
         """
         from magi.db import open_session
-        from magi.channels.tasks.models import Task
+        from magi.bus.models.local.task import Task
         from sqlalchemy import select
         new_id = _new_task_id()
         with open_session(self._state_dir) as session:
@@ -118,46 +103,20 @@ class TaskService:
             session.commit()
             return new_id, False
 
-    # -- live registration ---------------------------------------------
-
-    def live_register(self, task_id: str) -> None:
-        from magi.channels.tasks.scheduler import get_scheduler
-        get_scheduler().reschedule(task_id)
-
-    def live_register_from_db(self, task_id: str) -> bool:
-        """Re-read the task from DB and register it with the live scheduler.
-
-        Returns ``True`` if registration was attempted, ``False`` if
-        the scheduler is not running.
-        """
-        from magi.channels.tasks.scheduler import get_scheduler
-        try:
-            scheduler = get_scheduler()
-        except RuntimeError:
-            return False
-        task = self.get(task_id)
-        if task is not None:
-            scheduler.register(task)
-        return True
-
     # -- cron / schedule validation ------------------------------------
-
-    # These wrap the pure ``magi.channels.tasks.cron_utils`` helpers so
-    # the tools / agent layer can validate a cron expression without
-    # importing from ``magi.channels`` directly.
     @staticmethod
     def preset_to_cron(*args, **kwargs):
-        from magi.channels.tasks.cron_utils import preset_to_cron
+        from magi.bus.task_schedule import preset_to_cron
         return preset_to_cron(*args, **kwargs)
 
     @staticmethod
     def validate_run_at(*args, **kwargs):
-        from magi.channels.tasks.cron_utils import validate_run_at
+        from magi.bus.task_schedule import validate_run_at
         return validate_run_at(*args, **kwargs)
 
     @staticmethod
     def validate_run_at_future(*args, **kwargs):
-        from magi.channels.tasks.cron_utils import validate_run_at_future
+        from magi.bus.task_schedule import validate_run_at_future
         return validate_run_at_future(*args, **kwargs)
 
 

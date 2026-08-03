@@ -32,6 +32,8 @@ from magi.bus.models.local.memory import MemoryEntry
 from magi.bus.models.local.session import ChatMessage, ChatSession
 from magi.bus.models.local.setting import Setting
 from magi.bus.models.local.token_usage import TokenUsage
+from magi.bus.models.local.task import Task, TaskRun
+from magi.bus.models.local.task_preset import TaskPreset
 from magi.bus.models.local.tool import ToolCatalogState, ToolDefinitionRecord
 from magi.bus.models.magis.auth_credential import AuthCredential
 from magi.bus.models.magis.eve_runtime import EveRuntime
@@ -77,6 +79,9 @@ __all__ = [
     "MemoryEntry",
     "Setting",
     "TokenUsage",
+    "Task",
+    "TaskRun",
+    "TaskPreset",
     "ToolCatalogState",
     "ToolDefinitionRecord",
 ]

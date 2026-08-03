@@ -1023,7 +1023,7 @@ class BusStore:
         task_id = metadata.get("task_id")
         if not task_run_id or not task_id:
             return
-        from magi.channels.tasks.models import Task, TaskRun
+        from magi.bus.models.local.task import Task, TaskRun
 
         task_run = session.get(TaskRun, str(task_run_id))
         task = session.get(Task, str(task_id))
