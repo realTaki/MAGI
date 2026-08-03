@@ -18,6 +18,7 @@ class ContactView:
     notes: str
     source: str
     telegram_id: int | None
+    separated: bool
     last_seen_at: str
     created_at: str
     updated_at: str
@@ -26,7 +27,7 @@ class ContactView:
         return {
             "id": self.id, "name": self.name, "display_name": self.display_name,
             "role": self.role, "notes": self.notes, "source": self.source,
-            "telegram_id": self.telegram_id, "last_seen_at": self.last_seen_at,
+            "telegram_id": self.telegram_id, "separated": self.separated, "last_seen_at": self.last_seen_at,
             "created_at": self.created_at, "updated_at": self.updated_at,
         }
 

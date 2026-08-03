@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from sqlalchemy import func, select
+
 class TokenUsageService:
     """Token-usage façade used by ``magi.agent.token_usage``."""
 
@@ -32,3 +36,21 @@ class TokenUsageService:
             )
             session.add(row)
             session.commit()
+
+    def aggregate(self, *, uid: int, start: datetime, end: datetime) -> tuple[int, int, int]:
+        """Return input tokens, output tokens, and call count for a UTC range."""
+        from magi.db import TokenUsage, open_session
+
+        with open_session(self._state_dir) as session:
+            input_tokens, output_tokens, calls = session.execute(
+                select(
+                    func.coalesce(func.sum(TokenUsage.input_tokens), 0),
+                    func.coalesce(func.sum(TokenUsage.output_tokens), 0),
+                    func.count(TokenUsage.id),
+                ).where(
+                    TokenUsage.uid == uid,
+                    TokenUsage.ts >= start,
+                    TokenUsage.ts <= end,
+                )
+            ).one()
+        return int(input_tokens or 0), int(output_tokens or 0), int(calls or 0)

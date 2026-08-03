@@ -16,7 +16,14 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from magi.bus.contracts import AgentMessage, BusClaim, DeliveryClaim, RunResult, ToolClaim
+from magi.bus.contracts.agent import (
+    AgentMessage,
+    A2AInvocationRequest,
+    BusClaim,
+    DeliveryClaim,
+    RunResult,
+)
+from magi.bus.contracts.tools import ToolClaim
 from magi.bus.models import (
     AgentInbox,
     AgentRun,

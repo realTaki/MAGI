@@ -21,6 +21,7 @@ def _contact_view(row) -> ContactView:
     return ContactView(
         id=int(row.id), name=str(row.name), display_name=row.display_name, role=row.role,
         notes=str(row.notes), source=str(row.source), telegram_id=row.telegram_id,
+        separated=row.separated_at is not None,
         last_seen_at=_iso(row.last_seen_at) or "", created_at=_iso(row.created_at) or "",
         updated_at=_iso(row.updated_at) or "",
     )
@@ -206,3 +207,18 @@ class ContactsService:
             row.telegram_id = telegram_id
             session.commit()
             return True
+
+    def bind_telegram(self, uid: int, telegram_id: int) -> ContactView | None:
+        """Atomically move a Telegram binding to an active contact."""
+        from magi.db import Contact, open_session
+        with open_session(self._state_dir) as session:
+            contact = session.get(Contact, uid)
+            if contact is None or contact.separated_at is not None:
+                return None
+            prior = session.scalar(select(Contact).where(Contact.telegram_id == telegram_id))
+            if prior is not None and prior.id != contact.id:
+                prior.telegram_id = None
+            contact.telegram_id = telegram_id
+            session.commit()
+            session.refresh(contact)
+            return _contact_view(contact)

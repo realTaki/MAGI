@@ -6,7 +6,7 @@ recover a partially-processed turn after its own process restarts, and
 these rows are the durable record that makes that possible.
 
 Each table lives in its own submodule; this ``__init__`` re-exports for
-backward compatibility with the legacy ``magi.bus.models`` import path.
+internal BUS imports; no model is a public BUS contract.
 """
 
 from magi.bus.models.queue.a2a_invocation import A2AInvocation
