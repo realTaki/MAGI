@@ -13,6 +13,7 @@ from magi.bus.contracts.action_item import ActionItemView
 from magi.bus.services.agent_runs import AgentRunsService
 from magi.bus.services.auth import AuthService
 from magi.bus.services.contact import ContactsService
+from magi.bus.services.connector import ConnectorService
 from magi.bus.services.delivery import DeliveryService
 from magi.bus.services.magic import MagicService
 from magi.bus.services.magis import MagisService
@@ -39,6 +40,7 @@ __all__ = [
     "AuthService",
     "CatalogRevisionConflict",
     "ContactsService",
+    "ConnectorService",
     "DeliveryService",
     "MagicService",
     "MagisService",

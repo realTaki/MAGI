@@ -24,6 +24,12 @@ class SettingsService:
 
         return state_set(self._state_dir, key, value)
 
+    def delete(self, key: str) -> None:
+        """Delete one runtime setting through the BUS persistence boundary."""
+        from magi.db.settings import state_delete
+
+        state_delete(self._state_dir, key)
+
     @staticmethod
     def require_state_dir() -> str:
         """Return the runtime's configured state directory.

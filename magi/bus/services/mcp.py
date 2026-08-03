@@ -4,13 +4,22 @@ import json
 from sqlalchemy import select
 from magi.bus.contracts.mcp import McpServerConfig, McpServerView
 
+def _iso(value) -> str:
+    return value.isoformat().replace("+00:00", "Z") if value else ""
+
 def _config(row) -> McpServerConfig:
     return McpServerConfig(row.name, row.connection_type, row.command, tuple(row.to_args_list()), row.url,
         bool(row.enabled), row.connect_timeout, row.execute_timeout, row.sse_read_timeout,
         row.to_env_dict(), row.to_headers_dict())
 def _view(row) -> McpServerView:
     cfg = _config(row)
-    return McpServerView(cfg.name,cfg.connection_type,cfg.command,cfg.args,cfg.url,cfg.enabled,cfg.connect_timeout,cfg.execute_timeout,cfg.sse_read_timeout)
+    return McpServerView(
+        cfg.name, cfg.connection_type, cfg.command, cfg.args, cfg.url,
+        cfg.enabled, cfg.connect_timeout, cfg.execute_timeout, cfg.sse_read_timeout,
+        {key: bool(value) for key, value in cfg.env.items()},
+        {key: bool(value) for key, value in cfg.headers.items()},
+        _iso(row.created_at), _iso(row.updated_at),
+    )
 
 class McpService:
     def __init__(self, state_dir: str) -> None: self._state_dir = state_dir
@@ -20,6 +29,11 @@ class McpService:
     def enabled_configs(self) -> list[McpServerConfig]:
         from magi.db import McpServer, open_session
         with open_session(self._state_dir) as s: return [_config(r) for r in s.scalars(select(McpServer).where(McpServer.enabled.is_(True)))]
+    def get(self, name: str) -> McpServerView | None:
+        from magi.db import McpServer, open_session
+        with open_session(self._state_dir) as s:
+            row = s.get(McpServer, name)
+            return _view(row) if row else None
     def get_config(self, name: str) -> McpServerConfig | None:
         from magi.db import McpServer, open_session
         with open_session(self._state_dir) as s:
@@ -40,6 +54,15 @@ class McpService:
             row=s.get(McpServer,name)
             if row is None: return False
             s.delete(row); s.commit(); return True
+    def toggle(self, name: str) -> McpServerView | None:
+        from magi.db import McpServer, open_session
+        with open_session(self._state_dir) as s:
+            row = s.get(McpServer, name)
+            if row is None:
+                return None
+            row.enabled = not row.enabled
+            s.commit(); s.refresh(row)
+            return _view(row)
     def revision_stamp(self):
         from magi.db import McpServer, open_session
         with open_session(self._state_dir) as s: return s.scalar(select(McpServer.updated_at).order_by(McpServer.updated_at.desc()).limit(1))

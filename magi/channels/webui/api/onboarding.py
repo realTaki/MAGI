@@ -427,30 +427,20 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     if control_store.enabled():
         control_store.set("onboarding.complete", "true")
         return CompleteResponse(ok=True)
-    from sqlalchemy import select
+    from magi.bus import bootstrap
 
-    from magi.channels.webui.api.action_items import (
-        _ensure_llm_credentials_item,
-    )
-    from magi.db import Contact, open_session
-    from magi.db.settings import state_set
+    bus = bootstrap(_state_dir())
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
     #    second wizard pass after /restart) is a no-op for any
     #    admin that already has an open row.
     try:
-        with open_session() as session:
-            admins = list(
-                session.scalars(
-                    select(Contact).where(Contact.admin == 1)
-                ).all()
-            )
-            inserted = 0
-            for admin in admins:
-                if _ensure_llm_credentials_item(session, admin.id):
-                    inserted += 1
-            session.commit()
+        admins = bus.contacts.list_admins()
+        inserted = sum(
+            bus.action_item.ensure_llm_credentials_item(owner_uid=admin.id)
+            for admin in admins
+        )
     except Exception as exc:  # pragma: no cover — DB failure
         logger.exception(
             "complete: action-item insert failed (%d admins, %d inserted before error)",
@@ -465,18 +455,9 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     #      operator couldn't sign in. The TG branch
     #      relies on the existing admin-row check above.
     if admins:
-        from magi.bus.models.magis.auth_credential import AuthCredential
-        with open_session() as session:
-            admin_ids = [a.id for a in admins]
-            password_rows = session.scalars(
-                select(AuthCredential).where(
-                    AuthCredential.uid.in_(admin_ids),
-                    AuthCredential.kind == "password",
-                )
-            ).all()
-            has_password = bool(password_rows)
-            # ``has_tg`` = any admin has a telegram_id.
-            has_tg = any(a.telegram_id for a in admins)
+        has_password = bus.auth.has_password_credentials([admin.id for admin in admins])
+        # ``has_tg`` = any admin has a telegram_id.
+        has_tg = any(admin.telegram_id for admin in admins)
         if not has_tg and not has_password:
             return CompleteResponse(
                 ok=False,
@@ -489,7 +470,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
 
     # 2. Flip the flag only after the inserts succeeded.
     try:
-        state_set(_state_dir(), "onboarding.complete", "true")
+        bus.settings.set("onboarding.complete", "true")
     except Exception as exc:  # pragma: no cover — disk / permission errors
         logger.exception("failed to write onboarding_complete flag")
         return CompleteResponse(ok=False)

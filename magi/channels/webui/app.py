@@ -22,6 +22,7 @@ Subsequent checkpoints layer on:
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 
 from magi import __version__
 from magi.channels.webui.api import auth, contacts, magic, magis, onboarding
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -88,13 +90,12 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     if start_telegram:
         _log.getLogger(__name__).info("create_app: starting TG bot")
         from magi.channels.telegram.bot import start_bot
-        from magi.db import require_state_dir
 
         # Importing the ASGI module in a CLI/test process must not require the
         # container-only ``/workspace`` mount to exist. Node.run() initialises
         # the workspace before serving in production.
         try:
-            t = start_bot(require_state_dir())
+            t = start_bot(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
         except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
             t = None
             _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)

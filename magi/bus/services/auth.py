@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from sqlalchemy import select
+
 
 class AuthService:
     """Authorization façade for tool worker gates."""
@@ -30,3 +32,16 @@ class AuthService:
         if role not in allowed:
             return f"role {role!r} not in {sorted(allowed)}"
         return None
+
+    def has_password_credentials(self, uids: list[int]) -> bool:
+        """Whether any local operator has a password login credential."""
+        if not uids:
+            return False
+        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            return session.scalar(select(AuthCredential.id).where(
+                AuthCredential.uid.in_(uids),
+                AuthCredential.kind == "password",
+            ).limit(1)) is not None

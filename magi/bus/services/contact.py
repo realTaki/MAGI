@@ -57,6 +57,18 @@ class ContactsService:
             row = session.scalar(select(Contact).where(Contact.telegram_id == tgid))
             return _contact_view(row) if row is not None else None
 
+    def list_admins(self) -> list[ContactView]:
+        """Return active WebUI administrators as immutable contact DTOs."""
+        from magi.db import Contact, open_session
+
+        with open_session(self._state_dir) as session:
+            rows = session.scalars(
+                select(Contact)
+                .where(Contact.admin.is_(True), Contact.separated_at.is_(None))
+                .order_by(Contact.id)
+            ).all()
+            return [_contact_view(row) for row in rows]
+
     def list_notes(self, uid: int) -> list[NoteView]:
         from magi.db import ContactNote, open_session
         with open_session(self._state_dir) as session:

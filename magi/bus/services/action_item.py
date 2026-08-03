@@ -49,6 +49,35 @@ class ActionItemService:
             session.refresh(row)
             return _view(row)
 
+    def ensure_llm_credentials_item(self, *, owner_uid: int) -> bool:
+        """Create the onboarding credential nudge once for an operator.
+
+        The open-item lookup and insert share one BUS-owned transaction.  The
+        database partial unique index remains the final concurrency guard.
+        """
+        from magi.db import ActionItem, open_session
+
+        with open_session(self._state_dir) as session:
+            existing = session.scalar(select(ActionItem).where(
+                ActionItem.uid == owner_uid,
+                ActionItem.kind == "llm_credentials_missing",
+                ActionItem.completed_at.is_(None),
+                ActionItem.dismissed.is_(False),
+            ))
+            if existing is not None:
+                return False
+            session.add(ActionItem(
+                uid=owner_uid,
+                kind="llm_credentials_missing",
+                title="设置你的 LLM provider 和 API key",
+                description="切到「Contacts」，找到自己的档案，把 Provider 和 API Key 填上。",
+                target_url="/dashboard?tab=organization",
+                priority="normal",
+                source="system",
+            ))
+            session.commit()
+            return True
+
     def complete_for_owner(
         self, *, action_item_id: int, owner_uid: int, note: str | None,
     ) -> ActionItemView | None:
@@ -67,6 +96,51 @@ class ActionItemService:
                 session.refresh(row)
             return _view(row)
 
+    def get(self, action_item_id: int) -> ActionItemView | None:
+        """Return one action item without exposing its ORM row."""
+        from magi.db import ActionItem, open_session
+
+        with open_session(self._state_dir) as session:
+            row = session.get(ActionItem, action_item_id)
+            return _view(row) if row is not None else None
+
+    def list_for_owner(
+        self,
+        *,
+        owner_uid: int,
+        include_completed: bool,
+        kind: str | None = None,
+        completed_visible_days: int = 7,
+    ) -> list[ActionItemView]:
+        """List an owner's open items and optionally their recent completions."""
+        from datetime import timedelta
+
+        from magi.db import ActionItem, open_session
+
+        with open_session(self._state_dir) as session:
+            stmt = select(ActionItem).where(ActionItem.uid == owner_uid)
+            if kind is not None:
+                stmt = stmt.where(ActionItem.kind == kind)
+            if not include_completed:
+                stmt = stmt.where(
+                    ActionItem.completed_at.is_(None),
+                    ActionItem.dismissed.is_(False),
+                )
+            else:
+                cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+                    days=completed_visible_days
+                )
+                stmt = stmt.where(
+                    (ActionItem.completed_at.is_(None))
+                    | (ActionItem.completed_at >= cutoff)
+                )
+            rows = session.scalars(stmt.order_by(
+                ActionItem.completed_at.is_(None).desc(),
+                ActionItem.priority.desc(),
+                ActionItem.created_at.desc(),
+            )).all()
+            return [_view(row) for row in rows]
+
     def list_llm_for_owner(self, *, owner_uid: int, include_completed: bool) -> list[ActionItemView]:
         from magi.db import ActionItem, open_session
 
@@ -77,11 +151,9 @@ class ActionItemService:
             )
             if not include_completed:
                 stmt = stmt.where(ActionItem.completed_at.is_(None), ActionItem.dismissed.is_(False))
-            rows = session.scalars(
-                stmt.order_by(
-                    ActionItem.completed_at.is_(None).desc(),
-                    ActionItem.priority.desc(),
-                    ActionItem.created_at.desc(),
-                )
-            ).all()
+            rows = session.scalars(stmt.order_by(
+                ActionItem.completed_at.is_(None).desc(),
+                ActionItem.priority.desc(),
+                ActionItem.created_at.desc(),
+            )).all()
             return [_view(row) for row in rows]

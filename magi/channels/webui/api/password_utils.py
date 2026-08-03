@@ -160,8 +160,8 @@ class Attempt:
 
 
 def _store_get(state_dir: str, uid: int) -> dict | None:
-    from magi.db.settings import state_get
-    raw = state_get(state_dir, f"{_PASSWORD_KEY_PREFIX}.{uid}")
+    from magi.bus import bootstrap
+    raw = bootstrap(state_dir).settings.get(f"{_PASSWORD_KEY_PREFIX}.{uid}")
     if not raw:
         return None
     try:
@@ -171,13 +171,13 @@ def _store_get(state_dir: str, uid: int) -> dict | None:
 
 
 def _store_set(state_dir: str, uid: int, value: dict) -> None:
-    from magi.db.settings import state_set
-    state_set(state_dir, f"{_PASSWORD_KEY_PREFIX}.{uid}", json.dumps(value))
+    from magi.bus import bootstrap
+    bootstrap(state_dir).settings.set(f"{_PASSWORD_KEY_PREFIX}.{uid}", json.dumps(value))
 
 
 def _store_clear(state_dir: str, uid: int) -> None:
-    from magi.db.settings import state_delete
-    state_delete(state_dir, f"{_PASSWORD_KEY_PREFIX}.{uid}")
+    from magi.bus import bootstrap
+    bootstrap(state_dir).settings.delete(f"{_PASSWORD_KEY_PREFIX}.{uid}")
 
 
 def _now_ts() -> float:

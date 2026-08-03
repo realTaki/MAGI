@@ -50,17 +50,17 @@ sends ``""`` and the server treats that as "clear".
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Annotated, Literal, Optional
+import os
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy.orm import Session
 
-from magi.db import McpServer, get_session
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.mcp_servers")
 
@@ -71,15 +71,6 @@ router = APIRouter(tags=["mcp-servers"])
 
 ConnectionType = Literal["stdio", "sse", "streamable_http"]
 _VALID_CONNECTION_TYPES: tuple[str, ...] = ("stdio", "sse", "streamable_http")
-
-
-def _is_set(value: str | None) -> bool:
-    """Mirror of the :func:`_mask_key` policy in
-    :mod:`magi.channels.webui.api.magis` — a value is
-    "set" when it's a non-empty string. ``None`` and
-    ``""`` both count as unset; the loader treats both
-    identically."""
-    return bool(value) and value != ""
 
 
 class McpServerOut(BaseModel):
@@ -153,7 +144,7 @@ class McpServerIn(BaseModel):
         return v
 
 
-def _serialize(row: McpServer) -> McpServerOut:
+def _serialize(row) -> McpServerOut:
     """Build the response shape from a row, masking env /
     headers values.
 
@@ -168,58 +159,27 @@ def _serialize(row: McpServer) -> McpServerOut:
     set keys and uses the operator's input only on
     edit, never on read.
     """
-    env_pairs = _decode_json_dict(row.env_json)
-    headers_pairs = _decode_json_dict(row.headers_json)
     return McpServerOut(
         name=row.name,
         connection_type=row.connection_type,  # type: ignore[arg-type]
         command=row.command,
-        args=_decode_json_list(row.args_json),
+        args=list(row.args),
         url=row.url,
         enabled=row.enabled,
         connect_timeout=row.connect_timeout,
         execute_timeout=row.execute_timeout,
         sse_read_timeout=row.sse_read_timeout,
-        # ``env`` carries keys only — values are masked
-        # (set keys → empty string; unset keys → empty
-        # string for symmetry). The frontend distinguishes
-        # via ``env_set``.
-        env={k: "" for k in env_pairs},
-        env_set={k: _is_set(v) for k, v in env_pairs.items()},
-        headers={k: "" for k in headers_pairs},
-        headers_set={k: _is_set(v) for k, v in headers_pairs.items()},
-        created_at=row.created_at.isoformat() if row.created_at else "",
-        updated_at=row.updated_at.isoformat() if row.updated_at else "",
+        env={key: "" for key in row.env_set},
+        env_set=row.env_set,
+        headers={key: "" for key in row.headers_set},
+        headers_set=row.headers_set,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
-def _decode_json_dict(raw: str | None) -> dict[str, str]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except ValueError:
-        # Defensive: a hand-edited / corrupted row should
-        # not crash the list endpoint. Log and treat the
-        # column as empty; the loader is also defensive.
-        logger.warning("mcp_servers row has malformed JSON dict column")
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    return {str(k): str(v) for k, v in parsed.items()}
-
-
-def _decode_json_list(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except ValueError:
-        logger.warning("mcp_servers row has malformed JSON list column")
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
 
 
 def _validate_payload_for_connection_type(payload: McpServerIn) -> None:
@@ -256,7 +216,6 @@ def _validate_payload_for_connection_type(payload: McpServerIn) -> None:
 @router.get("/mcp-servers", response_model=list[McpServerOut])
 def list_mcp_servers(
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> list[McpServerOut]:
     """Return every row in the ``mcp_servers`` table.
 
@@ -265,17 +224,15 @@ def list_mcp_servers(
     only the ``env_set`` / ``headers_set`` per-key booleans
     are surfaced to the WebUI.
     """
-    rows = session.query(McpServer).order_by(McpServer.name.asc()).all()
-    return [_serialize(r) for r in rows]
+    return [_serialize(row) for row in _bus().mcp.list()]
 
 
 @router.get("/mcp-servers/{name}", response_model=McpServerOut)
 def get_mcp_server(
     name: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> McpServerOut:
-    row = session.get(McpServer, name)
+    row = _bus().mcp.get(name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -387,7 +344,6 @@ def list_mcp_server_tools(
 def create_mcp_server(
     payload: McpServerIn,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> McpServerOut:
     """Create a new row.
 
@@ -397,7 +353,8 @@ def create_mcp_server(
     """
     _validate_payload_for_connection_type(payload)
 
-    if session.get(McpServer, payload.name) is not None:
+    service = _bus().mcp
+    if service.get(payload.name) is not None:
         raise MagiHTTPException(
             status_code=409,
             code="conflict.mcp_server_name",
@@ -407,22 +364,13 @@ def create_mcp_server(
             ),
         )
 
-    row = McpServer(
-        name=payload.name,
-        connection_type=payload.connection_type,
-        command=payload.command,
-        args_json=json.dumps(payload.args),
-        env_json=json.dumps(payload.env),
-        url=payload.url,
-        headers_json=json.dumps(payload.headers),
-        enabled=payload.enabled,
-        connect_timeout=payload.connect_timeout,
-        execute_timeout=payload.execute_timeout,
+    row = service.upsert(
+        name=payload.name, connection_type=payload.connection_type,
+        command=payload.command, args=payload.args, env=payload.env,
+        url=payload.url, headers=payload.headers, enabled=payload.enabled,
+        connect_timeout=payload.connect_timeout, execute_timeout=payload.execute_timeout,
         sse_read_timeout=payload.sse_read_timeout,
     )
-    session.add(row)
-    session.commit()
-    session.refresh(row)
     logger.info("MCP server %r created", row.name)
     return _serialize(row)
 
@@ -432,7 +380,6 @@ def update_mcp_server(
     name: str,
     payload: McpServerIn,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> McpServerOut:
     """Partial update — PATCH carries the same shape as
     POST but the ``name`` on the path is the source of
@@ -445,7 +392,8 @@ def update_mcp_server(
     reads ``""`` as "operator explicitly set this to
     empty, do not inherit from parent env".
     """
-    row = session.get(McpServer, name)
+    service = _bus().mcp
+    row = service.get(name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -466,18 +414,13 @@ def update_mcp_server(
 
     _validate_payload_for_connection_type(payload)
 
-    row.connection_type = payload.connection_type
-    row.command = payload.command
-    row.args_json = json.dumps(payload.args)
-    row.env_json = json.dumps(payload.env)
-    row.url = payload.url
-    row.headers_json = json.dumps(payload.headers)
-    row.enabled = payload.enabled
-    row.connect_timeout = payload.connect_timeout
-    row.execute_timeout = payload.execute_timeout
-    row.sse_read_timeout = payload.sse_read_timeout
-    session.commit()
-    session.refresh(row)
+    row = service.upsert(
+        name=name, connection_type=payload.connection_type,
+        command=payload.command, args=payload.args, env=payload.env,
+        url=payload.url, headers=payload.headers, enabled=payload.enabled,
+        connect_timeout=payload.connect_timeout, execute_timeout=payload.execute_timeout,
+        sse_read_timeout=payload.sse_read_timeout,
+    )
     logger.info("MCP server %r updated", row.name)
     return _serialize(row)
 
@@ -486,21 +429,17 @@ def update_mcp_server(
 def delete_mcp_server(
     name: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> Response:
     """Hard delete the row. The next chat turn's
     :func:`maybe_reload_mcp_tools` will detect the
     missing row and drop the cached connection.
     """
-    row = session.get(McpServer, name)
-    if row is None:
+    if not _bus().mcp.delete(name):
         raise MagiHTTPException(
             status_code=404,
             code="not_found.mcp_server",
             detail=f"mcp server {name!r} not found",
         )
-    session.delete(row)
-    session.commit()
     logger.info("MCP server %r deleted", name)
     return Response(status_code=204)
 
@@ -509,20 +448,16 @@ def delete_mcp_server(
 def toggle_mcp_server(
     name: str,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> McpServerOut:
     """Flip the row's ``enabled`` flag. The loader
     filters on ``enabled=True`` so a disabled server
     doesn't connect on the next reload."""
-    row = session.get(McpServer, name)
+    row = _bus().mcp.toggle(name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
             code="not_found.mcp_server",
             detail=f"mcp server {name!r} not found",
         )
-    row.enabled = not row.enabled
-    session.commit()
-    session.refresh(row)
     logger.info("MCP server %r toggled → enabled=%s", row.name, row.enabled)
     return _serialize(row)
