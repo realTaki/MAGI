@@ -1,9 +1,11 @@
-"""Small, transport-independent contracts for :mod:`magi.bus`.
+"""Agent-side public DTOs exchanged across the bus.
 
-These dataclasses deliberately contain plain serialisable values.  A channel
-can turn an HTTP, Telegram, task, or future A2A input into an
-``AgentMessage`` without importing the agent loop, and an agent worker can
-consume it without importing a channel implementation.
+A channel turns an HTTP, Telegram, task, or future A2A input into
+an ``AgentMessage`` without importing the agent loop, and an
+agent worker consumes it without importing a channel
+implementation.  ``RunResult`` and ``BusClaim`` mirror the durable
+queue state that the actor / tool worker / channel delivery
+worker all see.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
+
 
 InboxKind = Literal[
     "channel.message.received",
@@ -31,8 +34,9 @@ RunStatus = Literal[
 class A2AInvocationRequest:
     """An actor-owned peer message effect.
 
-    ``expect_reply`` is deliberately explicit: ordinary MAGI communication is
-    one-way; only a caller that asks for a response parks its run.
+    ``expect_reply`` is deliberately explicit: ordinary MAGI
+    communication is one-way; only a caller that asks for a
+    response parks its run.
     """
 
     tool_call_id: str
@@ -46,22 +50,18 @@ class A2AInvocationRequest:
 class AgentMessage:
     """A request for exactly one agent turn.
 
-    ``event_id`` is supplied by the producer and is the idempotency key.  The
-    durable bus creates a ``run_id`` for the turn, which callers can use to
-    wait for a compatible synchronous response during the migration away from
+    ``event_id`` is supplied by the producer and is the
+    idempotency key.  The durable bus creates a ``run_id`` for
+    the turn, which callers can use to wait for a compatible
+    synchronous response during the migration away from
     direct synchronous agent calls.
 
     The cross-channel triple ``source_type`` + ``source_id`` +
-    ``external_event_id`` provides an *additional* idempotency boundary:
-    two different ``event_id`` values that share the same triple are
-    treated as the same upstream event (Telegram webhook retries, A2A
-    redeliveries, etc.). Producers that have a stable upstream id
-    MUST populate it.
-
-    ``idempotency_key`` (optional) overrides the default inbox-row
-    idempotency column (``event_id``); callers that need a different
-    unique key can pass it. ``deadline_at`` is the soft wall-clock
-    deadline checked by :class:`AgentWorker` before claiming.
+    ``external_event_id`` provides an *additional* idempotency
+    boundary: two different ``event_id`` values that share the
+    same triple are treated as the same upstream event
+    (Telegram webhook retries, A2A redeliveries, etc.).
+    Producers that have a stable upstream id MUST populate it.
     """
 
     event_id: str
@@ -72,16 +72,10 @@ class AgentMessage:
     caller_role: str | None = None
     kind: InboxKind = "channel.message.received"
     source_id: str | None = None
-    # Cross-channel idempotency triple (added 2026.08 by 0009_idempotency_keys).
     source_type: str | None = None
     external_event_id: str | None = None
     idempotency_key: str | None = None
     deadline_at: datetime | None = None
-    # ``conversation_id`` is deliberately separate from a producer event.
-    # A session is the normal conversation identity for WebUI/TG; producers
-    # without sessions may supply their own stable identity.  Keeping it in
-    # the envelope lets the store attach a later human message to a waiting
-    # run without importing a channel implementation.
     conversation_id: str | None = None
     correlation_id: str | None = None
     causation_id: str | None = None
@@ -99,81 +93,6 @@ class BusClaim:
     payload: dict[str, Any]
     attempts: int
     conversation_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class ToolClaim:
-    """A leased tool job returned to a tools-owned worker."""
-
-    job_id: str
-    run_id: str
-    tool_call_id: str
-    tool_name: str
-    payload: dict[str, Any]
-    attempts: int
-    source: str | None = None
-    catalog_revision: int | None = None
-    schema_hash: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
-    """The durable, LLM-visible definition of one executable tool.
-
-    This is deliberately data rather than a ``Tool`` object. It can cross
-    between the worker, actor and HTTP handlers without exposing a registry,
-    ORM object, or callable implementation.
-    """
-
-    name: str
-    source: str
-    description: str
-    input_schema: dict[str, Any]
-    allowed_roles: tuple[str, ...] = ()
-    enabled: bool = True
-    implementation_version: str | None = None
-    schema_hash: str = ""
-    revision: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class ToolCatalogSnapshot:
-    """Observable state returned after an atomic catalog replacement."""
-
-    revision: int
-    snapshot_hash: str
-    definitions: tuple[ToolDefinition, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ToolContext:
-    """JSON-safe execution context supplied to a tool worker."""
-
-    state_dir: str
-    workspace: str
-    uid: int
-    channel: str
-    session_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class ToolResult:
-    """A provider-valid result emitted by a tool worker."""
-
-    content: str
-    is_error: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class DeliveryClaim:
-    """A leased committed reply awaiting channel delivery."""
-
-    delivery_id: str
-    run_id: str | None
-    channel: str
-    destination: str | None
-    payload: dict[str, Any]
-    attempts: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,3 +154,27 @@ class BusStoreProtocol(Protocol):
         attempt_result: dict[str, Any] | None = None,
     ) -> None: ...
     def fail_agent_message(self, event_id: str, *, error_code: str, error_detail: str) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryClaim:
+    """A leased committed reply awaiting channel delivery."""
+
+    delivery_id: str
+    run_id: str | None
+    channel: str
+    destination: str | None
+    payload: dict[str, Any]
+    attempts: int
+
+
+__all__ = [
+    "InboxKind",
+    "RunStatus",
+    "A2AInvocationRequest",
+    "AgentMessage",
+    "BusClaim",
+    "RunResult",
+    "DeliveryClaim",
+    "BusStoreProtocol",
+]

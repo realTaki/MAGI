@@ -27,7 +27,7 @@ Files:
   - ``chat_titles.md``     : the system prompt for the
                              background "summarize a conversation
                              into a 3-5 word title" job. Read by
-                             :mod:`magi.agent.memory.session.auto_title`.
+                             :mod:`magi.agent.auto_title`.
   - ``context/``           : static blocks that are assembled
                              into an LLM system context: contact,
                              daily-note, memory, and skills.
@@ -190,7 +190,7 @@ def load_chat_title_prompt() -> str:
     """The system prompt for the auto-title worker (D.7).
 
     Reads the bundled ``chat_titles.md``. Used by
-    :mod:`magi.agent.memory.session.auto_title` to summarise each
+    :mod:`magi.agent.auto_title` to summarise each
     session's first user message into a 3-5 word title
     written back to ``Session.title``.
     """

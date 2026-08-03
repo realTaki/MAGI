@@ -586,7 +586,7 @@ async def _handle_contact_message(
     reply and no LLM call.
 
     Session lifecycle (D.10): TG now persists chat history
-    the same way WebUI does — ``SessionStore`` writes
+    the same way WebUI does — the BUS session service writes
     one file per ``(delivery_address, session_id)`` under
     ``<workspace>/memories/sessions/<delivery_address>/<sid>.json``.
     Unlike WebUI (which has a sidebar "新对话" affordance),
@@ -598,13 +598,8 @@ async def _handle_contact_message(
     history with this EVE. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.agent.memory.session import (
-        SessionMessage,
-        SessionStore,
-        new_session_id,
-        utcnow_iso,
-    )
-    from magi.agent.worker import submit_agent_message
+    from magi.bus import bootstrap
+    from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
     from magi.bus import AgentMessage
 
     # LLM credentials remain local to the agent. Telegram only publishes a
@@ -674,7 +669,7 @@ async def _handle_contact_message(
     # a new thread"; if a future affordance (C7 command like
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.
-    store = SessionStore(state_dir)
+    store = bootstrap(state_dir).session
     session_id = _resolve_or_create_tg_session(store, delivery_address, uid)
 
     # Inbound append — SQLite's per-statement atomicity replaces
@@ -714,24 +709,6 @@ async def _handle_contact_message(
         # history if they ever inspect it.
         post = None
 
-    # First-user-message of a fresh thread → fire the same
-    # auto-title worker the WebUI uses. The worker is keyed
-    # by ``(delivery_address, session_id)`` and uses its own per-
-    # session lock; no TG-specific code needed.
-    if post is not None and len(post.messages) == 1:
-        try:
-            from magi.agent.memory.session.auto_title import enqueue_title_job
-            await enqueue_title_job(
-                delivery_address=delivery_address,
-                session_id=session_id,
-                uid=uid,
-            )
-        except Exception:
-            logger.exception(
-                "telegram: failed to enqueue title job for session %s",
-                session_id,
-            )
-
     # -- "typing…" indicator (D.14) --------------------------------------
     # TG clears the typing state automatically when our
     # ``reply_text`` lands, but only if the LLM reply comes
@@ -750,7 +727,7 @@ async def _handle_contact_message(
     )
 
     try:
-        await submit_agent_message(
+        bootstrap(state_dir).agent_runs.publish_input(
             AgentMessage(
                 # Telegram message ids are stable per chat, and the inbound
                 # session message is separately persisted above. Together
@@ -774,7 +751,6 @@ async def _handle_contact_message(
                 # filter privileged tools without a Telegram dependency.
                 caller_role=contact_role,
             ),
-            state_dir=state_dir,
         )
     finally:
         # Always cancel — success, error, exception.
@@ -799,7 +775,7 @@ async def _handle_contact_message(
 
 
 def _resolve_or_create_tg_session(
-    store: SessionStore,
+    store,
     delivery_address: str,
     uid: int,
 ) -> str:
@@ -818,7 +794,7 @@ def _resolve_or_create_tg_session(
     TG ↔ WebUI usage fragmented the TG history into N
     sessions, contradicting the D.10 promise.
 
-    Filtering at the SQL level (via ``SessionStore.find_latest_for_channel``)
+    Filtering in the BUS session service (via ``find_latest_tg_session``)
     means:
       - Latest is a TG session → reuse it (the common path).
       - Latest is a WebUI session → ignored; we look at the
@@ -973,7 +949,7 @@ def start_bot(state_dir: str) -> threading.Thread | None:
     # input.
     #
     # The natural serialisation point is
-    # ``SessionStore.append_messages`` — concurrent appends
+    # BUS ``append_messages`` — concurrent appends
     # are safe under SQLite's row-level locking (D.22 channel
     # guard + D.23 contact scoping are already enforced
     # there). The TG inbound handler remains cheap (one

@@ -64,7 +64,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from magi.db import ChatSession, Contact
-from magi.agent.memory.session import new_session_id
+from magi.bus.contracts.session import new_session_id
 from magi.channels.tasks.cron_utils import (
     preset_to_cron,
     validate_run_at,

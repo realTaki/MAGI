@@ -45,7 +45,7 @@ from magi.channels.tasks.cron_utils import (
     validate_run_at,
 )
 from magi.proactive.models import TaskPreset
-from magi.agent.memory.session import new_session_id
+from magi.bus.contracts.session import new_session_id
 from magi.channels.webui.api.auth_gates import AdminGate
 
 logger = logging.getLogger("magi.api.task_presets")

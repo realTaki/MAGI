@@ -67,6 +67,8 @@ class AgentWorker:
         if recovered:
             logger.warning("recovered %s expired agent inbox leases", recovered)
         self._stopping = False
+        from magi.agent.auto_title import start_title_worker
+        await start_title_worker()
         self._task = asyncio.create_task(self._run(), name="magi-agent-worker")
 
     async def stop(self) -> None:
@@ -77,6 +79,8 @@ class AgentWorker:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        from magi.agent.auto_title import stop_title_worker
+        await stop_title_worker()
 
     def notify(self) -> None:
         """Wake the local poller after an in-process producer publishes."""
@@ -239,6 +243,7 @@ class AgentWorker:
                 attempt_id=attempt_id,
                 attempt_result=attempt_result,
             )
+            self._enqueue_title_if_needed(payload)
             hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
             return
         context = {
@@ -303,14 +308,29 @@ class AgentWorker:
         )
         hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"tool_calls": tool_call_ids}))
 
+    def _enqueue_title_if_needed(self, payload: dict) -> None:
+        """Schedule title generation from the agent side after a committed turn."""
+        uid, session_id = payload.get("uid"), payload.get("session_id")
+        if not isinstance(uid, int) or not isinstance(session_id, str):
+            return
+        from magi.bus import bootstrap
+        session = bootstrap(self.state_dir).session.get(uid, session_id)
+        if session is None or session.title is not None or len(session.messages) != 2:
+            return
+        from magi.agent.auto_title import enqueue_title_job
+        asyncio.create_task(
+            enqueue_title_job(session.delivery_address, session.session_id, uid),
+            name=f"magi-title-{session.session_id}",
+        )
+
 
 def _delivery_destination(state_dir: str, payload: dict) -> str | None:
     """Resolve a TG session address without importing a Telegram client."""
     if payload.get("channel") != "tg" or not payload.get("session_id"):
         return None
-    from magi.agent.memory.session import SessionStore
+    from magi.bus import bootstrap
 
-    session = SessionStore(state_dir).get(payload.get("uid"), payload["session_id"])
+    session = bootstrap(state_dir).session.get(payload.get("uid"), payload["session_id"])
     return session.delivery_address if session is not None else None
 
 

@@ -34,7 +34,7 @@ Why a dedicated API surface (vs. reusing ``prompts/``):
 
 Atomic write: the file is rewritten via ``tempfile.mkstemp``
 in the same directory + ``os.fsync`` + ``os.replace``, mirroring
-:mod:`magi.agent.memory.session` so a crash mid-write can never
+the BUS session persistence path so a crash mid-write can never
 leave a half-edited persona on disk (which the agent would
 then read on the next chat turn).
 
@@ -59,7 +59,7 @@ from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.auth_gates import AdminOrAssignedGate
 from magi.db.engine import require_state_dir
-from magi.agent.workspace import workspace_root
+from magi.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -117,7 +117,7 @@ class SoulUpdateResponse(BaseModel):
 def _write_atomic(path: Path, content: str) -> str:
     """Atomic write to ``path``; returns ISO UTC mtime after.
 
-    Mirrors :mod:`magi.agent.memory.session` so the two file
+    Mirrors the BUS session durability semantics so the two file
     surfaces (sessions, soul) follow the same crash-safety
     pattern. Caller is responsible for the audit row.
     """

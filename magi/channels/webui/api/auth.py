@@ -26,7 +26,7 @@ Authorization model (D.24):
   who never bound a TG bot).
 
   Reads (list / get sessions) are scoped by ``uid``
-  on the server side (see :class:`SessionStore` D.23) —
+  on the server side (see the BUS session service) —
   a contact sees their own history across every channel,
   regardless of which one was used to create a given row.
   Writes (continue-send / append) are still channel-owned

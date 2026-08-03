@@ -3,7 +3,7 @@
 
 Single ``Base.metadata`` is shared by every table module under
 :mod:`magi.db.models_*` and the session-package tables at
-:mod:`magi.agent.memory.session.tables`. Alembic uses this metadata for
+:mod:`magi.db.models_session`. Alembic uses this metadata for
 autogeneration, while committed revisions own the actual schema changes.
 Adding a model therefore also requires a reviewed Alembic revision.
 
@@ -11,7 +11,7 @@ Also exposes :func:`utcnow_naive` — the canonical
 "replacement for ``datetime.utcnow()``" used by every
 ORM ``default=`` and ``onupdate=`` in the project.
 Lives here (rather than in
-:mod:`magi.agent.memory.session.ids` where its sibling
+:mod:`magi.bus.contracts.session` where its sibling
 ``utcnow_iso`` lives) so the ORM model files can import
 it without triggering ``magi.agent.memory.__init__`` —
 which in turn imports the contact tools module, which
@@ -43,7 +43,7 @@ def utcnow_naive() -> datetime:
     ``datetime.now(timezone.utc)`` to silence Python
     3.12+'s ``datetime.utcnow()`` deprecation warning.
 
-    Companion to :func:`magi.agent.memory.session.ids.utcnow_iso`,
+    Companion to :func:`magi.bus.contracts.session.utcnow_iso`,
     which renders the same moment as an ISO string for
     the session-package tables (which use ``String(32)``
     columns rather than ``DateTime``). Two helpers,

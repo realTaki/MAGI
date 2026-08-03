@@ -109,27 +109,14 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         if not include_private_routes:
             yield
             return
-        from magi.agent.memory.session.auto_title import (
-            start_title_worker,
-            stop_title_worker,
-        )
-        from magi.agent.worker import start_agent_worker, stop_agent_worker
-        from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
-        from magi.tools.worker import start_tool_worker, stop_tool_worker
+        from magi.runtime import worker_lifespan
 
-        await start_agent_worker()
-        await start_tool_worker()
-        await start_delivery_worker()
-        await start_title_worker()
-        logger.info("agent, tool, and auto-title workers started")
-        try:
-            yield
-        finally:
-            await stop_title_worker()
-            await stop_delivery_worker()
-            await stop_tool_worker()
-            await stop_agent_worker()
-            logger.info("agent, tool, and auto-title workers stopped")
+        async with worker_lifespan():
+            logger.info("durable runtime workers started")
+            try:
+                yield
+            finally:
+                logger.info("durable runtime workers stopped")
 
     app = FastAPI(
         title="MAGI",

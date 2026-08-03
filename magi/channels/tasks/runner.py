@@ -61,15 +61,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from magi.agent.worker import submit_agent_message
-from magi.bus import AgentMessage
+from magi.bus import AgentMessage, bootstrap
 from magi.channels.tasks.models import Task, TaskRun
-from magi.agent.memory.session import (
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    utcnow_iso,
-)
+from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
 from magi.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
 from magi.db.settings import state_get
 
@@ -296,13 +290,13 @@ async def execute_task(
                     db.commit()
 
     # Persist the user-message AFTER the open_session()
-    # block exits — SessionStore opens its own session
+    # block exits — the BUS session service opens its own transaction
     # internally, and calling it while the outer
     # transaction is still open would deadlock SQLite
     # (BEGIN IMMEDIATE inside another BEGIN). WebUI
     # chat.py follows the same pattern: append_messages
     # outside the request handler's outer ORM session.
-    SessionStore(state_dir).append_messages(
+    bootstrap(state_dir).session.append_messages(
         task.uid, session_id,
         [SessionMessage(
             role="user", text=contextual_prompt, ts=started,
@@ -326,7 +320,7 @@ async def execute_task(
     # time. No callback injection here.
 
     try:
-        await submit_agent_message(
+        bootstrap(state_dir).agent_runs.publish_input(
             AgentMessage(
                 event_id=f"task:{task_id}:{run_id}",
                 source_id=run_id,
@@ -348,7 +342,6 @@ async def execute_task(
                     "task_started_at": started,
                 },
             ),
-            state_dir=state_dir,
         )
     except Exception as exc:  # noqa: BLE001 — durable publish failure
         logger.exception("task %s failed to publish actor input", task_id)

@@ -77,7 +77,7 @@ def _iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
     # Treat naive datetimes as UTC — they were created via
-    # ``utcnow_naive()`` (see ``magi.agent.memory.session.ids``),
+    # ``utcnow_naive()`` (see ``magi.bus.contracts.session``),
     # which replaces the deprecated ``datetime.utcnow()``.
     if dt.tzinfo is None:
         return dt.isoformat() + "Z"

@@ -1,4 +1,4 @@
-"""Background job: generate a 3-5-word title per chat session.
+"""Agent-owned background job: generate a 3-5-word chat title.
 
 When the operator sends the *first* user message of a
 session, the chat-send endpoint enqueues a :class:`TitleJob`
@@ -8,7 +8,7 @@ the queue and runs :func:`_summarize_to_title` for each. The
 job makes one LLM call using the operator's per-contact
 credentials (no system-default fallback — the chat-send
 endpoint already gated that case) and writes the result back
-to ``Session.title`` via :meth:`SessionStore.rename`.
+to ``Session.title`` via the BUS session service.
 
 Failure mode policy
 -------------------
@@ -24,7 +24,7 @@ back to ``preview``), nothing else.
 
 The chat-send endpoint pairs the title-job write with an
 ``asyncio.Lock`` (see
-:func:`magi.agent.memory.session.session_lock`); the worker
+the SQLite transaction boundary); the worker
 acquires the same lock around its read-then-write so the two
 flows never interleave on the same ``(session_id,)``.
 The lock is per session, not global — distinct sessions
@@ -48,12 +48,12 @@ from pathlib import Path
 from typing import Optional
 
 from magi.agent.llm.errors import LLMError
-from magi.db.engine import require_state_dir
+from magi.bus import bootstrap
+from magi.bus.contracts.session import utcnow_iso
+from magi.constants import STATE_DIR
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.prompts import load_chat_title_prompt
-from magi.agent.memory.session.ids import utcnow_iso
-from magi.agent.memory.session.store import SessionStore
 
 logger = logging.getLogger("magi.agent.auto_title")
 
@@ -234,7 +234,7 @@ async def _summarize_to_title(job: TitleJob) -> None:
         await asyncio.sleep(5)
 
         state_dir = _state_dir_for_job()
-        store = SessionStore(state_dir)
+        store = bootstrap(state_dir).session
 
         # D.23: store key is the operator's uid, not
         # a per-channel delivery address. The latter is
@@ -372,7 +372,7 @@ def _state_dir_for_job() -> str:
     module import, so tests that override the env var mid-run
     see the new value.
     """
-    return require_state_dir()
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 def _cleanse_title(raw: str) -> str:

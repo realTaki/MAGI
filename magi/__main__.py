@@ -187,13 +187,6 @@ def run() -> None:
     from magi.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")
 
-    # D.18 — one-shot import of any leftover pre-D.18 JSON
-    # session files. Idempotent.
-    from pathlib import Path
-    from magi.agent.memory.session import migrate_from_json
-    from magi.agent.workspace import workspace_root
-    migrate_from_json(Path(workspace_root(state_dir)))
-
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
     from magi.agent.workspace import bootstrap_workspace, workspace_root as wr

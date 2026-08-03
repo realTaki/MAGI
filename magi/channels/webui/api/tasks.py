@@ -52,7 +52,7 @@ from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.tasks.cron_utils import preset_to_cron, validate_cron, validate_run_at, validate_run_at_future
 from magi.channels.tasks.models import Task, TaskRun
 from magi.channels.tasks.scheduler import get_scheduler
-from magi.agent.memory.session import new_session_id
+from magi.bus.contracts.session import new_session_id
 from magi.db import ChatSession, Contact, require_state_dir
 
 logger = logging.getLogger("magi.channels.webui.api.tasks")

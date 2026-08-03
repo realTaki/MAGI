@@ -32,12 +32,7 @@ from typing import TYPE_CHECKING
 
 from magi.agent.llm import ChatMessage, get_provider
 from magi.agent.llm.tokens import estimate_messages_tokens
-from magi.agent.memory.session import (
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    utcnow_iso,
-)
+from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
 
 if TYPE_CHECKING:
     pass
@@ -115,7 +110,7 @@ async def maybe_compact(
     # Persist: append old messages to archive, prepend
     # summary to active, update active_tail_count and
     # last_compaction_at. Atomic write via _write().
-    store = SessionStore(state_dir)
+    store = bootstrap(state_dir).session
     sess = store.get(uid, session_id)
     if sess is None:
         return  # session disappeared mid-call; skip
@@ -126,7 +121,7 @@ async def maybe_compact(
         chat_to_session_message(m) for m in messages[-keep:]
     ]
     try:
-        store._write(sess, bump_updated=False)
+        store.replace_compacted(sess, bump_updated=False)
     except Exception:
         logger.exception(
             "compact: persist failed (session=%s); in-memory "

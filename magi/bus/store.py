@@ -336,7 +336,7 @@ class BusStore:
                     # The final provider response becomes user-visible in the
                     # same transition that marks the run complete.  Channels
                     # must not append a second, non-authoritative copy later.
-                    from magi.agent.memory.session.tables import ChatMessage, ChatSession
+                    from magi.db.models_session import ChatMessage, ChatSession
 
                     message_id = run.run_id[-26:]
                     session_exists = session.get(ChatSession, str(session_id)) is not None
@@ -349,7 +349,7 @@ class BusStore:
                             )
                         )
                     if existing_message is None and session_exists:
-                        from magi.agent.memory.session.ids import utcnow_iso
+                        from magi.bus.contracts.session import utcnow_iso
 
                         session.add(
                             ChatMessage(

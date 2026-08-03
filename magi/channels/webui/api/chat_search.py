@@ -1,7 +1,7 @@
 """HTTP wrapper around the chat-history FTS5 search.
 
 This module is the FastAPI surface; the actual query lives in
-:mod:`magi.agent.memory.session.search`. Keeping the HTTP wrapper
+:class:`magi.bus.services.session.SessionService`. Keeping the HTTP wrapper
 thin (admin gate, Pydantic response, error mapping) means the
 agent tool can call the same query without going through
 ``channels.webui.api.*`` — closing the package-boundary violation
@@ -16,13 +16,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
-from magi.agent.memory.session.search import (
-    SearchHit,
-    SearchUnavailable,
-    search_chat_history,
-)
+from magi.bus import bootstrap
+from magi.bus.contracts.session import SearchHit, SearchUnavailable
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.channels.webui.api.chat_sessions import SessionStoreDep, _admin_uid
+from magi.channels.webui.api.chat_sessions import SessionServiceDep, _admin_uid, _state_dir
 from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_search")
@@ -45,7 +42,7 @@ class SearchResponse(BaseModel):
 def search_chat(
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -58,12 +55,10 @@ def search_chat(
     ``WHERE s.uid = :uid`` picks up every session this contact
     owns — webui, TG, or any future channel.
     """
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request, service)
 
     try:
-        items, total = search_chat_history(
-            uid=uid, q=q, limit=limit, offset=offset,
-        )
+        items, total = bootstrap(_state_dir()).session.search(uid, q, limit=limit, offset=offset)
     except SearchUnavailable as e:
         raise MagiHTTPException(
             status_code=503,

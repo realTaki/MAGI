@@ -267,7 +267,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
 
     ``hit.delivery_address`` is the row's Telegram chat identifier
     (per-channel delivery address; carried on the row
-    since D.18). The :meth:`SessionStore.get` lookup is
+    since D.18). The BUS session lookup is
     scoped by ``ctx.uid`` (the search call
     already resolved every hit to this contact) — the
     store's defence-in-depth check on ``uid``
