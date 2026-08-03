@@ -657,9 +657,7 @@ def upgrade() -> None:
                   sa.ForeignKey("magis_roles.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "uq_magis_memberships_magic", "magis_memberships", ["magic_id"]
+        sa.UniqueConstraint("magic_id", name="uq_magis_memberships_magic"),
     )
 
     op.create_table(
@@ -672,9 +670,9 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(length=120)),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-    )
-    op.create_unique_constraint(
-        "uq_magis_admins_magis_telegram", "magis_admins", ["magis_id", "telegram_id"]
+        sa.UniqueConstraint(
+            "magis_id", "telegram_id", name="uq_magis_admins_magis_telegram"
+        ),
     )
 
     op.create_table(

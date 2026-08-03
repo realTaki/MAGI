@@ -1,16 +1,22 @@
 """Regression tests for the alembic migration chain.
 
-These tests guard the P0.1 fix: ``CANONICAL_HEAD`` must match the real
-terminal revision, and a DB whose ``alembic_version`` row sits at any
-earlier head must have every subsequent revision applied by
-``upgrade_head``.
+These tests guard the dev-mode rebase pattern: ``CANONICAL_HEAD`` must
+match the real terminal revision, and a DB whose ``alembic_version``
+row sits at a revision Alembic no longer ships must have its bookkeeping
+re-stamped by ``upgrade_head`` rather than crashing the boot.
 
-Without this test, future refactors that fold migrations back into
-earlier revisions (a known dev-mode pattern) can silently break the
-runtime: ``_rebase_to_canonical_head`` re-stamps the bookkeeping row
-without checking that the schema matches the new code, and a DB whose
-``alembic_version`` was pinned to a folded-away revision will boot but
-fail every ORM operation that touches a column the migration had added.
+The 2026.08 rebase collapsed the 15-revision chain (0001-0015) into a
+single ``0001_initial_schema`` baseline. In a dev environment that
+means existing local databases whose ``alembic_version.version_num``
+points at a now-deleted revision (e.g. ``0005_agent_bus``) still boot
+cleanly: ``_rebase_to_canonical_head`` notices the unknown revision,
+blanks the row, and re-stamps to the canonical head. A fresh DB just
+runs the single baseline migration from scratch.
+
+Without these tests a future refactor that folds the lone migration
+into a different revision (or removes the rebase guard) would silently
+break the runtime: every ORM operation that touches a column defined
+elsewhere would crash.
 """
 
 from __future__ import annotations
@@ -20,18 +26,15 @@ from pathlib import Path
 
 import pytest
 
-from magi.db import init_orm
-
 
 def test_canonical_head_equals_real_head() -> None:
     """``alembic_runner.CANONICAL_HEAD`` must be the terminal head.
 
-    This is the static guard. If a future revision is added but the
-    constant is not bumped, ``upgrade_head`` will silently leave the
-    new migration un-applied on every boot — the same class of bug
-    P0.1 fixed.
+    Static guard. If a future revision is added but the constant is not
+    bumped, ``upgrade_head`` will silently leave the new migration
+    un-applied on every boot.
     """
-    from magi.db.alembic_runner import CANONICAL_HEAD, _ALEMBIC_SCRIPT_LOCATION
+    from magi.bus.db.alembic_runner import CANONICAL_HEAD, _ALEMBIC_SCRIPT_LOCATION
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -72,99 +75,127 @@ def _columns(db_path: Path, table: str) -> set[str]:
         raw.close()
 
 
-def test_post_fix_applies_full_chain_on_legacy_db(monkeypatch, tmp_path: Path) -> None:
-    """A DB pinned at 0005 must have 0006/0007/0008 schema applied.
+def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
+    """A clean init_orm must end at CANONICAL_HEAD.
 
-    Simulates the broken-deployment scenario: a developer returned from
-    a long stretch where ``CANONICAL_HEAD`` was stuck at 0005, leaving
-    their DB at ``alembic_version=0005_agent_bus``. With the fix in
-    place, the next ``upgrade_head`` must run 0006/0007/0008 and the
-    runtime code's ORM metadata must line up.
+    The dev-mode rebase collapsed every schema change into a single
+    baseline migration. A fresh workspace boots, runs that one migration,
+    and ``alembic_version`` reads the canonical head.
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
 
     # Force the engine cache to rebuild against the tmp_path DB.
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
 
-    from alembic.command import upgrade as alembic_upgrade
-    from magi.db.alembic_runner import _config_for_state_dir
+    from magi.bus.db import init_orm
+    from magi.bus.db.alembic_runner import CANONICAL_HEAD
 
-    config = _config_for_state_dir(tmp_path)
-    alembic_upgrade(config, "0005_agent_bus")
+    init_orm(str(tmp_path), seed_root=False)
 
-    # Confirm we are at 0005 BEFORE any runtime code touches the DB.
     db_path = tmp_path / "magi.db"
-    assert _raw_alembic_version(db_path) == "0005_agent_bus", (
-        "pre-fix fixture failed: alembic upgrade to 0005 did not land "
-        "where expected"
+    assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
+        f"fresh DB did not land at CANONICAL_HEAD={CANONICAL_HEAD!r}"
     )
 
-    # Now run init_orm — this is what production boot does — which calls
-    # upgrade_head internally. With the fix it must walk 0006 → 0007 →
-    # 0008 → 0009 → 0010 and apply every column.
-    init_orm(str(tmp_path), seed_root=False)
-    assert _raw_alembic_version(db_path) == "0014_tool_registry_compat"
 
-    # Spot-check that the critical columns added by 0006/0007/0009 exist.
-    # If any of these fail, the runtime would have crashed at first ORM
-    # query against the column.
-    inbox = _columns(db_path, "agent_inbox")
-    assert "conversation_id" in inbox  # added by 0006
-    assert "correlation_id" in inbox
-    assert "causation_id" in inbox
-    assert "source_type" in inbox  # added by 0009
-    assert "external_event_id" in inbox
+def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> None:
+    """A DB whose ``alembic_version`` points at a deleted revision must
+    be re-stamped to the canonical head, not crash the boot.
 
-    run_inputs = _columns(db_path, "run_inputs")
-    assert "received_seq" in run_inputs  # added by 0006
-    assert "context_seq" in run_inputs
-    assert "status" in run_inputs
-    assert "source_event_id" in run_inputs  # added by 0009
+    Simulates the post-rebase dev scenario: a developer's local
+    ``magi.db`` still carries ``alembic_version.version_num =
+    '0005_agent_bus'`` from before the 2026.08 rebase folded every
+    schema change into ``0001_initial_schema``. The script directory
+    no longer knows that revision; without the rebase guard, Alembic
+    would raise ``Can't locate revision`` on every boot. With the
+    guard, ``upgrade_head`` notices the unknown revision, blanks the
+    row, and re-stamps.
 
-    llm = _columns(db_path, "llm_attempts")
-    assert "inbox_event_id" in llm  # added by 0006
-    assert "provider" in llm
-    assert "model" in llm
-    assert "last_stream_seq" in llm
-
-    chat = _columns(db_path, "chat_messages")
-    assert "content_blocks" in chat  # added by 0007
-    assert "run_id" in chat
-    assert "llm_attempt_id" in chat
-
-    a2a = _columns(db_path, "a2a_invocations")
-    assert "tool_call_id" in a2a  # added by 0007
-    assert "request_event_id" in a2a
-    assert "reply_to" in a2a
-    assert "expect_reply" in a2a
-    assert "deadline_at" in a2a
-    assert "idempotency_key" in a2a
-
-    tool_jobs = _columns(db_path, "tool_jobs")
-    assert "idempotency_key" in tool_jobs  # added by 0009
-
-    delivery_outbox = _columns(db_path, "delivery_outbox")
-    assert "event_id" in delivery_outbox  # added by 0009
-    assert "idempotency_key" in delivery_outbox
-
-    tool_calls = _columns(db_path, "tool_calls")
-    assert "ordinal" in tool_calls  # added by 0010
-    assert "ordered_at" in tool_calls
-
-    agent_runs = _columns(db_path, "agent_runs")
-    assert "expected_tool_call_ids" in agent_runs  # added by 0011
-    assert "expected_a2a_invocation_ids" in agent_runs
-    assert "iteration_count" in agent_runs
-    assert "token_usage" in agent_runs
-    assert "deadline_at" in agent_runs
-
-
-def test_fresh_db_stamps_at_terminal_head(monkeypatch, tmp_path: Path) -> None:
-    """A clean init_orm must end at 0011, not at 0005."""
+    The schema itself is already correct — every column the deleted
+    revisions added is part of the new baseline. The only thing
+    changing is the bookkeeping row.
+    """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
+
+    from magi.bus.db import init_orm
+    from magi.bus.db.alembic_runner import CANONICAL_HEAD
+
+    # Seed a fake ``alembic_version`` row pointing at a revision the
+    # script directory no longer ships. The schema is a fresh DB so the
+    # shape already matches the post-rebaseline state — we just want to
+    # prove the rebase retargets the row instead of crashing.
+    import sqlalchemy as sa
+    fake_db = tmp_path / "magi.db"
+    fake_db.touch()
+    seed_engine = sa.create_engine(f"sqlite:///{fake_db}")
+    with seed_engine.begin() as conn:
+        conn.execute(sa.text(
+            "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO alembic_version (version_num) VALUES ('0005_agent_bus')"
+        ))
+    seed_engine.dispose()
+
+    # Boot must succeed and leave alembic_version at the canonical head.
     init_orm(str(tmp_path), seed_root=False)
 
-    assert _raw_alembic_version(tmp_path / "magi.db") == "0014_tool_registry_compat"
+    db_path = tmp_path / "magi.db"
+    assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
+        f"unknown revision was not re-stamped; expected {CANONICAL_HEAD!r}"
+    )
+
+
+@pytest.mark.parametrize("table,expected_columns", [
+    # Every schema feature the actor runtime + idempotency + ordinal +
+    # metadata migrations folded into the single baseline. If any of
+    # these regresses, the runtime will crash at first ORM query
+    # against the column.
+    ("agent_inbox", {
+        "conversation_id", "correlation_id", "causation_id",
+        "source_type", "external_event_id",
+    }),
+    ("run_inputs", {
+        "received_seq", "context_seq", "status", "source_event_id",
+    }),
+    ("llm_attempts", {
+        "inbox_event_id", "provider", "model", "last_stream_seq",
+    }),
+    ("chat_messages", {
+        "content_blocks", "run_id", "llm_attempt_id",
+    }),
+    ("a2a_invocations", {
+        "tool_call_id", "request_event_id", "reply_to",
+        "expect_reply", "deadline_at", "idempotency_key",
+    }),
+    ("tool_jobs", {"idempotency_key"}),
+    ("delivery_outbox", {"event_id", "idempotency_key"}),
+    ("tool_calls", {"ordinal", "ordered_at"}),
+    ("agent_runs", {
+        "expected_tool_call_ids", "expected_a2a_invocation_ids",
+        "iteration_count", "token_usage", "deadline_at",
+    }),
+])
+def test_baseline_includes_all_actor_runtime_columns(
+    table: str, expected_columns: set[str], monkeypatch, tmp_path: Path,
+) -> None:
+    """The collapsed baseline must include every column the actor
+    runtime expects. Parametrised so a missing column fails with a
+    named assertion rather than a generic ``assert set.issubset`` dump.
+    """
+    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+
+    import magi.bus.db.engine as engine_mod
+    engine_mod._engine = engine_mod._SessionLocal = None
+
+    from magi.bus.db import init_orm
+
+    init_orm(str(tmp_path), seed_root=False)
+
+    actual = _columns(tmp_path / "magi.db", table)
+    missing = expected_columns - actual
+    assert not missing, f"{table!r} is missing columns: {sorted(missing)}"
