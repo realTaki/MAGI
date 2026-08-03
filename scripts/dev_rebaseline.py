@@ -46,8 +46,8 @@ from sqlalchemy.orm import Session
 # -- paths ---------------------------------------------------------------
 
 DEFAULT_DBS = [
-    Path("/root/GitHub/MAGI/workspace/Adam/memories/magi.db"),
-    Path("/root/GitHub/MAGI/workspace/Adam/telegram/magi.db"),
+    Path("/root/GitHub/MAGI/workspace/ADAM/memories/magi.db"),
+    Path("/root/GitHub/MAGI/workspace/ADAM/telegram/magi.db"),
 ]
 # The "primary" DB — the dump targets this file (the others
 # are smaller per-channel mirrors that share an overlapping
@@ -372,7 +372,7 @@ def main() -> int:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--db", action="append", default=None,
-        help="Override primary DB path (default: workspace/Adam/memories/magi.db). "
+        help="Override primary DB path (default: workspace/ADAM/memories/magi.db). "
              "For ``reset`` only, this is repeated to wipe extra DBs too.",
     )
     common.add_argument(

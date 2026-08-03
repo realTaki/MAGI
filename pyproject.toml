@@ -1,7 +1,7 @@
 [project]
 name = "magi"
 version = "0.1.0"
-description = "MAGI — Modular Agentic Governed Intelligence. Localized enterprise agent system with Adam (control plane) and one EVE (Everyday Virtual Employee) per employee over Telegram."
+description = "MAGI — Modular Agentic Group Intelligence. Localized enterprise agent system with ADAM (control plane) and one EVA (Extended Virtual Agent) per employee over Telegram."
 authors = [
     { name = "Taki", email = "taki.wang@ualberta.ca" }
 ]
@@ -9,16 +9,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 
 dependencies = [
-    # Adam web framework
+    # ADAM web framework
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     # Validation / settings
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
-    # Schema migrations run during every node boot, including EVE. Keep
-    # Alembic on the core runtime path rather than behind the Adam extra.
+    # Schema migrations run during every node boot, including EVA. Keep
+    # Alembic on the core runtime path rather than behind the ADAM extra.
     "alembic>=1.13.0",
-    # HTTP client (used by EVE's agent_client and llm/ollama)
+    # HTTP client (used by EVA's agent_client and llm/ollama)
     "httpx>=0.27.0",
     # SKILL.md frontmatter parser (skills/ loader) — keep
     # PyYAML on the critical path so the operator's
@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Phase 1 baseline extras (used by Adam & EVE at runtime)
+# Phase 1 baseline extras (used by ADAM & EVA at runtime)
 adam = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
@@ -41,9 +41,9 @@ adam = [
     # D.X — MCP (Model Context Protocol) client. Optional:
     # the tool loader falls back gracefully when this lib
     # is missing or when no mcp.json is configured, so
-    # an Adam install without MCP just runs without the
+    # an ADAM install without MCP just runs without the
     # MCP tool wedge. Listed as required because the
-    # typical Adam deployment uses MCP.
+    # typical ADAM deployment uses MCP.
     "mcp>=1.0.0",
 ]
 eve = [
@@ -60,7 +60,7 @@ dev = [
 ]
 
 [project.scripts]
-# Single entry point. Whether the process plays Adam or EVE is decided at
+# Single entry point. Whether the process plays ADAM or EVA is decided at
 # runtime by MAGI_NODE_ROLE (see `magi.__main__`). One image, one binary,
 # one supply chain.
 magi = "magi.__main__:main"

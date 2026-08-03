@@ -137,7 +137,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
 
 
 def test_different_tgids_get_different_sessions(tg_session_env):
-    """Two contacts chatting this EVE get two distinct rows
+    """Two contacts chatting this EVA get two distinct rows
     — DB-level ``delivery_address`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.
     """

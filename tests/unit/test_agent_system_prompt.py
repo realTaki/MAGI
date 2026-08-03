@@ -90,7 +90,7 @@ def test_prompt_always_starts_with_soul(state_dir, seed_contacts):
     the top of the rendered block."""
     from magi.agent.system_prompt import build_system_prompt
 
-    soul_text = "You are EVE. Speak in haiku when convenient."
+    soul_text = "You are EVA. Speak in haiku when convenient."
 
     rendered = build_system_prompt(
         str(state_dir),

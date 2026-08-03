@@ -20,9 +20,9 @@ def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
         adam_magic = db.get(MAGIC, genesis.adam_id)
         assert adam_magic.name == _DEFAULT_MAGI_NAME
         roles = {r.name: r for r in db.scalars(select(MAGISRole).where(MAGISRole.magis_id == genesis.id))}
-        assert set(roles) == {"Adam", "EVE"}
+        assert set(roles) == {"ADAM", "EVA"}
         membership = db.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == adam_magic.id))
-        assert membership.role_id == roles["Adam"].id
+        assert membership.role_id == roles["ADAM"].id
 
 
 def test_new_magic_is_unassigned(monkeypatch, tmp_path):
@@ -49,8 +49,8 @@ def test_magic_has_only_one_direct_magis_membership(monkeypatch, tmp_path):
         one, two, magic = MAGIS(name="One"), MAGIS(name="Two"), MAGIC(name="Only one home")
         db.add_all([one, two, magic]); db.flush()
         roles_one, roles_two = ensure_default_roles(db, one.id), ensure_default_roles(db, two.id)
-        db.add(MAGISMembership(magis_id=one.id, magic_id=magic.id, role_id=roles_one["EVE"].id)); db.commit()
-        db.add(MAGISMembership(magis_id=two.id, magic_id=magic.id, role_id=roles_two["EVE"].id))
+        db.add(MAGISMembership(magis_id=one.id, magic_id=magic.id, role_id=roles_one["EVA"].id)); db.commit()
+        db.add(MAGISMembership(magis_id=two.id, magic_id=magic.id, role_id=roles_two["EVA"].id))
         try:
             db.commit()
         except IntegrityError:

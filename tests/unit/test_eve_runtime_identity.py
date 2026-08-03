@@ -1,4 +1,4 @@
-"""EVE runtime identity must not create a second Genesis Adam."""
+"""EVA runtime identity must not create a second Genesis ADAM."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def test_eve_node_config_requires_runtime_id(monkeypatch):
     except ValueError as exc:
         assert "MAGI_RUNTIME_ID" in str(exc)
     else:
-        raise AssertionError("an EVE without a runtime identity must be rejected")
+        raise AssertionError("an EVA without a runtime identity must be rejected")
 
 
 def test_eve_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_path):
@@ -36,4 +36,4 @@ def test_eve_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_pa
     except LLMNotConfiguredError:
         pass
     else:
-        raise AssertionError("legacy environment credentials must not configure an EVE")
+        raise AssertionError("legacy environment credentials must not configure an EVA")

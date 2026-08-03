@@ -63,7 +63,7 @@ class NodeConfig:
         # Log level: read from settings if available, fall back to "info".
         log_level = DEFAULT_LOG_LEVEL
         try:
-            from magi.db.settings import state_get
+            from magi.bus.db.settings import state_get
             db_level = state_get(STATE_DIR, "system.log_level")
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
@@ -146,7 +146,7 @@ def run_webui() -> None:
         level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    from magi.db.magis import init_magis_public_db
+    from magi.bus.db.magis import init_magis_public_db
 
     # Seeding is idempotent and lets the control plane start before the first
     # runtime without maintaining a second service-entry module.
@@ -184,7 +184,7 @@ def run() -> None:
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
     # lifecycle state. The initial ADAM seeds Genesis there; an EVA only
     # opens the public schema assigned by its one direct MAGIS binding.
-    from magi.db.magis import init_magis_public_db
+    from magi.bus.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=cfg.role == "adam")
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
@@ -275,7 +275,7 @@ def run() -> None:
 
 def _init_state(state_dir: str) -> None:
     """Create the SQLite file under ``state_dir``.  Always SQLite."""
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     db_path = init_sqlite(state_dir)
     logger.info("sqlite initialised", extra={"path": str(db_path)})
 
@@ -332,7 +332,7 @@ def _read_channels_from_db(state_dir: str) -> list[str]:
     always on.  The operator can then toggle TG on via the Settings →
     Channels card.
     """
-    from magi.db.settings import state_get, state_set
+    from magi.bus.db.settings import state_get, state_set
     raw = state_get(state_dir, _CHANNELS_SETTINGS_KEY)
     if not raw:
         # Seed on first boot

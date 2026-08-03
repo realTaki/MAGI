@@ -5,7 +5,7 @@ admin branch is the most regression-prone — v0 originally
 short-circuited admins to ``logger.info(... return)`` so
 they wouldn't burn their API key on TG chitchat. Once D.4
 required per-contact credentials anyway, and D.10/D.11
-made TG chat-with-EVE a real affordance, admins needed the
+made TG chat-with-EVA a real affordance, admins needed the
 full handler path so their TG messages actually got a
 reply + emoji reaction.
 """
