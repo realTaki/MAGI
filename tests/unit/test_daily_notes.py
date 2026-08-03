@@ -53,7 +53,7 @@ def store_env(monkeypatch, tmp_path):
 
 
 def _store(state):
-    from magi.agent.memory.contacts.store import ContactStore
+    from bus.services.contact import ContactStore
     return ContactStore(str(state))
 
 
@@ -65,7 +65,7 @@ def _store(state):
 def test_upsert_daily_note_first_call_inserts(store_env):
     s = _store(store_env)
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     view = s.upsert_daily_note(contact_id=1, body_delta="sent the Q3 invoice")
     assert view.note == "sent the Q3 invoice"
@@ -89,7 +89,7 @@ def test_upsert_daily_note_second_call_appends(store_env):
 
     # Still one row.
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     with open_session() as db:
         rows = db.query(ContactNote).filter_by(
@@ -137,7 +137,7 @@ def test_permanent_notes_unaffected_by_daily_upsert(store_env):
     daily = s.upsert_daily_note(contact_id=1, body_delta="today's delta")
 
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     with open_session() as db:
         rows = db.query(ContactNote).filter_by(contact_id=1).all()
@@ -180,7 +180,7 @@ def test_partial_unique_index_rejects_duplicate_daily(store_env):
     from the constraint (note_date IS NULL is allowed for
     many rows)."""
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
     from sqlalchemy.exc import IntegrityError
 
     s = _store(store_env)
@@ -206,7 +206,7 @@ def test_partial_unique_index_allows_many_permanent(store_env):
     """Permanent rows are not constrained by the partial index
     (the WHERE clause excludes them)."""
     from magi.db import open_session
-    from magi.db.models_contact import ContactNote
+    from magi.bus.models.local.contact import ContactNote
 
     s = _store(store_env)
     for i in range(3):

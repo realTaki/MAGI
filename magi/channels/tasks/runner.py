@@ -53,25 +53,11 @@ decouples the two. See :class:`TaskScheduler` for the bridge.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from magi.agent.worker import submit_agent_message
-from magi.bus import AgentMessage
-from magi.channels.tasks.models import Task, TaskRun
-from magi.agent.memory.session import (
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    utcnow_iso,
-)
-from magi.db import ActionItem, ChatMessage, ChatSession, Contact, TokenUsage, open_session, require_state_dir
-from magi.db.settings import state_get
+from magi.bus import AgentMessage, bootstrap
+from magi.bus.contracts.session import SessionMessage, new_session_id
 
 # D.28: the runner no longer touches the TG client API
 # directly. The channel dispatcher is the single dispatch
@@ -81,7 +67,6 @@ from magi.db.settings import state_get
 # does whatever IM-client wiring it needs. Importing the
 # dispatcher is enough; we never reach for
 # ``get_telegram_bot`` directly.
-from magi.channels import dispatcher as channel_dispatcher
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.tasks.runner")
@@ -135,182 +120,52 @@ async def execute_task(
     # when the MAGI runtime isn't configured, which the
     # broad ``except Exception`` below logs as a
     # ``magi_missing_credentials`` task failure.
+    bus = bootstrap(state_dir)
+    execution = bus.task.prepare_execution(
+        task_id=task_id, run_id=run_id, started_at=started, manual=manual,
+    )
+    if execution is None:
+        logger.info("execute_task: task %s is unavailable for execution", task_id)
+        return None
 
-    with open_session() as db:
-        task = db.get(Task, task_id)
-        if task is None:
-            logger.info("execute_task: task %s vanished mid-flight", task_id)
-            return None
-        contact = db.get(Contact, task.uid)
-        if contact is None:
-            _finalise_run_failure(
-                db, run_id=run_id, task_id=task_id, uid=task.uid,
-                task_name=task.name, error="contact_missing",
-                started_iso=started,
-            )
-            _bump_failure(db, task, "contact_missing")
-            _maybe_disable_and_alert(db, task, "contact_missing")
-            db.commit()
-            return run_id
-
-        # Load the task's home session. Allocated at
-        # task-creation time by the API + schedule_task
-        # tool. Legacy rows (pre-session_id column)
-        # might still have ``None`` here; backfill on
-        # first fire so legacy tasks still get a
-        # thread.
-        if task.session_id is None:
-            task.session_id = new_session_id()
-            # Backfill the legacy ``delivery_address`` field
-            # for pre-D.28 rows. We seed with the operator's
-            # TG chat id if they have one (via the dispatcher
-            # so the adapter is the single source of truth);
-            # otherwise an empty string. The runner later
-            # reads ``Task.delivery_to`` directly for routing,
-            # so this column is purely a breadcrumb for the
-            # chat-history view.
-            #
-            # The dispatcher lookup is deferred to AFTER the
-            # ``with open_session()`` block exits — calling it
-            # inside the block would open a second SQLAlchemy
-            # session and deadlock SQLite (BEGIN IMMEDIATE
-            # while the outer transaction is still pending).
-            db.add(ChatSession(
-                session_id=task.session_id,
-                delivery_address="",  # patched after the with block
-                uid=task.uid,
-                channel="task",
-                title=f"[定时] {task.name}",
-                created_at=utcnow_iso(),
-                updated_at=utcnow_iso(),
-            ))
-            db.flush()
-        session_id = task.session_id
-        # Build a contextual user-message that includes
-        # the task's schedule metadata. The agent loop
-        # otherwise only sees ``task.prompt`` — a vague
-        # string like "提醒我查钱包" gives it no hint
-        # about *why* it's running (cron vs one-shot,
-        # monthly vs daily) or *who* it's running for.
-        # Without context the LLM ends up either asking
-        # clarification questions ("你希望怎么提醒？" —
-        # see the claim_20号钱包提醒 bug) or assuming
-        # this is a fresh setup request and calling
-        # ``schedule_task`` again to "configure the
-        # reminder", which creates a duplicate task.
-        #
-        # We keep the original prompt verbatim as the
-        # last block so the agent loop's downstream
-        # reply-excerpt extraction still picks up the
-        # operator's actual instruction. The header is
-        # scaffolding the agent should NOT ignore — the
-        # first sentence explicitly says "execute, don't
-        # re-create".
-        schedule_desc = (
-            task.cron if task.cron
-            else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
-        )
-        channel_directive = (
-            f"If channel='tg', call the ``send_message`` tool with "
-            f"the reply text to push the response. The tool routes "
-            f"via the channel dispatcher using the session's "
-            f"delivery address (the TG chat id; resolved from "
-            f"{task.delivery_to or '(unset)'}). If channel='webui', "
-            f"the reply lands inline in the operator's chat history "
-            f"automatically."
-            if task.target_channel == Channel.TG
-            else "Channel='webui': the reply lands inline in the "
-                 "operator's chat history automatically."
-        )
-        context_header = (
-            f"[task context]\n"
-            f"You are EXECUTING a scheduled task that just fired. "
-            f"Do NOT call ``schedule_task`` (or any tool that "
-            f"creates a new task) — the schedule below is already "
-            f"set up; you're running because it just fired. "
-            f"Carry out the prompt at the bottom as your goal for "
-            f"this fire.\n"
-            f"name: {task.name}\n"
-            f"schedule: {schedule_desc}\n"
-            f"channel: {task.target_channel}\n"
-            f"timezone: {task.tz}\n"
-            f"delivery_to: {task.delivery_to or '(none — webui only)'}\n"
-            f"delivery_directive: {channel_directive}\n"
-            f"\n"
-            f"[task prompt]\n"
-        )
-        contextual_prompt = context_header + task.prompt
-        run = db.get(TaskRun, run_id)
-        run = db.get(TaskRun, run_id)
-        if run is None:
-            # Cron-driven path: the scheduler never
-            # pre-created the row. Insert one now so the
-            # run shows up in the history pane as soon as
-            # the fire starts. The manual path
-            # (``POST /api/tasks/{id}/run``) takes the
-            # other branch — the API pre-created the row
-            # with ``status="running"`` so the operator's
-            # follow-up GET can find it by ``run_id``
-            # before the runner writes anything.
-            run = TaskRun(
-                id=run_id,
-                task_id=task_id,
-                session_id=session_id,
-                trigger="manual" if manual else "cron",
-                started_at=started,
-                status="running",
-            )
-            db.add(run)
-        # Snapshot for the calling coroutine so the
-        # actor publish doesn't need to keep its own
-        # DB session open.
-        task_name = task.name
-        # ``prompt`` sent to the agent is the contextual
-        # version (header + original prompt). The original
-        # ``task.prompt`` is still on the row for audit;
-        # the agent sees the wrapped text.
-        prompt = contextual_prompt
-        delivery_target = task.delivery_to
-        # Stash the new session id + uid so the post-with
-        # patch can update delivery_address without
-        # re-opening the outer session.
-        backfill_uid = task.uid
-        backfill_session_id = task.session_id
-        db.commit()
-
-    # Patch the new session's delivery_address to the
-    # operator's bound TG chat id (if any). Done outside
-    # the with block because the dispatcher opens its own
-    # SQLAlchemy session — nested BEGIN IMMEDIATE inside an
-    # outer transaction deadlocks SQLite.
-    if backfill_session_id is not None and backfill_uid is not None:
-        from magi.channels import dispatcher
-        fallback_tg_im_id = dispatcher.lookup_im_id(
-            backfill_uid, Channel.TG,
-        ) or ""
-        if fallback_tg_im_id:
-            with open_session() as db:
-                sess = db.get(ChatSession, backfill_session_id)
-                if sess is not None:
-                    sess.delivery_address = fallback_tg_im_id
-                    db.commit()
-
-    # Persist the user-message AFTER the open_session()
-    # block exits — SessionStore opens its own session
-    # internally, and calling it while the outer
-    # transaction is still open would deadlock SQLite
-    # (BEGIN IMMEDIATE inside another BEGIN). WebUI
-    # chat.py follows the same pattern: append_messages
-    # outside the request handler's outer ORM session.
-    SessionStore(state_dir).append_messages(
-        task.uid, session_id,
-        [SessionMessage(
-            role="user", text=contextual_prompt, ts=started,
-            message_id=new_session_id(),
-        )],
-        channel="task",
+    schedule_desc = (
+        execution.cron
+        if execution.cron
+        else (f"once at {execution.run_at}" if execution.run_at else "ad-hoc")
+    )
+    channel_directive = (
+        f"If channel='tg', call the ``send_message`` tool with the reply text "
+        f"to push the response. The delivery address resolves from "
+        f"{execution.delivery_to or '(unset)'}. If channel='webui', the reply "
+        f"lands inline in the operator's chat history automatically."
+        if execution.target_channel == Channel.TG
+        else "Channel='webui': the reply lands inline in the operator's chat history automatically."
+    )
+    contextual_prompt = (
+        "[task context]\n"
+        "You are EXECUTING a scheduled task that just fired. Do NOT call "
+        "``schedule_task`` (or any tool that creates a new task). Carry out "
+        "the prompt at the bottom as your goal for this fire.\n"
+        f"name: {execution.task_name}\n"
+        f"schedule: {schedule_desc}\n"
+        f"channel: {execution.target_channel}\n"
+        f"timezone: {execution.tz}\n"
+        f"delivery_to: {execution.delivery_to or '(none — webui only)'}\n"
+        f"delivery_directive: {channel_directive}\n\n"
+        f"[task prompt]\n{execution.prompt}"
     )
 
+    # Channel-owned delivery-address discovery remains outside BUS I/O.
+    from magi.channels import dispatcher
+    fallback_tg_im_id = dispatcher.lookup_im_id(execution.uid, Channel.TG) or ""
+    bus.task.set_session_delivery_address(
+        session_id=execution.session_id, delivery_address=fallback_tg_im_id,
+    )
+    bus.session.append_messages(
+        execution.uid, execution.session_id,
+        [SessionMessage(role="user", text=contextual_prompt, ts=started, message_id=new_session_id())],
+        channel="task",
+    )
     # ── 2. Publish the actor input ──
     # D.28: TG push is now handled by the channel
     # dispatcher. The agent loop never sees the TG
@@ -326,223 +181,40 @@ async def execute_task(
     # time. No callback injection here.
 
     try:
-        await submit_agent_message(
+        bus.agent_runs.publish_input(
             AgentMessage(
                 event_id=f"task:{task_id}:{run_id}",
                 source_id=run_id,
+                # Cross-channel idempotency triple (0009_idempotency_keys):
+                # task_run_id is the upstream-stable id (one per scheduled
+                # fire). A redelivered cron tick with a different local
+                # event_id collapses to the same inbox row.
+                source_type="task",
+                external_event_id=run_id,
                 kind="task.triggered",
-                text=prompt,
+                text=contextual_prompt,
                 channel="task",
-                uid=contact.id,
-                session_id=session_id,
-                caller_role=contact.role,
+                uid=execution.uid,
+                session_id=execution.session_id,
+                caller_role=execution.caller_role,
                 metadata={
                     "task_id": task_id,
                     "task_run_id": run_id,
                     "task_started_at": started,
                 },
             ),
-            state_dir=state_dir,
         )
     except Exception as exc:  # noqa: BLE001 — durable publish failure
         logger.exception("task %s failed to publish actor input", task_id)
-        return _mark_failed(
-            state_dir=state_dir, task_id=task_id, run_id=run_id,
-            uid=contact.id, task_name=task_name,
-            started_iso=started,
+        bus.task.mark_execution_failure(
+            task_id=task_id, run_id=run_id, started_at=started,
             error=f"publish:{type(exc).__name__}:{exc}",
         )
+        return run_id
 
     # Completion/failure is projected by BusStore in the same transaction as
     # the actor transition.  This runner deliberately never waits for a reply.
     return run_id
-
-
-# -- helpers ---------------------------------------------------------------
-
-
-
-
-def _mark_failed(
-    *,
-    state_dir: str,
-    task_id: str,
-    run_id: str,
-    uid: int,
-    task_name: str,
-    started_iso: str,
-    error: str,
-) -> str:
-    """Single shared failure path.
-
-    Writes the ``failed`` row + the body's error on the
-    task + (maybe) an ActionItem. Kept as a function
-    instead of inlined so both the timeout / unexpected
-    branches above share one definition site.
-    """
-    finished = datetime.now(timezone.utc).isoformat()
-    with open_session() as db:
-        run = db.get(TaskRun, run_id)
-        task = db.get(Task, task_id)
-        if run is not None:
-            run.status = "failed"
-            run.finished_at = finished
-            run.latency_ms = _ms_between(started_iso, finished)
-            run.error = error[:_LAST_ERROR_CHARS]
-        if task is not None:
-            _bump_failure(db, task, error)
-            _maybe_disable_and_alert(db, task, error)
-        db.commit()
-    return run_id
-
-
-def _bump_failure(db: Session, task: Task, error: str) -> None:
-    """Increment ``consecutive_failures`` + persist last_error."""
-    task.consecutive_failures = (task.consecutive_failures or 0) + 1
-    task.last_status = "failed"
-    task.last_run_at = datetime.now(timezone.utc).isoformat()
-    task.last_error = error[:_LAST_ERROR_CHARS]
-
-
-def _maybe_disable_and_alert(db: Session, task: Task, error: str) -> None:
-    """Cross the configured threshold → disable + post ActionItem.
-
-    Idempotent: the threshold is a one-way edge (a
-    success later resets ``consecutive_failures`` but
-    does NOT re-enable — the operator has to flip the
-    switch after they've read the ActionItem; that's
-    the point of the alert).
-    """
-    threshold = _failure_threshold()
-    if task.consecutive_failures < threshold:
-        return
-    if not task.enabled:
-        # Already disabled — don't duplicate the alert.
-        return
-    task.enabled = 0
-    db.add(ActionItem(
-        uid=task.uid,
-        kind="task_disabled",
-        title=f"定时任务已自动停用：{task.name}",
-        description=(
-            f"连续失败 {task.consecutive_failures} 次（阈值 {threshold}）。"
-            f"最后一次错误：{_truncate(error, 200)}"
-        ),
-        target_url=f"/chat/scheduled-tasks?task={task.id}",
-        priority="high",
-        source="system",
-    ))
-    logger.warning(
-        "task %s auto-disabled after %d consecutive failures",
-        task.name, task.consecutive_failures,
-    )
-
-
-def _finalise_run_failure(
-    db: Session, *,
-    run_id: str,
-    task_id: str,
-    uid: int,
-    task_name: str,
-    error: str,
-    started_iso: str,
-) -> None:
-    """First-half failure: task missing credentials, no session
-    yet created. Distinct from :func:`_mark_failed` because
-    there's no session_id to attach the run to."""
-    finished = datetime.now(timezone.utc).isoformat()
-    db.add(TaskRun(
-        id=run_id, task_id=task_id, session_id=None,
-        trigger="cron", started_at=started_iso, finished_at=finished,
-        status="failed",
-        error=error[:_LAST_ERROR_CHARS],
-        latency_ms=_ms_between(started_iso, finished),
-    ))
-    # Surface the alert directly because the failure
-    # didn't go through the standard path.
-    db.add(ActionItem(
-        uid=uid,
-        kind="task_disabled",
-        title=f"定时任务无法执行：{task_name}",
-        description=f"任务 \"{task_name}\" 对应的 EVE MAGI 没有设置 provider/api_key。",
-        target_url=f"/chat/scheduled-tasks?task={task_id}",
-        priority="high",
-        source="system",
-    ))
-
-
-def _latest_token_usage(db: Session, *, session_id: str, started_iso: str) -> tuple[int, int] | None:
-    """Sum (input, output) tokens written by the actor
-    just wrote. The ``token_usage`` schema is per-call so a
-    single fire may produce 1+ rows; summing keeps the
-    dashboard's "cost" view aligned with the per-session bill.
-
-    Filters by ``uid`` (the operator the LLM was
-    billed against) + ``ts >= started_iso`` (the fire's
-    wall-clock start). ``session_id`` is kept in the
-    signature for compatibility but isn't a column on
-    :class:`TokenUsage` — the token table is per-contact,
-    not per-session. Multiple concurrent fires for the
-    same contact would over-count, but that's a row
-    collision the scheduler's ``max_instances=1`` already
-    prevents.
-
-    ``None`` if no rows landed yet (e.g. the agent returned
-    before any LLM call — shouldn't happen in practice but
-    keeps the helper defensive).
-    """
-    del session_id  # not a column on TokenUsage; see docstring
-    rows = db.execute(
-        select(TokenUsage.input_tokens, TokenUsage.output_tokens)
-        .where(
-            TokenUsage.ts >= started_iso,
-        )
-    ).all()
-    if not rows:
-        return None
-    return (
-        sum(int(r[0]) for r in rows),
-        sum(int(r[1]) for r in rows),
-    )
-
-
-def _ms_between(started_iso: str, finished_iso: str) -> int:
-    """Subtract two ISO-8601 UTC strings → integer ms.
-
-    Falls back to 0 on parse failure (the row still
-    records finished_at correctly; the latency cell is
-    best-effort UX, not an SLA-critical value).
-    """
-    try:
-        s = datetime.fromisoformat(started_iso)
-        f = datetime.fromisoformat(finished_iso)
-    except ValueError:
-        return 0
-    return max(0, int((f - s).total_seconds() * 1000))
-
-
-def _failure_threshold() -> int:
-    """Read the configurable threshold from the KV store.
-
-    Falls back to the hard-coded default if the key
-    is unset or malformed. Lazy read on every call —
-    never cached at module import — so an operator
-    editing the value in the Settings API takes effect
-    on the very next failed run.
-    """
-    state_dir = require_state_dir()
-    raw = state_get(state_dir, "task.failure_threshold")
-    if raw is None or not raw.strip():
-        return _DEFAULT_FAILURE_THRESHOLD
-    try:
-        v = int(raw.strip())
-    except ValueError:
-        return _DEFAULT_FAILURE_THRESHOLD
-    return max(1, v)
-
-
-def _truncate(s: str, n: int) -> str:
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 # Public re-exports for the API / tests.

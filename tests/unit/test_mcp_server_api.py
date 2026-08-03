@@ -33,7 +33,7 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path):
     orm_mod._SessionLocal = None
 
     from magi.db import init_orm, open_session
-    from magi.db.models_contact import Contact
+    from magi.bus.models.local.contact import Contact
     init_orm(str(sd))
 
     with open_session() as db:

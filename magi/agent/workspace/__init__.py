@@ -1,11 +1,11 @@
 """MAGI workspace — path resolution + bootstrap.
 
-Holds the EVE\'s persistent artifacts that are NOT the
+Holds the EVA\'s persistent artifacts that are NOT the
 settings DB:
 
   - ``skills/``    : per-node skill bundle (C4 — SkillRunner)
   - ``memories/``  : per-node memory (C5 — proactive + context)
-  - ``SOUL.md``    : the EVE\'s "soul" — its persona, voice,
+  - ``SOUL.md``    : the EVA\'s "soul" — its persona, voice,
                      rules of engagement.
 
 Layout

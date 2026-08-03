@@ -121,28 +121,26 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # Cross-channel: the dispatcher routes by
-        # ``chat_sessions.channel``. WebUI sessions get the
-        # message appended directly to the chat store
-        # (operator sees it as a chat bubble); TG sessions
-        # push via the registered adapter. The LLM gets
-        # ``is_error=False`` when the message landed in its
-        # intended surface.
-
-        # Hand off to the dispatcher. The dispatcher reads
-        # ``chat_sessions.channel`` for ``session_id``, picks
-        # the right adapter, and the adapter handles its own
-        # IM id resolution + transport. This tool stays
-        # channel-agnostic.
-        from magi.channels import dispatcher
+        # A tool never invokes a channel adapter.  It writes a durable
+        # delivery intent; the channel-owned DeliveryWorker performs the
+        # actual protocol I/O after the agent transition has committed.
+        from magi.bus import bootstrap
 
         logger.info(
-            "send_message: dispatching %d chars to session=%s channel=%s",
+            "send_message: enqueueing %d chars for session=%s channel=%s",
             len(text), ctx.session_id, ctx.channel,
         )
         try:
-            await dispatcher.send_to_session(ctx.session_id, text)
-            logger.info("send_message: delivered to session=%s", ctx.session_id)
+            bus = bootstrap(ctx.state_dir)
+            session = bus.session.get(ctx.uid, ctx.session_id)
+            if session is None:
+                raise KeyError(f"unknown session {ctx.session_id!r}")
+            bus.delivery.enqueue(
+                channel=session.channel,
+                destination=session.delivery_address or None,
+                payload={"text": text, "session_id": session.session_id, "uid": session.uid},
+            )
+            logger.info("send_message: queued for session=%s", ctx.session_id)
         except KeyError as e:
             # Unknown channel / missing session — surface
             # the dispatcher's diagnostic verbatim.
@@ -156,10 +154,7 @@ class SendMessageTool(Tool):
             # react ("no-op push; reply text lands in chat
             # history").
             return ToolResult(
-                content=(
-                    f"send_message: {e}; the reply will "
-                    "land in chat history instead."
-                ),
+                content=f"send_message: {e}",
                 is_error=True,
             )
         except Exception as e:
@@ -170,7 +165,7 @@ class SendMessageTool(Tool):
 
         return ToolResult(
             content=(
-                f"send_message: delivered {len(text)} chars "
+                f"send_message: queued {len(text)} chars "
                 f"to session {ctx.session_id}"
             )
         )

@@ -46,7 +46,7 @@ from magi.db import (
     # here as well.
 )
 from magi.channels.tasks.runner import execute_task
-from magi.agent.memory.session import new_session_id
+from bus.services.session import new_session_id
 from magi.channels.tasks.scheduler import _reset_for_tests, stop_scheduler
 from magi.channels.tasks.models import Task, TaskRun
 

@@ -9,7 +9,7 @@ The workspace holds persistent artifacts that are NOT the
 settings DB:
 
   - ``skills/``    : per-node skill bundle (C4 — SkillRunner)
-  - ``SOUL.md``    : the EVE\'s "soul" — its persona, voice,
+  - ``SOUL.md``    : the EVA\'s "soul" — its persona, voice,
                      rules of engagement. Read as the agent
                      loop\'s system-prompt prefix.
 

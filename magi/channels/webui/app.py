@@ -14,7 +14,7 @@ Mounting order (matters for routing precedence):
 
 Subsequent checkpoints layer on:
 - C1.2 — more routers (contacts / eves / skills / audit / login).
-- C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVE → Adam ingest).
+- C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVA → ADAM ingest).
 - C6 — ``/api/eves/{id}/dispatch``, ``/api/eves/{id}/recall``.
 - C7 — WebSocket console stream (``/ws/console``).
 """
@@ -22,6 +22,7 @@ Subsequent checkpoints layer on:
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 
 from magi import __version__
 from magi.channels.webui.api import auth, contacts, magic, magis, onboarding
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.channels.webui")
 
@@ -53,7 +55,7 @@ def _find_spa_dist() -> Path | None:
 class HealthResponse(BaseModel):
     """Liveness payload for ``GET /health``.
 
-    Kept intentionally small — richer status (DB pool, EVE heartbeats,
+    Kept intentionally small — richer status (DB pool, EVA heartbeats,
     audit outbox lag) is added in C8 alongside the hardened degraded-mode
     story.
     """
@@ -70,17 +72,17 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     login/onboarding and MAGIS registry routes and never mounts React assets.
     The runtime remains an internal HTTP API for the one WebUI service.
     """
-    # Bootstrap MCP tools synchronously inside the uvicorn
-    # child process.  The node-level ``run()`` call bootstraps
-    # in the reloader process; uvicorn's ``reload=True`` spawns
-    # a fresh child that needs its own cache.
-    if include_private_routes:
-        try:
-            from magi.tools.registry import bootstrap_mcp_tools
-
-            bootstrap_mcp_tools()
-        except Exception:
-            pass
+    # The MCP bootstrap is handled by the composition root in
+    # ``magi.__main__`` (``bootstrap_mcp_tools`` is called before
+    # ``uvicorn`` is started).  Under ``reload=True`` uvicorn spawns
+    # a child process; the child inherits the same on-disk SQLite
+    # catalog snapshot, so a re-bootstrap is unnecessary — the
+    # catalog is the single source of truth and the child's
+    # ``bus.tool_catalog.get_snapshot()`` returns the same rows.
+    # The legacy in-app re-bootstrap was removed because channels
+    # must not depend on tools directly (boundary test); the
+    # composition root owns the cross-package wiring.
+    _ = include_private_routes  # keep the parameter's historical gate
 
     # Start TG bot in the uvicorn child process.
     import logging as _log
@@ -88,13 +90,12 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     if start_telegram:
         _log.getLogger(__name__).info("create_app: starting TG bot")
         from magi.channels.telegram.bot import start_bot
-        from magi.db import require_state_dir
 
         # Importing the ASGI module in a CLI/test process must not require the
         # container-only ``/workspace`` mount to exist. Node.run() initialises
         # the workspace before serving in production.
         try:
-            t = start_bot(require_state_dir())
+            t = start_bot(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
         except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
             t = None
             _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)
@@ -109,27 +110,14 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         if not include_private_routes:
             yield
             return
-        from magi.agent.memory.session.auto_title import (
-            start_title_worker,
-            stop_title_worker,
-        )
-        from magi.agent.worker import start_agent_worker, stop_agent_worker
-        from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
-        from magi.tools.worker import start_tool_worker, stop_tool_worker
+        from magi.runtime import worker_lifespan
 
-        await start_agent_worker()
-        await start_tool_worker()
-        await start_delivery_worker()
-        await start_title_worker()
-        logger.info("agent, tool, and auto-title workers started")
-        try:
-            yield
-        finally:
-            await stop_title_worker()
-            await stop_delivery_worker()
-            await stop_tool_worker()
-            await stop_agent_worker()
-            logger.info("agent, tool, and auto-title workers stopped")
+        async with worker_lifespan():
+            logger.info("durable runtime workers started")
+            try:
+                yield
+            finally:
+                logger.info("durable runtime workers stopped")
 
     app = FastAPI(
         title="MAGI",
@@ -197,7 +185,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     from magi.channels.webui.api import tg_bindings
 
     app.include_router(tg_bindings.router, prefix="/api")
-    # Adam → system LLM chat (operator types into the WebUI,
+    # ADAM → system LLM chat (operator types into the WebUI,
     # gets a synchronous reply). v0 non-streaming; C7 swaps
     # in SSE / WebSocket.
     from magi.channels.webui.api import chat

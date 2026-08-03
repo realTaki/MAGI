@@ -10,7 +10,7 @@ screen — no payload blob, no kind-specific column.
 
 Created by system paths (currently ``onboarding/complete``
 inserts one ``llm_credentials_missing`` row per admin). From
-C4, EVE-driven rows land via a future ``POST /api/action_items``
+C4, EVA-driven rows land via a future ``POST /api/action_items``
 endpoint — schema already accommodates them (``source='eve'``,
 ``priority='high'``).
 
@@ -25,14 +25,9 @@ distinction.
 Helpers
 =======
 
-``_ensure_llm_credentials_item(session, uid)`` lives
-in this module too so :mod:`onboarding` can call it
-uncommitted (the surrounding ``onboarding/complete`` body
-commits in one shot). The helper is idempotent: ``SELECT 1
-... WHERE completed_at IS NULL AND dismissed = 0`` is a no-op
-if any open row for the same ``(uid, kind)`` already
-exists, and the partial unique index at ``ux_action_items_open_per_kind``
-backs that up.
+The BUS service owns creation and completion transactions.  Onboarding asks
+it to ensure the per-admin credentials reminder, so the WebUI router never
+opens a persistence session.
 
 Indexes used
 ============
@@ -40,25 +35,23 @@ Indexes used
 - ``ix_action_items_uid``  : every GET filters here.
 - ``ix_action_items_contact_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
-- ``ux_action_items_open_per_kind``: idempotency check in
-  ``_ensure_llm_credentials_item``.
+- ``ux_action_items_open_per_kind``: BUS-side idempotency guard for the
+  onboarding credentials reminder.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Annotated
+import os
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.db import ActionItem, Contact, get_session
-from magi.db.base import utcnow_naive
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.action_items")
 
@@ -68,23 +61,7 @@ router = APIRouter(tags=["action_items"])
 # -- response / request shapes --------------------------------------------
 
 
-def _iso(dt: datetime | None) -> str | None:
-    """Format a datetime as ISO 8601 UTC, or None.
-
-    Keeps "completed_at is null" rendering simple in JS without
-    forcing the renderer to import a date library.
-    """
-    if dt is None:
-        return None
-    # Treat naive datetimes as UTC — they were created via
-    # ``utcnow_naive()`` (see ``magi.agent.memory.session.ids``),
-    # which replaces the deprecated ``datetime.utcnow()``.
-    if dt.tzinfo is None:
-        return dt.isoformat() + "Z"
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _serialize(a: ActionItem) -> "ActionItemOut":
+def _serialize(a) -> "ActionItemOut":
     return ActionItemOut(
         id=a.id,
         uid=a.uid,
@@ -137,62 +114,6 @@ class ActionItemCompleteRequest(BaseModel):
     completion_note: str | None = Field(default=None, max_length=500)
 
 
-# -- helper ----------------------------------------------------------------
-
-
-def _ensure_llm_credentials_item(
-    session: Session, uid: int
-) -> bool:
-    """Create an ``llm_credentials_missing`` row for the contact
-    if no open one already exists.
-
-    Returns ``True`` if a new row was added, ``False`` if one
-    was already there (idempotent no-op). The caller is
-    responsible for ``session.commit()`` — the surrounding
-    ``onboarding/complete`` body has its own commit point and
-    we don't want to introduce a second one that could collide
-    with the partial-unique index at the wrong moment.
-
-    Idempotency is enforced two ways:
-
-      1. ``SELECT ... WHERE completed_at IS NULL AND
-         dismissed = 0`` short-circuit (cheap).
-      2. The partial unique index
-         ``ux_action_items_open_per_kind`` on
-         ``(uid, kind) WHERE completed_at IS NULL AND
-         dismissed = 0`` is the safety net against a race
-         between two concurrent ``complete`` calls. The
-         session-level short-circuit + partial unique
-         together mean an open row is created at most once
-         per ``(uid, kind)``.
-    """
-    existing = session.scalar(
-        select(ActionItem).where(
-            ActionItem.uid == uid,
-            ActionItem.kind == "llm_credentials_missing",
-            ActionItem.completed_at.is_(None),
-            ActionItem.dismissed.is_(False),
-        )
-    )
-    if existing is not None:
-        return False
-    session.add(
-        ActionItem(
-            uid=uid,
-            kind="llm_credentials_missing",
-            title="设置你的 LLM provider 和 API key",
-            description=(
-                "切到「Contacts」，找到自己的档案，"
-                "把 Provider 和 API Key 填上。"
-            ),
-            target_url="/dashboard?tab=organization",
-            priority="normal",
-            source="system",
-        )
-    )
-    return True
-
-
 # -- routes -----------------------------------------------------------------
 
 
@@ -206,9 +127,11 @@ def _ensure_llm_credentials_item(
 _COMPLETED_VISIBLE_DAYS = 7
 
 
-def _current_admin_id(
-    request: Request, session: Session
-) -> int:
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+
+
+def _current_admin_id(request: Request) -> int:
     """Resolve the cookie's admin Contact id.
 
     ``AdminGate`` already validated cookie + admin row
@@ -236,8 +159,8 @@ def _current_admin_id(
             code="chat.unknown_sender",
             detail="no admin contact row bound to this session",
         )
-    contact = session.get(Contact, uid)
-    if contact is None or not bool(contact.admin):
+    contact = _bus().contacts.get(uid)
+    if contact is None or not contact.admin:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
@@ -250,7 +173,6 @@ def _current_admin_id(
 def list_action_items(
     request: Request,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
     include_completed: bool = True,
     kind: str | None = None,
 ) -> ActionItemListOut:
@@ -269,7 +191,7 @@ def list_action_items(
     so the URL has no "look at someone else's items"
     affordance.
     """
-    admin_id = _current_admin_id(request, session)
+    admin_id = _current_admin_id(request)
 
     # Open rows: always returned. A row with completed_at set
     # within the window OR dismissed within the window are
@@ -277,31 +199,12 @@ def list_action_items(
     # open before completed (cast completed_at IS NOT NULL as
     # 0), priority DESC ("high" > "normal" via alpha compare
     # which is enough for v0), then most-recent first.
-    cutoff = utcnow_naive() - timedelta(days=_COMPLETED_VISIBLE_DAYS)
-    stmt = select(ActionItem).where(ActionItem.uid == admin_id)
-    if kind is not None:
-        stmt = stmt.where(ActionItem.kind == kind)
-    if not include_completed:
-        # Hide anything that's not open + not dismissed.
-        stmt = stmt.where(
-            ActionItem.completed_at.is_(None),
-            ActionItem.dismissed.is_(False),
-        )
-    else:
-        # Default: open rows, plus completed rows newer than
-        # the window. Dismissed rows are hidden in the main
-        # list by design (the operator chose to hide them).
-        stmt = stmt.where(
-            (ActionItem.completed_at.is_(None))
-            | (ActionItem.completed_at >= cutoff)
-        )
-    stmt = stmt.order_by(
-        ActionItem.completed_at.is_(None).desc(),
-        ActionItem.priority.desc(),
-        ActionItem.created_at.desc(),
+    rows = _bus().action_item.list_for_owner(
+        owner_uid=admin_id,
+        include_completed=include_completed,
+        kind=kind,
+        completed_visible_days=_COMPLETED_VISIBLE_DAYS,
     )
-
-    rows = list(session.scalars(stmt).all())
     return ActionItemListOut(
         items=[_serialize(r) for r in rows],
         server_time=datetime.now(timezone.utc)
@@ -318,7 +221,6 @@ def complete_action_item(
     payload: ActionItemCompleteRequest,
     request: Request,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> ActionItemOut:
     """Mark an item complete. Idempotent.
 
@@ -337,8 +239,9 @@ def complete_action_item(
     row tied to a different uid and the operator
     could complete someone else's item via URL guessing.
     """
-    admin_id = _current_admin_id(request, session)
-    row = session.get(ActionItem, item_id)
+    admin_id = _current_admin_id(request)
+    service = _bus().action_item
+    row = service.get(item_id)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -356,22 +259,17 @@ def complete_action_item(
             detail="this action item is owned by another operator",
         )
 
-    # Already completed → idempotent return.
-    if row.completed_at is not None:
-        return _serialize(row)
-
-    row.completed_at = utcnow_naive()
-    row.completed_by_uid = admin_id
-    # Only overwrite the note if the caller actually sent
-    # one. ``model_fields_set`` tells us "the field was
-    # present in the request" — ``None`` and absent both
-    # count as "don't change", but a sent empty string is
-    # a legitimate "user removed the note" gesture we keep.
-    if "completion_note" in payload.model_fields_set:
-        row.completion_note = payload.completion_note
-
-    session.commit()
-    session.refresh(row)
+    row = service.complete_for_owner(
+        action_item_id=item_id,
+        owner_uid=admin_id,
+        note=(payload.completion_note if "completion_note" in payload.model_fields_set else None),
+    )
+    if row is None:  # Ownership was rechecked inside the BUS transaction.
+        raise MagiHTTPException(
+            status_code=403,
+            code="forbidden.not_your_action_item",
+            detail="this action item is owned by another operator",
+        )
     logger.info(
         "action item completed (id=%s, kind=%s, admin=%s)",
         row.id, row.kind, admin_id,

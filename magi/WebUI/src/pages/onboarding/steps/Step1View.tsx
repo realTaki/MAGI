@@ -5,6 +5,7 @@ import { InfoTip } from '../../../components/InfoTip';
 
 
 type ChannelOption = { id: string; name: string; descriptionKey: string; available: boolean };
+type Mode = "with_tg" | "webui_only";
 
 // Hardcoded deep-link to Telegram's bot registration flow. The handle
 // (`@BotFather`) is intentionally not internationalized — it is a
@@ -16,9 +17,14 @@ const channels: ChannelOption[] = [
   { id: 'slack', name: 'Slack', descriptionKey: 'onboarding.channelSlackDesc', available: false },
   { id: 'wechat', name: 'WeChat', descriptionKey: 'onboarding.channelWechatDesc', available: false },
 ];
+
 export function Step1View(props: {
   step1Mode: "view" | "edit";
   existingBot: { token: string; username: string } | null;
+  /** ``null`` means the wizard hasn't picked a mode yet — the
+   *  branch boxes render as the "first question" of the wizard. */
+  mode: Mode | null;
+  onModeChange: (mode: Mode) => void;
   onContinue: () => void;
   onReSet: () => void;
   onSaved: (token: string, username: string) => void;
@@ -33,28 +39,88 @@ export function Step1View(props: {
     <>
       <div className="mt-6 flex items-center gap-2">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">
-          {t("onboarding.step1Title")}
+          {t("onboarding.step1ModeTitle")}
         </h1>
-        <InfoTip text={t("onboarding.step1Help")} size={16} />
       </div>
       <p className="mt-2 text-ink-soft">
-        {t("onboarding.step1Desc")}
+        {t("onboarding.step1ModeDesc")}
       </p>
 
-      <ChannelSelect value={channel} onChange={setChannel} />
-      <ChannelDescription channel={selected} />
+      <ModePicker
+        mode={props.mode}
+        onChange={props.onModeChange}
+      />
 
-      {showBotToken &&
-        (props.step1Mode === "view" && props.existingBot ? (
-          <BotTokenConfiguredView
-            bot={props.existingBot}
-            onNext={props.onContinue}
-            onReSet={props.onReSet}
-          />
-        ) : (
-          <BotTokenField onSaved={props.onSaved} onCancel={() => {}} />
-        ))}
+      {props.mode === "webui_only" && (
+        <div className="mt-6 rounded-lg border border-sky-200 bg-sky-50/40 p-4">
+          <p className="text-sm text-sky-900">
+            {t("onboarding.modeWebuiOnlyDesc")}
+          </p>
+          <button
+            type="button"
+            onClick={props.onContinue}
+            className="btn btn-primary mt-3 px-5 py-2.5"
+          >
+            {t("common.next")}
+          </button>
+        </div>
+      )}
+
+      {props.mode === "with_tg" && (
+        <>
+          <div className="mt-6 flex items-center gap-2">
+            <h2 className="text-lg font-medium text-ink">
+              {t("onboarding.step1Title")}
+            </h2>
+            <InfoTip text={t("onboarding.step1Help")} size={16} />
+          </div>
+          <p className="mt-2 text-ink-soft">
+            {t("onboarding.step1Desc")}
+          </p>
+
+          <ChannelSelect value={channel} onChange={setChannel} />
+          <ChannelDescription channel={selected} />
+
+          {showBotToken &&
+            (props.step1Mode === "view" && props.existingBot ? (
+              <BotTokenConfiguredView
+                bot={props.existingBot}
+                onNext={props.onContinue}
+                onReSet={props.onReSet}
+              />
+            ) : (
+              <BotTokenField onSaved={props.onSaved} onCancel={() => {}} />
+            ))}
+        </>
+      )}
     </>
+  );
+}
+
+function ModePicker(props: { mode: Mode | null; onChange: (m: Mode) => void }) {
+  const t = useT();
+  const options: { mode: Mode; titleKey: string; descKey: string }[] = [
+    { mode: "with_tg", titleKey: "onboarding.modeWithTg", descKey: "onboarding.modeWithTgDesc" },
+    { mode: "webui_only", titleKey: "onboarding.modeWebuiOnly", descKey: "onboarding.modeWebuiOnlyDesc" },
+  ];
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-3">
+      {options.map((o) => (
+        <button
+          key={o.mode}
+          type="button"
+          onClick={() => props.onChange(o.mode)}
+          className={`text-left p-4 rounded-lg border transition ${
+            props.mode === o.mode
+              ? "border-sky-deep bg-sky-50/60"
+              : "border-sky-100 hover:border-sky-300"
+          }`}
+        >
+          <div className="font-medium text-sky-deep">{t(o.titleKey)}</div>
+          <div className="mt-1 text-sm text-ink-soft">{t(o.descKey)}</div>
+        </button>
+      ))}
+    </div>
   );
 }
 

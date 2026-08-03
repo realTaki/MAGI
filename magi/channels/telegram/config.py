@@ -10,8 +10,7 @@ Two reactions, one each side of the LLM call
 --------------------------------------------
 ``tg.read_reaction_emoji`` is set on the user's inbound
 message **before** the LLM runs (the "I've seen this and
-I'm working on it" signal). Once ``handle_message`` returns
-and the reply is posted, we re-set the reaction on the
+I'm working on it" signal). Once delivery posts the reply, we re-set the reaction on the
 **same** message using ``tg.done_reaction_emoji`` — TG's
 bot reaction API replaces any prior reaction from the same
 bot on the same message, so the user sees the read-receipt
@@ -58,7 +57,7 @@ from __future__ import annotations
 
 import logging
 
-from magi.db.settings import state_get, state_set
+from magi.bus import bootstrap
 
 logger = logging.getLogger("magi.channels.telegram.config")
 
@@ -131,7 +130,7 @@ def get_read_reaction_emoji(state_dir: str) -> str:
     keeps the inbound handler from blowing up on a bad
     string.
     """
-    raw = state_get(state_dir, _READ_META_KEY)
+    raw = bootstrap(state_dir).settings.get(_READ_META_KEY)
     if not raw:
         return DEFAULT_READ_REACTION_EMOJI
     if raw not in _VALID_EMOJI:
@@ -154,7 +153,7 @@ def set_read_reaction_emoji(state_dir: str, emoji: str) -> None:
     the API handler and an extra check would just hide
     programming errors.
     """
-    state_set(state_dir, _READ_META_KEY, emoji)
+    bootstrap(state_dir).settings.set(_READ_META_KEY, emoji)
 
 
 def get_done_reaction_emoji(state_dir: str) -> str:
@@ -170,7 +169,7 @@ def get_done_reaction_emoji(state_dir: str) -> str:
     reaction API replaces any prior bot reaction on the
     same message, so the two states don't conflict.
     """
-    raw = state_get(state_dir, _DONE_META_KEY)
+    raw = bootstrap(state_dir).settings.get(_DONE_META_KEY)
     if not raw:
         return DEFAULT_DONE_REACTION_EMOJI
     if raw not in _VALID_EMOJI:
@@ -189,4 +188,4 @@ def set_done_reaction_emoji(state_dir: str, emoji: str) -> None:
     Same allowlist contract as
     :func:`set_read_reaction_emoji`.
     """
-    state_set(state_dir, _DONE_META_KEY, emoji)
+    bootstrap(state_dir).settings.set(_DONE_META_KEY, emoji)

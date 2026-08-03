@@ -99,7 +99,7 @@ def _write_legacy_session(
 def test_migrate_imports_active_messages(fresh_db):
     """Active messages land in ``chat_messages`` with
     ``archived=0`` and the FTS5 trigger picks them up."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import (
         ChatMessage,
         ChatSession,
@@ -138,7 +138,7 @@ def test_migrate_imports_active_messages(fresh_db):
 
 def test_migrate_imports_archive_with_archived_flag(fresh_db):
     """Archive rows land in ``chat_messages`` with ``archived=1``."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatMessage, open_session
 
     state, workspace = fresh_db
@@ -171,7 +171,7 @@ def test_migrate_imports_archive_with_archived_flag(fresh_db):
 
 def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
     """Header fields (title, last_compaction_at) round-trip."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -194,7 +194,7 @@ def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
 def test_migrate_multiple_tgids(fresh_db):
     """Multiple delivery_address subdirs are walked; sessions are
     imported per chat."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -216,7 +216,7 @@ def test_migrate_multiple_tgids(fresh_db):
 
 def test_migrate_no_json_dir_is_noop(fresh_db):
     """No legacy tree → ``(0, 0, 0)`` and no DB writes."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -235,7 +235,7 @@ def test_migrate_no_json_dir_is_noop(fresh_db):
 def test_migrate_is_idempotent(fresh_db):
     """Second call on the same tree is a no-op — the unique
     constraint on ``(session_id, message_id)`` rejects dupes."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatMessage, ChatSession, open_session
 
     state, workspace = fresh_db
@@ -268,7 +268,7 @@ def test_migrate_idempotent_when_json_left_in_place(fresh_db, monkeypatch):
     this as ``imported=1`` on the second pass — same total
     rows before and after.
     """
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatSession, open_session
     from pathlib import Path
 
@@ -308,7 +308,7 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
     """A malformed JSON file is logged at WARNING, NOT deleted,
     and the rest of the tree still imports."""
     import logging
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
     from magi.db import ChatSession, open_session
 
     state, workspace = fresh_db
@@ -338,7 +338,7 @@ def test_migrate_invalid_tgid_dir_is_skipped(fresh_db):
     """A directory whose name violates the delivery_address regex is
     skipped with a warning (logged) rather than crashing the
     whole migration."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
 
     state, workspace = fresh_db
     # Create a chat dir with a name outside the regex
@@ -360,7 +360,7 @@ def test_migrate_cleans_up_empty_chat_dirs(fresh_db):
     """After all the JSON files inside a chat dir are
     imported, the empty parent directory is removed so the
     layout collapses to nothing."""
-    from magi.agent.memory.session import migrate_from_json
+    from bus.contracts.session import migrate_from_json
 
     state, workspace = fresh_db
     _write_legacy_session(workspace, "9001", "01ABC",

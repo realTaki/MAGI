@@ -26,7 +26,7 @@ Authorization model (D.24):
   who never bound a TG bot).
 
   Reads (list / get sessions) are scoped by ``uid``
-  on the server side (see :class:`SessionStore` D.23) —
+  on the server side (see the BUS session service) —
   a contact sees their own history across every channel,
   regardless of which one was used to create a given row.
   Writes (continue-send / append) are still channel-owned
@@ -37,37 +37,27 @@ Authorization model (D.24):
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import Annotated
 
-import hashlib
-import hmac
-import asyncio
-from base64 import urlsafe_b64encode, urlsafe_b64decode
 import httpx
 from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
-# Top-level import (not lazy): ``_state_dir`` is a module-
-# level helper called by every handler in this file.
-# A lazy import inside ``_state_dir`` would resolve fine
-# when called from inside a function — BUT the auth
-# routes run inside the same FastAPI worker that imports
-# this module at boot, and any other module that imports
-# ``_state_dir`` (transitively, via
-# ``from .auth import _state_dir`` or similar) would
-# resolve the name at import time, before the function
-# body ever runs. Same root cause as the D.22 fix on
-# ``magi/__main__.py``: hoist the import.
-from magi.db import Contact, ControlOperator, EveRuntime, MAGIC, MAGIS, open_session, require_state_dir  # noqa: E402
-from magi.db.settings import state_get  # noqa: E402
-from magi.channels.webui import control_store
+from magi.bus import bootstrap
+from magi.bus.contracts.contact import ContactView
+from magi.bus.contracts.magis import OperatorView
+from magi.bus.services.setting import SettingsService
 from magi.channels import Channel
-from magi.channels.telegram import bot as tg_bot  # noqa: E402
+from magi.channels.telegram import bot as tg_bot
+from magi.channels.webui import control_store
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers
 
@@ -83,6 +73,10 @@ _RESEND_COOLDOWN_SECONDS = 60
 
 SESSION_COOKIE_NAME = "magi_session"
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
+
+
+def _state_dir() -> str:
+    return SettingsService.require_state_dir()
 
 
 def _signing_key() -> bytes:
@@ -171,10 +165,6 @@ def selected_session(token: str | None) -> dict[str, object] | None:
         return None
 
 
-def _state_dir() -> str:
-    return require_state_dir()
-
-
 def _super_admins() -> set[int]:
     """Read the WebUI-admin allowlist as a set of contact ids.
 
@@ -192,26 +182,14 @@ def _super_admins() -> set[int]:
     the two concepts collided on the served user who is
     also an operator).
     """
+    bus = bootstrap(_state_dir())
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            return set(session.scalars(select(ControlOperator.id).where(ControlOperator.admin.is_(True))).all())
-    state_dir = _state_dir()
-    result: set[int] = set()
-    try:
-        with open_session() as session:
-            for ct in session.scalars(
-                select(Contact).where(Contact.admin == 1)
-            ).all():
-                result.add(contact.id)
-        if result:
-            return result
-    except Exception:
-        # If the ORM read fails (table not initialised yet,
-        # very-early-boot case) fall through to the meta.
-        pass
+        return {op.id for op in bus.magis.list_control_operators(admin_only=True)}
+    contacts = bus.contacts.list_admins()
+    if contacts:
+        return {contact.id for contact in contacts}
 
-    raw = state_get(state_dir, "telegram.super_admins")
+    raw = bus.settings.get("telegram.super_admins")
     if not raw:
         return set()
     try:
@@ -233,17 +211,12 @@ def _super_admins() -> set[int]:
             continue
     if not legacy_chat_ids:
         return set()
-    try:
-        with open_session() as session:
-            rows = session.scalars(
-                select(Contact).where(
-                    Contact.telegram_id.in_(legacy_chat_ids)
-                )
-            ).all()
-            return {contact.id for ct in rows}
-    except Exception:
-        logger.exception("super_admins: legacy meta lookup failed")
-        return set()
+    resolved: set[int] = set()
+    for tgid in legacy_chat_ids:
+        contact = bus.contacts.find_by_telegram_id(tgid)
+        if contact is not None:
+            resolved.add(contact.id)
+    return resolved
 
 
 # -- request / response schemas -----------------------------------------
@@ -309,6 +282,13 @@ class MeResponse(BaseModel):
     admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
     assigned: bool = False
     selected_magic_id: int | None = None
+    # ``login_methods`` + ``password_set`` mirror the
+    # :class:`AuthCredential` table + the bound IM. The
+    # Settings → Security card renders the form from
+    # these; the LoginPage uses ``/api/auth/login-methods``
+    # so it doesn't need a valid session.
+    login_methods: list[str] = []
+    password_set: bool = False
 
     # D.24: the cookie is keyed by ``uid``, not
     # the per-channel delivery address. The response
@@ -344,9 +324,12 @@ _LOGIN_KEY = "auth.login_code"
 
 
 def _load_login_code(uid: int) -> dict | None:
-    from magi.db.settings import state_get
-
-    raw = control_store.get(f"{_LOGIN_KEY}.{uid}") if control_store.enabled() else state_get(_state_dir(), f"{_LOGIN_KEY}.{uid}")
+    bus = bootstrap(_state_dir())
+    raw = (
+        control_store.get(f"{_LOGIN_KEY}.{uid}")
+        if control_store.enabled()
+        else bus.settings.get(f"{_LOGIN_KEY}.{uid}")
+    )
     if not raw:
         return None
     try:
@@ -356,29 +339,27 @@ def _load_login_code(uid: int) -> dict | None:
 
 
 def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
-    from magi.db.settings import state_set
-
+    bus = bootstrap(_state_dir())
     value = json.dumps(
-            {
-                "code": code,
-                "issued_at": issued_at.replace(microsecond=0).isoformat(),
-                "expires_at": expires_at,
-                "last_sent_at": issued_at.timestamp(),
-            }
-        )
+        {
+            "code": code,
+            "issued_at": issued_at.replace(microsecond=0).isoformat(),
+            "expires_at": expires_at,
+            "last_sent_at": issued_at.timestamp(),
+        }
+    )
     if control_store.enabled():
         control_store.set(f"{_LOGIN_KEY}.{uid}", value)
     else:
-        state_set(_state_dir(), f"{_LOGIN_KEY}.{uid}", value)
+        bus.settings.set(f"{_LOGIN_KEY}.{uid}", value)
 
 
 def _clear_login_code(uid: int) -> None:
-    from magi.db.settings import state_delete
-
+    bus = bootstrap(_state_dir())
     if control_store.enabled():
         control_store.delete(f"{_LOGIN_KEY}.{uid}")
     else:
-        state_delete(_state_dir(), f"{_LOGIN_KEY}.{uid}")
+        bus.settings.delete(f"{_LOGIN_KEY}.{uid}")
 
 
 # -- endpoints ---------------------------------------------------------
@@ -408,11 +389,11 @@ async def _target_access(magic_id: int, method: str, path: str, payload: dict[st
     the narrow pre-login capability, and the signature remains bound to the
     selected runtime id and exact path.
     """
-    from magi.db.magis import open_magis_session
-    from magi.channels.webui.api.runtime_proxy import _runtime_url
-
-    with open_magis_session() as session:
-        base = _runtime_url(session, magic_id)
+    bus = bootstrap(_state_dir())
+    try:
+        base = bus.magis.runtime_url_for_magic(magic_id)
+    except RuntimeError as exc:
+        raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
     headers = build_proxy_headers(
         method=method, path_and_query=path, target_id=magic_id,
         operator_id=0, operator_name="WebUI login", telegram_id=None,
@@ -438,21 +419,11 @@ async def available_magi() -> AvailableMAGIResponse:
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    from magi.db.magis import open_magis_session
-    with open_magis_session() as session:
-        rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
-        runtimes = {row.magic_id: row for row in session.scalars(select(EveRuntime)).all()}
-        root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-        result = [
-            AvailableMAGI(id=row.id, name=row.name)
-            for row in rows
-            if (root is not None and root.adam_id == row.id)
-            # The orchestrator records ``provisioning`` immediately after
-            # creating the Deployment; Kubernetes does not synchronously
-            # write a later observed state back to this registry.  Desired
-            # running is therefore the durable availability signal here.
-            or (runtimes.get(row.id) is not None and runtimes[row.id].desired_state == "running")
-        ]
+    bus = bootstrap(_state_dir())
+    result = [
+        AvailableMAGI(id=view.id, name=view.name)
+        for view in bus.magic.list_available_magic()
+    ]
     return AvailableMAGIResponse(magi=result)
 
 
@@ -488,7 +459,7 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
 
 @router.get("/allowed-accounts", response_model=AllowedLoginAccountsResponse)
 async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
-    """The list of UIDs that can log in to Adam.
+    """The list of UIDs that can log in to ADAM.
 
     UID is the row's identity; the dropdown's primary key is
     the UID, not the IM chat id. We still include
@@ -509,32 +480,31 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     1. ``role='admin'`` rows in ``contacts`` — the
        wizard-configured deployer list. role =
        ``super_admin``.
-    2. Contacts with a bound TG chat + an active EVE
+    2. Contacts with a bound TG chat + an active EVA
        assignment. role = ``assigned_contact``. C2 wires
        the TG binding (the contact proves ownership of the
        chat from TG by replying to a code); C6 wires the
-       EVE dispatch (Adam spawns a container for the
+       EVA dispatch (ADAM spawns a container for the
        contact). The two together mean "this person has a
-       live EVE they manage" — they should be able to sign
+       live EVA they manage" — they should be able to sign
        in to see its logs, change its skills, etc., without
        needing deployer-level access.
 
     For C0 the contacts side is empty (the tables don't
     exist yet — C1.1 lands the ORM). The path is wired so
     the frontend can show "0 assigned contacts" today and
-    start populating as soon as C6 dispatches the first EVE.
+    start populating as soon as C6 dispatches the first EVA.
 
     Display names come from the local ``Contact`` row only.
     We intentionally avoid Telegram ``getChat`` network calls here:
     login must stay fast even when Telegram is slow or blocked.
     """
+    bus = bootstrap(_state_dir())
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            operators = session.scalars(select(ControlOperator).where(ControlOperator.admin.is_(True))).all()
+        operators = bus.magis.list_control_operators(admin_only=True)
         return AllowedLoginAccountsResponse(accounts=[
-            AllowedLoginAccount(uid=operator.id, name=operator.display_name or f"Admin {operator.telegram_id}")
-            for operator in operators
+            AllowedLoginAccount(uid=op.id, name=op.display_name or f"Admin {op.telegram_id}")
+            for op in operators
         ])
     accounts: list[AllowedLoginAccount] = []
 
@@ -544,21 +514,16 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     # Admins without a TG binding are dropped (no IM to
     # deliver the verification code through).
     admin_uids = _super_admins()
-    admin_rows: list[tuple[int, int, str | None]] = []  # (uid, telegram_id, name)
+    candidates: dict[int, tuple[int | None, str | None]] = {}
     if admin_uids:
-        with open_session() as session:
-            for ct in session.scalars(
-                select(Contact).where(Contact.id.in_(admin_uids))
-            ).all():
-                if contact.telegram_id is not None:
-                    admin_rows.append(
-                        (contact.id, contact.telegram_id, contact.display_name or contact.name)
-                    )
-
-    candidates: dict[int, tuple[int, str | None]] = {
-        uid: (telegram_id_int, fallback_name)
-        for uid, telegram_id_int, fallback_name in admin_rows
-    }
+        for uid in admin_uids:
+            contact: ContactView | None = bus.contacts.get(uid)
+            if contact is None or contact.telegram_id is None:
+                continue
+            candidates[contact.id] = (
+                contact.telegram_id,
+                contact.display_name or contact.name,
+            )
 
     for uid, (_telegram_id_int, fallback_name) in sorted(candidates.items()):
         accounts.append(
@@ -585,7 +550,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     # We skip the join and rely on the frontend to de-dupe
     # super_admins from the visible list (super admins should
     # not also appear under "assigned contacts" — they manage
-    # the system, not a single EVE).
+    # the system, not a single EVA).
 
     return AllowedLoginAccountsResponse(accounts=accounts)
 
@@ -622,9 +587,8 @@ async def send_login_code(
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            operator = session.get(ControlOperator, uid)
+        bus = bootstrap(_state_dir())
+        operator: OperatorView | None = bus.magis.get_control_operator(uid)
         if operator is None or not operator.admin:
             return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
         previous = _load_login_code(uid)
@@ -749,7 +713,7 @@ async def verify_login_code(
     if not stored:
         return VerifyLoginCodeResponse(
             ok=False,
-            error="No code sent to this uid \u2014 request a new one.",
+            error="No code sent to this uid — request a new one.",
         )
 
     try:
@@ -759,7 +723,7 @@ async def verify_login_code(
     if not expires_at or datetime.now(timezone.utc).timestamp() >= expires_at:
         _clear_login_code(uid)
         return VerifyLoginCodeResponse(
-            ok=False, error="Code expired \u2014 request a new one."
+            ok=False, error="Code expired — request a new one."
         )
 
     # Burn on any path past expiry (mismatch, success, anything) so
@@ -812,8 +776,7 @@ async def me(
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
-    from magi.channels.webui.api.errors import MagiHTTPException
-
+    bus = bootstrap(_state_dir())
     selected = selected_session(magi_session)
     if selected is not None:
         return MeResponse(
@@ -828,12 +791,13 @@ async def me(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            operator = session.get(ControlOperator, uid)
+        operator = bus.magis.get_control_operator(uid)
         if operator is None:
             raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-        return MeResponse(uid=operator.id, telegram_id=operator.telegram_id, display_name=operator.display_name, admin=operator.admin)
+        return MeResponse(
+            uid=operator.id, telegram_id=operator.telegram_id,
+            display_name=operator.display_name, admin=operator.admin,
+        )
     # We already proved the cookie is a valid admin
     # uid; re-read the row to surface the
     # telegram_id + display name. If the row has since
@@ -842,8 +806,7 @@ async def me(
     # request, just no metadata to enrich the response
     # with.
     try:
-        with open_session() as session:
-            contact = session.get(Contact, uid)
+        contact = bus.contacts.get(uid)
         if contact is None:
             return MeResponse(
                 uid=uid,
@@ -851,11 +814,14 @@ async def me(
                 display_name=None,
                 admin=False,
             )
+        methods, _is_webui_only = _login_methods_for(uid)
         return MeResponse(
             uid=contact.id,
             telegram_id=contact.telegram_id,
             display_name=contact.name,
             admin=bool(contact.admin),
+            login_methods=methods,
+            password_set="password" in methods,
         )
     except Exception:
         # Defensive: a transient DB hiccup shouldn't
@@ -935,54 +901,6 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-def _resolve_password_credential(uid: int) -> str | None:
-    """Return the stored ``secret_hash`` for ``uid``'s password row, or ``None``."""
-    from magi.db.models_auth_credential import AuthCredential
-    with open_session() as session:
-        row = session.scalar(
-            select(AuthCredential).where(
-                AuthCredential.uid == uid,
-                AuthCredential.kind == "password",
-            )
-        )
-    return row.secret_hash if row else None
-
-
-def _set_password_credential(uid: int, new_hash: str) -> None:
-    """Upsert the password credential for ``uid``."""
-    from magi.db.models_auth_credential import AuthCredential
-    with open_session() as session:
-        row = session.scalar(
-            select(AuthCredential).where(
-                AuthCredential.uid == uid,
-                AuthCredential.kind == "password",
-            )
-        )
-        if row is None:
-            session.add(AuthCredential(uid=uid, kind="password", secret_hash=new_hash))
-        else:
-            row.secret_hash = new_hash
-            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.commit()
-
-
-def _delete_password_credential(uid: int) -> bool:
-    """Drop the password credential. Returns ``True`` if a row was removed."""
-    from magi.db.models_auth_credential import AuthCredential
-    with open_session() as session:
-        row = session.scalar(
-            select(AuthCredential).where(
-                AuthCredential.uid == uid,
-                AuthCredential.kind == "password",
-            )
-        )
-        if row is None:
-            return False
-        session.delete(row)
-        session.commit()
-        return True
-
-
 def _login_methods_for(uid: int) -> tuple[list[str], bool]:
     """Return ``(methods, is_webui_only)`` for ``uid``.
 
@@ -993,13 +911,12 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
     ControlOperator + the runtime's IM binding table; the
     single-MAGI path uses Contact + auth_credentials.
     """
+    bus = bootstrap(_state_dir())
     methods: list[str] = []
     is_webui_only = True
 
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            operator = session.get(ControlOperator, uid)
+        operator = bus.magis.get_control_operator(uid)
         if operator is None or not operator.admin:
             return ([], True)
         # Control-plane side: TG delivery is the only path
@@ -1009,18 +926,10 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
             methods.append("tg_code")
         return (methods, True)
 
-    from magi.db.models_auth_credential import AuthCredential
-    with open_session() as session:
-        contact = session.get(Contact, uid)
-        has_password = session.scalar(
-            select(AuthCredential).where(
-                AuthCredential.uid == uid,
-                AuthCredential.kind == "password",
-            )
-        ) is not None
+    contact = bus.contacts.get(uid)
     if contact is None:
         return ([], True)
-    if has_password:
+    if bus.auth.has_password_for(uid):
         methods.append("password")
     if contact.telegram_id is not None:
         methods.append("tg_code")
@@ -1085,6 +994,7 @@ async def login_password(
             ok=False, error="password does not match",
         )
 
+    bus = bootstrap(_state_dir())
     from magi.channels.webui.api import password_utils
 
     state_dir = _state_dir()
@@ -1105,7 +1015,7 @@ async def login_password(
     # clears the row on success below.
     password_utils.record_attempt(state_dir, payload.uid)
 
-    stored = _resolve_password_credential(payload.uid)
+    stored = bus.auth.get_password_credential(payload.uid)
     if not stored or not password_utils.verify_password(stored, payload.password):
         return LoginPasswordResponse(
             ok=False,
@@ -1159,6 +1069,7 @@ async def set_password(
             error="password login is not supported by the control plane",
         )
 
+    bus = bootstrap(_state_dir())
     from magi.channels.webui.api import password_utils
 
     if not payload.uid or not isinstance(payload.uid, int):
@@ -1174,11 +1085,8 @@ async def set_password(
         # Admin override — AdminGate already proved the
         # caller is admin, so we skip the old_password
         # check.
-        is_admin = False
-        with open_session() as session:
-            row = session.get(Contact, caller_uid)
-            is_admin = bool(row and row.admin)
-        if not is_admin:
+        caller_contact = bus.contacts.get(caller_uid)
+        if caller_contact is None or not caller_contact.admin:
             return SetPasswordResponse(
                 ok=False,
                 error="only admins can set another user's password",
@@ -1186,7 +1094,7 @@ async def set_password(
     else:
         # Self-service: must know the existing password,
         # unless they're setting one for the first time.
-        existing = _resolve_password_credential(payload.uid)
+        existing = bus.auth.get_password_credential(payload.uid)
         if existing is not None:
             if not payload.old_password:
                 return SetPasswordResponse(
@@ -1204,7 +1112,7 @@ async def set_password(
     except ValueError as exc:
         return SetPasswordResponse(ok=False, error=str(exc))
 
-    _set_password_credential(payload.uid, new_hash)
+    bus.auth.ensure_password_credential(uid=payload.uid, secret_hash=new_hash)
     logger.info("password set", extra={"uid": payload.uid, "by": caller_uid})
     return SetPasswordResponse(ok=True)
 
@@ -1223,6 +1131,7 @@ async def change_password(
     :func:`set_password` endpoint serves the admin
     override flow.
     """
+    bus = bootstrap(_state_dir())
     from magi.channels.webui.api import password_utils
 
     caller_uid = _verify_signed_uid(
@@ -1235,7 +1144,7 @@ async def change_password(
     except ValueError as exc:
         return SetPasswordResponse(ok=False, error=str(exc))
 
-    existing = _resolve_password_credential(caller_uid)
+    existing = bus.auth.get_password_credential(caller_uid)
     if existing is None:
         return SetPasswordResponse(
             ok=False,
@@ -1244,7 +1153,7 @@ async def change_password(
     if not password_utils.verify_password(existing, payload.old_password):
         return SetPasswordResponse(ok=False, error="old_password does not match")
 
-    _set_password_credential(caller_uid, new_hash)
+    bus.auth.ensure_password_credential(uid=caller_uid, secret_hash=new_hash)
     logger.info("password changed", extra={"uid": caller_uid})
     return SetPasswordResponse(ok=True)
 
@@ -1264,7 +1173,8 @@ async def revoke_password(
     """
     if control_store.enabled():
         return Response(status_code=204)
-    if not _delete_password_credential(uid):
+    bus = bootstrap(_state_dir())
+    if not bus.auth.delete_password_credential(uid):
         raise MagiHTTPException(
             status_code=404,
             code="auth.no_password_credential",

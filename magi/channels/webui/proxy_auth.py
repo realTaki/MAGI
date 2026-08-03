@@ -118,38 +118,17 @@ def ensure_runtime_operator(request: Request) -> int | None:
     if scope is None:
         return None
     is_admin, is_assigned = scope
-    from sqlalchemy import select
+    import os
 
-    from magi.db import Contact, open_session
-    from magi.db.models_contact import SOURCE_SYSTEM
+    from magi.bus import bootstrap
 
-    marker = f"magi.control_operator_id={operator_id}"
-    with open_session() as session:
-        if telegram_id is not None:
-            contact = session.scalar(select(Contact).where(Contact.telegram_id == telegram_id))
-        else:
-            contact = session.scalar(
-                select(Contact).where(Contact.source == SOURCE_SYSTEM, Contact.notes == marker)
-            )
-        if contact is None:
-            contact = Contact(
-                name=name or f"WebUI operator {operator_id}",
-                display_name=name or None,
-                role="assigned" if is_assigned else "guest",
-                admin=is_admin,
-                telegram_id=telegram_id,
-                source=SOURCE_SYSTEM,
-                notes=marker,
-            )
-            session.add(contact)
-            session.commit()
-            session.refresh(contact)
-        elif contact.admin != is_admin or (is_assigned and contact.role != "assigned"):
-            contact.admin = is_admin
-            if is_assigned:
-                contact.role = "assigned"
-            session.commit()
-        return contact.id
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.ensure_runtime_operator(
+        operator_id=operator_id,
+        name=name,
+        telegram_id=telegram_id,
+        is_admin=is_admin,
+        is_assigned=is_assigned,
+    )
 
 
 __all__ = ["build_proxy_headers", "ensure_runtime_operator", "verified_proxy_operator", "verified_proxy_scope"]

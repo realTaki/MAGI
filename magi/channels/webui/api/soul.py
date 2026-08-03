@@ -3,7 +3,7 @@
 The persona lives at ``<workspace_root>/SOUL.md`` and is
 read on every chat turn by
 :meth:`magi.agent.system_prompt.read_soul`. There is one
-``SOUL.md`` per **MAGI node** (Adam container, EVE container) —
+``SOUL.md`` per **MAGI node** (ADAM container, EVA container) —
 not one per contact. Per-contact personas are C4+ and out
 of scope here.
 
@@ -34,7 +34,7 @@ Why a dedicated API surface (vs. reusing ``prompts/``):
 
 Atomic write: the file is rewritten via ``tempfile.mkstemp``
 in the same directory + ``os.fsync`` + ``os.replace``, mirroring
-:mod:`magi.agent.memory.session` so a crash mid-write can never
+the BUS session persistence path so a crash mid-write can never
 leave a half-edited persona on disk (which the agent would
 then read on the next chat turn).
 
@@ -58,8 +58,8 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.webui.api.auth_gates import AdminOrAssignedGate
-from magi.db.engine import require_state_dir
-from magi.agent.workspace import workspace_root
+from magi.constants import STATE_DIR
+from magi.workspace import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -77,7 +77,7 @@ _SOUL_FILENAME = "SOUL.md"
 
 
 def _state_dir() -> str:
-    return require_state_dir()
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 def _soul_path() -> Path:
@@ -117,7 +117,7 @@ class SoulUpdateResponse(BaseModel):
 def _write_atomic(path: Path, content: str) -> str:
     """Atomic write to ``path``; returns ISO UTC mtime after.
 
-    Mirrors :mod:`magi.agent.memory.session` so the two file
+    Mirrors the BUS session durability semantics so the two file
     surfaces (sessions, soul) follow the same crash-safety
     pattern. Caller is responsible for the audit row.
     """

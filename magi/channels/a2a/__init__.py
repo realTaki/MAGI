@@ -72,7 +72,7 @@ The default scope is **same-MAGIS peers only**:
     ``magi-orchestrator`` request lifecycle, not through a2a.
     a2a is a peer-runtime bus, not an organisational control
     surface.
-  - Adam-of-an-ancestor-MAGIS can speak to descendants of that
+  - ADAM-of-an-ancestor-MAGIS can speak to descendants of that
     MAGIS (mirrors the existing ``adam_manages_magis`` semantics).
     The peer list builder walks the MAGIS tree.
 

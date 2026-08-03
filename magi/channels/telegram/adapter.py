@@ -28,11 +28,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 
-from sqlalchemy import select
-
-from magi.db import Contact, open_session
+from magi.bus import bootstrap
 from magi.channels import Channel
 from magi.channels.dispatcher import (
     ChannelAdapter,
@@ -98,31 +97,22 @@ class TelegramAdapter:
         await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:
-        with open_session() as db:
-            contact = db.get(Contact, uid)
+        contact = bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.get(uid)
         if contact is None or contact.telegram_id is None:
             return None
         return str(contact.telegram_id)
 
     def bind_im_id(self, uid: int, im_id: str) -> None:
         with _BIND_LOCK:
-            with open_session() as db:
-                contact = db.get(Contact, uid)
-                if contact is None:
-                    return
-                try:
-                    contact.telegram_id = int(im_id)
-                except (TypeError, ValueError):
-                    contact.telegram_id = None
-                db.commit()
+            try:
+                telegram_id = int(im_id)
+            except (TypeError, ValueError):
+                telegram_id = None
+            bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.set_telegram_id(uid, telegram_id)
 
     def unbind_im_id(self, uid: int) -> None:
         with _BIND_LOCK:
-            with open_session() as db:
-                contact = db.get(Contact, uid)
-                if contact is not None:
-                    contact.telegram_id = None
-                db.commit()
+            bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.set_telegram_id(uid, None)
 
 
 # Module-import-time registration. Tests that don't want the

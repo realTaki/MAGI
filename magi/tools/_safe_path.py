@@ -33,7 +33,7 @@ _MAX_PATH_LEN = 1024
 
 
 def safe_resolve(
-    workspace: Path,
+    workspace: Path | str,
     requested: str,
     *,
     must_be_file: bool = True,
@@ -60,8 +60,9 @@ def safe_resolve(
     # ``resolve()`` against workspace so ``"foo/bar"`` lands
     # at ``<workspace>/foo/bar`` and absolute inputs are
     # rejected as out-of-tree.
-    candidate = (workspace / requested).resolve()
-    workspace_resolved = workspace.resolve()
+    workspace_path = Path(workspace)
+    candidate = (workspace_path / requested).resolve()
+    workspace_resolved = workspace_path.resolve()
 
     # ``is_relative_to`` is the official containment check;
     # ``relative_to`` raises ``ValueError`` if not contained,

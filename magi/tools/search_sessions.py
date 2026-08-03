@@ -60,14 +60,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
-
-from magi.channels.webui.api.chat_search import (
-    SearchUnavailable,
-    search_chat_history,
-)
-from magi.agent.memory.session import SessionStore
-from magi.db import ChatMessage, ChatSession, open_session
+from magi.bus import bootstrap
+from magi.bus.contracts.session import SearchHit, SearchUnavailable
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 _MAX_HITS = 20
@@ -92,7 +86,7 @@ class SearchSessionsTool(Tool):
     # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Search the operator's past conversations with EVE "
+        "Search the operator's past conversations with EVA "
         "for messages containing a query string. Returns each "
         "match with up to ``context_n`` preceding + following "
         "messages so the model sees what was actually said "
@@ -189,8 +183,8 @@ class SearchSessionsTool(Tool):
         uid = ctx.uid
 
         try:
-            hits, total = search_chat_history(
-                uid=uid, q=q, limit=limit, offset=0,
+            hits, total = bootstrap(ctx.state_dir).session.search(
+                q, limit=limit,
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_sessions: {e}", is_error=True)
@@ -273,14 +267,14 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
 
     ``hit.delivery_address`` is the row's Telegram chat identifier
     (per-channel delivery address; carried on the row
-    since D.18). The :meth:`SessionStore.get` lookup is
+    since D.18). The BUS session lookup is
     scoped by ``ctx.uid`` (the search call
     already resolved every hit to this contact) — the
     store's defence-in-depth check on ``uid``
     covers the cross-contact case.
     """
     # Locate the hit in either the active or archive list.
-    session = SessionStore(state_dir).get(
+    session = bootstrap(state_dir).session.get(
         uid, hit.session_id,
     )
     if session is None:

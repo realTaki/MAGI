@@ -4,7 +4,7 @@ metadata:
   name: magi-config
 data:
   MAGI_NODE_ROLE: adam
-  # MAGI_CHANNELS intentionally unset — Adam defaults to webui, and the
+  # MAGI_CHANNELS intentionally unset — ADAM defaults to webui, and the
   # telegram channel is brought up by the onboarding wizard's save-bot
   # step (and re-detected at boot by reading the settings DB).
   MAGI_ADAM_URL: http://magi:42069

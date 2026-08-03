@@ -5,28 +5,30 @@ from __future__ import annotations
 import os
 
 import httpx
-from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request, Response
 
-from magi.db import EveRuntime, MAGIC, MAGIS
-from magi.db.magis import get_magis_session
+from magi.bus import bootstrap
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels.webui.proxy_auth import build_proxy_headers
 
 router = APIRouter(tags=["runtime-proxy"])
 
 
-def _runtime_url(session: Session, magic_id: int) -> str:
-    magic = session.get(MAGIC, magic_id)
-    if magic is None:
-        raise MagiHTTPException(status_code=404, code="magic.not_found", detail="MAGI not found")
-    runtime = session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic_id))
+def _runtime_url(magic_id: int) -> str:
+    """Resolve the upstream URL for the chosen MAGI's runtime.
+
+    Returns either ``http://<deployment>:42069`` when the EVA runtime
+    is observed running, the root runtime URL when the requested
+    MAGIC is the root MAGIS's ADAM, or raises 409 if the runtime
+    isn't running.
+    """
+    bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    runtime = bus.magic.get_runtime(magic_id)
     if runtime and runtime.deployment_name and runtime.observed_state not in {"stopped", "deleted"}:
         return f"http://{runtime.deployment_name}:42069"
-    root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-    if root and root.adam_id == magic_id:
-        return os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
+    root_url = bus.magis.root_runtime_url(magic_id)
+    if root_url is not None:
+        return root_url
     raise MagiHTTPException(
         status_code=409,
         code="runtime.not_running",
@@ -39,7 +41,6 @@ async def proxy_runtime(
     magic_id: int,
     path: str,
     request: Request,
-    magis_session: Session = Depends(get_magis_session),
 ) -> Response:
     """Forward one browser request to the chosen MAGI's internal API.
 
@@ -77,7 +78,7 @@ async def proxy_runtime(
         async with httpx.AsyncClient(timeout=60.0) as client:
             upstream = await client.request(
                 request.method,
-                _runtime_url(magis_session, magic_id) + runtime_path,
+                _runtime_url(magic_id) + runtime_path,
                 content=body or None,
                 headers={"content-type": request.headers.get("content-type", "application/json"), **signed_headers},
             )
@@ -94,7 +95,6 @@ async def proxy_runtime(
 async def proxy_selected_runtime(
     path: str,
     request: Request,
-    magis_session: Session = Depends(get_magis_session),
 ) -> Response:
     """Compatibility path for runtime APIs called without ``/runtime/<id>``.
 
@@ -108,4 +108,4 @@ async def proxy_selected_runtime(
     browser_session = selected_session(request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    return await proxy_runtime(int(browser_session["magic_id"]), path, request, magis_session)
+    return await proxy_runtime(int(browser_session["magic_id"]), path, request)

@@ -22,7 +22,7 @@ from magi.bus import (
     StreamEvent,
     get_stream_hub,
 )
-from magi.db import require_state_dir
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -49,7 +49,7 @@ class AgentWorker:
         poll_seconds: float = 0.25,
         store: BusStoreProtocol | None = None,
     ) -> None:
-        self.state_dir = state_dir or require_state_dir()
+        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
         self.store: BusStoreProtocol = store or BusStore(self.state_dir)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
@@ -67,6 +67,8 @@ class AgentWorker:
         if recovered:
             logger.warning("recovered %s expired agent inbox leases", recovered)
         self._stopping = False
+        from magi.agent.auto_title import start_title_worker
+        await start_title_worker()
         self._task = asyncio.create_task(self._run(), name="magi-agent-worker")
 
     async def stop(self) -> None:
@@ -77,10 +79,26 @@ class AgentWorker:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        from magi.agent.auto_title import stop_title_worker
+        await stop_title_worker()
 
     def notify(self) -> None:
         """Wake the local poller after an in-process producer publishes."""
         self._wake.set()
+
+    def _is_within_deadline(self, claim: BusClaim) -> bool:
+        """Return True iff the run's deadline (if any) is still in the future.
+
+        Reads ``agent_runs.deadline_at`` (set by
+        :class:`AgentMessage.deadline_at` at publish time). A
+        deadline in the past means the run is expired and should
+        fail rather than invoke the LLM. A row with no deadline
+        (None) is always considered within-deadline.
+        """
+        checker = getattr(self.store, "is_run_within_deadline", None)
+        # Third-party protocol fakes written before the deadline API are
+        # still safe: they have no persisted deadline to evaluate.
+        return True if checker is None else bool(checker(claim.run_id))
 
     async def _run(self) -> None:
         while not self._stopping:
@@ -99,6 +117,22 @@ class AgentWorker:
 
     async def _process(self, claim: BusClaim) -> None:
         try:
+            # Deadline gate (added 0011_agent_run_metadata): a run
+            # whose ``deadline_at`` has passed is terminally failed
+            # without invoking the LLM. The producer may pass a
+            # deadline via AgentMessage.deadline_at; a scheduler tick
+            # that schedules a long-running tool chain is the
+            # canonical use case.
+            if not self._is_within_deadline(claim):
+                self.store.fail_agent_message(
+                    claim.event_id,
+                    error_code="magi.run_deadline_exceeded",
+                    error_detail=(
+                        f"run deadline exceeded before claim "
+                        f"({claim.kind} for run {claim.run_id})"
+                    ),
+                )
+                return
             if claim.kind == "run.steer":
                 # Publication already atomically attached the input to its
                 # active run.  This inbox record is only an acknowledgement;
@@ -139,7 +173,7 @@ class AgentWorker:
         tool_results: list[dict] | None = None,
         steering_inputs: list[dict] | None = None,
     ) -> None:
-        from magi.agent.runtime_context import DEFAULT_MAX_TOKENS
+        from magi.agent.agent_context import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
         from magi.agent.workspace import workspace_root
 
@@ -209,6 +243,7 @@ class AgentWorker:
                 attempt_id=attempt_id,
                 attempt_result=attempt_result,
             )
+            self._enqueue_title_if_needed(payload)
             hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
             return
         context = {
@@ -273,14 +308,29 @@ class AgentWorker:
         )
         hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"tool_calls": tool_call_ids}))
 
+    def _enqueue_title_if_needed(self, payload: dict) -> None:
+        """Schedule title generation from the agent side after a committed turn."""
+        uid, session_id = payload.get("uid"), payload.get("session_id")
+        if not isinstance(uid, int) or not isinstance(session_id, str):
+            return
+        from magi.bus import bootstrap
+        session = bootstrap(self.state_dir).session.get(uid, session_id)
+        if session is None or session.title is not None or len(session.messages) != 2:
+            return
+        from magi.agent.auto_title import enqueue_title_job
+        asyncio.create_task(
+            enqueue_title_job(session.delivery_address, session.session_id, uid),
+            name=f"magi-title-{session.session_id}",
+        )
+
 
 def _delivery_destination(state_dir: str, payload: dict) -> str | None:
     """Resolve a TG session address without importing a Telegram client."""
     if payload.get("channel") != "tg" or not payload.get("session_id"):
         return None
-    from magi.agent.memory.session import SessionStore
+    from magi.bus import bootstrap
 
-    session = SessionStore(state_dir).get(payload.get("uid"), payload["session_id"])
+    session = bootstrap(state_dir).session.get(payload.get("uid"), payload["session_id"])
     return session.delivery_address if session is not None else None
 
 
@@ -313,7 +363,7 @@ async def stop_agent_worker() -> None:
 
 async def submit_agent_message(message: AgentMessage, *, state_dir: str | None = None) -> str:
     """Durably publish a turn from any async channel context."""
-    resolved_state_dir = state_dir or require_state_dir()
+    resolved_state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
     store = BusStore(resolved_state_dir)
     run_id = store.publish_agent_message(message)
     if _worker is not None and _worker.state_dir == resolved_state_dir:
@@ -329,7 +379,7 @@ async def wait_for_agent_run(
     poll_seconds: float = 0.1,
 ) -> str:
     """Wait for a durable run result without depending on the worker's loop."""
-    store = BusStore(state_dir or require_state_dir())
+    store = BusStore(state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR)
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while True:
         result = store.get_run_result(run_id)

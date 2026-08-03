@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.memory.session import SessionStore
+from bus.contracts.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import ChatSession, init_orm, open_session
 
@@ -137,7 +137,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
 
 
 def test_different_tgids_get_different_sessions(tg_session_env):
-    """Two contacts chatting this EVE get two distinct rows
+    """Two contacts chatting this EVA get two distinct rows
     — DB-level ``delivery_address`` scoping mirrors the WebUI guarantee
     so one user's history never bleeds into another's.
     """
@@ -165,7 +165,7 @@ def test_messages_persist_to_session(tg_session_env):
     """End-to-end: helper creates a session, append_messages
     persists the inbound + outbound rows, get sees them."""
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
-    from magi.agent.memory.session import SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
 
     state_dir, _workspace = tg_session_env
     store = SessionStore(state_dir)

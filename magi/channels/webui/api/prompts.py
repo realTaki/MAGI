@@ -21,7 +21,7 @@ endpoint exists for two cases:
      is more for "I want one log line that says it
      reloaded" than for performance.
 
-Auth: admin-gated, same as every other Adam route.
+Auth: admin-gated, same as every other ADAM route.
 """
 
 from __future__ import annotations

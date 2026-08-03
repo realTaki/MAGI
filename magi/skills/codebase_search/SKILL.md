@@ -16,7 +16,7 @@ version: "1.0"
 1. 优先用 `read_file` 读取文件精确段 —— 已知路径时 100% 准
 2. 找不到路径 → 用 `list_files` 列目录（一定要指定 path，
    默认是 workspace 根）
-3. 还没头绪 → 用 `send_message`（TG-side）让 EVE 复述
+3. 还没头绪 → 用 `send_message`（TG-side）让 EVA 复述
 
 ## 仓库拓扑
 

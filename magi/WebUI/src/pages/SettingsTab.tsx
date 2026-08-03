@@ -37,6 +37,7 @@ import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCar
 import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsInstructionCard } from "../components/settings/SettingsInstructionCard";
+import { SettingsSecurityCard } from "../components/settings/SettingsSecurityCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
 import { SettingsTaskPresetsCard } from "../components/settings/SettingsTaskPresetsCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
@@ -53,6 +54,7 @@ export type SettingSection =
   | "agent"
   | "task-presets"
   | "webui-access"
+  | "security"
   | "onboarding";
 
 export const SETTINGS_SECTIONS: SidebarItem[] = [
@@ -64,6 +66,7 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
   { id: "task-presets", label: "settings.navTaskPresets", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
+  { id: "security", label: "settings.navSecurity", icon: <IconContacts /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
 
@@ -115,6 +118,9 @@ export default function SettingsTab(props: SettingsTabProps) {
             signedInUser={props.signedInUser}
             onAdminsChanged={props.onAdminsChanged}
           />
+        )}
+        {section === "security" && (
+          <SettingsSecurityCard />
         )}
         {section === "onboarding" && props.isAdmin && (
           <SettingsOnboardingCard onRestart={props.onRestart} />

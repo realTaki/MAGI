@@ -22,7 +22,7 @@ unprivileged_contact: |
   请联系 MAGI 管理员，或把你的 ID ({delivery_address}) 告诉他们以加入。
 
 # Sent when a bound contact is marked separated (离职).
-# Admin can restore via the dashboard; the EVE itself stays
+# Admin can restore via the dashboard; the EVA itself stays
 # paused while separated.
 separated_contact: |
   你的账号（{contact_name}）已标记为离职。如需恢复，请联系管理员。

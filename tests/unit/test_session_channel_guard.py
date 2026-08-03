@@ -35,12 +35,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from magi.db import Contact, init_orm, init_sqlite, open_session
-from magi.agent.memory.session import (
-    ChannelMismatchError,
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    utcnow_iso)
+from bus.services.session import ChannelMismatchError, SessionMessage, new_session_id, utcnow_iso
+from bus.contracts.session import SessionStore
 
 # -- helpers / fixtures --------------------------------------------------
 
@@ -212,35 +208,23 @@ def test_get_does_not_check_channel(state: Path) -> None:
 # ────────────────────────────────────────────────────────────────── #
 
 @pytest.fixture
-def client(state: Path, admin: Contact):
-    """TestClient with ``handle_message`` monkey-patched
-    to an AsyncMock so we can detect "did the inbound
-    guard trip BEFORE handle_message was called".
+def client(state: Path, admin: Contact, monkeypatch):
+    """TestClient with durable message publication stubbed.
 
-    We use AsyncMock + ``assert_not_called`` rather than
-    a fake that returns a string: the channel-mismatch
-    path must short-circuit BEFORE the LLM call runs,
-    otherwise we'd bill the operator for a half-finished
-    request.
+    A channel mismatch must fail before it appends an inbound message or
+    publishes work to the agent inbox.
     """
-    from magi.agent import loop as agent_mod
     from magi.channels.webui.api import chat as chat_mod
 
-    fake = AsyncMock(return_value="never-called")
-    # Patch both namespaces — same shadow-import trap
-    # the chat_sessions_api fixture calls out.
-    import magi.agent.loop as loop_mod
-    monkeypatch_obj = __import__("pytest").MonkeyPatch()
-    monkeypatch_obj.setattr(loop_mod, "handle_message", fake)
-    monkeypatch_obj.setattr(chat_mod, "handle_message", fake)
+    fake = AsyncMock(return_value="run-test")
+    monkeypatch.setattr(chat_mod, "submit_agent_message", fake)
 
     from magi.channels.webui.app import app
 
     test_client = TestClient(app)
     # Stash the mock so tests can assert against it.
-    test_client._fake_handle = fake  # type: ignore[attr-defined]
-    yield test_client
-    monkeypatch_obj.undo()
+    test_client._fake_submit = fake  # type: ignore[attr-defined]
+    return test_client
 
 def _post_send(
     client: TestClient, admin: Contact, text: str, session_id: str):
@@ -251,10 +235,7 @@ def _post_send(
 
 def test_webui_send_to_tg_owned_session_is_403(
     client: TestClient, admin: Contact, state: Path) -> None:
-    """WebUI tries to send a message into a session that
-    was created by TG. The guard short-circuits with
-    ``403 chat.session_channel_mismatch`` — the LLM is
-    never called."""
+    """WebUI cannot publish into a session owned by TG."""
     sid = _make_session(state, "tg", (admin.telegram_id))
 
     r = _post_send(client, admin, "should be rejected", sid)
@@ -264,8 +245,7 @@ def test_webui_send_to_tg_owned_session_is_403(
     assert body["code"] == "chat.session_channel_mismatch"
     assert "tg" in body["detail"]  # the owning channel is named
 
-    # LLM was never invoked.
-    client._fake_handle.assert_not_called()  # type: ignore[attr-defined]
+    client._fake_submit.assert_not_called()  # type: ignore[attr-defined]
 
     # The session's history is unchanged.
     # D.23: store key is uid (int), not the
@@ -284,18 +264,19 @@ def test_webui_send_to_webui_owned_session_is_200(
 
     r = _post_send(client, admin, "hello", sid)
 
-    assert r.status_code == 200
+    assert r.status_code == 202
     body = r.json()
-    assert body["reply"] == "never-called"  # from the AsyncMock
+    assert body["run_id"] == "run-test"
 
-    # Inbound + outbound both appended.
+    # Only the inbound is persisted on the request path. The agent/delivery
+    # workers append any eventual assistant reply.
     # D.23: store key is uid (int).
     sess = SessionStore(str(state)).get(admin.id, sid)
     assert sess is not None
     roles = [m.role for m in sess.messages]
-    assert roles == ["user", "assistant"]
+    assert roles == ["user"]
     assert sess.messages[0].text == "hello"
-    assert sess.messages[1].text == "never-called"
+    client._fake_submit.assert_awaited_once()
 
 def test_webui_send_to_scheduled_owned_session_is_403(
     client: TestClient, admin: Contact, state: Path) -> None:
@@ -309,7 +290,7 @@ def test_webui_send_to_scheduled_owned_session_is_403(
     assert r.status_code == 403
     assert r.json()["code"] == "chat.session_channel_mismatch"
     assert "scheduled" in r.json()["detail"]
-    client._fake_handle.assert_not_called()  # type: ignore[attr-defined]
+    client._fake_submit.assert_not_called()  # type: ignore[attr-defined]
 
 def test_webui_list_includes_cross_channel_sessions(
     client: TestClient, admin: Contact, state: Path) -> None:

@@ -39,8 +39,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: magi-config
-          # Optional so a WebUI-only Adam can start without a Secret. Add
-          # the key when MAGI_CHANNELS includes telegram or when Adam/EVE
+          # Optional so a WebUI-only ADAM can start without a Secret. Add
+          # the key when MAGI_CHANNELS includes telegram or when ADAM/EVA
           # RPC authentication is enabled.
           env:
             # The initial MAGI has the deterministic first registry ID. Every
@@ -48,7 +48,7 @@ spec:
             # for another MAGI.
             - name: MAGI_RUNTIME_ID
               value: "1"
-            # The Adam image cannot call the Kubernetes API. It holds only an
+            # The ADAM image cannot call the Kubernetes API. It holds only an
             # HMAC secret for the narrow internal orchestrator API.
             - name: MAGI_ORCHESTRATOR_URL
               value: http://magi-orchestrator:42100
@@ -77,7 +77,7 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
-          # `magi --check` works for both Adam and EVE, including EVE nodes
+          # `magi --check` works for both ADAM and EVA, including EVA nodes
           # that do not mount the WebUI channel.
           startupProbe:
             exec:

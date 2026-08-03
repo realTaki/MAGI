@@ -69,7 +69,7 @@ def _default_configs() -> list[ConnectorConfig]:
     ]
 
 
-def _configs_from_db() -> list[ConnectorConfig] | None:
+def _configs_from_db(state_dir: str) -> list[ConnectorConfig] | None:
     """Read ``connector_configs`` from the private SQLite.
 
     Returns ``None`` when the table doesn't exist yet
@@ -89,60 +89,22 @@ def _configs_from_db() -> list[ConnectorConfig] | None:
     WebUI CRUD surface; for now the boot reads what it
     can and skips rows that don't parse.
     """
-    try:
-        from sqlalchemy import text
+    from magi.bus import bootstrap
 
-        from magi.db.engine import get_engine
-        engine = get_engine()
-
-        with engine.connect() as conn:
-            exists = conn.execute(
-                text(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name='connector_configs'"
-                )
-            ).fetchone()
-            if exists is None:
-                return None
-
-            rows = conn.execute(
-                text(
-                    "SELECT name, instance_id, enabled, settings_json, "
-                    "auth_json FROM connector_configs"
-                )
-            ).fetchall()
-    except Exception as exc:
-        logger.warning("connector_configs read failed: %s", exc)
+    rows = bootstrap(state_dir).connectors.list_configurations()
+    if rows is None:
         return None
-
-    import json
-
-    configs: list[ConnectorConfig] = []
-    for row in rows:
-        name, instance_id, enabled, settings_json, auth_json = row
-        try:
-            settings = json.loads(settings_json) if settings_json else {}
-            auth = json.loads(auth_json) if auth_json else None
-        except (ValueError, TypeError) as exc:
-            logger.warning(
-                "connector_configs row %r/%r has bad JSON: %s",
-                name, instance_id, exc,
-            )
-            continue
-        configs.append(
-            ConnectorConfig(
-                name=name,
-                instance_id=instance_id,
-                enabled=bool(enabled),
-                settings=settings,
-                auth=auth,
-            ),
-        )
-    return configs
+    return [ConnectorConfig(
+        name=row.name,
+        instance_id=row.instance_id,
+        enabled=row.enabled,
+        settings=row.settings,
+        auth=row.auth,
+    ) for row in rows]
 
 
 def _build_configs(state_dir: str) -> list[ConnectorConfig]:
-    db_configs = _configs_from_db()
+    db_configs = _configs_from_db(state_dir)
     if db_configs is None:
         return _default_configs()
     return db_configs

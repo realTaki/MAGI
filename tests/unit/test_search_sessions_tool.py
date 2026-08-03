@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.agent.memory.session import SessionStore
+from bus.contracts.session import SessionStore
 from magi.db import init_sqlite
 from magi.db import ChatMessage, init_orm, open_session
 from magi.tools.base import ToolContext
@@ -66,7 +66,7 @@ def _seed(
     append order. Returns the auto-generated session_id.
     """
     from datetime import datetime, timezone
-    from magi.agent.memory.session import SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     store = SessionStore(str(state_dir))
@@ -442,9 +442,8 @@ async def test_search_sessions_truncation_footer_counts_correctly(
     # marker so the FTS query hits all of them. The tool's
     # internal hit limit caps at 20; with 20 hits and a fat
     # ``context_n`` each block easily crosses 8 KB.
-    from magi.agent.memory.session import (
-        SessionMessage, new_session_id,
-    )
+    from bus.services.session import SessionMessage
+
     from datetime import datetime, timezone
 
     store = SessionStore(str(state_dir))

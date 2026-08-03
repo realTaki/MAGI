@@ -39,11 +39,9 @@ from typing import Annotated
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy import func, select
-
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.channels.webui.api.system_settings import get_system_timezone
-from magi.db import TokenUsage, open_session, require_state_dir
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.token_metrics")
 
@@ -51,7 +49,7 @@ router = APIRouter(tags=["token-metrics"])
 
 
 def _state_dir() -> str:
-    return require_state_dir()
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 @dataclass(frozen=True)
@@ -129,18 +127,9 @@ def _aggregate_period(
     start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
-    with open_session() as session:
-        in_sum, out_sum, calls = session.execute(
-            select(
-                func.coalesce(func.sum(TokenUsage.input_tokens), 0),
-                func.coalesce(func.sum(TokenUsage.output_tokens), 0),
-                func.count(TokenUsage.id),
-            ).where(
-                TokenUsage.uid == uid,
-                TokenUsage.ts >= start_utc_naive,
-                TokenUsage.ts <= end_utc_naive,
-            )
-        ).one()
+    in_sum, out_sum, calls = bootstrap(state_dir).token_usage.aggregate(
+        uid=uid, start=start_utc_naive, end=end_utc_naive,
+    )
 
     return PeriodUsage(
         input_tokens=int(in_sum or 0),
@@ -194,7 +183,7 @@ def get_contact_token_usage(
     window), not O(total rows).
     """
     state_dir = _state_dir()
-    tz_name = get_system_timezone(state_dir)
+    tz_name = bootstrap(state_dir).settings.system_timezone()
     tz = zoneinfo.ZoneInfo(tz_name)
 
     week = _aggregate_period(state_dir, uid, "week", tz)

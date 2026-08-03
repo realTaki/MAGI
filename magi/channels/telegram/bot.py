@@ -39,7 +39,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.channels import Channel  # noqa: E402
-from magi.db.engine import require_state_dir  # noqa: E402
+from magi.constants import STATE_DIR  # noqa: E402
 from magi.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
@@ -156,10 +156,10 @@ async def send_text_auto(chat_id: int, text: str) -> None:
     ``magi/channels/telegram/`` should touch the bot token
     or raw HTTP directly.
     """
-    from magi.db.engine import require_state_dir
-    from magi.db.settings import state_get
+    from magi.bus import bootstrap
+    import os
 
-    bot_token = state_get(require_state_dir(), "telegram.bot_token")
+    bot_token = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).settings.get("telegram.bot_token")
     if not bot_token:
         raise RuntimeError("telegram: no bot token saved; cannot send")
     await _send_via_raw_http(bot_token, chat_id, text)
@@ -297,7 +297,8 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         or update.effective_chat.title
     )
 
-    state_dir = require_state_dir()
+    import os
+    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
     # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
@@ -331,7 +332,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Dispatch accepts the caller if EITHER:
         #   - ``contact_admin=True`` (a WebUI operator — any role)
         #   - ``contact_role == 'assigned'`` (the served user —
-        #     the EVE they're chatting with is theirs).
+        #     the EVA they're chatting with is theirs).
         # ``role='guest'`` is NOT accepted here — a soft-
         # auto-created stranger still has to ask their
         # admin for promotion (handled in the "no contact
@@ -357,7 +358,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             return
         # ``admin`` and ``assigned`` both flow through the
-        # same handler. Good — TG chat-with-EVE is a real
+        # same handler. Good — TG chat-with-EVA is a real
         # affordance for mobile operators too.
         await _handle_contact_message(
             update,
@@ -434,12 +435,6 @@ def _auto_create_stranger_contact(
     ``None`` on hard failure (DB locked, import error,
     IntegrityError race that we couldn't recover from).
     """
-    from sqlalchemy.exc import IntegrityError
-
-    from magi.db import Contact, open_session
-    from magi.db.base import utcnow_naive
-    from magi.db.models_contact import SOURCE_SYSTEM
-
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
@@ -455,28 +450,10 @@ def _auto_create_stranger_contact(
     display_name = (display_name or "").strip() or None
 
     try:
-        with open_session() as db:
-            try:
-                row = Contact(
-                    name=name,
-                    display_name=display_name,
-                    role="guest",
-                    telegram_id=cid_int,
-                    source=SOURCE_SYSTEM,
-                    last_seen_at=utcnow_naive(),
-                )
-                db.add(row)
-                db.commit()
-                db.refresh(row)
-            except IntegrityError:
-                # Race — another worker already created
-                # the row. Roll back and look it up.
-                db.rollback()
-                row = db.scalar(
-                    select(Contact).where(Contact.telegram_id == cid_int)
-                )
-                if row is None:
-                    return None
+        from magi.bus import bootstrap
+        contacts = bootstrap(state_dir).contacts
+        if contacts.find_by_telegram_id(cid_int) is None:
+            contacts.create_contact(name=name, display_name=display_name, role="guest", telegram_id=cid_int, source="system")
     except Exception:
         logger.exception(
             "telegram: auto-create stranger contact failed",
@@ -499,7 +476,7 @@ def _find_contact_by_telegram_id(
     sign-in bit) and ``role`` (the served-by relationship)
     independently — ``admin=True`` is the canonical
     operator flag since the 2024 split (see
-    :mod:`magi.db.models_contact`).
+    :mod:`magi.bus.models.local.contact`).
 
     LLM credentials come from the direct MAGIS ``magic`` table,
     not from ``contacts``. Provider resolution happens in the agent loop.
@@ -510,60 +487,31 @@ def _find_contact_by_telegram_id(
     bindings are now written through the
     ``PATCH /api/contacts/{id}`` endpoint.
     """
-    from sqlalchemy import select
-
-    from magi.db import Contact, open_session
-    from magi.db.settings import state_get
-
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
         return None
 
-    def _fields(e: Contact) -> tuple[int, str, str, bool, bool]:
+    def _fields(e) -> tuple[int, str, str, bool, bool]:
         return (
             e.id,
             e.role,
             e.name,
-            e.separated_at is not None,
-            bool(e.admin),
+            e.separated,
+            e.admin,
         )
 
     try:
-        with open_session() as session:
-            contact = session.scalar(
-                select(Contact).where(Contact.telegram_id == cid_int)
-            )
-            if contact is not None:
-                return _fields(contact)
+        from magi.bus import bootstrap
+        contact = bootstrap(state_dir).contacts.find_by_telegram_id(cid_int)
+        if contact is not None:
+            return _fields(contact)
     except Exception:
         logger.exception(
             "telegram: ORM read failed resolving chat %s", tgid,
         )
 
-    # Legacy meta binding — only the uid is recorded,
-    # so we re-read the row to get the role / name. The
-    # meta key is left in place (the operator might still
-    # have stale bindings) but writes go through the new
-    # path.
-    raw = state_get(state_dir, f"telegram.user.{tgid}.uid")
-    if not raw:
-        return None
-    try:
-        legacy_uid = int(raw)
-    except (TypeError, ValueError):
-        return None
-    try:
-        with open_session() as session:
-            contact = session.get(Contact, legacy_uid)
-            if contact is None:
-                return None
-            return _fields(contact)
-    except Exception:
-        logger.exception(
-            "telegram: legacy-meta ORM read failed for contact %s", legacy_uid,
-        )
-        return None
+    return None
 
 
 async def _handle_contact_message(
@@ -576,7 +524,7 @@ async def _handle_contact_message(
     contact_separated: bool,
     contact_role: str,
 ) -> None:
-    """Route a message from a bound contact through the agent loop.
+    """Route a message from a bound contact into the durable agent inbox.
 
     LLM credentials are resolved from the runtime MAGI row in its direct
     MAGIS database rather than the Contact row — the MAGI owns the
@@ -586,7 +534,7 @@ async def _handle_contact_message(
     reply and no LLM call.
 
     Session lifecycle (D.10): TG now persists chat history
-    the same way WebUI does — ``SessionStore`` writes
+    the same way WebUI does — the BUS session service writes
     one file per ``(delivery_address, session_id)`` under
     ``<workspace>/memories/sessions/<delivery_address>/<sid>.json``.
     Unlike WebUI (which has a sidebar "新对话" affordance),
@@ -595,23 +543,18 @@ async def _handle_contact_message(
     The session is auto-created on the first inbound
     message and reused for every subsequent turn in that
     chat, so the file grows into the contact's complete
-    history with this EVE. Per-chat / per-topic session
+    history with this EVA. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.agent.memory.session import (
-        SessionMessage,
-        SessionStore,
-        new_session_id,
-        utcnow_iso,
-    )
-    from magi.agent.worker import submit_agent_message
+    from magi.bus import bootstrap
+    from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
     from magi.bus import AgentMessage
 
     # LLM credentials remain local to the agent. Telegram only publishes a
     # durable input and never receives provider credentials.
 
     if contact_separated:
-        # Separated contacts can't chat with their EVE —
+        # Separated contacts can't chat with their EVA —
         # the org marked them as 离职, so the agent is
         # paused. Admin can restore via the dashboard.
         await update.effective_message.reply_text(
@@ -621,7 +564,7 @@ async def _handle_contact_message(
 
     text = update.effective_message.text or ""
     if not text.strip():
-        # Sticker / photo / voice / etc — the agent loop
+        # Sticker / photo / voice / etc — the agent runtime
         # only handles text in v0. Acknowledge so the user
         # knows we got it but explain the limitation.
         await update.effective_message.reply_text(
@@ -670,11 +613,11 @@ async def _handle_contact_message(
     #      also seeds the auto-title worker.
     #
     # The "reuse the last session" policy is intentionally
-    # implicit: the TG client never tells the EVE "I want
+    # implicit: the TG client never tells the EVA "I want
     # a new thread"; if a future affordance (C7 command like
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.
-    store = SessionStore(state_dir)
+    store = bootstrap(state_dir).session
     session_id = _resolve_or_create_tg_session(store, delivery_address, uid)
 
     # Inbound append — SQLite's per-statement atomicity replaces
@@ -714,31 +657,13 @@ async def _handle_contact_message(
         # history if they ever inspect it.
         post = None
 
-    # First-user-message of a fresh thread → fire the same
-    # auto-title worker the WebUI uses. The worker is keyed
-    # by ``(delivery_address, session_id)`` and uses its own per-
-    # session lock; no TG-specific code needed.
-    if post is not None and len(post.messages) == 1:
-        try:
-            from magi.agent.memory.session.auto_title import enqueue_title_job
-            await enqueue_title_job(
-                delivery_address=delivery_address,
-                session_id=session_id,
-                uid=uid,
-            )
-        except Exception:
-            logger.exception(
-                "telegram: failed to enqueue title job for session %s",
-                session_id,
-            )
-
     # -- "typing…" indicator (D.14) --------------------------------------
     # TG clears the typing state automatically when our
     # ``reply_text`` lands, but only if the LLM reply comes
     # back within ~5s — past that, the client hides the
     # indicator. So we fire an immediate ``typing`` then
     # start a 4-second refresh loop in the background;
-    # cancelled the moment ``handle_message`` returns.
+    # cancelled after the inbound has been durably published.
     typing_stop = asyncio.Event()
     typing_task = asyncio.create_task(
         _typing_indicator_loop(
@@ -750,7 +675,7 @@ async def _handle_contact_message(
     )
 
     try:
-        await submit_agent_message(
+        bootstrap(state_dir).agent_runs.publish_input(
             AgentMessage(
                 # Telegram message ids are stable per chat, and the inbound
                 # session message is separately persisted above. Together
@@ -760,6 +685,12 @@ async def _handle_contact_message(
                     f"{update.effective_message.message_id}"
                 ),
                 source_id=str(update.effective_message.message_id),
+                # Cross-channel idempotency triple (0009_idempotency_keys):
+                # TG update_id is the upstream-stable id we dedupe on.
+                # Different ``event_id`` values (e.g. bot-restart re-runs
+                # of the same update) collapse to the same inbox row.
+                source_type="tg",
+                external_event_id=str(update.update_id),
                 text=text,
                 channel=Channel.TG,
                 session_id=session_id,
@@ -768,7 +699,6 @@ async def _handle_contact_message(
                 # filter privileged tools without a Telegram dependency.
                 caller_role=contact_role,
             ),
-            state_dir=state_dir,
         )
     finally:
         # Always cancel — success, error, exception.
@@ -793,7 +723,7 @@ async def _handle_contact_message(
 
 
 def _resolve_or_create_tg_session(
-    store: SessionStore,
+    store,
     delivery_address: str,
     uid: int,
 ) -> str:
@@ -812,7 +742,7 @@ def _resolve_or_create_tg_session(
     TG ↔ WebUI usage fragmented the TG history into N
     sessions, contradicting the D.10 promise.
 
-    Filtering at the SQL level (via ``SessionStore.find_latest_for_channel``)
+    Filtering in the BUS session service (via ``find_latest_tg_session``)
     means:
       - Latest is a TG session → reuse it (the common path).
       - Latest is a WebUI session → ignored; we look at the
@@ -862,7 +792,7 @@ def _resolve_or_create_tg_session(
 # TG "typing…" action expires after ~5s, so we refresh
 # every 4s while the LLM is thinking. The handler starts
 # this loop in the background just before
-# ``handle_message`` and signals it to stop via the returned
+# durable message publication and signals it to stop via the returned
 # ``stop_event`` — see ``_handle_contact_message``.
 _TYPING_REFRESH_SECONDS = 4.0
 
@@ -931,8 +861,6 @@ def start_bot(state_dir: str) -> threading.Thread | None:
     and keep the loop alive with an ``asyncio.Event`` that never gets
     set. The daemon thread is killed when the process exits.
     """
-    from magi.db.settings import state_get
-
     # Idempotent start: if a polling thread is already alive,
     # return it instead of spawning a second one.
     global _telegram_bot_thread
@@ -941,18 +869,17 @@ def start_bot(state_dir: str) -> threading.Thread | None:
             logger.info("telegram bot already running; reusing existing thread")
             return _telegram_bot_thread
 
-    token = state_get(state_dir, "telegram.bot_token")
+    token = bootstrap(state_dir).settings.get("telegram.bot_token")
     if not token:
         logger.info(
             "telegram: no bot token saved yet — channel idle until onboarding completes"
         )
         return None
 
-    username = state_get(state_dir, "telegram.bot_username")
+    username = bootstrap(state_dir).settings.get("telegram.bot_username")
     # ``concurrent_updates=True`` lets a follow-up TG message
     # for the same chat enter ``_on_message`` **while** the
-    # previous turn's ``handle_message`` is still in flight
-    # (still looping on tool calls). Without this, the
+    # previous turn's durable run is still in flight. Without this, the
     # python-telegram-bot runtime serialises per-chat updates
     # at the dispatcher level, so a fresh user message that
     # arrives mid-tool-chain sits in the bot's queue until the
@@ -968,7 +895,7 @@ def start_bot(state_dir: str) -> threading.Thread | None:
     # input.
     #
     # The natural serialisation point is
-    # ``SessionStore.append_messages`` — concurrent appends
+    # BUS ``append_messages`` — concurrent appends
     # are safe under SQLite's row-level locking (D.22 channel
     # guard + D.23 contact scoping are already enforced
     # there). The TG inbound handler remains cheap (one

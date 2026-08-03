@@ -69,7 +69,7 @@ def _seed_messages(store, delivery_address: str, count: int) -> str:
     The synthetic text is just ``"msg-{idx}"`` — enough
     to be distinct without being noisy.
     """
-    from magi.agent.memory.session import SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
 
     # D.23: store key is uid (int); delivery_address is the
     # per-channel delivery address stamped on the row.
@@ -93,7 +93,7 @@ def _seed_messages(store, delivery_address: str, count: int) -> str:
 def test_get_messages_page_returns_tail_slice(admin_env):
     """Newest ``limit`` active messages in chronological
     order. ``offset=0`` is the latest page."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -111,7 +111,7 @@ def test_get_messages_page_returns_tail_slice(admin_env):
 def test_get_messages_page_offset_skips_newest(admin_env):
     """``offset=limit`` returns the next older page — msg-1
     and msg-2, in that order."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -127,7 +127,7 @@ def test_get_messages_page_offset_zero_size_limit(admin_env):
     messages with no gaps and no duplicates. Offset
     counts from the newest end, so page 0 is msg-4,
     page 1 is msg-3, etc."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -145,7 +145,7 @@ def test_get_messages_page_past_end_returns_empty(admin_env):
     """Asking past the end returns ``[]`` but the totals
     still reflect the full count — the UI uses this to
     hide the load-more button."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 3)
@@ -162,7 +162,8 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
     default page. ``total_active`` and ``total_all``
     differ — the UI uses this to decide whether to show
     a separate "show archive" affordance later."""
-    from magi.agent.memory.session import SessionStore, SessionMessage, new_session_id
+    from bus.services.session import SessionMessage, new_session_id
+    from bus.contracts.session import SessionStore
     from magi.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
@@ -191,7 +192,8 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
     appended after the active page (also in chronological
     order — they sort by ``id`` ASC, which is the
     insertion order)."""
-    from magi.agent.memory.session import SessionStore, new_session_id
+    from bus.services.session import new_session_id
+    from bus.contracts.session import SessionStore
     from magi.db import ChatMessage, open_session
 
     store = SessionStore(str(admin_env))
@@ -220,7 +222,7 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
     """An unknown session_id returns zeros and an empty
     page. The HTTP layer is responsible for translating
     ``([], 0, 0)`` into a 404 when offset==0."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     msgs, total_active, total_all = store.get_messages_page(
@@ -240,7 +242,7 @@ def test_get_messages_page_respects_uid_scope(admin_env):
     terms of the new key, since the delivery_address column no
     longer drives the WHERE clause.
     """
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
@@ -277,7 +279,7 @@ def client(admin_env):
 def test_messages_route_default_page(client, admin_env):
     """``GET /api/chat/sessions/{id}/messages`` (no params)
     returns up to 50 active messages + totals."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -297,7 +299,7 @@ def test_messages_route_pagination_via_offset(client, admin_env):
     """Two pages with ``limit=2, offset=0`` and
     ``offset=2`` cover a 5-message session without gaps
     or duplicates."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
@@ -349,7 +351,7 @@ def test_messages_route_cross_contact_isolation(client, admin_env):
     clause by ``uid`` (D.23); an attacker who
     knows the session_id still gets a 404.
     """
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     # Bob's session: uid=2,  (the
@@ -366,7 +368,7 @@ def test_messages_route_past_end_returns_empty_with_totals(client, admin_env):
     """``offset`` past the end returns ``messages: []`` but
     the totals still reflect the full session size — the
     UI hides the load-more button on this signal."""
-    from magi.agent.memory.session import SessionStore
+    from bus.contracts.session import SessionStore
 
     store = SessionStore(str(admin_env))
     sid = _seed_messages(store, "9001", 2)

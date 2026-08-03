@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy the Genesis Adam and its restricted EVE orchestrator to an existing
+# Deploy the Genesis ADAM and its restricted EVA orchestrator to an existing
 # Kubernetes cluster. kubectl is downloaded into deploy/.tools when absent,
 # never installed system-wide or via sudo.
 set -euo pipefail

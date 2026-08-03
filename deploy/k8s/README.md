@@ -11,8 +11,8 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 - 每个 MAGI 一个独立 Deployment；
 - 每个 MAGI 一个独立 PVC，挂载到容器 `/workspace`；其 MAGIS 另有一个公共 PVC 挂载到 `/magis`；
 - 源码保留在不可变镜像内（`/app/magi`），不会挂载到 `/workspace`；
-- Adam 通过 ClusterIP Service 提供 WebUI；
-- EVE 使用 Telegram 时不创建 HTTP Service；
+- ADAM 通过 ClusterIP Service 提供 WebUI；
+- EVA 使用 Telegram 时不创建 HTTP Service；
 - 每个 MAGI 的私有 SQLite 仅单副本运行；每个 MAGIS 使用独立 PostgreSQL 保存组织数据。
 
 本地开发另有 ``overlays/dev-eva00``：它仅由 ``../bootstrap-k8s.sh``
@@ -22,7 +22,7 @@ manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
 
 此外，``../bootstrap-k8s.sh`` 会部署 ``magi-orchestrator``。它是唯一可创建 MAGI 的
 Deployment/私有 PVC，以及新 MAGIS 的 PostgreSQL、公共 PVC 和数据库 Secret 的组件；
-Adam 仅通过带 HMAC 的集群内 API 请求启动/停止。不要为 Adam 挂载 Docker socket 或
+ADAM 仅通过带 HMAC 的集群内 API 请求启动/停止。不要为 ADAM 挂载 Docker socket 或
 Kubernetes ServiceAccount token。
 
 ## 目录结构
@@ -109,7 +109,7 @@ images:
 - 只有 `/workspace` 是持久化挂载；
 - 不需要在 Pod 内运行 Vite。
 
-## 2. 创建 Genesis 数据库 Secret 并部署 Adam
+## 2. 创建 Genesis 数据库 Secret 并部署 ADAM
 
 Genesis PostgreSQL 是初始 MAGIS 的必需依赖。先复制示例到一个不提交 Git 的位置，
 填入强随机密码，然后创建 Secret：
@@ -120,10 +120,10 @@ cp deploy/k8s/secrets/magis-genesis-db.example.yaml /tmp/magis-genesis-db.yaml
 kubectl -n magi apply -f /tmp/magis-genesis-db.yaml
 ```
 
-`MAGIS_DATABASE_URL` 必须指向 `magi-magis-1-genesis-db:5432/magis_1`。初始 Adam
+`MAGIS_DATABASE_URL` 必须指向 `magi-magis-1-genesis-db:5432/magis_1`。初始 ADAM
 会从这个 Secret 获得连接串，并在该 PostgreSQL 中创建 Genesis 与 `EVA-00 PROTO TYPE`。
 
-默认 Adam 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置
+默认 ADAM 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置
 （启动逻辑会从 settings DB 自动检测已 onboarded 的通道）：
 
 ```yaml
@@ -176,10 +176,10 @@ http://magi-webui:42069
 
 ## 3. Telegram Secret（可选）
 
-WebUI-only Adam 不需要 Telegram Secret；Genesis 数据库 Secret 则是上一节的必需项。
+WebUI-only ADAM 不需要 Telegram Secret；Genesis 数据库 Secret 则是上一节的必需项。
 清单中的 Telegram Secret 引用是 optional 的，因此没有它 Pod 仍能启动。
 
-如果 Adam 同时启用 Telegram,推荐通过命令行创建 Secret,而不是把真实密钥写
+如果 ADAM 同时启用 Telegram,推荐通过命令行创建 Secret,而不是把真实密钥写
 进 Git:
 
 ```bash
@@ -188,7 +188,7 @@ kubectl -n magi create secret generic adam-magi-secrets \
   --from-literal=MAGI_SHARED_SECRET='replace-with-long-random-secret'
 ```
 
-Adam 默认只跑 webui 通道。TG bot 在 `save-bot` 步骤由 onboarding 拉起
+ADAM 默认只跑 webui 通道。TG bot 在 `save-bot` 步骤由 onboarding 拉起
 (daemon 跑在 webui worker 进程里),不需要把 `MAGI_CHANNELS` 预设成
 `webui,telegram` —— settings DB 里 `telegram.bot_token` 一旦写入,
 节点启动时就会自动把 telegram 通道加进来。
@@ -199,16 +199,16 @@ Adam 默认只跑 webui 通道。TG bot 在 `save-bot` 步骤由 onboarding 拉�
 deploy/k8s/secrets/adam-magi-secrets.example.yaml
 ```
 
-## 4. 部署一个 EVE
+## 4. 部署一个 EVA
 
-`overlays/eve-example` 是一个可复制的 EVE 模板。它会：
+`overlays/eve-example` 是一个可复制的 EVA 模板。它会：
 
 - 设置 `MAGI_NODE_ROLE=eve`；
 - 创建独立的 Deployment 和 PVC；
-- 删除 EVE 的 HTTP Service，因为 Telegram polling 不需要入站 HTTP；
+- 删除 EVA 的 HTTP Service，因为 Telegram polling 不需要入站 HTTP；
 - 将 `MAGI_ADAM_URL` 指向 `adam-magi:42069`。
 
-EVE 的通道由 `settings.channels.enabled` 控制（telegram 在 onboarding 的
+EVA 的通道由 `settings.channels.enabled` 控制（telegram 在 onboarding 的
 save-bot 写入 bot token 后自动启用），无需在启动时预设 `MAGI_CHANNELS`。
 
 先复制目录：
@@ -234,7 +234,7 @@ cp -R deploy/k8s/overlays/eve-example \
      MAGI_ADAM_URL: http://adam-magi:42069
    ```
 
-3. 创建 EVE 的 Telegram Secret。因为 overlay 使用了 `eve-eva00-` 前缀，
+3. 创建 EVA 的 Telegram Secret。因为 overlay 使用了 `eve-eva00-` 前缀，
    Secret 名称也要带前缀：
 
    ```bash
@@ -262,13 +262,13 @@ MAGIS DB:   magi-magis-<magis-id>-<name>-db（共享，不是每个 MAGI 一个�
 宿主机目录映射的等价概念是：
 
 ```text
-Adam       → adam-magi-workspace PVC → /workspace
-EVE Eva00  → eve-eva00-magi-workspace PVC → /workspace
-EVE Bob    → eve-bob-magi-workspace PVC → /workspace
+ADAM       → adam-magi-workspace PVC → /workspace
+EVA Eva00  → eve-eva00-magi-workspace PVC → /workspace
+EVA Bob    → eve-bob-magi-workspace PVC → /workspace
 ```
 
 各个 MAGI 的 `/workspace` 相互隔离，不共享 SQLite、SOUL、skills 或 session。
-它们只挂载直属 MAGIS 的 `/magis` 公共 PVC；Adam 对子 MAGIS 的管理权不意味着
+它们只挂载直属 MAGIS 的 `/magis` 公共 PVC；ADAM 对子 MAGIS 的管理权不意味着
 它会挂载子 MAGIS 的公共工作区。
 
 ## 5. 持久化布局
@@ -277,7 +277,7 @@ Kubernetes 中不再使用 Docker Compose 的 host bind mount：
 
 ```text
 Compose:
-宿主机目录/Adam:/workspace
+宿主机目录/ADAM:/workspace
 
 Kubernetes:
 PVC → /workspace
@@ -320,7 +320,7 @@ Kubernetes API token 暴露给 Pod。
 deploy/k8s/overlays/adam/ingress.example.yaml
 ```
 
-修改域名后，将它加入 Adam overlay 的 `resources`，再执行：
+修改域名后，将它加入 ADAM overlay 的 `resources`，再执行：
 
 ```bash
 kubectl apply -k deploy/k8s/overlays/adam
@@ -331,7 +331,7 @@ kubectl apply -k deploy/k8s/overlays/adam
 
 ## 当前边界
 
-当前 Kubernetes 部署是“一个 Adam + 手工复制的多个 EVE overlay”。Adam WebUI
-还不会自动创建 Kubernetes Deployment；未来 C6 可以让 Adam 通过 Kubernetes
-API 或一个受限的 operator/controller 来创建和回收 EVE。届时不应直接给 MAGI
+当前 Kubernetes 部署是“一个 ADAM + 手工复制的多个 EVA overlay”。ADAM WebUI
+还不会自动创建 Kubernetes Deployment；未来 C6 可以让 ADAM 通过 Kubernetes
+API 或一个受限的 operator/controller 来创建和回收 EVA。届时不应直接给 MAGI
 Pod 授予任意 Kubernetes 管理权限，而应使用最小权限的专用 controller。

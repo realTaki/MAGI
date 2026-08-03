@@ -3,7 +3,7 @@
 A "session" is a single thread of messages between an
 operator (identified by their uid in the dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
-under the operator's workspace (see :mod:`magi.agent.memory.session`)
+in the BUS-owned SQLite session domain.
 and are per-user — admin A's session is invisible to admin B.
 
 Endpoints
@@ -30,23 +30,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-
+from magi.bus import bootstrap
+from magi.bus.contracts.session import (
+    Session, SessionCorruptError, SessionError, SessionMessage,
+    SessionNotFoundError, SessionPathError, SessionSummary,
+)
+from magi.bus.services.session import SessionService
 from magi.channels.webui.api.auth_gates import AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 from magi.channels import Channel
-from magi.agent.memory.session import (
-    Session,
-    SessionCorruptError,
-    SessionError,
-    SessionMessage,
-    SessionNotFoundError,
-    SessionPathError,
-    SessionStore,
-    SessionSummary,
-    new_session_id,
-)
-from magi.db import Contact, open_session, require_state_dir
+from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.chat_sessions")
 
@@ -54,21 +47,21 @@ router = APIRouter(tags=["chat_sessions"])
 
 
 def _state_dir() -> str:
-    return require_state_dir()
+    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
-def get_session_store() -> SessionStore:
-    """FastAPI dependency — one SessionStore per request.
+def get_session_store() -> SessionService:
+    """FastAPI dependency — one BUS session facade per request.
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override
     ``MAGI_STATE_DIR`` need each request to see the
     current value, not the value captured at import time.
     """
-    return SessionStore(_state_dir())
+    return bootstrap(_state_dir()).session
 
 
-SessionStoreDep = Annotated[SessionStore, Depends(get_session_store)]
+SessionServiceDep = Annotated[SessionService, Depends(get_session_store)]
 
 
 # -- Pydantic response shapes ------------------------------------------------
@@ -219,13 +212,13 @@ def _delivery_address_for_uid(uid: int, channel: Channel | str = Channel.TG) -> 
     the caller's ORM session here.
 
     Returns ``""`` when the operator has no binding on
-    the channel. ``SessionStore.create`` accepts an
+    the channel. ``SessionService.create`` accepts an
     empty address as "no outbound push", which is
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
     """
-    from magi.channels import dispatcher as channel_dispatcher
-    return channel_dispatcher.lookup_im_id(uid, channel) or ""
+    contact = bootstrap(_state_dir()).contacts.get(uid)
+    return str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
 
 
 def _resolve_uid(request: Request) -> int:
@@ -254,7 +247,7 @@ def _resolve_uid(request: Request) -> int:
     return uid
 
 
-def _admin_uid(request: Request, store: SessionStoreDep) -> int:
+def _admin_uid(request: Request, service: SessionServiceDep | None = None) -> int:
     """Resolve the cookie to its admin contact id and
     gate by role.
 
@@ -271,16 +264,10 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
     turn the trailing ``return contact.id`` into a
     ``DetachedInstanceError``.
     """
-    uid = _resolve_uid(request)
-    with open_session() as session:
-        contact = session.get(Contact, uid)
-        if contact is None or not bool(contact.admin):
-            raise MagiHTTPException(
-                status_code=401,
-                code="chat.unknown_sender",
-                detail="no admin contact row bound to this session",
-            )
-        return contact.id
+    # AdminGate has already authenticated and authorised this request.  The
+    # signed cookie carries the durable contact id, so no channel may reopen
+    # the ORM merely to re-read the same authority.
+    return _resolve_uid(request)
 
 
 @router.post(
@@ -291,7 +278,7 @@ def _admin_uid(request: Request, store: SessionStoreDep) -> int:
 def create_session(
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
 ) -> CreateSessionResponse:
     """Create a new empty session for the current operator.
 
@@ -310,9 +297,9 @@ def create_session(
     # dispatcher so this endpoint never reads
     # ``Contact.telegram_id`` directly. The store key,
     # however, is ``uid`` — see
-    # :meth:`SessionStore.create`.
+    # :meth:`SessionService.create`.
     delivery_address = _delivery_address_for_uid(uid)
-    sess = store.create(
+    sess = service.create(
         uid, channel=Channel.WEBUI, delivery_address=delivery_address,
     )
     return CreateSessionResponse(session_id=sess.session_id)
@@ -325,7 +312,7 @@ def create_session(
 def list_sessions(
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
     limit: int = 50,
     offset: int = 0,
 ) -> SessionListOut:
@@ -353,7 +340,7 @@ def list_sessions(
     # other channel the operator owns. The frontend
     # renders the channel alongside each row (D.22
     # added the field).
-    items, total = store.list_summaries(
+    items, total = service.list_summaries(
         uid, limit=limit, offset=offset,
     )
     return SessionListOut(
@@ -375,12 +362,12 @@ def get_session(
     session_id: str,
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request, service)
     try:
-        sess = store.get(uid, session_id)
+        sess = service.get(uid, session_id)
     except SessionPathError as e:
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
@@ -414,7 +401,7 @@ def delete_session(
     session_id: str,
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
 ):
     """Remove a session permanently.
 
@@ -423,9 +410,9 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request, service)
     try:
-        removed = store.delete(uid, session_id)
+        removed = service.delete(uid, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -449,7 +436,7 @@ def update_session(
     payload: UpdateSessionRequest,
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
 ) -> SessionOut:
     """Rename a session (D.7).
 
@@ -470,12 +457,12 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request, service)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
         # ``None`` and empty (whitespace-only or ``""``) both
-        # clear. ``SessionStore.rename`` re-clamps to 80 as a
+        # clear. ``SessionService.rename`` re-clamps to 80 as a
         # final defensive ceiling.
         if raw is None or raw.strip() == "":
             new_title: str | None = None
@@ -483,7 +470,7 @@ def update_session(
             new_title = raw
 
         try:
-            sess = store.rename(
+            sess = service.rename(
                 uid, session_id, new_title, bump_updated=False
             )
         except SessionPathError as e:
@@ -515,7 +502,7 @@ def update_session(
     # 404 if the session vanished between the GET that
     # showed the row and this PATCH.
     try:
-        sess = store.get(uid, session_id)
+        sess = service.get(uid, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -577,7 +564,7 @@ def get_session_messages(
     session_id: str,
     request: Request,
     _admin: AdminGate,
-    store: SessionStoreDep,
+    service: SessionServiceDep,
     limit: int = 50,
     offset: int = 0,
     include_archived: bool = False,
@@ -590,7 +577,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request, service)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic
@@ -604,7 +591,7 @@ def get_session_messages(
     if offset < 0:
         offset = 0
     try:
-        msgs, total_active, total_all = store.get_messages_page(
+        msgs, total_active, total_all = service.get_messages_page(
             uid, session_id,
             limit=limit, offset=offset,
             include_archived=include_archived,
@@ -621,7 +608,7 @@ def get_session_messages(
         # session doesn't exist (vs. an empty session).
         # Distinguishing the two cases: try ``store.get``
         # and 404 if it returns None.
-        sess = store.get(uid, session_id)
+        sess = service.get(uid, session_id)
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,

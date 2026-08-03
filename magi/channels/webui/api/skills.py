@@ -14,28 +14,26 @@ Endpoints
 - ``PATCH /api/skills/{name}``             → toggle enabled
 - ``GET /api/skills/{name}/raw``           → markdown body
 
-Auth: admin-gated like every other Adam endpoint.
+Auth: admin-gated like every other ADAM endpoint.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db import get_session
-from magi.db.settings import state_get, state_set
-from magi.db.engine import require_state_dir
 from magi.channels.webui.api.errors import MagiHTTPException
-from magi.tools.skill_loader import get_skill_loader
+from magi.skills import get_skill_metas
 
 logger = logging.getLogger("magi.channels.webui.api.skills")
 
@@ -45,8 +43,12 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _DISABLED_KEY = "skills.disabled"
 
 
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+
+
 def _load_disabled() -> set[str]:
-    raw = state_get(require_state_dir(), _DISABLED_KEY)
+    raw = _bus().settings.get(_DISABLED_KEY)
     if not raw:
         return set()
     try:
@@ -56,7 +58,7 @@ def _load_disabled() -> set[str]:
 
 
 def _save_disabled(disabled: set[str]) -> None:
-    state_set(require_state_dir(), _DISABLED_KEY, json.dumps(sorted(disabled)))
+    _bus().settings.set(_DISABLED_KEY, json.dumps(sorted(disabled)))
 
 
 _MAX_BODY_BYTES = 32 * 1024
@@ -85,10 +87,9 @@ class SkillToggleIn(BaseModel):
 def list_skills(
     request: Request,
     _admin: AdminGate,
-    session: Session = Depends(get_session),
 ) -> list[SkillOut]:
     """Enumerate every registered skill."""
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     disabled = _load_disabled()
     return [
         SkillOut(
@@ -108,12 +109,11 @@ def toggle_skill(
     name: str,
     body: SkillToggleIn,
     _admin: AdminGate,
-    session: Session = Depends(get_session),
 ) -> SkillOut:
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     meta = loader.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
@@ -137,12 +137,11 @@ def get_skill_body(
     request: Request,
     name: str,
     _admin: AdminGate,
-    session: Session = Depends(get_session),
 ) -> SkillBodyOut:
     """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_loader()
+    loader = get_skill_metas()
     meta = loader.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")

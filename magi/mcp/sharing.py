@@ -8,14 +8,14 @@ Why a sharing layer
 
 Today every MCP server row lives in the *private*
 ``mcp_servers`` table of a single MAGI. The operator of
-``Adam`` configures one server; ``EVE``-00 sees no
+``ADAM`` configures one server; ``EVA``-00 sees no
 servers. There's no way to say "this server is an
 infra-level resource — every MAGIC under the same MAGIS
 should see it".
 
 The user asked for "MAGIS 共享 MCP" — i.e. one operator
 configures a server once, and the other MAGICs
-(``EVE``-01, ``EVE``-02, ...) operating under the same
+(``EVA``-01, ``EVA``-02, ...) operating under the same
 MAGIS root can also call its tools. Three design shapes
 were considered:
 
@@ -48,7 +48,7 @@ Schema (planned)
 
 A new table on the **public** MAGIS PostgreSQL:
 
-  - ``magis_shared_mcp_servers`` — adopted by an Adam
+  - ``magis_shared_mcp_servers`` — adopted by an ADAM
     MAGIS, marked as "shared by this MAGIS". Columns
     mirror the private ``mcp_servers`` table minus the
     secret-bearing fields; the actual secrets stay on

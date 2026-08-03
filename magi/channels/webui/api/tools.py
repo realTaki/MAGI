@@ -1,36 +1,23 @@
 """Tools — list every tool the LLM can invoke.
 
-End-user-facing read-only view of
-:meth:`magi.tools.registry.get_tools_grouped`.
-Useful for the operator to verify what their MAGI install
-can actually do — ``mcp.json`` loaded the right servers,
-no LLM tool wedge broke, etc. Also surfaces each tool's
-:attr:`magi.tools.base.Tool.ALLOWED_ROLES` so the
-operator can audit "who can call what" without reading
-code (D.universal-role-gate).
+Reads from the ``tools`` database table (seeded by the tool worker on
+startup).  Reflects the same data the agent loop uses to build the LLM's
+tool menu, so the operator sees exactly what the model can call.
 
-We pull the rich :class:`Tool` instances (not just the
-flat schemas) because ``allowed_roles`` lives on the
-class, not the wire-format schema. ``source`` (builtin
-vs MCP) is also tracked here so the dashboard can render
-two distinct cards — the operator usually cares whether
-a tool ships with MAGI or came in via config, and that
-distinction drives how to debug a missing-tool report.
-
-Auth: admin-gated like every other Adam endpoints (read-only
+Auth: admin-gated like every other ADAM endpoints (read-only
 data; non-sensitive — same gate as ``/api/contacts``).
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.tools.base import Tool
-from magi.tools.registry import get_tools_grouped
 
 router = APIRouter(tags=["tools"])
 
@@ -111,62 +98,42 @@ def _summarize_schema(schema: dict[str, Any]) -> int:
     return 0
 
 
-@router.get("/tools", response_model=ToolListOut)
-def list_tools(_admin: AdminGate) -> ToolListOut:
-    """Render the current tool registry as a flat list.
-
-    Builtins are always available.  MCP tools are loaded
-    at boot and refreshed before each chat turn — the
-    listing endpoint reads whatever is currently cached.
-    If the MCP cache is empty (e.g. on first visit after
-    a uvicorn reload), the operator can trigger a reload
-    via the agent's chat turn or the :ref:`/api/tools/reload`
-    endpoint.
-    """
-    built_in, mcp = get_tools_grouped(caller_role=None)
-    items: list[ToolOut] = [
-        _serialize_tool(tool, "builtin") for tool in built_in
-    ] + [
-        _serialize_tool(tool, "mcp") for tool in mcp
-    ]
-    # Stable ordering by name keeps the dashboard layout
-    # deterministic across refreshes; ``registry`` returns
-    # the built-in-first + MCP-appended order which is also
-    # stable but harder to reason about in a diff. Sort
-    # AFTER concatenation so MCP and built-in tools
-    # intermix lexicographically (each card groups them
-    # client-side by ``source``).
-    items.sort(key=lambda t: t.name)
-    return ToolListOut(items=items, total=len(items))
-
-
-def _serialize_tool(
-    tool: Tool, source: Literal["builtin", "mcp"],
+def _build_tool_out(
+    schema: dict[str, Any],
+    source: Literal["builtin", "mcp"],
+    allowed_roles: list[str] | None = None,
 ) -> ToolOut:
-    """Render one :class:`Tool` instance to a
-    :class:`ToolOut` row. Pulled out of the route body
-    so tests can poke a single tool without going through
-    the registry.
-
-    ``source`` is passed in by the caller — there's no
-    way to introspect the tool to learn "did this come
-    from a builtin or an MCP server" (both implement the
-    Tool protocol via duck typing), so the route handler
-    tells us which cache it pulled from."""
-    schema = tool.to_anthropic_schema()
-    name = schema.get("name", "")
-    # MCP tools are prefixed ``<server>__<tool>`` by the loader
-    # (see magi/tools/mcp_loader.MCPTool); recover the
-    # owning server so the dashboard can group tools per MCP server.
-    server = name.split("__", 1)[0] if source == "mcp" and "__" in name else None
+    """Build a :class:`ToolOut` from a DB schema row."""
+    name = str(schema.get("name", ""))
+    server: str | None = None
+    if source == "mcp" and "__" in name:
+        server = name.split("__", 1)[0]
     return ToolOut(
         name=name,
-        description=_summarize(schema.get("description", "") or ""),
+        description=_summarize(str(schema.get("description", "") or "")),
         prop_count=_summarize_schema(schema.get("input_schema") or {}),
         source=source,
+        allowed_roles=sorted(allowed_roles) if allowed_roles else [],
         server=server,
-        # Sorted so the dashboard renders a stable,
-        # human-readable order across reloads (frozensets
-        # aren't stable-across-Python-versions by default).
-        allowed_roles=sorted(tool.ALLOWED_ROLES),
     )
+
+
+@router.get("/tools", response_model=ToolListOut)
+def list_tools(_admin: AdminGate) -> ToolListOut:
+    """Render the durable BUS catalog, never an execution registry."""
+    state_dir = os.environ.get("MAGI_STATE_DIR", "")
+    definitions = bootstrap(state_dir).tool_catalog.list_definitions()
+    items = [
+        _build_tool_out(
+            {
+                "name": definition.name,
+                "description": definition.description,
+                "input_schema": definition.input_schema,
+            },
+            "mcp" if definition.source.startswith("mcp") else "builtin",
+            list(definition.allowed_roles),
+        )
+        for definition in definitions
+    ]
+    items.sort(key=lambda t: t.name)
+    return ToolListOut(items=items, total=len(items))
