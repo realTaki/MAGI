@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from magi.bus.contracts.task import TaskScheduleView
+from magi.bus.contracts.task import TaskExecution, TaskScheduleView
 
 
 def _schedule_view(row) -> TaskScheduleView:
@@ -103,6 +103,119 @@ class TaskService:
             session.commit()
             return new_id, False
 
+    def prepare_execution(
+        self, *, task_id: str, run_id: str, started_at: str, manual: bool,
+    ) -> TaskExecution | None:
+        """Atomically create a run and return the task context for channel I/O.
+
+        The returned record is a DTO snapshot.  The caller publishes it to the
+        actor only after this transaction commits; it never receives ORM rows.
+        """
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.models.local.contact import Contact
+        from magi.bus.models.local.session import ChatSession
+        from magi.bus.models.local.task import Task, TaskRun
+        from magi.bus.contracts.session import new_session_id, utcnow_iso
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            task = session.get(Task, task_id)
+            if task is None:
+                return None
+            contact = session.get(Contact, task.uid)
+            if contact is None:
+                finished_at = datetime.utcnow().isoformat()
+                session.add(TaskRun(
+                    id=run_id, task_id=task_id, session_id=None,
+                    trigger="manual" if manual else "cron", started_at=started_at,
+                    finished_at=finished_at, status="failed", error="contact_missing",
+                    latency_ms=_milliseconds(started_at, finished_at),
+                ))
+                session.add(ActionItem(
+                    uid=task.uid, kind="task_disabled",
+                    title=f"定时任务无法执行：{task.name}",
+                    description="任务所属联系人不存在。",
+                    target_url=f"/chat/scheduled-tasks?task={task.id}",
+                    priority="high", source="system",
+                ))
+                session.commit()
+                return None
+            if task.session_id is None:
+                task.session_id = new_session_id()
+                session.add(ChatSession(
+                    session_id=task.session_id, delivery_address="", uid=task.uid,
+                    channel="task", title=f"[定时] {task.name}",
+                    created_at=utcnow_iso(), updated_at=utcnow_iso(),
+                ))
+            run = session.get(TaskRun, run_id)
+            if run is None:
+                session.add(TaskRun(
+                    id=run_id, task_id=task_id, session_id=task.session_id,
+                    trigger="manual" if manual else "cron", started_at=started_at,
+                    status="running",
+                ))
+            session.commit()
+            return TaskExecution(
+                task_id=str(task.id), run_id=run_id, session_id=str(task.session_id),
+                uid=int(task.uid), caller_role=contact.role, task_name=str(task.name),
+                prompt=str(task.prompt), cron=str(task.cron), run_at=task.run_at,
+                tz=str(task.tz), target_channel=str(task.target_channel),
+                delivery_to=task.delivery_to,
+            )
+
+    def set_session_delivery_address(self, *, session_id: str, delivery_address: str) -> None:
+        """Persist a channel-resolved address after its external lookup."""
+        if not delivery_address:
+            return
+        from magi.bus.models.local.session import ChatSession
+        from magi.db import open_session
+
+        with open_session(self._state_dir) as session:
+            row = session.get(ChatSession, session_id)
+            if row is not None and not row.delivery_address:
+                row.delivery_address = delivery_address
+                session.commit()
+
+    def mark_execution_failure(
+        self, *, task_id: str, run_id: str, started_at: str, error: str,
+    ) -> None:
+        """Durably record an execution failure and one-way auto-disable edge."""
+        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.models.local.task import Task, TaskRun
+        from magi.db import open_session
+        from magi.db.settings import state_get
+
+        finished_at = datetime.utcnow().isoformat()
+        with open_session(self._state_dir) as session:
+            run = session.get(TaskRun, run_id)
+            task = session.get(Task, task_id)
+            if run is not None:
+                run.status = "failed"
+                run.finished_at = finished_at
+                run.latency_ms = _milliseconds(started_at, finished_at)
+                run.error = error[:500]
+            if task is not None:
+                task.consecutive_failures = (task.consecutive_failures or 0) + 1
+                task.last_status = "failed"
+                task.last_run_at = finished_at
+                task.last_error = error[:500]
+                raw_threshold = state_get(self._state_dir, "task.failure_threshold")
+                try:
+                    threshold = max(1, int(raw_threshold or "5"))
+                except ValueError:
+                    threshold = 5
+                if task.enabled and task.consecutive_failures >= threshold:
+                    task.enabled = 0
+                    session.add(ActionItem(
+                        uid=task.uid, kind="task_disabled",
+                        title=f"定时任务已自动停用：{task.name}",
+                        description=(f"连续失败 {task.consecutive_failures} 次（阈值 {threshold}）。"
+                                     f"最后一次错误：{error[:200]}"),
+                        target_url=f"/chat/scheduled-tasks?task={task.id}",
+                        priority="high", source="system",
+                    ))
+            session.commit()
+
     # -- cron / schedule validation ------------------------------------
     @staticmethod
     def preset_to_cron(*args, **kwargs):
@@ -123,3 +236,10 @@ class TaskService:
 def _new_task_id() -> str:
     import uuid
     return f"task_{uuid.uuid4().hex}"
+
+
+def _milliseconds(started_at: str, finished_at: str) -> int:
+    try:
+        return max(0, int((datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds() * 1000))
+    except ValueError:
+        return 0

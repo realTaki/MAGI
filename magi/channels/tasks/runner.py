@@ -129,182 +129,52 @@ async def execute_task(
     # when the MAGI runtime isn't configured, which the
     # broad ``except Exception`` below logs as a
     # ``magi_missing_credentials`` task failure.
+    bus = bootstrap(state_dir)
+    execution = bus.task.prepare_execution(
+        task_id=task_id, run_id=run_id, started_at=started, manual=manual,
+    )
+    if execution is None:
+        logger.info("execute_task: task %s is unavailable for execution", task_id)
+        return None
 
-    with open_session() as db:
-        task = db.get(Task, task_id)
-        if task is None:
-            logger.info("execute_task: task %s vanished mid-flight", task_id)
-            return None
-        contact = db.get(Contact, task.uid)
-        if contact is None:
-            _finalise_run_failure(
-                db, run_id=run_id, task_id=task_id, uid=task.uid,
-                task_name=task.name, error="contact_missing",
-                started_iso=started,
-            )
-            _bump_failure(db, task, "contact_missing")
-            _maybe_disable_and_alert(db, task, "contact_missing")
-            db.commit()
-            return run_id
-
-        # Load the task's home session. Allocated at
-        # task-creation time by the API + schedule_task
-        # tool. Legacy rows (pre-session_id column)
-        # might still have ``None`` here; backfill on
-        # first fire so legacy tasks still get a
-        # thread.
-        if task.session_id is None:
-            task.session_id = new_session_id()
-            # Backfill the legacy ``delivery_address`` field
-            # for pre-D.28 rows. We seed with the operator's
-            # TG chat id if they have one (via the dispatcher
-            # so the adapter is the single source of truth);
-            # otherwise an empty string. The runner later
-            # reads ``Task.delivery_to`` directly for routing,
-            # so this column is purely a breadcrumb for the
-            # chat-history view.
-            #
-            # The dispatcher lookup is deferred to AFTER the
-            # ``with open_session()`` block exits — calling it
-            # inside the block would open a second SQLAlchemy
-            # session and deadlock SQLite (BEGIN IMMEDIATE
-            # while the outer transaction is still pending).
-            db.add(ChatSession(
-                session_id=task.session_id,
-                delivery_address="",  # patched after the with block
-                uid=task.uid,
-                channel="task",
-                title=f"[定时] {task.name}",
-                created_at=utcnow_iso(),
-                updated_at=utcnow_iso(),
-            ))
-            db.flush()
-        session_id = task.session_id
-        # Build a contextual user-message that includes
-        # the task's schedule metadata. The agent loop
-        # otherwise only sees ``task.prompt`` — a vague
-        # string like "提醒我查钱包" gives it no hint
-        # about *why* it's running (cron vs one-shot,
-        # monthly vs daily) or *who* it's running for.
-        # Without context the LLM ends up either asking
-        # clarification questions ("你希望怎么提醒？" —
-        # see the claim_20号钱包提醒 bug) or assuming
-        # this is a fresh setup request and calling
-        # ``schedule_task`` again to "configure the
-        # reminder", which creates a duplicate task.
-        #
-        # We keep the original prompt verbatim as the
-        # last block so the agent loop's downstream
-        # reply-excerpt extraction still picks up the
-        # operator's actual instruction. The header is
-        # scaffolding the agent should NOT ignore — the
-        # first sentence explicitly says "execute, don't
-        # re-create".
-        schedule_desc = (
-            task.cron if task.cron
-            else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
-        )
-        channel_directive = (
-            f"If channel='tg', call the ``send_message`` tool with "
-            f"the reply text to push the response. The tool routes "
-            f"via the channel dispatcher using the session's "
-            f"delivery address (the TG chat id; resolved from "
-            f"{task.delivery_to or '(unset)'}). If channel='webui', "
-            f"the reply lands inline in the operator's chat history "
-            f"automatically."
-            if task.target_channel == Channel.TG
-            else "Channel='webui': the reply lands inline in the "
-                 "operator's chat history automatically."
-        )
-        context_header = (
-            f"[task context]\n"
-            f"You are EXECUTING a scheduled task that just fired. "
-            f"Do NOT call ``schedule_task`` (or any tool that "
-            f"creates a new task) — the schedule below is already "
-            f"set up; you're running because it just fired. "
-            f"Carry out the prompt at the bottom as your goal for "
-            f"this fire.\n"
-            f"name: {task.name}\n"
-            f"schedule: {schedule_desc}\n"
-            f"channel: {task.target_channel}\n"
-            f"timezone: {task.tz}\n"
-            f"delivery_to: {task.delivery_to or '(none — webui only)'}\n"
-            f"delivery_directive: {channel_directive}\n"
-            f"\n"
-            f"[task prompt]\n"
-        )
-        contextual_prompt = context_header + task.prompt
-        run = db.get(TaskRun, run_id)
-        run = db.get(TaskRun, run_id)
-        if run is None:
-            # Cron-driven path: the scheduler never
-            # pre-created the row. Insert one now so the
-            # run shows up in the history pane as soon as
-            # the fire starts. The manual path
-            # (``POST /api/tasks/{id}/run``) takes the
-            # other branch — the API pre-created the row
-            # with ``status="running"`` so the operator's
-            # follow-up GET can find it by ``run_id``
-            # before the runner writes anything.
-            run = TaskRun(
-                id=run_id,
-                task_id=task_id,
-                session_id=session_id,
-                trigger="manual" if manual else "cron",
-                started_at=started,
-                status="running",
-            )
-            db.add(run)
-        # Snapshot for the calling coroutine so the
-        # actor publish doesn't need to keep its own
-        # DB session open.
-        task_name = task.name
-        # ``prompt`` sent to the agent is the contextual
-        # version (header + original prompt). The original
-        # ``task.prompt`` is still on the row for audit;
-        # the agent sees the wrapped text.
-        prompt = contextual_prompt
-        delivery_target = task.delivery_to
-        # Stash the new session id + uid so the post-with
-        # patch can update delivery_address without
-        # re-opening the outer session.
-        backfill_uid = task.uid
-        backfill_session_id = task.session_id
-        db.commit()
-
-    # Patch the new session's delivery_address to the
-    # operator's bound TG chat id (if any). Done outside
-    # the with block because the dispatcher opens its own
-    # SQLAlchemy session — nested BEGIN IMMEDIATE inside an
-    # outer transaction deadlocks SQLite.
-    if backfill_session_id is not None and backfill_uid is not None:
-        from magi.channels import dispatcher
-        fallback_tg_im_id = dispatcher.lookup_im_id(
-            backfill_uid, Channel.TG,
-        ) or ""
-        if fallback_tg_im_id:
-            with open_session() as db:
-                sess = db.get(ChatSession, backfill_session_id)
-                if sess is not None:
-                    sess.delivery_address = fallback_tg_im_id
-                    db.commit()
-
-    # Persist the user-message AFTER the open_session()
-    # block exits — the BUS session service opens its own transaction
-    # internally, and calling it while the outer
-    # transaction is still open would deadlock SQLite
-    # (BEGIN IMMEDIATE inside another BEGIN). WebUI
-    # chat.py follows the same pattern: append_messages
-    # outside the request handler's outer ORM session.
-    bootstrap(state_dir).session.append_messages(
-        task.uid, session_id,
-        [SessionMessage(
-            role="user", text=contextual_prompt, ts=started,
-            message_id=new_session_id(),
-        )],
-        channel="task",
+    schedule_desc = (
+        execution.cron
+        if execution.cron
+        else (f"once at {execution.run_at}" if execution.run_at else "ad-hoc")
+    )
+    channel_directive = (
+        f"If channel='tg', call the ``send_message`` tool with the reply text "
+        f"to push the response. The delivery address resolves from "
+        f"{execution.delivery_to or '(unset)'}. If channel='webui', the reply "
+        f"lands inline in the operator's chat history automatically."
+        if execution.target_channel == Channel.TG
+        else "Channel='webui': the reply lands inline in the operator's chat history automatically."
+    )
+    contextual_prompt = (
+        "[task context]\n"
+        "You are EXECUTING a scheduled task that just fired. Do NOT call "
+        "``schedule_task`` (or any tool that creates a new task). Carry out "
+        "the prompt at the bottom as your goal for this fire.\n"
+        f"name: {execution.task_name}\n"
+        f"schedule: {schedule_desc}\n"
+        f"channel: {execution.target_channel}\n"
+        f"timezone: {execution.tz}\n"
+        f"delivery_to: {execution.delivery_to or '(none — webui only)'}\n"
+        f"delivery_directive: {channel_directive}\n\n"
+        f"[task prompt]\n{execution.prompt}"
     )
 
+    # Channel-owned delivery-address discovery remains outside BUS I/O.
+    from magi.channels import dispatcher
+    fallback_tg_im_id = dispatcher.lookup_im_id(execution.uid, Channel.TG) or ""
+    bus.task.set_session_delivery_address(
+        session_id=execution.session_id, delivery_address=fallback_tg_im_id,
+    )
+    bus.session.append_messages(
+        execution.uid, execution.session_id,
+        [SessionMessage(role="user", text=contextual_prompt, ts=started, message_id=new_session_id())],
+        channel="task",
+    )
     # ── 2. Publish the actor input ──
     # D.28: TG push is now handled by the channel
     # dispatcher. The agent loop never sees the TG
