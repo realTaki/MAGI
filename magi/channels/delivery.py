@@ -8,6 +8,7 @@ import uuid
 from contextlib import suppress
 
 from magi.bus import DeliveryClaim, bootstrap
+from magi.bus.contracts.session import SessionMessage, utcnow_iso
 from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.channels.delivery")
@@ -57,6 +58,22 @@ class DeliveryWorker:
                 from magi.channels.a2a.transport import send_a2a_delivery
 
                 await send_a2a_delivery(int(claim.destination), claim.delivery_id, claim.payload)
+            elif claim.channel == "webui":
+                session_id = str(claim.payload.get("session_id") or "")
+                uid = claim.payload.get("uid")
+                if not session_id or not isinstance(uid, int):
+                    raise ValueError("webui delivery is missing session identity")
+                self.bus.session.append_messages(
+                    uid,
+                    session_id,
+                    [SessionMessage(
+                        role="assistant",
+                        text=str(claim.payload.get("text") or ""),
+                        ts=utcnow_iso(),
+                        message_id=self.bus.session.new_id(),
+                    )],
+                    channel="webui",
+                )
             else:
                 raise ValueError(f"unsupported delivery channel: {claim.channel!r}")
         except Exception:

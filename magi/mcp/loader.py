@@ -276,7 +276,7 @@ def _mcp_tool_result(*, success: bool, content: str, error: str | None) -> Any:
     regular tool output) and flip ``is_error=True`` so the
     loop can count failures for its bound.
     """
-    from magi.db.types import ToolResult
+    from magi.bus import ToolResult
     if success:
         return ToolResult(content=content, is_error=False)
     return ToolResult(

@@ -105,7 +105,7 @@ def get_provider(model: str | None = None) -> LLMProvider:
     """
     from magi.bus import bootstrap
 
-    config = bootstrap("").runtime_identity.provider_configuration()
+    config = bootstrap("").magic.provider_configuration()
     if config is None:
         logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
         raise LLMNotConfiguredError(

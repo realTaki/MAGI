@@ -17,8 +17,10 @@ import magi.db.models_action_item  # noqa: F401,E402
 import magi.db.models_contact  # noqa: F401,E402
 import magi.db.models_eve_runtime  # noqa: F401,E402
 import magi.db.models_magic  # noqa: F401,E402
+import magi.db.models_memory  # noqa: F401,E402
 import magi.db.models_magis  # noqa: F401,E402
 import magi.db.models_setting  # noqa: F401,E402
+import magi.db.models_session  # noqa: F401,E402
 import magi.db.models_token_usage  # noqa: F401,E402
 import magi.db.models_tool  # noqa: F401,E402
 import magi.proactive.models  # noqa: F401,E402

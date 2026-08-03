@@ -124,20 +124,18 @@ def build_system_prompt(
     a sensible prompt. The result is just the SOUL when
     nothing else is registered yet.
 
-    Side effects: this calls ``MemoryStore.list_for_owner``
+    Side effects: this calls ``bus.memory.list_for_owner``
     (one SELECT, capped at 50 rows), ``ContactStore.find_by_person``
     (single primary-key lookup), a one-row ``Contact``
     read for the chatter's display_name, and
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.agent.memory.contacts.store import ContactStore
     from magi.agent.memory.contacts.prompt import (
         format_contact_block,
         format_daily_note_block,
     )
     from magi.agent.memory.self.prompt import format_memory_block
-    from magi.agent.memory.self.store import MemoryStore
     from magi.skills import format_skills_block, get_skill_metas
     from magi.bus import bootstrap
 
@@ -152,7 +150,7 @@ def build_system_prompt(
 
     # Memory block — User-wide facts + in-flight work.
     try:
-        memory_rows = MemoryStore(state_dir).list_for_owner(uid)
+        memory_rows = bootstrap(state_dir).memory.list_for_owner(uid)
         memory_block = format_memory_block(memory_rows)
     except Exception:
         logger.exception(
@@ -172,10 +170,10 @@ def build_system_prompt(
     # "Current chatter" header.
     contact_block = ""
     try:
-        store = ContactStore(state_dir)
-        contact = store.get(uid)
+        contacts = bootstrap(state_dir).contacts
+        contact = contacts.get(uid)
         display_name = contact.display_name or contact.name if contact else None
-        notes = store.list_notes(uid) if contact else None
+        notes = contacts.list_notes(uid) if contact else None
         contact_block = format_contact_block(
             contact, display_name=display_name, notes=notes,
         )
@@ -198,8 +196,7 @@ def build_system_prompt(
     if show_daily_note:
         daily_block = ""
         try:
-            store = ContactStore(state_dir)
-            note = store.read_daily_note(uid)
+            note = bootstrap(state_dir).contacts.read_daily_note(uid)
             daily_block = format_daily_note_block(
                 note,
                 show_prompt_rules=show_daily_note_prompt,

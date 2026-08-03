@@ -16,7 +16,7 @@ with a verb discriminator:
     that specific tool result, not to the whole turn.
 
 Person records are NOT writable through these tools —
-they live in :mod:`magi.agent.memory.contacts` and
+they live in :mod:`magi.bus.services.contact` and
 have their own tool set (the LLM-managed directory of
 people the MAGI knows about).
 
@@ -34,17 +34,12 @@ import json
 import logging
 from typing import Any
 
-from magi.db import Contact, open_session
-from magi.agent.memory.self.models import (
-    ALL_KINDS,
-    SOURCE_EVE,
-)
-from magi.agent.memory.self.store import MemoryStore
+from magi.bus import bootstrap
+from magi.bus.contracts.memory import ALL_KINDS, SOURCE_EVE
 from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
-    caller_role_denied_reason,
 )
 
 
@@ -54,15 +49,15 @@ _WRITE_ROLES = frozenset({"admin", "assigned"})
 
 
 def _gate(ctx: ToolContext) -> str | None:
-    """Thin wrapper around
-    :func:`magi.tools.base.caller_role_denied_reason`
-    — the canonical in-run gate lives there so memory,
-    contacts, and action-item tools share one check. The
-    re-resolution on every call (not cache on ``ctx``) is
-    preserved by the helper, so an admin-promoting-an-
-    operator change takes effect on the next LLM call
-    without a process restart."""
-    return caller_role_denied_reason(ctx, _WRITE_ROLES)
+    """Authorise the caller against the role whitelist for memory writes.
+
+    The bus owns the role re-resolution on every call (no cache on
+    ``ctx``); an admin-promoting-an-operator change takes effect on
+    the next LLM call without a process restart.
+    """
+    return bootstrap(ctx.state_dir).auth.caller_role_check(
+        ctx.uid, allowed=tuple(_WRITE_ROLES)
+    )
 
 
 def _err(msg: str) -> ToolResult:
@@ -163,8 +158,8 @@ class AddMemoryTool(Tool):
             return _err(gate)
 
         try:
-            store = MemoryStore(ctx.state_dir)
-            view = store.add(
+            bus = bootstrap(ctx.state_dir)
+            view = bus.memory.add(
                 int(ctx.uid),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
@@ -232,8 +227,8 @@ class UpdateMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            store = MemoryStore(ctx.state_dir)
-            view = store.update(
+            bus = bootstrap(ctx.state_dir)
+            view = bus.memory.update(
                 memory_id,
                 subject=kwargs.get("subject"),
                 body=kwargs.get("body"),
@@ -267,8 +262,8 @@ class CompleteMemoryTool(Tool):
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
         "Mark an ongoing memory row as done. The row stays in the "
-        "table for the audit trail but is no longer rendered in "
-        "the system-prompt block. Use when the operator says "
+        "table for the audit trail but is no longer rendered in the "
+        "system-prompt block. Use when the operator says "
         "'完成了' / '搞定了' / 'the project shipped'."
     )
     input_schema = {
@@ -295,8 +290,8 @@ class CompleteMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            store = MemoryStore(ctx.state_dir)
-            view = store.complete(memory_id)
+            bus = bootstrap(ctx.state_dir)
+            view = bus.memory.complete(memory_id)
         except LookupError as e:
             return _err(str(e))
         return _ok(view.to_dict())
@@ -349,8 +344,7 @@ class DeleteMemoryTool(Tool):
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
-        store = MemoryStore(ctx.state_dir)
-        existed = store.delete(memory_id)
+        existed = bootstrap(ctx.state_dir).memory.delete(memory_id)
         return _ok({"memory_id": memory_id, "existed": existed})
 
 

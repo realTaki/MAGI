@@ -5,12 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from magi.bus.services import (
-    AgentRunsService, ContactsService, DeliveryService, RuntimeIdentityService,
-    SettingsService, TokenUsageService, ToolJobsService,
+    ActionItemService,
+    AgentRunsService,
+    AuthService,
+    ContactsService,
+    DeliveryService,
+    MagicService,
+    MagisService,
+    MemoryService,
+    SessionService,
+    SettingsService,
+    TaskService,
+    TokenUsageService,
+    ToolCatalogService,
+    ToolJobsService,
 )
 from magi.bus.store import BusStore
-from magi.bus.tool_catalog import ToolCatalogService
-
 
 @dataclass(frozen=True, slots=True)
 class Bus:
@@ -22,7 +32,13 @@ class Bus:
     delivery: DeliveryService
     settings: SettingsService
     contacts: ContactsService
-    runtime_identity: RuntimeIdentityService
+    session: SessionService
+    memory: MemoryService
+    task: TaskService
+    action_item: ActionItemService
+    auth: AuthService
+    magic: MagicService
+    magis: MagisService
     token_usage: TokenUsageService
 
 
@@ -41,6 +57,12 @@ def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
         delivery=DeliveryService(store),
         settings=SettingsService(state_dir),
         contacts=ContactsService(state_dir),
-        runtime_identity=RuntimeIdentityService(),
+        session=SessionService(state_dir),
+        memory=MemoryService(state_dir),
+        task=TaskService(state_dir),
+        action_item=ActionItemService(state_dir),
+        auth=AuthService(state_dir),
+        magic=MagicService(state_dir),
+        magis=MagisService(),
         token_usage=TokenUsageService(state_dir),
     )

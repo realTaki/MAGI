@@ -13,10 +13,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from magi.bus import AgentMessage
+from magi.bus import AgentMessage, bootstrap
 from magi.channels.a2a.protocol import PROTOCOL_VERSION, verify_signature
-from magi.db.magis import open_magis_session
-from magi.db.models_magis_membership import can_route_a2a
 
 router = APIRouter(tags=["a2a"])
 
@@ -26,11 +24,7 @@ def _error(status: int, code: str) -> JSONResponse:
 
 
 def _can_receive_from(sender_magic_id: int) -> bool:
-    value = os.environ.get("MAGI_RUNTIME_ID")
-    if not value or not value.isdigit():
-        return False
-    with open_magis_session() as session:
-        return can_route_a2a(session, sender_magic_id, int(value))
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).magic.can_receive_a2a(sender_magic_id)
 
 
 @router.post("/a2a/inbox", status_code=202)
@@ -60,28 +54,23 @@ async def receive(request: Request) -> JSONResponse:
     if from_magic_id != magic_id or not event_id or not text:
         return _error(400, "bad_request")
 
-    from magi.agent.worker import _worker, submit_agent_message
-    from magi.bus import BusStore
-
     reply_to = body.get("reply_to")
+    bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
     if kind == "result":
         if not isinstance(reply_to, str) or not reply_to:
             return _error(400, "bad_request")
-        state_dir = None
-        completed_run = BusStore(state_dir).complete_a2a_invocation(
+        completed_run = bus.agent_runs.complete_a2a(
             reply_to=reply_to,
             content=text,
             is_error=bool(body.get("is_error", False)),
         )
-        if completed_run and _worker is not None:
-            _worker.notify()
         return JSONResponse(
             status_code=202,
             content={"accepted": True, "event_id": event_id, "run_id": completed_run},
         )
     if kind != "request":
         return _error(400, "bad_request")
-    run_id = await submit_agent_message(
+    run_id = bus.agent_runs.publish_input(
         AgentMessage(
             event_id=f"a2a:{magic_id}:{event_id}",
             source_id=str(magic_id),

@@ -1,9 +1,4 @@
-"""Add the durable, BUS-owned Tool Catalog.
-
-The existing ``tools`` table remains a read-only compatibility projection for
-older WebUI code. New producer/consumer paths use ``tool_definitions`` and
-``tool_catalog_state`` through ``magi.bus.tool_catalog``.
-"""
+"""Add the durable, BUS-owned Tool Catalog."""
 
 from __future__ import annotations
 

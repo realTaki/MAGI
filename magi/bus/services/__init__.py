@@ -1,21 +1,54 @@
-"""BUS domain services, retained behind the new package namespace."""
+"""Bus services: domain-partitioned facades over the bus.
+
+The services are the only public bus surface for callers outside
+``magi.bus``. Each service wraps either a :class:`magi.bus.store.BusStore`
+queue method (durable) or direct SQLAlchemy access (per-domain CRUD
+backed by ``magi.bus.models``).
+"""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-
-_spec = importlib.util.spec_from_file_location(
-    "magi.bus._legacy_services", Path(__file__).parent.parent / "services.py"
+from magi.bus.services.action_item import ActionItemService
+from magi.bus.contracts.action_item import ActionItemView
+from magi.bus.services.agent_runs import AgentRunsService
+from magi.bus.services.auth import AuthService
+from magi.bus.services.contact import ContactsService
+from magi.bus.services.delivery import DeliveryService
+from magi.bus.services.magic import MagicService
+from magi.bus.services.magis import MagisService
+from magi.bus.services.memory import MemoryService
+from magi.bus.services.session import SessionService
+from magi.bus.services.setting import SettingsService
+from magi.bus.services.task import TaskService
+from magi.bus.services.token_usage import TokenUsageService
+from magi.bus.services.tool_catalog import (
+    CatalogRevisionConflict,
+    ToolCatalogService,
+    ToolCatalogSnapshot,
+    ToolCatalogValidationError,
+    ToolDefinition,
 )
-assert _spec is not None and _spec.loader is not None
-_legacy = importlib.util.module_from_spec(_spec)
-sys.modules[_spec.name] = _legacy
-_spec.loader.exec_module(_legacy)
-for _name in dir(_legacy):
-    if not _name.startswith("_"):
-        globals()[_name] = getattr(_legacy, _name)
+from magi.bus.services.tool_jobs import ToolJobsService
 
-__all__ = tuple(name for name in dir(_legacy) if not name.startswith("_"))
+
+__all__ = [
+    "ActionItemService",
+    "ActionItemView",
+    "AgentRunsService",
+    "AuthService",
+    "CatalogRevisionConflict",
+    "ContactsService",
+    "DeliveryService",
+    "MagicService",
+    "MagisService",
+    "MemoryService",
+    "SessionService",
+    "SettingsService",
+    "TaskService",
+    "TokenUsageService",
+    "ToolCatalogService",
+    "ToolCatalogSnapshot",
+    "ToolCatalogValidationError",
+    "ToolDefinition",
+    "ToolJobsService",
+]

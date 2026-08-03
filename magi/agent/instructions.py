@@ -36,7 +36,7 @@ def runtime_instruction_block() -> str:
     try:
         from magi.bus import bootstrap
 
-        personal, memberships = bootstrap("").runtime_identity.instruction_context()
+        personal, memberships = bootstrap("").magic.instruction_context()
         return _render(personal, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")

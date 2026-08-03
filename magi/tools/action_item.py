@@ -54,9 +54,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-
-from magi.db import ActionItem, open_session
+from magi.bus import bootstrap
 from magi.tools.base import (
     Tool,
     ToolContext,
@@ -132,27 +130,6 @@ def _iso(dt: datetime | None) -> str | None:
         # ``utcnow_naive()`` in the model.
         return dt.isoformat() + "Z"
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _serialize(item: ActionItem) -> dict[str, Any]:
-    """JSON-friendly view of a row. Matches the shape
-    ``/api/action_items`` returns (Pydantic-wise) so an
-    operator looking at the dashboard sees the same row
-    the LLM can see."""
-    return {
-        "id": item.id,
-        "uid": item.uid,
-        "kind": item.kind,
-        "title": item.title,
-        "description": item.description,
-        "target_url": item.target_url,
-        "priority": item.priority,
-        "due_date": _iso(item.due_date),
-        "source": item.source,
-        "created_at": _iso(item.created_at) or "",
-        "completed_at": _iso(item.completed_at),
-        "dismissed": item.dismissed,
-    }
 
 
 # -- AddActionItemTool ------------------------------------------------------------
@@ -285,31 +262,15 @@ class AddActionItemTool(Tool):
                         f"(YYYY-MM-DD), got {raw!r}"
                     )
 
-        with open_session() as db:
-            item = ActionItem(
-                uid=int(ctx.uid),
-                # Per-row unique kind so multiple open
-                # action items per operator don't
-                # collide with the partial unique index
-                # ``ux_action_items_open_per_kind``. See
-                # ``_new_llm_action_item_kind`` for the
-                # format.
-                kind=_new_llm_action_item_kind(),
-                title=title,
-                description=description,
-                target_url=target_url,
-                priority=priority,
-                due_date=due_date,
-                source="llm",
-            )
-            db.add(item)
-            db.commit()
-            db.refresh(item)
+        item = bootstrap(ctx.state_dir).action_item.create_llm(
+            uid=int(ctx.uid), kind=_new_llm_action_item_kind(), title=title,
+            description=description, target_url=target_url, priority=priority, due_date=due_date,
+        )
         logger.info(
             "add_action_item: item %s created for contact=%s title=%r",
             item.id, ctx.uid, title,
         )
-        return _ok({"created": _serialize(item)})
+        return _ok({"created": item.to_dict()})
 
 
 # -- CompleteActionItemTool -------------------------------------------------------
@@ -377,44 +338,13 @@ class CompleteActionItemTool(Tool):
             return _err(f"note is too long ({len(note)} > 500)")
 
         ct_id = int(ctx.uid)
-        with open_session() as db:
-            row = db.get(ActionItem, item_id)
-            if row is None:
-                # Don't leak whether the id exists at
-                # all — a 404 vs. an "owned by someone
-                # else" 403 distinction is enough info
-                # for an LLM to enumerate other
-                # operators' action items.
-                return _err(
-                    f"action item {item_id} not found or not "
-                    f"owned by the calling operator"
-                )
-            if row.uid != ct_id:
-                logger.warning(
-                    "complete_action_item denied: contact=%s tried to "
-                    "complete item %s owned by %s",
-                    ct_id, item_id, row.uid,
-                )
-                return _err(
-                    f"action item {item_id} not found or "
-                    f"not owned by the calling operator"
-                )
-            if row.completed_at is None:
-                row.completed_at = datetime.now(timezone.utc).replace(
-                    tzinfo=None
-                )
-                row.completed_by_uid = ct_id
-                if note is not None:
-                    row.completion_note = note
-                db.commit()
-                db.refresh(row)
-                logger.info(
-                    "complete_action_item: item %s completed by %s",
-                    item_id, ct_id,
-                )
-            # else: idempotent — return the existing
-            # row unchanged.
-            return _ok({"item": _serialize(row)})
+        row = bootstrap(ctx.state_dir).action_item.complete_for_owner(
+            action_item_id=item_id, owner_uid=ct_id, note=note,
+        )
+        if row is None:
+            return _err(f"action item {item_id} not found or not owned by the calling operator")
+        logger.info("complete_action_item: item %s completed by %s", item_id, ct_id)
+        return _ok({"item": row.to_dict()})
 
 
 # -- ListActionItemTool -----------------------------------------------------------
@@ -466,32 +396,11 @@ class ListActionItemTool(Tool):
         ct_id = int(ctx.uid)
         include_completed = bool(kwargs.get("include_completed"))
 
-        with open_session() as db:
-            # ``kind`` filter restricts to LLM-driven
-            # action items — operators can have system-
-            # seeded ``llm_credentials_missing`` rows
-            # too, and those surface on the dashboard
-            # but not via this tool (they're managed by
-            # the onboarding flow, not the LLM). Per-row
-            # unique suffix matches the prefix (see
-            # ``AddActionItemTool``).
-            stmt = select(ActionItem).where(
-                ActionItem.uid == ct_id,
-                ActionItem.kind.like(f"{_LLM_ACTION_ITEM_KIND_PREFIX}_%"),
-            )
-            if not include_completed:
-                stmt = stmt.where(
-                    ActionItem.completed_at.is_(None),
-                    ActionItem.dismissed.is_(False),
-                )
-            stmt = stmt.order_by(
-                ActionItem.completed_at.is_(None).desc(),
-                ActionItem.priority.desc(),
-                ActionItem.created_at.desc(),
-            )
-            rows = list(db.scalars(stmt).all())
+        rows = bootstrap(ctx.state_dir).action_item.list_llm_for_owner(
+            owner_uid=ct_id, include_completed=include_completed,
+        )
         return _ok({
-            "items": [_serialize(r) for r in rows],
+            "items": [row.to_dict() for row in rows],
             "total": len(rows),
         })
 

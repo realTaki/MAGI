@@ -1,8 +1,7 @@
 """Contact directory — what the MAGI knows about people.
 
-The unified ``contacts`` table (see :mod:`magi.db.models_contact`)
-holds every person row. Each ``Contact`` carries a ``notes``
-field (LLM-managed free-form markdown) and a ``source`` field.
+The BUS owns durable contact persistence. This package contains only prompt
+formatting for agent context.
 
 Tool classes live in :mod:`magi.tools.memory_contacts` — they
 were moved out of this package to break a dependency cycle
@@ -11,7 +10,9 @@ were moved out of this package to break a dependency cycle
 
 from __future__ import annotations
 
-from magi.db.models_contact import (
+from magi.bus.contracts.contact import (
+    ContactView,
+    NoteView,
     SOURCE_EVE,
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
@@ -20,15 +21,14 @@ from magi.agent.memory.contacts.prompt import (
     format_contact_block,
     format_daily_note_block,
 )
-from magi.agent.memory.contacts.store import ContactStore, ContactView
 
 
 __all__ = [
     "SOURCE_EVE",
     "SOURCE_MANUAL",
     "SOURCE_SYSTEM",
-    "ContactStore",
     "ContactView",
+    "NoteView",
     "format_contact_block",
     "format_daily_note_block",
 ]

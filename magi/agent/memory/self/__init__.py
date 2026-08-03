@@ -10,26 +10,22 @@ not a record of people. Person records
 The LLM manages the table through four tools
 (in :mod:`magi.tools.memory_self`): add / update / complete / delete.
 
-Layout:
-
-  - :mod:`.models`  — :class:`MemoryEntry` ORM table
-  - :mod:`.store`   — :class:`MemoryStore` CRUD
-  - :mod:`.prompt`  — :func:`format_memory_block`
+Persistence and CRUD are owned by ``magi.bus.memory``; this package keeps
+only agent-side prompt formatting.
 """
 
 from __future__ import annotations
 
-from magi.agent.memory.self.models import (
+from magi.bus.contracts.memory import (
     ALL_KINDS,
     KIND_IMPORTANT,
     KIND_ONGOING,
     SOURCE_EVE,
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
-    MemoryEntry,
+    MemoryView,
 )
 from magi.agent.memory.self.prompt import format_memory_block
-from magi.agent.memory.self.store import MemoryStore, MemoryView
 
 
 __all__ = [
@@ -41,8 +37,6 @@ __all__ = [
     "SOURCE_MANUAL",
     "SOURCE_SYSTEM",
     # data
-    "MemoryEntry",
-    "MemoryStore",
     "MemoryView",
     # formatter
     "format_memory_block",

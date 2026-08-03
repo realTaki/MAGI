@@ -29,12 +29,11 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
-from magi.agent.memory.self.models import (
+from magi.bus.contracts.memory import (
     KIND_IMPORTANT,
     KIND_ONGOING,
-    MemoryEntry,
+    MemoryView,
 )
-from magi.agent.memory.self.store import MemoryView
 from magi.prompts import load_memory_block_template
 
 

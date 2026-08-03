@@ -10,14 +10,14 @@ data; non-sensitive — same gate as ``/api/contacts``).
 
 from __future__ import annotations
 
+import os
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from magi.bus import bootstrap
 from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db.engine import require_state_dir
-from magi.db.tool_schemas import get_tools_grouped as _get_tools_grouped, get_tool_schemas as _get_tool_schemas
 
 router = APIRouter(tags=["tools"])
 
@@ -120,13 +120,20 @@ def _build_tool_out(
 
 @router.get("/tools", response_model=ToolListOut)
 def list_tools(_admin: AdminGate) -> ToolListOut:
-    """Render the current tool registry as a flat list, read from the DB."""
-    state_dir = require_state_dir()
-    built_in_schemas, mcp_schemas = _get_tools_grouped(state_dir)
-    items: list[ToolOut] = [
-        _build_tool_out(schema, "builtin") for schema in built_in_schemas
-    ] + [
-        _build_tool_out(schema, "mcp") for schema in mcp_schemas
+    """Render the durable BUS catalog, never an execution registry."""
+    state_dir = os.environ.get("MAGI_STATE_DIR", "")
+    definitions = bootstrap(state_dir).tool_catalog.list_definitions()
+    items = [
+        _build_tool_out(
+            {
+                "name": definition.name,
+                "description": definition.description,
+                "input_schema": definition.input_schema,
+            },
+            "mcp" if definition.source.startswith("mcp") else "builtin",
+            list(definition.allowed_roles),
+        )
+        for definition in definitions
     ]
     items.sort(key=lambda t: t.name)
     return ToolListOut(items=items, total=len(items))

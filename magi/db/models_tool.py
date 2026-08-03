@@ -20,38 +20,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from magi.db.base import Base, utcnow_naive
 
 
-class ToolRegistry(Base):
-    __tablename__ = "tools"
-
-    name: Mapped[str] = mapped_column(String(128), primary_key=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    input_schema: Mapped[dict] = mapped_column(JSON, nullable=False)
-    # ``None`` means "no role restriction".  A non-None list means
-    # only callers whose role is in the list may see/use the tool.
-    allowed_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin")
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    updated_at: Mapped[object] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
-    )
-
-    def to_llm_schema(self) -> dict:
-        """Render this row into the dict the LLM provider expects."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema,
-        }
-
-
 class ToolDefinitionRecord(Base):
     """Durable Tool Catalog row owned by :mod:`magi.bus`.
 
-    ``ToolRegistry`` above is a legacy compatibility projection used by the
-    old WebUI APIs. New actor/worker code uses this model only through the
-    BUS catalog service.
+    It is an internal persistence model. Callers use the immutable
+    ``magi.bus.contracts.ToolDefinition`` DTO via the catalog service.
     """
 
     __tablename__ = "tool_definitions"

@@ -35,12 +35,10 @@ registry entries.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
-from sqlalchemy import select
-from sqlalchemy.exc import MultipleResultsFound
-
-from magi.db import Contact, open_session
+from magi.bus import bootstrap
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.dispatcher")
@@ -240,55 +238,6 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         )
 
 
-async def send_to_session(session_id: str, text: str) -> None:
-    """Send ``text`` to the session's owner via the
-    session's channel.
-
-    Used by the agent's ``send_message`` tool (D.16): the
-    LLM's "side-channel" push reaches the right channel
-    without the tool needing to know which one.
-
-    Loads the session row's ``channel`` column and the
-    row's ``delivery_address``, hands the address to the
-    adapter (which already knows how to interpret it for
-    its channel). The dispatcher itself never reads
-    ``delivery_address``; that's the adapter's job.
-    """
-    from magi.agent.memory.session.tables import ChatSession
-    with open_session() as db:
-        sess = db.get(ChatSession, session_id)
-    if sess is None:
-        raise KeyError(f"no session {session_id}")
-
-    # WebUI has no out-of-band adapter — instead, append
-    # the message directly to the chat session so it lands
-    # in the WebUI scroll. TG / task channels go through a
-    # registered adapter for actual push.
-    if sess.channel == Channel.WEBUI:
-        from magi.agent.memory.session.store import SessionStore
-        from magi.agent.memory.session.ids import new_session_id, utcnow_iso
-        from magi.agent.memory.session.models import SessionMessage
-        from magi.db.engine import require_state_dir
-        store = SessionStore(state_dir=require_state_dir())
-        store.append_messages(
-            sess.uid, session_id,
-            [SessionMessage(
-                role="assistant", text=text,
-                ts=utcnow_iso(), message_id=new_session_id(),
-            )],
-        )
-        return
-
-    _auto_register_builtin_adapters()
-    adapter = _ADAPTERS.get(sess.channel)
-    if adapter is None:
-        raise KeyError(
-            f"session {session_id} has channel={sess.channel!r} "
-            f"but no adapter is registered for that channel"
-        )
-    await adapter.send(sess.uid, text)
-
-
 def lookup_im_id(uid: int, channel: Channel | str) -> str | None:
     """Return the channel-specific IM id for ``uid``, or
     ``None`` when no binding exists.
@@ -325,8 +274,7 @@ def list_bindings(uid: int) -> list[tuple[str, str]]:
     is set. Future channels (WeChat, Slack) will add their own
     columns to ``Contact`` and read from there.
     """
-    with open_session() as db:
-        contact = db.get(Contact, uid)
+    contact = bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.get(uid)
     if contact is None or contact.telegram_id is None:
         return []
     return [("telegram", str(contact.telegram_id))]
@@ -338,7 +286,6 @@ __all__ = [
     "get_adapter",
     "list_channels",
     "send_to_uid",
-    "send_to_session",
     "lookup_im_id",
     "bind_im_id",
     "list_bindings",

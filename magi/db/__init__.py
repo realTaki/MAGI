@@ -47,14 +47,8 @@ the engine helpers). New code can import from the
 focused submodules; the facade is here for back-compat
 in routes + tests.
 
-The session-domain tables (:class:`ChatSession`,
-:class:`ChatMessage`) live in
-:mod:`magi.agent.memory.session.tables` — they're owned by
-the ``session`` package (singular: this is the *manager*
-of sessions, not a place where sessions are *stored* in
-bulk). The db package re-exports them so existing
-``from magi.db import ChatSession`` imports keep
-working.
+The session-domain tables (:class:`ChatSession`, :class:`ChatMessage`) live
+in :mod:`magi.db.models_session`. BUS repositories own all access to them.
 """
 
 from __future__ import annotations
@@ -83,9 +77,11 @@ from magi.db.models_magis import MAGIS
 from magi.db.models_magis_admin import MAGISAdmin
 from magi.db.models_magis_membership import MAGISMembership, MAGISRole
 from magi.db.models_mcp_server import McpServer
+from magi.db.models_memory import MemoryEntry
 from magi.db.models_setting import Setting
+from magi.db.models_session import ChatMessage, ChatSession
 from magi.db.models_token_usage import TokenUsage
-from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord, ToolRegistry
+from magi.db.models_tool import ToolCatalogState, ToolDefinitionRecord
 
 # The session/memory packages still accept historical ``magi.db.models_*``
 # imports while they are migrated. Alias only modules already loaded above, so
@@ -103,11 +99,6 @@ for _module_name in (
         f"magi.db.{_module_name}"
     ]
 _sys.modules["magi.db.settings"] = __import__("magi.db.settings", fromlist=["*"])
-
-# Session-domain tables — owned by ``magi.agent.session``
-# but re-exported here for callers that want a single import
-# surface (``from magi.db import ChatSession``).
-from magi.agent.memory.session.tables import ChatMessage, ChatSession
 
 __all__ = [
     # base + engine
@@ -130,14 +121,14 @@ __all__ = [
     "MAGISRole",
     "EveRuntime",
     "McpServer",
-    "ToolRegistry",
+    "MemoryEntry",
     "ToolDefinitionRecord",
     "ToolCatalogState",
     # dashboard
     "ActionItem",
     "TokenUsage",
     "Setting",
-    # sessions (re-exported from sessions/tables.py)
+    # sessions
     "ChatSession",
     "ChatMessage",
 ]

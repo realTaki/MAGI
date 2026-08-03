@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from magi.agent.compaction import maybe_compact
 from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
-from magi.agent.memory.session import SessionStore
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.agent.workspace import workspace_root
 from magi.bus import ToolContext, bootstrap
@@ -55,7 +54,7 @@ def build_messages_from_session(
 ) -> list[ChatMessage]:
     if not session_id or uid is None:
         return [ChatMessage(role="user", content=new_user_text)]
-    session = SessionStore(state_dir).get(uid, session_id)
+    session = bootstrap(state_dir).session.get(uid, session_id)
     if session is None:
         return [ChatMessage(role="user", content=new_user_text)]
     messages = [

@@ -5,6 +5,7 @@ Write:
   - :class:`AddContactNoteTool`   — add a note about a contact.
   - :class:`UpdateContactNoteTool` — update a specific note by id.
   - :class:`DeleteContactNoteTool` — remove a specific note.
+  - :class:`UpdateDailyNoteTool`  — append a delta to today's daily note.
 Read:
   - :class:`SearchContactsTool`   — search contacts + notes.
 
@@ -20,12 +21,11 @@ import json
 import logging
 from typing import Any
 
-from magi.agent.memory.contacts.store import ContactStore
+from magi.bus import bootstrap
 from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
-    caller_role_denied_reason,
 )
 
 
@@ -60,7 +60,9 @@ def _gate(ctx: ToolContext) -> str | None:
         return None
     if ctx.caller_role == "assigned":
         return None
-    return caller_role_denied_reason(ctx, _WRITE_ROLES)
+    return bootstrap(ctx.state_dir).auth.caller_role_check(
+        ctx.uid, allowed=tuple(_WRITE_ROLES)
+    )
 
 
 def _err(msg: str) -> ToolResult:
@@ -109,8 +111,8 @@ class AddContactTool(Tool):
         if not isinstance(name, str) or not name.strip():
             return _err("name is required (non-empty string)")
         try:
-            store = ContactStore(ctx.state_dir)
-            view = store.create_contact(
+            bus = bootstrap(ctx.state_dir)
+            view = bus.contacts.create_contact(
                 name=name,
                 display_name=kwargs.get("display_name"),
                 role=kwargs.get("role") or "guest",
@@ -198,87 +200,88 @@ class UpdateDailyNoteTool(Tool):
         from datetime import datetime as _dt
         note_date: Any = None
         raw_date = kwargs.get("note_date")
-        if isinstance(raw_date, str) and raw_date.strip():
+        if raw_date:
             try:
-                # Accept "YYYY-MM-DD" only — naive UTC midnight.
-                # A timezone-aware string would need parsing;
-                # for v0 we only need the local-date-as-UTC
-                # case the morning/night reports produce.
                 note_date = _dt.strptime(raw_date, "%Y-%m-%d")
             except ValueError:
-                return _err(
-                    f"note_date must be YYYY-MM-DD, got {raw_date!r}"
-                )
+                return _err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
         try:
-            store = ContactStore(ctx.state_dir)
-            view = store.upsert_daily_note(
-                contact_id, body_delta=body_delta, note_date=note_date
+            bus = bootstrap(ctx.state_dir)
+            view = bus.contacts.upsert_daily_note(
+                int(contact_id), body_delta, note_date=note_date
             )
         except ValueError as e:
             return _err(str(e))
         return _ok(view.to_dict())
 
 
-# -- AddContactNoteTool -------------------------------------------------------
+# -- AddContactNoteTool ------------------------------------------------------
 
 
 class AddContactNoteTool(Tool):
-    """Add a note about an existing contact."""
+    """Append one new note row to a contact.
+
+    Notes are individual ``contact_notes`` rows; the LLM can
+    update or delete by id without rewriting anything else
+    about the same person.
+    """
 
     name = "add_contact_note"
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Add a note (one fact) about an existing contact. "
-        "Each call creates a new note row — use for "
-        "individual facts like 'Lily 在财务部' / "
-        "'Mark prefer Slack'. Returns the note id for "
-        "later update/delete. Contact must already exist "
-        "(use add_contact first if needed)."
+        "Add a new note about an existing contact (by uid). "
+        "Each call creates one row in contact_notes — keep "
+        "each note to one fact. To update or delete an "
+        "existing note, use update_contact_note / "
+        "delete_contact_note with the note_id."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "contact_id": {"type": "integer", "description": "contacts.id."},
-            "note": {"type": "string", "description": "The note text. <=8 KB."},
+            "uid": {"type": "integer", "description": "Contact uid (required)."},
+            "note": {"type": "string", "description": "One short fact (<=8 KB)."},
         },
-        "required": ["contact_id", "note"],
+        "required": ["uid", "note"],
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         gate = _gate(ctx)
         if gate is not None:
             return _err(gate)
-        contact_id = kwargs.get("contact_id")
-        if not isinstance(contact_id, int):
-            return _err(f"contact_id must be int, got {type(contact_id).__name__}")
+        uid = kwargs.get("uid")
+        note = kwargs.get("note")
+        if not isinstance(uid, int):
+            return _err(f"uid must be int, got {type(uid).__name__}")
+        if not isinstance(note, str) or not note.strip():
+            return _err("note is required (non-empty string)")
         try:
-            store = ContactStore(ctx.state_dir)
-            view = store.add_note(contact_id, note=kwargs["note"])
+            bus = bootstrap(ctx.state_dir)
+            view = bus.contacts.add_note(uid, note)
         except ValueError as e:
             return _err(str(e))
         return _ok(view.to_dict())
 
 
-# -- UpdateContactNoteTool ----------------------------------------------------
+# -- UpdateContactNoteTool ---------------------------------------------------
 
 
 class UpdateContactNoteTool(Tool):
-    """Update a specific note by id."""
+    """Edit an existing note by id."""
 
     name = "update_contact_note"
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Update a specific contact note by note_id. "
-        "Use when the operator says 'Lily 现在不负责这个了' — "
-        "find the note via search_contacts first, note the id, "
-        "then update it."
+        "Update an existing contact note by id. Use when the "
+        "operator says '改一下那条 / 把 ... 改成 ...'. The note_id "
+        "is visible in the add_contact_note result and the "
+        "search_contacts output."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "note_id": {"type": "integer", "description": "contact_notes.id."},
-            "note": {"type": "string", "description": "Updated note text."},
+            "note_id": {"type": "integer", "description": "id of the note row."},
+            "note": {"type": "string", "description": "Replacement text."},
         },
         "required": ["note_id", "note"],
     }
@@ -288,33 +291,36 @@ class UpdateContactNoteTool(Tool):
         if gate is not None:
             return _err(gate)
         note_id = kwargs.get("note_id")
+        note = kwargs.get("note")
         if not isinstance(note_id, int):
             return _err(f"note_id must be int, got {type(note_id).__name__}")
+        if not isinstance(note, str) or not note.strip():
+            return _err("note is required (non-empty string)")
         try:
-            store = ContactStore(ctx.state_dir)
-            view = store.update_note(note_id, note=kwargs["note"])
-        except (ValueError, LookupError) as e:
+            bus = bootstrap(ctx.state_dir)
+            view = bus.contacts.update_note(note_id, note)
+        except LookupError as e:
             return _err(str(e))
         return _ok(view.to_dict())
 
 
-# -- DeleteContactNoteTool ----------------------------------------------------
+# -- DeleteContactNoteTool ---------------------------------------------------
 
 
 class DeleteContactNoteTool(Tool):
-    """Delete a specific note by id. Idempotent."""
+    """Remove a contact note by id. Idempotent."""
 
     name = "delete_contact_note"
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Delete a specific contact note by note_id. "
-        "Idempotent — deleting a non-existent id returns success. "
-        "Only use for individual notes, not the contact itself."
+        "Delete a contact note by id. Idempotent — deleting a "
+        "non-existent id is a no-op success. Use when the "
+        "operator says '忘了那条 / 删掉'."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "note_id": {"type": "integer", "description": "contact_notes.id."},
+            "note_id": {"type": "integer", "description": "id of the note row to remove."},
         },
         "required": ["note_id"],
     }
@@ -326,45 +332,54 @@ class DeleteContactNoteTool(Tool):
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
             return _err(f"note_id must be int, got {type(note_id).__name__}")
-        store = ContactStore(ctx.state_dir)
-        existed = store.delete_note(note_id)
+        existed = bootstrap(ctx.state_dir).contacts.delete_note(note_id)
         return _ok({"note_id": note_id, "existed": existed})
 
 
-# -- SearchContactsTool -------------------------------------------------------
+# -- SearchContactsTool ------------------------------------------------------
 
 
 class SearchContactsTool(Tool):
-    """Search contacts by name or note content."""
+    """Search contacts by name or by note content."""
 
     name = "search_contacts"
     ALLOWED_ROLES = frozenset({"assigned"})
     description = (
-        "Search contacts by name or note content "
-        "(case-insensitive substring). Returns contacts "
-        "whose name or any note matches. Use when the "
-        "operator says '记得 Mark 在哪吗' / "
-        "'谁在负责 Q3 报销'."
+        "Search the contact directory by name or by note text. "
+        "Returns the matching contacts and a sample of their "
+        "notes. Use when the operator says '查一下 Lily / 谁在财务部'."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Substring to search for."},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "query": {
+                "type": "string",
+                "description": "Search string (matches name or note text, case-insensitive substring).",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "Max contacts to return. Default 20.",
+            },
         },
         "required": ["query"],
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        query = (kwargs.get("query") or "").strip()
-        if not query:
-            return _err("query is required")
-        limit = int(kwargs.get("limit") or 20)
-        store = ContactStore(ctx.state_dir)
-        results = store.search(query, limit=limit)
+        gate = _gate(ctx)
+        if gate is not None:
+            return _err(gate)
+        query = kwargs.get("query")
+        limit = kwargs.get("limit") or 20
+        if not isinstance(query, str) or not query.strip():
+            return _err("query is required (non-empty string)")
+        bus = bootstrap(ctx.state_dir)
+        views = bus.contacts.search(query, limit=limit)
         return _ok({
             "query": query,
-            "matches": [v.to_dict() for v in results],
+            "count": len(views),
+            "contacts": [v.to_dict() for v in views],
         })
 
 
@@ -373,5 +388,6 @@ __all__ = [
     "AddContactNoteTool",
     "UpdateContactNoteTool",
     "DeleteContactNoteTool",
+    "UpdateDailyNoteTool",
     "SearchContactsTool",
 ]

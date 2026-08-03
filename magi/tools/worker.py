@@ -63,8 +63,8 @@ class ToolWorker:
     async def start(self) -> None:
         if self._task is None:
             self._stopping = False
-            # Seed the tools table with every known tool's LLM schema
-            # before the poll loop starts.  Upsert is idempotent — code
+            # Publish the durable catalog before the poll loop starts. The
+            # replacement is idempotent — code
             # changes that add/modify tools are reflected on restart.
             _seed_tools(self.state_dir)
             self._task = asyncio.create_task(self._run(), name="magi-tool-worker")

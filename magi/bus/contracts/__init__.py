@@ -29,3 +29,10 @@ for _name in dir(_legacy):
         globals()[_name] = getattr(_legacy, _name)
 
 __all__ = tuple(name for name in dir(_legacy) if not name.startswith("_"))
+
+# New domain contracts live in real package modules.  Keep the flat legacy
+# module bridge above for the existing actor DTOs while making these symbols
+# available from the single public ``magi.bus.contracts`` entry point.
+from magi.bus.contracts.magis import ProviderConfiguration  # noqa: E402
+
+__all__ = (*__all__, "ProviderConfiguration")

@@ -1,8 +1,7 @@
-"""Create the legacy WebUI ``tools`` projection table when absent.
+"""Historical migration for the superseded ``tools`` projection table.
 
-``tool_definitions`` is the authoritative Tool Catalog. This table is a
-temporary read compatibility projection maintained transactionally by the BUS
-catalog service while historical WebUI handlers are migrated.
+The next migration drops this table. The revision is retained solely so an
+already-upgraded installation has a valid Alembic history.
 """
 
 from __future__ import annotations

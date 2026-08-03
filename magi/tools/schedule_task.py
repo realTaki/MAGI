@@ -46,14 +46,10 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.channels.tasks.cron_utils import preset_to_cron, validate_run_at, validate_run_at_future
-from magi.channels.tasks.models import Task
-from magi.channels.tasks.scheduler import get_scheduler
-from magi.agent.memory.session import new_session_id
-from magi.db import ChatSession, Contact, open_session, require_state_dir
-from magi.db.settings import state_get
+from magi.bus import bootstrap
+from magi.bus.contracts.channels import ChannelEnum as Channel
+from magi.bus.contracts.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.channels import Channel
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("magi.tools.schedule_task")
@@ -281,7 +277,9 @@ class ScheduleTaskTool(Tool):
         if target_channel == Channel.WEBUI:
             delivery_to = None
         elif target_channel == Channel.TG:
-            delivery_to = _session_delivery_address(ctx.session_id)
+            delivery_to = bootstrap(ctx.state_dir).session.resolve_delivery_address_for_session(
+                ctx.session_id
+            )
         else:
             delivery_to = None
 
@@ -291,17 +289,18 @@ class ScheduleTaskTool(Tool):
         # shape at tool-call time. We translate at this
         # boundary so the WebUI API + LLM tool + raw SQL all
         # see the same row shape.
+        bus = bootstrap(ctx.state_dir)
         run_at_iso: str | None = None
         if frequency == "once":
             try:
-                run_at_iso = validate_run_at(
+                run_at_iso = bus.task.validate_run_at(
                     kwargs.get("run_at") or ""
                 )
                 # Past-time run_at silently no-ops in
                 # apscheduler — reject here so the LLM
                 # can retry with a future timestamp
                 # rather than ship a dead task.
-                validate_run_at_future(run_at_iso)
+                bus.task.validate_run_at_future(run_at_iso)
             except ValueError as exc:
                 return ToolResult(
                     content=f"invalid run_at: {exc}",
@@ -315,7 +314,7 @@ class ScheduleTaskTool(Tool):
             # the contract tolerant.
         else:
             try:
-                cron = preset_to_cron(
+                cron = bus.task.preset_to_cron(
                     frequency,
                     hour=int(kwargs.get("hour") or 0),
                     minute=int(kwargs.get("minute") or 0),
@@ -336,29 +335,29 @@ class ScheduleTaskTool(Tool):
         # from the DB (not ``ctx.uid``-trust) so
         # a mis-wired caller can't punch above its
         # authority.
-        with open_session() as db:
-            contact = db.get(Contact, ctx.uid)
-            if contact is None:
-                return ToolResult(content="caller not found", is_error=True)
-            # Author gate: ``admin=True`` (WebUI operator)
-            # OR ``role='assigned'`` (the served user).
-            # Mirrors ``magi.channels.webui.api.tasks.
-            # _enforce_creator_can_create`` so the API
-            # and the LLM-side tool agree on who can
-            # author a scheduled task. Re-read from the DB
-            # (not ``ctx.uid``-trust) so a mis-wired caller
-            # can't punch above its authority.
-            if not (bool(contact.admin) or contact.role == "assigned"):
-                return ToolResult(
-                    content=(
-                        f"schedule_task requires admin or "
-                        f"assigned-contact scope; "
-                        f"admin={bool(contact.admin)}, role={contact.role!r} "
-                        f"is not permitted."
-                    ),
-                    is_error=True,
-                )
-            operator_id = contact.id
+        bus = bootstrap(ctx.state_dir)
+        contact = bus.contacts.get(ctx.uid)
+        if contact is None:
+            return ToolResult(content="caller not found", is_error=True)
+        # Author gate: ``admin=True`` (WebUI operator)
+        # OR ``role='assigned'`` (the served user).
+        # Mirrors ``magi.channels.webui.api.tasks.
+        # _enforce_creator_can_create`` so the API
+        # and the LLM-side tool agree on who can
+        # author a scheduled task. Re-read from the DB
+        # (not ``ctx.uid``-trust) so a mis-wired caller
+        # can't punch above its authority.
+        if not (bool(contact.role == "assigned")):
+            return ToolResult(
+                content=(
+                    f"schedule_task requires admin or "
+                    f"assigned-contact scope; "
+                    f"role={contact.role!r} "
+                    f"is not permitted."
+                ),
+                is_error=True,
+            )
+        operator_id = contact.id
         # Session closed — now safe to open nested ones
         # (the dispatcher adapter's ``with open_session()``
         # would otherwise deadlock against SQLite's
@@ -366,89 +365,43 @@ class ScheduleTaskTool(Tool):
 
         # D.28: stamp the operator's bound IM id on the new
         # session row as a breadcrumb. Resolved via the
-        # channel dispatcher OUTSIDE the gate's open_session
+        # bus.dispatcher outside the open_session
         # (the dispatcher opens its own SQLite session
         # — nested inside an outer txn would deadlock).
         # Empty string when the operator has no TG binding.
-        from magi.channels import dispatcher as channel_dispatcher
         task_session_delivery_address = (
-            channel_dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
+            bus.dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
-        is_update = False
-        task_id = new_session_id()
-        # Resolve system tz *before* opening the outer
-        # ``open_session()`` block — ``state_get`` opens
-        # its own ORM session, and a nested session
-        # inside an outer ``open_session()`` would
-        # ``BEGIN IMMEDIATE``-deadlock on the shared
-        # SQLite handle.
-        resolved_tz = _resolve_system_tz()
-        with open_session() as db:
-            existing = db.execute(
-                select(Task).where(Task.name == name)
-            ).scalar_one_or_none()
-            if existing is not None:
-                existing.prompt = prompt
-                existing.cron = cron
-                existing.run_at = run_at_iso
-                existing.delivery_to = delivery_to
-                existing.target_channel = target_channel
-                existing.enabled = 1
-                existing.consecutive_failures = 0
-                existing.uid = operator_id
-                # ``session_id`` is preserved across upserts —
-                # the cron conversation is a single thread
-                # across updates; we don't recreate it on
-                # every prompt edit (the operator wants
-                # continuity). Allocating it lazily only
-                # happens for legacy rows (those created
-                # before this column existed); a future
-                # cleanup migration can backfill them.
-                if existing.session_id is None:
-                    existing.session_id = _allocate_task_session(
-                        db,
-                        uid=operator_id,
-                        name=name,
-                        delivery_address=task_session_delivery_address,
-                    )
-                task_id = existing.id
-                is_update = True
-            else:
-                # Allocate the task's home session at
-                # creation time so cron fires accumulate
-                # into one conversation per task. Same
-                # shape as the API: channel="task",
-                # title="[定时] <name>".
-                new_session_id_str = _allocate_task_session(
-                    db,
-                    uid=operator_id,
-                    name=name,
-                    delivery_address=task_session_delivery_address,
-                )
-                db.add(Task(
-                    id=task_id,
-                    name=name,
-                    prompt=prompt,
-                    cron=cron,
-                    run_at=run_at_iso,
-                    delivery_to=delivery_to,
-                    session_id=new_session_id_str,
-                    tz=resolved_tz,
-                    target_channel=target_channel,
-                    uid=operator_id,
-                    enabled=1,
-                    consecutive_failures=0,
-                    created_at=_now_iso(),
-                    updated_at=_now_iso(),
-                ))
-            db.commit()
+        bus = bootstrap(ctx.state_dir)
+        # Resolve system tz via the bus so the SQLAlchemy session
+        # boundary stays in one place.
+        resolved_tz = bus.setting.system_timezone()
+        # Allocate the task's home session up-front so cron fires
+        # accumulate into one conversation per task. The
+        # ``upsert_by_name`` body preserves the existing
+        # ``session_id`` for update-paths (continuity across
+        # prompt edits).
+        new_session_id_str = bus.session.create_task_session(
+            uid=operator_id,
+            title=f"[定时] {name}",
+            delivery_address=task_session_delivery_address,
+        )
+        task_id, is_update = bus.task.upsert_by_name(
+            name=name,
+            prompt=prompt,
+            cron=cron,
+            run_at=run_at_iso,
+            delivery_to=delivery_to,
+            target_channel=target_channel,
+            uid=operator_id,
+            session_id=new_session_id_str,
+            tz=resolved_tz,
+        )
 
         # ── Live-register with the apscheduler singleton ───────────────
-        try:
-            scheduler = get_scheduler()
-        except RuntimeError:
+        if not bus.task.live_register_from_db(task_id):
             logger.info(
                 "schedule_task: scheduler not running; task %s stored in DB only",
                 task_id,
@@ -461,10 +414,6 @@ class ScheduleTaskTool(Tool):
                     f"node start."
                 )
             )
-        with open_session() as db:
-            task = db.get(Task, task_id)
-            if task is not None:
-                scheduler.register(task)
         return ToolResult(
             content=(
                 f"{'updated' if is_update else 'created'} task "
@@ -474,138 +423,4 @@ class ScheduleTaskTool(Tool):
         )
 
 
-def _resolve_system_tz() -> str:
-    """Read the configured timezone; fall back to the
-    server's local timezone (matches the canonical
-    ``system_settings._system_default_timezone`` helper
-    that ``GET /api/system-settings/timezone`` returns).
-
-    Lazy import of ``system_settings`` to keep the tool
-    module import graph small — the agent loop loads this
-    file at chat-turn time, and the WebUI router pulls in
-    SQLAlchemy / FastAPI / Pydantic that we don't need for
-    pure cron handling. The helper function is reused
-    verbatim; both the API endpoint and this tool now
-    agree that "no configured timezone" means "use the
-    server's local timezone", not hard-coded UTC.
-
-    The ``os`` import is lazy for the same reason (don't
-    force ``os.environ`` to be read at module load) — and
-    for the state_dir path, prefer ``MAGI_STATE_DIR``
-    with a fallback only for boot-time probes that
-    pre-date the env var being set.
-    """
-    import os
-
-    from magi.db.runtime_settings import (
-        system_default_timezone,
-    )
-
-    raw = state_get(
-        require_state_dir(),
-        "system.timezone",
-    )
-    if raw:
-        try:
-            ZoneInfo(raw)
-            return raw
-        except ZoneInfoNotFoundError:
-            # Stored value isn't an IANA tz — fall through
-            # to the server-local default. Same recovery
-            # path the API uses.
-            logger.warning(
-                "schedule_task: stored system.timezone %r is "
-                "not a valid IANA tz; falling back to %s",
-                raw, system_default_timezone(),
-            )
-    return system_default_timezone()
-
-
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _allocate_task_session(
-    db, *, uid: int, name: str, delivery_address: str = "",
-) -> str:
-    """Create a fresh ``channel="task"`` ChatSession
-    for a brand-new task. The row's ``delivery_address``
-    stamps the operator's bound IM id as a breadcrumb —
-    no routing depends on it (channel="task" disables the
-    outbound send_message tool, and TG tasks carry their
-    target in ``Task.delivery_to``).
-
-    The session_id is the FK target the runner uses at
-    fire time; it's the conversation thread every cron
-    reply accumulates into. Keeping the allocation
-    here (rather than at fire time) ensures the
-    operator sees the [定时] chat in their WebUI
-    history immediately on task creation — and
-    prevents the cross-task pollution that the
-    per-fire allocation produced when two tasks
-    shared a delivery target.
-
-    D.28: ``delivery_address`` is the caller's
-    pre-resolved per-channel IM id (looked up via
-    ``dispatcher.lookup_im_id`` BEFORE entering this
-    helper's SQLAlchemy session). Looking it up inside
-    the helper would force the dispatcher's adapter to
-    open a nested SQLite session while the caller's
-    ``open_session()`` is still active — nested
-    ``BEGIN IMMEDIATE`` deadlocks the SQLite handle. The
-    caller resolves the address and passes the value;
-    this helper just stamps it on the new row.
-    """
-    from magi.agent.memory.session import utcnow_iso as _utcnow_iso
-    session_id = new_session_id()
-    db.add(ChatSession(
-        session_id=session_id,
-        delivery_address=delivery_address,
-        uid=uid,
-        channel="task",
-        title=f"[定时] {name}",
-        created_at=_utcnow_iso(),
-        updated_at=_utcnow_iso(),
-    ))
-    db.flush()
-    return session_id
-
-
 __all__ = ["ScheduleTaskTool"]
-
-
-def _session_delivery_address(session_id):
-    """Read ``chat_sessions.delivery_address`` for ``session_id`` and
-    return it as a string, or ``None`` if the session is
-    missing / has no delivery address / has a malformed
-    value.
-
-    Used by :meth:`ScheduleTaskTool.run` to populate the
-    new task's ``delivery_to`` for ``channel='tg'`` —
-    sessions are the source of truth for IM addressing,
-    not anything the LLM carries in its tool context.
-
-    Tolerates DB errors by returning ``None`` rather
-    than raising — the calling code already gates on
-    ``None`` and surfaces a friendly "delivery_to
-    required for channel='tg'" error to the LLM.
-    """
-    if not session_id:
-        return None
-    try:
-        from magi.db import open_session as _open
-        from magi.agent.memory.session.tables import (
-            ChatSession as _ChatSession,
-        )
-        with _open() as db:
-            sess = db.get(_ChatSession, session_id)
-        if sess is None or not sess.delivery_address:
-            return None
-        return str(sess.delivery_address)
-    except Exception:
-        logger.exception(
-            "schedule_task: session lookup failed for %s",
-            session_id,
-        )
-        return None

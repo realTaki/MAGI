@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from magi.agent.memory.contacts.store import ContactView, NoteView
+from magi.bus.contracts.contact import ContactView, NoteView
 from magi.prompts import load_contact_block_template
 
 
