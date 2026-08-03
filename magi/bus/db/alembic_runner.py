@@ -92,20 +92,27 @@ def _rebase_to_canonical_head(
 
     The rebasing logic kicks in when the existing row names a
     revision Alembic can no longer find — typically because the
-    follow-on migration was deleted in a refactor. The shape of
-    the database is already correct (the deleted migration's
-    effect is folded into ``0001_baseline``); we just need the
-    bookkeeping row to match.
+    follow-on migration was deleted in a refactor. In a *dev*
+    environment, the rebase also collapses the schema, so the
+    application tables that used to exist (under the old
+    revision chain) may not be present at all. ``upgrade_head``
+    is therefore responsible for *applying* the new baseline
+    after the rebase — not just retargeting the bookkeeping
+    row. The contract is: blank ``alembic_version`` here so
+    ``command.upgrade("head")`` runs every migration from
+    scratch.
 
     Implementation note: Alembic's ``stamp`` cannot target a
     revision that the script directory doesn't ship, so when
     the current row points at a now-deleted revision we have
-    to blank the row first (``DELETE FROM alembic_version``)
-    and then re-stamp. The DELETE is safe: a fresh stamp
-    re-inserts the row immediately, and a crash in between
-    leaves the DB in the "no alembic_version" state which
-    ``init_orm``'s legacy branch handles correctly on the
-    next boot.
+    to blank the row first (``DELETE FROM alembic_version``).
+    We deliberately do NOT pre-stamp to ``CANONICAL_HEAD``
+    before calling ``upgrade`` — Alembic would see the row
+    already at head and skip the migration. The DELETE is
+    safe: ``upgrade`` re-creates the row immediately and
+    stamps it, and a crash in between leaves the DB in the
+    "no alembic_version" state which ``init_orm``'s legacy
+    branch handles correctly on the next boot.
 
     ``force=True`` re-stamps even when the row already names a
     known revision. Not used in the normal startup path — kept
@@ -149,18 +156,23 @@ def _rebase_to_canonical_head(
             if current is not None:
                 logger.warning(
                     "alembic_version row points at unknown revision %r; "
-                    "re-stamping to canonical head %r",
-                    current, CANONICAL_HEAD,
+                    "blanking so upgrade applies the canonical baseline",
+                    current,
                 )
-                # Blank the bookkeeping row before re-stamping.
-                # ``command.stamp`` refuses to retarget from a
-                # revision it can't resolve.
-                conn.execute(text("DELETE FROM alembic_version"))
-                conn.commit()
+            # Blank the bookkeeping row. We do NOT pre-stamp
+            # to CANONICAL_HEAD here — Alembic would then see
+            # the row already at head on the subsequent
+            # ``upgrade`` and skip running the migration. The
+            # fresh-DB code path inside ``command.upgrade``
+            # handles "no alembic_version row" by running
+            # every migration and stamping the final head.
+            conn.execute(text("DELETE FROM alembic_version"))
+            conn.commit()
     finally:
         engine.dispose()
 
-    command.stamp(config, CANONICAL_HEAD)
+    # Tell the caller a rebase was needed; the actual migration
+    # application happens in ``upgrade_head`` immediately after.
     return True
 
 
