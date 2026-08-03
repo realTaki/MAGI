@@ -24,14 +24,9 @@ from __future__ import annotations
 
 import pytest
 
-from magi.agent.memory.session import (
-    Session,
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    summary_from_session,
-)
+from bus.services.session import Session, SessionMessage, new_session_id, summary_from_session
 
+from bus.contracts.session import SessionStore
 
 # Crockford base32 alphabet — used to assert ULID shape.
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"

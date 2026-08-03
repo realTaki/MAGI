@@ -39,7 +39,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.channels import Channel  # noqa: E402
-from magi.db.engine import require_state_dir  # noqa: E402
+from magi.constants import STATE_DIR  # noqa: E402
 from magi.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
@@ -156,10 +156,10 @@ async def send_text_auto(chat_id: int, text: str) -> None:
     ``magi/channels/telegram/`` should touch the bot token
     or raw HTTP directly.
     """
-    from magi.db.engine import require_state_dir
-    from magi.db.settings import state_get
+    from magi.bus import bootstrap
+    import os
 
-    bot_token = state_get(require_state_dir(), "telegram.bot_token")
+    bot_token = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).settings.get("telegram.bot_token")
     if not bot_token:
         raise RuntimeError("telegram: no bot token saved; cannot send")
     await _send_via_raw_http(bot_token, chat_id, text)
@@ -297,7 +297,8 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         or update.effective_chat.title
     )
 
-    state_dir = require_state_dir()
+    import os
+    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
     # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
@@ -434,12 +435,6 @@ def _auto_create_stranger_contact(
     ``None`` on hard failure (DB locked, import error,
     IntegrityError race that we couldn't recover from).
     """
-    from sqlalchemy.exc import IntegrityError
-
-    from magi.db import Contact, open_session
-    from magi.db.base import utcnow_naive
-    from magi.db.models_contact import SOURCE_SYSTEM
-
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
@@ -455,28 +450,10 @@ def _auto_create_stranger_contact(
     display_name = (display_name or "").strip() or None
 
     try:
-        with open_session() as db:
-            try:
-                row = Contact(
-                    name=name,
-                    display_name=display_name,
-                    role="guest",
-                    telegram_id=cid_int,
-                    source=SOURCE_SYSTEM,
-                    last_seen_at=utcnow_naive(),
-                )
-                db.add(row)
-                db.commit()
-                db.refresh(row)
-            except IntegrityError:
-                # Race — another worker already created
-                # the row. Roll back and look it up.
-                db.rollback()
-                row = db.scalar(
-                    select(Contact).where(Contact.telegram_id == cid_int)
-                )
-                if row is None:
-                    return None
+        from magi.bus import bootstrap
+        contacts = bootstrap(state_dir).contacts
+        if contacts.find_by_telegram_id(cid_int) is None:
+            contacts.create_contact(name=name, display_name=display_name, role="guest", telegram_id=cid_int, source="system")
     except Exception:
         logger.exception(
             "telegram: auto-create stranger contact failed",
@@ -510,60 +487,31 @@ def _find_contact_by_telegram_id(
     bindings are now written through the
     ``PATCH /api/contacts/{id}`` endpoint.
     """
-    from sqlalchemy import select
-
-    from magi.db import Contact, open_session
-    from magi.db.settings import state_get
-
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
         return None
 
-    def _fields(e: Contact) -> tuple[int, str, str, bool, bool]:
+    def _fields(e) -> tuple[int, str, str, bool, bool]:
         return (
             e.id,
             e.role,
             e.name,
-            e.separated_at is not None,
-            bool(e.admin),
+            e.separated,
+            e.admin,
         )
 
     try:
-        with open_session() as session:
-            contact = session.scalar(
-                select(Contact).where(Contact.telegram_id == cid_int)
-            )
-            if contact is not None:
-                return _fields(contact)
+        from magi.bus import bootstrap
+        contact = bootstrap(state_dir).contacts.find_by_telegram_id(cid_int)
+        if contact is not None:
+            return _fields(contact)
     except Exception:
         logger.exception(
             "telegram: ORM read failed resolving chat %s", tgid,
         )
 
-    # Legacy meta binding — only the uid is recorded,
-    # so we re-read the row to get the role / name. The
-    # meta key is left in place (the operator might still
-    # have stale bindings) but writes go through the new
-    # path.
-    raw = state_get(state_dir, f"telegram.user.{tgid}.uid")
-    if not raw:
-        return None
-    try:
-        legacy_uid = int(raw)
-    except (TypeError, ValueError):
-        return None
-    try:
-        with open_session() as session:
-            contact = session.get(Contact, legacy_uid)
-            if contact is None:
-                return None
-            return _fields(contact)
-    except Exception:
-        logger.exception(
-            "telegram: legacy-meta ORM read failed for contact %s", legacy_uid,
-        )
-        return None
+    return None
 
 
 async def _handle_contact_message(
@@ -913,8 +861,6 @@ def start_bot(state_dir: str) -> threading.Thread | None:
     and keep the loop alive with an ``asyncio.Event`` that never gets
     set. The daemon thread is killed when the process exits.
     """
-    from magi.db.settings import state_get
-
     # Idempotent start: if a polling thread is already alive,
     # return it instead of spawning a second one.
     global _telegram_bot_thread
@@ -923,14 +869,14 @@ def start_bot(state_dir: str) -> threading.Thread | None:
             logger.info("telegram bot already running; reusing existing thread")
             return _telegram_bot_thread
 
-    token = state_get(state_dir, "telegram.bot_token")
+    token = bootstrap(state_dir).settings.get("telegram.bot_token")
     if not token:
         logger.info(
             "telegram: no bot token saved yet — channel idle until onboarding completes"
         )
         return None
 
-    username = state_get(state_dir, "telegram.bot_username")
+    username = bootstrap(state_dir).settings.get("telegram.bot_username")
     # ``concurrent_updates=True`` lets a follow-up TG message
     # for the same chat enter ``_on_message`` **while** the
     # previous turn's durable run is still in flight. Without this, the

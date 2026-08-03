@@ -31,11 +31,9 @@ from pathlib import Path
 import pytest
 
 from magi.db import Contact, init_orm, open_session
-from magi.agent.memory.self import (
-    KIND_IMPORTANT,
-    KIND_ONGOING,
-    MemoryStore,
-    format_memory_block)
+from bus.contracts.memory import KIND_IMPORTANT, KIND_ONGOING
+from bus.services.memory import MemoryStore, format_memory_block
+
 from bus.services.memory import MemoryView
 from magi.tools.memory_self import (
     AddMemoryTool,

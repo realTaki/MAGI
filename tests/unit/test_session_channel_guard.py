@@ -35,12 +35,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from magi.db import Contact, init_orm, init_sqlite, open_session
-from magi.agent.memory.session import (
-    ChannelMismatchError,
-    SessionMessage,
-    SessionStore,
-    new_session_id,
-    utcnow_iso)
+from bus.services.session import ChannelMismatchError, SessionMessage, new_session_id, utcnow_iso
+from bus.contracts.session import SessionStore
 
 # -- helpers / fixtures --------------------------------------------------
 

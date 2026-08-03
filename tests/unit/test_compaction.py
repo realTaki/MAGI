@@ -351,10 +351,8 @@ def test_build_messages_from_session_does_not_load_archive(
     ``messages`` list. Operators view archive via
     ``GET /api/chat/sessions/{id}``."""
     from magi.agent.runtime_context import build_messages_from_session
-    from magi.agent.memory.session import (
-        SessionStore,
-        SessionMessage,
-    )
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
@@ -420,10 +418,9 @@ async def test_maybe_compact_noop_when_under_threshold(
     touching the list or calling any LLM."""
     from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.memory.session import (
-        SessionStore,
-        SessionMessage,
-    )
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+
     from magi.db.settings import state_set
 
     state_dir = str(tmp_path / "state")
@@ -473,10 +470,9 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     (no old messages to archive)."""
     from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
-    from magi.agent.memory.session import (
-        SessionStore,
-        SessionMessage,
-    )
+    from bus.services.session import SessionMessage
+    from bus.contracts.session import SessionStore
+
     from magi.db.settings import state_set
 
     state_dir = str(tmp_path / "state")

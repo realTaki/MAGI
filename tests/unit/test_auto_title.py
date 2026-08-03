@@ -170,10 +170,8 @@ def test_cleanse_returns_empty_for_blank():
 async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     """End-to-end: create session → append user message → run
     ``_summarize_to_title`` → title is set on the DB row."""
-    from magi.agent.memory.session import (
-        SessionMessage,
-        SessionStore,
-        new_session_id as _mk_id)
+    from bus.services.session import SessionMessage, new_session_id as _mk_id
+    from bus.contracts.session import SessionStore
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(

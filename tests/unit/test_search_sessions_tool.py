@@ -442,9 +442,8 @@ async def test_search_sessions_truncation_footer_counts_correctly(
     # marker so the FTS query hits all of them. The tool's
     # internal hit limit caps at 20; with 20 hits and a fat
     # ``context_n`` each block easily crosses 8 KB.
-    from magi.agent.memory.session import (
-        SessionMessage, new_session_id,
-    )
+    from bus.services.session import SessionMessage
+
     from datetime import datetime, timezone
 
     store = SessionStore(str(state_dir))

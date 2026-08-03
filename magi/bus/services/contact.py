@@ -21,7 +21,7 @@ def _contact_view(row) -> ContactView:
     return ContactView(
         id=int(row.id), name=str(row.name), display_name=row.display_name, role=row.role,
         notes=str(row.notes), source=str(row.source), telegram_id=row.telegram_id,
-        separated=row.separated_at is not None,
+        separated=row.separated_at is not None, admin=bool(row.admin),
         last_seen_at=_iso(row.last_seen_at) or "", created_at=_iso(row.created_at) or "",
         updated_at=_iso(row.updated_at) or "",
     )

@@ -10,6 +10,26 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 
+def start_channel(name: str, state_dir: str) -> None:
+    """Start a concrete channel from the composition layer."""
+    if name == "telegram":
+        from magi.channels.telegram.bot import start_bot
+        start_bot(state_dir)
+
+
+def stop_channel(name: str) -> None:
+    if name == "telegram":
+        from magi.channels.telegram.bot import stop_bot
+        stop_bot()
+
+
+def is_channel_running(name: str) -> bool:
+    if name == "telegram":
+        from magi.channels.telegram.bot import is_running
+        return is_running()
+    return name == "webui"
+
+
 @asynccontextmanager
 async def worker_lifespan():
     """Run local durable workers for the lifetime of an ASGI process."""
