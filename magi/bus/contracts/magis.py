@@ -51,44 +51,71 @@ class MagisView:
 
     Returned by :class:`magi.bus.services.magis.MagisService` instead of the
     ORM ``MAGIS`` row so callers never bind to ORM internals.
+
+    ``adam_id`` is the optional Adam MAGI assigned to this MAGIS.
+    ``child_ids`` lists the ids of MAGISes whose ``parent_id`` points here.
+    ``member_count`` is the number of MAGISMembership rows attached to this
+    MAGIS — included so the WebUI doesn't have to count them itself.
     """
 
     id: int
     name: str
     parent_id: Optional[int]
+    adam_id: Optional[int]
     instruction: str
+    child_ids: tuple[int, ...]
+    member_count: int
     created_at: Optional[str]
     updated_at: Optional[str]
 
 
 @dataclass(frozen=True, slots=True)
 class MagisAdminView:
-    """MAGIS administrator row as a value object."""
+    """MAGIS administrator row as a value object.
+
+    ``magic_id`` carries the contact's telegram identifier (the only
+    identifier field on the ORM row) and ``display_name`` is the
+    optional label persisted by the API.
+    """
 
     id: int
     group_id: int
     magic_id: int
+    display_name: Optional[str]
     created_at: Optional[str]
 
 
 @dataclass(frozen=True, slots=True)
 class MagisRoleView:
-    """MAGIS role row as a value object."""
+    """MAGIS role row as a value object.
+
+    ``magis_id`` is the parent MAGIS; ``is_reserved`` flags the
+    built-in Adam/EVE roles that the API refuses to edit or delete.
+    """
 
     id: int
+    magis_id: int
     name: str
     instruction: str
+    is_reserved: bool
     created_at: Optional[str]
 
 
 @dataclass(frozen=True, slots=True)
 class MagisMembershipView:
-    """MAGIS membership row as a value object."""
+    """MAGIS membership row as a value object.
+
+    ``magic_name`` and ``role_name`` are joined-in convenience fields;
+    ``magic_name`` may be ``None`` if the referenced MAGIC row has been
+    deleted, while ``role_name`` always reflects the bound role.
+    """
 
     id: int
     magic_id: int
+    magic_name: Optional[str]
     group_id: int
     role_id: int
+    role_name: str
     created_at: Optional[str]
 
 
@@ -145,3 +172,19 @@ class MagicView:
     runtime: Optional[EveRuntimeView]
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorView:
+    """Control-plane WebUI operator (the PG-backed ``ControlOperator`` row).
+
+    Returned by :class:`magi.bus.services.magis.MagisService` so the
+    channels layer never binds to the ORM directly.
+    """
+
+    id: int
+    telegram_id: int
+    display_name: Optional[str]
+    admin: bool
+    created_at: Optional[str]
+    updated_at: Optional[str]

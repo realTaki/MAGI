@@ -7,27 +7,21 @@ existing ``state_get`` / ``state_set`` / WAL concurrency story.
 
 This module owns only the **HTTP surface** — the FastAPI router,
 Pydantic request/response models, and the constants for the KV
-keys. The read helpers themselves live in
-:mod:`magi.db.runtime_settings` so the agent loop and other
-non-channel code can read them without crossing back into the
-``channels.webui`` tree.
-
-KV key ownership stays here so a webui API write and a runtime
-read share the same row, with one source of truth.
+keys.  Reads and writes go through :mod:`magi.bus.services.setting`
+so the API layer never crosses the channels → db boundary.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import zoneinfo
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
-from magi.channels.webui.api.auth_gates import AdminGate
-from magi.db.engine import require_state_dir
-from magi.db.runtime_settings import (
+from magi.bus.services.setting import (
     COMPACT_CONTEXT_WINDOW_KEY,
     COMPACT_KEEP_RECENT_KEY,
     COMPACT_THRESHOLD_PCT_KEY,
@@ -47,30 +41,18 @@ from magi.db.runtime_settings import (
     SHOW_DAILY_NOTE_PROMPT_KEY,
     SYSTEM_TZ_KEY,
     TOOL_MAX_ITERATIONS_KEY,
-    get_compact_context_window as _get_compact_context_window,
-    get_compact_keep_recent as _get_compact_keep_recent,
-    get_compact_threshold_pct as _get_compact_threshold_pct,
-    get_show_daily_note as _get_show_daily_note,
-    get_show_daily_note_prompt as _get_show_daily_note_prompt,
-    get_system_timezone as _get_system_timezone,
-    get_tool_max_iterations as _get_tool_max_iterations,
-    set_system_timezone as _set_system_timezone,
-    system_default_timezone as _system_default_timezone,
 )
-from magi.db.settings import state_set
+from magi.bus import bootstrap
+from magi.channels.webui.api.auth_gates import AdminGate
 
 logger = logging.getLogger("magi.api.system_settings")
 
 router = APIRouter(tags=["system-settings"])
 
-# All KV key / bounds / default constants are owned by
-# ``magi.db.runtime_settings`` and re-exported above so the webui
-# API writes the same row the runtime reads. Keep that as the
-# single source of truth.
 
-
-def _state_dir() -> str:
-    return require_state_dir()
+def _settings():
+    """Return the bus settings service for the active state dir."""
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).settings
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -94,9 +76,10 @@ class TimezoneUpdateRequest(BaseModel):
 
 @router.get("/system-settings/timezone", response_model=TimezoneOut)
 def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
+    svc = _settings()
     return TimezoneOut(
-        current=_get_system_timezone(_state_dir()),
-        default=_system_default_timezone(),
+        current=svc.system_timezone(),
+        default=svc.system_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -115,8 +98,9 @@ def put_system_timezone(
     from magi.channels.webui.api.errors import MagiHTTPException
 
     tz = payload.timezone
+    svc = _settings()
     try:
-        _set_system_timezone(_state_dir(), tz)
+        svc.set_system_timezone(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         raise MagiHTTPException(
             status_code=400,
@@ -130,7 +114,7 @@ def put_system_timezone(
     logger.info("system.timezone set to %r", tz)
     return TimezoneOut(
         current=tz,
-        default=_system_default_timezone(),
+        default=svc.system_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -160,8 +144,9 @@ class ToolMaxIterationsUpdateRequest(BaseModel):
     response_model=ToolMaxIterationsOut,
 )
 def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
+    svc = _settings()
     return ToolMaxIterationsOut(
-        current=_get_tool_max_iterations(_state_dir()),
+        current=svc.tool_max_iterations(),
         default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
@@ -177,7 +162,8 @@ def put_tool_max_iterations(
     _admin: AdminGate,
 ) -> ToolMaxIterationsOut:
     """Persist a new max tool iterations value."""
-    state_set(_state_dir(), TOOL_MAX_ITERATIONS_KEY, str(payload.value))
+    svc = _settings()
+    svc.set(TOOL_MAX_ITERATIONS_KEY, str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(
         current=payload.value,
@@ -215,11 +201,11 @@ class CompactConfigUpdateRequest(BaseModel):
 
 @router.get("/system-settings/compact-config", response_model=CompactConfigOut)
 def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
-    state = _state_dir()
+    svc = _settings()
     return CompactConfigOut(
-        context_window=_get_compact_context_window(state),
-        threshold_pct=_get_compact_threshold_pct(state),
-        keep_recent=_get_compact_keep_recent(state),
+        context_window=svc.compact_context_window(),
+        threshold_pct=svc.compact_threshold_pct(),
+        keep_recent=svc.compact_keep_recent(),
         default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
         default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
         default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
@@ -232,10 +218,10 @@ def put_compact_config(
     _admin: AdminGate,
 ) -> CompactConfigOut:
     """Persist a new compact-config triple."""
-    state = _state_dir()
-    state_set(state, COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
-    state_set(state, COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
-    state_set(state, COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
+    svc = _settings()
+    svc.set(COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
+    svc.set(COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
+    svc.set(COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
     logger.info(
         "compact-config set: window=%d threshold=%d%% keep=%d",
         payload.context_window, payload.threshold_pct, payload.keep_recent,
@@ -259,8 +245,10 @@ def put_compact_config(
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
 def get_show_daily_note(state_dir: str) -> bool:
-    return _get_show_daily_note(state_dir)
+    from magi.bus import bootstrap
+    return bootstrap(state_dir).settings.show_daily_note()
 
 
 def get_show_daily_note_prompt(state_dir: str) -> bool:
-    return _get_show_daily_note_prompt(state_dir)
+    from magi.bus import bootstrap
+    return bootstrap(state_dir).settings.show_daily_note_prompt()

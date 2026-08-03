@@ -7,17 +7,40 @@ The :class:`Bus` facade exposes a per-domain service namespace
 """
 
 from magi.bus.bootstrap import Bus, bootstrap
-from magi.bus.contracts.agent import (
-    AgentMessage,
+from magi.bus.contracts import (
     A2AInvocationRequest,
+    ActionItemView,
+    AgentMessage,
     BusClaim,
     BusStoreProtocol,
+    CallerIdentity,
+    Channel,
+    ChannelEnum,
+    ContactView,
     DeliveryClaim,
+    DeliveryResult,
+    EveRuntimeView,
+    InboundMessage,
+    MagisAdminView,
+    MagisMembershipView,
+    MagisRoleView,
+    MagisView,
+    MagicView,
+    MemberRole,
+    MembershipBrief,
+    MemoryView,
+    NoteView,
+    OperatorView,
+    OutboundDelivery,
+    ProviderConfiguration,
     RunResult,
-)
-from magi.bus.contracts.tools import (
-    ToolClaim,
+    RuntimeIdentity,
+    SearchHit,
+    Session,
+    SessionMessage,
+    SessionSummary,
     ToolCatalogSnapshot,
+    ToolClaim,
     ToolContext,
     ToolDefinition,
     ToolResult,
@@ -48,4 +71,21 @@ __all__ = [
     "ToolContext",
     "ToolDefinition",
     "ToolResult",
+    # channel-side DTOs
+    "Channel", "ChannelEnum", "DeliveryResult", "InboundMessage", "OutboundDelivery",
+    # session DTOs
+    "Session", "SessionMessage", "SessionSummary", "SearchHit",
+    # contact DTOs
+    "ContactView", "NoteView",
+    # memory DTOs
+    "MemoryView",
+    # magis DTOs
+    "MagisView", "MagisAdminView", "MagisRoleView", "MagisMembershipView",
+    "MagicView", "MembershipBrief", "EveRuntimeView", "OperatorView",
+    "MemberRole", "RuntimeIdentity", "ProviderConfiguration",
+    # auth DTOs
+    "CallerIdentity",
+    # action_item DTOs
+    "ActionItemView",
 ]
+

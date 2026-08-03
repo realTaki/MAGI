@@ -167,6 +167,104 @@ class MagicService:
         with open_magis_session() as session:
             return can_route_a2a(session, sender_magic_id, int(runtime_id))
 
+    def get_runtime(self, magic_id: int) -> EveRuntimeView | None:
+        """Return the EVE runtime view for ``magic_id`` (or ``None``).
+
+        Used by the WebUI runtime-proxy to decide whether a
+        private-runtime upstream URL is reachable; the proxy treats
+        ``None`` as "the runtime isn't tracked here, ask the
+        root-runtime resolver".
+        """
+        from sqlalchemy import select
+
+        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            row = session.scalar(
+                select(EveRuntime).where(EveRuntime.magic_id == magic_id)
+            )
+            return _runtime_view(row) if row is not None else None
+
+    def list_all_magic(self) -> list[MagicView]:
+        """Return every MAGIC row with its runtime + memberships populated.
+
+        Used by the WebUI ``list_magic`` endpoint when the operator has
+        no MAGIS scope (e.g. the singleton WebUI's bootstrap state).
+        ``list_magic`` returns ``[]`` when both ``assigned_ids`` is
+        empty and ``direct_ids`` is unset; ``list_all_magic`` is the
+        explicit "show me everything" path.
+        """
+        from sqlalchemy import select
+
+        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.magic import MAGIC
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
+            runtimes = {
+                r.magic_id: r
+                for r in session.scalars(
+                    select(EveRuntime).where(
+                        EveRuntime.magic_id.in_([m.id for m in rows])
+                    )
+                ).all()
+            } if rows else {}
+            return [
+                _magic_view(session, magic, runtimes.get(magic.id))
+                for magic in rows
+            ]
+
+    def get_instruction(self, magic_id: int) -> str | None:
+        """Return the MAGIC's personal instruction text, or ``None`` when missing."""
+        from magi.bus.models.magis.magic import MAGIC
+        from magi.db.magis import open_magis_session
+        with open_magis_session() as session:
+            magic = session.get(MAGIC, magic_id)
+            return None if magic is None else str(magic.instruction or "")
+
+    def list_available_magic(self) -> list[MagicView]:
+        """Return MAGIC rows that are currently sign-in targets.
+
+        A MAGIC is "available" when either it is the root MAGIS's
+        Adam (the static control-plane entry) or it has an
+        ``EveRuntime`` whose ``desired_state == "running"`` (the
+        orchestrator has been asked to start a Deployment for it;
+        Kubernetes does not synchronously write a later observed
+        state back to the registry, so the desired state is the
+        durable signal).
+
+        The WebUI ``/available-magi`` endpoint renders this list as
+        the login dropdown's primary set.
+        """
+        from sqlalchemy import select
+
+        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.models.magis.magis import MAGIS
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
+            runtimes = {
+                row.magic_id: row
+                for row in session.scalars(select(EveRuntime)).all()
+            }
+            root = session.scalar(
+                select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id)
+            )
+            result: list[MagicView] = []
+            for row in rows:
+                runtime = runtimes.get(row.id)
+                is_root_adam = root is not None and root.adam_id == row.id
+                is_desired_running = (
+                    runtime is not None and runtime.desired_state == "running"
+                )
+                if is_root_adam or is_desired_running:
+                    result.append(_magic_view(session, row, runtime))
+            return result
+
     # ------------------------------------------------------------------
     # CRUD operations exposed for ``magi.channels.webui.api.magic``.
     # All methods accept primitive args (no FastAPI ``Request``) and return
@@ -447,4 +545,50 @@ class MagicService:
                 runtime.last_error = None
 
             session.commit()
+            return _runtime_view(runtime)
+
+    # ------------------------------------------------------------------
+    # Runtime identity + visibility helpers for the WebUI channel.
+    # ------------------------------------------------------------------
+
+    def current_runtime_magic_id(self) -> int | None:
+        """Return the ``MAGI`` id served by this WebUI, or ``None``.
+
+        Reads ``MAGI_RUNTIME_ID`` first; falls back to the root
+        MAGIS's ``adam_id``.  Mirrors :meth:`MagisService.current_runtime_magic_id`
+        — kept here so the API can resolve WebUI-bound MAGIs without
+        reaching into the MAGIS table on its own.
+        """
+        from magi.db.magis import open_magis_session
+        from magi.bus.models.magis.magis import MAGIS
+        from sqlalchemy import select
+
+        runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+        if runtime_id and runtime_id.isdigit():
+            return int(runtime_id)
+        with open_magis_session() as session:
+            root = session.scalar(
+                select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id)
+            )
+            return int(root.adam_id) if root and root.adam_id else None
+
+    def ensure_runtime(self, magic_id: int) -> EveRuntimeView:
+        """Return the EveRuntimeView for ``magic_id``, creating one if missing."""
+        from sqlalchemy import select
+
+        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.magic import MAGIC
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            if session.get(MAGIC, magic_id) is None:
+                raise LookupError(f"magic {magic_id} not found")
+            runtime = session.scalar(
+                select(EveRuntime).where(EveRuntime.magic_id == magic_id)
+            )
+            if runtime is None:
+                runtime = EveRuntime(magic_id=magic_id)
+                session.add(runtime)
+                session.commit()
+                session.refresh(runtime)
             return _runtime_view(runtime)

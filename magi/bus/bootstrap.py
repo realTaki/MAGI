@@ -22,6 +22,7 @@ from magi.bus.services import (
     ToolCatalogService,
     ToolJobsService,
 )
+from magi.bus.services.dispatcher import DispatcherService
 from magi.bus.store import BusStore
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ class Bus:
     magic: MagicService
     magis: MagisService
     token_usage: TokenUsageService
+    dispatcher: DispatcherService
 
 
 def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
@@ -71,4 +73,5 @@ def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
         magic=MagicService(state_dir),
         magis=MagisService(),
         token_usage=TokenUsageService(state_dir),
+        dispatcher=DispatcherService(state_dir),
     )

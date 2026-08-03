@@ -45,3 +45,87 @@ class AuthService:
                 AuthCredential.uid.in_(uids),
                 AuthCredential.kind == "password",
             ).limit(1)) is not None
+
+    def has_password_for(self, uid: int) -> bool:
+        """Whether ``uid`` specifically has a password credential row."""
+        return self.has_password_credentials([uid])
+
+    def ensure_password_credential(self, *, uid: int, secret_hash: str) -> bool:
+        """Insert or update the ``password`` credential for ``uid``.
+
+        Used by the WebUI-only onboarding step (``/set-admin-password``):
+        the operator sets their first password; the row is created on the
+        first call and re-hashed on subsequent calls (the latter bumps
+        ``updated_at`` so the security card can show the credential age).
+
+        Returns ``True`` if a new credential row was created, ``False`` if
+        an existing row's hash was overwritten.
+        """
+        from datetime import datetime, timezone
+
+        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.db.magis import open_magis_session
+
+        if not secret_hash:
+            raise ValueError("secret_hash is required")
+        with open_magis_session() as session:
+            row = session.scalar(
+                select(AuthCredential).where(
+                    AuthCredential.uid == uid,
+                    AuthCredential.kind == "password",
+                )
+            )
+            if row is None:
+                session.add(AuthCredential(
+                    uid=uid, kind="password", secret_hash=secret_hash,
+                ))
+                session.commit()
+                return True
+            row.secret_hash = secret_hash
+            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.commit()
+            return False
+
+    def get_password_credential(self, uid: int) -> str | None:
+        """Return the stored ``secret_hash`` for ``uid``'s password row.
+
+        Returns ``None`` when no password credential exists for ``uid``.
+        Used by the WebUI ``/login-password`` and ``/set-password`` flows
+        to verify the operator's password before issuing a session
+        cookie.
+        """
+        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            row = session.scalar(
+                select(AuthCredential).where(
+                    AuthCredential.uid == uid,
+                    AuthCredential.kind == "password",
+                )
+            )
+            return row.secret_hash if row is not None else None
+
+    def delete_password_credential(self, uid: int) -> bool:
+        """Drop the password credential for ``uid``.
+
+        Returns ``True`` if a row was removed, ``False`` when no
+        password credential was present.  Used by the WebUI
+        ``DELETE /api/auth/credentials/password/{uid}`` revoke
+        flow.
+        """
+        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.db.magis import open_magis_session
+
+        with open_magis_session() as session:
+            row = session.scalar(
+                select(AuthCredential).where(
+                    AuthCredential.uid == uid,
+                    AuthCredential.kind == "password",
+                )
+            )
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True

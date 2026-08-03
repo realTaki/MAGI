@@ -166,3 +166,47 @@ class ToolCatalogService:
             if source is not None: stmt = stmt.where(ToolDefinitionRecord.source == source)
             row = session.scalar(stmt.order_by(ToolDefinitionRecord.id).limit(1))
             return _as_contract(row) if row is not None else None
+
+    def bootstrap_mcp(self) -> int:
+        """One-shot MCP loader used at ASGI startup.
+
+        Loads tools from configured MCP servers via
+        :mod:`magi.mcp.loader`, converts each into an
+        agent-visible :class:`ToolDefinition`, and publishes the
+        resulting snapshot to the durable catalog under
+        ``source="mcp"``. Replaces the side-effecting
+        ``magi.tools.registry.bootstrap_mcp_tools`` so the
+        channels layer never imports the executor module.
+
+        Returns the number of tool definitions registered. Missing
+        tables or transient DB errors degrade to "0 published"
+        rather than failing ASGI startup.
+        """
+        try:
+            from magi.mcp.loader import load_mcp_tools_blocking
+        except Exception:
+            return 0
+        try:
+            loaded = load_mcp_tools_blocking()
+        except Exception:
+            return 0
+        definitions = [
+            ToolDefinition(
+                name=t.name,
+                source="mcp",
+                description=t.description,
+                input_schema=t.to_anthropic_schema(),
+                allowed_roles=(),
+                enabled=True,
+                implementation_version="1",
+            )
+            for t in loaded
+            if getattr(t, "name", None)
+        ]
+        if not definitions:
+            return 0
+        try:
+            self.replace_snapshot(source="mcp", definitions=definitions)
+        except Exception:
+            return 0
+        return len(definitions)

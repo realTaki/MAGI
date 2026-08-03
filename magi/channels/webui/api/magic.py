@@ -3,20 +3,27 @@
 A MAGI is created independently.  MAGIS membership and role assignment live
 in the MAGIS API, so creation does not imply either membership or a running
 container.
+
+All data access goes through the bus facade — no ``magi.db.*`` imports
+(``channels → db`` boundary enforced by
+``tests/architecture/test_import_boundaries.py``).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from magi.db import EveRuntime, MAGIC, MAGIS, MAGISMembership, MAGISRole
-from magi.db.magis import get_magis_session
+from magi.bus import bootstrap
+from magi.bus.contracts.magis import (
+    EveRuntimeView,
+    MagicView,
+    MembershipBrief as MembershipBriefDTO,
+)
 from magi.channels.webui.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.magic")
@@ -29,6 +36,9 @@ def _admin_gate(request: Request) -> str:
 
 
 AdminGate = Annotated[str, Depends(_admin_gate)]
+
+
+# -- Pydantic response models (no ORM imports) -------------------------
 
 
 class MembershipBrief(BaseModel):
@@ -82,222 +92,278 @@ class InstructionOut(BaseModel):
     instruction: str
 
 
-def _runtime_out(runtime: EveRuntime | None) -> EveRuntimeOut | None:
-    if runtime is None:
+# -- Conversion helpers -------------------------------------------------
+
+
+def _bus():
+    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+
+
+def _runtime_out(view: EveRuntimeView | None) -> EveRuntimeOut | None:
+    if view is None:
         return None
     return EveRuntimeOut(
-        desired_state=runtime.desired_state, observed_state=runtime.observed_state,
-        namespace=runtime.namespace, deployment_name=runtime.deployment_name,
-        workspace_claim_name=runtime.workspace_claim_name,
-        credential_secret_name=runtime.credential_secret_name, last_error=runtime.last_error,
-        updated_at=runtime.updated_at.isoformat() if runtime.updated_at else "",
+        desired_state=view.desired_state,
+        observed_state=view.observed_state,
+        namespace=view.namespace,
+        deployment_name=view.deployment_name,
+        workspace_claim_name=view.workspace_claim_name,
+        credential_secret_name=view.credential_secret_name,
+        last_error=view.last_error,
+        updated_at=view.updated_at,
     )
 
 
-def _serialize(session: Session, magic: MAGIC, runtime: EveRuntime | None = None) -> MAGICOut:
-    memberships = session.execute(
-        select(MAGISMembership, MAGISRole, MAGIS)
-        .join(MAGISRole, MAGISRole.id == MAGISMembership.role_id)
-        .join(MAGIS, MAGIS.id == MAGISMembership.magis_id)
-        .where(MAGISMembership.magic_id == magic.id)
-        .order_by(MAGISMembership.id)
-    ).all()
+def _membership_brief(dto: MembershipBriefDTO) -> MembershipBrief:
+    return MembershipBrief(
+        magis_id=dto.magis_id,
+        magis_name=dto.magis_name,
+        role_id=dto.role_id,
+        role_name=dto.role_name,
+    )
+
+
+def _magic_out(view: MagicView) -> MAGICOut:
     return MAGICOut(
-        id=magic.id, name=magic.name, provider=magic.provider,
-        api_key_set=bool(magic.api_key), api_key_last4=(magic.api_key[-4:] if magic.api_key else None),
-        memberships=[MembershipBrief(magis_id=m.magis_id, magis_name=s.name, role_id=r.id, role_name=r.name) for m, r, s in memberships],
-        runtime=_runtime_out(runtime),
-        created_at=magic.created_at.isoformat() if magic.created_at else "",
-        updated_at=magic.updated_at.isoformat() if magic.updated_at else "",
+        id=view.id,
+        name=view.name,
+        provider=view.provider,
+        api_key_set=view.api_key_set,
+        api_key_last4=view.api_key_last4,
+        memberships=[_membership_brief(m) for m in view.memberships],
+        runtime=_runtime_out(view.runtime),
+        created_at=view.created_at,
+        updated_at=view.updated_at,
     )
 
 
-def _served_direct_magis_id(session: Session) -> int | None:
-    current = _current_magic(session)
-    binding = session.scalar(select(MAGISMembership).where(MAGISMembership.magic_id == current.id))
-    return binding.magis_id if binding is not None else None
+# -- Error translation --------------------------------------------------
 
 
-def _require_visible_magic(session: Session, magic: MAGIC, *, allow_unassigned: bool = True) -> None:
-    binding = _direct_magis_binding(session, magic)
-    served = _served_direct_magis_id(session)
-    if binding is None and allow_unassigned:
-        return
-    if binding is None or served is None or binding[0].magis_id != served:
-        raise MagiHTTPException(403, "forbidden.magic_management_scope", "MAGI is outside the current direct MAGIS")
+def _translate_bus_error(exc: Exception) -> MagiHTTPException:
+    """Map exceptions raised by the bus services to MagiHTTPException.
+
+    The frontend keys off the stable ``code`` field for i18n, so we
+    preserve the pre-refactor codes (``not_found.magic``,
+    ``runtime.current_magic_protected``,
+    ``validation.magic_membership_required``,
+    ``validation.eve_provider_credentials_required``,
+    ``runtime.orchestrator_unavailable``).
+
+    Anything we can't classify falls back to a 400 with the bus's
+    detail so a future error type stays visible to the operator.
+    """
+    from magi.orchestrator.client import OrchestratorUnavailable
+
+    if isinstance(exc, OrchestratorUnavailable):
+        return MagiHTTPException(
+            503, "runtime.orchestrator_unavailable", str(exc)
+        )
+    if isinstance(exc, LookupError):
+        return MagiHTTPException(404, "not_found.magic", str(exc))
+    if isinstance(exc, PermissionError):
+        return MagiHTTPException(
+            409, "runtime.current_magic_protected", str(exc)
+        )
+    if isinstance(exc, ValueError):
+        text = str(exc).lower()
+        if "magis" in text and ("membership" in text or "assign" in text):
+            code = "validation.magic_membership_required"
+        elif "provider" in text or "credential" in text or "api key" in text:
+            code = "validation.eve_provider_credentials_required"
+        elif "desired_state" in text:
+            code = "validation.invalid_value"
+        else:
+            code = "validation.invalid_value"
+        return MagiHTTPException(400, code, str(exc))
+    raise exc
+
+
+# -- Direct / served identity + visibility ------------------------------
+
+
+def _served_direct_magis_id() -> int | None:
+    return _bus().magis.served_direct_magis_id()
+
+
+def _is_visible_magic(magic_id: int, *, allow_unassigned: bool) -> bool:
+    """A MAGIC is visible when it's directly bound to the served MAGIS,
+    or it's unassigned and ``allow_unassigned`` is True.
+
+    Mirrors ``_require_visible_magic`` from the pre-refactor
+    ``api/magic.py`` — visible == outside the management scope block.
+    """
+    served = _served_direct_magis_id()
+    if served is None:
+        return False
+    bindings = _bus().magic.list_memberships(magic_id)
+    if not bindings:
+        return allow_unassigned
+    return any(b.magis_id == served for b in bindings)
+
+
+def _require_visible_magic(magic_id: int, *, allow_unassigned: bool) -> None:
+    if not _is_visible_magic(magic_id, allow_unassigned=allow_unassigned):
+        raise MagiHTTPException(
+            status_code=403,
+            code="forbidden.magic_management_scope",
+            detail="MAGI is outside the current direct MAGIS",
+        )
+
+
+def _current_magic_id() -> int:
+    """Return the MAGI id served by this WebUI container, raising 404 when none."""
+    magic_id = _bus().magic.current_runtime_magic_id()
+    if magic_id is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.current_magic",
+            detail="this runtime is not bound to a MAGI",
+        )
+    return magic_id
+
+
+def _magic_or_404(magic_id: int) -> MagicView:
+    view = _bus().magic.get_magic(magic_id)
+    if view is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.magic", detail="MAGI not found"
+        )
+    return view
+
+
+# -- Routes -------------------------------------------------------------
 
 
 @router.get("/magic", response_model=list[MAGICOut])
-def list_magic(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> list[MAGICOut]:
-    served = _served_direct_magis_id(session)
-    direct_ids = select(MAGISMembership.magic_id).where(MAGISMembership.magis_id == served) if served else select(MAGISMembership.magic_id).where(False)
-    assigned_ids = select(MAGISMembership.magic_id)
-    rows = session.scalars(select(MAGIC).where((MAGIC.id.in_(direct_ids)) | (~MAGIC.id.in_(assigned_ids))).order_by(MAGIC.id)).all()
-    runtimes = {r.magic_id: r for r in session.scalars(select(EveRuntime).where(EveRuntime.magic_id.in_([m.id for m in rows]))).all()} if rows else {}
-    return [_serialize(session, magic, runtimes.get(magic.id)) for magic in rows]
+def list_magic(_admin: AdminGate) -> list[MAGICOut]:
+    bus = _bus()
+    served = _served_direct_magis_id()
+    direct_ids: set[int] = set()
+    if served is not None:
+        # MAGIs bound to the served MAGIS — visible regardless of
+        # whether they're bound elsewhere too.
+        direct_ids = {
+            m.magic_id for m in bus.magis.list_memberships(served)
+        }
+    assigned_ids = bus.magis.assigned_magic_ids()
+    views = bus.magic.list_magic(
+        served=served,
+        direct_ids=direct_ids,
+        assigned_ids=assigned_ids,
+    )
+    return [_magic_out(v) for v in views]
 
 
 @router.post("/magic", response_model=MAGICOut, status_code=201)
-def create_magic(payload: MAGICCreate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
-    magic = MAGIC(name=payload.name, provider=payload.provider, api_key=payload.api_key)
-    session.add(magic)
-    session.commit()
-    session.refresh(magic)
-    return _serialize(session, magic)
-
-
-def _magic_or_404(session: Session, magic_id: int) -> MAGIC:
-    magic = session.get(MAGIC, magic_id)
-    if magic is None:
-        raise MagiHTTPException(404, "not_found.magic", "MAGI not found")
-    return magic
+def create_magic(payload: MAGICCreate, _admin: AdminGate) -> MAGICOut:
+    view = _bus().magic.create_magic(
+        name=payload.name,
+        provider=payload.provider,
+        api_key=payload.api_key,
+    )
+    return _magic_out(view)
 
 
 @router.get("/magic/{magic_id}", response_model=MAGICOut)
-def get_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
-    magic = _magic_or_404(session, magic_id)
-    _require_visible_magic(session, magic)
-    return _serialize(session, magic, session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id)))
+def get_magic(magic_id: int, _admin: AdminGate) -> MAGICOut:
+    _require_visible_magic(magic_id, allow_unassigned=True)
+    return _magic_out(_magic_or_404(magic_id))
 
 
 @router.patch("/magic/{magic_id}", response_model=MAGICOut)
-def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> MAGICOut:
-    magic = _magic_or_404(session, magic_id)
-    _require_visible_magic(session, magic)
-    for field in ("name", "provider"):
-        if field in payload.model_fields_set:
-            setattr(magic, field, getattr(payload, field))
-    if "api_key" in payload.model_fields_set:
-        magic.api_key = payload.api_key or None
-    session.commit()
-    return _serialize(session, magic, session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id)))
-
-
-def _current_magic(session: Session) -> MAGIC:
-    """Resolve the MAGI served by this WebUI container."""
-    import os
-    runtime_id = os.environ.get("MAGI_RUNTIME_ID")
-    if runtime_id and runtime_id.isdigit():
-        return _magic_or_404(session, int(runtime_id))
-    root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-    if root and root.adam_id:
-        return _magic_or_404(session, root.adam_id)
-    raise MagiHTTPException(404, "not_found.current_magic", "this runtime is not bound to a MAGI")
+def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate) -> MAGICOut:
+    _require_visible_magic(magic_id, allow_unassigned=True)
+    # Forward only the fields the caller explicitly included; the bus
+    # treats anything else as ``_FIELD_UNSET`` and leaves the column
+    # untouched.  ``api_key=None`` is forwarded verbatim so the user
+    # can clear a stored credential via PATCH.
+    update_kwargs: dict[str, object] = {}
+    fields_set = payload.model_fields_set
+    for field in ("name", "provider", "api_key"):
+        if field in fields_set:
+            update_kwargs[field] = getattr(payload, field)
+    try:
+        view = _bus().magic.update_magic(magic_id, **update_kwargs)
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
+    return _magic_out(view)
 
 
 @router.get("/magic/self/instruction", response_model=InstructionOut)
-def get_self_instruction(_admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> InstructionOut:
-    magic = _current_magic(session)
-    return InstructionOut(magic_id=magic.id, instruction=magic.instruction)
+def get_self_instruction(_admin: AdminGate) -> InstructionOut:
+    magic_id = _current_magic_id()
+    personal, _bindings = _bus().magic.instruction_context()
+    return InstructionOut(magic_id=magic_id, instruction=personal)
 
 
 @router.put("/magic/self/instruction", response_model=InstructionOut)
-def put_self_instruction(payload: InstructionPayload, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> InstructionOut:
-    magic = _current_magic(session)
-    magic.instruction = payload.instruction
-    session.commit()
-    return InstructionOut(magic_id=magic.id, instruction=magic.instruction)
-
-
-def _runtime_or_create(session: Session, magic: MAGIC) -> EveRuntime:
-    runtime = session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id))
-    if runtime is None:
-        runtime = EveRuntime(magic_id=magic.id)
-        session.add(runtime)
-        session.flush()
-    return runtime
-
-
-def _direct_magis_binding(session: Session, magic: MAGIC):
-    """Return the MAGI's one direct MAGIS, role, and membership."""
-    row = session.execute(
-        select(MAGISMembership, MAGISRole, MAGIS)
-        .join(MAGISRole, MAGISRole.id == MAGISMembership.role_id)
-        .join(MAGIS, MAGIS.id == MAGISMembership.magis_id)
-        .where(MAGISMembership.magic_id == magic.id).order_by(MAGISMembership.id)
-    ).first()
-    return row
-
-
-def _apply_result(runtime: EveRuntime, result) -> None:
-    runtime.observed_state = result.observed_state
-    runtime.namespace, runtime.deployment_name = result.namespace, result.deployment_name
-    runtime.workspace_claim_name = result.workspace_claim_name
-    runtime.credential_secret_name, runtime.last_error = result.credential_secret_name, None
+def put_self_instruction(payload: InstructionPayload, _admin: AdminGate) -> InstructionOut:
+    magic_id = _current_magic_id()
+    try:
+        _bus().magic.set_instruction(magic_id, payload.instruction)
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
+    return InstructionOut(magic_id=magic_id, instruction=payload.instruction)
 
 
 @router.get("/magic/{magic_id}/runtime", response_model=EveRuntimeOut)
-def get_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
-    magic = _magic_or_404(session, magic_id)
-    _require_visible_magic(session, magic, allow_unassigned=False)
-    return _runtime_out(_runtime_or_create(session, magic))  # type: ignore[return-value]
-
-
-def _lifecycle(action: str, magic_id: int, session: Session) -> EveRuntimeOut:
-    magic = _magic_or_404(session, magic_id)
-    _require_visible_magic(session, magic, allow_unassigned=False)
-    if magic.id == _current_magic(session).id:
-        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot stop or restart the MAGI currently serving this session")
-    runtime = _runtime_or_create(session, magic)
-    direct_binding = _direct_magis_binding(session, magic)
-    if action == "start":
-        if direct_binding is None:
-            raise MagiHTTPException(400, "validation.magic_membership_required", "assign this MAGI to a MAGIS before starting it")
-        if not magic.provider or not magic.api_key:
-            raise MagiHTTPException(400, "validation.eve_provider_credentials_required", "configure provider and API key before starting this MAGI")
-    from magi.orchestrator.client import OrchestratorUnavailable, request_lifecycle
-    from magi.orchestrator.contracts import EveSpec
-    runtime.desired_state = "running" if action == "start" else "stopped"
-    from magi.orchestrator.contracts import MagisBinding, MagisRuntimeConfiguration
-    magis = MagisBinding(id=direct_binding[2].id, name=direct_binding[2].name) if direct_binding else None
-    configuration = (
-        MagisRuntimeConfiguration(
-            magis_instruction=direct_binding[2].instruction,
-            role_name=direct_binding[1].name,
-            role_instruction=direct_binding[1].instruction,
-            magic_name=magic.name,
-            personal_instruction=magic.instruction,
-            provider=magic.provider,
-            api_key=magic.api_key,
-        )
-        if direct_binding else None
-    )
-    spec = EveSpec(magic_id=magic.id, name=magic.name, magis=magis, configuration=configuration)
+def get_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+    _require_visible_magic(magic_id, allow_unassigned=False)
     try:
-        result = request_lifecycle(action, spec)
-    except OrchestratorUnavailable as exc:
-        runtime.observed_state, runtime.last_error = "failed", str(exc)
-        session.commit()
-        raise MagiHTTPException(503, "runtime.orchestrator_unavailable", str(exc)) from exc
-    _apply_result(runtime, result)
-    session.commit()
-    return _runtime_out(runtime)  # type: ignore[return-value]
+        view = _bus().magic.ensure_runtime(magic_id)
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
+    return _runtime_out(view)  # type: ignore[return-value]
+
+
+def _lifecycle(action: str, magic_id: int) -> EveRuntimeOut:
+    _require_visible_magic(magic_id, allow_unassigned=False)
+    bus = _bus()
+    current = _current_magic_id()
+    if magic_id == current:
+        raise MagiHTTPException(
+            status_code=409,
+            code="runtime.current_magic_protected",
+            detail="Cannot stop or restart the MAGI currently serving this session",
+        )
+    try:
+        bus.magic.set_runtime(
+            magic_id,
+            "running" if action == "start" else "stopped",
+            lifecycle_action=action,
+        )
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
+    try:
+        view = bus.magic.ensure_runtime(magic_id)
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
+    return _runtime_out(view)  # type: ignore[return-value]
 
 
 @router.post("/magic/{magic_id}/runtime/start", response_model=EveRuntimeOut)
-def start_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
-    return _lifecycle("start", magic_id, session)
+def start_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+    return _lifecycle("start", magic_id)
 
 
 @router.post("/magic/{magic_id}/runtime/stop", response_model=EveRuntimeOut)
-def stop_runtime(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> EveRuntimeOut:
-    return _lifecycle("stop", magic_id, session)
+def stop_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+    return _lifecycle("stop", magic_id)
 
 
 @router.delete("/magic/{magic_id}", status_code=204)
-def delete_magic(magic_id: int, _admin: AdminGate, session: Annotated[Session, Depends(get_magis_session)]) -> Response:
-    magic = _magic_or_404(session, magic_id)
-    _require_visible_magic(session, magic)
-    if magic.id == _current_magic(session).id:
-        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot delete the MAGI currently serving this session")
-    runtime = session.scalar(select(EveRuntime).where(EveRuntime.magic_id == magic.id))
-    if runtime and runtime.deployment_name:
-        from magi.orchestrator.client import OrchestratorUnavailable, request_lifecycle
-        from magi.orchestrator.contracts import EveSpec
-        try:
-            request_lifecycle("delete", EveSpec(magic_id=magic.id, name=magic.name))
-        except OrchestratorUnavailable as exc:
-            raise MagiHTTPException(503, "runtime.orchestrator_unavailable", str(exc)) from exc
-    session.delete(magic)
-    session.commit()
+def delete_magic(magic_id: int, _admin: AdminGate) -> Response:
+    _require_visible_magic(magic_id, allow_unassigned=True)
+    current = _current_magic_id()
+    if magic_id == current:
+        raise MagiHTTPException(
+            status_code=409,
+            code="runtime.current_magic_protected",
+            detail="Cannot delete the MAGI currently serving this session",
+        )
+    try:
+        _bus().magic.delete_magic(magic_id)
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
     return Response(status_code=204)

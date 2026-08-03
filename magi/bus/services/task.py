@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from magi.bus.contracts.task import TaskExecution, TaskPresetView, TaskScheduleView
+from sqlalchemy import func, select
+
+from magi.bus.contracts.task import (
+    TaskExecution,
+    TaskFullView,
+    TaskPresetView,
+    TaskRunView,
+    TaskScheduleView,
+)
+from magi.bus.contracts.session import new_session_id
 
 
 def _schedule_view(row) -> TaskScheduleView:
@@ -24,6 +33,29 @@ def _preset_view(row) -> TaskPresetView:
     )
 
 
+def _full_view(row) -> TaskFullView:
+    """Render the operator-facing :class:`TaskFullView` (all columns surfaced in the WebUI)."""
+    return TaskFullView(
+        id=str(row.id), name=str(row.name), prompt=str(row.prompt),
+        cron=str(row.cron), run_at=row.run_at, delivery_to=row.delivery_to,
+        tz=str(row.tz), target_channel=str(row.target_channel), uid=int(row.uid),
+        enabled=bool(row.enabled), consecutive_failures=int(row.consecutive_failures or 0),
+        last_run_at=row.last_run_at, last_status=row.last_status, last_error=row.last_error,
+        created_at=str(row.created_at), updated_at=str(row.updated_at),
+        session_id=row.session_id, preset_id=row.preset_id, preset_key=row.preset_key,
+    )
+
+
+def _run_view(row) -> TaskRunView:
+    return TaskRunView(
+        id=str(row.id), task_id=str(row.task_id), session_id=row.session_id,
+        trigger=str(row.trigger), started_at=str(row.started_at),
+        finished_at=row.finished_at, latency_ms=row.latency_ms,
+        status=str(row.status), error=row.error, reply_excerpt=row.reply_excerpt,
+        input_tokens=int(row.input_tokens or 0), output_tokens=int(row.output_tokens or 0),
+    )
+
+
 class TaskService:
     """Task persistence façade; channel schedulers observe committed rows."""
 
@@ -39,20 +71,70 @@ class TaskService:
             row = session.get(Task, str(task_id))
             return _schedule_view(row) if row is not None else None
 
+    def get_schedule_for_name(self, name: str) -> TaskScheduleView | None:
+        """Look up a task by its operator-facing ``name`` (for uniqueness pre-checks)."""
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        with open_session(self._state_dir) as session:
+            row = session.scalar(select(Task).where(Task.name == name).limit(1))
+            return _schedule_view(row) if row is not None else None
+
     def list_enabled_schedules(self) -> list[TaskScheduleView]:
         from magi.db import open_session
         from magi.bus.models.local.task import Task
-        from sqlalchemy import select
         with open_session(self._state_dir) as session:
             rows = session.scalars(
                 select(Task).where(Task.enabled.is_(True))
             ).all()
             return [_schedule_view(row) for row in rows]
 
+    def get(self, task_id: str) -> TaskFullView | None:
+        """Full task view (all columns) — operator-facing CRUD detail."""
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        with open_session(self._state_dir) as session:
+            row = session.get(Task, str(task_id))
+            return _full_view(row) if row is not None else None
+
+    def list(
+        self,
+        *,
+        enabled: Optional[bool] = None,
+        uid: Optional[int] = None,
+        kind: Optional[str] = None,  # "preset" | "custom" | None
+    ) -> list[TaskFullView]:
+        """List tasks with optional filters. ``kind`` drives the preset-vs-custom split."""
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        with open_session(self._state_dir) as session:
+            q = select(Task).order_by(Task.created_at.desc())
+            if enabled is not None:
+                q = q.where(Task.enabled == (1 if enabled else 0))
+            if uid is not None:
+                q = q.where(Task.uid == uid)
+            if kind == "preset":
+                q = q.where(Task.preset_key.is_not(None))
+            elif kind == "custom":
+                q = q.where(Task.preset_key.is_(None))
+            rows = session.scalars(q).all()
+            return [_full_view(row) for row in rows]
+
+    def list_runs(self, task_id: str, *, limit: int = 20) -> list[TaskRunView]:
+        """Most-recent-first runs for one task."""
+        from magi.db import open_session
+        from magi.bus.models.local.task import TaskRun
+        with open_session(self._state_dir) as session:
+            rows = session.scalars(
+                select(TaskRun)
+                .where(TaskRun.task_id == task_id)
+                .order_by(TaskRun.started_at.desc())
+                .limit(limit)
+            ).all()
+            return [_run_view(row) for row in rows]
+
     # -- preset templates ----------------------------------------------
 
     def list_presets(self) -> list[TaskPresetView]:
-        from sqlalchemy import select
         from magi.bus.models.local.task_preset import TaskPreset
         from magi.db import open_session
 
@@ -70,7 +152,6 @@ class TaskService:
             return _preset_view(row) if row is not None else None
 
     def create_preset(self, **values) -> TaskPresetView | None:
-        from sqlalchemy import select
         from magi.bus.models.local.task_preset import TaskPreset
         from magi.bus.contracts.session import new_session_id
         from magi.db import open_session
@@ -146,7 +227,6 @@ class TaskService:
         """
         from magi.db import open_session
         from magi.bus.models.local.task import Task
-        from sqlalchemy import select
         new_id = _new_task_id()
         with open_session(self._state_dir) as session:
             existing = session.execute(
@@ -184,6 +264,147 @@ class TaskService:
             session.add(row)
             session.commit()
             return new_id, False
+
+    def create_task(
+        self,
+        *,
+        task_id: Optional[str] = None,
+        name: str,
+        prompt: str,
+        cron: str,
+        run_at: Optional[str],
+        delivery_to: Optional[str],
+        target_channel: str,
+        uid: int,
+        session_id: Optional[str] = None,
+        tz: str = "UTC",
+        enabled: int = 1,
+        preset_id: Optional[str] = None,
+        preset_key: Optional[str] = None,
+    ) -> TaskFullView:
+        """Insert a fresh task row. Raises ``ValueError`` on a name collision.
+
+        Used by the WebUI ``POST /api/tasks`` route. Returns the full
+        view of the freshly-created task so the caller can serialise
+        it directly. When ``task_id`` is omitted, a new ULID is
+        generated.
+        """
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        new_id = task_id or _new_task_id()
+        now = datetime.utcnow().isoformat()
+        with open_session(self._state_dir) as session:
+            existing = session.scalar(select(Task.id).where(Task.name == name))
+            if existing is not None:
+                raise ValueError(f"task name {name!r} already exists")
+            row = Task(
+                id=new_id, name=name, prompt=prompt,
+                cron=cron, run_at=run_at, delivery_to=delivery_to,
+                target_channel=target_channel, uid=uid,
+                session_id=session_id, tz=tz,
+                enabled=enabled, consecutive_failures=0,
+                preset_id=preset_id, preset_key=preset_key,
+                created_at=now, updated_at=now,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return _full_view(row)
+
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        name: Optional[str] = None,
+        prompt: Optional[str] = None,
+        cron: Optional[str] = None,
+        run_at: Optional[str] = None,
+        delivery_to: Optional[str] = None,
+        target_channel: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> TaskFullView | None:
+        """Partial update — each ``None`` means "leave unchanged".
+
+        The :class:`Task` ``enabled`` column is an Integer 0/1; the
+        helper normalises the bool input. ``name`` uniqueness is NOT
+        enforced here — the API route owns that pre-condition.
+        """
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        with open_session(self._state_dir) as session:
+            row = session.get(Task, task_id)
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if prompt is not None:
+                row.prompt = prompt
+            if cron is not None:
+                row.cron = cron
+            if run_at is not None:
+                row.run_at = run_at
+            if delivery_to is not None:
+                row.delivery_to = delivery_to
+            if target_channel is not None:
+                row.target_channel = target_channel
+            if enabled is not None:
+                row.enabled = 1 if enabled else 0
+            row.tz = _resolve_system_tz(self._state_dir)
+            row.updated_at = datetime.utcnow().isoformat()
+            session.commit()
+            session.refresh(row)
+            return _full_view(row)
+
+    def delete_task(self, task_id: str) -> bool:
+        from magi.db import open_session
+        from magi.bus.models.local.task import Task
+        with open_session(self._state_dir) as session:
+            row = session.get(Task, task_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
+    def seed_presets_for_contact(self, contact_id: int) -> int:
+        """Trigger the preset-seed pass for one contact.
+
+        Wraps ``magi.proactive.task_presets.seed_presets_for_contact``
+        in a bus-managed session so the WebUI route can fire the
+        seed hook after a contact is created / promoted without
+        crossing back to the db layer. Idempotent; returns the
+        number of NEW task rows inserted (``0`` on a no-op).
+        """
+        from magi.db import open_session
+        from magi.proactive.task_presets import seed_presets_for_contact as _seed
+        with open_session(self._state_dir) as session:
+            inserted = _seed(session, contact_id)
+            session.commit()
+        return inserted
+
+    def create_task_run(
+        self,
+        *,
+        task_id: str,
+        run_id: str,
+        trigger: str,
+        started_at: str,
+        session_id: Optional[str] = None,
+    ) -> str:
+        """Insert a ``TaskRun`` row and return the ``run_id``.
+
+        Used by the manual ``POST /api/tasks/{id}/run`` route so the
+        response carries a stable id for the operator's follow-up.
+        """
+        from magi.db import open_session
+        from magi.bus.models.local.task import TaskRun
+        with open_session(self._state_dir) as session:
+            session.add(TaskRun(
+                id=run_id, task_id=task_id, session_id=session_id,
+                trigger=trigger, started_at=started_at, status="running",
+            ))
+            session.commit()
+        return run_id
 
     def prepare_execution(
         self, *, task_id: str, run_id: str, started_at: str, manual: bool,
@@ -325,3 +546,10 @@ def _milliseconds(started_at: str, finished_at: str) -> int:
         return max(0, int((datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds() * 1000))
     except ValueError:
         return 0
+
+
+def _resolve_system_tz(state_dir: str) -> str:
+    """Read the configured system timezone (with UTC fallback)."""
+    from magi.db.settings import state_get
+    raw = state_get(state_dir, "system.timezone")
+    return raw if raw else "UTC"

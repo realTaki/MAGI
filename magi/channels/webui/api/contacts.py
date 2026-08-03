@@ -16,16 +16,14 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Annotated, Optional
+import os
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
-from magi.db import Contact, ContactNote, get_session
-from magi.db.base import utcnow_naive
+from magi.bus.contracts.contact import ContactView, NoteView
+from magi.bus.services.contact import ContactsService
 from magi.channels.webui.api.auth_gates import admin_gate, AdminGate
 from magi.channels.webui.api.errors import MagiHTTPException
 
@@ -49,9 +47,21 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 # -- helpers ----------------------------------------------------------------
 
-def _iso(dt: datetime | None) -> str:
+def _bus(state_dir: str | None = None) -> ContactsService:
+    """Resolve a ContactsService bound to the right state dir.
+
+    The default resolves ``MAGI_STATE_DIR`` from env or the runtime
+    constant; the parameter is reserved for tests.
+    """
+    from magi.constants import STATE_DIR
+    return ContactsService(os.environ.get("MAGI_STATE_DIR", state_dir or STATE_DIR))
+
+
+def _iso(dt) -> str:
     if dt is None:
         return ""
+    if isinstance(dt, str):
+        return dt
     return dt.isoformat().replace("+00:00", "Z")
 
 
@@ -128,11 +138,11 @@ class ContactUpdate(BaseModel):
 
 
 def _serialize(
-    c: Contact,
+    view: ContactView,
     notes_count: int = 0,
     login_methods: list[str] | None = None,
 ) -> ContactOut:
-    """Render a :class:`Contact` row to the wire shape.
+    """Render a :class:`ContactView` to the wire shape.
 
     ``login_methods`` is computed by the caller (via
     :func:`_login_methods_for`) to avoid an N+1 query. A
@@ -141,27 +151,27 @@ def _serialize(
     ``GET /api/contacts/{id}`` path.
     """
     if login_methods is None:
-        login_methods = _login_methods_for(c)
+        login_methods = _login_methods_for(view)
     return ContactOut(
-        id=c.id,
-        name=c.name,
-        display_name=c.display_name,
-        role=c.role,
-        admin=bool(c.admin),
-        separated_at=c.separated_at.isoformat() if c.separated_at else None,
-        telegram_id=c.telegram_id,
-        notes=c.notes,
+        id=view.id,
+        name=view.name,
+        display_name=view.display_name,
+        role=view.role,
+        admin=view.admin,
+        separated_at=view.last_seen_at if view.separated else None,
+        telegram_id=view.telegram_id,
+        notes=view.notes,
         notes_count=notes_count,
-        source=c.source,
-        last_seen_at=_iso(c.last_seen_at),
-        created_at=_iso(c.created_at),
-        updated_at=_iso(c.updated_at),
+        source=view.source,
+        last_seen_at=view.last_seen_at,
+        created_at=view.created_at,
+        updated_at=view.updated_at,
         password_set="password" in login_methods,
         login_methods=login_methods,
     )
 
 
-def _login_methods_for(contact: Contact) -> list[str]:
+def _login_methods_for(view: ContactView) -> list[str]:
     """Compute the login methods for a single contact.
 
     Mirrors the same logic the auth endpoints use, kept
@@ -169,7 +179,7 @@ def _login_methods_for(contact: Contact) -> list[str]:
     through the auth module. Side-effect free.
     """
     methods: list[str] = []
-    if contact.telegram_id is not None:
+    if view.telegram_id is not None:
         methods.append("tg_code")
     # password_set is queried separately by the bulk
     # helper below — we let the caller pass the
@@ -178,44 +188,35 @@ def _login_methods_for(contact: Contact) -> list[str]:
 
 
 def _bulk_login_methods(
-    session: Session,
-    contacts: list[Contact],
+    bus: ContactsService,
+    views: list[ContactView],
 ) -> dict[int, list[str]]:
     """Batch-fetch the password-set flag for a list of contacts.
 
     Returns ``{uid: methods}``. The tg_code leg is
-    computed from the already-loaded contact row.
+    computed from the already-loaded contact view.
     """
-    from magi.bus.models.magis.auth_credential import AuthCredential
-
-    if not contacts:
+    if not views:
         return {}
-    uids = [c.id for c in contacts]
-    password_uids: set[int] = set(
-        session.scalars(
-            select(AuthCredential.uid).where(
-                AuthCredential.uid.in_(uids),
-                AuthCredential.kind == "password",
-            )
-        ).all()
-    )
+    uids = [v.id for v in views]
+    password_uids = bus.password_uids(uids)
     out: dict[int, list[str]] = {}
-    for c in contacts:
+    for v in views:
         methods: list[str] = []
-        if c.telegram_id is not None:
+        if v.telegram_id is not None:
             methods.append("tg_code")
-        if c.id in password_uids:
+        if v.id in password_uids:
             methods.append("password")
-        out[c.id] = methods
+        out[v.id] = methods
     return out
 
 
 def _single_login_methods(
-    session: Session,
-    contact: Contact,
+    bus: ContactsService,
+    view: ContactView,
 ) -> list[str]:
     """Single-row helper for the by-id endpoints."""
-    return _bulk_login_methods(session, [contact]).get(contact.id, [])
+    return _bulk_login_methods(bus, [view]).get(view.id, [])
 
 
 # -- routes -----------------------------------------------------------------
@@ -223,7 +224,6 @@ def _single_login_methods(
 @router.get("/contacts", response_model=ContactListOut)
 def list_contacts(
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
     with_notes: bool = False,
     separated: bool = False,
     include_separated: bool = False,
@@ -247,19 +247,7 @@ def list_contacts(
     if page_size > _PAGE_SIZE_MAX:
         page_size = _PAGE_SIZE_MAX
 
-    base = select(Contact)
-
-    if with_notes:
-        # Contacts that have at least one note in ``contact_notes``.
-        from magi.bus.models.local.contact import ContactNote
-        note_ids = session.scalars(
-            select(ContactNote.contact_id).distinct()
-        ).all()
-        base = base.where(Contact.id.in_(note_ids) if note_ids else False)
-    elif separated:
-        base = base.where(Contact.separated_at.is_not(None))
-    elif not include_separated:
-        base = base.where(Contact.separated_at.is_(None))
+    bus = _bus()
 
     if role is not None and not with_notes:
         if role not in _CONTACT_ROLES:
@@ -268,59 +256,42 @@ def list_contacts(
                 code="validation.role_unknown",
                 detail=f"Unknown role {role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
             )
-        base = base.where(Contact.role == role)
 
     if admin is not None and not with_notes:
         # ``admin=true`` ↔ WebUI operators. The Settings →
         # WebUI access card queries this filter to render
         # the admin list. Independent of ``role`` — see the
         # notes on ``ContactOut.admin``.
-        base = base.where(Contact.admin == (1 if admin else 0))
+        pass
 
     if with_notes:
-        base = base.order_by(Contact.last_seen_at.desc()).limit(_MAX_ROWS)
-        rows = session.scalars(base).all()
-        # Preload notes counts in one query
-        from magi.bus.models.local.contact import ContactNote
-        note_counts: dict[int, int] = {}
-        if rows:
-            cids = [r.id for r in rows]
-            counts = session.execute(
-                select(ContactNote.contact_id, func.count())
-                .where(ContactNote.contact_id.in_(cids))
-                .group_by(ContactNote.contact_id)
-            ).all()
-            note_counts = {c: int(n) for c, n in counts}
-        login_methods = _bulk_login_methods(session, rows)
+        views = bus.list_with_notes(limit=_MAX_ROWS)
+        uids = [v.id for v in views]
+        counts = bus.count_notes_per_contact(uids)
+        login_methods = _bulk_login_methods(bus, views)
         return ContactListOut(
             items=[
                 _serialize(
-                    r,
-                    notes_count=note_counts.get(r.id, 0),
-                    login_methods=login_methods.get(r.id, []),
+                    v,
+                    notes_count=counts.get(v.id, 0),
+                    login_methods=login_methods.get(v.id, []),
                 )
-                for r in rows
+                for v in views
             ],
-            total=len(rows),
+            total=len(views),
             page=1,
-            page_size=len(rows),
+            page_size=len(views),
             total_pages=1,
         )
 
-    total = session.scalar(
-        select(func.count()).select_from(base.subquery())
-    ) or 0
-    total_pages = max(1, (total + page_size - 1) // page_size)
-
-    page_q = (
-        base.order_by(Contact.name.asc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+    rows, total = bus.list_paginated(
+        role=role, admin=admin, separated=separated,
+        include_separated=include_separated, page=page, page_size=page_size,
     )
-    rows = session.scalars(page_q).all()
-    login_methods = _bulk_login_methods(session, rows)
+    login_methods = _bulk_login_methods(bus, rows)
+    total_pages = max(1, (total + page_size - 1) // page_size)
     return ContactListOut(
-        items=[_serialize(r, login_methods=login_methods.get(r.id, [])) for r in rows],
+        items=[_serialize(v, login_methods=login_methods.get(v.id, [])) for v in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -332,15 +303,15 @@ def list_contacts(
 def create_contact(
     payload: ContactCreate,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> ContactOut:
+    bus = _bus()
     name = payload.name.strip()
     if not name:
         raise MagiHTTPException(
             status_code=400, code="validation.name_required",
             detail="name must not be empty",
         )
-    if session.scalar(select(Contact).where(Contact.name == name)) is not None:
+    if bus.name_exists(name):
         raise MagiHTTPException(
             status_code=409, code="conflict.contact_name_exists",
             detail=f"contact {name!r} already exists",
@@ -350,31 +321,24 @@ def create_contact(
             status_code=400, code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
         )
-    if payload.role == "assigned" and session.scalar(
-        select(Contact.id).where(Contact.role == "assigned", Contact.separated_at.is_(None))
-    ) is not None:
+    if payload.role == "assigned" and bus.assigned_active():
         raise MagiHTTPException(
             status_code=409,
             code="conflict.assigned_user_exists",
             detail="This MAGI already has an assigned user",
         )
-    if payload.telegram_id is not None and session.scalar(
-        select(Contact).where(Contact.telegram_id == payload.telegram_id)
-    ) is not None:
+    if payload.telegram_id is not None and bus.telegram_id_bound(payload.telegram_id):
         raise MagiHTTPException(
             status_code=409, code="conflict.telegram_id_already_bound",
             detail=f"telegram_id {payload.telegram_id} is already bound",
         )
-    contact = Contact(
+    view = bus.create_contact(
         name=name,
         display_name=payload.display_name,
         role=payload.role,
         admin=payload.admin,
         telegram_id=payload.telegram_id,
     )
-    session.add(contact)
-    session.commit()
-    session.refresh(contact)
 
     # Preset seed hook — fires only when the contact was
     # *created* as ``assigned`` from the start. The
@@ -393,18 +357,16 @@ def create_contact(
     # the helper, but the per-preset existence check
     # would short-circuit since the rows are already
     # there).
-    if contact.role == "assigned":
+    if view.role == "assigned":
         try:
-            from magi.proactive.task_presets import seed_presets_for_contact
-            seed_presets_for_contact(session, contact.id)
-            session.commit()
+            bus.seed_presets_for_contact(view.id)
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for newly-created contact %d: %s",
-                contact.id, exc,
+                view.id, exc,
             )
 
-    return _serialize(contact, login_methods=_single_login_methods(session, contact))
+    return _serialize(view, login_methods=_single_login_methods(bus, view))
 
 
 # -- notes sub-resource ---------------------------------------------------
@@ -423,35 +385,31 @@ class NoteListOut(BaseModel):
     total: int
 
 
+def _note_view_out(view: NoteView) -> NoteOut:
+    return NoteOut(
+        id=view.id,
+        contact_id=view.contact_id,
+        note=view.note,
+        source=view.source,
+        created_at=view.created_at,
+        updated_at=view.updated_at,
+    )
+
+
 @router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
 def list_contact_notes(
     contact_id: int,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> NoteListOut:
-    from magi.bus.models.local.contact import Contact, ContactNote
-    contact = session.get(Contact, contact_id)
+    bus = _bus()
+    contact = bus.get(contact_id)
     if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
         )
-    rows = session.scalars(
-        select(ContactNote)
-        .where(ContactNote.contact_id == contact_id)
-        .order_by(ContactNote.created_at.desc())
-    ).all()
-    items = [
-        NoteOut(
-            id=r.id,
-            contact_id=r.contact_id,
-            note=r.note,
-            source=r.source,
-            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
-            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
-        )
-        for r in rows
-    ]
+    notes = bus.list_notes(contact_id)
+    items = [_note_view_out(n) for n in notes]
     return NoteListOut(items=items, total=len(items))
 
 
@@ -459,63 +417,15 @@ def list_contact_notes(
 def get_contact(
     contact_id: int,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> ContactOut:
-    contact = session.get(Contact, contact_id)
-    if contact is None:
+    bus = _bus()
+    view = bus.get(contact_id)
+    if view is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
         )
-    return _serialize(contact, login_methods=_single_login_methods(session, contact))
-
-
-# -- notes sub-resource ---------------------------------------------------
-
-class NoteOut(BaseModel):
-    id: int
-    contact_id: int
-    note: str
-    source: str
-    created_at: str
-    updated_at: str
-
-
-class NoteListOut(BaseModel):
-    items: list[NoteOut]
-    total: int
-
-
-@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
-def list_contact_notes(
-    contact_id: int,
-    _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
-) -> NoteListOut:
-    from magi.bus.models.local.contact import Contact, ContactNote
-    contact = session.get(Contact, contact_id)
-    if contact is None:
-        raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
-            detail="contact not found",
-        )
-    rows = session.scalars(
-        select(ContactNote)
-        .where(ContactNote.contact_id == contact_id)
-        .order_by(ContactNote.created_at.desc())
-    ).all()
-    items = [
-        NoteOut(
-            id=r.id,
-            contact_id=r.contact_id,
-            note=r.note,
-            source=r.source,
-            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
-            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
-        )
-        for r in rows
-    ]
-    return NoteListOut(items=items, total=len(items))
+    return _serialize(view, login_methods=_single_login_methods(bus, view))
 
 
 @router.patch("/contacts/{contact_id}", response_model=ContactOut)
@@ -523,10 +433,10 @@ def update_contact(
     contact_id: int,
     payload: ContactUpdate,
     _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
 ) -> ContactOut:
-    contact = session.get(Contact, contact_id)
-    if contact is None:
+    bus = _bus()
+    existing = bus.get(contact_id)
+    if existing is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
@@ -538,15 +448,15 @@ def update_contact(
     # ``role`` is a clean no-op.
     newly_assigned = False
 
+    new_name: Optional[str] = None
     if "name" in payload.model_fields_set and payload.name:
-        contact.name = payload.name.strip()
+        new_name = payload.name.strip()
 
+    new_display_name: Optional[str] = None
     if "display_name" in payload.model_fields_set:
-        contact.display_name = payload.display_name
+        new_display_name = payload.display_name
 
-    if "separated" in payload.model_fields_set:
-        contact.separated_at = utcnow_naive() if payload.separated else None
-
+    new_role: Optional[str] = None
     if "role" in payload.model_fields_set and payload.role is not None:
         if payload.role not in _CONTACT_ROLES:
             raise MagiHTTPException(
@@ -557,20 +467,14 @@ def update_contact(
         # hook can detect a transition INTO assigned (vs.
         # an idempotent assigned→assigned PATCH that
         # shouldn't trigger a fresh seed round).
-        prev_role = contact.role
-        if payload.role == "assigned" and prev_role != "assigned" and session.scalar(
-            select(Contact.id).where(
-                Contact.role == "assigned",
-                Contact.separated_at.is_(None),
-                Contact.id != contact.id,
-            )
-        ) is not None:
+        prev_role = existing.role
+        if payload.role == "assigned" and prev_role != "assigned" and bus.assigned_active():
             raise MagiHTTPException(
                 status_code=409,
                 code="conflict.assigned_user_exists",
                 detail="This MAGI already has an assigned user",
             )
-        contact.role = payload.role
+        new_role = payload.role
         # Tag the local variable for the post-commit
         # branch. We need this outside the ``if`` so it
         # survives the conditional execution.
@@ -578,27 +482,41 @@ def update_contact(
             payload.role == "assigned" and prev_role != "assigned"
         )
 
+    new_admin: Optional[bool] = None
     # ``admin`` toggle — independent of ``role`` (the role
     # transition above has its own seed-hook trigger; the
     # admin bit doesn't affect seeding).
     if "admin" in payload.model_fields_set and payload.admin is not None:
-        contact.admin = bool(payload.admin)
+        new_admin = bool(payload.admin)
 
+    new_telegram_id: Optional[int] = None
     if "telegram_id" in payload.model_fields_set:
         new_tg = payload.telegram_id
-        if new_tg is not None:
-            existing = session.scalar(
-                select(Contact).where(Contact.telegram_id == new_tg)
+        if new_tg is not None and bus.telegram_id_bound(new_tg, exclude_uid=contact_id):
+            raise MagiHTTPException(
+                status_code=409, code="conflict.telegram_id_already_bound",
+                detail=f"telegram_id {new_tg} is already bound",
             )
-            if existing is not None and existing.id != contact.id:
-                raise MagiHTTPException(
-                    status_code=409, code="conflict.telegram_id_already_bound",
-                    detail=f"telegram_id {new_tg} is already bound",
-                )
-        contact.telegram_id = new_tg
+        new_telegram_id = new_tg
 
-    session.commit()
-    session.refresh(contact)
+    new_separated: Optional[bool] = None
+    if "separated" in payload.model_fields_set:
+        new_separated = payload.separated
+
+    view = bus.update_contact(
+        contact_id,
+        name=new_name,
+        display_name=new_display_name,
+        role=new_role,
+        admin=new_admin,
+        telegram_id=new_telegram_id,
+        separated=new_separated,
+    )
+    if view is None:
+        raise MagiHTTPException(
+            status_code=404, code="not_found.contact",
+            detail="contact not found",
+        )
 
     # Preset seed hook — fires only on a TRUE transition
     # into ``assigned``. assigned→admin→assigned would
@@ -610,109 +528,11 @@ def update_contact(
     # double-seed is a no-op rather than a duplicate.
     if newly_assigned:
         try:
-            from magi.proactive.task_presets import seed_presets_for_contact
-            seed_presets_for_contact(session, contact.id)
-            session.commit()
+            bus.seed_presets_for_contact(view.id)
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for contact %d (role → assigned): %s",
-                contact.id, exc,
+                view.id, exc,
             )
 
-    return _serialize(contact, login_methods=_single_login_methods(session, contact))
-
-
-# -- notes sub-resource ---------------------------------------------------
-
-class NoteOut(BaseModel):
-    id: int
-    contact_id: int
-    note: str
-    source: str
-    created_at: str
-    updated_at: str
-
-
-class NoteListOut(BaseModel):
-    items: list[NoteOut]
-    total: int
-
-
-@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
-def list_contact_notes(
-    contact_id: int,
-    _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
-) -> NoteListOut:
-    from magi.bus.models.local.contact import Contact, ContactNote
-    contact = session.get(Contact, contact_id)
-    if contact is None:
-        raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
-            detail="contact not found",
-        )
-    rows = session.scalars(
-        select(ContactNote)
-        .where(ContactNote.contact_id == contact_id)
-        .order_by(ContactNote.created_at.desc())
-    ).all()
-    items = [
-        NoteOut(
-            id=r.id,
-            contact_id=r.contact_id,
-            note=r.note,
-            source=r.source,
-            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
-            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
-        )
-        for r in rows
-    ]
-    return NoteListOut(items=items, total=len(items))
-
-
-# -- notes sub-resource ---------------------------------------------------
-
-class NoteOut(BaseModel):
-    id: int
-    contact_id: int
-    note: str
-    source: str
-    created_at: str
-    updated_at: str
-
-
-class NoteListOut(BaseModel):
-    items: list[NoteOut]
-    total: int
-
-
-@router.get("/contacts/{contact_id}/notes", response_model=NoteListOut)
-def list_contact_notes(
-    contact_id: int,
-    _admin: AdminGate,
-    session: Annotated[Session, Depends(get_session)],
-) -> NoteListOut:
-    from magi.bus.models.local.contact import Contact, ContactNote
-    contact = session.get(Contact, contact_id)
-    if contact is None:
-        raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
-            detail="contact not found",
-        )
-    rows = session.scalars(
-        select(ContactNote)
-        .where(ContactNote.contact_id == contact_id)
-        .order_by(ContactNote.created_at.desc())
-    ).all()
-    items = [
-        NoteOut(
-            id=r.id,
-            contact_id=r.contact_id,
-            note=r.note,
-            source=r.source,
-            created_at=r.created_at.isoformat().replace("+00:00", "Z"),
-            updated_at=r.updated_at.isoformat().replace("+00:00", "Z"),
-        )
-        for r in rows
-    ]
-    return NoteListOut(items=items, total=len(items))
+    return _serialize(view, login_methods=_single_login_methods(bus, view))

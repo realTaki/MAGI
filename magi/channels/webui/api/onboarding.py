@@ -31,14 +31,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-from datetime import datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
-from magi.db import ControlOperator, MAGIS, MAGISAdmin, require_state_dir
+from magi.bus import bootstrap
+from magi.bus.services.setting import SettingsService
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.webui import control_store
@@ -47,9 +45,15 @@ logger = logging.getLogger("magi.api.onboarding")
 
 router = APIRouter(tags=["onboarding"])
 
+
 def _state_dir() -> str:
     """Read MAGI_STATE_DIR each call — keeps state_dir testable + env-friendly."""
-    return require_state_dir()
+    return SettingsService.require_state_dir()
+
+
+def _bus():
+    """Build the BUS facade for the runtime's state directory."""
+    return bootstrap(_state_dir())
 
 
 # -- request / response schemas -----------------------------------------
@@ -197,25 +201,26 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
+    state_dir = _state_dir()
+    bus = _bus()
+
     if control_store.enabled():
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-            admins = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all() if root else []
+        root_id = bus.magis.get_root_magis_id()
+        admins = (
+            [str(a.magic_id) for a in bus.magis.list_admins(root_id)]
+            if root_id is not None
+            else []
+        )
         username = control_store.get("telegram.bot_username")
         return OnboardingStatus(
             bot_saved=bool(username), bot_username=username,
-            super_admins_count=len(admins), super_admins=[str(a.telegram_id) for a in admins],
+            super_admins_count=len(admins), super_admins=admins,
             onboarding_complete=(control_store.get("onboarding.complete") or "").lower() in {"true", "1"},
             login_methods=["tg_code"] if admins else [],
             mode="with_tg" if admins else None,
         )
-    from magi.db import Contact, open_session
-    from magi.db.settings import state_get
-    from magi.bus.models.magis.auth_credential import AuthCredential
 
-    state_dir = _state_dir()
-    bot_username = state_get(state_dir, "telegram.bot_username")
+    bot_username = bus.settings.get("telegram.bot_username")
 
     # Super admins live in the contacts table (unified with
     # the rest of the org directory) — that's the single source
@@ -229,33 +234,25 @@ async def get_status() -> OnboardingStatus:
     login_methods: list[str] = []
     chosen_mode: str | None = None
     try:
-        with open_session() as session:
-            admin_rows = list(session.scalars(
-                select(Contact).where(Contact.admin == 1)
-            ).all())
-            for admin in admin_rows:
-                if admin.telegram_id is not None:
-                    admins.append(str(admin.telegram_id))
-            # ``login_methods`` summarises the wizard's
-            # owner (the first admin row). The wizard
-            # only ever sets up one admin's credentials
-            # during onboarding, so the first row is the
-            # source of truth.
-            if admin_rows:
-                first = admin_rows[0]
-                has_password = session.scalar(
-                    select(AuthCredential).where(
-                        AuthCredential.uid == first.id,
-                        AuthCredential.kind == "password",
-                    )
-                ) is not None
-                if has_password:
-                    login_methods.append("password")
-                if first.telegram_id is not None:
-                    login_methods.append("tg_code")
-                chosen_mode = "with_tg" if first.telegram_id else (
-                    "webui_only" if has_password else None
-                )
+        admin_rows = bus.contacts.list_admins()
+        for admin in admin_rows:
+            if admin.telegram_id is not None:
+                admins.append(str(admin.telegram_id))
+        # ``login_methods`` summarises the wizard's
+        # owner (the first admin row). The wizard
+        # only ever sets up one admin's credentials
+        # during onboarding, so the first row is the
+        # source of truth.
+        if admin_rows:
+            first = admin_rows[0]
+            has_password = bus.auth.has_password_for(first.id)
+            if has_password:
+                login_methods.append("password")
+            if first.telegram_id is not None:
+                login_methods.append("tg_code")
+            chosen_mode = "with_tg" if first.telegram_id else (
+                "webui_only" if has_password else None
+            )
     except Exception:
         # If the table is unreachable (very early boot) the
         # wizard still loads; admins stays empty until the
@@ -282,13 +279,13 @@ async def get_status() -> OnboardingStatus:
     # from when bot setup WAS the only onboarding step. Treat
     # the old key as one-shot-equivalent so an operator
     # upgrading from v0 doesn't get sent back into the wizard.
-    complete_raw = state_get(state_dir, "onboarding.complete")
+    complete_raw = bus.settings.get("onboarding.complete")
     if complete_raw is None:
         # Pre-rename deployments still have the older
         # ``telegram.onboarding_complete`` key. Read it once,
         # migrate forward lazily (don't write here — the
         # wizard's completion will write the new key).
-        old_raw = state_get(state_dir, "telegram.onboarding_complete")
+        old_raw = bus.settings.get("telegram.onboarding_complete")
         if old_raw is not None:
             logger.info(
                 "migrating legacy telegram.onboarding_complete -> onboarding.complete",
@@ -349,45 +346,13 @@ async def set_admin_password_onboarding(
     except ValueError as exc:
         return SetAdminPasswordResponse(ok=False, error=str(exc))
 
-    from magi.db import Contact, open_session
-    from magi.bus.models.magis.auth_credential import AuthCredential
+    bus = _bus()
 
-    with open_session() as session:
-        existing_admin = session.scalar(
-            select(Contact).where(Contact.admin == 1).order_by(Contact.id)
-        )
-        if existing_admin is None:
-            # First admin — fresh insert. ``role='assigned'``
-            # mirrors the typical single-MAGI operator.
-            row = Contact(name=name, admin=True, role="assigned")
-            session.add(row)
-            session.flush()
-            admin_uid = row.id
-        else:
-            # Subsequent admin renames (operator re-entered
-            # the wizard) reuse the row so chat history
-            # survives. If a password row already exists,
-            # we overwrite the hash — the operator is
-            # explicitly setting a new password.
-            existing_admin.name = name
-            admin_uid = existing_admin.id
-
-        # Upsert the password credential.
-        cred = session.scalar(
-            select(AuthCredential).where(
-                AuthCredential.uid == admin_uid,
-                AuthCredential.kind == "password",
-            )
-        )
-        if cred is None:
-            session.add(AuthCredential(
-                uid=admin_uid, kind="password", secret_hash=new_hash,
-            ))
-        else:
-            cred.secret_hash = new_hash
-            cred.updated_at = datetime.utcnow()
-
-        session.commit()
+    # Upsert the first admin Contact row (create on first call, rename on
+    # subsequent calls so chat history survives a re-entered wizard).
+    admin_uid = bus.contacts.upsert_first_admin(name=name)
+    # Upsert the password credential.
+    bus.auth.ensure_password_credential(uid=admin_uid, secret_hash=new_hash)
 
     logger.info(
         "onboarding: admin password set",
@@ -427,9 +392,9 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     if control_store.enabled():
         control_store.set("onboarding.complete", "true")
         return CompleteResponse(ok=True)
-    from magi.bus import bootstrap
+    from magi.bus import bootstrap as _bootstrap
 
-    bus = bootstrap(_state_dir())
+    bus = _bootstrap(_state_dir())
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
@@ -441,14 +406,11 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
             bus.action_item.ensure_llm_credentials_item(owner_uid=admin.id)
             for admin in admins
         )
-    except Exception as exc:  # pragma: no cover — DB failure
-        logger.exception(
-            "complete: action-item insert failed (%d admins, %d inserted before error)",
-            len(admins) if 'admins' in locals() else 0, inserted if 'inserted' in locals() else 0,
-        )
+    except Exception:  # pragma: no cover — DB failure
+        logger.exception("complete: action-item insert failed")
         return CompleteResponse(ok=False)
 
-        # 1.5. Branch-aware credential check. A WebUI-only
+    # 1.5. Branch-aware credential check. A WebUI-only
     #      wizard must have at least one admin with a
     #      password credential before ``/complete`` is
     #      allowed to flip the flag — otherwise the
@@ -471,7 +433,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     # 2. Flip the flag only after the inserts succeeded.
     try:
         bus.settings.set("onboarding.complete", "true")
-    except Exception as exc:  # pragma: no cover — disk / permission errors
+    except Exception:  # pragma: no cover — disk / permission errors
         logger.exception("failed to write onboarding_complete flag")
         return CompleteResponse(ok=False)
     logger.info(
@@ -504,12 +466,12 @@ async def restart_onboarding(_payload: RestartRequest) -> RestartResponse:
     if control_store.enabled():
         control_store.delete("onboarding.complete")
         return RestartResponse(ok=True)
-    from magi.db.settings import state_delete
 
+    bus = _bus()
     try:
-        state_delete(_state_dir(), "onboarding.complete")
-        state_delete(_state_dir(), "telegram.onboarding_complete")
-    except Exception as exc:  # pragma: no cover — disk / permission errors
+        bus.settings.delete("onboarding.complete")
+        bus.settings.delete("telegram.onboarding_complete")
+    except Exception:  # pragma: no cover — disk / permission errors
         logger.exception("failed to clear onboarding_complete flag")
         return RestartResponse(ok=False)
     logger.info("onboarding marked incomplete (restart)")
@@ -552,13 +514,13 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
             logger.exception("failed to configure root runtime telegram")
             return SaveBotResponse(ok=False, error=str(exc))
         return SaveBotResponse(ok=True)
-    from magi.db.settings import state_set
 
     state_dir = _state_dir()
+    bus = _bus(state_dir)
     try:
-        state_set(state_dir, "telegram.bot_token", payload.token)
-        state_set(state_dir, "telegram.bot_username", payload.username)
-    except Exception as exc:  # pragma: no cover — disk / permission errors
+        bus.settings.set("telegram.bot_token", payload.token)
+        bus.settings.set("telegram.bot_username", payload.username)
+    except Exception:  # pragma: no cover — disk / permission errors
         logger.exception("failed to write settings")
         return SaveBotResponse(ok=False, error=str(exc))
 
@@ -634,6 +596,9 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     every subsequent outbound goes through the dispatcher.
     """
     from datetime import datetime, timezone
+    state_dir = _state_dir()
+    bus = _bus(state_dir)
+
     if control_store.enabled():
         delivery_address = payload.tgid.strip()
         if not delivery_address.lstrip("-").isdigit():
@@ -655,9 +620,8 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
             control_store.delete(f"telegram.verify_code.{delivery_address}")
             return SendAdminCodeResponse(ok=False, error=f"Telegram send failed: {exc}")
         return SendAdminCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-    from magi.db.settings import state_get, state_set
 
-    bot_token = state_get(_state_dir(), "telegram.bot_token")
+    bot_token = bus.settings.get("telegram.bot_token")
     if not bot_token:
         return SendAdminCodeResponse(
             ok=False,
@@ -677,7 +641,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     # LAST SENT timestamp stored in settings (separate from the code's
     # own expiry so the cooldown applies even if the previous code is
     # already expired).
-    previous = state_get(_state_dir(), f"telegram.verify_code.{delivery_address}")
+    previous = bus.settings.get(f"telegram.verify_code.{delivery_address}")
     if previous:
         try:
             prev_data = json.loads(previous)
@@ -713,8 +677,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
 
     # Persist BEFORE we send — if Telegram fails, the user can retry
     # with the same code still in settings, no surprise active codes.
-    state_set(
-        _state_dir(),
+    bus.settings.set(
         f"telegram.verify_code.{delivery_address}",
         json.dumps(
             {
@@ -740,8 +703,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     try:
         await tg_bot.send_text_raw(bot_token, int(delivery_address), text)
     except Exception as exc:
-        from magi.db.settings import state_delete
-        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+        bus.settings.delete(f"telegram.verify_code.{delivery_address}")
         return SendAdminCodeResponse(
             ok=False, error=f"Telegram send failed: {exc}",
         )
@@ -771,6 +733,9 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     4. Fetch a display name via ``getChat`` for the frontend.
     """
     from datetime import datetime, timezone
+    state_dir = _state_dir()
+    bus = _bus(state_dir)
+
     if control_store.enabled():
         delivery_address, code = payload.tgid.strip(), payload.code.strip()
         raw = control_store.get(f"telegram.verify_code.{delivery_address}")
@@ -784,14 +749,13 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
         except (TypeError, ValueError, json.JSONDecodeError):
             return VerifyAdminCodeResponse(ok=False, error="Stored code is corrupt")
         return VerifyAdminCodeResponse(ok=True)
-    from magi.db.settings import state_get
 
     delivery_address = payload.tgid.strip()
     code = payload.code.strip()
     if not code.isdigit() or len(code) != 6:
         return VerifyAdminCodeResponse(ok=False, error="Code must be 6 digits")
 
-    raw = state_get(_state_dir(), f"telegram.verify_code.{delivery_address}")
+    raw = bus.settings.get(f"telegram.verify_code.{delivery_address}")
     if not raw:
         return VerifyAdminCodeResponse(
             ok=False,
@@ -819,9 +783,8 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
         expires_at = 0
     now_ts = datetime.now(timezone.utc).timestamp()
 
-    from magi.db.settings import state_delete
     if not expires_at or now_ts >= expires_at:
-        state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+        bus.settings.delete(f"telegram.verify_code.{delivery_address}")
         return VerifyAdminCodeResponse(
             ok=False,
             error="Code expired — request a new one.",
@@ -829,7 +792,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
 
     # Burn on any path that gets past expiry (mismatch, success,
     # anything) so the code can't be re-tried by an attacker.
-    state_delete(_state_dir(), f"telegram.verify_code.{delivery_address}")
+    bus.settings.delete(f"telegram.verify_code.{delivery_address}")
 
     if stored != code:
         return VerifyAdminCodeResponse(ok=False, error="Code does not match")
@@ -843,31 +806,13 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     # later remove via save_admin's diff step, doubling the
     # work for no gain.
 
-    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
+    bot_token = bus.settings.get("telegram.bot_token") or ""
     display_name = await tg_bot.get_chat_name_raw(bot_token, int(delivery_address))
     logger.info(
         "admin chat verified via code",
         extra={"display_name": display_name},
     )
     return VerifyAdminCodeResponse(ok=True, display_name=display_name)
-
-
-async def _fetch_display_name(delivery_address: str) -> str | None:
-    """Resolve a TG chat display name via raw HTTP API.
-    Fails silently — returns ``None`` on any error.
-    """
-    from magi.db.settings import state_get
-
-    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
-    return await tg_bot.get_chat_name_raw(bot_token, int(delivery_address))
-
-
-def _now_iso() -> str:
-    """UTC ISO timestamp without microseconds — the settings table is
-    text-only and we don't need sub-second precision for a 5-min TTL."""
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
 @router.post("/save-admin", response_model=SaveAdminResponse)
@@ -898,6 +843,9 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     gate (``_is_admin_or_assigned_contact`` in
     ``contacts.py``) reads exclusively from this table.
     """
+    state_dir = _state_dir()
+    bus = _bus(state_dir)
+
     if control_store.enabled():
         try:
             telegram_ids = sorted({int(value.strip()) for value in payload.tgids if value.strip()})
@@ -905,26 +853,15 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             return SaveAdminResponse(ok=False, error="tgid must be numeric")
         if not telegram_ids:
             return SaveAdminResponse(ok=False, error="At least one tgid required")
-        from magi.db.magis import open_magis_session
-        with open_magis_session() as session:
-            root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-            if root is None:
-                return SaveAdminResponse(ok=False, error="Genesis MAGIS is not initialized")
-            existing = session.scalars(select(MAGISAdmin).where(MAGISAdmin.magis_id == root.id)).all()
-            wanted = set(telegram_ids)
-            for operator in existing:
-                if operator.telegram_id not in wanted:
-                    session.delete(operator)
-            known = {operator.telegram_id: operator for operator in existing}
-            for telegram_id in telegram_ids:
-                if telegram_id not in known:
-                    session.add(MAGISAdmin(magis_id=root.id, telegram_id=telegram_id, display_name=f"Admin {telegram_id}"))
-            session.commit()
+        root_id = bus.magis.get_root_magis_id()
+        if root_id is None:
+            return SaveAdminResponse(ok=False, error="Genesis MAGIS is not initialized")
+        bus.magis.replace_admins(
+            root_id,
+            [(tg_id, f"Admin {tg_id}") for tg_id in telegram_ids],
+        )
         return SaveAdminResponse(ok=True, count=len(telegram_ids))
-    from magi.db import Contact, open_session
-    from magi.channels import dispatcher as channel_dispatcher
 
-    state_dir = _state_dir()
     cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})
     if not cleaned:
         return SaveAdminResponse(ok=False, error="At least one tgid required")
@@ -941,9 +878,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             )
 
     # Display name resolution runs in parallel for all ids.
-    from magi.db.settings import state_get
-
-    bot_token = state_get(_state_dir(), "telegram.bot_token") or ""
+    bot_token = bus.settings.get("telegram.bot_token") or ""
     display_names: dict[int, str | None] = {}
     if parsed_ids:
         results = await asyncio.gather(
@@ -961,75 +896,13 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
             else:
                 display_names[cid] = name
 
+    # The bus service performs the diff (drop admins not in the
+    # new set, upsert/insert the rest) and returns the resulting
+    # contact ids in input order.
     try:
-        new_ct_ids: list[int] = []
-        with open_session() as session:
-            # 1) Existing admin rows not in the new list → delete
-            #    (these are onboarding-created shells; no
-            #    business data so dropping is safe). Match by
-            #    the legacy ``Contact.telegram_id`` column
-            #    (the read-cache the inbound handler still
-            #    uses) — admins without a TG binding can't
-            #    ever have been put here by onboarding, but
-            #    we tolerate them for parity with the API
-            #    surface.
-            # Identify existing operators by the new
-            # ``admin=True`` boolean (replaces the pre-2024
-            # ``role='admin'`` query — admin was split from
-            # role when the two concepts collided on the
-            # served user who is also an operator).
-            existing_admins = session.scalars(
-                select(Contact).where(Contact.admin == 1)
-            ).all()
-            new_id_set = set(parsed_ids)
-            for old in existing_admins:
-                if old.telegram_id is None or old.telegram_id not in new_id_set:
-                    session.delete(old)
-
-            # 2) Each new chat → ensure a Contact row
-            #    exists with admin=True. New operators are
-            #    stamped ``role='assigned'`` (matches the
-            #    migration's data semantics: a fresh operator
-            #    is the served user of this single-operator
-            #    install). Promote existing regular contacts
-            #    in the rare case the chat was already
-            #    bound.
-            #
-            # The actual IM binding is the channel adapter's
-            # job (D.28): we call ``dispatcher.bind_im_id``
-            # AFTER the with block to write
-            # ``user_im_bindings`` (canonical) and sync
-            # ``Contact.telegram_id`` (legacy read-cache).
-            for cid in parsed_ids:
-                contact = session.scalar(
-                    select(Contact).where(Contact.telegram_id == cid)
-                )
-                if contact is None:
-                    contact = Contact(
-                        name=display_names[cid] or f"Admin {cid}",
-                        display_name=display_names[cid],
-                        role="assigned",
-                        admin=True,
-                    )
-                    session.add(contact)
-                    session.flush()
-                else:
-                    contact.admin = True
-                    # If the row was previously not the
-                    # served user (role='guest'), also flip
-                    # it to 'assigned' — the operator of a
-                    # single-operator install IS the served
-                    # user. Multi-operator installs can
-                    # manually re-set role afterwards if
-                    # needed.
-                    if contact.role == "guest":
-                        contact.role = "assigned"
-                    if display_names[cid]:
-                        contact.name = display_names[cid]
-                        if not contact.display_name:
-                            contact.display_name = display_names[cid]
-                new_ct_ids.append(contact.id)
-            session.commit()
+        new_ct_ids = bus.contacts.replace_admin_set(
+            [(cid, display_names.get(cid)) for cid in parsed_ids]
+        )
     except Exception as exc:
         logger.exception("failed to write admin contacts")
         return SaveAdminResponse(ok=False, error=str(exc))
@@ -1038,8 +911,8 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     # channel dispatcher. The adapter writes
     # ``user_im_bindings`` (canonical) and syncs the
     # legacy ``Contact.telegram_id`` column for the bot's
-    # inbound handler. Done outside the with block because
-    # the dispatcher opens its own session (nested BEGIN
+    # inbound handler. Done outside the bus write so the
+    # dispatcher opens its own session (nested BEGIN
     # IMMEDIATE inside an outer transaction would deadlock
     # SQLite).
     from magi.channels import dispatcher as channel_dispatcher

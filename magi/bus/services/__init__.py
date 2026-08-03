@@ -15,6 +15,7 @@ from magi.bus.services.auth import AuthService
 from magi.bus.services.contact import ContactsService
 from magi.bus.services.connector import ConnectorService
 from magi.bus.services.delivery import DeliveryService
+from magi.bus.services.dispatcher import DispatcherService
 from magi.bus.services.magic import MagicService
 from magi.bus.services.magis import MagisService
 from magi.bus.services.memory import MemoryService
@@ -42,6 +43,7 @@ __all__ = [
     "ContactsService",
     "ConnectorService",
     "DeliveryService",
+    "DispatcherService",
     "MagicService",
     "MagisService",
     "MemoryService",
@@ -56,3 +58,4 @@ __all__ = [
     "ToolDefinition",
     "ToolJobsService",
 ]
+
