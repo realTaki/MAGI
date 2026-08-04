@@ -99,8 +99,17 @@ def _direct_magis_binding(session: Any, magic_id: int):
 class MagicService:
     """Public MAGI Society runtime registry; PG-backed in production."""
 
-    def __init__(self, state_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        state_dir: str | None = None,
+        *,
+        runtime_dispatcher: Any | None = None,
+    ) -> None:
         self._state_dir = state_dir
+        # Phase 2 — replaced the direct ``magi.orchestrator.client``
+        # import with a BUS-injected dispatcher.  Default keeps the
+        # legacy K8s behaviour bit-identical.
+        self._runtime_dispatcher = runtime_dispatcher
 
     @staticmethod
     def _runtime_magic(session: Any):
@@ -407,10 +416,16 @@ class MagicService:
                 select(EveRuntime).where(EveRuntime.magic_id == magic.id)
             )
             if runtime is not None and runtime.deployment_name:
-                from magi.orchestrator.client import request_lifecycle
-                from magi.orchestrator.contracts import EveSpec
+                # Phase 2 — replaced direct ``magi.orchestrator.client``
+                # import with the BUS dispatcher.  The dispatcher
+                # internally still hits the legacy K8s client so the
+                # K8s Profile is bit-identical; Phase 4 substitutes the
+                # body with a real BUS command queue.
+                from magi.bus.contracts.lifecycle import RuntimeSpec
 
-                request_lifecycle("delete", EveSpec(magic_id=magic.id, name=magic.name))
+                spec = RuntimeSpec(magic_id=magic.id, name=magic.name)
+                dispatcher = self._runtime_dispatcher or _default_dispatcher()
+                dispatcher.delete(spec)
             session.delete(magic)
             session.commit()
             return True
