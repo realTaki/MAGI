@@ -6,7 +6,7 @@ The :class:`Bus` facade exposes a per-domain service namespace
 (``bus.session``, ``bus.memory``, ``bus.tool_jobs``, ...).
 """
 
-from magi.bus.bootstrap import Bus, bootstrap
+from magi.bus.bootstrap import Bus, bootstrap, get_bus
 from magi.bus.contracts import (
     A2AInvocationRequest,
     ActionItemView,
@@ -65,6 +65,7 @@ __all__ = [
     # public domain facade
     "Bus",
     "bootstrap",
+    "get_bus",
     # queue + transport
     "BusStore",
     "BusStoreProtocol",

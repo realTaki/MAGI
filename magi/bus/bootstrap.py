@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from magi.bus.services import (
     ActionItemService,
@@ -23,6 +24,7 @@ from magi.bus.services import (
     ToolCatalogService,
     ToolJobsService,
 )
+from magi.bus.services.control_registry import ControlRegistryService
 from magi.bus.services.dispatcher import DispatcherService
 from magi.bus.services.runtime import BackendDispatcherService, RuntimeRegistryService
 from magi.bus.store import BusStore
@@ -54,6 +56,9 @@ class Bus:
     # for callers that rely on positional construction.
     runtime: BackendDispatcherService
     registry: RuntimeRegistryService
+    # Phase 3 close-out — Local control-plane registry (no-op on K8s
+    # where the Compose-Root passes ``control_engine=None``).
+    control_registry: Optional[ControlRegistryService] = None
 
 
 def bootstrap(
@@ -62,6 +67,7 @@ def bootstrap(
     initialise_local: bool = False,
     runtime_backend: object | None = None,
     magis_engine: object | None = None,
+    control_engine: object | None = None,
 ) -> Bus:
     """Create the public BUS facade after optionally initialising SQLite.
 
@@ -72,6 +78,11 @@ def bootstrap(
     ``magis_engine`` (Phase 3) lets the Composition Root inject a
     dedicated MAGIS engine (Local Profile SQLite, K8s PostgreSQL, …)
     so the public schema lives outside the Adam's private database.
+
+    ``control_engine`` (Phase 3 close-out) lets the Composition Root
+    inject the Local control-plane registry engine.  K8s Profile
+    passes ``None``; the resulting Bus still exposes a
+    ``control_registry`` slot — it just resolves to ``None``.
     """
     if magis_engine is not None:
         # Phase 3 — propagate injected engine to the module-level cache
@@ -86,6 +97,15 @@ def bootstrap(
         init_orm(state_dir, seed_root=False)
     store = BusStore(state_dir)
     runtime_service = BackendDispatcherService(backend=runtime_backend)
+
+    control_registry_service: Optional[ControlRegistryService] = None
+    if control_engine is not None:
+        from magi.bus.db.control.repository import ControlRepository
+
+        control_registry_service = ControlRegistryService(
+            ControlRepository(control_engine)
+        )
+
     return Bus(
         agent_runs=AgentRunsService(store),
         tool_catalog=ToolCatalogService(state_dir),
@@ -107,4 +127,33 @@ def bootstrap(
         dispatcher=DispatcherService(state_dir),
         runtime=runtime_service,
         registry=RuntimeRegistryService(dispatcher=runtime_service),
+        control_registry=control_registry_service,
     )
+
+
+# --------------------------------------------------------------------------- #
+# process-wide singleton
+# --------------------------------------------------------------------------- #
+
+_bus: Bus | None = None
+
+
+def get_bus() -> Bus:
+    """Return the process-wide BUS facade, initialising it on first call.
+
+    This is the **only** entry point that modules outside ``magi.bus``
+    should use.  It hides ``state_dir`` / ``MAGI_STATE_DIR`` entirely —
+    consumers receive a ready-to-use ``Bus`` without ever knowing where
+    the SQLite database lives.
+
+    The singleton is process-wide (like :func:`magi.bus.db.engine.get_engine`).
+    Tests that need a different state directory should call
+    :func:`bootstrap` directly or set ``MAGI_STATE_DIR`` before the first
+    call to :func:`get_bus`.
+    """
+    global _bus
+    if _bus is None:
+        from magi.bus.db.engine import require_state_dir
+
+        _bus = bootstrap(require_state_dir())
+    return _bus
