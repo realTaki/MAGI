@@ -45,6 +45,18 @@ from magi.bus.contracts import (
     ToolDefinition,
     ToolResult,
 )
+from magi.bus.contracts.lifecycle import (
+    KubernetesBackendDetail,
+    MagisProvisionResult,
+    RuntimeOperationResult,
+    RuntimeSpec,
+)
+from magi.bus.contracts.runtime import BackendKind, RuntimeEndpoint
+from magi.bus.services.runtime import (
+    BackendDispatcherService,
+    OrchestratorUnavailable,
+    RuntimeRegistryService,
+)
 from magi.bus.store import BusStore
 from magi.bus.stream import StreamEvent, StreamHub, get_stream_hub
 
@@ -87,5 +99,16 @@ __all__ = [
     "CallerIdentity",
     # action_item DTOs
     "ActionItemView",
+    # Phase 2 — platform-neutral Runtime lifecycle + endpoint DTOs.
+    "BackendKind",
+    "RuntimeEndpoint",
+    "RuntimeSpec",
+    "RuntimeOperationResult",
+    "MagisProvisionResult",
+    "KubernetesBackendDetail",
+    # Phase 2 — Runtime lifecycle + registry services.
+    "BackendDispatcherService",
+    "RuntimeRegistryService",
+    "OrchestratorUnavailable",
 ]
 

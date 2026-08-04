@@ -404,7 +404,7 @@ class ScheduleTaskTool(Tool):
             content=(
                 f"{'updated' if is_update else 'created'} task "
                 f"{name!r} (id={task_id}, frequency={frequency!r}, "
-                f"cron={cron!r}, channel={channel!r})"
+                f"cron={cron!r}, channel={target_channel!r})"
             )
         )
 

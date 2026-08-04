@@ -54,6 +54,7 @@ class SessionService:
     def create(self, uid: int, *, channel: str, delivery_address: str | None = "") -> Session:
         validate_uid(uid)
         session_id, now = new_session_id(), utcnow_iso()
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             db.add(ChatSession(
                 session_id=session_id, uid=uid, channel=str(channel),
@@ -66,12 +67,14 @@ class SessionService:
     def get(self, uid: int, session_id: str) -> Session | None:
         validate_uid(uid)
         validate_session_id(session_id)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session_id)
             return self._session(row) if row is not None and row.uid == uid else None
 
     def find_latest_tg_session(self, uid: int) -> str | None:
         validate_uid(uid)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             return db.scalar(
                 select(ChatSession.session_id).where(
@@ -89,6 +92,7 @@ class SessionService:
         for index, message in enumerate(values):
             if message.role not in _ALLOWED_ROLES:
                 raise SessionCorruptError(f"messages[{index}].role {message.role!r} is not allowed")
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session_id)
             if row is None or row.uid != uid:
@@ -114,6 +118,7 @@ class SessionService:
         validate_uid(uid)
         validate_session_id(session_id)
         cleaned = title.strip()[:_TITLE_MAX_LEN] if title and title.strip() else None
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session_id)
             if row is None or row.uid != uid:
@@ -129,6 +134,7 @@ class SessionService:
     def set_title_if_null(self, uid: int, session_id: str, title: str, *, bump_updated: bool = True) -> Session | None:
         validate_uid(uid)
         validate_session_id(session_id)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             result = db.execute(
                 update(ChatSession).where(
@@ -140,6 +146,7 @@ class SessionService:
 
     def replace_compacted(self, session: Session, *, bump_updated: bool = False) -> Session:
         """Atomically persist compaction's active and archived transcript views."""
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session.session_id)
             if row is None or row.uid != session.uid:
@@ -171,6 +178,7 @@ class SessionService:
     def delete(self, uid: int, session_id: str) -> bool:
         validate_uid(uid)
         validate_session_id(session_id)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session_id)
             if row is None or row.uid != uid:
@@ -181,6 +189,7 @@ class SessionService:
 
     def list_summaries(self, uid: int, *, limit: int = 50, offset: int = 0) -> tuple[list[SessionSummary], int]:
         validate_uid(uid)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             headers = db.execute(
                 select(ChatSession).where(ChatSession.uid == uid).order_by(ChatSession.updated_at.desc())
@@ -205,6 +214,7 @@ class SessionService:
     def get_messages_page(self, uid: int, session_id: str, *, limit: int = 50, offset: int = 0, include_archived: bool = False) -> tuple[list[SessionMessage], int, int]:
         validate_uid(uid)
         validate_session_id(session_id)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             row = db.get(ChatSession, session_id)
             if row is None or row.uid != uid:
@@ -231,6 +241,7 @@ class SessionService:
         if not match:
             return [], 0
         base = """FROM chat_messages_fts JOIN chat_messages m ON m.id = chat_messages_fts.rowid JOIN chat_sessions s ON s.session_id = m.session_id WHERE chat_messages_fts MATCH :match AND s.uid = :uid"""
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             available = db.execute(text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_messages_fts'")).first()
             if available is None:
@@ -253,6 +264,7 @@ class SessionService:
 
     def resolve_delivery_address_for_session(self, session_id: str) -> str | None:
         validate_session_id(session_id)
+        from magi.bus.db import open_session
         with open_session(self._state_dir) as db:
             return db.scalar(select(ChatSession.delivery_address).where(ChatSession.session_id == session_id))
 

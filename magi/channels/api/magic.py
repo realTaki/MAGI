@@ -153,7 +153,7 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
     Anything we can't classify falls back to a 400 with the bus's
     detail so a future error type stays visible to the operator.
     """
-    from magi.orchestrator.client import OrchestratorUnavailable
+    from magi.bus.services.runtime import OrchestratorUnavailable
 
     if isinstance(exc, OrchestratorUnavailable):
         return MagiHTTPException(

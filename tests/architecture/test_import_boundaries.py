@@ -43,6 +43,11 @@ MAGI_ROOT = REPO_ROOT / "magi"
 # ``magi.bus.db`` — the *only* callers of ``magi.bus.db`` are the bus
 # services themselves (and the composition root + Alembic migration
 # runner, both of which are exempted below).
+#
+# Phase 2/3 (Local Standalone Deployment plan §4.4) — the BUS must never
+# import the orchestrator package; the orchestrator / API must not reach
+# into storage; the ``magi.deploy`` Composition Root namespace is the
+# sole exempted package (skipped via :data:`COMPOSITION_ROOT_PREFIXES`).
 RULES: list[tuple[str, list[str]]] = [
     # Domain packages — must not reach into storage or sibling domain
     # code.  They MAY import ``magi.bus`` (services + contracts + the
@@ -68,6 +73,11 @@ RULES: list[tuple[str, list[str]]] = [
     # protocol concern, not a Python one. The TASK bridge lives at
     # ``magi.bus.services.task_scheduler_bridge``; the API reaches
     # the scheduler only via that bridge.
+    #
+    # Phase 2/3 (Local Standalone Deployment plan §4.4) — the API
+    # must not import the orchestrator package directly; runtime
+    # endpoint resolution is a BUS concern reached via
+    # ``bus.registry.resolve_endpoint(magic_id)``.
     (
         "magi.channels.api",
         [
@@ -79,6 +89,11 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.connectors",
             "magi.bus.db",
             "magi.bus.models",
+            "magi.orchestrator",
+            "magi.orchestrator.backends",
+            "magi.orchestrator.client",
+            "magi.orchestrator.service",
+            "magi.orchestrator.contracts",
         ],
     ),
     # bus is the application core — must not import channel/agent
@@ -87,6 +102,12 @@ RULES: list[tuple[str, list[str]]] = [
     # worker is part of the bus-side task infrastructure, and
     # ``magi.bus.services.task_scheduler_bridge`` is the single Python
     # module allowed to hold the scheduler handle.
+    #
+    # Phase 2/3 (Local Standalone Deployment plan §4.4) — the BUS must
+    # not import the orchestrator package directly.  The runtime
+    # lifecycle seam is :class:`BackendDispatcherService`; the
+    # orchestrator's only contact with the BUS is via the DTOs and the
+    # bootstrap-registered engine injection.
     (
         "magi.bus",
         [
@@ -102,7 +123,32 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.agent.llm",
         ],
     ),
+    # Phase 2 — BUS services that own the runtime lifecycle seam must
+    # never reach back into the orchestrator package *implementations*
+    # (the legacy ``KubernetesEveBackend`` class, the orchestrator
+    # client, the FastAPI service).  The dispatcher legitimately
+    # imports the backend factory and the K8s *adapter* (which
+    # implements the Protocol) — those are exempted by the
+    # ``magi.orchestrator.backends`` sub-rule below.
+    ("magi.bus.services", ["magi.orchestrator.kubernetes", "magi.orchestrator.client", "magi.orchestrator.service", "magi.orchestrator.contracts"]),
+    # Phase 2 — the dispatcher must not import the legacy K8s class
+    # directly; it consumes the K8s *adapter* (which wraps the legacy
+    # class) via the factory's Protocol surface.
+    ("magi.bus.services.runtime", ["magi.orchestrator.kubernetes"]),
 ]
+
+# ``magi.deploy`` is the Composition-Root namespace — it is the sole
+# package allowed to import everything (including storage + the
+# orchestrator package).  The exemption is applied inside
+# ``_rule_violations`` below.
+COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.deploy", "magi.local"}
+
+# ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
+# ``magi.bus.models.*`` — that's the whole point of the consolidation.
+# The boundary rule's `_is_internal` check already lets a file under
+# ``magi.bus.*`` import any ``magi.bus.X`` submodule, so no additional
+# exception is needed here.
+ALLOWED_BUS_SUBDOMAINS_FOR_LOWER_LAYERS: dict[str, set[str]] = {}
 
 # ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
 # ``magi.bus.models.*`` — that's the whole point of the consolidation.
@@ -186,6 +232,13 @@ def _rule_violations() -> list[tuple[Path, int, str, str, str]]:
     for py_path in _iter_python_files():
         source_module = _module_name_from_path(py_path)
         if source_module is None:
+            continue
+        # Composition-Root exemption: ``magi.deploy`` and ``magi.local``
+        # are the only packages allowed to import everything (including
+        # storage + the orchestrator package).  Plan §5.3.
+        if any(
+            _is_internal(exempt, source_module) for exempt in COMPOSITION_ROOT_PREFIXES
+        ):
             continue
         for source_prefix, forbidden_prefixes in RULES:
             if not _is_internal(source_prefix, source_module):

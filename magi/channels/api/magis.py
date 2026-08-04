@@ -246,10 +246,18 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate) -> MAGISOut:
         raise _translate_bus_error(exc) from exc
     # Provisioning is control-plane work.  A MAGI never gets
     # Kubernetes API credentials just because it manages a MAGIS.
+    # Phase 2 — routed through the BUS dispatcher (plan §4.5: API
+    # publishes BUS commands, never calls orchestrator directly).
     try:
-        from magi.orchestrator.client import provision_magis
-        from magi.orchestrator.contracts import MagisBinding
-        provision_magis(MagisBinding(id=view.id, name=view.name))
+        from magi.bus import bootstrap
+        from magi.bus.services.runtime import OrchestratorUnavailable
+
+        bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+        bus.runtime.provision_magis(magis_id=view.id, magis_name=view.name)
+    except OrchestratorUnavailable as exc:
+        raise MagiHTTPException(
+            503, "runtime.magis_provisioning_unavailable", str(exc)
+        ) from exc
     except Exception as exc:
         raise MagiHTTPException(
             503, "runtime.magis_provisioning_unavailable", str(exc)

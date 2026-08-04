@@ -23,6 +23,7 @@ def bootstrap_local(
     data_root: Path | str,
     *,
     initialise: bool = False,
+    magis_dir: Path | str | None = None,
 ) -> Bus:
     """Build the Local Profile BUS facade rooted at ``data_root``.
 
@@ -35,6 +36,25 @@ def bootstrap_local(
     schema (idempotent — safe to call on every launch).  Phase 6's
     launcher is the canonical caller; tests may pass ``initialise=True``
     to set up a fresh ``tmp_path`` fixture.
+
+    ``magis_dir`` (Phase 3) overrides the per-MAGIS SQLite location; when
+    ``None`` the function picks ``<data_root>/MAGIS/local/magis.db``.  The
+    resulting engine is injected into the BUS so the public schema lives
+    outside the Adam's private database.
     """
     layout = LocalPathLayout(Path(data_root))
-    return bootstrap(str(layout.state_dir), initialise_local=initialise)
+    if magis_dir is None:
+        magis_dir = Path(data_root).expanduser().resolve() / "MAGIS" / "local"
+    magis_dir = Path(magis_dir)
+    magis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Phase 3 — build the per-MAGIS SQLite engine eagerly so the BUS
+    # facade receives it via bootstrap(..., magis_engine=...).
+    from magi.bus.db.magis.local_engine import build as build_local_engine
+
+    magis_engine = build_local_engine(magis_dir)
+    return bootstrap(
+        str(layout.state_dir),
+        initialise_local=initialise,
+        magis_engine=magis_engine,
+    )

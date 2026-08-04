@@ -17,15 +17,16 @@ router = APIRouter(tags=["runtime-proxy"])
 def _runtime_url(magic_id: int) -> str:
     """Resolve the upstream URL for the chosen MAGI's runtime.
 
-    Returns either ``http://<deployment>:42069`` when the EVA runtime
-    is observed running, the root runtime URL when the requested
-    MAGIC is the root MAGIS's ADAM, or raises 409 if the runtime
-    isn't running.
+    Phase 2 — delegates to :class:`RuntimeRegistryService` for the
+    platform-neutral endpoint descriptor instead of forging
+    ``f"http://{deployment_name}:42069"`` from the ORM row.
+    Falls back to the legacy ``bus.magis.root_runtime_url`` for the
+    root-runtime case so K8s behaviour stays bit-identical.
     """
     bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
-    runtime = bus.magic.get_runtime(magic_id)
-    if runtime and runtime.deployment_name and runtime.observed_state not in {"stopped", "deleted"}:
-        return f"http://{runtime.deployment_name}:42069"
+    endpoint = bus.registry.resolve_endpoint(magic_id)
+    if endpoint is not None:
+        return endpoint.base_url
     root_url = bus.magis.root_runtime_url(magic_id)
     if root_url is not None:
         return root_url

@@ -33,6 +33,17 @@ from magi.bus.contracts.runtime import RuntimeEndpoint
 logger = logging.getLogger("magi.bus.services.runtime")
 
 
+class OrchestratorUnavailable(RuntimeError):
+    """Raised when the lifecycle controller could not accept an operation.
+
+    Re-exported from the BUS layer so API handlers can catch a
+    BUS-defined exception instead of reaching into the orchestrator
+    package.  The orchestrator client raises its own
+    ``OrchestratorUnavailable``; the dispatcher wraps it as this type
+    before propagating.
+    """
+
+
 class BackendDispatcherService:
     """BUS facade for runtime lifecycle commands.
 
@@ -66,7 +77,16 @@ class BackendDispatcherService:
 
     def start(self, spec: RuntimeSpec) -> RuntimeOperationResult:
         """Bring one runtime up; idempotent."""
-        result = self.backend.start(spec)
+        try:
+            result = self.backend.start(spec)
+        except OrchestratorUnavailable:
+            raise
+        except RuntimeError as exc:
+            # Wrap backend-level RuntimeError as the BUS-defined
+            # ``OrchestratorUnavailable`` so API handlers can catch one
+            # exception type without reaching into the orchestrator
+            # package.
+            raise OrchestratorUnavailable(str(exc)) from exc
         logger.info(
             "runtime start dispatched",
             extra={
@@ -79,7 +99,12 @@ class BackendDispatcherService:
 
     def stop(self, spec: RuntimeSpec) -> RuntimeOperationResult:
         """Stop one runtime; state / data preserved."""
-        result = self.backend.stop(spec)
+        try:
+            result = self.backend.stop(spec)
+        except OrchestratorUnavailable:
+            raise
+        except RuntimeError as exc:
+            raise OrchestratorUnavailable(str(exc)) from exc
         logger.info(
             "runtime stop dispatched",
             extra={
@@ -92,7 +117,12 @@ class BackendDispatcherService:
 
     def delete(self, spec: RuntimeSpec) -> RuntimeOperationResult:
         """Remove one runtime's deployment resources."""
-        result = self.backend.delete(spec)
+        try:
+            result = self.backend.delete(spec)
+        except OrchestratorUnavailable:
+            raise
+        except RuntimeError as exc:
+            raise OrchestratorUnavailable(str(exc)) from exc
         logger.info(
             "runtime delete dispatched",
             extra={
@@ -168,4 +198,4 @@ class RuntimeRegistryService:
         return result.endpoint
 
 
-__all__ = ["BackendDispatcherService", "RuntimeRegistryService"]
+__all__ = ["BackendDispatcherService", "RuntimeRegistryService", "OrchestratorUnavailable"]

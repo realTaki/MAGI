@@ -9,8 +9,13 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
-from magi.orchestrator.kubernetes import KubernetesEveBackend
+from magi.bus.contracts.lifecycle import (
+    MagisProvisionResult,
+    RuntimeOperationResult,
+    RuntimeSpec,
+)
+from magi.orchestrator.backends.factory import create as create_backend
+from magi.orchestrator.contracts import EveSpec, MagisBinding
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:
@@ -49,7 +54,10 @@ def create_app() -> FastAPI:
         binding = MagisBinding.model_validate_json(body)
         if binding.id != magis_id:
             raise HTTPException(status_code=400, detail="path/body MAGIS id mismatch")
-        return KubernetesEveBackend().provision_magis(binding)
+        # Phase 2 — routed through the backend factory so the
+        # ``MAGI_BACKEND`` env var selects the implementation.
+        backend = create_backend()
+        return backend.provision_magis(magis_id=binding.id, magis_name=binding.name)
 
     async def _spec_and_auth(
         request: Request, x_magi_timestamp: str | None, x_magi_signature: str | None
@@ -58,40 +66,51 @@ def create_app() -> FastAPI:
         _verify_request(body, x_magi_timestamp, x_magi_signature)
         return EveSpec.model_validate_json(body)
 
-    @app.post("/v1/eves/{magic_id}/start", response_model=EveOperationResult)
+    def _to_runtime_spec(legacy: EveSpec) -> RuntimeSpec:
+        return RuntimeSpec(
+            magic_id=legacy.magic_id,
+            name=legacy.name,
+            magis_id=(legacy.magis.id if legacy.magis is not None else None),
+            magis_name=(legacy.magis.name if legacy.magis is not None else None),
+        )
+
+    @app.post("/v1/eves/{magic_id}/start", response_model=RuntimeOperationResult)
     async def start_eve(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
-    ) -> EveOperationResult:
-        spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magic_id != magic_id:
+    ) -> RuntimeOperationResult:
+        legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
+        if legacy.magic_id != magic_id:
             raise HTTPException(status_code=400, detail="path/body magic id mismatch")
-        return KubernetesEveBackend().start(spec)
+        backend = create_backend()
+        return backend.start(_to_runtime_spec(legacy))
 
-    @app.post("/v1/eves/{magic_id}/stop", response_model=EveOperationResult)
+    @app.post("/v1/eves/{magic_id}/stop", response_model=RuntimeOperationResult)
     async def stop_eve(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
-    ) -> EveOperationResult:
-        spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magic_id != magic_id:
+    ) -> RuntimeOperationResult:
+        legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
+        if legacy.magic_id != magic_id:
             raise HTTPException(status_code=400, detail="path/body magic id mismatch")
-        return KubernetesEveBackend().stop(spec)
+        backend = create_backend()
+        return backend.stop(_to_runtime_spec(legacy))
 
-    @app.post("/v1/eves/{magic_id}/delete", response_model=EveOperationResult)
+    @app.post("/v1/eves/{magic_id}/delete", response_model=RuntimeOperationResult)
     async def delete_eve(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
-    ) -> EveOperationResult:
-        spec = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if spec.magic_id != magic_id:
+    ) -> RuntimeOperationResult:
+        legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
+        if legacy.magic_id != magic_id:
             raise HTTPException(status_code=400, detail="path/body magic id mismatch")
-        return KubernetesEveBackend().delete(spec)
+        backend = create_backend()
+        return backend.delete(_to_runtime_spec(legacy))
 
     return app

@@ -25,7 +25,43 @@ def _iso(value: datetime | None) -> str:
     return value.isoformat() if value is not None else ""
 
 
+# Phase 2 — lazy default dispatcher for callers that don't inject one
+# via ``MagicService.__init__``.  Resolves on first use so tests that
+# patch ``MAGI_BACKEND`` after import still pick the right backend.
+_DEFAULT_DISPATCHER: Any | None = None
+
+
+def _default_dispatcher() -> Any:
+    """Return the process-wide default :class:`BackendDispatcherService`.
+
+    Constructed on first call to honour any test-time ``MAGI_BACKEND``
+    patches applied after import.  The dispatcher's body still calls the
+    legacy K8s client for K8s deployments (Phase 4 will substitute).
+    """
+    global _DEFAULT_DISPATCHER
+    if _DEFAULT_DISPATCHER is None:
+        from magi.bus.services.runtime import BackendDispatcherService
+
+        _DEFAULT_DISPATCHER = BackendDispatcherService()
+    return _DEFAULT_DISPATCHER
+
+
 def _runtime_view(runtime: Any) -> EveRuntimeView:
+    # Phase 2 — populate platform-neutral projection when the ORM row
+    # carries it (Phase 4 will write these columns); fall back to
+    # inferring from the legacy K8s fields for old rows.
+    backend_kind = getattr(runtime, "backend_kind", None) or (
+        "kubernetes" if getattr(runtime, "deployment_name", None) else None
+    )
+    backend_ref = getattr(runtime, "backend_ref", None) or getattr(
+        runtime, "deployment_name", None
+    )
+    endpoint_url = getattr(runtime, "endpoint_url", None) or (
+        f"http://{runtime.deployment_name}:42069"
+        if getattr(runtime, "deployment_name", None)
+        and str(runtime.observed_state or "") not in {"stopped", "deleted"}
+        else None
+    )
     return EveRuntimeView(
         desired_state=str(runtime.desired_state),
         observed_state=str(runtime.observed_state),
@@ -35,6 +71,9 @@ def _runtime_view(runtime: Any) -> EveRuntimeView:
         credential_secret_name=runtime.credential_secret_name,
         last_error=runtime.last_error,
         updated_at=_iso(runtime.updated_at),
+        backend_kind=backend_kind,
+        backend_ref=backend_ref,
+        endpoint_url=endpoint_url,
     )
 
 
@@ -515,48 +554,44 @@ class MagicService:
                         raise ValueError(
                             "configure provider and API key before starting this MAGI"
                         )
-                from magi.orchestrator.client import request_lifecycle
-                from magi.orchestrator.contracts import (
-                    EveSpec,
-                    MagisBinding,
-                    MagisRuntimeConfiguration,
-                )
+                # Phase 2 — replaced direct ``magi.orchestrator.client``
+                # import with the BUS dispatcher.  The dispatcher
+                # internally still hits the legacy K8s client so the
+                # K8s Profile is bit-identical; Phase 4 substitutes the
+                # body with a real BUS command queue.
+                from magi.bus.contracts.lifecycle import RuntimeSpec
 
                 binding = _direct_magis_binding(session, magic.id)
-                magis = (
-                    MagisBinding(id=binding[2].id, name=binding[2].name)
-                    if binding is not None
-                    else None
+                spec = RuntimeSpec(
+                    magic_id=magic.id,
+                    name=magic.name,
+                    magis_id=(binding[2].id if binding is not None else None),
+                    magis_name=(binding[2].name if binding is not None else None),
                 )
-                configuration = (
-                    MagisRuntimeConfiguration(
-                        magis_instruction=binding[2].instruction,
-                        role_name=binding[1].name,
-                        role_instruction=binding[1].instruction,
-                        magic_name=magic.name,
-                        personal_instruction=magic.instruction,
-                        provider=magic.provider,
-                        api_key=magic.api_key,
-                    )
-                    if binding is not None
-                    else None
-                )
-                spec = EveSpec(
-                    magic_id=magic.id, name=magic.name,
-                    magis=magis, configuration=configuration,
-                )
+                dispatcher = self._runtime_dispatcher or _default_dispatcher()
                 try:
-                    result = request_lifecycle(lifecycle_action, spec)
+                    if lifecycle_action == "start":
+                        result = dispatcher.start(spec)
+                    else:
+                        result = dispatcher.stop(spec)
                 except Exception as exc:
                     runtime.observed_state = "failed"
                     runtime.last_error = str(exc)
                     session.commit()
                     raise
                 runtime.observed_state = result.observed_state
-                runtime.namespace = result.namespace
-                runtime.deployment_name = result.deployment_name
-                runtime.workspace_claim_name = result.workspace_claim_name
-                runtime.credential_secret_name = result.credential_secret_name
+                if result.kubernetes_detail is not None:
+                    # Legacy ORM fields — populated only by the K8s
+                    # backend; the Local backend leaves them alone.
+                    runtime.namespace = result.kubernetes_detail.namespace
+                    runtime.deployment_name = result.kubernetes_detail.deployment_name
+                    runtime.workspace_claim_name = result.kubernetes_detail.workspace_claim_name
+                    runtime.credential_secret_name = result.kubernetes_detail.credential_secret_name
+                else:
+                    runtime.namespace = None
+                    runtime.deployment_name = None
+                    runtime.workspace_claim_name = None
+                    runtime.credential_secret_name = None
                 runtime.last_error = None
 
             session.commit()
