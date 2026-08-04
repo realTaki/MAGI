@@ -192,12 +192,9 @@ def run() -> None:
     from magi.agent.workspace import bootstrap_workspace, workspace_root as wr
     bootstrap_workspace(wr(state_dir))
 
-    # D.X — bootstrap MCP servers declared in the ``mcp_servers`` table.
-    try:
-        from magi.tools.registry import bootstrap_mcp_tools
-        bootstrap_mcp_tools()
-    except Exception as e:  # noqa: BLE001 — never block boot
-        logger.warning("MCP bootstrap skipped: %s", e)
+    # MCP tool discovery moved to the ToolWorker's startup seed
+    # (see magi/tools/worker._seed_tools).  The worker loads both
+    # built-in and MCP tools before publishing the durable catalog.
 
     # Install plugins + wire connector events into the
     # plugin bus. Idempotent — the audit_log plugin and

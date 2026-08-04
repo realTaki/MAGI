@@ -21,11 +21,18 @@ logger = logging.getLogger("magi.tools.worker")
 
 
 def _seed_tools(state_dir: str) -> None:
-    """Publish the executable registry as an atomic BUS catalog snapshot."""
+    """Publish the executable registry as an atomic BUS catalog snapshot.
+
+    Loads both built-in tools and MCP-discovered tools, then publishes
+    them into the durable Tool Catalog.  The Agent reads from that catalog
+    and never knows whether a schema came from built-in code or MCP.
+    """
     try:
-        from magi.tools.registry import get_tools_grouped
+        from magi.tools.registry import bootstrap_mcp_tools, get_tools_grouped
 
         bus = bootstrap(state_dir)
+        # Ensure MCP tools are loaded before we snapshot the grouped list.
+        bootstrap_mcp_tools()
         builtin, mcp = get_tools_grouped()
         for source, tools in (("builtin", builtin), ("mcp", mcp)):
             snapshot = bus.tool_catalog.get_snapshot()
