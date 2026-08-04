@@ -1,18 +1,34 @@
-"""OS-specific data-root resolution for the Local launcher.
+"""OS-specific + deployer-supplied path resolution for the launcher.
 
-Per plan §5.1, the Local Profile defaults its data root to:
+This module is the **single** place MAGI's filesystem layout is
+defined.  Two path families live here:
 
-- macOS : ``~/Library/Application Support/MAGI``
-- Linux : ``$XDG_DATA_HOME/magi`` (``~/.local/share/magi`` as fallback)
-- Windows : ``%LOCALAPPDATA%\\MAGI`` (``~/AppData/Local/MAGI`` fallback)
+1. **Deployer-supplied workspace** — the operator's persistent
+   volume (container bind-mount, Local Profile data root, test
+   ``tmp_path``).
 
-The launcher-issued ``launcher.json``, ``control-secret`` and the
-SQLite control registry live under ``<data_root>/control/``.
+   - :func:`workspace_dir` reads ``$MAGI_WORKSPACE_DIR`` (or falls
+     back to ``/workspace`` for the K8s-mount default).
+   - :func:`state_dir` derives the SQLite + sessions directory as
+     ``<workspace_dir>/memories``.
 
-Mirrors what :meth:`magi.launcher.LocalPathLayout.from_platform` used
-to do before the launch-pad consolidation; that factory method is
-deleted but the convention lives on here so it can be reused across
-:mod:`magi.launcher.cli` and the supervisor.
+   Derived from ``MAGI_WORKSPACE_DIR``
+   constants — the deployer's only filesystem knob is
+   ``MAGI_WORKSPACE_DIR``.
+
+2. **Local Profile launcher** — the Local Profile's per-runtime /
+   control / launcher-state layout.  Per plan §5.1 the OS-specific
+   default lives at ``default_data_root``; control
+   registry / launcher state live under ``<data_root>/control/``;
+   per-runtime workspaces / logs derive from the runtime_id + slug.
+
+3. **K8s-vs-Local state workspace root** — :func:`workspace_root`
+   derives the operator-facing files (SOUL.md, skills/, memories/)
+   from a state directory.
+
+The architecture test treats ``magi.launcher`` as a Composition-Root
+prefix; callers across the bus import these helpers for read-only
+configuration values, not for cross-package wiring.
 """
 
 from __future__ import annotations
@@ -28,6 +44,53 @@ _PLATFORM = sys.platform
 logger = logging.getLogger("magi.launcher.paths")
 
 
+# ──────────────────────────────────────────────────────────────────────── #
+# Group 1: deployer-supplied workspace (container / K8s profile)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Fixed canonical subdirectory under the workspace that holds the SQLite
+# database, alembic migrations, and session history.  Not configurable —
+# this is the schema the runtime assumes.
+_STATE_SUBDIR = "memories"
+
+
+def workspace_dir() -> Path:
+    """Return the deployer's persistent workspace directory.
+
+    Resolution:
+
+    1. ``$MAGI_WORKSPACE_DIR`` when set (deployer configuration);
+    2. ``/workspace`` (K8s-mount default) when not set.
+
+    This is the **only** host-level environment variable for path
+    layout.  The single deployer env var is ``MAGI_WORKSPACE_DIR``
+    var — those values are derived from this one.
+    """
+    raw = os.environ.get("MAGI_WORKSPACE_DIR")
+    return Path(raw).expanduser().resolve() if raw else Path("/workspace")
+
+
+def state_dir() -> Path:
+    """Return the SQLite + migrations + session-history directory.
+
+    Always ``<workspace_dir>/<STATE_SUBDIR>``; never set independently.
+    Local Profile that uses a different layout reads the layout's
+    ``state_dir`` directly and never consults this helper.
+    """
+    return workspace_dir() / _STATE_SUBDIR
+
+
+def workspace_root() -> Path:
+    """Alias for :func:`workspace_dir` — 0-arg workspace root resolver.
+
+    Use this when you need a workspace ``Path`` without knowing about
+    ``MAGI_WORKSPACE_DIR``.  Replaces the legacy
+    ``workspace_root(state_dir)`` pattern where callers passed a
+    ``state_dir`` they had to look up themselves.
+    """
+    return workspace_dir()
+
+
 # Bundled default SOUL.md lives in ``prompts/`` so all prompt
 # templates are co-located. The bootstrap copies it to the workspace
 # root on first boot; the deployer can then edit the workspace copy
@@ -35,15 +98,23 @@ logger = logging.getLogger("magi.launcher.paths")
 _BUNDLED_SOUL = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
 
 
-def workspace_root(state_dir: str | os.PathLike[str]) -> Path:
-    """Derive the workspace root from the state directory.
+def workspace_root_from_state(state_dir: str | os.PathLike[str]) -> Path:
+    """DEPRECATED — derive the workspace root from a state directory.
 
-    The default layout puts the SQLite at
-    ``<workspace>/state/magi.db``, so the workspace root is
-    ``Path(state_dir).parent``. Used by every module that needs to
-    resolve operator-facing paths (SOUL.md, skills/, memories/).
+    Kept for the launcher / agent / api modules that still thread
+    ``state_dir`` through their constructors. New code should call
+    the 0-arg :func:`workspace_root` (or :func:`workspace_dir`)
+    instead.  This function will be removed in a later phase once all
+    internal callers stop passing ``state_dir`` explicitly.
     """
     return Path(state_dir).parent
+
+
+# Backward-compat alias — the original ``workspace_root(state_dir)``
+# name.  Internal modules currently import this; once Phase D1 / D2
+# drops ``state_dir`` from those constructors, the alias can go too.
+# (Kept separate from ``workspace_root()`` — they have different
+# signatures so they can't both be named ``workspace_root``.)
 
 
 def bootstrap_workspace(workspace: Path) -> dict[str, str]:
@@ -154,13 +225,20 @@ def runtime_audit_log_path(data_root: Path, runtime_id: int, slug: str) -> Path:
 
 
 __all__ = [
+    # Group 1 — deployer workspace (container / K8s profile)
+    "workspace_dir",
+    "state_dir",
     "workspace_root",
     "bootstrap_workspace",
+    # Group 2 — Local Profile data root
     "default_data_root",
+    # Group 3 — per-runtime and control-plane
     "control_dir",
     "control_secret_path",
     "launcher_state_path",
     "runtime_workspace_root",
     "runtime_log_dir",
     "runtime_audit_log_path",
+    # Deprecated
+    "workspace_root_from_state",
 ]

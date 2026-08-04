@@ -38,7 +38,6 @@ via ``_rehydrate_from_db``.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
@@ -67,25 +66,23 @@ logger = logging.getLogger("magi.channels.api.tasks")
 router = APIRouter(tags=["tasks"])
 
 
-def _state_dir() -> str:
-    from magi.constants import STATE_DIR
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
-
-
 def _task_service() -> TaskService:
-    return TaskService(_state_dir())
+    from magi.bus import get_bus
+    return get_bus().task
 
 
 def _settings() -> SettingsService:
-    return SettingsService(_state_dir())
+    from magi.bus import get_bus
+    return get_bus().settings
 
 
 def _contacts() -> ContactsService:
-    return ContactsService(_state_dir())
+    from magi.bus import get_bus
+    return get_bus().contacts
 
 
 def _sessions() -> SessionService:
-    return SessionService(_state_dir())
+    return get_bus().session
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -668,7 +665,7 @@ def run_task_now(
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §5.6 +
     # §6 — ``channels.api ⊥ channels.tasks``). The bridge owns both
     # the in-process scheduler path and the dev-mode sync fallback.
-    bridge = TaskSchedulerBridge(_state_dir())
+    bridge = get_bus().task_scheduler
     try:
         bridge.request_manual_fire(task_id, run_id=run_id)
     except RuntimeError:
@@ -794,7 +791,7 @@ def _register_with_scheduler_view(view: TaskFullView) -> None:
     running" case for us; the DB row is still authoritative and the
     scheduler rehydrates from DB on its next start.
     """
-    TaskSchedulerBridge(_state_dir()).notify_scheduled(view)
+    get_bus().task_scheduler.notify_scheduled(view)
 
 
 def _unregister_from_scheduler(task_id: str) -> None:
@@ -804,7 +801,7 @@ def _unregister_from_scheduler(task_id: str) -> None:
     scheduler interaction behind ``magi.bus`` so the boundary test
     keeps enforcing the doc.
     """
-    TaskSchedulerBridge(_state_dir()).notify_unscheduled(task_id)
+    get_bus().task_scheduler.notify_unscheduled(task_id)
 
 
 # The creator-role gate moved from a constant to a helper

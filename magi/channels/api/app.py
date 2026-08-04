@@ -22,7 +22,6 @@ Subsequent checkpoints layer on:
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -118,7 +117,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         # container-only ``/workspace`` mount to exist. Node.run() initialises
         # the workspace before serving in production.
         try:
-            t = start_bot(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+            t = start_bot(STATE_DIR)
         except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
             t = None
             _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)

@@ -39,15 +39,13 @@ logger = logging.getLogger("magi.bus.db.engine")
 
 
 def require_state_dir() -> str:
-    """Return the absolute path to the state directory.
+    """Return the state directory path.
 
-    Returns the hardcoded :data:`magi.constants.STATE_DIR`
-    (``/workspace/memories``).  The ``MAGI_STATE_DIR`` env
-    var is honoured as an **escape hatch for tests only** —
-    production code never sets or reads it.
+    Derived from ``MAGI_WORKSPACE_DIR`` (default ``/workspace``)
+    with a ``memories/`` subdirectory for SQLite data.
     """
-    from magi.constants import STATE_DIR
-    return os.environ.get("MAGI_STATE_DIR") or STATE_DIR
+    from magi.launcher.paths import state_dir as _state_dir
+    return str(_state_dir())
 
 
 def get_engine_for(state_dir: Path) -> Engine:
@@ -296,17 +294,13 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     engine cache.
     """
     global _engine, _SessionLocal
-    if state_dir is not None:
-        # Honour an explicit override (mostly for tests) before creating
-        # the lazy engine. This also lets the settings facade initialise a
-        # fresh database from its legacy ``state_dir`` argument.
-        os.environ["MAGI_STATE_DIR"] = state_dir
-    requested_path = Path(_state_dir_from_env()).resolve()
+    resolved_state_dir = state_dir or require_state_dir()
+    requested_path = Path(resolved_state_dir).resolve()
     if _engine is not None:
         # If the cached engine points at a different directory,
         # dispose it so the next ``get_engine()`` rebuilds. The
         # cache check is by path (not by env var) so a re-entrant
-        # test that reuses ``MAGI_STATE_DIR`` hits the fast path.
+        # test that reuses ``MAGI_WORKSPACE_DIR`` hits the fast path.
         try:
             bound_url = _engine.url.database
         except Exception:
@@ -409,14 +403,7 @@ def open_session(
     """
     if state_dir is not None:
         requested = Path(state_dir).resolve()
-        configured = os.environ.get("MAGI_STATE_DIR")
-        if configured is None:
-            os.environ["MAGI_STATE_DIR"] = str(requested)
-            if _SessionLocal is None:
-                init_orm()
-            assert _SessionLocal is not None
-            session_factory = _SessionLocal
-        elif Path(configured).resolve() == requested:
+        if requested == Path(require_state_dir()).resolve():
             if _SessionLocal is None:
                 init_orm()
             assert _SessionLocal is not None

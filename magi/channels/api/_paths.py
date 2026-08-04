@@ -1,29 +1,25 @@
 """API-side path resolution helper.
 
-The 24 files under :mod:`magi.channels.api` each read
-``MAGI_STATE_DIR`` from the environment.  Centralising that lookup here
-lets the Composition Root swap the resolution rule later (e.g. inject a
-``LocalPathLayout`` for the Local Profile) without touching every router.
+Every ``magi.channels.api`` router reads its state directory through
+:func:`resolve_state_dir`.  The single source of the path is
+:mod:`magi.launcher.paths`; this module is just the legacy indirection
+so tests continue to work while the actual lookup obeys
+``MAGI_WORKSPACE_DIR``.
 
-This is **not** a new public API: it is the same env-var contract the
-modules used before, just exposed once so the K8s path stays bit-identical
-when the launcher sets ``MAGI_STATE_DIR`` and the Local path can override
-via the launcher-constructed layout in a later phase.
+This module is scheduled for deletion in Phase F once every
+``magi.channels.api`` router calls ``get_bus()`` instead of resolving
+``state_dir`` locally.
 """
 
 from __future__ import annotations
 
-import os
-
-from magi.constants import STATE_DIR
+from magi.launcher.paths import state_dir
 
 
 def resolve_state_dir() -> str:
     """Return the state directory for the current API request.
 
-    Order of resolution (matches the legacy inline pattern):
-
-    1. ``MAGI_STATE_DIR`` env var when set (tests + Composition Root);
-    2. ``magi.constants.STATE_DIR`` (K8s default, ``/workspace/memories``).
+    Reads ``MAGI_WORKSPACE_DIR`` (deployer-supplied) and appends the
+    canonical ``memories/`` subdirectory.  See :mod:`magi.launcher.paths`.
     """
-    return os.environ.get("MAGI_STATE_DIR") or STATE_DIR
+    return str(state_dir())

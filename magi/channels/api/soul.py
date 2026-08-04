@@ -58,8 +58,7 @@ from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminOrAssignedGate
-from magi.constants import STATE_DIR
-from magi.launcher.paths import workspace_root
+from magi.launcher.paths import workspace_dir
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -76,12 +75,8 @@ _MAX_SOUL_CHARS = 8000
 _SOUL_FILENAME = "SOUL.md"
 
 
-def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
-
-
 def _soul_path() -> Path:
-    return workspace_root(_state_dir()) / _SOUL_FILENAME
+    return workspace_dir() / _SOUL_FILENAME
 
 
 class SoulReadResponse(BaseModel):

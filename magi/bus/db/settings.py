@@ -14,7 +14,6 @@ helpers until their callers are migrated.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from magi.bus.db.engine import open_session
@@ -22,17 +21,8 @@ from magi.bus.models.local.setting import Setting
 
 
 def _prepare_session(state_dir: str):
-    """Return an ORM session bound to ``state_dir``.
-
-    ``state_dir`` remains in the helper signature for compatibility with the
-    pre-ORM KV API. ``open_session`` validates it against the process-wide
-    engine and initialises the engine from it when the caller has not already
-    configured ``MAGI_STATE_DIR``.
-    """
-    requested = str(Path(state_dir))
-    if not os.environ.get("MAGI_STATE_DIR"):
-        os.environ["MAGI_STATE_DIR"] = requested
-    return open_session(requested)
+    """Return an ORM session bound to ``state_dir``."""
+    return open_session(str(Path(state_dir)))
 
 
 def state_get(state_dir: str, key: str) -> str | None:
@@ -66,7 +56,7 @@ def settings_get_for(state_dir: str, key: str) -> str | None:
     """Composition-Root-aware variant of :func:`state_get`.
 
     Accepts an explicit ``state_dir`` rather than relying on
-    ``MAGI_STATE_DIR``.  Phase 1 callers fall back to :func:`state_get`;
+    the runtime state directory.  Phase 1 callers fall back to state_get();
     Phase 3's Local Profile may pass a per-MAGIS state directory.
     """
     with _prepare_session(state_dir) as db:

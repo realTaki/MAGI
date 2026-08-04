@@ -261,7 +261,12 @@ class KubernetesEveBackend:
                                     "image": self.image,
                                     "imagePullPolicy": "IfNotPresent",
                                     "env": [
-                                        {"name": "MAGI_NODE_ROLE", "value": "eve"},
+                                        # The runtime derives its archetype (ADAM
+                                        # vs EVA) from MAGIS at boot via
+                                        # ``MagisService.derive_runtime_role`` —
+                                        # see ``MAGI_RUNTIME_ID`` → MAGIC.id →
+                                        # ``MAGIS.adam_id`` comparison. No
+                                        # separate role env var is needed.
                                         {"name": "MAGI_RUNTIME_ID", "value": str(spec.magic_id)},
                                         {"name": "MAGIS_ID", "value": str(spec.magis.id)},
                                         {"name": "MAGIS_DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": magis_database_secret, "key": "MAGIS_DATABASE_URL"}}},

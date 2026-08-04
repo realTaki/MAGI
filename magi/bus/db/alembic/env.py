@@ -30,14 +30,15 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# The CLI workflow can target the same workspace convention as the runtime:
-# `MAGI_STATE_DIR=/path/to/state alembic ...`. The programmatic runner sets
-# the URL directly, so this is only a convenience override for developers.
-if state_dir := os.environ.get("MAGI_STATE_DIR"):
-    config.set_main_option(
-        "sqlalchemy.url",
-        f"sqlite:///{Path(state_dir).resolve() / 'magi.db'}",
-    )
+# State directory is <WORKSPACE>/memories (container /workspace/memories,
+# local dev from MAGI_WORKSPACE_DIR env).  The programmatic runner sets
+# the URL directly; this is only a convenience for CLI workflows.
+from magi.constants import STATE_DIR as _state_dir
+
+config.set_main_option(
+    "sqlalchemy.url",
+    f"sqlite:///{Path(_state_dir).resolve() / 'magi.db'}",
+)
 
 target_metadata = Base.metadata
 

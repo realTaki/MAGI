@@ -47,7 +47,7 @@ router = APIRouter(tags=["tg-settings"])
 
 def _state_dir() -> str:
     import os
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
+    return STATE_DIR
 
 
 class ReactionChoice(BaseModel):

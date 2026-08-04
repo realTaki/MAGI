@@ -5,11 +5,13 @@ SQLite database under ``/workspace/memories/magi.db``.  Organisation identity,
 instructions and provider configuration live in the direct MAGIS PostgreSQL
 database. Hardcoded paths live in :mod:`magi.constants`.
 
-``MAGI_NODE_ROLE`` and ``MAGI_RUNTIME_ID`` bind a running container to its
-deployment identity. ``MAGIS_DATABASE_URL`` identifies the one direct MAGIS
-database an isolated runtime may read. The orchestrator injects only that URL
-and the non-secret runtime identity, never an instruction bundle or provider
-credential environment variable.
+``MAGI_RUNTIME_ID`` binds a running container to its deployment identity;
+``MAGIS_DATABASE_URL`` identifies the one direct MAGIS database an isolated
+runtime may read. The orchestrator injects only that URL and the non-secret
+runtime identity, never an instruction bundle or provider credential
+environment variable. The runtime's archetype (ADAM vs EVA) is read from
+the MAGIS tree (``MAGIS.adam_id == MAGIC.id``); no separate role env var
+is needed.
 
 Boot flow: the first ADAM workspace seeds Genesis.  An EVA workspace never
 seeds a Council or a second ADAM; it only initialises its local runtime state.
@@ -27,7 +29,8 @@ from dataclasses import asdict, dataclass, field
 import uvicorn
 
 from magi import __version__
-from magi.constants import DEFAULT_LOG_LEVEL, STATE_DIR, WEBUI_HOST, WEBUI_PORT
+from magi.constants import DEFAULT_LOG_LEVEL, WEBUI_HOST, WEBUI_PORT
+from magi.launcher.paths import state_dir
 from magi.channels import Channel  # noqa: E402
 
 logger = logging.getLogger("magi")
@@ -48,23 +51,32 @@ _CHANNELS_SETTINGS_KEY = "channels.enabled"
 class NodeConfig:
     """Minimal config for a MAGI node.  Everything lives in the DB."""
     channels: tuple[str, ...] = field(default_factory=tuple)
-    state_dir: str = STATE_DIR
+    state_dir: str = field(default_factory=lambda: str(state_dir()))
     host: str = WEBUI_HOST
     port: int = WEBUI_PORT
     reload: bool = False
     log_level: str = DEFAULT_LOG_LEVEL
-    role: str = "adam"
     runtime_id: str | None = None
+    is_genesis: bool = False
 
     # ------------------------------------------------------------------
     @classmethod
     def from_env(cls) -> "NodeConfig":
-        """Build config.  Everything is hardcoded or read from the DB."""
+        """Build config.  Everything is hardcoded or read from the DB.
+
+        ``MAGI_RUNTIME_ID`` is the only runtime-identity env var. When
+        it is unset, this process is the Genesis bootstrap ADAM —
+        there is no MAGIC row to look up yet, and the seed will
+        create one. When set, the orchestrator has already created
+        the MAGIC + MAGIS membership rows; the role is derived from
+        MAGIS at boot (``MagisService.derive_runtime_role``), not
+        from a separate ``MAGI_NODE_ROLE`` env var.
+        """
         # Log level: read from settings if available, fall back to "info".
         log_level = DEFAULT_LOG_LEVEL
         try:
             from magi.bus.db.settings import state_get
-            db_level = state_get(STATE_DIR, "system.log_level")
+            db_level = state_get(str(state_dir()), "system.log_level")
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
         except Exception:
@@ -76,22 +88,25 @@ class NodeConfig:
         port_raw = os.environ.get("MAGI_PORT")
         port = int(port_raw) if port_raw else WEBUI_PORT
 
-        role = os.environ.get("MAGI_NODE_ROLE", "adam").strip().lower()
-        if role not in {"adam", "eve"}:
-            raise ValueError("MAGI_NODE_ROLE must be 'adam' or 'eve'")
-        runtime_id = os.environ.get("MAGI_RUNTIME_ID") or None
-        if role == "eve" and not runtime_id:
-            raise ValueError("MAGI_RUNTIME_ID is required for an EVA runtime")
+        runtime_id_raw = os.environ.get("MAGI_RUNTIME_ID", "").strip()
+        if runtime_id_raw:
+            if not runtime_id_raw.isdigit():
+                raise ValueError("MAGI_RUNTIME_ID must be an integer magic_id")
+            runtime_id = runtime_id_raw
+            is_genesis = False
+        else:
+            runtime_id = None
+            is_genesis = True
 
         return cls(
             channels=(),
-            state_dir=STATE_DIR,
+            state_dir=str(state_dir()),
             host=WEBUI_HOST,
             port=port,
             reload=reload,
             log_level=log_level,
-            role=role,
             runtime_id=runtime_id,
+            is_genesis=is_genesis,
         )
 
 
@@ -190,15 +205,20 @@ def run() -> None:
 
     # The composition root is the only place that initialises local storage.
     # Workers and channels receive the public BUS facade after this point.
-    from magi.bus import get_bus
-    bus = bootstrap(state_dir, initialise_local=True)
+    from magi.bus import bootstrap
+    bootstrap(state_dir, initialise_local=True)
     logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
-    # lifecycle state. The initial ADAM seeds Genesis there; an EVA only
-    # opens the public schema assigned by its one direct MAGIS binding.
+    # lifecycle state. The archetype (ADAM / EVA) is read from MAGIS, not
+    # from a ``MAGI_NODE_ROLE`` env var:
+    #   - Genesis bootstrap (no ``MAGI_RUNTIME_ID``) seeds the public
+    #     schema with this process as the root ADAM.
+    #   - Orchestrator-launched runtimes (``MAGI_RUNTIME_ID`` set) look
+    #     up their MAGIC row + direct MAGIS membership and compare their
+    #     ``magic_id`` against ``MAGIS.adam_id`` to derive the role.
     from magi.bus.db.magis import init_magis_public_db
-    init_magis_public_db(seed_root=cfg.role == "adam")
+    init_magis_public_db(seed_root=cfg.is_genesis)
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
@@ -308,7 +328,7 @@ def _launch_telegram(cfg: NodeConfig) -> None:
     """Mount the Telegram channel: start the bot polling daemon."""
     from magi.channels.telegram.bot import start_bot
 
-    thread = start_bot(STATE_DIR)
+    thread = start_bot(str(state_dir()))
     if thread is None:
         logger.info("telegram: bot token not saved yet — channel idle")
         return

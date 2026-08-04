@@ -35,7 +35,6 @@ registry entries.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
 from magi.bus import get_bus
@@ -128,7 +127,7 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     only channel adapters participate in.
     """
     _ADAPTERS[adapter.name] = adapter
-    state_dir = os.environ.get("MAGI_STATE_DIR", "")
+    state_dir = STATE_DIR
     try:
         bus = get_bus()
         bus.dispatcher.register(adapter)

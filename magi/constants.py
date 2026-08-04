@@ -1,9 +1,12 @@
 """MAGI hard-coded constants.
 
-Everything in this file is a fixed value that **cannot** be
-overridden by environment variables or database settings.
-If you need to change one of these, you must edit this file
-and rebuild.
+DEPRECATED — being phased out. Path-related constants have moved to
+:mod:`magi.launcher.paths` (``workspace_dir()``, ``state_dir()``).
+The remaining truly-constant values (``WEBUI_*``, ``DEFAULT_LOG_LEVEL``)
+will move to :mod:`magi.launcher.constants` in Phase C / F.
+
+This file stays as a thin re-export shim until all importers are
+migrated; the migration deletes it in Phase F.
 
 For mutable configuration, see the ``settings`` table
 (``magi/db/models_setting.py``, read via
@@ -13,13 +16,15 @@ For mutable configuration, see the ``settings`` table
 from __future__ import annotations
 
 # -- container filesystem layout -----------------------------------------
-# The container bind-mounts the host workspace at /workspace.
-# State (SQLite + migrations + session history) lives in a
-# ``memories/`` subdirectory so the workspace root can hold
-# user-facing artifacts (skills/, SOUL.md) alongside system
-# data without collisions.
-STATE_DIR: str = "/workspace/memories"
-WORKSPACE_DIR: str = "/workspace"
+# DEPRECATED.  Path resolution moved to :mod:`magi.launcher.paths`.
+# These module-level constants are kept as a temporary shim for code
+# that imports ``STATE_DIR`` / ``WORKSPACE_DIR`` as strings; they will
+# be deleted in Phase F.  New code should call ``launcher.paths.state_dir()``
+# / ``launcher.paths.workspace_dir()`` instead.
+from magi.launcher.paths import state_dir as _sd, workspace_dir as _wd
+
+STATE_DIR: str = str(_sd())
+WORKSPACE_DIR: str = str(_wd())
 
 # -- Web UI --------------------------------------------------------------
 WEBUI_HOST: str = "0.0.0.0"

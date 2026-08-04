@@ -298,7 +298,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
     import os
-    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
+    state_dir = STATE_DIR
 
     # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.

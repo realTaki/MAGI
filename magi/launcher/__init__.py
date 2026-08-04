@@ -93,7 +93,7 @@ class LocalPathLayout:
 # §2. Local Composition Root ----------------------------------------------------
 
 
-from magi.bus import Bus, get_bus as _bus_bootstrap  # noqa: E402
+from magi.bus import Bus, bootstrap as _bus_bootstrap  # noqa: E402
 
 
 def bootstrap_local(
@@ -104,6 +104,14 @@ def bootstrap_local(
     initialise_control: bool = True,
 ) -> Bus:
     """Build the Local Profile BUS facade rooted at ``data_root``.
+
+    NOTE: this calls :func:`magi.bus.bootstrap` (not
+    :func:`magi.bus.get_bus`) — the Local Profile needs a
+    composition that owns the chosen ``state_dir``, ``magis_engine``,
+    and ``control_engine``, which the process-wide singleton does
+    not.
+
+    ``data_root`` becomes the root of the :class:`LocalPathLayout`.
 
     ``data_root`` becomes the root of the :class:`LocalPathLayout`.  All
     downstream workers receive their ``state_dir`` from this layout via

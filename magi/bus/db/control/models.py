@@ -86,6 +86,11 @@ class ControlRuntimeState(Base):
     workspace_dir: Mapped[str] = mapped_column(String(500), nullable=False)
     log_dir: Mapped[str] = mapped_column(String(500), nullable=False)
     audit_log_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Denormalised ``port`` for fast lookup without joining the alloc
+    # table — kept in sync by ``ControlRepository.record_spawn`` /
+    # ``release_port``.  The :attr:`port_alloc` relationship remains
+    # authoritative for FK correctness.
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     spawned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -95,11 +100,6 @@ class ControlRuntimeState(Base):
         back_populates="runtime_state",
         uselist=False,
     )
-
-    @property
-    def port(self) -> int | None:
-        """Authoritative port — derived from the relationship."""
-        return self.port_alloc.port if self.port_alloc else None
 
 
 class ControlPortAllocation(Base):

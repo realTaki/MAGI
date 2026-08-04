@@ -47,7 +47,7 @@ router = APIRouter(tags=["onboarding"])
 
 
 def _state_dir() -> str:
-    """Read MAGI_STATE_DIR each call — keeps state_dir testable + env-friendly."""
+    """Return the state dir from the runtime workspace — keeps state_dir testable + env-friendly."""
     return SettingsService.require_state_dir()
 
 

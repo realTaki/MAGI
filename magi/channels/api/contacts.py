@@ -16,7 +16,6 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -47,14 +46,10 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 # -- helpers ----------------------------------------------------------------
 
-def _bus(state_dir: str | None = None) -> ContactsService:
-    """Resolve a ContactsService bound to the right state dir.
-
-    The default resolves ``MAGI_STATE_DIR`` from env or the runtime
-    constant; the parameter is reserved for tests.
-    """
-    from magi.constants import STATE_DIR
-    return ContactsService(os.environ.get("MAGI_STATE_DIR", state_dir or STATE_DIR))
+def _bus() -> ContactsService:
+    """Resolve a ContactsService bound to the right state dir."""
+    from magi.bus import get_bus
+    return get_bus().contacts
 
 
 def _iso(dt) -> str:

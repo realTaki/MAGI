@@ -126,6 +126,34 @@ class MagisService:
             )
             return int(root.adam_id) if root and root.adam_id else None
 
+    def derive_runtime_role(self, magic_id: int) -> str:
+        """Return ``"adam"`` if ``magic_id`` is the ADAM of its MAGIS, else ``"eve"``.
+
+        Looks up the MAGIC's direct MAGIS membership and compares its
+        ``id`` against the membership's ``MAGIS.adam_id``. This is the
+        single source of truth for the runtime's archetype — the boot
+        flow never reads ``MAGI_NODE_ROLE``.
+        """
+        from magi.bus.db.magis import open_magis_session
+        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from sqlalchemy import select
+
+        with open_magis_session() as session:
+            binding = session.scalar(
+                select(MAGISMembership).where(MAGISMembership.magic_id == magic_id)
+            )
+            if binding is None:
+                raise LookupError(
+                    f"MAGI {magic_id} has no direct MAGIS membership; "
+                    "the orchestrator must create the MAGIC + membership row "
+                    "before starting the runtime"
+                )
+            magis = session.get(MAGIS, binding.magis_id)
+            if magis is None:
+                raise LookupError(f"MAGIS {binding.magis_id} not found")
+            return "adam" if int(magis.adam_id) == magic_id else "eve"
+
     def served_direct_magis_id(self) -> int | None:
         """The single MAGIS id this WebUI may administer directly.
 

@@ -142,13 +142,13 @@ def get_bus() -> Bus:
     """Return the process-wide BUS facade, initialising it on first call.
 
     This is the **only** entry point that modules outside ``magi.bus``
-    should use.  It hides ``state_dir`` / ``MAGI_STATE_DIR`` entirely —
+    should use.  It hides ``state_dir`` entirely —
     consumers receive a ready-to-use ``Bus`` without ever knowing where
     the SQLite database lives.
 
     The singleton is process-wide (like :func:`magi.bus.db.engine.get_engine`).
     Tests that need a different state directory should call
-    :func:`bootstrap` directly or set ``MAGI_STATE_DIR`` before the first
+    :func:`bootstrap` directly or set ``MAGI_WORKSPACE_DIR`` before the first
     call to :func:`get_bus`.
     """
     global _bus

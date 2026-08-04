@@ -18,7 +18,7 @@ class DeliveryWorker:
     """Send durable outbox records without blocking the agent actor."""
 
     def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
-        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
+        self.state_dir = state_dir or STATE_DIR
         self.bus = get_bus()
         self.worker_id = f"delivery-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds

@@ -44,7 +44,7 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
     _require_control(request)
     from magi.channels.telegram import bot as tg_bot
 
-    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
+    state_dir = STATE_DIR
     bus = _bus()
     bus.settings.set("telegram.bot_token", payload.token)
     bus.settings.set("telegram.bot_username", payload.username)

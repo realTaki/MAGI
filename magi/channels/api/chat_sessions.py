@@ -25,7 +25,6 @@ directly.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -39,15 +38,10 @@ from magi.bus.services.session import SessionService
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels import Channel
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.chat_sessions")
 
 router = APIRouter(tags=["chat_sessions"])
-
-
-def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 def get_session_store() -> SessionService:
@@ -55,7 +49,7 @@ def get_session_store() -> SessionService:
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override
-    ``MAGI_STATE_DIR`` need each request to see the
+    the path is resolved via ``magi.paths.state_dir()`` which honours
     current value, not the value captured at import time.
     """
     return get_bus().session
