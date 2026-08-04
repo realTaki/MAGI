@@ -50,7 +50,7 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
                 event_id="worker-message-1",
                 text="hello",
                 channel="webui",
-                session_id="session-1",
+                session_id="01KZ568F25VXD7AKTK7CQA6H45",
                 uid=1,
             ),
             state_dir=state,
@@ -64,7 +64,7 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
         {
             "text": "hello",
             "channel": "webui",
-            "session_id": "session-1",
+            "session_id": "01KZ568F25VXD7AKTK7CQA6H45",
             "uid": 1,
             "caller_role": None,
             "max_tokens": 1024,

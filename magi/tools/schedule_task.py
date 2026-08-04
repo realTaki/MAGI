@@ -377,7 +377,7 @@ class ScheduleTaskTool(Tool):
         bus = bootstrap(ctx.state_dir)
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
-        resolved_tz = bus.setting.system_timezone()
+        resolved_tz = bus.settings.system_timezone()
         # Allocate the task's home session up-front so cron fires
         # accumulate into one conversation per task. The
         # ``upsert_by_name`` body preserves the existing

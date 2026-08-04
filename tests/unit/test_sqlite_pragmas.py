@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _local_db_synchronous_call() -> tuple[int, str]:
     """Return ``(line_number, stmt_text)`` of the synchronous PRAGMA
-    in ``magi/db/local_db.py``.
+    in ``magi/bus/db/local_db.py``.
     """
     src = (REPO_ROOT / "magi" / "db" / "local_db.py").read_text()
     tree = ast.parse(src)
@@ -74,7 +74,7 @@ def test_local_db_issues_synchronous_normal_after_commit() -> None:
     src = (REPO_ROOT / "magi" / "db" / "local_db.py").read_text()
     sync_line, stmt = _local_db_synchronous_call()
     assert stmt, (
-        "magi/db/local_db.py must issue PRAGMA synchronous=NORMAL"
+        "magi/bus/db/local_db.py must issue PRAGMA synchronous=NORMAL"
     )
     # Slice the file up to the synchronous call. There must be a
     # ``conn.commit()`` in that prefix — that's the commit that

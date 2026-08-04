@@ -184,10 +184,19 @@ def _default_path() -> Path:
     Reads ``MAGI_AUDIT_LOG_PATH`` at call time so an
     operator setting the env var after the plugin module
     is imported still gets the right path.
+
+    When the env var is unset, falls back to
+    ``<state_dir>/../audit/audit.log``.  Inside the K8s container this
+    resolves to ``/workspace/audit/audit.log`` (bit-identical with the
+    legacy literal); inside the Local Profile it lands at
+    ``<data_root>/audit/audit.log`` per
+    :class:`~magi.deploy.path_layout.LocalPathLayout`.
     """
-    return Path(
-        os.environ.get("MAGI_AUDIT_LOG_PATH", "/workspace/audit/audit.log"),
-    )
+    override = os.environ.get("MAGI_AUDIT_LOG_PATH")
+    if override:
+        return Path(override)
+    from magi.constants import STATE_DIR
+    return Path(STATE_DIR).parent / "audit" / "audit.log"
 
 
 class AuditLogPlugin:

@@ -51,6 +51,34 @@ def require_state_dir() -> str:
     return os.environ.get("MAGI_STATE_DIR") or STATE_DIR
 
 
+def state_dir_for(layout: Path) -> str:
+    """Return the state directory projection for a :class:`LocalPathLayout`.
+
+    Composition-Root helper used by the Local Profile launcher.  Phase 1
+    stays bit-identical with the K8s Profile because the Local launcher
+    passes a layout whose ``state_dir`` resolves to the same path as the
+    legacy ``MAGI_STATE_DIR`` env var would.
+    """
+    from magi.deploy.path_layout import LocalPathLayout
+
+    if not isinstance(layout, LocalPathLayout):
+        raise TypeError(
+            f"state_dir_for() requires a LocalPathLayout, got {type(layout).__name__}"
+        )
+    return str(layout.state_dir)
+
+
+def get_engine_for(state_dir: Path) -> Engine:
+    """Build an auxiliary SQLAlchemy engine rooted at ``state_dir``.
+
+    Reuses the per-path caching in :func:`_sessionmaker_for_explicit_state_dir`.
+    Useful for tests and Phase 3's :class:`LocalMagisEngine` injection — the
+    mainline K8s Profile still goes through the process-wide :func:`get_engine`.
+    """
+    requested = Path(state_dir).resolve()
+    return _sessionmaker_for_explicit_state_dir(requested).get_bind()
+
+
 # -- bootstrap --------------------------------------------------------------
 
 _engine: Engine | None = None

@@ -39,17 +39,40 @@ logger = logging.getLogger("magi.channels.api")
 # In-container path the Dockerfile uses. In dev (vite dev), we look
 # for the WebUI build output inside the magi/ folder; if not present
 # the SPA mount is skipped and vite handles the UI itself on :42069.
+#
+# Phase 1 also accepts the package-resource location (``importlib.resources``)
+# so a wheel-installed / standalone-bundled MAGI ships the SPA alongside the
+# Python code and the launcher doesn't have to guess absolute paths.
 _SPA_DIST_CANDIDATES: tuple[Path, ...] = (
     Path("/app/magi/WebUI/dist"),  # Dockerfile runtime stage
     Path(__file__).resolve().parents[2] / "WebUI" / "dist",  # dev checkout (magi/ is parents[2])
 )
 
 
+def _package_spa_dist() -> Path | None:
+    """Return the wheel-shipped SPA path via ``importlib.resources`` if present.
+
+    Used by Phase 1's bundled-layout path — a wheel-installed MAGI
+    resolves the React ``dist`` from the package metadata so it doesn't
+    depend on absolute filesystem assumptions.
+    """
+    try:
+        from importlib.resources import files
+
+        candidate = files("magi").joinpath("WebUI", "dist")
+        path = Path(str(candidate))
+    except (ModuleNotFoundError, FileNotFoundError):
+        return None
+    if path.is_dir() and (path / "index.html").is_file():
+        return path
+    return None
+
+
 def _find_spa_dist() -> Path | None:
     for candidate in _SPA_DIST_CANDIDATES:
         if candidate.is_dir() and (candidate / "index.html").is_file():
             return candidate
-    return None
+    return _package_spa_dist()
 
 
 class HealthResponse(BaseModel):

@@ -62,4 +62,46 @@ def state_delete(state_dir: str, key: str) -> None:
         db.commit()
 
 
-__all__ = ["state_get", "state_set", "state_delete"]
+def settings_get_for(state_dir: str, key: str) -> str | None:
+    """Composition-Root-aware variant of :func:`state_get`.
+
+    Accepts an explicit ``state_dir`` rather than relying on
+    ``MAGI_STATE_DIR``.  Phase 1 callers fall back to :func:`state_get`;
+    Phase 3's Local Profile may pass a per-MAGIS state directory.
+    """
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        return setting.value if setting is not None else None
+
+
+def settings_set_for(state_dir: str, key: str, value: str) -> None:
+    """Composition-Root-aware variant of :func:`state_set`."""
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        if setting is None:
+            db.add(Setting(key=key, value=value))
+        else:
+            setting.value = value
+        db.commit()
+
+
+def settings_delete_for(state_dir: str, key: str) -> bool:
+    """Composition-Root-aware variant of :func:`state_delete`.  Returns whether a row was removed."""
+    with _prepare_session(state_dir) as db:
+        setting = db.get(Setting, key)
+        if setting is None:
+            db.commit()
+            return False
+        db.delete(setting)
+        db.commit()
+        return True
+
+
+__all__ = [
+    "state_get",
+    "state_set",
+    "state_delete",
+    "settings_get_for",
+    "settings_set_for",
+    "settings_delete_for",
+]
