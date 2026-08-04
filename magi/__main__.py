@@ -29,7 +29,7 @@ from dataclasses import asdict, dataclass, field
 import uvicorn
 
 from magi import __version__
-from magi.constants import DEFAULT_LOG_LEVEL, WEBUI_HOST, WEBUI_PORT
+from magi.launcher.constants import DEFAULT_LOG_LEVEL, WEBUI_HOST, WEBUI_PORT
 from magi.launcher.paths import state_dir
 from magi.channels import Channel  # noqa: E402
 
@@ -206,7 +206,7 @@ def run() -> None:
     # The composition root is the only place that initialises local storage.
     # Workers and channels receive the public BUS facade after this point.
     from magi.bus import bootstrap
-    bootstrap(state_dir, initialise_local=True)
+    bootstrap(initialise_local=True)
     logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
