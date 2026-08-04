@@ -30,12 +30,15 @@ def store_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact, init_orm, init_sqlite, open_session,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        init_sqlite,
+        open_session,
     )
     init_sqlite(str(state))
     init_orm(str(state))
@@ -64,7 +67,7 @@ def _store(state):
 
 def test_upsert_daily_note_first_call_inserts(store_env):
     s = _store(store_env)
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     view = s.upsert_daily_note(contact_id=1, body_delta="sent the Q3 invoice")
@@ -88,7 +91,7 @@ def test_upsert_daily_note_second_call_appends(store_env):
     assert view.note == "first delta\nsecond delta"
 
     # Still one row.
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     with open_session() as db:
@@ -136,7 +139,7 @@ def test_permanent_notes_unaffected_by_daily_upsert(store_env):
     perm = s.add_note(contact_id=1, note="Lily 在财务部")
     daily = s.upsert_daily_note(contact_id=1, body_delta="today's delta")
 
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     with open_session() as db:
@@ -179,7 +182,7 @@ def test_partial_unique_index_rejects_duplicate_daily(store_env):
     ``(contact_id, note_date)``. Permanent rows are exempt
     from the constraint (note_date IS NULL is allowed for
     many rows)."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
     from sqlalchemy.exc import IntegrityError
 
@@ -205,7 +208,7 @@ def test_partial_unique_index_rejects_duplicate_daily(store_env):
 def test_partial_unique_index_allows_many_permanent(store_env):
     """Permanent rows are not constrained by the partial index
     (the WHERE clause excludes them)."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     s = _store(store_env)
@@ -246,7 +249,7 @@ def test_system_prompt_omits_daily_block_when_disabled(store_env):
     s = _store(store_env)
     s.upsert_daily_note(contact_id=1, body_delta="today's note")
 
-    from magi.db.settings import state_set as _state_set
+    from magi.bus.db.settings import state_set as _state_set
     _state_set(str(store_env), "system.show_daily_note", "false")
 
     from magi.agent.system_prompt import build_system_prompt
@@ -265,7 +268,7 @@ def test_system_prompt_folds_capture_rules_only_when_opted_in(store_env):
     s = _store(store_env)
     s.upsert_daily_note(contact_id=1, body_delta="today's note")
 
-    from magi.db.settings import state_set as _state_set
+    from magi.bus.db.settings import state_set as _state_set
     _state_set(str(store_env), "system.show_daily_note_prompt", "true")
 
     from magi.agent.system_prompt import build_system_prompt

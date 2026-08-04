@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from magi.bus import AgentMessage
-from magi.db import init_orm
+from magi.bus.db import init_orm
 
 
 @pytest.fixture()

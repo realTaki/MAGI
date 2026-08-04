@@ -21,8 +21,11 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore
 from magi.bus.models.queue import AgentInbox, DeliveryOutbox, LLMAttempt
-from magi.db import init_orm, open_session
-from magi.db.base import utcnow_naive
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
+from magi.bus.db.base import utcnow_naive
 
 
 @pytest.fixture()
@@ -95,7 +98,7 @@ def test_pending_delivery_resumes_after_process_restart(
     store.complete_agent_message(claim.event_id, "restart-me", delivery_destination="42")
 
     # Simulate restart: drop the engine cache and rebuild.
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     fresh_store = BusStore(str(tmp_path))
 

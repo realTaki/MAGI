@@ -8,7 +8,10 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore
 from magi.bus.models.queue import DeliveryOutbox
-from magi.db import init_orm, open_session
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 
 
 @pytest.mark.asyncio
@@ -26,7 +29,7 @@ async def test_delivery_worker_sends_and_marks_reply_delivered(tmp_path, monkeyp
 
     from magi.channels import delivery as delivery_mod
     from magi.channels.telegram import bot as bot_mod
-    from magi.db import settings as settings_mod
+    from magi.bus.db import settings as settings_mod
 
     delivered: list[tuple[str, int, str]] = []
 

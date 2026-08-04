@@ -32,10 +32,10 @@ def _saved_token(monkeypatch: pytest.MonkeyPatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     init_sqlite(str(state))
 
-    from magi.db.settings import state_set
+    from magi.bus.db.settings import state_set
     state_set(str(state), "telegram.bot_token", "fake:token")
     state_set(str(state), "telegram.bot_username", "fakebot")
     return state

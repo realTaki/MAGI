@@ -223,7 +223,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     # tmp_path. Without this, the second test onwards
     # writes to the first test's DB and the third test's
     # rows appear in the fourth test's results.
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     return ToolContext(
@@ -352,9 +352,8 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     the webui handler was silently dropping messages. The
     test follows the production code path.
     """
-    from magi.db import (
-        ChatSession,
-        open_session)
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
     from magi.channels import dispatcher
     from magi.channels.telegram import bot as tg_bot
 
@@ -365,7 +364,7 @@ async def test_send_message_tg_calls_callback(workspace_ctx, monkeypatch):
     # row the tool's ``ctx.session_id`` points at. The
     # post-refactor dispatcher reads ``Contact.telegram_id``
     # directly as the per-channel IM identifier.
-    from magi.db import Contact
+    from magi.bus.models.local.contact import Contact
     with open_session() as db:
         existing = db.get(Contact, 42)
         if existing is None:

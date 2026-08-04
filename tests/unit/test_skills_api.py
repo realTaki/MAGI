@@ -18,8 +18,12 @@ from fastapi.testclient import TestClient
 
 from magi.channels.api.app import create_app
 from magi.skills.loader import _reset_for_tests
-from magi.db import init_sqlite
-from magi.db import Contact, init_orm, open_session
+from magi.bus.db import init_sqlite
+from magi.bus.models.local.contact import Contact
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 
 @pytest.fixture
 def workspace(tmp_path):
@@ -45,7 +49,7 @@ def env(monkeypatch, tmp_path, workspace):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

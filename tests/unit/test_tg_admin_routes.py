@@ -24,15 +24,20 @@ def tg_admin_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    from magi.db import init_sqlite
-    from magi.db import Contact, init_orm, open_session
+    from magi.bus.db import init_sqlite
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
 
     init_sqlite(str(state))
     init_orm(str(state))
     return state
 
 def _seed_contact(state_dir: str, *, delivery_address: int, role: str, admin: bool = False):
-    from magi.db import Contact, open_session
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import open_session
 
     with open_session() as s:
         s.query(Contact).delete()

@@ -41,8 +41,11 @@ def _seed_admin():
     tests in the same pytest run don't trip the UNIQUE
     constraint on ``telegram_id``.
     """
-    from magi.db import (
-        Contact, init_orm, open_session)
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     init_orm(os.environ["MAGI_STATE_DIR"])
     with open_session() as s:
         # Clean slate (cheap; we never need cross-test
@@ -205,7 +208,8 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     again = store.get(admin.id, sid)
     assert again.title == "My first question"
     # D.18: title lives in the chat_sessions row, not a JSON file.
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
     with open_session() as db:
         row = db.get(ChatSession, sid)
     assert row.title == "My first question"
@@ -452,7 +456,8 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
 
     # Wait for the two jobs to land — each takes essentially
     # 0s thanks to the no-op sleep in ``_install_fake_provider``.
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
     for _ in range(50):
         await asyncio.sleep(0.01)
         # Both sessions titled?

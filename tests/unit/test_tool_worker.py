@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from magi.bus import BusStore
-from magi.db import init_orm
+from magi.bus.db import init_orm
 from magi.tools.base import ToolResult
 
 

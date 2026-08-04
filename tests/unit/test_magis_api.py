@@ -4,9 +4,14 @@ from sqlalchemy import select
 
 def test_each_magis_gets_reserved_roles(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.db import MAGIS, MAGISRole, init_orm, open_session
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_membership import MAGISRole
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     from magi.bus.models.magis.magis_membership import ensure_default_roles
     init_orm(str(tmp_path))
     with open_session() as db:
@@ -18,9 +23,15 @@ def test_each_magis_gets_reserved_roles(monkeypatch, tmp_path):
 
 def test_adam_does_not_manage_descendant_without_direct_membership(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_membership import MAGISMembership
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     from magi.bus.models.magis.magis_membership import adam_manages_magis, ensure_default_roles
     init_orm(str(tmp_path), seed_root=False)
     with open_session() as db:

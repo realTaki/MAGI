@@ -48,15 +48,16 @@ def env(monkeypatch, tmp_path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
         init_orm,
         init_sqlite,
-        open_session)
+        open_session,
+    )
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -137,7 +138,7 @@ def _seed_memory(
     orders by ``importance DESC, updated_at DESC``, so
     the test must control timestamps directly.
     """
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.contracts.memory import (
         SOURCE_MANUAL,
         MemoryEntry)

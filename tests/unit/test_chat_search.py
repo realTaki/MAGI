@@ -39,12 +39,16 @@ def search_env(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_sqlite
-    from magi.db import Contact, init_orm, open_session
+    from magi.bus.db import init_sqlite
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -74,7 +78,8 @@ def _seed_chat_message(delivery_address: str, text: str) -> str:
 def seed_messages(search_env):
     from bus.services.session import new_session_id
     from bus.contracts.session import SessionStore
-    from magi.db import ChatMessage, open_session
+    from magi.bus.models.local.session import ChatMessage
+    from magi.bus.db import open_session
 
     counter = {"n": 0}
 

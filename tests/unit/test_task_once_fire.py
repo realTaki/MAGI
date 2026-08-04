@@ -35,7 +35,11 @@ from magi.channels.tasks.scheduler import (
     TaskScheduler,
     _reset_for_tests,
     stop_scheduler)
-from magi.db import init_orm, init_sqlite, open_session
+from magi.bus.db import (
+    init_orm,
+    init_sqlite,
+    open_session,
+)
 from magi.channels.tasks.models import Task
 
 
@@ -86,7 +90,7 @@ def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     sd.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     init_sqlite(str(sd))
@@ -104,7 +108,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
     from magi.channels.tasks import models as _  # noqa: F401  (registers Task on Base)
-    from magi.db import Contact
+    from magi.bus.models.local.contact import Contact
 
     task_id = "T" + "0" * 25
     row_kwargs = dict(overrides)
@@ -232,7 +236,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
 
     # Seed a target operator + bind the cookie identity
     # the ``_gate`` consults.
-    from magi.db import Contact
+    from magi.bus.models.local.contact import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",
@@ -277,7 +281,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
 
     start_scheduler(str(state_db))
 
-    from magi.db import Contact
+    from magi.bus.models.local.contact import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",

@@ -62,11 +62,14 @@ def mcp_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_orm, open_session
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     from magi.bus.models.local.mcp_server import McpServer
 
     init_orm(str(state))
@@ -183,7 +186,7 @@ def test_load_servers_malformed_json_falls_back_to_empty(mcp_db, caplog):
     ``args_json`` doesn't crash the whole load. The
     loader logs a warning and treats the column as
     empty."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.mcp_server import McpServer
 
     with open_session() as s:
@@ -367,7 +370,7 @@ def test_maybe_reload_fires_on_table_edit(mcp_db):
     # ``onupdate`` only fires on column value changes,
     # so we touch ``enabled``.
     import time as _t
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.mcp_server import McpServer
 
     # The datetime resolution on sqlite is second-level,
@@ -398,7 +401,7 @@ def test_maybe_reload_handles_deleted_table(mcp_db, monkeypatch):
     # ``magi.db.open_session`` to raise — that's
     # the symbol the function actually resolves at call
     # time.
-    import magi.db as db_mod
+    import magi.bus.db as db_mod
 
     real_open_session = db_mod.open_session
     def _boom(*_a, **_kw):

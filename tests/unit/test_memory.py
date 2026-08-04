@@ -30,7 +30,11 @@ from pathlib import Path
 
 import pytest
 
-from magi.db import Contact, init_orm, open_session
+from magi.bus.models.local.contact import Contact
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 from bus.contracts.memory import KIND_IMPORTANT, KIND_ONGOING
 from bus.services.memory import MemoryStore, format_memory_block
 
@@ -53,7 +57,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

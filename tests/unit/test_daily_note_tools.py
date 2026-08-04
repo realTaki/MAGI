@@ -32,12 +32,15 @@ def state_dir(monkeypatch, tmp_path):
     sd.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact, init_orm, init_sqlite, open_session,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        init_sqlite,
+        open_session,
     )
     init_sqlite(str(sd))
     init_orm(str(sd))
@@ -56,7 +59,7 @@ def state_dir(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_update_daily_note_inserts_first_row(state_dir):
     from magi.tools.memory_contacts import UpdateDailyNoteTool
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     tool = UpdateDailyNoteTool()
@@ -75,7 +78,7 @@ async def test_update_daily_note_inserts_first_row(state_dir):
 @pytest.mark.asyncio
 async def test_update_daily_note_appends_second_call(state_dir):
     from magi.tools.memory_contacts import UpdateDailyNoteTool
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     tool = UpdateDailyNoteTool()
@@ -122,7 +125,8 @@ async def test_update_daily_note_rejects_for_unassigned_contact(state_dir):
     seeded contact's ``role`` to ``"guest"`` AND clear its
     ``admin`` bit so the DB-backed
     ``caller_role_denied_reason`` check sees a non-author."""
-    from magi.db import Contact, open_session
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import open_session
     from magi.tools.memory_contacts import UpdateDailyNoteTool
 
     # Flip the seeded admin's role from "assigned" to "guest"
@@ -150,11 +154,12 @@ async def test_update_daily_note_admits_admin_with_role_guest(state_dir):
     operator (``role='guest', admin=True``) can still write
     their own daily notes."""
     from magi.tools.memory_contacts import UpdateDailyNoteTool
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import ContactNote
 
     # Need a contact row at uid=2 with role='guest' so the FK resolves.
-    from magi.db import Contact, open_session as _open
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import open_session as _open
     with _open() as db:
         db.add(Contact(
             id=2, name="TA-colleague",

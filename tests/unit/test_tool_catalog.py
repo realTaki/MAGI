@@ -6,7 +6,7 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore, ToolDefinition, bootstrap
 from magi.bus.services.tool_catalog import CatalogRevisionConflict, ToolCatalogValidationError
-from magi.db import init_orm
+from magi.bus.db import init_orm
 
 
 @pytest.fixture()
@@ -86,7 +86,7 @@ def test_agent_transition_binds_job_to_catalog_snapshot(catalog, tmp_path) -> No
 
 def test_catalog_updates_legacy_webui_projection_in_same_transaction(catalog, tmp_path) -> None:
     catalog.replace_snapshot(source="builtin", definitions=[_definition("visible")])
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.tool import ToolRegistry
 
     with open_session(str(tmp_path / "state")) as session:

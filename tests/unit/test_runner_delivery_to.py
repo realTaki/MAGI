@@ -35,15 +35,16 @@ from pathlib import Path
 
 import pytest
 
-from magi.db import (
+from magi.bus.models.local.session import (
     ChatMessage,
     ChatSession,
-    Contact,
+)
+from magi.bus.models.local.contact import Contact
+from magi.bus.db import (
     init_orm,
     init_sqlite,
     open_session,
-    # Avoid circular import; the runner imports db from
-    # here as well.
+    # Avoid circular import; the runner imports db from     # here as well.,
 )
 from magi.channels.tasks.runner import execute_task
 from bus.services.session import new_session_id
@@ -63,7 +64,7 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.db.engine as _orm_mod
+    import magi.bus.db.engine as _orm_mod
 
     _orm_mod._engine = None
     _orm_mod._SessionLocal = None

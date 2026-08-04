@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.db import init_orm
+from magi.bus.db import init_orm
 
 
 @pytest.fixture()
@@ -61,7 +61,7 @@ def test_ordinal_assigned_monotonically_within_run(store: BusStore) -> None:
     """Parallel tool_calls get ordinals 1..N in submission order."""
     run_id = _seed_run_with_tool_calls(store, ["a", "b", "c"])
 
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.queue import ToolCall
 
     with open_session() as session:
@@ -90,7 +90,7 @@ def test_load_tool_continuation_orders_by_ordinal(store: BusStore) -> None:
         is_error=False,
     ) if False else None  # No-op, we'll do explicit writes below
     # Actually claim in array order and complete out of order.
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.queue import ToolCall, ToolJob
 
     with open_session() as session:
@@ -136,7 +136,7 @@ def test_legacy_continuation_falls_back_to_array_order(
     run_id = _seed_run_with_tool_calls(store, ["legacy-a", "legacy-b"])
 
     # Wipe ordinals on this run's rows to simulate pre-0010 data.
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.queue import ToolCall, ToolJob, ToolCall as TC
     from sqlalchemy import update
 

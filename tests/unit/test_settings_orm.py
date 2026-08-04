@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 
 def _reset_engine() -> None:
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
 
     orm_mod._engine = None
     orm_mod._SessionLocal = None
@@ -23,8 +23,12 @@ def state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
 
 
 def test_state_helpers_use_the_orm_settings_model(state_dir):
-    from magi.db import Setting, init_sqlite, open_session
-    from magi.db.settings import state_delete, state_get, state_set
+    from magi.bus.models.local.setting import Setting
+    from magi.bus.db import (
+        init_sqlite,
+        open_session,
+    )
+    from magi.bus.db.settings import state_delete, state_get, state_set
 
     # The bootstrap no longer creates settings with raw SQL; the ORM creates
     # it when the first settings helper opens a session.
@@ -47,7 +51,8 @@ def test_state_helpers_use_the_orm_settings_model(state_dir):
 
 
 def test_settings_table_is_registered_in_orm_metadata(state_dir):
-    from magi.db import Setting, init_orm
+    from magi.bus.models.local.setting import Setting
+    from magi.bus.db import init_orm
 
     init_orm(str(state_dir))
 
@@ -66,8 +71,8 @@ def test_init_orm_records_alembic_head(state_dir):
     so future rebase / new-revision changes don't require a
     test edit here.
     """
-    from magi.db import init_orm
-    from magi.db.alembic_runner import CANONICAL_HEAD
+    from magi.bus.db import init_orm
+    from magi.bus.db.alembic_runner import CANONICAL_HEAD
 
     engine = init_orm(str(state_dir))
 

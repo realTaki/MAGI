@@ -54,7 +54,8 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
     s = store.create(2, )
     # Write the new fields via direct ORM and re-read via the
     # store.
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
     with open_session() as db:
         row = db.get(ChatSession, s.session_id)
         row.active_tail_count = 20
@@ -87,7 +88,11 @@ def test_session_archive_round_trip_via_orm(fresh_db):
         SessionMessage(role="user",      text="new msg",  ts="2026-07-02T00:00:00Z", message_id="m1"),
         SessionMessage(role="assistant", text="new reply", ts="2026-07-02T00:00:01Z", message_id="m2"),
     ])
-    from magi.db import ChatMessage, ChatSession, open_session
+    from magi.bus.models.local.session import (
+        ChatMessage,
+        ChatSession,
+    )
+    from magi.bus.db import open_session
     with open_session() as db:
         archived_msg = SessionMessage(
             role="user", text="old msg 1",
@@ -212,12 +217,12 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_sqlite
-    from magi.db import init_orm
+    from magi.bus.db import init_sqlite
+    from magi.bus.db import init_orm
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -299,7 +304,8 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
-    from magi.db import ChatMessage, open_session
+    from magi.bus.models.local.session import ChatMessage
+    from magi.bus.db import open_session
 
     store = SessionStore(str(fresh_db))
     sess = store.create(2, )
@@ -421,13 +427,13 @@ async def test_maybe_compact_noop_when_under_threshold(
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
 
-    from magi.db.settings import state_set
+    from magi.bus.db.settings import state_set
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
     # The settings table is created by init_sqlite; without
     # it, ``state_set`` raises ``no such table: settings``.
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     init_sqlite(state_dir)
     state_set(state_dir, "system.compact_context_window", "100000")
     state_set(state_dir, "system.compact_threshold_pct", "80")
@@ -473,11 +479,11 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     from bus.services.session import SessionMessage
     from bus.contracts.session import SessionStore
 
-    from magi.db.settings import state_set
+    from magi.bus.db.settings import state_set
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     init_sqlite(state_dir)
     state_set(state_dir, "system.compact_context_window", "100")
     state_set(state_dir, "system.compact_threshold_pct", "1")

@@ -19,7 +19,10 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore, StreamEvent, get_stream_hub
 from magi.bus.models.queue import AgentRun
-from magi.db import init_orm, open_session
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 
 
 @pytest.fixture()
@@ -51,7 +54,7 @@ def test_message_committed_event_only_fires_after_commit_succeeds(
     queue = hub.subscribe(run_id)
 
     # Force commit to raise.
-    from magi.db import open_session
+    from magi.bus.db import open_session
     real_commit = open_session().__enter__().commit
 
     def boom_commit(*a, **kw):

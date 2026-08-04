@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from magi.bus import AgentMessage, BusStore
-from magi.db import init_orm
+from magi.bus.db import init_orm
 
 
 def _setup(tmp_path: Path, monkeypatch) -> BusStore:
@@ -68,7 +68,7 @@ def test_concurrent_publish_agent_message_preserves_idempotency(
     tmp_path: Path, monkeypatch
 ) -> None:
     """Two threads publishing the same ``event_id`` produce one inbox row."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.queue import AgentInbox
 
     store = _setup(tmp_path, monkeypatch)

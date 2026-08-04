@@ -199,7 +199,12 @@ def test_admin_reload_endpoint_clears_cache(
     import magi.prompts as prompts
     from fastapi.testclient import TestClient
     from magi.channels.api.app import create_app
-    from magi.db import Contact, init_orm, init_sqlite, open_session
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        init_sqlite,
+        open_session,
+    )
 
     # Need a state dir + admin cookie for the AdminGate
     # to let the endpoint through. Same pattern as the
@@ -208,7 +213,7 @@ def test_admin_reload_endpoint_clears_cache(
     state = tmp_prompts_dir / "state"
     state.mkdir(exist_ok=True)
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
     init_sqlite(str(state))
@@ -250,10 +255,10 @@ def test_reload_endpoint_requires_admin(tmp_prompts_dir: Path, monkeypatch):
     state = tmp_prompts_dir / "state"
     state.mkdir(exist_ok=True)
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
-    from magi.db import init_sqlite
+    from magi.bus.db import init_sqlite
     init_sqlite(str(state))
 
     # The gate checks Contact.role via the ORM; without

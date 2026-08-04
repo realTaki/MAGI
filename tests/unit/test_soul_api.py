@@ -56,10 +56,11 @@ def client(soul_env):
 
     # Lazy import — keeps the test module fast to import and
     # ensures the env var is set before the factory builds.
-    from magi.db import (
-        Contact,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
         init_orm,
-        open_session)
+        open_session,
+    )
 
     init_orm(str(state_dir))
     with open_session() as s:
@@ -238,10 +239,11 @@ def _client_with_role(soul_env, *, role: str, delivery_address: int):
     multiple rows.
     """
     state_dir, _workspace = soul_env
-    from magi.db import (
-        Contact,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
         init_orm,
-        open_session)
+        open_session,
+    )
 
     init_orm(str(state_dir))
     with open_session() as s:
@@ -309,7 +311,8 @@ def test_gate_uses_uid_not_telegram_id(soul_env):
     ``"6240201712"`` must 403.
     """
     state_dir, _ = soul_env
-    from magi.db import Contact, open_session
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import open_session
 
     # Reset + seed a deliberately mismatched pair.
     with open_session() as s:

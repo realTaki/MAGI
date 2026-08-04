@@ -46,15 +46,16 @@ def token_env(monkeypatch, tmp_path):
     # rebuilds against the test's tmp_path. ``init_orm`` /
     # ``init_sqlite`` would otherwise no-op on the second
     # test onwards because the global engine is already set.
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_sqlite
-    from magi.db import (
-        Contact,
+    from magi.bus.db import init_sqlite
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
         init_orm,
-        open_session)
+        open_session,
+    )
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -97,7 +98,8 @@ def test_record_token_usage_happy_path(token_env):
     """Full Anthropic-shape ``usage`` dict → row with all
     four fields populated."""
     from magi.agent.token_usage import record_token_usage
-    from magi.db import TokenUsage, open_session
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import open_session
 
     record_token_usage(
         str(token_env[0]),
@@ -133,7 +135,8 @@ def test_record_token_usage_empty_dict_writes_zero_row(token_env):
     the call-count aggregate accurate if the helper is
     called with ``usage={}`` (e.g. a future failure path)."""
     from magi.agent.token_usage import record_token_usage
-    from magi.db import TokenUsage, open_session
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import open_session
 
     record_token_usage(
         str(token_env[0]),
@@ -157,7 +160,8 @@ def test_record_token_usage_partial_dict(token_env):
     """Missing cache keys default to 0; the helper doesn't
     raise on a minimal Anthropic shape."""
     from magi.agent.token_usage import record_token_usage
-    from magi.db import TokenUsage, open_session
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import open_session
 
     record_token_usage(
         str(token_env[0]),
@@ -212,7 +216,7 @@ def test_timezone_put_round_trip(token_env, client):
 
     # Subprocess-equivalent: a fresh get_system_timezone
     # call reads the new value back.
-    from magi.db.runtime_settings import get_system_timezone
+    from magi.bus.db.runtime_settings import get_system_timezone
     assert get_system_timezone(str(token_env[0])) == "Asia/Shanghai"
 
 def test_timezone_put_rejects_unknown_tz(token_env, client):
@@ -249,7 +253,8 @@ def _insert_usage(state_dir, *, uid, when_utc, in_t, out_t, channel="webui"):
     specific UTC timestamp. Bypasses ``agent._record_token_usage``
     so tests can place rows in the past (the helper uses
     ``default=datetime.utcnow``)."""
-    from magi.db import TokenUsage, open_session
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import open_session
 
     with open_session() as s:
         s.add(TokenUsage(
@@ -349,7 +354,7 @@ def test_token_usage_uses_configured_timezone_for_week_boundary(token_env, clien
     Pinned to verify that the aggregation actually reads
     the configured tz and doesn't silently default to UTC.
     """
-    from magi.db.runtime_settings import set_system_timezone
+    from magi.bus.db.runtime_settings import set_system_timezone
 
     set_system_timezone(str(token_env[0]), "Asia/Shanghai")
 
@@ -422,7 +427,7 @@ def test_timezone_falls_back_when_stored_value_invalid(token_env, client):
     fallback so the dashboard stays usable even with a
     bad meta key."""
     from tzlocal import get_localzone
-    from magi.db.settings import state_set
+    from magi.bus.db.settings import state_set
 
     state_set(str(token_env[0]), "system.timezone", "garbage")
     r = client.get("/api/system-settings/timezone")

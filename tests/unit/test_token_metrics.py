@@ -44,16 +44,17 @@ def env(monkeypatch, tmp_path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
     
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact,
-        TokenUsage,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import (
         init_orm,
         init_sqlite,
-        open_session)
+        open_session,
+    )
 
     init_sqlite(str(state))
     init_orm(str(state))
@@ -65,7 +66,7 @@ def env(monkeypatch, tmp_path):
     # MDT or CST) shifts the Monday-00:00-local anchor and
     # rows that the test thinks are "1 day ago in UTC"
     # fall outside the configured window.
-    from magi.db.runtime_settings import set_system_timezone
+    from magi.bus.db.runtime_settings import set_system_timezone
     set_system_timezone(str(state), "UTC")
 
     with open_session() as db:
@@ -106,7 +107,8 @@ def _seed_usage(uid: int, ts: datetime, in_tok: int, out_tok: int):
     the table — the agent loop always writes them; tests
     use the same shape.
     """
-    from magi.db import TokenUsage, open_session
+    from magi.bus.models.local.token_usage import TokenUsage
+    from magi.bus.db import open_session
 
     with open_session() as db:
         db.add(
@@ -179,7 +181,8 @@ def test_week_window_includes_recent(client, env):
 def test_scope_to_one_uid(client, env):
     """Aggregation filters by the URL's uid; other Contacts'
     rows aren't counted."""
-    from magi.db import Contact, open_session as _os
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import open_session as _os
 
     with _os() as db:
         other = Contact(

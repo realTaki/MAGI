@@ -40,12 +40,12 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_sqlite
-    from magi.db import init_orm
+    from magi.bus.db import init_sqlite
+    from magi.bus.db import init_orm
     init_sqlite(str(state))
     init_orm(str(state))
 
@@ -100,11 +100,11 @@ def test_migrate_imports_active_messages(fresh_db):
     """Active messages land in ``chat_messages`` with
     ``archived=0`` and the FTS5 trigger picks them up."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import (
+    from magi.bus.models.local.session import (
         ChatMessage,
         ChatSession,
-        open_session,
     )
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     _write_legacy_session(
@@ -139,7 +139,8 @@ def test_migrate_imports_active_messages(fresh_db):
 def test_migrate_imports_archive_with_archived_flag(fresh_db):
     """Archive rows land in ``chat_messages`` with ``archived=1``."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatMessage, open_session
+    from magi.bus.models.local.session import ChatMessage
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     _write_legacy_session(
@@ -172,7 +173,8 @@ def test_migrate_imports_archive_with_archived_flag(fresh_db):
 def test_migrate_preserves_title_and_compaction_metadata(fresh_db):
     """Header fields (title, last_compaction_at) round-trip."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     _write_legacy_session(
@@ -195,7 +197,8 @@ def test_migrate_multiple_tgids(fresh_db):
     """Multiple delivery_address subdirs are walked; sessions are
     imported per chat."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     _write_legacy_session(workspace, "9001", "01AAA",
@@ -217,7 +220,8 @@ def test_migrate_multiple_tgids(fresh_db):
 def test_migrate_no_json_dir_is_noop(fresh_db):
     """No legacy tree → ``(0, 0, 0)`` and no DB writes."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     # Don't create any JSON.
@@ -236,7 +240,11 @@ def test_migrate_is_idempotent(fresh_db):
     """Second call on the same tree is a no-op — the unique
     constraint on ``(session_id, message_id)`` rejects dupes."""
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatMessage, ChatSession, open_session
+    from magi.bus.models.local.session import (
+        ChatMessage,
+        ChatSession,
+    )
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
     _write_legacy_session(workspace, "9001", "01ABC",
@@ -269,7 +277,8 @@ def test_migrate_idempotent_when_json_left_in_place(fresh_db, monkeypatch):
     rows before and after.
     """
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
     from pathlib import Path
 
     state, workspace = fresh_db
@@ -309,7 +318,8 @@ def test_migrate_corrupt_file_is_logged_and_left_in_place(fresh_db, caplog):
     and the rest of the tree still imports."""
     import logging
     from bus.contracts.session import migrate_from_json
-    from magi.db import ChatSession, open_session
+    from magi.bus.models.local.session import ChatSession
+    from magi.bus.db import open_session
 
     state, workspace = fresh_db
 

@@ -25,8 +25,12 @@ from pathlib import Path
 import pytest
 
 from bus.contracts.session import SessionStore
-from magi.db import init_sqlite
-from magi.db import ChatMessage, init_orm, open_session
+from magi.bus.db import init_sqlite
+from magi.bus.models.local.session import ChatMessage
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 from magi.tools.base import ToolContext
 from magi.tools.search_sessions import SearchSessionsTool
 
@@ -43,7 +47,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

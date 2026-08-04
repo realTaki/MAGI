@@ -17,7 +17,10 @@ import pytest
 from magi.bus import AgentMessage, BusStore
 from magi.bus.models.queue import AgentInbox, DeliveryOutbox, ToolJob
 from magi.bus.contracts.agent import A2AInvocationRequest
-from magi.db import init_orm, open_session
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 
 
 @pytest.fixture()
@@ -46,7 +49,7 @@ def test_migration_0009_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     and crash on the second one.
     """
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)
     # Reset engine cache so the second init_orm sees a "fresh" environment

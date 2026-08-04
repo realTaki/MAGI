@@ -28,7 +28,11 @@ from pathlib import Path
 
 import pytest
 
-from magi.db import Contact, init_orm, open_session
+from magi.bus.models.local.contact import Contact
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
 from magi.tools.base import (
     ToolContext,
     caller_role_denied_reason)
@@ -42,7 +46,7 @@ def fresh_db(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 

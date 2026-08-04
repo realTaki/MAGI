@@ -98,7 +98,10 @@ def test_local_db_issues_synchronous_normal_after_commit() -> None:
 
 def test_engine_sets_synchronous_normal_on_new_connection(tmp_path: Path) -> None:
     """The SQLAlchemy engine's per-connection listener sets NORMAL."""
-    from magi.db import init_orm, open_session
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
 
     init_orm(str(tmp_path), seed_root=False)
 

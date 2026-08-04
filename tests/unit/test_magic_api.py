@@ -10,10 +10,19 @@ def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
     The exact seeded name is :data:`magi.db.engine._DEFAULT_MAGI_NAME`
     — pinned here so a rename is intentional rather than silent."""
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.db import MAGIC, MAGIS, MAGISMembership, MAGISRole, init_orm, open_session
-    from magi.db.engine import _DEFAULT_MAGI_NAME
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_membership import (
+        MAGISMembership,
+        MAGISRole,
+    )
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
+    from magi.bus.db.engine import _DEFAULT_MAGI_NAME
     init_orm(str(tmp_path))
     with open_session() as db:
         genesis = db.scalar(select(MAGIS).where(MAGIS.name == "Genesis"))
@@ -27,9 +36,14 @@ def test_fresh_workspace_seeds_default_magic_as_genesis_adam(
 
 def test_new_magic_is_unassigned(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    from magi.db import MAGIC, MAGISMembership, init_orm, open_session
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis_membership import MAGISMembership
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     init_orm(str(tmp_path))
     with open_session() as db:
         worker = MAGIC(name="Worker")
@@ -39,10 +53,16 @@ def test_new_magic_is_unassigned(monkeypatch, tmp_path):
 
 def test_magic_has_only_one_direct_magis_membership(monkeypatch, tmp_path):
     monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
-    import magi.db.engine as engine_mod
+    import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     from sqlalchemy.exc import IntegrityError
-    from magi.db import MAGIC, MAGIS, MAGISMembership, init_orm, open_session
+    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.models.magis.magis_membership import MAGISMembership
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
     from magi.bus.models.magis.magis_membership import ensure_default_roles
     init_orm(str(tmp_path), seed_root=False)
     with open_session() as db:

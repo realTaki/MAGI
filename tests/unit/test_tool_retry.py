@@ -15,8 +15,11 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore
 from magi.bus.models.queue import AgentInbox, ToolCall, ToolJob
-from magi.db import init_orm, open_session
-from magi.db.base import utcnow_naive
+from magi.bus.db import (
+    init_orm,
+    open_session,
+)
+from magi.bus.db.base import utcnow_naive
 
 
 @pytest.fixture()

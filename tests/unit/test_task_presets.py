@@ -40,15 +40,16 @@ def state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import (
-        Contact,
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
         init_orm,
         init_sqlite,
-        open_session)
+        open_session,
+    )
     init_sqlite(str(sd))
     init_orm(str(sd))
 
@@ -78,7 +79,7 @@ def _now() -> str:
 
 def test_bundled_templates_are_loaded_and_resynchronised(state):
     """A source-file edit wins over a stale bundled DB row on next boot."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.models import TaskPreset
     from magi.proactive.task_preset_templates import (
         load_task_preset_templates,
@@ -109,7 +110,7 @@ def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
     weekly_review, morning_brief, night_summary); the count
     rides on ``state["preset_count"]`` so this test stays
     in sync as new presets are added."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
     from magi.channels.tasks.models import Task
     from magi.proactive.models import TaskPreset
@@ -151,7 +152,7 @@ def test_seed_is_idempotent_on_repeat_call(state):
     """Calling the helper twice for the same contact must
     return 0 on the second call (per-preset existence
     short-circuit) and leave the row count unchanged."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
     from magi.channels.tasks.models import Task
 
@@ -186,7 +187,7 @@ def test_seed_skips_admin_contacts(state):
     the served user (``role='guest', admin=True``)
     doesn't need auto-seeded daily briefings.
     """
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
     from magi.channels.tasks.models import Task
 
@@ -209,7 +210,7 @@ def test_seed_skips_disabled_presets(state):
     helper reads the preset's current ``enabled`` only to
     decide whether to SEED, not to flip already-seeded
     rows)."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
     from magi.channels.tasks.models import Task
     from magi.proactive.models import TaskPreset
@@ -243,7 +244,7 @@ def test_seed_snapshot_semantics_edits_preset_after_seed(state):
     """Editing a preset AFTER seeding must NOT mutate the
     already-seeded per-user rows. The per-user ``Task``
     row keeps its snapshotted ``prompt``."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
     from magi.channels.tasks.models import Task
     from magi.proactive.models import TaskPreset
@@ -279,7 +280,7 @@ def test_seed_returns_zero_for_unknown_contact(state):
     the call-site check and the helper invocation, the
     helper returns 0 and logs a warning. No FK violation
     surfaces to the route handler."""
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
 
     with open_session() as db:

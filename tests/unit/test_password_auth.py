@@ -110,12 +110,12 @@ def auth_state(monkeypatch, tmp_path):
     state.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import init_orm
-    from magi.db import open_session as _open_session
+    from magi.bus.db import init_orm
+    from magi.bus.db import open_session as _open_session
     from magi.bus.models.local.contact import Contact as _Contact
     from magi.bus.models.magis.auth_credential import AuthCredential as _AuthCredential
 
@@ -266,7 +266,7 @@ def test_onboarding_set_admin_password_creates_admin_row(auth_state):
         auth_state.state_dir, 1, cooldown_seconds=60,
     ) is True
     # Manually run the same logic the endpoint does:
-    from magi.db import open_session
+    from magi.bus.db import open_session
     from magi.bus.models.local.contact import Contact
     from magi.bus.models.magis.auth_credential import AuthCredential
 

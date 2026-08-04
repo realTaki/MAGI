@@ -49,12 +49,17 @@ def tg_state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path):
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(state))
 
-    import magi.db.engine as orm_mod
+    import magi.bus.db.engine as orm_mod
 
     orm_mod._engine = None
     orm_mod._SessionLocal = None
 
-    from magi.db import Contact, init_orm, init_sqlite, open_session
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        init_sqlite,
+        open_session,
+    )
 
     init_sqlite(str(state))
     init_orm(str(state))

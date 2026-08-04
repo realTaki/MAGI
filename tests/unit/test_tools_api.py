@@ -78,9 +78,13 @@ def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ws.mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", str(sd))
     
-    from magi.db import init_sqlite
-    from magi.db import Contact, init_orm, open_session
-    import magi.db.engine as _orm_mod
+    from magi.bus.db import init_sqlite
+    from magi.bus.models.local.contact import Contact
+    from magi.bus.db import (
+        init_orm,
+        open_session,
+    )
+    import magi.bus.db.engine as _orm_mod
     # Reset the SQLAlchemy engine singleton so each test
     # opens its own fresh sqlite file. Without this, an
     # earlier test's engine (pointing at a deleted path)
