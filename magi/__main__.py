@@ -121,9 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "service",
         nargs="?",
-        choices=("runtime", "webui"),
+        choices=("runtime", "webui", "local"),
         default="runtime",
-        help="service role: runtime (default) or the singleton webui control plane",
+        help="service role: runtime (default), webui control plane, or `local` (Local Profile launcher — start/status/stop/doctor after the verb)",
     )
     parser.add_argument(
         "--check",
@@ -135,9 +135,22 @@ def main(argv: list[str] | None = None) -> int:
         return check()
     if args.service == "webui":
         run_webui()
+    elif args.service == "local":
+        return _run_local(argv)
     else:
         run()
     return 0
+
+
+def _run_local(argv: list[str] | None) -> int:
+    """Dispatch ``magi local <verb>`` to the launcher CLI."""
+    from magi.launcher.cli import main as local_main
+
+    # Pop the leading "local" so the local CLI sees just its verbs.
+    rest = list(argv or [])
+    if rest and rest[0] == "local":
+        rest = rest[1:]
+    return int(local_main(rest))
 
 
 def run_webui() -> None:

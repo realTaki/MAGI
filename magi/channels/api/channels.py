@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -22,8 +21,7 @@ from pydantic import BaseModel, Field
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
-from magi.bus import bootstrap
-from magi.constants import STATE_DIR
+from magi.bus import get_bus
 from magi.launcher import is_channel_running, start_channel, stop_channel
 
 logger = logging.getLogger("magi.api.channels")
@@ -47,8 +45,8 @@ _CHANNEL_META: list[dict] = [
 _REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
 
 
-def _read_enabled(state_dir: str) -> list[str]:
-    raw = bootstrap(state_dir).settings.get(_SETTINGS_KEY)
+def _read_enabled() -> list[str]:
+    raw = get_bus().settings.get(_SETTINGS_KEY)
     if not raw:
         return [Channel.WEBUI]
     try:
@@ -65,13 +63,13 @@ def _read_enabled(state_dir: str) -> list[str]:
     return [Channel.WEBUI]
 
 
-def _write_enabled(state_dir: str, channels: list[str]) -> None:
-    bootstrap(state_dir).settings.set(_SETTINGS_KEY, json.dumps(channels))
+def _write_enabled(channels: list[str]) -> None:
+    get_bus().settings.set(_SETTINGS_KEY, json.dumps(channels))
 
 
-def _has_credentials(state_dir: str, channel: str) -> bool:
+def _has_credentials(channel: str) -> bool:
     if channel == Channel.TG:
-        return bool(bootstrap(state_dir).settings.get("telegram.bot_token"))
+        return bool(get_bus().settings.get("telegram.bot_token"))
     return True  # webui always has creds; unimplemented channels defer
 
 
@@ -109,8 +107,7 @@ def list_channels(
     _admin: AdminGate,
     request: Request,
 ) -> ChannelsResponse:
-    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
-    enabled = _read_enabled(state_dir)
+    enabled = _read_enabled()
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
         name = meta["name"]
@@ -118,7 +115,7 @@ def list_channels(
             name=name,
             label=meta["label"],
             implemented=meta["implemented"],
-            has_credentials=_has_credentials(state_dir, name),
+            has_credentials=_has_credentials(name),
             enabled=name in enabled,
             running=is_channel_running(name),
         ))
@@ -131,7 +128,6 @@ def update_channels(
     _admin: AdminGate,
     request: Request,
 ) -> ChannelsResponse:
-    state_dir = os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
     # Validate all names are known Channel values
     unknown = [c for c in payload.enabled if c not in Channel]
@@ -156,8 +152,8 @@ def update_channels(
             effective_enabled.append(req)
 
     # Persist
-    _write_enabled(state_dir, effective_enabled)
-    enabled_list = _read_enabled(state_dir)
+    _write_enabled(effective_enabled)
+    enabled_list = _read_enabled()
 
     # Start / stop channels to match the new enabled list.
     # Already-running channels are left alone; newly-enabled ones
@@ -170,7 +166,7 @@ def update_channels(
 
         if should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
-            start_channel(name, state_dir)
+            start_channel(name, get_bus().settings.require_state_dir())
         elif not should_run and currently_running:
             logger.info("channels: stopping %r (toggled off)", name)
             stop_channel(name)
@@ -179,7 +175,7 @@ def update_channels(
             name=name,
             label=meta["label"],
             implemented=meta["implemented"],
-            has_credentials=_has_credentials(state_dir, name),
+            has_credentials=_has_credentials(name),
             enabled=name in enabled_list,
             running=is_channel_running(name),
         ))

@@ -43,7 +43,7 @@ _DISABLED_KEY = "skills.disabled"
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    return get_bus()
 
 
 def _load_disabled() -> set[str]:
