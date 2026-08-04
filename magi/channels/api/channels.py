@@ -24,7 +24,7 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.bus import bootstrap
 from magi.constants import STATE_DIR
-from magi.runtime import is_channel_running, start_channel, stop_channel
+from magi.launcher import is_channel_running, start_channel, stop_channel
 
 logger = logging.getLogger("magi.api.channels")
 

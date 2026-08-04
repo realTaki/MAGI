@@ -59,7 +59,7 @@ from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminOrAssignedGate
 from magi.constants import STATE_DIR
-from magi.workspace import workspace_root
+from magi.launcher import workspace_root
 
 logger = logging.getLogger("magi.api.soul")
 

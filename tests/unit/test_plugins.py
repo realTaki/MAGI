@@ -14,7 +14,7 @@ from magi.connectors.bus import (
     publish as publish_connector,
     reset_bus as reset_connector_bus,
 )
-from magi.runtime import (
+from magi.launcher import (
     start_connector_bridge,
     stop_connector_bridge,
 )
