@@ -175,7 +175,6 @@ def get_contact_token_usage(
     contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
-    state_dir = _state_dir()
     tz_name = get_bus().settings.system_timezone()
     tz = zoneinfo.ZoneInfo(tz_name)
 

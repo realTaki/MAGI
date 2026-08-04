@@ -57,9 +57,17 @@ class ToolCatalogSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ToolContext:
-    """JSON-safe execution context supplied to a tool worker."""
+    """JSON-safe execution context supplied to a tool worker.
 
-    state_dir: str
+    The runtime's physical filesystem location (``state_dir``) is
+    owned by the BUS and **not** exposed here — tools that need
+    to read or write persistent state call the public
+    ``bus.<service>`` methods rather than handling the path
+    themselves. Only the user-facing ``workspace`` (the operator's
+    ``/workspace`` mount) is part of the tool context, because it
+    is the boundary tools operate against (``safe_resolve`` etc.).
+    """
+
     workspace: str
     uid: int
     channel: str

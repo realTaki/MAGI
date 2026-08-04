@@ -22,7 +22,7 @@ from magi.bus import (
     get_bus_store,
     get_stream_hub,
 )
-from magi.launcher.paths import state_dir as launcher_state_dir, workspace_dir
+from magi.launcher.paths import workspace_dir
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -186,10 +186,6 @@ class AgentWorker:
             "max_tokens": DEFAULT_MAX_TOKENS,
             "continuation_messages": continuation_messages,
             "tool_results": tool_results,
-            # Match the legacy signature that callers (and tests) still
-            # expect — :func:`magi.launcher.paths.state_dir` is the
-            # authoritative source.
-            "_state_dir": str(launcher_state_dir()),
         }
         if steering_inputs:
             kwargs["steering_inputs"] = steering_inputs

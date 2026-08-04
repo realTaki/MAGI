@@ -377,11 +377,11 @@ def _read_channels_from_db(state_dir: str) -> list[str]:
     return default
 
 
-def start_channel(name: str, state_dir: str) -> None:
+def start_channel(name: str) -> None:
     """Start a single channel at runtime (no restart needed)."""
     if name == "telegram":
         from magi.channels.telegram.bot import start_bot
-        start_bot(state_dir)
+        start_bot()
 
 
 def stop_channel(name: str) -> None:

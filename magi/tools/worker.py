@@ -117,7 +117,6 @@ class ToolWorker:
         try:
             result = await tool.run(
                 ToolContext(
-                    state_dir=self.bus.settings.require_state_dir(),
                     workspace=str(context_data.get("workspace") or ""),
                     uid=int(context_data.get("uid") or 0),
                     channel=str(context_data.get("channel") or ""),

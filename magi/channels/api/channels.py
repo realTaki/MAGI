@@ -166,7 +166,7 @@ def update_channels(
 
         if should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
-            start_channel(name, get_bus().settings.require_state_dir())
+            start_channel(name)
         elif not should_run and currently_running:
             logger.info("channels: stopping %r (toggled off)", name)
             stop_channel(name)

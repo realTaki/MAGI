@@ -87,7 +87,6 @@ def build_context(
         provider=provider,
         soul=read_soul(),
         tool_ctx=ToolContext(
-            state_dir=get_bus().settings.require_state_dir(),
             workspace=str(workspace_dir()),
             uid=uid or 0,
             channel=channel,
