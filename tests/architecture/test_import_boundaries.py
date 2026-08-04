@@ -51,18 +51,52 @@ RULES: list[tuple[str, list[str]]] = [
     ("magi.agent", ["magi.tools", "magi.channels", "magi.bus.db", "magi.bus.models"]),
     ("magi.tools", ["magi.agent", "magi.channels", "magi.bus.db", "magi.bus.models"]),
     ("magi.channels", ["magi.agent", "magi.tools", "magi.bus.db", "magi.bus.models"]),
+    # ``magi.mcp`` and ``magi.connectors`` are siblings — each is a
+    # tools-adapter for an external product (MCP for products that
+    # speak the MCP protocol, connectors for products that don't).
+    # Both MAY depend on ``magi.tools``; both must not reach into
+    # storage. This is the "external-adapter" symmetry.
     ("magi.mcp", ["magi.bus.db", "magi.bus.models"]),
-    ("magi.proactive", ["magi.bus.db", "magi.bus.models"]),
     ("magi.connectors", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.proactive", ["magi.bus.db", "magi.bus.models"]),
     ("magi.orchestrator", ["magi.bus.db", "magi.bus.models"]),
     ("magi.skills", ["magi.bus.db", "magi.bus.models"]),
-    # bus is the application core — must not import tool/channel/agent
+    # ``magi.channels.api`` is the WebUI backend. Per
+    # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §6
+    # (forbidden-deps table) + §5.6, the API MUST NOT depend on the
+    # generic task scheduler worker — scheduler interaction is a BUS
+    # protocol concern, not a Python one. The TASK bridge lives at
+    # ``magi.bus.services.task_scheduler_bridge``; the API reaches
+    # the scheduler only via that bridge.
+    (
+        "magi.channels.api",
+        [
+            "magi.channels.tasks",
+            "magi.agent",
+            "magi.tools",
+            "magi.mcp",
+            "magi.plugins",
+            "magi.connectors",
+            "magi.bus.db",
+            "magi.bus.models",
+        ],
+    ),
+    # bus is the application core — must not import channel/agent
     # implementations, LLM providers, or Telegram clients.
+    # ``magi.channels.tasks`` is the explicit exception: the scheduler
+    # worker is part of the bus-side task infrastructure, and
+    # ``magi.bus.services.task_scheduler_bridge`` is the single Python
+    # module allowed to hold the scheduler handle.
     (
         "magi.bus",
         [
             "magi.tools",
-            "magi.channels",
+            "magi.channels.telegram",
+            "magi.channels.api",
+            "magi.channels.a2a",
+            "magi.channels.base",
+            "magi.channels.dispatcher",
+            "magi.channels.delivery",
             "magi.agent.worker",
             "magi.agent.step",
             "magi.agent.llm",
