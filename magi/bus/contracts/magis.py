@@ -140,6 +140,14 @@ class EveRuntimeView:
 
     Mirrors the WebUI's ``EveRuntimeOut`` Pydantic model.  Returned to
     callers instead of leaking the ORM ``EveRuntime`` row.
+
+    The legacy K8s-specific fields (``namespace`` / ``deployment_name`` /
+    ``workspace_claim_name`` / ``credential_secret_name``) remain for
+    backward compatibility with the K8s Profile — they are populated by
+    the K8s backend and ``None`` for Local runtimes.  New code should
+    resolve endpoints via
+    :class:`~magi.bus.contracts.runtime.RuntimeEndpoint` (the platform-neutral
+    descriptor) rather than forging URLs from ``deployment_name``.
     """
 
     desired_state: str
@@ -150,6 +158,10 @@ class EveRuntimeView:
     credential_secret_name: Optional[str]
     last_error: Optional[str]
     updated_at: str
+    # Phase 2 — platform-neutral projection (nullable for legacy rows).
+    backend_kind: Optional[str] = None
+    backend_ref: Optional[str] = None
+    endpoint_url: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)

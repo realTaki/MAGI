@@ -36,7 +36,7 @@ def _local_db_synchronous_call() -> tuple[int, str]:
     """Return ``(line_number, stmt_text)`` of the synchronous PRAGMA
     in ``magi/bus/db/local_db.py``.
     """
-    src = (REPO_ROOT / "magi" / "db" / "local_db.py").read_text()
+    src = (REPO_ROOT / "magi" / "bus" / "db" / "local_db.py").read_text()
     tree = ast.parse(src)
     matches: list[tuple[int, str]] = []
     for node in ast.walk(tree):
@@ -71,7 +71,7 @@ def test_local_db_issues_synchronous_normal_after_commit() -> None:
     after a preceding ``conn.commit()`` in the same ``with``
     block.
     """
-    src = (REPO_ROOT / "magi" / "db" / "local_db.py").read_text()
+    src = (REPO_ROOT / "magi" / "bus" / "db" / "local_db.py").read_text()
     sync_line, stmt = _local_db_synchronous_call()
     assert stmt, (
         "magi/bus/db/local_db.py must issue PRAGMA synchronous=NORMAL"

@@ -1,0 +1,171 @@
+"""Platform-neutral Runtime lifecycle + registry services.
+
+Phase 2 introduces two new BUS facade services:
+
+- :class:`BackendDispatcherService` — the seam through which any business
+  module starts / stops / deletes a runtime.  Today it delegates to the
+  in-process :func:`~magi.orchestrator.backends.factory.create` factory;
+  Phase 4-7 will replace the body with a real BUS command queue so the
+  Orchestrator Worker can consume commands asynchronously.
+
+- :class:`RuntimeRegistryService` — resolves a
+  :class:`~magi.bus.contracts.runtime.RuntimeEndpoint` for a magic_id,
+  replacing the legacy ``f"http://{deployment_name}:42069"`` URL forging
+  done at :mod:`magi.channels.api.runtime_proxy`.
+
+Both services are constructed by :func:`magi.bus.bootstrap` and exposed
+on the :class:`magi.bus.Bus` facade as ``bus.runtime`` and
+``bus.registry``.  No business module instantiates them directly.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from magi.bus.contracts.lifecycle import (
+    MagisProvisionResult,
+    RuntimeOperationResult,
+    RuntimeSpec,
+)
+from magi.bus.contracts.runtime import RuntimeEndpoint
+
+logger = logging.getLogger("magi.bus.services.runtime")
+
+
+class BackendDispatcherService:
+    """BUS facade for runtime lifecycle commands.
+
+    In Phase 2 this is an in-process shim that calls the active
+    :class:`~magi.orchestrator.backends.base.RuntimeBackend` directly.
+    Phase 4-7 substitutes the body with a real BUS command queue so the
+    Orchestrator Worker can consume commands asynchronously.  Tests can
+    inject a stub backend via the constructor.
+    """
+
+    def __init__(self, backend: Any | None = None) -> None:
+        self._backend = backend
+
+    @property
+    def backend(self) -> Any:
+        """Resolve the backend on demand; honours ``MAGI_BACKEND`` overrides."""
+        if self._backend is None:
+            from magi.orchestrator.backends.factory import create
+
+            self._backend = create()
+        return self._backend
+
+    def provision_magis(self, magis_id: int, magis_name: str) -> MagisProvisionResult:
+        """Provision one MAGIS's public database + workspace."""
+        result = self.backend.provision_magis(magis_id=magis_id, magis_name=magis_name)
+        logger.info(
+            "magis provision dispatched",
+            extra={"magis_id": magis_id, "backend_kind": result.backend_kind},
+        )
+        return result
+
+    def start(self, spec: RuntimeSpec) -> RuntimeOperationResult:
+        """Bring one runtime up; idempotent."""
+        result = self.backend.start(spec)
+        logger.info(
+            "runtime start dispatched",
+            extra={
+                "runtime_id": spec.magic_id,
+                "backend_kind": result.backend_kind,
+                "observed_state": result.observed_state,
+            },
+        )
+        return result
+
+    def stop(self, spec: RuntimeSpec) -> RuntimeOperationResult:
+        """Stop one runtime; state / data preserved."""
+        result = self.backend.stop(spec)
+        logger.info(
+            "runtime stop dispatched",
+            extra={
+                "runtime_id": spec.magic_id,
+                "backend_kind": result.backend_kind,
+                "observed_state": result.observed_state,
+            },
+        )
+        return result
+
+    def delete(self, spec: RuntimeSpec) -> RuntimeOperationResult:
+        """Remove one runtime's deployment resources."""
+        result = self.backend.delete(spec)
+        logger.info(
+            "runtime delete dispatched",
+            extra={
+                "runtime_id": spec.magic_id,
+                "backend_kind": result.backend_kind,
+                "observed_state": result.observed_state,
+            },
+        )
+        return result
+
+    def endpoint_for(self, spec: RuntimeSpec) -> RuntimeOperationResult:
+        """Return the current observed endpoint without changing state."""
+        return self.backend.endpoint_for(spec)
+
+
+class RuntimeRegistryService:
+    """BUS facade for resolving :class:`RuntimeEndpoint` for a magic_id.
+
+    Phase 2 derives the endpoint from the legacy
+    :class:`~magi.bus.models.magis.eve_runtime.EveRuntime` row when
+    present, falling back to the dispatcher's ``endpoint_for`` query.
+    Phase 4 will replace the implementation with a Local-registry
+    table (``magi.db.control``); the public API stays stable.
+    """
+
+    def __init__(self, dispatcher: BackendDispatcherService | None = None) -> None:
+        self._dispatcher = dispatcher or BackendDispatcherService()
+
+    def _legacy_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
+        try:
+            from magi.bus.db.magis import open_magis_session
+            from magi.bus.models.magis.eve_runtime import EveRuntime
+
+            with open_magis_session() as session:
+                runtime = (
+                    session.query(EveRuntime)
+                    .filter(EveRuntime.magic_id == magic_id)
+                    .one_or_none()
+                )
+            if runtime is None or not runtime.deployment_name:
+                return None
+            observed = str(runtime.observed_state or "unknown")
+            return RuntimeEndpoint(
+                runtime_id=magic_id,
+                backend_kind="kubernetes",
+                base_url=f"http://{runtime.deployment_name}:42069",
+                backend_ref=runtime.deployment_name,
+                observed_state=observed,
+            )
+        except Exception:  # noqa: BLE001 — registry is best-effort
+            logger.debug("legacy endpoint lookup failed", exc_info=True)
+            return None
+
+    def resolve_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
+        """Return the platform-neutral endpoint for ``magic_id``.
+
+        Returns ``None`` when the runtime isn't registered (e.g. before
+        the first ``start`` call).  Callers that need to send HTTP
+        traffic must treat ``None`` as "not yet running" and surface a
+        409 / 503 to the operator.
+        """
+        legacy = self._legacy_endpoint(magic_id)
+        if legacy is not None and legacy.observed_state not in {"stopped", "deleted"}:
+            return legacy
+        # Last-resort: ask the backend directly.  For K8s this returns
+        # the deployment-name URL even if the Pod isn't yet running;
+        # callers must not assume HTTP reachability.
+        try:
+            result = self._dispatcher.endpoint_for(RuntimeSpec(magic_id=magic_id))
+        except Exception:  # noqa: BLE001 — registry is best-effort
+            logger.debug("backend endpoint_for lookup failed", exc_info=True)
+            return legacy
+        return result.endpoint
+
+
+__all__ = ["BackendDispatcherService", "RuntimeRegistryService"]
