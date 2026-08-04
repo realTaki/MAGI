@@ -176,19 +176,36 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
 
 
 def default_data_root() -> Path:
-    """Return the OS-specific default data root for the Local Profile."""
+    """Return the OS-specific default data root for the Local Profile.
+
+    The Local Profile follows the openclaw-style layout:
+
+    - Linux: ``~/.magi``
+    - macOS: ``~/Documents/.magi``
+    - Windows: ``%USERPROFILE%\\Documents\\.magi``
+
+    macOS / Windows intentionally place the data root under the user's
+    Documents folder rather than the OS-managed Application Support /
+    AppData location — openclaw-style operators expect to find a single
+    ``.magi`` folder they can browse, back up, and sync via the same
+    mechanism as any other document.  Linux keeps the traditional
+    ``~/.magi`` to mirror the same single-folder experience; XDG
+    ``$XDG_DATA_HOME/magi`` is honored as an explicit override.
+
+    ``$MAGI_DATA_ROOT`` always wins so tests / power users can route the
+    data root anywhere.
+    """
     override = os.environ.get("MAGI_DATA_ROOT")
     if override:
         return Path(override)
     if _PLATFORM == "darwin":
-        return Path.home() / "Library" / "Application Support" / "MAGI"
+        return Path.home() / "Documents" / ".magi"
     if _PLATFORM == "win32":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "MAGI"
+        return Path.home() / "Documents" / ".magi"
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg) / "magi"
-    return Path.home() / ".local" / "share" / "magi"
+    return Path.home() / ".magi"
 
 
 def control_dir(data_root: Path) -> Path:

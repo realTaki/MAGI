@@ -1,0 +1,25 @@
+[Unit]
+Description=MAGI local runtime (openclaw-style single-machine)
+Documentation=https://github.com/realTaki/MAGI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# __MAGI_BIN__ is replaced with the resolved magi executable at
+# install time. The service runs `magi local start` exactly as the
+# operator would on the command line, so failures surface the same
+# logs and exit codes a human would see.
+ExecStart=__MAGI_BIN__ local start --no-open
+ExecStop=__MAGI_BIN__ local stop
+Restart=on-failure
+RestartSec=5
+# The launcher writes to /home/<user>/.magi (Linux) — limit blast
+# radius to the user account.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

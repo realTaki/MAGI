@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
-# One-command local development cluster bootstrap. Docker is the only host
+# Single-node k8s dev deploy — start a kind cluster, build the production
+# + dev images, and apply the dev overlays on top. Docker is the only host
 # prerequisite; kind and kubectl are pinned inside deploy/.tools rather than
 # system-installed. The kind node receives the checkout at /mnt/magi so the
 # dev-eva00 overlay can hot-reload backend and WebUI source.
+#
+# Two related paths live alongside this file:
+#
+#   deploy/k8s-dev/bootstrap-k8s-dev.sh  ← this file
+#   deploy/k8s/bootstrap-k8s.sh         ← production deploy to existing cluster
+#   deploy/local/                       ← non-container openclaw-style
 set -euo pipefail
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 TOOLS_DIR="$ROOT_DIR/deploy/.tools"
+K8S_DIR="$ROOT_DIR/deploy/k8s"
+K8S_DEV_DIR="$ROOT_DIR/deploy/k8s-dev"
 KIND_VERSION="${KIND_VERSION:-v0.24.0}"
 KUBECONFIG_PATH="${MAGI_KUBECONFIG:-$ROOT_DIR/.kind-kubeconfig}"
 mkdir -p "$TOOLS_DIR"
@@ -20,7 +29,7 @@ if [ ! -x "$KIND" ]; then
   chmod 0755 "$KIND"
 fi
 if ! "$KIND" get clusters | grep -qx magi; then
-  sed "s|__MAGI_REPO_ROOT__|$ROOT_DIR|g" "$ROOT_DIR/deploy/k8s/kind.dev.yaml" \
+  sed "s|__MAGI_REPO_ROOT__|$ROOT_DIR|g" "$K8S_DEV_DIR/kind.yaml" \
     | "$KIND" create cluster --name magi --config=-
 fi
 "$KIND" export kubeconfig --name magi --kubeconfig "$KUBECONFIG_PATH" >/dev/null
@@ -30,9 +39,9 @@ docker build -f "$ROOT_DIR/deploy/Dockerfile.dev" -t magi:dev "$ROOT_DIR"
 "$KIND" load docker-image magi:dev --name magi
 MAGI_IMAGE=magi:dev \
   EVE_IMAGE=magi:0.1.0 \
-  ADAM_OVERLAY="$ROOT_DIR/deploy/k8s/overlays/dev-eva00" \
-  CONTROL_OVERLAY="$ROOT_DIR/deploy/k8s/control-dev" \
+  ADAM_OVERLAY="$K8S_DEV_DIR/overlays/dev-eva00" \
+  CONTROL_OVERLAY="$K8S_DEV_DIR/control-dev" \
   ADAM_DEPLOYMENT=magi-node \
   WEBUI_SERVICE=magi-webui \
   KUBECONFIG="$KUBECONFIG_PATH" \
-  "$ROOT_DIR/deploy/bootstrap-k8s.sh"
+  "$K8S_DIR/bootstrap-k8s.sh"

@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
-# Deploy the Genesis ADAM and its restricted EVA orchestrator to an existing
-# Kubernetes cluster. kubectl is downloaded into deploy/.tools when absent,
-# never installed system-wide or via sudo.
+# Production Kubernetes deploy — apply the manifest tree under deploy/k8s/
+# to an existing cluster (EKS, GKE, k3s, self-hosted, etc.). kubectl is
+# downloaded into deploy/.tools when absent; never installed system-wide
+# or via sudo.
+#
+# This is the **production** deployment path. Two related paths live
+# alongside it:
+#
+#   deploy/k8s/bootstrap-k8s.sh          ← this file
+#   deploy/k8s-dev/bootstrap-k8s-dev.sh  ← single-node kind dev cluster
+#   deploy/local/                        ← non-container openclaw-style
 set -euo pipefail
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 TOOLS_DIR="$ROOT_DIR/deploy/.tools"
+K8S_DIR="$ROOT_DIR/deploy/k8s"
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.31.0}"
 MAGI_IMAGE="${MAGI_IMAGE:-magi:0.1.0}"
 EVE_IMAGE="${EVE_IMAGE:-$MAGI_IMAGE}"
-ADAM_OVERLAY="${ADAM_OVERLAY:-$ROOT_DIR/deploy/k8s/overlays/adam}"
+ADAM_OVERLAY="${ADAM_OVERLAY:-$K8S_DIR/overlays/adam}"
 ADAM_DEPLOYMENT="${ADAM_DEPLOYMENT:-magi-node}"
 WEBUI_DEPLOYMENT="${WEBUI_DEPLOYMENT:-magi-webui}"
 WEBUI_SERVICE="${WEBUI_SERVICE:-magi-webui}"
-CONTROL_OVERLAY="${CONTROL_OVERLAY:-$ROOT_DIR/deploy/k8s/control}"
+CONTROL_OVERLAY="${CONTROL_OVERLAY:-$K8S_DIR/control}"
 mkdir -p "$TOOLS_DIR"
 
 if command -v kubectl >/dev/null 2>&1; then
@@ -30,7 +39,7 @@ else
 fi
 
 "$KUBECTL" cluster-info >/dev/null
-"$KUBECTL" apply -f "$ROOT_DIR/deploy/k8s/namespace.yaml"
+"$KUBECTL" apply -f "$K8S_DIR/namespace.yaml"
 if ! "$KUBECTL" -n magi get secret magi-control >/dev/null 2>&1; then
   CONTROL_SECRET="$(openssl rand -hex 32)"
   "$KUBECTL" -n magi create secret generic magi-control --from-literal="MAGI_CONTROL_SECRET=$CONTROL_SECRET"

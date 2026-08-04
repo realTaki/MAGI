@@ -1,6 +1,8 @@
-# Template consumed by bootstrap-local.sh. The script replaces
+# Template consumed by bootstrap-k8s-dev.sh. The script replaces
 # __MAGI_REPO_ROOT__ with the absolute checkout path before piping this into
 # kind, so Pods can use the node-visible /mnt/magi hostPath mounts below.
+# Lives under deploy/k8s-dev/ to make it clear this is the single-node
+# dev mode, not the production deploy path at deploy/k8s/.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:

@@ -1,4 +1,4 @@
-"""``magi local start | status | stop | doctor`` — plan §8 / §12 Phase 6.
+"""``magi local start | status | stop | doctor | install-service | uninstall-service``.
 
 The Local Profile launcher is intentionally tiny:
 
@@ -11,6 +11,9 @@ The Local Profile launcher is intentionally tiny:
               plan §7.4 — only ``delete`` releases).
 - ``doctor`` — surface the control-registry state for an operator
               investigating "why isn't my local MAGI talking to me?".
+- ``install-service``   — write a systemd user unit that runs
+              ``magi local start`` on boot (Linux only).
+- ``uninstall-service`` — remove the systemd user unit.
 
 The CLI is a thin wrapper over the BUS services built during Phases
 3-5 — never a parallel set of bootstrappers.  When ``magi local``
@@ -24,6 +27,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -183,6 +189,131 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Service registration (Linux systemd user unit)
+# ---------------------------------------------------------------------------
+#
+# The Local Profile in production runs as a normal user process started
+# by the operator — but on Linux we expose two extra verbs so the same
+# deployment can be promoted to a "starts on login, restarts on crash"
+# service without taking on the container / k8s machinery.
+#
+# Only Linux is supported. macOS uses launchd (we document the plist
+# in deploy/local/service/magi.plist.example but do not auto-install it
+# from Python). Windows uses Task Scheduler XML — see
+# deploy/local/README.md.
+#
+# The wallpaper is shipped at deploy/local/service/magi.service.  The
+# CLI copies it into ``~/.config/systemd/user/magi.service`` and runs
+# ``systemctl --user daemon-reload`` plus ``enable --now``.
+
+_SYSTEMD_USER_DIR = Path.home() / ".config" / "systemd" / "user"
+_SYSTEMD_SERVICE_NAME = "magi.service"
+_SERVICE_TEMPLATE_CANDIDATES = (
+    # Source checkout (development)
+    Path(__file__).resolve().parent.parent.parent / "deploy" / "local" / "service" / "magi.service",
+    # Installed wheel (pip-installed magi)
+    Path(__file__).resolve().parent.parent / "share" / "magi" / "local" / "magi.service",
+)
+
+
+def _resolve_service_template() -> Optional[Path]:
+    for candidate in _SERVICE_TEMPLATE_CANDIDATES:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _magi_executable() -> str:
+    """Best-effort path to the ``magi`` binary used by the unit."""
+    found = shutil.which("magi")
+    if found:
+        return found
+    # Fallback: ``python -m magi`` — works for editable installs.
+    return f"{sys.executable} -m magi"
+
+
+def cmd_install_service(args: argparse.Namespace) -> int:
+    """``magi local install-service``: register systemd user unit (Linux only)."""
+    if current_platform() != "linux":
+        print(
+            f"error: install-service is Linux-only (current platform: {current_platform()}). "
+            "On macOS, copy deploy/local/service/magi.plist.example to "
+            "~/Library/LaunchAgents/com.magi.local.plist and run "
+            "`launchctl load -w <plist>`.  On Windows, import the XML in "
+            "deploy/local/service/magi-task.xml via Task Scheduler.",
+            file=sys.stderr,
+        )
+        return 2
+
+    template = _resolve_service_template()
+    if template is None:
+        print(
+            "error: cannot locate deploy/local/service/magi.service template. "
+            "Reinstall magi from the source checkout.",
+            file=sys.stderr,
+        )
+        return 2
+
+    target_dir = _SYSTEMD_USER_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / _SYSTEMD_SERVICE_NAME
+
+    body = template.read_text(encoding="utf-8")
+    # Substitute the actual magi binary path so the unit does not depend
+    # on PATH being set correctly when systemd starts the user session.
+    magi_path = _magi_executable()
+    body = body.replace("__MAGI_BIN__", magi_path)
+    target.write_text(body, encoding="utf-8")
+    target.chmod(0o644)
+
+    if not shutil.which("systemctl"):
+        print(
+            "error: systemctl not found on PATH. Install systemd or run "
+            "`magi local start` manually as a foreground process.",
+            file=sys.stderr,
+        )
+        return 2
+
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "--user", "enable", "--now", _SYSTEMD_SERVICE_NAME], check=True)
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "unit": str(target),
+                "exec": magi_path,
+                "hint": "systemctl --user status magi.service",
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_uninstall_service(args: argparse.Namespace) -> int:
+    """``magi local uninstall-service``: remove systemd user unit (Linux only)."""
+    if current_platform() != "linux":
+        print(
+            f"error: uninstall-service is Linux-only (current platform: {current_platform()}).",
+            file=sys.stderr,
+        )
+        return 2
+
+    target = _SYSTEMD_USER_DIR / _SYSTEMD_SERVICE_NAME
+    if shutil.which("systemctl") and target.exists():
+        subprocess.run(
+            ["systemctl", "--user", "disable", "--now", _SYSTEMD_SERVICE_NAME],
+            check=False,
+        )
+    if target.exists():
+        target.unlink()
+    if shutil.which("systemctl"):
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+    print(json.dumps({"ok": True, "removed": str(target)}, indent=2))
+    return 0
+
+
 def _ensure_adam(bus) -> int:
     """Ensure exactly one Adam MAGIC exists; return its id.
 
@@ -213,6 +344,8 @@ def build_parser() -> argparse.ArgumentParser:
         ("status", cmd_status, "list registered runtimes from the control registry"),
         ("stop", cmd_stop, "stop every registered runtime"),
         ("doctor", cmd_doctor, "print diagnostic state for operator investigation"),
+        ("install-service", cmd_install_service, "register systemd user unit (Linux only)"),
+        ("uninstall-service", cmd_uninstall_service, "remove systemd user unit (Linux only)"),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument(

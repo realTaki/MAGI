@@ -41,9 +41,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
     return ToolContext(
-        state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
-        
         uid=42,
         channel="webui",
     )

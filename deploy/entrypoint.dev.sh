@@ -1,13 +1,12 @@
 #!/bin/sh
-# Dev-mode container entrypoint. Runs vite (HMR for the SPA) in
-# the background, then execs `magi` as PID 1 so the container's
-# lifecycle is tied to the Python process — vite crashing doesn't
-# kill the container, but magi crashing does, and compose restarts
-# the whole service.
+# Dev-mode container entrypoint (single-node k8s dev mode only).
+# Runs vite (HMR for the SPA) in the background, then execs `magi` as
+# PID 1 so the container's lifecycle is tied to the Python process —
+# vite crashing doesn't kill the container, but magi crashing does,
+# and the kubelet restarts the whole Pod.
 #
-# Auto-reload for Python is driven by MAGI_RELOAD=1 in
-# docker-compose/docker-compose.dev.yml; uvicorn picks it up via
-# NodeConfig.
+# Auto-reload for Python is driven by MAGI_RELOAD=1 in the dev-eva00
+# overlay's ConfigMap; uvicorn picks it up via NodeConfig.
 
 set -eu
 cd /app/magi/WebUI

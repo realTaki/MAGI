@@ -1,34 +1,34 @@
 # MAGI Kubernetes 部署
 
-MAGI 当前**只**通过 Kubernetes 部署。`deploy/` 下的所有
-manifest 都假定一个真实的 k8s 集群（kind、minikube、EKS、GKE
-等），不再保留 docker-compose 路径。
+这是 **生产** k8s 部署入口。`deploy/k8s/` 下的所有 manifest
+与一个真实存在的 k8s 集群（EKS、GKE、AKS、自建、k3s 等）配
+合使用，**不** 包含源码映射——容器内 `/app/magi` 由镜像提供，
+不挂载宿主机目录。
 
-当前清单支持：
+`deploy/` 共有三种部署方式：
 
-- 一个独立 `magi-webui` Service（浏览器唯一入口）；
-- 每个 MAGI 一个内部 Runtime API；
-- 每个 MAGI 一个独立 Deployment；
-- 每个 MAGI 一个独立 PVC，挂载到容器 `/workspace`；其 MAGIS 另有一个公共 PVC 挂载到 `/magis`；
-- 源码保留在不可变镜像内（`/app/magi`），不会挂载到 `/workspace`；
-- ADAM 通过 ClusterIP Service 提供 WebUI；
-- EVA 使用 Telegram 时不创建 HTTP Service；
-- 每个 MAGI 的私有 SQLite 仅单副本运行；每个 MAGIS 使用独立 PostgreSQL 保存组织数据。
+| 目录 | 形态 | 用途 |
+| --- | --- | --- |
+| [deploy/local/](../local/) | 单机非容器 | openclaw 风格一键本地启动 |
+| [deploy/k8s-dev/](../k8s-dev/) | k8s 单机（kind dev） | 调试 k8s 模块化方案 |
+| `deploy/k8s/` ← 当前 | k8s 生产 | 把现有集群当生产环境使用 |
 
-本地开发另有 ``overlays/dev-eva00``：它仅由 ``../bootstrap-k8s.sh``
-配合 kind extraMounts 使用，把宿主机 ``workspace/MAGIC/eva-00`` 映射为
-`/workspace`，并把源码映射为 `/app/magi`，以启用 Uvicorn reload
-与 Vite HMR。不要将此 overlay 应用于远程/生产集群。
+kind dev 集群在 `deploy/k8s-dev/` 单独维护；它仍复用本目录的
+`base/` 节点模板，但额外叠加了：
 
-此外，``../bootstrap-k8s.sh`` 会部署 ``magi-orchestrator``。它是唯一可创建 MAGI 的
-Deployment/私有 PVC，以及新 MAGIS 的 PostgreSQL、公共 PVC 和数据库 Secret 的组件；
-ADAM 仅通过带 HMAC 的集群内 API 请求启动/停止。不要为 ADAM 挂载 Docker socket 或
-Kubernetes ServiceAccount token。
+- `kind.yaml` 单节点 kind 配置；
+- `control-dev/` 把 WebUI 切到 Vite HMR + 源码 `/mnt/magi` 挂载；
+- `overlays/dev-eva00/` 把 magi-node 切到 `magi:dev` 镜像 + 源码挂载。
+
+请把上面的本地开发场景放到 `deploy/k8s-dev/`，本目录只保留生产
+配置。
 
 ## 目录结构
 
 ```text
 deploy/k8s/
+├── README.md                          ← this file
+├── bootstrap-k8s.sh                   生产部署脚本
 ├── namespace.yaml
 ├── base/
 │   ├── configmap.yaml
@@ -38,22 +38,30 @@ deploy/k8s/
 │   ├── pvc.yaml
 │   ├── service.yaml
 │   └── serviceaccount.yaml
+├── control/                           生产 orchestrator + 唯一 WebUI
+│   ├── configmap.yaml
+│   ├── deployment.yaml                orchestrator
+│   ├── kustomization.yaml
+│   ├── role.yaml
+│   ├── rolebinding.yaml
+│   ├── service.yaml
+│   ├── serviceaccount.yaml
+│   ├── webui-deployment.yaml
+│   └── webui-service.yaml
 ├── overlays/
 │   ├── adam/
 │   │   ├── ingress.example.yaml
 │   │   ├── kustomization.yaml
 │   │   ├── patch-config.yaml
 │   │   └── patch-magis-genesis.yaml
-│   ├── dev-eva00/                 # kind only: source hot reload + host paths
 │   └── eve-example/
 │       ├── kustomization.yaml
 │       ├── patch-config.yaml
 │       └── patch-delete-service.yaml
-├── secrets/
-│   ├── adam-magi-secrets.example.yaml
-│   ├── eve-example-magi-secrets.example.yaml
-│   └── magis-genesis-db.example.yaml
-└── README.md
+└── secrets/
+    ├── adam-magi-secrets.example.yaml
+    ├── eve-example-magi-secrets.example.yaml
+    └── magis-genesis-db.example.yaml
 ```
 
 `base` 是初始节点模板，并声明 Genesis 的 PostgreSQL 和公共工作区。`control/` 同时
@@ -273,15 +281,18 @@ EVA Bob    → eve-bob-magi-workspace PVC → /workspace
 
 ## 5. 持久化布局
 
-Kubernetes 中不再使用 Docker Compose 的 host bind mount：
+Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供；而非生产
+部署（`deploy/local/` 单机本地、`deploy/k8s-dev/` kind dev）虽然
+底层是宿主目录，但应用看到的目录树与生产 PVC 完全一致：
 
 ```text
-Compose:
-宿主机目录/ADAM:/workspace
+# 生产
+PVC /workspace                                       per-MAGI 私有
+PVC /magis                                            直属 MAGIS 公共
 
-Kubernetes:
-PVC → /workspace
-独立 MAGIS PVC → /magis
+# 非容器单机（deploy/local/）
+~/.magi/MAGIC/<id>-<slug>/workspace/        per-MAGI 私有
+~/Documents/.magi/MAGIS/<id>-<slug>/       直属 MAGIS 公共
 ```
 
 容器内布局保持一致：

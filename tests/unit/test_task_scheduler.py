@@ -77,7 +77,7 @@ def test_init_populates_required_attributes(fresh_state_dir: str) -> None:
     ``__init__`` at the wrong indent and silently swallows
     the rest of the constructor body.
     """
-    sch = TaskScheduler(fresh_state_dir)
+    sch = TaskScheduler()
     # These four are referenced from ``start()`` /
     # ``register()`` / ``unregister()`` / ``shutdown()``:
     assert hasattr(sch, "_sched"), (
@@ -101,8 +101,6 @@ def test_init_populates_required_attributes(fresh_state_dir: str) -> None:
     # on_task_failure is intentionally None until failure.py
     # binds its log-only handler at boot.
     assert sch.on_task_failure is None
-    # Public surface:
-    assert sch.state_dir == fresh_state_dir
 
 
 def test_start_scheduler_factory_idempotent(fresh_state_dir: str) -> None:

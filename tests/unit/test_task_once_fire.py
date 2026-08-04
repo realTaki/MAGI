@@ -246,9 +246,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
         db.commit()
 
     ctx = ToolContext(
-        state_dir=str(state_db),
         workspace=state_db.parent,
-
         uid=1,
         channel="webui")
     res = await ScheduleTaskTool().run(
@@ -291,9 +289,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
         db.commit()
 
     ctx = ToolContext(
-        state_dir=str(state_db),
         workspace=state_db.parent,
-        
         uid=1,
         channel="webui")
     res = await ScheduleTaskTool().run(

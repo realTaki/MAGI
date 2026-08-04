@@ -308,3 +308,134 @@ def test_allowlist_is_empty() -> None:
     for path, prefix in sorted(ALLOWLIST):
         lines.append(f"  ({path!r}, {prefix!r})")
     pytest.fail("\n".join(lines))
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+# ``state_dir`` leak prevention
+#
+# ``state_dir`` is the physical filesystem location of the private SQLite
+# database. It is resolved by ``magi.launcher.paths.state_dir()`` and is
+# consumed only by module code inside ``magi/bus/``. The composition root
+# (``magi/__main__.py``, the WebUI factory, the runtime API factory) is the
+# only non-BUS site that computes the path — it does so to bootstrap SQLite
+# before the BUS exists. Every other module must reach the BUS through
+# ``get_bus().<service>.<method>(...)`` and never see the path.
+#
+# This test walks every non-BUS, non-launcher Python file and fails on
+# any of:
+#   - ``from magi.launcher.paths import state_dir`` (or its dynamic
+#     equivalent via ``__import__`` / ``importlib.import_module``).
+#   - An ``import`` line resolving to ``magi.launcher.paths`` when the
+#     imported name is ``state_dir``.
+#   - ``require_state_dir`` attribute access on a SettingsService
+#     instance (the public method that leaked the path was removed).
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Files that legitimately need to read ``state_dir`` because they form the
+# composition root. These are the only sites where the BUS has not yet
+# been bootstrapped and SQLite must be located from the launcher.
+STATE_DIR_COMPOSITION_ROOT_ALLOWLIST: frozenset[str] = frozenset({
+    "magi/__main__.py",
+    "magi/channels/api/app.py",
+    "magi/channels/api/runtime_control.py",
+    "magi/channels/telegram/bot.py",
+})
+
+
+def _state_dir_name_imports_or_calls(py_path: Path) -> list[tuple[int, str]]:
+    """Return ``(lineno, snippet)`` for every state_dir leak in ``py_path``."""
+    try:
+        source = py_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    try:
+        tree = ast.parse(source, filename=str(py_path))
+    except SyntaxError:
+        return []
+
+    findings: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        # ``from magi.launcher.paths import state_dir, ...``
+        if isinstance(node, ast.ImportFrom):
+            if node.module in {"magi.launcher.paths"}:
+                for alias in node.names:
+                    if alias.name == "state_dir":
+                        findings.append(
+                            (node.lineno, f"from {node.module} import state_dir")
+                        )
+        # ``import magi.launcher.paths`` followed by ``... .state_dir``
+        # — caught by Attribute access below.
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "magi.launcher.paths":
+                    findings.append(
+                        (node.lineno, "import magi.launcher.paths")
+                    )
+        # ``magi.launcher.paths.state_dir(...)`` — the launcher.paths
+        # module is the only public path to ``state_dir``; importing it
+        # wholesale is the leading indicator of a leak.
+        if isinstance(node, ast.Attribute):
+            value = node.value
+            if (
+                isinstance(value, ast.Name)
+                and value.id == "state_dir"
+                and isinstance(node.ctx, ast.Load)
+            ):
+                # Standalone ``state_dir`` reference (not on a different
+                # object). Usually means ``from ... import state_dir``.
+                findings.append(
+                    (node.lineno, "use of bare `state_dir` identifier")
+                )
+        # ``settings.require_state_dir(...)`` — the public method that
+        # leaked the path was removed. Fail if any code still calls it.
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "require_state_dir"
+            ):
+                findings.append(
+                    (node.lineno, "call to .require_state_dir()")
+                )
+    # Deduplicate by line.
+    seen: set[int] = set()
+    deduped: list[tuple[int, str]] = []
+    for lineno, snippet in findings:
+        if lineno in seen:
+            continue
+        seen.add(lineno)
+        deduped.append((lineno, snippet))
+    return deduped
+
+
+def test_state_dir_does_not_leak_outside_bus() -> None:
+    """No non-BUS, non-launcher module may import or call ``state_dir``.
+
+    The composition-root allowlist covers the boot-time sites that
+    legitimately need the path before the BUS exists. Anything else is
+    a layered-boundary regression: the BUS owns the path and every
+    other module goes through ``get_bus().<service>.<method>``.
+    """
+    offenders: list[str] = []
+    for py_path in _iter_python_files():
+        source_module = _module_name_from_path(py_path)
+        if source_module is None:
+            continue
+        # Skip BUS — it owns state_dir and require_state_dir.
+        if _is_internal("magi.bus", source_module):
+            continue
+        # Skip launcher — defines state_dir as its primary export.
+        if _is_internal("magi.launcher", source_module):
+            continue
+        rel = str(py_path.relative_to(REPO_ROOT))
+        if rel in STATE_DIR_COMPOSITION_ROOT_ALLOWLIST:
+            continue
+        for lineno, snippet in _state_dir_name_imports_or_calls(py_path):
+            offenders.append(f"{rel}:{lineno}  {snippet}")
+    assert not offenders, (
+        "`state_dir` (the SQLite filesystem location) must not be "
+        "imported or called from non-BUS modules. The composition root "
+        "and bootstrap pipeline are the only allowed sites; everything "
+        "else should reach the BUS through `get_bus().<service>.<method>(...)`. "
+        "Offending lines:\n  " + "\n  ".join(offenders)
+    )
