@@ -55,15 +55,15 @@ on the right:
 
 ```text
 WebUI frontend       -> magi.channels.api
-magi.proactive.*     -> magi.channels.tasks + magi.prompts
 magi.mcp.*           -> magi.tools extension contracts
+magi.connectors.*    -> magi.tools extension contracts
 
 magi.agent.*         -> magi.bus public API + magi.prompts
                          + agent internals/LLM providers
 magi.tools.*         -> magi.bus public API + tool registry/executors
 magi.channels.*      -> magi.bus public API + channel-local adapters
+magi.proactive.*     -> magi.bus public API + magi.prompts
 magi.plugins.*       -> magi.bus public API
-magi.connectors.*    -> magi.bus public API + owned external clients
 magi.orchestrator.*  -> magi.bus public API + Kubernetes client
 
 magi.bus             -> magi.db persistence API
@@ -74,12 +74,12 @@ magi.prompts         -> content/templates and standard library only
 ```mermaid
 flowchart TD
     WEB["WebUI frontend"] --> API["magi.channels.api"]
-    PRO["magi.proactive"] --> TASKS["magi.channels.tasks"]
     MCP["magi.mcp"] --> TOOLS["magi.tools"]
+    CONNECTORS["magi.connectors"] --> TOOLS
 
     subgraph CHANNELS["magi.channels"]
         API
-        TASKS
+        TASKS["magi.channels.tasks"]
         OTHER["Other channels"]
     end
 
@@ -88,8 +88,9 @@ flowchart TD
     OTHER --> BUS
     AGENT["magi.agent"] --> BUS
     TOOLS --> BUS
+    PRO["magi.proactive"] --> BUS
     PLUGINS["magi.plugins"] --> BUS
-    SUPPORT["connectors / orchestrator"] --> BUS
+    ORCH["magi.orchestrator"] --> BUS
     BUS --> DB["magi.db"]
 
     AGENT -.-> PROMPTS["magi.prompts"]
@@ -98,13 +99,17 @@ flowchart TD
 
 `magi.bus` and `magi.prompts` are the only **shared** modules: domain modules
 may use BUS for runtime state and messages, and may use Prompts for reusable
-prompt content. The narrower `mcp -> tools`, `proactive -> channels.tasks`,
-and `WebUI -> channels.api` relationships are explicit extension or delivery
+prompt content. The narrower `mcp/connectors -> tools` and
+`WebUI -> channels.api` relationships are explicit extension or delivery
 edges, not permission to treat Tools or Channels as general shared APIs.
+Proactive publishes scheduling commands to BUS; it does not import
+`channels.tasks`.
 
 `magi.__main__` is the composition root. It creates the runtime through
-`bus.bootstrap()`, starts workers/adapters, registers MCP implementations with
-Tools, and supplies environment-specific configuration. A domain module must
+`bus.bootstrap()`, starts workers/adapters, instantiates MCP and Connector
+executors, registers those instances with the Tools registry, and supplies
+environment-specific configuration. MCP and Connectors do not own independent
+job workers: ToolWorker is the sole consumer of Tool Jobs. A domain module must
 not initialise a database itself or import another domain merely to obtain a
 runtime capability.
 
@@ -112,25 +117,29 @@ runtime capability.
 
 ```text
 agent      -X-> tools / channels / plugins / db
-tools      -X-> agent / channels / plugins / MCP / db
+tools      -X-> agent / channels / plugins / MCP / connectors / db
 channels   -X-> agent / tools / plugins / db
-plugins    -X-> agent / tools / channels / MCP / db
+plugins    -X-> agent / tools / channels / MCP / connectors / db
 
-proactive  -X-> bus / db / agent / tools
-MCP        -X-> bus / db / agent / channels
+proactive  -X-> channels.tasks / db / agent / tools
+MCP        -X-> bus / db / agent / channels / connectors
+connectors -X-> bus / db / agent / channels / plugins / MCP
 WebUI      -X-> bus / db / agent / tools
 
-connectors, orchestrator -X-> db
+orchestrator -X-> db
 
 db         -X-> bus / agent / tools / channels / proactive / plugins / MCP
+               / connectors
 bus        -X-> agent / tools / channels / proactive / plugins / MCP / prompts
-             / Tool implementations / LLM providers / protocol clients
+             / connectors / Tool implementations / LLM providers
+             / protocol clients
 ```
 
-`proactive` enters the runtime through `magi.channels.tasks`; it does not
-publish directly to BUS. MCP is a Tools-side adapter and depends on narrow
-Tools extension contracts; the Tools core must not depend back on MCP. The
-WebUI frontend talks only to `magi.channels.api`.
+`proactive` publishes task commands through BUS; `magi.channels.tasks`
+consumes those commands without a direct Python dependency in either direction.
+MCP and Connectors implement narrow contracts owned by Tools; the Tools core
+must not import either concrete adapter module. The WebUI frontend talks only
+to `magi.channels.api`.
 
 This includes indirect shortcuts. ORM models, sessions, engines, raw SQL
 helpers, and database-specific settings remain persistence access even if
@@ -194,14 +203,14 @@ repositories; expanding it into a catch-all application API is not the goal.
 | `magi.db` | SQLAlchemy models/base, engines/sessions, Alembic and database configuration | public application API, domain commands, cross-module orchestration |
 | `magi.prompts` | reusable prompt templates and prompt content resources | runtime state, persistence or cross-module coordination |
 | `magi.agent` | reasoning, context, one provider step, AgentWorker | direct DB access, Tool execution, channel delivery |
-| `magi.tools` | Tool contracts, executable registry, discovery and ToolWorker | MCP-specific loading in the core, Agent schema authority, direct DB/channel access |
-| `magi.mcp` | MCP configuration, connections, discovery adapters and registration through Tools contracts | direct BUS/DB access or reverse dependency from Tools |
+| `magi.tools` | Tool contracts, executable registry, catalog synchronisation and the sole ToolWorker | provider-specific loading in the core, Agent schema authority, direct DB/channel access |
+| `magi.mcp` | MCP configuration, connections, discovery and ToolExecutor/ToolProvider adapters | an independent Tool Job worker, direct BUS/DB access or reverse dependency from Tools |
 | `magi.channels` | protocol ingress, delivery workers and adapters | Agent orchestration, Tool execution, DB access |
 | `magi.channels.api` | HTTP/SSE backend used by the WebUI frontend | direct Agent/Tool/DB access |
-| `magi.channels.tasks` | task/schedule ingress as a Channel | proactive policy or direct DB access |
-| `magi.proactive` | policy deciding when and why to create/trigger tasks | direct BUS/DB access; task delivery outside `channels.tasks` |
-| `magi.plugins` | plugin lifecycle and plugin-originated capability/state exchange through BUS | direct Agent, Tool, Channel or DB calls |
-| `magi.connectors` | owned external clients and event normalisation | direct DB access or cross-domain calls |
+| `magi.channels.tasks` | generic scheduler Worker consuming BUS commands and publishing due Agent inputs | preset tasks, proactive policy or direct DB/Agent access |
+| `magi.proactive` | system task/heartbeat definitions and policy published through BUS | direct Tasks/Agent/Tool/DB calls or scheduling execution |
+| `magi.plugins` | plugin lifecycle and plugin-originated capability/state exchange through BUS | direct Agent, Tool, Channel, Connector or DB calls |
+| `magi.connectors` | product-specific tool groups and ToolExecutor/ToolProvider adapters | an independent Tool Job worker, direct BUS/DB access, channel ingress or parallel Tool protocols |
 | `magi.orchestrator` | constrained runtime lifecycle operations | direct DB access or domain business logic |
 
 BUS stores and routes state but does not decide which MAGI should act, how
@@ -241,12 +250,14 @@ resource limits.
 External surfaces reach the runtime through their declared owner:
 
 ```text
-WebUI frontend -> channels.api ---------\
-Telegram/etc. -> other channels --------+-> BUS durable agent inbox
-proactive -> channels.tasks ------------/
+WebUI frontend -> channels.api ----------\
+Telegram/etc. -> other channels ----------+-> BUS durable agent inbox
+                                           
+proactive -> BUS task commands -> channels.tasks Worker
+          -> BUS standard agent input -----/
 
-MCP -> tools -> BUS Tool Catalog / jobs
-plugins -----> BUS
+MCP / Connector adapters -> Tools registry -> BUS Tool Catalog / jobs
+plugins -----------------------------------> BUS
 ```
 
 The resulting Actor transition remains:
@@ -406,16 +417,31 @@ transcript state through BUS.
 The database Tool Catalog is the only Agent schema source:
 
 ```text
-MCP discovery -> Tools extension contract --\
-built-in / Skill discovery ---------------+-> Tools -> BUS snapshot -> Local SQLite
-Agent                                                    <- BUS list_schemas
-ToolWorker                                                -> executable registry only
+MCP discovery -> MCP adapter ----------------\
+product discovery -> Connector adapter -------+-> Tools registry -> BUS snapshot
+built-in / Skill discovery ------------------/                    -> Local SQLite
+Agent                                                        <- BUS list_schemas
+BUS Tool Job -> ToolWorker -> executable registry -> registered executor instance
 ```
 
-`magi.mcp` adapts MCP discovery and execution into contracts owned by
-`magi.tools`. Tools does not import MCP. The composition root instantiates the
-adapter and registers it with Tools; Tools then synchronises catalog state
-through BUS.
+`magi.mcp` and `magi.connectors` adapt external capabilities into
+`ToolProvider` and `ToolExecutor` contracts owned by `magi.tools`. They
+import those contracts; Tools does not import either concrete adapter module.
+The composition root instantiates the adapters and registers their instances
+with the Tools registry; Tools then synchronises catalog state through BUS.
+
+The three directions are intentionally different:
+
+```text
+code imports:       MCP / Connectors -> Tools -> BUS
+composition:        __main__ -> Tools + MCP + Connectors
+runtime invocation: BUS Tool Job -> ToolWorker -> registry -> adapter instance
+```
+
+MCP and Connectors have no independent Tool Job workers. ToolWorker owns job
+claiming, policy, timeout, retry, idempotency and result persistence, while an
+adapter owns only provider-specific discovery and execution. Runtime invocation
+of an injected object does not reverse the source-code dependency.
 
 A definition includes name, source, description, JSON schema, allowed roles,
 enabled state, implementation version, schema hash, and revision. Snapshot
@@ -437,11 +463,14 @@ dispatcher directly.
 
 Channels normalise external input into `AgentMessage` and submit it through
 BUS. `magi.channels.api` is the WebUI backend; the frontend does not call BUS
-or Agent directly. `magi.channels.tasks` is the task/schedule ingress used by
-`magi.proactive`; proactive policy does not publish directly to BUS. A
-successful ingress means durable acceptance, not synchronous Agent completion.
-The API returns `202 Accepted` with `run_id`, exposes best-effort SSE, and
-reads the durable result through BUS when necessary.
+or Agent directly. `magi.channels.tasks` is a generic scheduler Worker: it
+consumes task management commands published to BUS by API, Tools, Proactive or
+other authorised producers, persists schedules through BUS, and publishes a
+standard Agent input through BUS when work is due. It contains no preset task
+or proactive policy, and producers never call it directly. A successful
+ingress means durable acceptance, not synchronous Agent completion. The API
+returns `202 Accepted` with `run_id`, exposes best-effort SSE, and reads the
+durable result through BUS when necessary.
 
 Agent and Tool effects enter `delivery_outbox` through BUS. Delivery workers
 claim records, call their protocol adapter outside a transaction, then complete,
@@ -490,8 +519,9 @@ cannot lose a committed record.
 ## 14. Verification and completion
 
 AST import-boundary checks must enforce all dependencies in section 3,
-including the one-way `domain -> BUS -> DB`, `MCP -> Tools`, `proactive ->
-channels.tasks`, and `WebUI -> channels.api` edges. They must catch direct DB
+including the one-way `domain -> BUS -> DB`,
+`MCP/Connectors -> Tools`, `proactive -> BUS`, and
+`WebUI -> channels.api` edges. They must catch direct DB
 imports, type-only imports, re-exports, and known dynamic imports, with no
 permanent allowlist. Tests cover catalog role filtering, ORM isolation,
 idempotency, leases, crashes, duplicate and late Tool/A2A results, steering
@@ -499,11 +529,13 @@ order, delivery retry, restart recovery, and that LLM/Tool/network operations
 occur outside transactions.
 
 The architecture is fully converged only when Agent, Tools, Channels, Plugins,
-connectors, and orchestrator depend on BUS rather than one another; BUS alone
-depends on DB; proactive enters through `channels.tasks`; MCP enters through
-Tools; and the WebUI frontend enters through `channels.api`. Both storage
-domains must be BUS-only, the Tool Catalog must be the sole Agent schema
-source, and all docs must describe `handle_message()` only as removed legacy
+Proactive, and Orchestrator cooperate through BUS rather than one another; BUS
+alone depends on DB; Tasks consumes scheduling commands from BUS and publishes
+due Agent inputs back through BUS; MCP and Connectors implement Tools-owned
+contracts without independent workers; and the WebUI frontend enters through
+`channels.api`. Both storage domains must be BUS-only, ToolWorker must be the
+sole Tool Job consumer, the Tool Catalog must be the sole Agent schema source,
+and all docs must describe `handle_message()` only as removed legacy
 behaviour or a BUS-contained temporary wrapper.
 
 Do not claim completion by deleting tests, weakening assertions, copying DB
