@@ -177,7 +177,7 @@ def get_contact_token_usage(
     window), not O(total rows).
     """
     state_dir = _state_dir()
-    tz_name = bootstrap(state_dir).settings.system_timezone()
+    tz_name = get_bus().settings.system_timezone()
     tz = zoneinfo.ZoneInfo(tz_name)
 
     week = _aggregate_period(state_dir, uid, "week", tz)

@@ -150,7 +150,7 @@ def build_system_prompt(
     bounded; no N+1 risk.
     """
     from magi.skills import format_skills_block, get_skill_metas
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
     # SOUL first — establishes the persona for the rest
     # of the system prompt.
@@ -163,7 +163,7 @@ def build_system_prompt(
 
     # Memory block — User-wide facts + in-flight work.
     try:
-        memory_rows = bootstrap(state_dir).memory.list_for_owner(uid)
+        memory_rows = get_bus().memory.list_for_owner(uid)
         memory_block = _format_memory_block(memory_rows)
     except Exception:
         logger.exception(
@@ -183,7 +183,7 @@ def build_system_prompt(
     # "Current chatter" header.
     contact_block = ""
     try:
-        contacts = bootstrap(state_dir).contacts
+        contacts = get_bus().contacts
         contact = contacts.get(uid)
         notes = contacts.list_notes(uid) if contact else None
         contact_block = _format_contact_block(contact, notes)
@@ -202,11 +202,11 @@ def build_system_prompt(
     # in via ``system.show_daily_note_prompt`` (default
     # OFF — the tool description already restates the
     # core intent).
-    show_daily_note, show_daily_note_prompt = bootstrap(state_dir).settings.show_daily_note()
+    show_daily_note, show_daily_note_prompt = get_bus().settings.show_daily_note()
     if show_daily_note:
         daily_block = ""
         try:
-            note = bootstrap(state_dir).contacts.read_daily_note(uid)
+            note = get_bus().contacts.read_daily_note(uid)
             daily_block = _format_daily_note_block(note)
         except Exception:
             logger.exception(

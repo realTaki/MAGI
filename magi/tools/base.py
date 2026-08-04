@@ -204,9 +204,9 @@ def caller_role_denied_reason(
             "caller did not authenticate through a "
             "cookie / TG binding."
         )
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    role = bootstrap(ctx.state_dir).contacts.role_for(ct_id)
+    role = get_bus().contacts.role_for(ct_id)
     if role is None:
         return f"contact {ct_id!r} not found"
     if role not in allowed_roles:

@@ -64,9 +64,9 @@ async def maybe_compact(
     if not session_id:
         return
 
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    context_window, threshold_pct, keep = bootstrap(state_dir).settings.compaction_policy()
+    context_window, threshold_pct, keep = get_bus().settings.compaction_policy()
     # Already short enough: nothing to compact.
     if len(messages) <= keep:
         return
@@ -110,7 +110,7 @@ async def maybe_compact(
     # Persist: append old messages to archive, prepend
     # summary to active, update active_tail_count and
     # last_compaction_at. Atomic write via _write().
-    store = bootstrap(state_dir).session
+    store = get_bus().session
     sess = store.get(uid, session_id)
     if sess is None:
         return  # session disappeared mid-call; skip

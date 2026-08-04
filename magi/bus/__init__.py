@@ -6,7 +6,7 @@ The :class:`Bus` facade exposes a per-domain service namespace
 (``bus.session``, ``bus.memory``, ``bus.tool_jobs``, ...).
 """
 
-from magi.bus.bootstrap import Bus, bootstrap, get_bus
+from magi.bus.bootstrap import Bus, get_bus, get_bus
 from magi.bus.contracts import (
     A2AInvocationRequest,
     ActionItemView,

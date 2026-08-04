@@ -7,7 +7,7 @@ import logging
 import uuid
 from contextlib import suppress
 
-from magi.bus import DeliveryClaim, bootstrap
+from magi.bus import DeliveryClaim, get_bus
 from magi.bus.contracts.session import SessionMessage, utcnow_iso
 from magi.constants import STATE_DIR
 
@@ -19,7 +19,7 @@ class DeliveryWorker:
 
     def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
         self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
-        self.bus = bootstrap(self.state_dir)
+        self.bus = get_bus()
         self.worker_id = f"delivery-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None

@@ -38,7 +38,7 @@ import logging
 import os
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.channels.dispatcher")
@@ -130,7 +130,7 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     _ADAPTERS[adapter.name] = adapter
     state_dir = os.environ.get("MAGI_STATE_DIR", "")
     try:
-        bus = bootstrap(state_dir)
+        bus = get_bus()
         bus.dispatcher.register(adapter)
     except Exception:
         # Bootstrap may not be ready yet during early module
@@ -291,7 +291,7 @@ def list_bindings(uid: int) -> list[tuple[str, str]]:
     is set. Future channels (WeChat, Slack) will add their own
     columns to ``Contact`` and read from there.
     """
-    contact = bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.get(uid)
+    contact = get_bus().contacts.get(uid)
     if contact is None or contact.telegram_id is None:
         return []
     return [("telegram", str(contact.telegram_id))]

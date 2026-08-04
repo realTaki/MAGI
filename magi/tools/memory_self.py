@@ -34,7 +34,7 @@ import json
 import logging
 from typing import Any
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.memory import ALL_KINDS, SOURCE_EVE
 from magi.tools.base import (
     Tool,
@@ -55,7 +55,7 @@ def _gate(ctx: ToolContext) -> str | None:
     ``ctx``); an admin-promoting-an-operator change takes effect on
     the next LLM call without a process restart.
     """
-    return bootstrap(ctx.state_dir).auth.caller_role_check(
+    return get_bus().auth.caller_role_check(
         ctx.uid, allowed=tuple(_WRITE_ROLES)
     )
 
@@ -158,7 +158,7 @@ class AddMemoryTool(Tool):
             return _err(gate)
 
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.memory.add(
                 int(ctx.uid),
                 kind=kwargs["kind"],
@@ -227,7 +227,7 @@ class UpdateMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.memory.update(
                 memory_id,
                 subject=kwargs.get("subject"),
@@ -290,7 +290,7 @@ class CompleteMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.memory.complete(memory_id)
         except LookupError as e:
             return _err(str(e))
@@ -344,7 +344,7 @@ class DeleteMemoryTool(Tool):
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
-        existed = bootstrap(ctx.state_dir).memory.delete(memory_id)
+        existed = get_bus().memory.delete(memory_id)
         return _ok({"memory_id": memory_id, "existed": existed})
 
 

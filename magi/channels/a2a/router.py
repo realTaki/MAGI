@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from magi.bus import AgentMessage, bootstrap
+from magi.bus import AgentMessage, get_bus
 from magi.channels.a2a.protocol import PROTOCOL_VERSION, verify_signature
 
 router = APIRouter(tags=["a2a"])
@@ -24,7 +24,7 @@ def _error(status: int, code: str) -> JSONResponse:
 
 
 def _can_receive_from(sender_magic_id: int) -> bool:
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).magic.can_receive_a2a(sender_magic_id)
+    return get_bus().magic.can_receive_a2a(sender_magic_id)
 
 
 @router.post("/a2a/inbox", status_code=202)
@@ -55,7 +55,7 @@ async def receive(request: Request) -> JSONResponse:
         return _error(400, "bad_request")
 
     reply_to = body.get("reply_to")
-    bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    bus = get_bus()
     if kind == "result":
         if not isinstance(reply_to, str) or not reply_to:
             return _error(400, "bad_request")

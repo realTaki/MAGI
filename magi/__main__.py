@@ -190,7 +190,7 @@ def run() -> None:
 
     # The composition root is the only place that initialises local storage.
     # Workers and channels receive the public BUS facade after this point.
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
     bus = bootstrap(state_dir, initialise_local=True)
     logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 

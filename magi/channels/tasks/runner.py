@@ -56,7 +56,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from magi.bus import AgentMessage, bootstrap
+from magi.bus import AgentMessage, get_bus
 from magi.bus.contracts.session import SessionMessage, new_session_id
 
 # D.28: the runner no longer touches the TG client API
@@ -120,7 +120,7 @@ async def execute_task(
     # when the MAGI runtime isn't configured, which the
     # broad ``except Exception`` below logs as a
     # ``magi_missing_credentials`` task failure.
-    bus = bootstrap(state_dir)
+    bus = get_bus()
     execution = bus.task.prepare_execution(
         task_id=task_id, run_id=run_id, started_at=started, manual=manual,
     )

@@ -41,6 +41,9 @@ from magi.bus.db.control.models import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
+# ``RuntimeDesiredState`` is re-exported via ``services.control_registry``
+# for the orchestrator package; the import here keeps the local FK
+# auto-create logic in :meth:`ControlRepository.allocate_port` working.
 
 
 # -- DTOs --------------------------------------------------------------------
@@ -160,7 +163,13 @@ class ControlRepository:
             session.commit()
 
     def record_spawn(self, runtime_id: int, pid: int, base_url: str, port: int) -> None:
-        """Mark a Runtime as having successfully spawned."""
+        """Mark a Runtime as having successfully spawned.
+
+        ``port`` is recorded on the port-allocation row, not on
+        ``control_runtime_state`` — the relationship
+        :attr:`ControlRuntimeState.port_alloc` is the source of
+        truth for the runtime's port.
+        """
         now = datetime.now(timezone.utc)
         with self._Session() as session:
             row = session.get(ControlRuntimeState, runtime_id)
@@ -169,7 +178,6 @@ class ControlRepository:
             row.observed_state = RuntimeObservedState.STARTED
             row.pid = pid
             row.base_url = base_url
-            row.port = port
             row.spawned_at = now
             row.stale = False
             row.updated_at = now
@@ -265,6 +273,12 @@ class ControlRepository:
 
         Per plan §7.2 the range is sticky (a runtime keeps its port
         across stop / start).  Reallocation only happens on :meth:`forget`.
+
+        Auto-creates a placeholder :class:`ControlRuntimeState` row if
+        the caller hasn't populated one yet — keeps the FK satisfied
+        so :func:`LocalProcessRuntimeBackend.start` can call this
+        before :meth:`attach_paths` when the supervisor boots a
+        partially-recovered workspace.
         """
         with self._Session() as session:
             existing = session.get(ControlPortAllocation, runtime_id)
@@ -275,6 +289,24 @@ class ControlRepository:
                     in_use_since=existing.in_use_since,
                     released_at=existing.released_at,
                 )
+            # Ensure the parent runtime_state row exists so the FK is
+            # satisfiable.  ``attach_paths`` / ``upsert_desired_state``
+            # will overwrite these placeholder fields later.
+            parent = session.get(ControlRuntimeState, runtime_id)
+            if parent is None:
+                parent = ControlRuntimeState(
+                    runtime_id=runtime_id,
+                    backend_kind="local_process",
+                    desired_state=RuntimeDesiredState.STARTED,
+                    observed_state=RuntimeObservedState.UNKNOWN,
+                    backend_ref="",
+                    workspace_dir="",
+                    log_dir="",
+                    audit_log_path="",
+                    updated_at=datetime.now(timezone.utc),
+                )
+                session.add(parent)
+                session.flush()
             held = {
                 p for (p,) in session.query(ControlPortAllocation.port)
                 .filter(ControlPortAllocation.released_at.is_(None))
@@ -352,7 +384,7 @@ def _to_dto(row: ControlRuntimeState, port: int | None) -> RuntimeStateDTO:
         workspace_dir=Path(row.workspace_dir),
         log_dir=Path(row.log_dir),
         audit_log_path=Path(row.audit_log_path),
-        port=port,
+        port=row.port if row.port else port,
         spawned_at=row.spawned_at,
         stopped_at=row.stopped_at,
         updated_at=row.updated_at,

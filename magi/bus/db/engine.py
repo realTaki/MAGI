@@ -1,5 +1,5 @@
 
-"""Private per-MAGI SQLite engine, bootstrap, and session helpers.
+"""Private per-MAGI SQLite engine, get_bus, and session helpers.
 
 Lives in the same SQLite file as the small ``meta`` bootstrap table.
 Private application tables, including the legacy ``settings`` KV table, are

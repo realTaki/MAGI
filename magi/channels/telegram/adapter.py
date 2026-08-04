@@ -31,7 +31,7 @@ import logging
 import os
 import threading
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels import Channel
 from magi.channels.dispatcher import (
     ChannelAdapter,
@@ -97,7 +97,7 @@ class TelegramAdapter:
         await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:
-        contact = bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.get(uid)
+        contact = get_bus().contacts.get(uid)
         if contact is None or contact.telegram_id is None:
             return None
         return str(contact.telegram_id)
@@ -108,11 +108,11 @@ class TelegramAdapter:
                 telegram_id = int(im_id)
             except (TypeError, ValueError):
                 telegram_id = None
-            bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.set_telegram_id(uid, telegram_id)
+            get_bus().contacts.set_telegram_id(uid, telegram_id)
 
     def unbind_im_id(self, uid: int) -> None:
         with _BIND_LOCK:
-            bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.set_telegram_id(uid, None)
+            get_bus().contacts.set_telegram_id(uid, None)
 
 
 # Module-import-time registration. Tests that don't want the

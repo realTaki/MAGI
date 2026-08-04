@@ -34,9 +34,9 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
 def runtime_instruction_block() -> str:
     """Load only this MAGI's direct MAGIS instruction from public database."""
     try:
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
 
-        personal, memberships = bootstrap("").magic.instruction_context()
+        personal, memberships = get_bus().magic.instruction_context()
         return _render(personal, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")

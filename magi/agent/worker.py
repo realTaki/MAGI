@@ -313,8 +313,8 @@ class AgentWorker:
         uid, session_id = payload.get("uid"), payload.get("session_id")
         if not isinstance(uid, int) or not isinstance(session_id, str):
             return
-        from magi.bus import bootstrap
-        session = bootstrap(self.state_dir).session.get(uid, session_id)
+        from magi.bus import get_bus
+        session = get_bus().session.get(uid, session_id)
         if session is None or session.title is not None or len(session.messages) != 2:
             return
         from magi.agent.auto_title import enqueue_title_job
@@ -328,9 +328,9 @@ def _delivery_destination(state_dir: str, payload: dict) -> str | None:
     """Resolve a TG session address without importing a Telegram client."""
     if payload.get("channel") != "tg" or not payload.get("session_id"):
         return None
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    session = bootstrap(state_dir).session.get(payload.get("uid"), payload["session_id"])
+    session = get_bus().session.get(payload.get("uid"), payload["session_id"])
     return session.delivery_address if session is not None else None
 
 

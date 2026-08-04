@@ -46,9 +46,9 @@ def record_token_usage(
     for swallowing (we don't want a transient DB hiccup to
     break a chat that already succeeded).
     """
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    bootstrap(state_dir).token_usage.record(
+    get_bus().token_usage.record(
         uid=uid, channel=channel, provider=provider, model=model, usage=usage
     )
 

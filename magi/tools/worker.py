@@ -13,7 +13,7 @@ import uuid
 from contextlib import suppress
 from pathlib import Path
 
-from magi.bus import ToolClaim, ToolContext, ToolDefinition, bootstrap
+from magi.bus import ToolClaim, ToolContext, ToolDefinition, get_bus
 from magi.constants import STATE_DIR
 from magi.tools.registry import get_tool
 
@@ -30,7 +30,7 @@ def _seed_tools(state_dir: str) -> None:
     try:
         from magi.tools.registry import bootstrap_mcp_tools, get_tools_grouped
 
-        bus = bootstrap(state_dir)
+        bus = get_bus()
         # Ensure MCP tools are loaded before we snapshot the grouped list.
         bootstrap_mcp_tools()
         builtin, mcp = get_tools_grouped()
@@ -61,7 +61,7 @@ class ToolWorker:
 
     def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
         self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
-        self.bus = bootstrap(self.state_dir)
+        self.bus = get_bus()
         self.worker_id = f"tools-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None

@@ -73,7 +73,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.task import TaskScheduleView
 from magi.channels.tasks.channel import TaskChannel
 
@@ -306,7 +306,7 @@ class TaskScheduler:
         name. :func:`state_get` only reads — no exception
         surface here.
         """
-        raw = bootstrap(self._state_dir).settings.system_timezone()
+        raw = get_bus().settings.system_timezone()
         # ``state_get`` returns the raw string from the KV
         # store; the WebUI validator already rejected
         # garbage on save, so we accept whatever we got
@@ -390,7 +390,7 @@ class TaskScheduler:
         rebuild from the DB so cron schedules survive
         restarts.
         """
-        tasks = bootstrap(self._state_dir).task.list_enabled_schedules()
+        tasks = get_bus().task.list_enabled_schedules()
         for task in tasks:
             self.register(task)
         logger.info("rehydrated %d task(s) from DB", len(tasks))

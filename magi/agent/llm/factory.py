@@ -103,9 +103,9 @@ def get_provider(model: str | None = None) -> LLMProvider:
         The configured provider id is not in
         :func:`known_providers` (typo, stale value).
     """
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    config = bootstrap("").magic.provider_configuration()
+    config = get_bus().magic.provider_configuration()
     if config is None:
         logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
         raise LLMNotConfiguredError(

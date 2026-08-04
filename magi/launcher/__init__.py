@@ -93,7 +93,7 @@ class LocalPathLayout:
 # §2. Local Composition Root ----------------------------------------------------
 
 
-from magi.bus import Bus, bootstrap as _bus_bootstrap  # noqa: E402
+from magi.bus import Bus, get_bus as _bus_bootstrap  # noqa: E402
 
 
 def bootstrap_local(

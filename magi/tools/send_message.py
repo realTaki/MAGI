@@ -124,14 +124,14 @@ class SendMessageTool(Tool):
         # A tool never invokes a channel adapter.  It writes a durable
         # delivery intent; the channel-owned DeliveryWorker performs the
         # actual protocol I/O after the agent transition has committed.
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
 
         logger.info(
             "send_message: enqueueing %d chars for session=%s channel=%s",
             len(text), ctx.session_id, ctx.channel,
         )
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             session = bus.session.get(ctx.uid, ctx.session_id)
             if session is None:
                 raise KeyError(f"unknown session {ctx.session_id!r}")

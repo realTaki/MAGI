@@ -21,7 +21,7 @@ import json
 import logging
 from typing import Any
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.tools.base import (
     Tool,
     ToolContext,
@@ -60,7 +60,7 @@ def _gate(ctx: ToolContext) -> str | None:
         return None
     if ctx.caller_role == "assigned":
         return None
-    return bootstrap(ctx.state_dir).auth.caller_role_check(
+    return get_bus().auth.caller_role_check(
         ctx.uid, allowed=tuple(_WRITE_ROLES)
     )
 
@@ -111,7 +111,7 @@ class AddContactTool(Tool):
         if not isinstance(name, str) or not name.strip():
             return _err("name is required (non-empty string)")
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.contacts.create_contact(
                 name=name,
                 display_name=kwargs.get("display_name"),
@@ -207,7 +207,7 @@ class UpdateDailyNoteTool(Tool):
                 return _err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.contacts.upsert_daily_note(
                 int(contact_id), body_delta, note_date=note_date
             )
@@ -256,7 +256,7 @@ class AddContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return _err("note is required (non-empty string)")
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.contacts.add_note(uid, note)
         except ValueError as e:
             return _err(str(e))
@@ -297,7 +297,7 @@ class UpdateContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return _err("note is required (non-empty string)")
         try:
-            bus = bootstrap(ctx.state_dir)
+            bus = get_bus()
             view = bus.contacts.update_note(note_id, note)
         except LookupError as e:
             return _err(str(e))
@@ -332,7 +332,7 @@ class DeleteContactNoteTool(Tool):
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
             return _err(f"note_id must be int, got {type(note_id).__name__}")
-        existed = bootstrap(ctx.state_dir).contacts.delete_note(note_id)
+        existed = get_bus().contacts.delete_note(note_id)
         return _ok({"note_id": note_id, "existed": existed})
 
 
@@ -374,7 +374,7 @@ class SearchContactsTool(Tool):
         limit = kwargs.get("limit") or 20
         if not isinstance(query, str) or not query.strip():
             return _err("query is required (non-empty string)")
-        bus = bootstrap(ctx.state_dir)
+        bus = get_bus()
         views = bus.contacts.search(query, limit=limit)
         return _ok({
             "query": query,

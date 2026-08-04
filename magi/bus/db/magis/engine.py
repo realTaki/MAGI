@@ -9,10 +9,8 @@ instruction values as environment variables.
 
 Phase 3 — the Composition Root may inject an explicit MAGIS engine
 (``set_injected_magis_engine``) so the Local Profile can back the
-public schema with a dedicated SQLite file.  The legacy env-var /
-private-SQLite fallback stays reachable for tests via
-``MAGI_ALLOW_LEGACY_MAGIS_FALLBACK=1``; production code raises when
-neither an injection nor a PostgreSQL DSN is present.
+public schema with a dedicated SQLite file.  Production code raises
+when neither an injection nor a PostgreSQL DSN is present.
 """
 
 from __future__ import annotations
@@ -54,24 +52,17 @@ def get_magis_engine() -> Engine:
 
     1. The Composition-Root-injected engine (Local Profile per-MAGIS SQLite).
     2. ``MAGIS_DATABASE_URL`` for the K8s Profile (PostgreSQL).
-    3. Silent fallback to the private ``magi.db`` engine — gated by
-       ``MAGI_ALLOW_LEGACY_MAGIS_FALLBACK=1`` so production code raises
-       instead of falling through (per plan §6.1).
+
+    Raises when neither is configured (per plan §6.1).
     """
     global _engine, _session_factory
     if _injected_magis_engine is not None:
         return _injected_magis_engine
     url = _url()
     if url is None:
-        from magi.bus.db.engine import get_engine
-
-        if os.environ.get("MAGI_ALLOW_LEGACY_MAGIS_FALLBACK") == "1":
-            return get_engine()
         raise RuntimeError(
-            "MAGIS database is not configured. Set MAGIS_DATABASE_URL (K8s Profile), "
-            "inject a magis_engine via magi.bus.bootstrap(...), or set "
-            "MAGI_ALLOW_LEGACY_MAGIS_FALLBACK=1 for test fixtures that still use "
-            "the legacy private SQLite fallback."
+            "MAGIS database is not configured. Set MAGIS_DATABASE_URL (K8s Profile) "
+            "or inject a magis_engine via magi.bus.bootstrap(...)."
         )
     if _engine is None or str(_engine.url) != url:
         if _engine is not None:
@@ -114,15 +105,6 @@ def get_magis_session() -> Generator[Session, None, None]:
     engine = get_magis_engine()
     if (_url() is not None or _injected_magis_engine is not None) and _session_factory is None:
         _session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
-    if _url() is None and _injected_magis_engine is None:
-        from magi.bus.db.engine import get_session
-
-        if os.environ.get("MAGI_ALLOW_LEGACY_MAGIS_FALLBACK") == "1":
-            yield from get_session()
-            return
-        raise RuntimeError(
-            "MAGIS database is not configured. See get_magis_engine() for resolution order."
-        )
     assert _session_factory is not None
     session = _session_factory()
     try:
@@ -136,16 +118,6 @@ def open_magis_session() -> Generator[Session, None, None]:
     """Context manager counterpart for prompt and provider resolution."""
     global _session_factory
     engine = get_magis_engine()
-    if _url() is None and _injected_magis_engine is None:
-        from magi.bus.db.engine import open_session
-
-        if os.environ.get("MAGI_ALLOW_LEGACY_MAGIS_FALLBACK") == "1":
-            with open_session() as session:
-                yield session
-            return
-        raise RuntimeError(
-            "MAGIS database is not configured. See get_magis_engine() for resolution order."
-        )
     if _session_factory is None:
         _session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
     session = _session_factory()

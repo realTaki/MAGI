@@ -173,5 +173,4 @@ def test_legacy_continuation_falls_back_to_array_order(
 
     cont, results = store.load_tool_continuation(run_id)
     assert cont is not None
-    # Legacy fallback uses array order (not row insertion order).
     assert [r["tool_use_id"] for r in results] == ["legacy-a", "legacy-b"]

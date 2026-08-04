@@ -44,7 +44,7 @@ import json
 import logging
 from typing import Any
 
-from magi.bus import ToolContext, ToolResult, bootstrap
+from magi.bus import ToolContext, ToolResult, get_bus
 from magi.tools.base import (
     Tool,
     caller_role_denied_reason,
@@ -193,7 +193,7 @@ class AddMcpServerTool(Tool):
         if not isinstance(enabled, bool):
             enabled = True
 
-        bus = bootstrap(context.state_dir)
+        bus = get_bus()
         if any(server.name == name for server in bus.mcp.list()):
             return _err(f"server '{name}' already exists")
         row = bus.mcp.upsert(name=name, connection_type=conn_type, command=kwargs.get("command"), args=kwargs.get("args"), url=kwargs.get("url"), enabled=enabled, env=kwargs.get("env"), headers=kwargs.get("headers"), connect_timeout=kwargs.get("connect_timeout"), execute_timeout=kwargs.get("execute_timeout"), sse_read_timeout=kwargs.get("sse_read_timeout"))
@@ -227,7 +227,7 @@ class ListMcpServersTool(Tool):
         if denied:
             return _err(denied)
 
-        rows = bootstrap(context.state_dir).mcp.list()
+        rows = get_bus().mcp.list()
 
         if not rows:
             return _ok({"servers": [], "hint": "No MCP servers configured yet."})
@@ -273,7 +273,7 @@ class DeleteMcpServerTool(Tool):
         if not name:
             return _err("missing required field: name")
 
-        if not bootstrap(context.state_dir).mcp.delete(name):
+        if not get_bus().mcp.delete(name):
             return _ok({"status": "not_found", "hint": f"No server named '{name}' — nothing to delete."})
 
         return _ok({
@@ -416,7 +416,7 @@ class UpdateMcpServerTool(Tool):
         if conn_type in ("sse", "streamable_http") and "url" in kwargs and not kwargs.get("url"):
             return _err(f"{conn_type} servers require 'url'")
 
-        bus = bootstrap(context.state_dir)
+        bus = get_bus()
         current = bus.mcp.get_config(name)
         if current is None:
                 return _err(

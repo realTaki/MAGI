@@ -46,7 +46,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.channels import ChannelEnum as Channel
 from magi.bus.contracts.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult
@@ -277,7 +277,7 @@ class ScheduleTaskTool(Tool):
         if target_channel == Channel.WEBUI:
             delivery_to = None
         elif target_channel == Channel.TG:
-            delivery_to = bootstrap(ctx.state_dir).session.resolve_delivery_address_for_session(
+            delivery_to = get_bus().session.resolve_delivery_address_for_session(
                 ctx.session_id
             )
         else:
@@ -289,7 +289,7 @@ class ScheduleTaskTool(Tool):
         # shape at tool-call time. We translate at this
         # boundary so the WebUI API + LLM tool + raw SQL all
         # see the same row shape.
-        bus = bootstrap(ctx.state_dir)
+        bus = get_bus()
         run_at_iso: str | None = None
         if frequency == "once":
             try:
@@ -335,7 +335,7 @@ class ScheduleTaskTool(Tool):
         # from the DB (not ``ctx.uid``-trust) so
         # a mis-wired caller can't punch above its
         # authority.
-        bus = bootstrap(ctx.state_dir)
+        bus = get_bus()
         contact = bus.contacts.get(ctx.uid)
         if contact is None:
             return ToolResult(content="caller not found", is_error=True)
@@ -374,7 +374,7 @@ class ScheduleTaskTool(Tool):
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
-        bus = bootstrap(ctx.state_dir)
+        bus = get_bus()
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
         resolved_tz = bus.settings.system_timezone()

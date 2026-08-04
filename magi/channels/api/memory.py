@@ -47,9 +47,9 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_sessions import _admin_uid, _state_dir
+from magi.channels.api.chat_sessions import _admin_uid
 
 logger = logging.getLogger("magi.api.memory")
 
@@ -135,7 +135,7 @@ def list_memory(
     trail.
     """
     admin_id = _admin_uid(request)
-    rows = bootstrap(_state_dir()).memory.list_for_owner(
+    rows = get_bus().memory.list_for_owner(
         admin_id, include_completed=True, limit=_MAX_ROWS,
     )
     return MemoryListOut(

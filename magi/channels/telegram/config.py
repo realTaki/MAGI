@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import logging
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 
 logger = logging.getLogger("magi.channels.telegram.config")
 
@@ -130,7 +130,7 @@ def get_read_reaction_emoji(state_dir: str) -> str:
     keeps the inbound handler from blowing up on a bad
     string.
     """
-    raw = bootstrap(state_dir).settings.get(_READ_META_KEY)
+    raw = get_bus().settings.get(_READ_META_KEY)
     if not raw:
         return DEFAULT_READ_REACTION_EMOJI
     if raw not in _VALID_EMOJI:
@@ -153,7 +153,7 @@ def set_read_reaction_emoji(state_dir: str, emoji: str) -> None:
     the API handler and an extra check would just hide
     programming errors.
     """
-    bootstrap(state_dir).settings.set(_READ_META_KEY, emoji)
+    get_bus().settings.set(_READ_META_KEY, emoji)
 
 
 def get_done_reaction_emoji(state_dir: str) -> str:
@@ -169,7 +169,7 @@ def get_done_reaction_emoji(state_dir: str) -> str:
     reaction API replaces any prior bot reaction on the
     same message, so the two states don't conflict.
     """
-    raw = bootstrap(state_dir).settings.get(_DONE_META_KEY)
+    raw = get_bus().settings.get(_DONE_META_KEY)
     if not raw:
         return DEFAULT_DONE_REACTION_EMOJI
     if raw not in _VALID_EMOJI:
@@ -188,4 +188,4 @@ def set_done_reaction_emoji(state_dir: str, emoji: str) -> None:
     Same allowlist contract as
     :func:`set_read_reaction_emoji`.
     """
-    bootstrap(state_dir).settings.set(_DONE_META_KEY, emoji)
+    get_bus().settings.set(_DONE_META_KEY, emoji)

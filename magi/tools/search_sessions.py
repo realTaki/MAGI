@@ -60,7 +60,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.session import SearchHit, SearchUnavailable
 from magi.tools.base import Tool, ToolContext, ToolResult
 
@@ -183,7 +183,7 @@ class SearchSessionsTool(Tool):
         uid = ctx.uid
 
         try:
-            hits, total = bootstrap(ctx.state_dir).session.search(
+            hits, total = get_bus().session.search(
                 q, limit=limit,
             )
         except SearchUnavailable as e:
@@ -274,7 +274,7 @@ def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
     covers the cross-contact case.
     """
     # Locate the hit in either the active or archive list.
-    session = bootstrap(state_dir).session.get(
+    session = get_bus().session.get(
         uid, hit.session_id,
     )
     if session is None:

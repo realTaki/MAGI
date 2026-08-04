@@ -118,9 +118,9 @@ class MCPTimeoutConfig:
 def _timeout_from_settings(key: str, default: float) -> float:
     """Read a float setting, falling back to *default*."""
     try:
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
         from magi.constants import STATE_DIR
-        raw = bootstrap(STATE_DIR).settings.get(key)
+        raw = get_bus().settings.get(key)
         if raw:
             return float(raw)
     except (ValueError, Exception):
@@ -502,9 +502,9 @@ def _load_servers_from_db() -> list[MCPServerConnection]:
     have added servers yet) or the DB read fails.
     """
     try:
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
         from magi.constants import STATE_DIR
-        rows = bootstrap(STATE_DIR).mcp.enabled_configs()
+        rows = get_bus().mcp.enabled_configs()
     except Exception:
         # Defensive: a missing table (pre-init) or a busy
         # DB on a parallel thread should not crash the
@@ -669,9 +669,9 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
 
     # 2. Row still in the table? On-demand connect.
     try:
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
         from magi.constants import STATE_DIR
-        row = bootstrap(STATE_DIR).mcp.get_config(name)
+        row = get_bus().mcp.get_config(name)
     except Exception:
         logger.exception(
             "list_tools_for_server: db read failed for %r", name

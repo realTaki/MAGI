@@ -14,7 +14,7 @@ from magi.agent.compaction import maybe_compact
 from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.launcher.paths import workspace_root
-from magi.bus import ToolContext, bootstrap
+from magi.bus import ToolContext, get_bus
 from magi.prompts import load_bot_replies
 
 logger = logging.getLogger("magi.agent.agent_context")
@@ -54,7 +54,7 @@ def build_messages_from_session(
 ) -> list[ChatMessage]:
     if not session_id or uid is None:
         return [ChatMessage(role="user", content=new_user_text)]
-    session = bootstrap(state_dir).session.get(uid, session_id)
+    session = get_bus().session.get(uid, session_id)
     if session is None:
         return [ChatMessage(role="user", content=new_user_text)]
     messages = [
@@ -95,7 +95,7 @@ def build_context(
             session_id=session_id or "",
         ),
         # The agent sees only the durable catalog, never the tools registry.
-        tool_schemas=bootstrap(state_dir).tool_catalog.list_schemas(caller_role=caller_role),
+        tool_schemas=get_bus().tool_catalog.list_schemas(caller_role=caller_role),
         messages=build_messages_from_session(state_dir, uid, session_id, text),
     )
 

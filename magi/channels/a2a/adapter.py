@@ -63,13 +63,13 @@ class A2AAdapter:
         request/retry path, so callers never hold an agent stack open while a
         peer thinks.
         """
-        from magi.bus import bootstrap
+        from magi.bus import get_bus
 
         if not text:
             raise ValueError("A2A messages cannot be empty")
         if not os.environ.get("MAGI_RUNTIME_ID", "").isdigit():
             raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
-        bootstrap(os.environ.get("MAGI_STATE_DIR", "")).delivery.enqueue(
+        get_bus().delivery.enqueue(
             channel=Channel.A2A,
             destination=str(uid),
             payload={"text": text, "reply_to": None},

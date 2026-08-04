@@ -89,9 +89,9 @@ def _configs_from_db(state_dir: str) -> list[ConnectorConfig] | None:
     WebUI CRUD surface; for now the boot reads what it
     can and skips rows that don't parse.
     """
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    rows = bootstrap(state_dir).connectors.list_configurations()
+    rows = get_bus().connectors.list_configurations()
     if rows is None:
         return None
     return [ConnectorConfig(

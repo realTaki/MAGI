@@ -844,19 +844,11 @@ class BusStore:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
         """Return a resumable continuation only after all expected tools settle.
 
-        Ordering (design §6.6 + §10.4):
-
-          - The canonical order is ``tool_calls.ordinal`` ASC
-            (within a run). Pre-0010 rows have ``ordinal IS NULL``
-            and fall back to ``continuation["tool_call_ids"]`` array
-            order; this preserves the legacy path while new writes
-            always populate ordinal.
-          - When all rows in the run have ordinal populated,
-            ``continuation["tool_call_ids"]`` is ignored (its order
-            is redundant with the column).
-          - When rows have mixed ordinal / NULL, we order by
-            ``ordinal NULLS LAST`` so legacy rows still sort to the
-            end and the new rows keep their strict LLM-emit order.
+        Ordering (design §6.6 + §10.4): the canonical order is
+        ``tool_calls.ordinal`` ASC within a run. Every row created
+        under the current schema has ``ordinal`` populated; pre-0010
+        fallback to ``continuation["tool_call_ids"]`` array order is
+        gone — fresh installs only.
         """
         with open_session(self._state_dir) as session:
             run = session.get(AgentRun, run_id)
@@ -875,22 +867,13 @@ class BusStore:
             ):
                 return None
 
-            # Decide ordering: ordinal wins when every expected call
-            # has a non-null ordinal; otherwise fall back to the
-            # legacy array order so pre-0010 runs don't change shape.
-            every_ordinal_present = all(
-                calls_by_id[cid].ordinal is not None for cid in call_ids
-            )
-            if every_ordinal_present:
-                ordered_call_ids = [
-                    row.tool_call_id
-                    for row in sorted(
-                        [calls_by_id[cid] for cid in call_ids],
-                        key=lambda r: (r.ordinal, r.id),
-                    )
-                ]
-            else:
-                ordered_call_ids = list(call_ids)
+            ordered_call_ids = [
+                row.tool_call_id
+                for row in sorted(
+                    [calls_by_id[cid] for cid in call_ids],
+                    key=lambda r: (r.ordinal, r.id),
+                )
+            ]
 
             results = []
             for call_id in ordered_call_ids:

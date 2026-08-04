@@ -19,8 +19,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
-from magi.bus import bootstrap
-from magi.channels.api.chat_sessions import _state_dir
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 
@@ -71,12 +70,12 @@ def bind_telegram(
             detail="telegram_id must fit in an integer",
         )
 
-    contact = bootstrap(_state_dir()).contacts.get(payload.uid)
+    contact = get_bus().contacts.get(payload.uid)
     if contact is None:
         raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.uid} not found")
     if contact.separated:
         raise MagiHTTPException(status_code=409, code="conflict.contact_separated", detail="restore the separated contact before binding Telegram")
-    bootstrap(_state_dir()).contacts.bind_telegram(payload.uid, telegram_id_int)
+    get_bus().contacts.bind_telegram(payload.uid, telegram_id_int)
 
     return TGBindResponse(
         telegram_id=payload.telegram_id,
@@ -117,9 +116,9 @@ def unbind_telegram(
 
     # The dispatcher resolves the bound uid and the
     # adapter drops both the new and legacy rows.
-    contact = bootstrap(_state_dir()).contacts.find_by_telegram_id(telegram_id_int)
+    contact = get_bus().contacts.find_by_telegram_id(telegram_id_int)
     if contact is not None:
-        bootstrap(_state_dir()).contacts.set_telegram_id(contact.id, None)
+        get_bus().contacts.set_telegram_id(contact.id, None)
     return Response(status_code=204)
 
 
@@ -163,7 +162,7 @@ def get_telegram_binding(
 
     bound_uid = None
     bound_name = None
-    contact = bootstrap(_state_dir()).contacts.find_by_telegram_id(telegram_id_int)
+    contact = get_bus().contacts.find_by_telegram_id(telegram_id_int)
     if contact is not None:
         bound_uid = contact.id
         bound_name = contact.name

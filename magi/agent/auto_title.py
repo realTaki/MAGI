@@ -42,15 +42,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from magi.agent.llm.errors import LLMError
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.session import utcnow_iso
-from magi.constants import STATE_DIR
 from magi.agent.llm.factory import get_provider
 from magi.agent.llm.provider import ChatMessage
 from magi.prompts import load_chat_title_prompt
@@ -233,8 +230,7 @@ async def _summarize_to_title(job: TitleJob) -> None:
     try:
         await asyncio.sleep(5)
 
-        state_dir = _state_dir_for_job()
-        store = bootstrap(state_dir).session
+        store = get_bus().session
 
         # D.23: store key is the operator's uid, not
         # a per-channel delivery address. The latter is
@@ -363,16 +359,6 @@ async def _summarize_to_title(job: TitleJob) -> None:
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #
-
-
-def _state_dir_for_job() -> str:
-    """Resolve ``MAGI_STATE_DIR`` lazily on each job pickup.
-
-    Reads the env var at job-dequeue time rather than at
-    module import, so tests that override the env var mid-run
-    see the new value.
-    """
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 def _cleanse_title(raw: str) -> str:

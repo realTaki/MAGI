@@ -156,10 +156,10 @@ async def send_text_auto(chat_id: int, text: str) -> None:
     ``magi/channels/telegram/`` should touch the bot token
     or raw HTTP directly.
     """
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
     import os
 
-    bot_token = bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR)).settings.get("telegram.bot_token")
+    bot_token = get_bus().settings.get("telegram.bot_token")
     if not bot_token:
         raise RuntimeError("telegram: no bot token saved; cannot send")
     await _send_via_raw_http(bot_token, chat_id, text)
@@ -450,8 +450,8 @@ def _auto_create_stranger_contact(
     display_name = (display_name or "").strip() or None
 
     try:
-        from magi.bus import bootstrap
-        contacts = bootstrap(state_dir).contacts
+        from magi.bus import get_bus
+        contacts = get_bus().contacts
         if contacts.find_by_telegram_id(cid_int) is None:
             contacts.create_contact(name=name, display_name=display_name, role="guest", telegram_id=cid_int, source="system")
     except Exception:
@@ -502,8 +502,8 @@ def _find_contact_by_telegram_id(
         )
 
     try:
-        from magi.bus import bootstrap
-        contact = bootstrap(state_dir).contacts.find_by_telegram_id(cid_int)
+        from magi.bus import get_bus
+        contact = get_bus().contacts.find_by_telegram_id(cid_int)
         if contact is not None:
             return _fields(contact)
     except Exception:
@@ -546,7 +546,7 @@ async def _handle_contact_message(
     history with this EVA. Per-chat / per-topic session
     splits are a future C7+ affordance.
     """
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
     from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
     from magi.bus import AgentMessage
 
@@ -617,7 +617,7 @@ async def _handle_contact_message(
     # a new thread"; if a future affordance (C7 command like
     # ``/new``) lands, it'll arrive here as an explicit
     # ``session_id = None`` and trigger the create branch.
-    store = bootstrap(state_dir).session
+    store = get_bus().session
     session_id = _resolve_or_create_tg_session(store, delivery_address, uid)
 
     # Inbound append — SQLite's per-statement atomicity replaces
@@ -675,7 +675,7 @@ async def _handle_contact_message(
     )
 
     try:
-        bootstrap(state_dir).agent_runs.publish_input(
+        get_bus().agent_runs.publish_input(
             AgentMessage(
                 # Telegram message ids are stable per chat, and the inbound
                 # session message is separately persisted above. Together
@@ -869,14 +869,14 @@ def start_bot(state_dir: str) -> threading.Thread | None:
             logger.info("telegram bot already running; reusing existing thread")
             return _telegram_bot_thread
 
-    token = bootstrap(state_dir).settings.get("telegram.bot_token")
+    token = get_bus().settings.get("telegram.bot_token")
     if not token:
         logger.info(
             "telegram: no bot token saved yet — channel idle until onboarding completes"
         )
         return None
 
-    username = bootstrap(state_dir).settings.get("telegram.bot_username")
+    username = get_bus().settings.get("telegram.bot_username")
     # ``concurrent_updates=True`` lets a follow-up TG message
     # for the same chat enter ``_on_message`` **while** the
     # previous turn's durable run is still in flight. Without this, the
