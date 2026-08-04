@@ -46,7 +46,7 @@ def _secret_data(values: dict[str, str]) -> dict[str, str]:
     return {key: base64.b64encode(value.encode()).decode() for key, value in values.items()}
 
 
-class KubernetesEveBackend:
+class KubernetesEvaBackend:
     """Apply the fixed EVA resource template to one configured namespace."""
 
     def __init__(self) -> None:

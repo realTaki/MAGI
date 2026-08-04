@@ -251,9 +251,9 @@ def test_audit_log_records_connector_event():
             id="ev-1", payload={"title": "standup"},
         )
         emit(
-            Hook.ON_CONNECTOR_EVENT,
+            Hook.ON_CONNECTOR_EVANT,
             PluginContext(
-                hook=Hook.ON_CONNECTOR_EVENT,
+                hook=Hook.ON_CONNECTOR_EVANT,
                 connector="calendar",
                 connector_event=ce,
             ),
@@ -343,7 +343,7 @@ def test_connector_bridge_forwards_to_plugin_bus():
     async def handler(ctx):
         plugin_bus_seen.append(ctx.connector_event)
 
-    plugin_bus.subscribe(Hook.ON_CONNECTOR_EVENT, handler)
+    plugin_bus.subscribe(Hook.ON_CONNECTOR_EVANT, handler)
 
     start_connector_bridge(plugin_bus)
     try:

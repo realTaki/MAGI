@@ -125,7 +125,7 @@ RULES: list[tuple[str, list[str]]] = [
     ),
     # Phase 2 — BUS services that own the runtime lifecycle seam must
     # never reach back into the orchestrator package *implementations*
-    # (the legacy ``KubernetesEveBackend`` class, the orchestrator
+    # (the legacy ``KubernetesEvaBackend`` class, the orchestrator
     # client, the FastAPI service).  The dispatcher legitimately
     # imports the backend factory and the K8s *adapter* (which
     # implements the Protocol) — those are exempted by the

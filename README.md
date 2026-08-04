@@ -12,7 +12,7 @@
 > an
 > organization of independent MAGI: each has its own runtime,
 > workspace, memory, tools, provider credentials, and role in the Society.
-> They coordinate through ADAM, execute through EVEs, retain what they learn,
+> They coordinate through ADAM, execute through EVAs, retain what they learn,
 > and grow into a durable collective intelligence.
 
 MAGI is built for the question beyond “how do I delegate this task?”:
@@ -31,7 +31,7 @@ organization itself as the primary unit.
 | Agents are steps in a workflow | MAGI are persistent members of an organization |
 | Collaboration ends with a task | Context, memory, skills, and relationships persist |
 | One process commonly hosts many agents | Every MAGI has an independent containerized runtime and workspace |
-| A manager delegates predefined work | ADAM coordinates a Society; EVEs are independently managed, started, and stopped |
+| A manager delegates predefined work | ADAM coordinates a Society; EVAs are independently managed, started, and stopped |
 | Scale means adding concurrent calls | Scale means adding capable MAGI and connected Societies |
 
 MAGI does not replace workflow engines. It provides the substrate on which a
@@ -45,7 +45,7 @@ MAGIS should become better because it has existed:
 - MAGI learn from the outcomes, failures, and observations of their work.
 - Useful procedures become reusable Skills rather than disappearing into an
   individual conversation.
-- ADAM can recognize capability gaps, organize specialized EVEs, and reshape
+- ADAM can recognize capability gaps, organize specialized EVAs, and reshape
   the Society as its work changes.
 - Societies can share knowledge and collaborate without reducing every member
   to a stateless API call.
@@ -68,7 +68,7 @@ The names are deliberate:
 | **MAGIS** | A **MAGI Society**: an organization of MAGI. Societies form a tree. |
 | **MAGIC** | Internal table/API name for an individual MAGI. It is not a separate product concept. |
 | **ADAM** | The leading MAGI of a Society. ADAM provides its control plane and coordinates its MAGI. |
-| **EVA** | A working MAGI role. A Society can create, configure, start, stop, and retire multiple EVEs. |
+| **EVA** | A working MAGI role. A Society can create, configure, start, stop, and retire multiple EVAs. |
 
 ```text
 Operator

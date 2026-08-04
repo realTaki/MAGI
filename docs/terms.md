@@ -59,9 +59,12 @@ code branches at deploy time. They are not two separate products.
 | **EVA** (formerly *Everyday Virtual Employee*) | In the pre-2026-07 framing, "EVA" was a single employee-facing agent. The 2026-07 rename reframed it as a role inside a Society; **EVA is no longer an acronym**, all product copy now uses EVA. |
 
 > **Renamed in 2026-08:** *Adam* → *ADAM* (case + new backronym),
-> *EVA* → *EVA* (different word + new backronym). The internal identifier
-> `magic_position='eva'` (lowercase, used as a token in `MAGI_NODE_ROLE`
-> and SQL `CASE` expressions) is **not** changed.
+> *EVA* → *EVA* (different word + new backronym).
+>
+> **2026-08 follow-up:** the lowercase internal token was **also** flipped
+> from `eve` → `eva`. `MAGI_NODE_ROLE=eva`, `source='eva'`, and
+> `magic.position='eva'` now all share the spelling with the display name.
+> Validation set in `magi/__main__.py` is `{"adam", "eva"}`.
 
 ---
 

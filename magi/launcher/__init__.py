@@ -211,11 +211,11 @@ def start_connector_bridge(plugin_bus: object) -> None:
     async def _forward(event: object) -> None:
         try:
             context = PluginContext(
-                hook=Hook.ON_CONNECTOR_EVENT,
+                hook=Hook.ON_CONNECTOR_EVANT,
                 connector=getattr(event, "connector", None),
                 connector_event=event,
             )
-            plugin_bus.emit(Hook.ON_CONNECTOR_EVENT, context)  # type: ignore[union-attr]
+            plugin_bus.emit(Hook.ON_CONNECTOR_EVANT, context)  # type: ignore[union-attr]
         except Exception:
             import logging
 

@@ -217,7 +217,7 @@ class AuditLogPlugin:
         Hook.AFTER_TOOL_CALL,
         Hook.AFTER_LLM_CALL,
         Hook.AFTER_CHANNEL_SEND,
-        Hook.ON_CONNECTOR_EVENT,
+        Hook.ON_CONNECTOR_EVANT,
     )
 
     def __init__(
@@ -299,7 +299,7 @@ def _build_record(context: PluginContext) -> AuditRecord:
             "error": context.channel_error,
         }
         actor = "channel"
-    elif context.hook == Hook.ON_CONNECTOR_EVENT:
+    elif context.hook == Hook.ON_CONNECTOR_EVANT:
         # ``connector_event`` is a ``ConnectorEvent`` — pull
         # the bits that matter without depending on the
         # concrete type.

@@ -1,7 +1,7 @@
 /**
  * SidebarShell — the two-column "light sky sidebar + light
  * content pane" layout used by every tab that needs a
- * second-level navigation: Chat (6 EVE-output categories +
+ * second-level navigation: Chat (6 EVA-output categories +
  * 新对话/搜索对话 + history list), Knowledge (Skills /
  * Connectors / Contacts), MAGI Council (智群管理 / 智能体管理).
  *

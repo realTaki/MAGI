@@ -44,7 +44,7 @@ class Hook(str, enum.Enum):
     AFTER_CHANNEL_SEND = "after_channel_send"
     BEFORE_CONNECTOR_FETCH = "before_connector_fetch"
     AFTER_CONNECTOR_FETCH = "after_connector_fetch"
-    ON_CONNECTOR_EVENT = "on_connector_event"
+    ON_CONNECTOR_EVANT = "on_connector_event"
     ON_SESSION_OPEN = "on_session_open"
     ON_SESSION_CLOSE = "on_session_close"
 
@@ -93,7 +93,7 @@ class PluginContext:
     channel_error: str | None = None
 
     # Connector hooks — populated when ``hook in (BEFORE_/AFTER_)CONNECTOR_FETCH``
-    # or ``ON_CONNECTOR_EVENT``.
+    # or ``ON_CONNECTOR_EVANT``.
     connector: str | None = None
     connector_instance: str | None = None
     connector_query: dict[str, Any] | None = None

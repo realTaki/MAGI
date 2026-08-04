@@ -13,9 +13,9 @@ Mounting order (matters for routing precedence):
      the SPA's client-side router can take over.
 
 Subsequent checkpoints layer on:
-- C1.2 — more routers (contacts / eves / skills / audit / login).
+- C1.2 — more routers (contacts / evas / skills / audit / login).
 - C3 — ``/ingest/audit``, ``/ingest/heartbeat`` (EVA → ADAM ingest).
-- C6 — ``/api/eves/{id}/dispatch``, ``/api/eves/{id}/recall``.
+- C6 — ``/api/evas/{id}/dispatch``, ``/api/evas/{id}/recall``.
 - C7 — WebSocket console stream (``/ws/console``).
 """
 

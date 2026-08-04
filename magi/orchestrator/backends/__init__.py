@@ -2,7 +2,7 @@
 
 Each backend implements the :class:`RuntimeBackend` Protocol and
 encapsulates one deployment-profile's view of "start a MAGI".  Today
-only :class:`KubernetesEveBackendAdapter` exists (the K8s Profile);
+only :class:`KubernetesEvaBackendAdapter` exists (the K8s Profile);
 the Local Profile implementation lands in Phase 4 alongside the
 supervisor / launcher.
 

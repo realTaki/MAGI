@@ -71,7 +71,7 @@ magi local start
 | `magi/constants.py` | `STATE_DIR=/workspace/memories`、`WORKSPACE_DIR=/workspace` | 容器路径硬编码必须解除 |
 | `magi/agent/workspace/paths.py` | Workspace 从 state dir 推导，并明确不允许覆盖 | 路径由 Composition Root 注入 Agent 自有配置，不把 RuntimePaths 变成新的公共业务模块 |
 | `magi/orchestrator/kubernetes.py` | 直接创建 Secret、PVC、Service、Deployment 和 MAGIS PostgreSQL | 需要抽出 RuntimeBackend |
-| `magi/orchestrator/service.py` | 每个请求直接构造 `KubernetesEveBackend` | 需要 backend factory 与 Local backend |
+| `magi/orchestrator/service.py` | 每个请求直接构造 `KubernetesEvaBackend` | 需要 backend factory 与 Local backend |
 | `magi/orchestrator/contracts.py` | 结果包含 namespace、deployment_name、workspace_claim_name | contracts 泄漏 K8s 概念，需要兼容迁移 |
 | `magi/channels/webui/api/runtime_proxy.py` | 旧目录中用 `deployment_name:42069` 推导 Runtime URL | 迁移到 `magi.channels.api`，并改用 BUS 的平台无关 endpoint query |
 | `magi/channels/webui/api/runtime_access.py` | 旧目录中的 Adam fallback 同样依赖 K8s Service 名 | 迁移到 `magi.channels.api`，并使用同一 BUS query |
@@ -129,7 +129,7 @@ KubernetesRuntimeBackend
 LocalProcessRuntimeBackend
 ```
 
-旧 `KubernetesEveBackend` 可以先作为 compatibility implementation，不要求第一阶段移动文件或重命名所有类型。优先消除公共 contracts 中的 K8s 假设，再进行目录清理。
+旧 `KubernetesEvaBackend` 可以先作为 compatibility implementation，不要求第一阶段移动文件或重命名所有类型。优先消除公共 contracts 中的 K8s 假设，再进行目录清理。
 
 该 contract 属于 Orchestrator 内部部署适配层。只有 Orchestrator Worker 或其私有 Service 可以持有 `RuntimeBackend` 实例；BUS、`channels.api`、Agent、Tools、Tasks、Plugins 和其他 Channels 均不得导入该类型。backend 执行结果必须由 Orchestrator 转换为 BUS 的平台无关 DTO/事件。
 
@@ -549,7 +549,7 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 
 1. 记录最新 `main` commit 与完整测试结果；
 2. 列出所有 `/workspace`、`/magis`、`:42069`、`deployment_name` 和 K8s DNS 假设；
-3. 列出所有直接构造 `KubernetesEveBackend` 的位置；
+3. 列出所有直接构造 `KubernetesEvaBackend` 的位置；
 4. 列出 `agent/tools/channels/plugins/proactive` 对彼此或 `magi.db` 的直接 import；
 5. 检查 `magi.channels.webui` 向 `magi.channels.api` 的迁移状态；
 6. 检查 API、Tools、Proactive 是否仍直接调用 `channels.tasks`；
@@ -572,7 +572,7 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 
 1. 在 BUS 中新增平台无关的 Runtime lifecycle command/query/event DTO；
 2. 新增 Orchestrator 私有 `RuntimeBackend` contract；
-3. 将 `KubernetesEveBackend` 适配到新 contract；
+3. 将 `KubernetesEvaBackend` 适配到新 contract；
 4. 新增 `RuntimeEndpoint` BUS DTO 与 query；
 5. 将 Orchestrator 改为消费 BUS 命令、调用 backend、再写回 BUS；BUS 不导入 backend；
 6. 将 `magi.channels.api` 的 proxy 和 Adam fallback 改用 BUS query；

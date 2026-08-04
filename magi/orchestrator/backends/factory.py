@@ -23,9 +23,9 @@ def create() -> RuntimeBackend:
     """
     kind = os.environ.get("MAGI_BACKEND", "kubernetes").strip().lower()
     if kind in {"kubernetes", ""}:
-        from magi.orchestrator.backends.kubernetes_compat import KubernetesEveBackendAdapter
+        from magi.orchestrator.backends.kubernetes_compat import KubernetesEvaBackendAdapter
 
-        return KubernetesEveBackendAdapter()
+        return KubernetesEvaBackendAdapter()
     if kind == "local_process":
         from magi.orchestrator.backends.local_process import LocalProcessRuntimeBackend
 

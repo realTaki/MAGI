@@ -6,7 +6,7 @@ Sections mirror the Phase 0 checklist:
 
 1. Latest `main` commit + test baseline
 2. `/workspace`, `/magis`, `:42069`, `deployment_name`, K8s DNS assumptions
-3. Direct construction sites of `KubernetesEveBackend`
+3. Direct construction sites of `KubernetesEvaBackend`
 4. Domain → domain cross-imports and direct DB reaches
 5. `magi.channels.webui` → `magi.channels.api` migration status
 6. API / Tools / Proactive direct calls into `channels.tasks`
@@ -88,10 +88,10 @@ No code constructs `f"http://{name}:42069"` outside the four sites listed in §2
 
 ---
 
-## 3. Direct construction of `KubernetesEveBackend`
+## 3. Direct construction of `KubernetesEvaBackend`
 
 ```
-magi/orchestrator/backends/kubernetes_compat.py:44      self._inner = inner or KubernetesEveBackend()
+magi/orchestrator/backends/kubernetes_compat.py:44      self._inner = inner or KubernetesEvaBackend()
 ```
 
 That single line is the **only** construction site in the entire tree.  Everywhere else uses the factory:
@@ -100,7 +100,7 @@ That single line is the **only** construction site in the entire tree.  Everywhe
 magi/orchestrator/backends/factory.py:17   def create() -> RuntimeBackend:
 ```
 
-`KubernetesEveBackend` lives on as the legacy implementation consumed by [`KubernetesEveBackendAdapter`](../magi/orchestrator/backends/kubernetes_compat.py), which exposes the `RuntimeBackend` Protocol.  Phase 2 is satisfied at this surface.
+`KubernetesEvaBackend` lives on as the legacy implementation consumed by [`KubernetesEvaBackendAdapter`](../magi/orchestrator/backends/kubernetes_compat.py), which exposes the `RuntimeBackend` Protocol.  Phase 2 is satisfied at this surface.
 
 ---
 
@@ -196,7 +196,7 @@ Orchestrator surface:
 |---|---|---|
 | `magi/orchestrator/backends/base.py` | 2 | `RuntimeBackend` Protocol |
 | `magi/orchestrator/backends/factory.py` | 2 | `create()` returns Protocol-conforming instance |
-| `magi/orchestrator/backends/kubernetes_compat.py` | 2 | Wraps `KubernetesEveBackend` to satisfy Protocol |
+| `magi/orchestrator/backends/kubernetes_compat.py` | 2 | Wraps `KubernetesEvaBackend` to satisfy Protocol |
 | `magi/orchestrator/backends/local_process.py` | **4** | NOT YET BUILT — slot reserved by `factory.create()` |
 | `magi/orchestrator/worker.py` | 5+ | NOT YET BUILT — Phase 4's reconcile loop will live here |
 

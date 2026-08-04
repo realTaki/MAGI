@@ -32,4 +32,4 @@ def test_control_plane_exposes_magis_provision_route():
 
     paths = {route.path for route in create_app().routes}
     assert "/v1/magis/{magis_id}/provision" in paths
-    assert "/v1/eves/{magic_id}/start" in paths
+    assert "/v1/evas/{magic_id}/start" in paths

@@ -499,13 +499,13 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
             )
         )
 
-    # 2. Assigned contacts. C0: the contacts / eves tables don't
+    # 2. Assigned contacts. C0: the contacts / evas tables don't
     # exist yet, so this list is always empty. The query is
     # sketched in the comment so C1.1 / C6 can drop it in.
     #
     #   SELECT e.uid, e.telegram_id, e.name
     #   FROM contacts e
-    #   JOIN eves v ON v.uid = e.id
+    #   JOIN evas v ON v.uid = e.id
     #   WHERE e.telegram_id IS NOT NULL
     #     AND v.status != 'shutting_down'
     #     AND NOT EXISTS (

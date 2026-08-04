@@ -1,6 +1,6 @@
 """Kubernetes backend adapter.
 
-Wraps the legacy :class:`magi.orchestrator.kubernetes.KubernetesEveBackend`
+Wraps the legacy :class:`magi.orchestrator.kubernetes.KubernetesEvaBackend`
 and exposes the platform-neutral :class:`RuntimeBackend` Protocol.  The
 legacy class stays in :mod:`magi.orchestrator.kubernetes` until Phase 9
 (per plan §4.2); this adapter translates between old and new DTOs so
@@ -24,7 +24,7 @@ from magi.bus.contracts.lifecycle import (
 )
 from magi.bus.contracts.runtime import RuntimeEndpoint
 from magi.orchestrator.contracts import MagisBinding
-from magi.orchestrator.kubernetes import KubernetesEveBackend
+from magi.orchestrator.kubernetes import KubernetesEvaBackend
 
 
 def _slug(value: str | None, fallback: str) -> str:
@@ -33,15 +33,15 @@ def _slug(value: str | None, fallback: str) -> str:
     return slug[:48].rstrip("-")
 
 
-class KubernetesEveBackendAdapter:
+class KubernetesEvaBackendAdapter:
     """``RuntimeBackend`` implementation backed by Kubernetes."""
 
     kind = "kubernetes"
 
-    def __init__(self, inner: KubernetesEveBackend | None = None) -> None:
+    def __init__(self, inner: KubernetesEvaBackend | None = None) -> None:
         # Default to the legacy class so the behaviour is bit-identical
         # in Phase 2; tests can inject a stub.
-        self._inner = inner or KubernetesEveBackend()
+        self._inner = inner or KubernetesEvaBackend()
 
     def provision_magis(self, magis_id: int, magis_name: str) -> MagisProvisionResult:
         legacy = self._inner.provision_magis(MagisBinding(id=magis_id, name=magis_name))
@@ -152,4 +152,4 @@ class KubernetesEveBackendAdapter:
         )
 
 
-__all__ = ["KubernetesEveBackendAdapter"]
+__all__ = ["KubernetesEvaBackendAdapter"]
