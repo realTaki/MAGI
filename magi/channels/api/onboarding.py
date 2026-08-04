@@ -35,7 +35,7 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.services.setting import SettingsService
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
@@ -53,7 +53,7 @@ def _state_dir() -> str:
 
 def _bus():
     """Build the BUS facade for the runtime's state directory."""
-    return bootstrap(_state_dir())
+    return get_bus()
 
 
 # -- request / response schemas -----------------------------------------
@@ -392,9 +392,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     if control_store.enabled():
         control_store.set("onboarding.complete", "true")
         return CompleteResponse(ok=True)
-    from magi.bus import bootstrap as _bootstrap
-
-    bus = _bootstrap(_state_dir())
+    bus = get_bus()
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
@@ -516,7 +514,7 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
         return SaveBotResponse(ok=True)
 
     state_dir = _state_dir()
-    bus = _bus(state_dir)
+    bus = _bus()
     try:
         bus.settings.set("telegram.bot_token", payload.token)
         bus.settings.set("telegram.bot_username", payload.username)
@@ -597,7 +595,7 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     """
     from datetime import datetime, timezone
     state_dir = _state_dir()
-    bus = _bus(state_dir)
+    bus = _bus()
 
     if control_store.enabled():
         delivery_address = payload.tgid.strip()
@@ -734,7 +732,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     """
     from datetime import datetime, timezone
     state_dir = _state_dir()
-    bus = _bus(state_dir)
+    bus = _bus()
 
     if control_store.enabled():
         delivery_address, code = payload.tgid.strip(), payload.code.strip()
@@ -844,7 +842,7 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     ``contacts.py``) reads exclusively from this table.
     """
     state_dir = _state_dir()
-    bus = _bus(state_dir)
+    bus = _bus()
 
     if control_store.enabled():
         try:

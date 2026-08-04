@@ -154,6 +154,8 @@ def runtime_audit_log_path(data_root: Path, runtime_id: int, slug: str) -> Path:
 
 
 __all__ = [
+    "workspace_root",
+    "bootstrap_workspace",
     "default_data_root",
     "control_dir",
     "control_secret_path",

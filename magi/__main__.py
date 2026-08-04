@@ -202,7 +202,7 @@ def run() -> None:
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
-    from magi.launcher.paths import workspace_root as wr
+    from magi.launcher.paths import bootstrap_workspace, workspace_root as wr
     bootstrap_workspace(wr(state_dir))
 
     # MCP tool discovery moved to the ToolWorker's startup seed

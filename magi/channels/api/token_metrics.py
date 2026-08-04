@@ -31,7 +31,6 @@ to UTC for the SQL comparison.
 from __future__ import annotations
 
 import logging
-import os
 import zoneinfo
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -39,17 +38,12 @@ from typing import Annotated
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.token_metrics")
 
 router = APIRouter(tags=["token-metrics"])
-
-
-def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
 
 
 @dataclass(frozen=True)
@@ -127,7 +121,7 @@ def _aggregate_period(
     start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
-    in_sum, out_sum, calls = bootstrap(state_dir).token_usage.aggregate(
+    in_sum, out_sum, calls = get_bus().token_usage.aggregate(
         uid=uid, start=start_utc_naive, end=end_utc_naive,
     )
 

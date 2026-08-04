@@ -30,7 +30,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.session import (
     Session, SessionCorruptError, SessionError, SessionMessage,
     SessionNotFoundError, SessionPathError, SessionSummary,
@@ -58,7 +58,7 @@ def get_session_store() -> SessionService:
     ``MAGI_STATE_DIR`` need each request to see the
     current value, not the value captured at import time.
     """
-    return bootstrap(_state_dir()).session
+    return get_bus().session
 
 
 SessionServiceDep = Annotated[SessionService, Depends(get_session_store)]
@@ -217,7 +217,7 @@ def _delivery_address_for_uid(uid: int, channel: Channel | str = Channel.TG) -> 
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
     """
-    contact = bootstrap(_state_dir()).contacts.get(uid)
+    contact = get_bus().contacts.get(uid)
     return str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
 
 

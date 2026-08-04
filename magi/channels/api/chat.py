@@ -31,11 +31,10 @@ defensive ceiling on top.
 from __future__ import annotations
 
 import logging
-import os
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
-from magi.bus import bootstrap
+from magi.bus import AgentMessage, get_bus
 from magi.bus.contracts.session import (
     ChannelMismatchError, SessionMessage, SessionPathError, new_session_id,
     utcnow_iso as _utcnow_iso,
@@ -44,8 +43,6 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
-from magi.bus import AgentMessage
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -60,13 +57,7 @@ _MAX_INPUT_CHARS = 8000
 _MAX_OUTPUT_CHARS = 4000
 
 
-def _state_dir() -> str:
-    return os.environ.get("MAGI_STATE_DIR", STATE_DIR)
-
-
-def _resolve_caller_credentials(
-    state_dir: str, uid: int
-) -> tuple[int, str]:
+def _resolve_caller_credentials(uid: int) -> tuple[int, str]:
     """Look up the operator's Contact row by their
     ``uid`` (the cookie value post-D.24) and return
     ``(uid, role)``.
@@ -91,7 +82,7 @@ def _resolve_caller_credentials(
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
     """
-    contact = bootstrap(state_dir).contacts.get(uid)
+    contact = get_bus().contacts.get(uid)
 
     if contact is None:
         raise MagiHTTPException(
@@ -192,9 +183,7 @@ async def send_chat(
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    uid, contact_role = _resolve_caller_credentials(
-        _state_dir(), cookie_uid
-    )
+    uid, contact_role = _resolve_caller_credentials(cookie_uid)
     # D.24: per-channel delivery address stamped on the
     # session row's ``delivery_address`` column (renamed
     # from the legacy per-channel chat-id column in D.28).
@@ -208,7 +197,7 @@ async def send_chat(
     # — NOT the per-channel delivery address. The store
     # resolves rows by uid; the channel adapter interprets
     # the delivery address when it has to push a reply.
-    store = bootstrap(_state_dir()).session
+    store = get_bus().session
     session_id = payload.session_id
     # The per-channel delivery address stamped on the
     # session row. ``""`` if the operator never bound TG.
@@ -256,7 +245,7 @@ async def send_chat(
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
-        contact = bootstrap(_state_dir()).contacts.get(uid)
+        contact = get_bus().contacts.get(uid)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.create(
             uid, channel=Channel.WEBUI, delivery_address=tg_im_id,
@@ -315,7 +304,7 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    run_id = bootstrap(_state_dir()).agent_runs.publish_input(
+    run_id = get_bus().agent_runs.publish_input(
         AgentMessage(
                 # The persisted inbound session-message id is the producer's
                 # idempotency key. A network retry cannot create a second

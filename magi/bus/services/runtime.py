@@ -176,6 +176,32 @@ class RuntimeRegistryService:
             logger.debug("legacy endpoint lookup failed", exc_info=True)
             return None
 
+    def _local_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
+        """Phase 7 — read the Local control-registry row before forging URLs."""
+        from magi.bus.services.control_registry import ControlRegistryService
+
+        try:
+            from magi.bus import get_bus
+            bus = get_bus()
+        except Exception:
+            return None
+        control: Optional[ControlRegistryService] = getattr(bus, "control_registry", None)
+        if control is None:
+            return None
+        try:
+            row = control.get_runtime(magic_id)
+        except Exception:
+            return None
+        if row.base_url is None:
+            return None
+        return RuntimeEndpoint(
+            runtime_id=magic_id,
+            backend_kind="local_process",
+            base_url=row.base_url,
+            backend_ref=row.backend_ref,
+            observed_state=row.observed_state.value,
+        )
+
     def resolve_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
         """Return the platform-neutral endpoint for ``magic_id``.
 
@@ -183,7 +209,15 @@ class RuntimeRegistryService:
         the first ``start`` call).  Callers that need to send HTTP
         traffic must treat ``None`` as "not yet running" and surface a
         409 / 503 to the operator.
+
+        Phase 7 — Local Profile is checked first when present,
+        because the Local control registry is the authoritative source
+        for live ``base_url`` values.  K8s Profile falls back to the
+        legacy ``eve_runtime.deployment_name`` URL forging.
         """
+        local = self._local_endpoint(magic_id)
+        if local is not None and local.observed_state not in {"stopped", "deleted"}:
+            return local
         legacy = self._legacy_endpoint(magic_id)
         if legacy is not None and legacy.observed_state not in {"stopped", "deleted"}:
             return legacy

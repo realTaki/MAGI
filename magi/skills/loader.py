@@ -134,9 +134,9 @@ class SkillMeta:
 
 
 def _workspace_root() -> Path:
-    """Mirror :func:`magi.agent.workspace.workspace_root` — we
+    """Mirror :func:`magi.launcher.paths.workspace_root` — we
     inline the implementation to avoid a circular import path
-    at module load time (agent → skills loader → workspace).
+    at module load time (agent → skills loader → launcher).
 
     Workspace is always ``<state_dir>/..`` — inside the container
     this resolves to ``/workspace``.  There is no env-var override

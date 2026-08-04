@@ -30,8 +30,11 @@ from magi.bus.contracts.lifecycle import (
     RuntimeSpec,
 )
 from magi.bus.contracts.runtime import RuntimeEndpoint
-from magi.bus.db.control.models import RuntimeDesiredState, RuntimeObservedState
-from magi.bus.services.control_registry import ControlRegistryService
+from magi.bus.services.control_registry import (
+    ControlRegistryService,
+    RuntimeDesiredState,
+    RuntimeObservedState,
+)
 from magi.launcher.ports import reserve_port
 from magi.launcher.supervisor import (
     ProcessSpec,
