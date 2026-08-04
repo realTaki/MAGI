@@ -45,7 +45,7 @@ magi/constants.py:22            WORKSPACE_DIR: str = "/workspace"
 magi/orchestrator/kubernetes.py:270   "mountPath": "/workspace"   (K8s PV manifest string)
 ```
 
-The `constants.WORKSPACE_DIR` is the K8s default.  Local Profile no longer references it: [`magi/launcher.py:LocalPathLayout`](../magi/launcher.py) builds `<data_root>/workspace` instead, with the K8s profile surviving the rewrite via the `[magi/bus/db/engine.py:require_state_dir()]` helper that honours `MAGI_STATE_DIR` for tests and the legacy `/workspace/memories` path for K8s containers.
+The `constants.WORKSPACE_DIR` is the K8s default.  Local Profile no longer references it: [`magi/launcher.py:LocalPathLayout`](../magi/launcher.py) builds `<data_root>/workspace` instead, with the K8s profile surviving the rewrite via the `[magi/bus/db/engine.py:require_state_dir()]` helper that honours ``MAGI_WORKSPACE_DIR`` for tests and the legacy `/workspace/memories` path for K8s containers.
 
 ### 2.2 `/magis` (one K8s manifest reference only)
 

@@ -62,14 +62,19 @@ class Bus:
 
 
 def bootstrap(
-    state_dir: str,
     *,
     initialise_local: bool = False,
     runtime_backend: object | None = None,
     magis_engine: object | None = None,
     control_engine: object | None = None,
 ) -> Bus:
-    """Create the public BUS facade after optionally initialising SQLite.
+    """Create the public BUS facade for the container / K8s profile.
+
+    The container profile's state directory is derived from
+    :func:`magi.launcher.paths.state_dir` (which reads
+    ``MAGI_WORKSPACE_DIR``).  The Local Profile, which has its own
+    layout, reaches :func:`_bootstrap` directly with the layout's
+    ``state_dir``.
 
     ``runtime_backend`` (Phase 2) overrides the backend selected by the
     ``MAGI_BACKEND`` env var — used by tests to inject a stub
@@ -83,6 +88,35 @@ def bootstrap(
     inject the Local control-plane registry engine.  K8s Profile
     passes ``None``; the resulting Bus still exposes a
     ``control_registry`` slot — it just resolves to ``None``.
+    """
+    from magi.launcher.paths import state_dir as _state_dir
+
+    return _bootstrap(
+        str(_state_dir()),
+        initialise_local=initialise_local,
+        runtime_backend=runtime_backend,
+        magis_engine=magis_engine,
+        control_engine=control_engine,
+    )
+
+
+def _bootstrap(
+    state_dir: str,
+    *,
+    initialise_local: bool = False,
+    runtime_backend: object | None = None,
+    magis_engine: object | None = None,
+    control_engine: object | None = None,
+) -> Bus:
+    """Private — current implementation of :func:`bootstrap`.
+
+    Takes ``state_dir`` explicitly.  Called by:
+
+    - :func:`bootstrap` for container / K8s (after reading state_dir()).
+    - :func:`magi.launcher.bootstrap_local` for the Local Profile
+      (passes ``layout.state_dir``).
+
+    Business modules never call this; they use :func:`get_bus`.
     """
     if magis_engine is not None:
         # Phase 3 — propagate injected engine to the module-level cache
@@ -118,7 +152,7 @@ def bootstrap(
         memory=MemoryService(state_dir),
         mcp=McpService(state_dir),
         task=TaskService(state_dir),
-        task_scheduler=TaskSchedulerBridge(state_dir),
+        task_scheduler=TaskSchedulerBridge(),
         action_item=ActionItemService(state_dir),
         auth=AuthService(state_dir),
         magic=MagicService(state_dir, runtime_dispatcher=runtime_service),
@@ -148,12 +182,30 @@ def get_bus() -> Bus:
 
     The singleton is process-wide (like :func:`magi.bus.db.engine.get_engine`).
     Tests that need a different state directory should call
-    :func:`bootstrap` directly or set ``MAGI_WORKSPACE_DIR`` before the first
+    :func:`_bootstrap` directly or set ``MAGI_WORKSPACE_DIR`` before the first
     call to :func:`get_bus`.
     """
     global _bus
     if _bus is None:
-        from magi.bus.db.engine import require_state_dir
-
-        _bus = bootstrap(require_state_dir())
+        _bus = bootstrap()
     return _bus
+
+
+_BUS_STORE: "BusStore | None" = None
+
+
+def get_bus_store() -> "BusStore":
+    """Return the process-wide :class:`BusStore` (low-level queue ops).
+
+    The store is created on first call alongside the BUS, sharing the
+    same ``state_dir``.  Modules that need direct access to the
+    durable queue primitives (claim / recover / park) without pulling
+    in the full bus facade use this entry point.
+    """
+    global _BUS_STORE
+    if _BUS_STORE is None:
+        from magi.launcher.paths import state_dir as _launcher_state_dir
+        from magi.bus.store import BusStore as _BusStore
+
+        _BUS_STORE = _BusStore(state_dir=str(_launcher_state_dir()))
+    return _BUS_STORE

@@ -44,7 +44,7 @@ from magi.channels.tasks.scheduler import (
 
 @pytest.fixture
 def fresh_state_dir(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    """Per-test state directory + ``MAGI_STATE_DIR`` env var.
+    """Per-test state directory + ``MAGI_WORKSPACE_DIR`` env var.
 
     The env var matters because ``start_scheduler`` →
     ``start()`` lazily initialises the SQLAlchemy engine,
@@ -106,7 +106,7 @@ def test_init_populates_required_attributes(fresh_state_dir: str) -> None:
 
 
 def test_start_scheduler_factory_idempotent(fresh_state_dir: str) -> None:
-    """``start_scheduler(state_dir)`` builds one singleton,
+    """``start_scheduler()`` builds one singleton,
     starts the loop thread + apscheduler, and returns the
     same instance on subsequent calls.
 
@@ -115,16 +115,16 @@ def test_start_scheduler_factory_idempotent(fresh_state_dir: str) -> None:
     failure mode doesn't even reach this assertion, but the
     structural-attribute check above is the cheaper guard.
     """
-    sch = start_scheduler(fresh_state_dir)
+    sch = start_scheduler()
     assert sch is not None
     assert isinstance(sch, TaskScheduler)
-    second = start_scheduler(fresh_state_dir)
+    second = start_scheduler()
     # Idempotent: same instance on second call.
     assert second is sch
 
 
 def test_get_scheduler_after_start(fresh_state_dir: str) -> None:
     """``get_scheduler()`` returns the running singleton."""
-    started = start_scheduler(fresh_state_dir)
+    started = start_scheduler()
     fetched = get_scheduler()
     assert fetched is started

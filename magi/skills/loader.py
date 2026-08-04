@@ -70,7 +70,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from magi.constants import WORKSPACE_DIR
+from magi.launcher.paths import workspace_dir
 
 logger = logging.getLogger("magi.agent.skills.loader")
 
@@ -129,7 +129,7 @@ def _workspace_root() -> Path:
     There is no env-var override (the host-side mount path is
     a k8s PVC concern, not a runtime concern).
     """
-    return Path(WORKSPACE_DIR)
+    return workspace_dir()
 
 
 def _parse_frontmatter(raw: str) -> tuple[dict, str, dict]:

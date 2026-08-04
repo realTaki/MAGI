@@ -13,7 +13,7 @@ from magi.bus.db import init_orm
 def catalog(tmp_path, monkeypatch):
     state = tmp_path / "state"
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state), seed_root=False)
+    init_orm(str(state / "memories"), seed_root=False)
     return bootstrap(str(state)).tool_catalog
 
 

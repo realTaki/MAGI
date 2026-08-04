@@ -22,7 +22,6 @@ class TaskChannel:
     @classmethod
     async def dispatch(
         cls,
-        state_dir: str,
         task_id: str,
         *,
         manual: bool = False,
@@ -37,7 +36,6 @@ class TaskChannel:
         from magi.channels.tasks.runner import execute_task
 
         await execute_task(
-            state_dir,
             task_id,
             manual=manual,
             pre_created_run_id=pre_created_run_id,

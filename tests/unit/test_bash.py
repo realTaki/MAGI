@@ -378,7 +378,7 @@ def test_run_initial_cwd_is_workspace(workspace_ctx):
 def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     """Sanity: all three tools are registered. The
     tool names show up in the LLM's tool list, in
-    the order registered. ``MAGI_STATE_DIR`` must be
+    the order registered. ``MAGI_WORKSPACE_DIR`` must be
     set so the registry's tool-construction path
     can build the SQLAlchemy engine (the LLM tools
     gate on roles which require a DB lookup).

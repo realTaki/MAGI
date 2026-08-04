@@ -95,7 +95,6 @@ _LAST_ERROR_CHARS = 500
 
 
 async def execute_task(
-    state_dir: str,
     task_id: str,
     *,
     manual: bool = False,

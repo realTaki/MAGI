@@ -58,8 +58,8 @@ class TaskSchedulerBridge:
     tests construct a bridge without booting apscheduler.
     """
 
-    def __init__(self, state_dir: str) -> None:
-        self._state_dir = state_dir
+    def __init__(self) -> None:
+        pass
 
     # -- warm-cache notifications ---------------------------------------
 
@@ -121,7 +121,6 @@ class TaskSchedulerBridge:
         from magi.channels.tasks.channel import TaskChannel
 
         await TaskChannel.dispatch(
-            self._state_dir,
             task_id,
             manual=True,
             pre_created_run_id=run_id,
@@ -143,7 +142,7 @@ class TaskSchedulerBridge:
 
     # -- lifecycle (Phase 5: keep __main__.py from reaching scheduler) --
 
-    def start(self, *, rehydrate: bool = True) -> None:
+    def start(self) -> None:
         """Start the apscheduler-backed task worker.
 
         Phase 5 — keeps callers (``magi __main__.py`` and the
@@ -154,17 +153,14 @@ class TaskSchedulerBridge:
         """
         from magi.channels.tasks.scheduler import start_scheduler
 
-        start_scheduler(self._state_dir, rehydrate=rehydrate)
-        logger.info(
-            "task scheduler started via bridge",
-            extra={"state_dir": self._state_dir},
-        )
+        start_scheduler()
+        logger.info("task scheduler started via bridge")
 
     def stop(self) -> None:
         """Stop the task worker if it's running; idempotent."""
         from magi.channels.tasks.scheduler import stop_scheduler
 
-        stop_scheduler(self._state_dir)
+        stop_scheduler()
         logger.info("task scheduler stopped via bridge")
 
     # -- internal --------------------------------------------------------

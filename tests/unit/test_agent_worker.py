@@ -12,7 +12,7 @@ from magi.bus.db import init_orm
 def worker_state(tmp_path, monkeypatch) -> str:
     state = tmp_path / "state"
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state), seed_root=False)
+    init_orm(str(state / "memories"), seed_root=False)
     return str(state)
 
 

@@ -14,7 +14,7 @@ from magi.agent.compaction import maybe_compact
 from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.bus import ToolContext, get_bus
-from magi.constants import WORKSPACE_DIR
+from magi.launcher.paths import workspace_dir
 from magi.prompts import load_bot_replies
 
 logger = logging.getLogger("magi.agent.agent_context")
@@ -88,7 +88,7 @@ def build_context(
         soul=read_soul(),
         tool_ctx=ToolContext(
             state_dir=get_bus().settings.require_state_dir(),
-            workspace=WORKSPACE_DIR,
+            workspace=str(workspace_dir()),
             uid=uid or 0,
             channel=channel,
             session_id=session_id or "",

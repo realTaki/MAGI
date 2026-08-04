@@ -25,7 +25,6 @@ class AgentStepResult:
 
 
 async def run_agent_step(
-    state_dir: str,
     *,
     text: str,
     channel: str,

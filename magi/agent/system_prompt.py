@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from magi.constants import WORKSPACE_DIR
+from magi.launcher.paths import workspace_dir
 
 logger = logging.getLogger("magi.agent.system_prompt")
 
@@ -77,7 +77,7 @@ def read_soul() -> str:
     """
     from magi.prompts import load_fallback_persona
 
-    soul_path = Path(WORKSPACE_DIR) / SOUL_FILENAME
+    soul_path = workspace_dir() / SOUL_FILENAME
     try:
         text = soul_path.read_text(encoding="utf-8")
     except FileNotFoundError:

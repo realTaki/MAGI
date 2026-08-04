@@ -91,7 +91,7 @@ def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
 
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
 
     db_path = tmp_path / "magi.db"
     assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
@@ -142,7 +142,7 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
     seed_engine.dispose()
 
     # Boot must succeed and leave alembic_version at the canonical head.
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
 
     db_path = tmp_path / "magi.db"
     assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
@@ -194,7 +194,7 @@ def test_baseline_includes_all_actor_runtime_columns(
 
     from magi.bus.db import init_orm
 
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
 
     actual = _columns(tmp_path / "magi.db", table)
     missing = expected_columns - actual

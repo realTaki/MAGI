@@ -165,10 +165,10 @@ class ControlRepository:
     def record_spawn(self, runtime_id: int, pid: int, base_url: str, port: int) -> None:
         """Mark a Runtime as having successfully spawned.
 
-        ``port`` is recorded on the port-allocation row, not on
-        ``control_runtime_state`` — the relationship
-        :attr:`ControlRuntimeState.port_alloc` is the source of
-        truth for the runtime's port.
+        Mirrors ``port`` onto the ``control_runtime_state.port``
+        denormalised column so single-row reads don't need to join
+        the alloc table.  The :attr:`ControlRuntimeState.port_alloc`
+        relationship remains authoritative for FK correctness.
         """
         now = datetime.now(timezone.utc)
         with self._Session() as session:
@@ -178,6 +178,7 @@ class ControlRepository:
             row.observed_state = RuntimeObservedState.STARTED
             row.pid = pid
             row.base_url = base_url
+            row.port = port
             row.spawned_at = now
             row.stale = False
             row.updated_at = now
@@ -281,7 +282,14 @@ class ControlRepository:
         partially-recovered workspace.
         """
         with self._Session() as session:
-            existing = session.get(ControlPortAllocation, runtime_id)
+            # Look up by ``runtime_id`` column, NOT by PK (= port) —
+            # ``session.get`` with the runtime_id argument silently
+            # fetches by primary key, which is wrong here.
+            existing = (
+                session.query(ControlPortAllocation)
+                .filter(ControlPortAllocation.runtime_id == runtime_id)
+                .one_or_none()
+            )
             if existing is not None and existing.released_at is None:
                 return PortAllocationDTO(
                     port=existing.port,
@@ -336,11 +344,25 @@ class ControlRepository:
             )
 
     def release_port(self, runtime_id: int) -> None:
+        """Drop the live port-allocation row for ``runtime_id``.
+
+        Per plan §7.4 only ``delete`` should call this — after release
+        the port slot is back in the allocator pool.  We ``DELETE`` the
+        row outright (instead of soft-deleting via ``released_at``)
+        so a fresh ``allocate_port`` for the same port has a clean PK.
+        """
         with self._Session() as session:
-            alloc = session.get(ControlPortAllocation, runtime_id)
+            alloc = (
+                session.query(ControlPortAllocation)
+                .filter(
+                    ControlPortAllocation.runtime_id == runtime_id,
+                    ControlPortAllocation.released_at.is_(None),
+                )
+                .one_or_none()
+            )
             if alloc is None:
                 return
-            alloc.released_at = datetime.now(timezone.utc)
+            session.delete(alloc)
             session.commit()
 
     # -- secrets -----------------------------------------------------------

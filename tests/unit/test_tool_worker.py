@@ -16,7 +16,7 @@ from magi.tools.base import ToolResult
 async def test_tool_worker_returns_result_to_agent_inbox(tmp_path, monkeypatch) -> None:
     state = tmp_path / "state"
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state), seed_root=False)
+    init_orm(str(state / "memories"), seed_root=False)
     store = BusStore(str(state))
     store.enqueue_tool_job(
         run_id="run-1",
@@ -33,7 +33,7 @@ async def test_tool_worker_returns_result_to_agent_inbox(tmp_path, monkeypatch) 
             return ToolResult(content=f"done:{kwargs['value']}")
 
     monkeypatch.setattr(worker_mod, "get_tool", lambda *_args, **_kwargs: FakeTool())
-    worker = worker_mod.ToolWorker(str(state), poll_seconds=0.01)
+    worker = worker_mod.ToolWorker(poll_seconds=0.01)
     await worker.start()
     try:
         for _ in range(50):

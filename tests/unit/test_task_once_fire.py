@@ -149,7 +149,7 @@ def test_register_with_run_at_uses_date_trigger(state_db: Path) -> None:
     whose ``run_at`` is set, regardless of cron."""
     from magi.channels.tasks.scheduler import start_scheduler
 
-    sch = start_scheduler(str(state_db))
+    sch = start_scheduler()
 
     # Schedule ~60s in the future so ``get_next_fire_time``
     # returns a real instant we can assert against.
@@ -174,7 +174,7 @@ def test_register_with_cron_only_uses_cron_trigger(state_db: Path) -> None:
     still goes through ``CronTrigger``."""
     from magi.channels.tasks.scheduler import start_scheduler
 
-    sch = start_scheduler(str(state_db))
+    sch = start_scheduler()
     row = _make_task(
         state_db,
         name="daily-row",
@@ -196,7 +196,7 @@ def test_register_with_both_cron_and_run_at_prefers_run_at(state_db: Path) -> No
     """
     from magi.channels.tasks.scheduler import start_scheduler
 
-    sch = start_scheduler(str(state_db))
+    sch = start_scheduler()
     fire_at = "2099-01-01T00:00:00+00:00"
     row = _make_task(
         state_db,
@@ -279,7 +279,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     from magi.tools.schedule_task import ScheduleTaskTool
     from magi.tools.base import ToolContext
 
-    start_scheduler(str(state_db))
+    start_scheduler()
 
     from magi.bus.models.local.contact import Contact
     with open_session() as db:

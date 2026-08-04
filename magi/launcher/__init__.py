@@ -93,7 +93,8 @@ class LocalPathLayout:
 # §2. Local Composition Root ----------------------------------------------------
 
 
-from magi.bus import Bus, bootstrap as _bus_bootstrap  # noqa: E402
+from magi.bus import Bus  # noqa: E402  (Composition Root — only path that uses _bootstrap)
+from magi.bus.bootstrap import _bootstrap as _bus_bootstrap  # noqa: E402
 
 
 def bootstrap_local(
@@ -149,7 +150,7 @@ def bootstrap_local(
 
         control_engine = build_control_engine(control_dir(layout.data_root))
 
-    return _bus_bootstrap(
+    return _bootstrap(
         str(layout.state_dir),
         initialise_local=initialise,
         magis_engine=magis_engine,
@@ -160,12 +161,12 @@ def bootstrap_local(
 # §3. Process lifecycle wiring --------------------------------------------------
 
 
-def start_channel(name: str, state_dir: str) -> None:
+def start_channel(name: str) -> None:
     """Start a concrete channel from the composition layer."""
     if name == "telegram":
         from magi.channels.telegram.bot import start_bot
 
-        start_bot(state_dir)
+        start_bot()
 
 
 def stop_channel(name: str) -> None:

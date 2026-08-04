@@ -195,8 +195,9 @@ def _default_path() -> Path:
     override = os.environ.get("MAGI_AUDIT_LOG_PATH")
     if override:
         return Path(override)
-    from magi.constants import STATE_DIR
-    return Path(STATE_DIR).parent / "audit" / "audit.log"
+    from magi.launcher.paths import workspace_dir as _workspace_dir
+
+    return _workspace_dir() / "logs" / "audit.log"
 
 
 class AuditLogPlugin:

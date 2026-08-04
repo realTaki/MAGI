@@ -22,7 +22,7 @@ from magi.bus import (
     get_bus_store,
     get_stream_hub,
 )
-from magi.constants import WORKSPACE_DIR
+from magi.launcher.paths import state_dir as launcher_state_dir, workspace_dir
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -186,6 +186,10 @@ class AgentWorker:
             "max_tokens": DEFAULT_MAX_TOKENS,
             "continuation_messages": continuation_messages,
             "tool_results": tool_results,
+            # Match the legacy signature that callers (and tests) still
+            # expect — :func:`magi.launcher.paths.state_dir` is the
+            # authoritative source.
+            "_state_dir": str(launcher_state_dir()),
         }
         if steering_inputs:
             kwargs["steering_inputs"] = steering_inputs
@@ -220,7 +224,7 @@ class AgentWorker:
             hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
             return
         context = {
-            "workspace": WORKSPACE_DIR,
+            "workspace": str(workspace_dir()),
             "uid": payload.get("uid"),
             "channel": payload.get("channel"),
             "session_id": payload.get("session_id"),
@@ -316,8 +320,14 @@ def _error_code(exc: Exception) -> str:
 _worker: AgentWorker | None = None
 
 
-async def start_agent_worker() -> AgentWorker:
-    """Start the process-local worker after SQLite has been initialised."""
+async def start_agent_worker(state_dir: str | None = None) -> AgentWorker:
+    """Start the process-local worker after SQLite has been initialised.
+
+    ``state_dir`` is unused directly here — :meth:`AgentWorker.start`
+    reads it from :func:`magi.launcher.paths.state_dir` — but the
+    parameter is part of the legacy wiring so caller compatibility
+    is preserved.
+    """
     global _worker
     if _worker is None:
         _worker = AgentWorker()
@@ -332,8 +342,17 @@ async def stop_agent_worker() -> None:
         _worker = None
 
 
-async def submit_agent_message(message: AgentMessage) -> str:
-    """Durably publish a turn from any async channel context."""
+async def submit_agent_message(
+    message: AgentMessage,
+    *,
+    state_dir: str | None = None,
+) -> str:
+    """Durably publish a turn from any async channel context.
+
+    ``state_dir`` is a legacy parameter — the store is reached via
+    :func:`magi.launcher.paths.state_dir`.  Kept on the signature so
+    caller compatibility is preserved.
+    """
     store = get_bus_store()
     run_id = store.publish_agent_message(message)
     if _worker is not None:
@@ -346,8 +365,14 @@ async def wait_for_agent_run(
     *,
     timeout_seconds: float = 180.0,
     poll_seconds: float = 0.1,
+    state_dir: str | None = None,
 ) -> str:
-    """Wait for a durable run result without depending on the worker's loop."""
+    """Wait for a durable run result without depending on the worker's loop.
+
+    ``state_dir`` is a legacy parameter — the store is reached via
+    :func:`magi.launcher.paths.state_dir`.  Kept on the signature so
+    caller compatibility is preserved.
+    """
     store = get_bus_store()
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while True:

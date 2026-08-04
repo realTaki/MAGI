@@ -139,7 +139,7 @@ class ToolWorker:
 _worker: ToolWorker | None = None
 
 
-async def start_tool_worker() -> ToolWorker:
+async def start_tool_worker(state_dir: str | None = None) -> ToolWorker:
     global _worker
     if _worker is None:
         _worker = ToolWorker()

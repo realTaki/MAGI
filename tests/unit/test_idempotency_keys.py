@@ -26,7 +26,7 @@ from magi.bus.db import (
 @pytest.fixture()
 def store(tmp_path, monkeypatch) -> BusStore:
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
     return BusStore(str(tmp_path))
 
 
@@ -51,12 +51,12 @@ def test_migration_0009_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
     # Reset engine cache so the second init_orm sees a "fresh" environment
     # (init_orm is idempotent at the alembic level via version stamp,
     # but the cache means the second call would be a no-op anyway).
     engine_mod._engine = engine_mod._SessionLocal = None
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
 
     # If the second upgrade tried to re-add columns the migration would
     # have raised; reaching here is success. Spot-check the new

@@ -22,7 +22,7 @@ from magi.bus.db import init_orm
 
 def _setup(tmp_path: Path, monkeypatch) -> BusStore:
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path), seed_root=False)
+    init_orm(str(tmp_path / "memories"), seed_root=False)
     return BusStore(str(tmp_path))
 
 

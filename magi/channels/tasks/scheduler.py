@@ -93,13 +93,11 @@ class TaskScheduler:
 
     def __init__(
         self,
-        state_dir: str,
         *,
         executor_max_workers: int = _DEFAULT_EXECUTOR_WORKERS,
         coalesce: bool = True,
         misfire_grace_seconds: int = 300,
     ) -> None:
-        self._state_dir = state_dir
         # Stash these on self — :class:`apscheduler.executors.pool.
         # ThreadPoolExecutor` doesn't expose ``max_workers``
         # back out, so anything that wants to log or assert
@@ -161,17 +159,6 @@ class TaskScheduler:
         # to a log-only handler.
         self.on_task_failure: Optional[Callable[[str, str], None]] = None
 
-    @property
-    def state_dir(self) -> str:
-        """Public read-only view of the bound state dir.
-
-        Tools and tests occasionally need the path
-        (e.g. to seed a profile fixture without going
-        through the API). Returning a property keeps
-        the field write-once invariant.
-        """
-        return self._state_dir
-
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
@@ -199,8 +186,8 @@ class TaskScheduler:
         self._sched.start()
         self._rehydrate_from_db()
         logger.info(
-            "TaskScheduler started (state_dir=%s, executor_workers=%d)",
-            self._state_dir, self._executor_max_workers,
+            "TaskScheduler started (executor_workers=%d)",
+            self._executor_max_workers,
         )
 
     def shutdown(self, *, wait: bool = True, cancel_running: bool = True) -> None:
@@ -358,7 +345,6 @@ class TaskScheduler:
         try:
             fut = asyncio.run_coroutine_threadsafe(
                 TaskChannel.dispatch(
-                    self._state_dir,
                     task_id,
                     manual=manual,
                     pre_created_run_id=run_id,
@@ -419,7 +405,7 @@ _scheduler: Optional[TaskScheduler] = None
 _scheduler_lock = threading.Lock()
 
 
-def start_scheduler(state_dir: str) -> TaskScheduler:
+def start_scheduler() -> TaskScheduler:
     """Module singleton factory — idempotent.
 
     Subsequent calls return the existing scheduler. Tests
@@ -428,7 +414,7 @@ def start_scheduler(state_dir: str) -> TaskScheduler:
     global _scheduler
     with _scheduler_lock:
         if _scheduler is None:
-            _scheduler = TaskScheduler(state_dir)
+            _scheduler = TaskScheduler()
             _scheduler.start()
         return _scheduler
 

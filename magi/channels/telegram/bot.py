@@ -39,7 +39,7 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.channels import Channel  # noqa: E402
-from magi.constants import STATE_DIR  # noqa: E402
+from magi.launcher.paths import state_dir as _launcher_state_dir  # noqa: E402
 from magi.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
@@ -298,7 +298,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
     import os
-    state_dir = STATE_DIR
+    state_dir = str(_launcher_state_dir())
 
     # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
@@ -849,7 +849,7 @@ async def _typing_indicator_loop(
             continue
 
 
-def start_bot(state_dir: str) -> threading.Thread | None:
+def start_bot() -> threading.Thread | None:
     """Start the Telegram bot in a daemon thread. Returns the thread, or
     ``None`` if no bot token is saved yet (so the user hasn't completed
     step 1 of the onboarding wizard).

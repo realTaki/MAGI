@@ -18,7 +18,7 @@ from magi.bus.db import (
 async def test_delivery_worker_sends_and_marks_reply_delivered(tmp_path, monkeypatch) -> None:
     state = tmp_path / "state"
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state), seed_root=False)
+    init_orm(str(state / "memories"), seed_root=False)
     store = BusStore(str(state))
     run_id = store.publish_agent_message(
         AgentMessage(event_id="tg-event", text="hello", channel="tg")
@@ -38,7 +38,7 @@ async def test_delivery_worker_sends_and_marks_reply_delivered(tmp_path, monkeyp
 
     monkeypatch.setattr(bot_mod, "send_text_raw", fake_send)
     monkeypatch.setattr(settings_mod, "state_get", lambda *_args: "token")
-    worker = delivery_mod.DeliveryWorker(str(state), poll_seconds=0.01)
+    worker = delivery_mod.DeliveryWorker(poll_seconds=0.01)
     await worker.start()
     try:
         for _ in range(50):
