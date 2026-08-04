@@ -22,12 +22,13 @@ MAGI 的模块边界遵循以下规则：
 3. `magi.db` 不是公共模块，只有 `magi.bus` 可以直接访问。
 4. `agent`、`tools`、`channels`、`plugins` 和 `proactive` 的运行时业务统一通过 BUS 协作，彼此不得直接依赖。
 5. `magi.plugins` 严格只依赖 `magi.bus`，不能把 Agent、Tools、Channels 或 Connectors 当作插件 SDK。
-6. `magi.tools` 是最底层的工具能力层，定义原子化、通用的工具协议、目录和执行机制。
-7. `magi.mcp` 与 `magi.connectors` 都是 Tools 的上层能力来源，允许依赖 `magi.tools`：MCP 适配标准 MCP Server；Connectors 则为某个产品或软件提供一组产品专用工具。
-8. `magi.channels.tasks` 是 BUS 上的通用任务调度 Worker。API、Tools 和 Proactive 只向 BUS 发布任务管理命令；Tasks 消费命令、登记调度，并在到期时通过 BUS 唤起 Agent。
-9. `magi.channels.tasks` 不包含任何预设任务或主动策略；`magi.proactive` 才负责定义系统级任务与心跳，以增强 Agent 的主动性。
-10. WebUI 前端只依赖 `magi.channels.api` 提供的 HTTP、WebSocket 或流式接口。
-11. `magi.__main__` 是 Composition Root，可以导入并组装各模块，但不得承载业务逻辑。
+6. `magi.tools` 是最底层的工具运行时与能力层，定义统一合同、目录、执行器注册表和唯一的 ToolWorker；核心 built-in tools 只保留原子化、通用能力。
+7. `magi.mcp` 与 `magi.connectors` 都是 Tools 的上层适配实现，依赖并实现 `magi.tools` 定义的 `ToolProvider` / `ToolExecutor` 合同：MCP 适配标准 MCP Server；Connectors 为具体产品提供一组专用工具。
+8. MCP 和 Connectors 不拥有独立 Worker，也不消费 BUS Tool Job；由 Composition Root 将其适配器实例注册到 Tools，ToolWorker 在运行时通过注册表调用它们。
+9. `magi.channels.tasks` 是 BUS 上的通用任务调度 Worker。API、Tools 和 Proactive 只向 BUS 发布任务管理命令；Tasks 消费命令、登记调度，并在到期时通过 BUS 唤起 Agent。
+10. `magi.channels.tasks` 不包含任何预设任务或主动策略；`magi.proactive` 才负责定义系统级任务与心跳，以增强 Agent 的主动性。
+11. WebUI 前端只依赖 `magi.channels.api` 提供的 HTTP、WebSocket 或流式接口。
+12. `magi.__main__` 是 Composition Root，可以导入并组装各模块，但不得承载业务逻辑。
 
 ## 3. 总体依赖图
 
@@ -69,6 +70,16 @@ flowchart TD
     PRO -.-> PROMPTS
 ```
 
+图中的箭头只表示代码依赖。工具体系需要同时区分三种方向：
+
+| 关系 | 方向 | 含义 |
+|---|---|---|
+| 代码依赖 | `MCP / Connectors → Tools → BUS` | 适配器导入并实现 Tools 拥有的合同；Tools 不导入具体适配器 |
+| 装配关系 | `__main__ → Tools + MCP + Connectors` | Composition Root 创建适配器并注册到 Tools |
+| 运行时调用 | `BUS Tool Job → ToolWorker → Registry → Adapter` | ToolWorker 调用已注入的实例，不改变代码依赖方向 |
+
+因此，运行时的 `ToolWorker → MCP/Connector 实例` 调用不是 `magi.tools → magi.mcp/magi.connectors` 的源码依赖，而是依赖倒置后的接口调用。
+
 主依赖链可简化为：
 
 ```text
@@ -93,9 +104,9 @@ agent / plugins ─────┘
 | 其他 `magi.channels.*` | Telegram 等消息渠道适配 | `magi.bus` | 外部消息平台 |
 | `magi.proactive` | 定义系统级任务和心跳，通过 BUS 登记调度，增强 Agent 主动性 | `magi.bus`、`magi.prompts` | 开发者定义的主动策略 |
 | `magi.agent` | 推理循环、上下文构建、LLM 调用 | `magi.bus`、`magi.prompts` | Runtime 中的 Agent Worker |
-| `magi.tools` | 最底层的原子化、通用工具协议，目录同步和执行 Worker；提供通过 BUS 管理任务与心跳的通用工具 | `magi.bus` | `magi.mcp`、`magi.connectors`、核心内置工具 |
-| `magi.mcp` | 将 MCP Server 能力接入 Tools 体系 | `magi.tools` | MCP Server 配置与连接 |
-| `magi.connectors` | 面向特定产品或软件组织一组专用工具；补足无 MCP Server 或 MCP 能力不足的集成场景 | `magi.tools` | 产品专用 API、SDK 或本地自动化接口 |
+| `magi.tools` | 定义统一工具合同、Catalog 同步、Executor Registry 和唯一 ToolWorker；承载原子化通用 built-in tools 以及通过 BUS 管理任务的工具 | `magi.bus` | Agent Tool Jobs、核心 built-in tools、已注册适配器 |
+| `magi.mcp` | 实现 Tools 合同，将 MCP Server 的发现与执行能力注册为适配器；无独立 Worker | `magi.tools` | MCP Server 配置与连接 |
+| `magi.connectors` | 实现 Tools 合同，按产品组织一组专用工具；无独立 Worker | `magi.tools` | 产品专用 API、SDK、CLI 或本地自动化接口 |
 | `magi.plugins` | 插件发现、生命周期和插件能力登记 | `magi.bus` | 外部或内置插件 |
 | `magi.bus` | 命令、事件、查询、队列、事务和一致性协议 | `magi.db` | 所有 BUS 消费者 |
 | `magi.db` | 数据模型、数据库引擎、迁移与存储实现 | 通用基础库 | 仅 `magi.bus` |
@@ -186,14 +197,14 @@ LLM Provider Adapter 应作为 `magi.agent` 的内部子模块，而不是其他
 
 #### 负责
 
-- 定义 MAGI 内部统一的 Tool Descriptor、参数 Schema 和执行结果协议。
-- 注册和管理最底层、原子化、可跨场景复用的内置工具执行器。
-- 将 Tool Catalog 的变化同步到 BUS。
-- 从 BUS 领取工具执行请求。
-- 执行工具并将成功、失败、超时和取消结果写回 BUS。
-- 实现工具执行的权限、超时、并发、重试和幂等控制。
-- 为 MCP 适配层提供明确且稳定的接入接口。
-- 为 Connectors 提供组合和注册产品专用工具的稳定接入接口。
+- 定义 MAGI 内部统一的 Tool Descriptor、参数 Schema、`ToolProvider`、`ToolExecutor` 和执行结果协议。
+- 维护 Executor Registry，并注册最底层、原子化、可跨场景复用的内置工具执行器。
+- 将所有来源的 Tool Catalog 变化统一同步到 BUS。
+- 由唯一的 ToolWorker 从 BUS 领取工具执行请求。
+- 通过 Executor Registry 解析并调用已注册的 built-in、MCP 或 Connector 执行器。
+- 将成功、失败、超时和取消结果写回 BUS。
+- 统一实现工具执行的权限、超时、并发、重试和幂等控制。
+- 为 MCP 与 Connectors 提供明确且稳定的接入合同。
 - 提供任务创建、更新、暂停、恢复、取消和查询工具；这些工具只通过 BUS 发布任务命令或查询，不直接调用 `magi.channels.tasks`。
 
 #### 不负责
@@ -201,8 +212,9 @@ LLM Provider Adapter 应作为 `magi.agent` 的内部子模块，而不是其他
 - 不发起 Agent 推理。
 - 不直接修改会话上下文。
 - 不直接操作数据库。
-- 不依赖或识别 `magi.mcp`；MCP 是上层适配者。
-- 不依赖或识别 `magi.connectors`；Connectors 也是上层适配者。
+- 不导入或识别 `magi.mcp` 的具体实现；只调用注册为 Tools 合同的实例。
+- 不导入或识别 `magi.connectors` 的具体实现；只调用注册为 Tools 合同的实例。
+- 不为 MCP 或 Connector 创建第二套 Tool Job Worker。
 - 不在核心层堆积某个产品专属的一整套业务工具；这类工具归属于对应 Connector。
 - 不直接向 Channel 发送执行结果。
 
@@ -232,6 +244,8 @@ Tools 是工具体系的底座，不等于所有工具实现都必须放在 `mag
 
 - 不直接向 BUS 注册工具或写入工具结果。
 - 不直接访问数据库。
+- 不拥有独立 ToolWorker，也不从 BUS 领取 Tool Job。
+- 不自行实现权限、重试、幂等或结果持久化；这些属于 Tools 运行时。
 - 不被 `magi.tools` 反向导入。
 - 不参与 Agent 上下文和推理。
 
@@ -241,7 +255,7 @@ Tools 是工具体系的底座，不等于所有工具实现都必须放在 `mag
 magi.mcp → magi.tools → magi.bus → magi.db
 ```
 
-其中只有相邻模块之间存在直接代码依赖。
+其中只有相邻模块之间存在直接代码依赖。运行时由 ToolWorker 通过 Tools 的 Executor Registry 调用已注册的 MCP Adapter；该实例由 Composition Root 注入，因此不会形成 Tools 对 MCP 的源码依赖。
 
 ### 5.6 `magi.connectors`
 
@@ -259,7 +273,9 @@ Connector 是面向某个具体产品或软件的一组工具适配，不是新�
 
 #### 不负责
 
-- 不定义一套与 `magi.tools` 平行的工具协议或 Tool Catalog。
+- 不定义一套与 `magi.tools` 平行的工具协议、Tool Catalog 或 Tool Job 队列。
+- 不拥有独立 ToolWorker，也不从 BUS 领取 Tool Job。
+- 不自行实现 Tools 已统一提供的权限、重试、幂等或结果持久化。
 - 不直接向 Agent 暴露实例，也不直接参与 Agent 推理。
 - 不直接访问数据库。
 - 不直接依赖 Channels、Plugins 或 MCP。
@@ -272,7 +288,7 @@ Connector 是面向某个具体产品或软件的一组工具适配，不是新�
 magi.connectors → magi.tools → magi.bus → magi.db
 ```
 
-与 MCP 一样，只有相邻模块之间存在直接代码依赖。Connectors 与 MCP 是并列的两种工具接入方式：
+与 MCP 一样，只有相邻模块之间存在直接代码依赖。运行时由 ToolWorker 调用已注册的 Connector Adapter，Composition Root 负责实例化和注册。Connectors 与 MCP 是并列的两种工具接入方式：
 
 ```text
 MCP Server ─────→ magi.mcp ───────┐
@@ -485,6 +501,7 @@ WebUI 前端 → magi.channels.api
 
 - 读取启动参数和环境配置。
 - 创建 BUS、数据库实现和各类 Worker。
+- 实例化 MCP 与 Connector Adapter，并注册到 Tools 的 Executor Registry。
 - 装配模块依赖和 Adapter。
 - 根据进程角色启动 Runtime、WebUI API 或其他服务。
 - 管理启动顺序、健康检查和优雅退出。
@@ -578,8 +595,8 @@ Agent 从 BUS 读取 Tool Catalog，因此不需要调用 Tools 模块获得工�
 ```mermaid
 sequenceDiagram
     participant MS as MCP Server
-    participant MCP as magi.mcp
-    participant TOOLS as magi.tools
+    participant MCP as MCP Adapter
+    participant TOOLS as ToolWorker / Registry
     participant BUS as BUS
 
     MS-->>MCP: 工具列表
@@ -598,8 +615,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant PRODUCT as 产品 API / SDK
-    participant CONN as magi.connectors
-    participant TOOLS as magi.tools
+    participant CONN as Connector Adapter
+    participant TOOLS as ToolWorker / Registry
     participant BUS as BUS
 
     CONN->>TOOLS: 注册一组标准 Tool Descriptor
@@ -612,7 +629,7 @@ sequenceDiagram
     TOOLS->>BUS: 写入 Tool Result
 ```
 
-Agent 只从 BUS 看到规范化后的工具目录和结果，不需要知道工具来自核心 built-in、MCP 还是 Connector。
+Agent 只从 BUS 看到规范化后的工具目录和结果，不需要知道工具来自核心 built-in、MCP 还是 Connector。上面时序中的 Tools → Adapter 是对象级运行时调用；源码层仍然是 Adapter → Tools 合同。
 
 ### 7.5 通用任务调度
 
@@ -683,6 +700,8 @@ sequenceDiagram
 - `agent`、`tools`、`channels`、`plugins` 和 `proactive` 之间不存在跨模块直接导入；运行时协作统一通过 BUS。Connectors 与 MCP 作为明确例外，只向下依赖 Tools。
 - `magi.tools` 不依赖 `magi.mcp`。
 - `magi.tools` 不依赖 `magi.connectors`。
+- MCP 与 Connectors 都没有独立 ToolWorker，也不直接消费 BUS Tool Job。
+- Composition Root 将 MCP/Connector Adapter 注册到 Tools，ToolWorker 只通过 Tools 合同和 Executor Registry 调用它们。
 - `magi.mcp` 不绕过 Tools 直接访问 BUS。
 - `magi.connectors` 不绕过 Tools 直接访问 BUS，也不创建平行的工具协议或 Catalog。
 - 产品专用的一组工具归属于对应 Connector；Tools 核心只保留原子化、通用的能力与执行基础。
