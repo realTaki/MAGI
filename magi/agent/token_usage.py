@@ -12,7 +12,6 @@ from __future__ import annotations
 
 
 def record_token_usage(
-    state_dir: str,
     *,
     uid: int,
     channel: str,
@@ -33,14 +32,6 @@ def record_token_usage(
     Unknown keys are ignored; missing keys default to 0 so
     a provider that returned no usage metadata still gets a
     row (call count stays honest).
-
-    ``state_dir`` is unused at runtime (the SQL row is a
-    process-global write regardless of which MAGI node is
-    calling) but kept in the signature so the function can
-    be called uniformly with the rest of the agent loop's
-    helpers — it documents "this lives in the state_dir's
-    DB" without forcing callers to reach into ORM
-    internals.
 
     Raises whatever the ORM raises — caller is responsible
     for swallowing (we don't want a transient DB hiccup to

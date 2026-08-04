@@ -16,27 +16,23 @@ Two surfaces pinned:
     actually mean on disk").
   - :func:`build_system_prompt` — assembles the full prompt
     in the fixed order the agent loop uses. Stateless
-    from the caller's POV: takes the inputs (``state_dir``
-    / ``uid`` / ``soul``), returns a single string. The
+    from the caller's POV: takes ``uid`` / ``soul``,
+    returns a single string. The
     memory and contact lookups are done here so the
     LLM-facing prompt is built in one place; the agent
     loop only sees the finished string.
 
 The ``uid -> Contact row -> ContactEntry`` resolution
 lives here too (not in the agent loop) so the prompt
-builder is self-contained. Pre-D.26 the resolver ran on
-a per-channel chat id (TG digits at the time) and the
-contact directory was keyed off "the admin who's
-chatting at this address". D.26 collapses that:
-there's only ever one User per chat (the cookie's
-``magi_session`` is the User's UID directly), so the
-system prompt looks up the contact record via ``uid``
-and renders it inline.
+builder is self-contained.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
+from magi.constants import WORKSPACE_DIR
 
 logger = logging.getLogger("magi.agent.system_prompt")
 
@@ -65,12 +61,10 @@ def _format_daily_note_block(note) -> str:
     return f"## Daily note\n{note.note}" if note is not None and note.note else ""
 
 
-def read_soul(state_dir: str) -> str:
+def read_soul() -> str:
     """Load the persona text from the workspace's ``SOUL.md``.
 
-    Path resolution goes through :func:`magi.launcher.paths.workspace_root`
-    which derives the workspace from ``MAGI_STATE_DIR`` (always
-    ``/workspace`` inside the container).
+    The workspace is always ``/workspace`` inside the container.
 
     This is a **read** function — it does not bootstrap or write
     to disk. The workspace bootstrap runs once at boot from
@@ -82,9 +76,8 @@ def read_soul(state_dir: str) -> str:
     the agent loop should never silently mutate on-disk state.
     """
     from magi.prompts import load_fallback_persona
-    from magi.launcher.paths import workspace_root
 
-    soul_path = workspace_root(state_dir) / SOUL_FILENAME
+    soul_path = Path(WORKSPACE_DIR) / SOUL_FILENAME
     try:
         text = soul_path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -94,7 +87,6 @@ def read_soul(state_dir: str) -> str:
 
 
 def build_system_prompt(
-    state_dir: str,
     *,
     uid: int,
     soul: str,
@@ -117,13 +109,7 @@ def build_system_prompt(
          renders the :class:`ContactEntry` row scoped to
          ``(uid, uid)``: the User's own self-record, the
          same lookup the user's ``add_contact_note`` /
-         ``search_contacts`` tools maintain. Pre-D.26 the
-         block was keyed off a per-channel chat id; that
-         field is gone now. The User is uniquely
-         identified by ``uid``; the cookie's
-         ``magi_session`` value IS the UID directly.
-         There is no second "person on the other end" in
-         this model — "admin 当前 在跟谁聊 根本不存在".
+         ``search_contacts`` tools maintain.
       5. **Daily note** — :func:`format_daily_note_block`
          renders today's running log (``contact_notes``
          where ``kind='daily'``). The LLM appends to it via

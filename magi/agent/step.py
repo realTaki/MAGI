@@ -57,7 +57,6 @@ async def run_agent_step(
             messages=(),
         )
     context = agent_context.build_context(
-        state_dir,
         text=text,
         channel=channel,
         uid=uid,
@@ -97,10 +96,10 @@ async def run_agent_step(
                 agent_context.ChatMessage(role="user", content=str(steering.get("text") or ""))
             )
     await agent_context.maybe_compact(
-        state_dir, uid, session_id, context.messages
+        uid, session_id, context.messages
     )
     request = {
-        "system": agent_context.build_system_prompt(state_dir, uid=uid, soul=context.soul),
+        "system": agent_context.build_system_prompt(uid=uid, soul=context.soul),
         "messages": context.messages,
         "max_tokens": max_tokens,
         "tools": context.tool_schemas,

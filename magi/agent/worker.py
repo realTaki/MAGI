@@ -16,13 +16,13 @@ from magi.bus import (
     A2AInvocationRequest,
     AgentMessage,
     BusClaim,
-    BusStore,
     BusStoreProtocol,
     RunResult,
     StreamEvent,
+    get_bus_store,
     get_stream_hub,
 )
-from magi.constants import STATE_DIR
+from magi.constants import WORKSPACE_DIR
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -44,13 +44,11 @@ class AgentWorker:
 
     def __init__(
         self,
-        state_dir: str | None = None,
         *,
         poll_seconds: float = 0.25,
         store: BusStoreProtocol | None = None,
     ) -> None:
-        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
-        self.store: BusStoreProtocol = store or BusStore(self.state_dir)
+        self.store: BusStoreProtocol = store or get_bus_store()
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._wake = asyncio.Event()
@@ -87,17 +85,8 @@ class AgentWorker:
         self._wake.set()
 
     def _is_within_deadline(self, claim: BusClaim) -> bool:
-        """Return True iff the run's deadline (if any) is still in the future.
-
-        Reads ``agent_runs.deadline_at`` (set by
-        :class:`AgentMessage.deadline_at` at publish time). A
-        deadline in the past means the run is expired and should
-        fail rather than invoke the LLM. A row with no deadline
-        (None) is always considered within-deadline.
-        """
+        """Return True iff the run's deadline (if any) is still in the future."""
         checker = getattr(self.store, "is_run_within_deadline", None)
-        # Third-party protocol fakes written before the deadline API are
-        # still safe: they have no persisted deadline to evaluate.
         return True if checker is None else bool(checker(claim.run_id))
 
     async def _run(self) -> None:
@@ -117,12 +106,6 @@ class AgentWorker:
 
     async def _process(self, claim: BusClaim) -> None:
         try:
-            # Deadline gate (added 0011_agent_run_metadata): a run
-            # whose ``deadline_at`` has passed is terminally failed
-            # without invoking the LLM. The producer may pass a
-            # deadline via AgentMessage.deadline_at; a scheduler tick
-            # that schedules a long-running tool chain is the
-            # canonical use case.
             if not self._is_within_deadline(claim):
                 self.store.fail_agent_message(
                     claim.event_id,
@@ -134,9 +117,6 @@ class AgentWorker:
                 )
                 return
             if claim.kind == "run.steer":
-                # Publication already atomically attached the input to its
-                # active run.  This inbox record is only an acknowledgement;
-                # it must not start another inference while tools are running.
                 self.store.complete_agent_input(claim.event_id)
                 return
             if claim.kind in {"tool.result", "a2a.result"}:
@@ -156,7 +136,7 @@ class AgentWorker:
                 )
                 return
             await self._advance(claim, claim.payload)
-        except Exception as exc:  # a durable run must not strand its producer
+        except Exception as exc:
             error_code = _error_code(exc)
             logger.exception("agent run %s failed", claim.run_id)
             self.store.fail_agent_message(
@@ -175,7 +155,6 @@ class AgentWorker:
     ) -> None:
         from magi.agent.agent_context import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
-        from magi.launcher.paths import workspace_root
 
         attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)
         hub = get_stream_hub()
@@ -208,18 +187,12 @@ class AgentWorker:
             "continuation_messages": continuation_messages,
             "tool_results": tool_results,
         }
-        # Keep the compatibility step call byte-for-byte stable unless there
-        # is actual steering to append.  Older direct callers/tests therefore
-        # remain valid while the new path gets provider-valid ordering.
         if steering_inputs:
             kwargs["steering_inputs"] = steering_inputs
-        # Third-party/tests may still replace the compatibility step with the
-        # old call signature.  Native runtime code opts into streaming without
-        # making that migration surface a breaking change.
         if "on_stream_event" in inspect.signature(run_agent_step).parameters:
             kwargs["on_stream_event"] = _forward_stream_event
         try:
-            step = await run_agent_step(self.state_dir, **kwargs)
+            step = await run_agent_step(**kwargs)
         except Exception as exc:
             self.store.fail_llm_attempt(attempt_id, str(exc))
             hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "llm.failed", {"error": str(exc)}))
@@ -238,7 +211,7 @@ class AgentWorker:
             self.store.commit_agent_transition(
                 claim.event_id,
                 reply=step.text,
-                delivery_destination=_delivery_destination(self.state_dir, payload),
+                delivery_destination=_delivery_destination(payload),
                 continuation={"messages": list(step.messages), "assistant_blocks": list(step.assistant_blocks)},
                 attempt_id=attempt_id,
                 attempt_result=attempt_result,
@@ -247,7 +220,7 @@ class AgentWorker:
             hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
             return
         context = {
-            "workspace": str(workspace_root(self.state_dir)),
+            "workspace": WORKSPACE_DIR,
             "uid": payload.get("uid"),
             "channel": payload.get("channel"),
             "session_id": payload.get("session_id"),
@@ -266,8 +239,6 @@ class AgentWorker:
                 if target_magic_id <= 0 or not text.strip():
                     raise ValueError("magic_id and text are required")
             except (KeyError, TypeError, ValueError) as exc:
-                # Preserve provider-valid transcript even for malformed model
-                # output; the next step receives an ordinary failed result.
                 regular_tool_uses.append({
                     "id": tool_use["id"],
                     "name": "message_magi",
@@ -324,7 +295,7 @@ class AgentWorker:
         )
 
 
-def _delivery_destination(state_dir: str, payload: dict) -> str | None:
+def _delivery_destination(payload: dict) -> str | None:
     """Resolve a TG session address without importing a Telegram client."""
     if payload.get("channel") != "tg" or not payload.get("session_id"):
         return None
@@ -345,11 +316,11 @@ def _error_code(exc: Exception) -> str:
 _worker: AgentWorker | None = None
 
 
-async def start_agent_worker(state_dir: str | None = None) -> AgentWorker:
+async def start_agent_worker() -> AgentWorker:
     """Start the process-local worker after SQLite has been initialised."""
     global _worker
     if _worker is None:
-        _worker = AgentWorker(state_dir)
+        _worker = AgentWorker()
         await _worker.start()
     return _worker
 
@@ -361,12 +332,11 @@ async def stop_agent_worker() -> None:
         _worker = None
 
 
-async def submit_agent_message(message: AgentMessage, *, state_dir: str | None = None) -> str:
+async def submit_agent_message(message: AgentMessage) -> str:
     """Durably publish a turn from any async channel context."""
-    resolved_state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
-    store = BusStore(resolved_state_dir)
+    store = get_bus_store()
     run_id = store.publish_agent_message(message)
-    if _worker is not None and _worker.state_dir == resolved_state_dir:
+    if _worker is not None:
         _worker.notify()
     return run_id
 
@@ -374,12 +344,11 @@ async def submit_agent_message(message: AgentMessage, *, state_dir: str | None =
 async def wait_for_agent_run(
     run_id: str,
     *,
-    state_dir: str | None = None,
     timeout_seconds: float = 180.0,
     poll_seconds: float = 0.1,
 ) -> str:
     """Wait for a durable run result without depending on the worker's loop."""
-    store = BusStore(state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR)
+    store = get_bus_store()
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while True:
         result = store.get_run_result(run_id)

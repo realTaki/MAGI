@@ -357,22 +357,6 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
         stamp_baseline(state_dir or require_state_dir())
 
     upgrade_head(state_dir or require_state_dir(), engine)
-    # Built-in scheduled-task templates are code-owned prompts, not SQL
-    # literals in a migration. Synchronise them after schema upgrade so a
-    # developer can tune a mounted YAML file and see it on the next boot.
-    # The module that exposed ``sync_bundled_task_presets`` (formerly
-    # ``magi.proactive.task_preset_templates``) was retired as part of
-    # the 2026.08 proactive → bus refactor. Skip the call gracefully
-    # when the symbol is missing so boot doesn't depend on a feature
-    # that's been moved; the table itself stays empty until a future
-    # sync layer replaces it.
-    try:
-        from magi.bus.services.task import sync_bundled_task_presets  # type: ignore[attr-defined]
-        with Session(engine) as session:
-            sync_bundled_task_presets(session)
-            session.commit()
-    except (ImportError, AttributeError):
-        logger.debug("bundled task preset sync not available; skipping")
     if seed_root:
         _seed_default_root(engine)
     logger.info(
