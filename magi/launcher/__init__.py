@@ -1,37 +1,40 @@
-"""MAGI launcher — composition-root module for both deploy profiles.
+"""MAGI launcher — composition-root package for both deploy profiles.
 
-This module is the single Composition-Root home for MAGI today. It is
-the only place that knows about path layouts, Local-vs-K8s bootstrap
+This package is the single Composition-Root home for MAGI. It is the
+only place that knows about path layouts, Local-vs-K8s bootstrap
 selection, or process-lifecycle wiring for channels / workers / the
-connector-to-plugin bridge. Business modules (``magi.bus``,
+connector-to-plugin bridge.  Business modules (``magi.bus``,
 ``magi.agent``, ``magi.tools``, ``magi.channels``, ``magi.mcp``,
 ``magi.connectors``, ``magi.skills``, ``magi.proactive``,
 ``magi.orchestrator``) never import from here.
 
-Sectioned by concern for readability, but kept as one flat file:
+Layout:
 
-  §1. Path layout config       — ``LocalPathLayout`` dataclass
-  §2. Local Composition Root   — ``bootstrap_local()``
-  §3. Process lifecycle wiring — channel/bridge/worker adapter
-  §4. Back-compat re-export    — ``workspace_root`` (canonical: ``magi.agent.workspace``)
+- ``LocalPathLayout`` (here)             — path layout dataclass
+- ``bootstrap_local`` (here)             — Local Profile Composition Root
+- ``start_channel`` / ``stop_channel`` /
+  ``is_channel_running`` / ``start_connector_bridge`` /
+  ``stop_connector_bridge`` /
+  ``worker_lifespan`` (here)             — process lifecycle adapter
+- ``paths``                              — OS-specific data-root resolution
+- ``platform``                           — OS detection + browser open
+- ``security``                           — launcher control-secret helpers
+- ``ports`` (Phase 4)                    — bitmap port allocator
+- ``supervisor`` (Phase 4)               — LocalProcessRuntimeBackend host
+- ``cli`` (Phase 6)                      — ``magi local start|status|stop|doctor``
 
 The architecture test (``tests/architecture/test_import_boundaries.py``)
-treats this module as a Composition-Root prefix, exempt from the standard
-bus-centric boundary rules.  When Phase 6 lands
-(``magi local start|status|stop|doctor`` per
-``docs/MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md`` §13.2),
-convert this module into the ``magi/launcher/`` package and add
-``cli.py`` / ``supervisor.py`` / ``paths.py`` / ``ports.py`` /
-``platform.py`` / ``security.py`` per the plan.
+treats this package as a Composition-Root prefix, exempt from the
+standard bus-centric boundary rules.
 """
 
 from __future__ import annotations
 
-# §1. Path layout config --------------------------------------------------------
-
-import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+# §1. Path layout config --------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +92,8 @@ class LocalPathLayout:
 
 # §2. Local Composition Root ----------------------------------------------------
 
-from magi.bus import Bus, bootstrap  # noqa: E402  (kept after config above so §1 reads cleanly)
+
+from magi.bus import Bus, bootstrap as _bus_bootstrap  # noqa: E402
 
 
 def bootstrap_local(
@@ -97,6 +101,7 @@ def bootstrap_local(
     *,
     initialise: bool = False,
     magis_dir: Path | str | None = None,
+    initialise_control: bool = True,
 ) -> Bus:
     """Build the Local Profile BUS facade rooted at ``data_root``.
 
@@ -114,6 +119,10 @@ def bootstrap_local(
     ``None`` the function picks ``<data_root>/MAGIS/local/magis.db``.  The
     resulting engine is injected into the BUS so the public schema lives
     outside the Adam's private database.
+
+    ``initialise_control=True`` (Phase 3 close-out) also builds the
+    Local control-plane registry engine and threads it through the
+    :class:`Bus.control_registry` facade.
     """
     layout = LocalPathLayout(Path(data_root))
     if magis_dir is None:
@@ -121,21 +130,26 @@ def bootstrap_local(
     magis_dir = Path(magis_dir)
     magis_dir.mkdir(parents=True, exist_ok=True)
 
-    # Phase 3 — build the per-MAGIS SQLite engine eagerly so the BUS
-    # facade receives it via bootstrap(..., magis_engine=...).
     from magi.bus.db.magis.local_engine import build as build_local_engine
 
     magis_engine = build_local_engine(magis_dir)
-    return bootstrap(
+
+    control_engine = None
+    if initialise_control:
+        from magi.bus.db.control.engine import build_control_engine
+        from magi.launcher.paths import control_dir
+
+        control_engine = build_control_engine(control_dir(layout.data_root))
+
+    return _bus_bootstrap(
         str(layout.state_dir),
         initialise_local=initialise,
         magis_engine=magis_engine,
+        control_engine=control_engine,
     )
 
 
 # §3. Process lifecycle wiring --------------------------------------------------
-
-from contextlib import asynccontextmanager  # noqa: E402
 
 
 def start_channel(name: str, state_dir: str) -> None:
@@ -161,7 +175,7 @@ def is_channel_running(name: str) -> bool:
     return name == "webui"
 
 
-# -- connector→plugin bridge (composition wiring) -------------------------------
+# -- connector→plugin bridge (composition wiring) ------------------------------
 
 _BRIDGE_HANDLERS: list[tuple] = []
 
@@ -247,10 +261,6 @@ async def worker_lifespan():
 
 # §4. Back-compat re-export -----------------------------------------------------
 
-# The canonical helper lives in ``magi.agent.workspace``.  Re-exported here
-# so legacy callers that imported ``from magi.workspace import
-# workspace_root`` (or ``from magi.launcher import workspace_root`` after
-# the consolidation) keep working.
 from magi.agent.workspace import workspace_root  # noqa: E402, F401
 
 
