@@ -1,7 +1,7 @@
 /**
  * ChatTab — chat session list + conversation pane.
  *
- * Two-column shell: sidebar on the left (6 EVE-output
+ * Two-column shell: sidebar on the left (6 EVA-output
  * categories at the top, then a separator, then
  * 新对话 / 搜索对话 / 历史对话 with a top-20 list
  * and a 查看全部 affordance), and a content pane on
@@ -40,7 +40,7 @@ import { ChatConversationPane } from './chat/ChatConversationPane';
 
 // -- tab: chat --------------------------------------------------------------
 //
-// Two-column shell: a sidebar on the left (6 EVE-output categories
+// Two-column shell: a sidebar on the left (6 EVA-output categories
 // at the top, then a separator, then 新对话 / 搜索对话 / 历史对话
 // with a top-20 list and a 查看全部 affordance), and a content
 // pane on the right that changes based on what's selected.

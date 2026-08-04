@@ -7,7 +7,7 @@ outside :mod:`magi.bus` sees DTOs.
 """
 
 from magi.bus.models.magis.auth_credential import AuthCredential
-from magi.bus.models.magis.eve_runtime import EveRuntime
+from magi.bus.models.magis.eva_runtime import EvaRuntime
 from magi.bus.models.magis.magic import MAGIC
 from magi.bus.models.magis.magis import MAGIS
 from magi.bus.models.magis.magis_admin import MAGISAdmin
@@ -20,7 +20,7 @@ from magi.bus.models.magis.magis_membership import (
 
 __all__ = [
     "AuthCredential",
-    "EveRuntime",
+    "EvaRuntime",
     "MAGIC",
     "MAGIS",
     "MAGISAdmin",

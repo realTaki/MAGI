@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import get_bus
 from magi.bus.contracts.magis import (
-    EveRuntimeView,
+    EvaRuntimeView,
     MagicView,
     MembershipBrief as MembershipBriefDTO,
 )
@@ -47,7 +47,7 @@ class MembershipBrief(BaseModel):
     role_name: str
 
 
-class EveRuntimeOut(BaseModel):
+class EvaRuntimeOut(BaseModel):
     desired_state: str
     observed_state: str
     namespace: str | None = None
@@ -65,7 +65,7 @@ class MAGICOut(BaseModel):
     api_key_set: bool = False
     api_key_last4: str | None = None
     memberships: list[MembershipBrief] = []
-    runtime: EveRuntimeOut | None = None
+    runtime: EvaRuntimeOut | None = None
     created_at: str
     updated_at: str
 
@@ -98,10 +98,10 @@ def _bus():
     return get_bus()
 
 
-def _runtime_out(view: EveRuntimeView | None) -> EveRuntimeOut | None:
+def _runtime_out(view: EvaRuntimeView | None) -> EvaRuntimeOut | None:
     if view is None:
         return None
-    return EveRuntimeOut(
+    return EvaRuntimeOut(
         desired_state=view.desired_state,
         observed_state=view.observed_state,
         namespace=view.namespace,
@@ -146,7 +146,7 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
     preserve the pre-refactor codes (``not_found.magic``,
     ``runtime.current_magic_protected``,
     ``validation.magic_membership_required``,
-    ``validation.eve_provider_credentials_required``,
+    ``validation.eva_provider_credentials_required``,
     ``runtime.orchestrator_unavailable``).
 
     Anything we can't classify falls back to a 400 with the bus's
@@ -169,7 +169,7 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
         if "magis" in text and ("membership" in text or "assign" in text):
             code = "validation.magic_membership_required"
         elif "provider" in text or "credential" in text or "api key" in text:
-            code = "validation.eve_provider_credentials_required"
+            code = "validation.eva_provider_credentials_required"
         elif "desired_state" in text:
             code = "validation.invalid_value"
         else:
@@ -306,8 +306,8 @@ def put_self_instruction(payload: InstructionPayload, _admin: AdminGate) -> Inst
     return InstructionOut(magic_id=magic_id, instruction=payload.instruction)
 
 
-@router.get("/magic/{magic_id}/runtime", response_model=EveRuntimeOut)
-def get_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+@router.get("/magic/{magic_id}/runtime", response_model=EvaRuntimeOut)
+def get_runtime(magic_id: int, _admin: AdminGate) -> EvaRuntimeOut:
     _require_visible_magic(magic_id, allow_unassigned=False)
     try:
         view = _bus().magic.ensure_runtime(magic_id)
@@ -316,7 +316,7 @@ def get_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
     return _runtime_out(view)  # type: ignore[return-value]
 
 
-def _lifecycle(action: str, magic_id: int) -> EveRuntimeOut:
+def _lifecycle(action: str, magic_id: int) -> EvaRuntimeOut:
     _require_visible_magic(magic_id, allow_unassigned=False)
     bus = _bus()
     current = _current_magic_id()
@@ -341,13 +341,13 @@ def _lifecycle(action: str, magic_id: int) -> EveRuntimeOut:
     return _runtime_out(view)  # type: ignore[return-value]
 
 
-@router.post("/magic/{magic_id}/runtime/start", response_model=EveRuntimeOut)
-def start_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+@router.post("/magic/{magic_id}/runtime/start", response_model=EvaRuntimeOut)
+def start_runtime(magic_id: int, _admin: AdminGate) -> EvaRuntimeOut:
     return _lifecycle("start", magic_id)
 
 
-@router.post("/magic/{magic_id}/runtime/stop", response_model=EveRuntimeOut)
-def stop_runtime(magic_id: int, _admin: AdminGate) -> EveRuntimeOut:
+@router.post("/magic/{magic_id}/runtime/stop", response_model=EvaRuntimeOut)
+def stop_runtime(magic_id: int, _admin: AdminGate) -> EvaRuntimeOut:
     return _lifecycle("stop", magic_id)
 
 

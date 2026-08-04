@@ -18,13 +18,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 
-EVE_DESIRED_STATES = frozenset({"draft", "running", "stopped", "deleted"})
-EVE_OBSERVED_STATES = frozenset(
+EVA_DESIRED_STATES = frozenset({"draft", "running", "stopped", "deleted"})
+EVA_OBSERVED_STATES = frozenset(
     {"draft", "provisioning", "running", "stopped", "failed", "deleting", "deleted"}
 )
 
 
-class EveRuntime(Base):
+class EvaRuntime(Base):
     """Desired and observed runtime state for one EVA ``Magi`` row.
 
     Resource names are persisted after the orchestrator accepts a request so
@@ -33,7 +33,7 @@ class EveRuntime(Base):
     calls.
     """
 
-    __tablename__ = "eve_runtimes"
+    __tablename__ = "eva_runtimes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     magic_id: Mapped[int] = mapped_column(

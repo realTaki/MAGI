@@ -9,7 +9,7 @@ import time
 
 import httpx
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
+from magi.orchestrator.contracts import EvaOperationResult, EvaSpec, MagisBinding, MagisProvisionResult
 
 
 class OrchestratorUnavailable(RuntimeError):
@@ -31,7 +31,7 @@ def _headers(body: bytes) -> dict[str, str]:
     return {"X-MAGI-Timestamp": timestamp, "X-MAGI-Signature": digest}
 
 
-def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
+def request_lifecycle(action: str, spec: EvaSpec) -> EvaOperationResult:
     """Request a start or stop without exposing Kubernetes credentials to ADAM."""
     if action not in {"start", "stop", "delete"}:
         raise ValueError(f"unsupported EVA lifecycle action: {action}")
@@ -39,7 +39,7 @@ def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
     body = spec.model_dump_json(exclude_none=True).encode()
     try:
         response = httpx.post(
-            f"{url.rstrip('/')}/v1/eves/{spec.magic_id}/{action}",
+            f"{url.rstrip('/')}/v1/evas/{spec.magic_id}/{action}",
             content=body,
             headers={"content-type": "application/json", **_headers(body)},
             timeout=15.0,
@@ -50,7 +50,7 @@ def request_lifecycle(action: str, spec: EveSpec) -> EveOperationResult:
         raise OrchestratorUnavailable(
             f"orchestrator rejected {action}: {response.status_code} {response.text[:500]}"
         )
-    return EveOperationResult.model_validate(response.json())
+    return EvaOperationResult.model_validate(response.json())
 
 
 def provision_magis(binding: MagisBinding) -> MagisProvisionResult:

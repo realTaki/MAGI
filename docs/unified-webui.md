@@ -35,7 +35,7 @@ WebUI 代理路径为：
 /api/runtime/<magic_id>/<runtime-api-path>
 ```
 
-浏览器代码不会提供上游地址。WebUI 只从 MAGI 注册和 `eve_runtimes.deployment_name`
+浏览器代码不会提供上游地址。WebUI 只从 MAGI 注册和 `eva_runtimes.deployment_name`
 推导 Service 名；Genesis 的初始 MAGI 使用 `magi` Service。一个已停止或尚未启动的
 MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 

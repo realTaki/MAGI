@@ -9,5 +9,5 @@ data:
   # MAGI_CHANNELS intentionally unset — Eva's role default is
   # ("telegram",); the daemon is brought up by the wizard (Eva
   # re-binds per-user during onboarding).
-  MAGI_UID: eve-example
+  MAGI_UID: eva-example
   MAGI_ADAM_URL: http://adam-magi:42069

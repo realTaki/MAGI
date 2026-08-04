@@ -2,20 +2,20 @@
  * Admin console — Adam's web UI.
  *
  * Adam is the enterprise control plane: HR / IT / admins sign in
- * here, manage contacts / EVEs / skills / settings, watch the
- * audit log. EVE is the per-contact agent node; it has its own
+ * here, manage contacts / EVAs / skills / settings, watch the
+ * audit log. EVA is the per-contact agent node; it has its own
  * runtime and its own (much simpler) dashboard — only Chat and a
  * personal Knowledge view, no Admin tab, no Settings tab.
  *
  * C0 ships only Adam (the k8s ``adam-magi`` Deployment is
- * the first node; EVE is a C6 deliverable), so the EVE-specific
+ * the first node; EVA is a C6 deliverable), so the EVA-specific
  * dashboard is a C6 deliverable. For now the role distinction is
  * documented in this header; the frontend doesn't yet gate tabs by
- * node role because the only node is Adam. When EVE containers
+ * node role because the only node is Adam. When EVA containers
  * come online, the cleanest split is:
  *   - this file stays as `AdamDashboardPage.tsx` (rename at C6)
- *   - a new `EveDashboardPage.tsx` renders just Chat + a scoped
- *     Knowledge (the EVE's *own* personal knowledge, not the
+ *   - a new `EvaDashboardPage.tsx` renders just Chat + a scoped
+ *     Knowledge (the EVA's *own* personal knowledge, not the
  *     enterprise one)
  *   - `App.tsx` picks which one to mount based on
  *     `GET /api/meta/node-role` (added at C6)

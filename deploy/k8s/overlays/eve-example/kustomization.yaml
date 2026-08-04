@@ -6,7 +6,7 @@ resources:
 
 # Copy this overlay once per EVA and change the prefix and MAGI_UID in
 # patch-config.yaml. The prefix gives every EVA its own Deployment and PVC.
-namePrefix: eve-example-
+namePrefix: eva-example-
 
 patches:
   - path: patch-config.yaml

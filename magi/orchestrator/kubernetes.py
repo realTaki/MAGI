@@ -19,16 +19,16 @@ import httpx
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from magi.orchestrator.contracts import EveOperationResult, EveSpec, MagisBinding, MagisProvisionResult
+from magi.orchestrator.contracts import EvaOperationResult, EvaSpec, MagisBinding, MagisProvisionResult
 
 _TOKEN_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
 _CA_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
 
 
-def _resource_name(spec: EveSpec) -> str:
-    raw = (spec.name or "eve").lower()
-    slug = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-") or "eve"
-    return f"magi-eve-{spec.magic_id}-{slug}"[:63].rstrip("-")
+def _resource_name(spec: EvaSpec) -> str:
+    raw = (spec.name or "eva").lower()
+    slug = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-") or "eva"
+    return f"magi-eva-{spec.magic_id}-{slug}"[:63].rstrip("-")
 
 
 def _magis_resource_name(binding: MagisBinding) -> str:
@@ -56,7 +56,7 @@ class KubernetesEveBackend:
             f"https://{host}:{port}" if host else ""
         )
         self.namespace = os.environ.get("MAGI_K8S_NAMESPACE", "magi")
-        self.image = os.environ.get("MAGI_EVE_IMAGE", "magi:0.1.0")
+        self.image = os.environ.get("MAGI_EVA_IMAGE", "magi:0.1.0")
         if not self.base_url or not _TOKEN_PATH.is_file():
             raise RuntimeError("Kubernetes service-account credentials are unavailable")
         self.token = _TOKEN_PATH.read_text().strip()
@@ -168,7 +168,7 @@ class KubernetesEveBackend:
         ).hexdigest()
         return f"postgresql+psycopg://magi:{password}@{resource}-db:5432/magis_{binding.id}"
 
-    def _project_runtime_configuration(self, spec: EveSpec) -> None:
+    def _project_runtime_configuration(self, spec: EvaSpec) -> None:
         """Write a MAGI's direct-MAGIS configuration before Pod creation.
 
         The target database is a runtime projection. The ADAM control plane
@@ -198,12 +198,12 @@ class KubernetesEveBackend:
         )
         _ = bootstrap  # noqa: F841  # composition-root convention: import kept for explicit traceability
 
-    def start(self, spec: EveSpec) -> EveOperationResult:
+    def start(self, spec: EvaSpec) -> EvaOperationResult:
         name = _resource_name(spec)
         pvc_name = f"{name}-workspace"
         labels = {
             "app.kubernetes.io/name": "magi",
-            "app.kubernetes.io/component": "eve",
+            "app.kubernetes.io/component": "eva",
             "magi.io/managed-by": "magi-orchestrator",
             "magi.io/magic-id": str(spec.magic_id),
         }
@@ -291,7 +291,7 @@ class KubernetesEveBackend:
                 },
             },
         )
-        return EveOperationResult(
+        return EvaOperationResult(
             observed_state="provisioning",
             namespace=self.namespace,
             deployment_name=name,
@@ -300,7 +300,7 @@ class KubernetesEveBackend:
             message="MAGI Deployment applied; it resolves configuration from its direct MAGIS database.",
         )
 
-    def stop(self, spec: EveSpec) -> EveOperationResult:
+    def stop(self, spec: EvaSpec) -> EvaOperationResult:
         name = _resource_name(spec)
         self._request(
             "PATCH",
@@ -308,7 +308,7 @@ class KubernetesEveBackend:
             body={"spec": {"replicas": 0}},
             content_type="application/merge-patch+json",
         )
-        return EveOperationResult(
+        return EvaOperationResult(
             observed_state="stopped",
             namespace=self.namespace,
             deployment_name=name,
@@ -317,14 +317,14 @@ class KubernetesEveBackend:
             message="MAGI scaled to zero; its private and MAGIS public workspaces were retained.",
         )
 
-    def delete(self, spec: EveSpec) -> EveOperationResult:
+    def delete(self, spec: EvaSpec) -> EvaOperationResult:
         """Remove the managed resource set after an explicit Admin delete."""
         name = _resource_name(spec)
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._delete(f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{name}")
         self._delete(f"{prefix}/services/{name}")
         self._delete(f"{prefix}/persistentvolumeclaims/{name}-workspace")
-        return EveOperationResult(
+        return EvaOperationResult(
             observed_state="deleted",
             namespace=self.namespace,
             deployment_name=name,

@@ -33,13 +33,13 @@ file.
 | C0 — first-touch deploy | **Done** | WebUI + TG + SQLite + ORM, end-to-end |
 | C1.1 — schema baseline | **Done** | ORM + FTS5 + default-root seed |
 | C1.2 — User lifecycle | **Done** | Full CRUD + per-User LLM routing |
-| C1.3 — Alembic + WebUI completion | **Partial** | Versioned Alembic baseline is live; `/api/eves` `/api/audit` `/api/login` still pending |
+| C1.3 — Alembic + WebUI completion | **Partial** | Versioned Alembic baseline is live; `/api/evas` `/api/audit` `/api/login` still pending |
 | C2 — chat history | **~90%** | All CRUD/auto-compact/auto-title done; **TG self-serve `/start <code>` still pending**; D.22/D.23/D.24/interrupt/reactions landed |
 | C3 — cross-channel dispatcher + audit ingest | **~30%** | Per-User LLM routing done; real asyncio.gather dispatcher and `/ingest/audit` `/ingest/heartbeat` still placeholder |
-| C4 — per-MAGI persona + memory UI | **~55%** | `action_items.source="eve"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-MAGI SOUL.md, memory management UI still pending |
+| C4 — per-MAGI persona + memory UI | **~55%** | `action_items.source="eva"` done; **memory + contact + skills blocks now wired into system prompt** (per-chat contact renders real display_name); per-MAGI SOUL.md, memory management UI still pending |
 | C5 — more channels (Email + Calendar) | **0%** | Not started |
 | D.28 — channel dispatcher | **~80%** (core done, stragglers remain) | Architected in ``magi/channels/dispatcher.py``: domain code (tools, runner, loop) talks only to the dispatcher in uid+channel+session_id. ``chat_sessions.tgid`` renamed to ``delivery_address``. TG adapter in ``channels/telegram/adapter.py`` implements the ``ChannelAdapter`` Protocol (send/lookup_im_id/bind_im_id). ``send_message`` tool uses ``dispatcher.send_to_session``; runner no longer has ``_tg_send_callback``. Remaining: ``onboarding.py`` Pydantic schemas still expose ``tgid`` field names; ``contacts/store.py``, ``session/ids.py``, ``session/migration.py`` have tgid-named helpers. D.29 (``magi_im_bindings`` table) is the follow-up. |
-| C6 — cross-MAGI + cross-User | **~5%** | Role enum in place; `/api/eves/{id}/dispatch`, cross-User query still pending |
+| C6 — cross-MAGI + cross-User | **~5%** | Role enum in place; `/api/evas/{id}/dispatch`, cross-User query still pending |
 | C7 — WebSocket stream console | **0%** | Not started |
 | C8 — hardening (encryption, degraded mode, audit outbox) | **0%** | Not started |
 
@@ -97,7 +97,7 @@ stubbed or absent.
 | Departments + Users tables (raw-SQL) | **Done** | C1.1 will layer an ORM on top |
 | First-touch handler ("I don't know who you are") | **Done** | node `__init__` C0 path; C3 replaces with the real dispatcher |
 | Single-node deploy (`MAGI_STATE_BACKEND=sqlite`; channels from `settings.channels.enabled`) | **Done** | `main.py` reads enabled channels from the DB, not `MAGI_CHANNELS` |
-| `MAGI_NODE_ROLE=adam` / `eve` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `main.py` docstring |
+| `MAGI_NODE_ROLE=adam` / `eva` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `main.py` docstring |
 | Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
 | LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
@@ -158,7 +158,7 @@ discipline C0 deliberately punted on).
 | Item | Status | Notes |
 |---|---|---|
 | First Alembic baseline migration (replaces `migrations.py` `_run_inline_migrations`) | **Done** | `0001_baseline` adopts existing DBs and creates fresh schemas; dev mode collapsed the whole chain into this single revision — see [docs/database-migrations.md](database-migrations.md). |
-| All remaining C1.1 routes: `/api/eves`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/eves`, `/api/audit`, `/api/login` not yet |
+| All remaining C1.1 routes: `/api/evas`, `/api/skills`, `/api/audit`, `/api/login` | **Partial** | `/api/skills` is wired (`KnowledgeTab` Skills list); `/api/evas`, `/api/audit`, `/api/login` not yet |
 | Encrypted-at-rest `api_key` (C0 caveat → done) | **Later** | `MAGI_SECRET` plumbed through |
 
 ---
@@ -224,7 +224,7 @@ driven action items.
 | Item | Status | Notes |
 |---|---|---|
 | Per-MAGI SOUL.md (replacing workspace-global) | **Next** | `loop.py: "C4 will move this to a per-MAGI"`, `soul.py: "Per-MAGI personas are C4+"` |
-| `action_items.source = "eve"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVA side writes them |
+| `action_items.source = "eva"` for proactive follow-ups | **Done** | `models_action_item.py` already documents this; C4 is when the EVA side writes them |
 | `action_items.priority = "high"` for time-sensitive follow-ups | **Done** | Same |
 | `action_items.payload_json` per-kind structured fields | **Later** | YAGNI for the rows we can foresee (per the model docstring); add when C4 needs structured per-kind fields |
 | Memory subsystem fully wired into `loop.py` prompt assembly | **Done** | `_build_system_prompt` in `loop.py` renders SOUL → memory (important + ongoing in-flight) → contact (per-chat, real display_name) → skills; tests in `test_agent_system_prompt.py` pin ordering + scope + resilience |
@@ -255,7 +255,7 @@ that needs to be visible across them.
 |---|---|---|
 | `Contact.role` = `"user"` / `"guest"` semantics (not just `"admin"` / `"assigned"`) | **Done** | `models_contact.py` (formerly `models_employee.py`) already supports all four; C1.1 writes `admin` / `assigned`, C6 fills the rest |
 | Eva-of-another-MAGI bot refusal ("you can talk to your own EVA, not mine") | **Later** | `models_contact.py: "C6+ (cross-MAGI access, public visitors)"` |
-| `api/eves/{id}/dispatch`, `api/eves/{id}/recall` | **Next** | `app.py: "C6 — /api/eves/{id}/dispatch, /api/eves/{id}/recall"` |
+| `api/evas/{id}/dispatch`, `api/evas/{id}/recall` | **Next** | `app.py: "C6 — /api/evas/{id}/dispatch, /api/evas/{id}/recall"` |
 | Cross-User query / summary (operator-side, in ADAM) | **Later** | Per the product spec: "汇总 / 跨 User 查询 in ADAM, not EVA → EVA" |
 | Per-User LLM key per assigned User enforced everywhere | **Next** | C3 wires the dispatcher; C6 closes the loop on cross-User queries |
 
@@ -329,7 +329,7 @@ The schema collapses to **three tables**:
 | Table | Holds | Position / role lives on |
 |---|---|---|
 | `magics` | organizations (the council) | n/a |
-| `magis` | agents (MAGI runtime processes) | `magis.position` ∈ {`adam`, `eve`} |
+| `magis` | agents (MAGI runtime processes) | `magis.position` ∈ {`adam`, `eva`} |
 | `users` | people (MAGI's contact directory) | `users.role` ∈ {`admin`, `assigned`, `user`, `guest`} |
 
 `magis.position` and `users.role` are **orthogonal axes**:
@@ -357,7 +357,7 @@ Two independent axes that earlier drafts conflated:
 
 | Axis | Question it answers | Stored in | Values |
 |---|---|---|---|
-| **Org position** | "What is this agent's role in the MAGIS's structure?" | `magis.position` | `adam` / `eve` |
+| **Org position** | "What is this agent's role in the MAGIS's structure?" | `magis.position` | `adam` / `eva` |
 | **Service role** | "How does this person relate to a specific MAGI?" | `users.role` | `admin` / `assigned` / `user` / `guest` |
 | **Service binding** | "Which MAGI does this `users` row belong to?" | `users.magi_id` (FK) | nullable (NULL for `user`/`guest`) |
 | **Channel identity** | "Which TG chat / Slack channel does this MAGI own?" | `magi_im_bindings(magi_id, channel, im_id)` | per-(MAGI, channel) row |
@@ -392,14 +392,14 @@ class MAGIC(Base):
     每个 MAGIC 在它所在的 MAGIS 里持有一个 position：
       - position='adam' → 这个 MAGIS 的 ADAM（leader / operator）。
                          每个 MAGIS 恰好一个（partial UNIQUE）。
-      - position='eve'  → 这个 MAGIS 的 EVA（普通 member）。N 个。
+      - position='eva'  → 这个 MAGIS 的 EVA（普通 member）。N 个。
     """
     __tablename__ = "magis"
     id            : int            # PK
     name          : str
     display_name  : str | None
     magic_id      : int   # FK → magics.id (ON DELETE CASCADE)
-    position      : str   # "adam" | "eve"
+    position      : str   # "adam" | "eva"
     provider      : str | None    # LLM provider (per-MAGI)
     api_key       : str | None    # LLM key (per-MAGI)
     separated_at  : datetime | None
@@ -427,7 +427,7 @@ class User(Base):
                                    # 非 NULL：role='admin'/'assigned' 时绑到具体 MAGI
                                    # NULL：   role='user'/'guest' 时无 MAGI 绑定
     notes         : str            # free-form markdown（原 ContactEntry.notes）
-    source        : str            # "manual" / "eve" / "system"
+    source        : str            # "manual" / "eva" / "system"
     last_seen_at  : datetime
     created_at    : datetime
     updated_at    : datetime
@@ -489,7 +489,7 @@ class MagiImBinding(Base):
 - `agents.department_id` column — gone.
 - `users.department_id` column — gone.
 - `archetype=manager` / `archetype=worker` — gone. Replaced by
-  `magis.position` (`adam` / `eve`).
+  `magis.position` (`adam` / `eva`).
 
 #### What changes semantically
 
@@ -537,7 +537,7 @@ class MagiImBinding(Base):
 | `user_im_bindings.uid` | `magi_im_bindings.magi_id` | same |
 | `ToolContext.uid` | `ToolContext.magi_id` | runtime cookie identity = `magi_id` |
 | `magi_session` cookie value | unchanged (it's just an int) | value is `magi_id` now; old cookies carrying `contact.id` need re-login |
-| `MAGI_NODE_ROLE=adam/eve` | `MAGI_NODE_ROLE=adam/eve` (kept) | docstring updated to "position selector" — env name stays for back-compat |
+| `MAGI_NODE_ROLE=adam/eva` | `MAGI_NODE_ROLE=adam/eva` (kept) | docstring updated to "position selector" — env name stays for back-compat |
 
 #### What changes code-wise
 
@@ -560,7 +560,7 @@ class MagiImBinding(Base):
 | `/api/magis/*` | MAGIS list / create / update / delete |
 | `/api/magic/*` | MAGIC list / create / update / delete; `magic_position` is required |
 | `/api/users/*` | new; list / create / update / archive User rows; `role` is a required field; `magi_id` is required iff `role IN {'admin','assigned'}` |
-| `/api/eves/*` | now a view onto `magis` filtered by `position='eve'` |
+| `/api/evas/*` | now a view onto `magis` filtered by `position='eva'` |
 | `dispatcher.lookup_im_id` | reads `magi_im_bindings.magi_id`; the lookup's "owner of this IM id" is a Magi, not a User |
 | EVA ↔ ADAM dispatch RPC | resolved by reading the bound Magi row's `magic_id` (parent MAGIC) and that MAGIC's ADAM-position Magi |
 | Runtime MAGI process boot | reads `MAGI_NODE_ROLE` env (still the position selector); looks up the corresponding `Magi` row in DB by IM binding; verifies `position` matches the env; loads position-specific policy from there |
@@ -581,7 +581,7 @@ that does the whole thing in one transaction:
    - From each `Employee.role='admin'` row → create a `Magi` with
      `position='adam'` under the default MAGIC.
    - From each `Employee.role='assigned'` row → create a `Magi`
-     with `position='eve'` under the default MAGIC.
+     with `position='eva'` under the default MAGIC.
 7. Backfill `users`:
    - From each `Employee.role='admin'` row → create a `User` with
      `role='admin'`, `magi_id=<the ADAM magi row's id>`.
@@ -608,7 +608,7 @@ violations.
 
 #### What does NOT change
 
-- `MAGI_NODE_ROLE` env var name (`adam` / `eve`) — kept for
+- `MAGI_NODE_ROLE` env var name (`adam` / `eva`) — kept for
   back-compat. Docstring updated to "MAGI process position
   selector". The Magi row's `position` column should match (a
   sanity check on boot).
@@ -631,10 +631,10 @@ the operator wants archetype-named columns / settings.
 
 | Code surface | Action | Trigger / ETA |
 |---|---|---|
-| `MAGI_NODE_ROLE` | keep `adam` / `eve`; add docstring "manager / worker archetype" mapping | **Done in doc; code docstring next** |
+| `MAGI_NODE_ROLE` | keep `adam` / `eva`; add docstring "manager / worker archetype" mapping | **Done in doc; code docstring next** |
 | `MAGI_NODE_ROLE` future values | register new archetype by adding a tuple to `VALID_ROLES` + a `scope` policy entry | when third archetype ships |
 | Per-MAGI SOUL.md location | `workspace/<magi_id>/SOUL.md` (was `workspace/ADAM/SOUL.md` — bundled default) | C4 |
-| `eve-<id>` Docker service naming | rename to `magi-<id>` when next dispatch lands | C6 dispatch PR |
+| `eva-<id>` Docker service naming | rename to `magi-<id>` when next dispatch lands | C6 dispatch PR |
 
 ### F3 — i18n + copy cleanups
 
@@ -643,7 +643,7 @@ feature.
 
 | Surface | Action |
 |---|---|
-| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; reflect the 2026-08 ADAM/EVA rename in any remaining "Adam/EVE" strings |
+| `knowledgeContactsIntro` / `knowledgeMemoryIntro` / `tgReactionsDesc` / `roleAssistant` / `employees` / `tasksHint` / `newChatHint` / `searchHint` | review and replace "员工 / assigned employee" wording with "User / assigned User"; reflect the 2026-08 ADAM/EVA rename in any remaining "Adam/EVA" strings |
 | Persona / onboarding copy | reflect new archetype language |
 
 ### F4 — Glossary + module docstrings

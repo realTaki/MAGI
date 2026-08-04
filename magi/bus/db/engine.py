@@ -324,7 +324,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.bus.models.local.action_item  # noqa: F401
     import magi.bus.models.magis.auth_credential  # noqa: F401 — password + future credentials
     import magi.bus.models.local.contact  # noqa: F401 — unified contact directory
-    import magi.bus.models.magis.eve_runtime  # noqa: F401 — EVA lifecycle state
+    import magi.bus.models.magis.eva_runtime  # noqa: F401 — EVA lifecycle state
     import magi.bus.models.magis.magic  # noqa: F401 — individual MAGI rows
     import magi.bus.models.magis.magis  # noqa: F401 — MAGIS tree
     import magi.bus.models.magis.magis_membership  # noqa: F401 — roles + memberships

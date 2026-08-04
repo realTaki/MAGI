@@ -1,6 +1,6 @@
 /**
  * TgReactionPickerCard — combined card for the two TG
- * reactions the EVE bot sets on the user's inbound
+ * reactions the EVA bot sets on the user's inbound
  * message:
  *
  *  - "已读" (read):  fired **before** the LLM runs, the

@@ -54,13 +54,13 @@ deploy/k8s/
 │   │   ├── kustomization.yaml
 │   │   ├── patch-config.yaml
 │   │   └── patch-magis-genesis.yaml
-│   └── eve-example/
+│   └── eva-example/
 │       ├── kustomization.yaml
 │       ├── patch-config.yaml
 │       └── patch-delete-service.yaml
 └── secrets/
     ├── adam-magi-secrets.example.yaml
-    ├── eve-example-magi-secrets.example.yaml
+    ├── eva-example-magi-secrets.example.yaml
     └── magis-genesis-db.example.yaml
 ```
 
@@ -209,9 +209,9 @@ deploy/k8s/secrets/adam-magi-secrets.example.yaml
 
 ## 4. 部署一个 EVA
 
-`overlays/eve-example` 是一个可复制的 EVA 模板。它会：
+`overlays/eva-example` 是一个可复制的 EVA 模板。它会：
 
-- 设置 `MAGI_NODE_ROLE=eve`；
+- 设置 `MAGI_NODE_ROLE=eva`；
 - 创建独立的 Deployment 和 PVC；
 - 删除 EVA 的 HTTP Service，因为 Telegram polling 不需要入站 HTTP；
 - 将 `MAGI_ADAM_URL` 指向 `adam-magi:42069`。
@@ -222,48 +222,48 @@ save-bot 写入 bot token 后自动启用），无需在启动时预设 `MAGI_CH
 先复制目录：
 
 ```bash
-cp -R deploy/k8s/overlays/eve-example \
-      deploy/k8s/overlays/eve-eva00
+cp -R deploy/k8s/overlays/eva-example \
+      deploy/k8s/overlays/eva-eva00
 ```
 
 然后修改：
 
-1. `eve-eva00/kustomization.yaml`：
+1. `eva-eva00/kustomization.yaml`：
 
    ```yaml
-   namePrefix: eve-eva00-
+   namePrefix: eva-eva00-
    ```
 
-2. `eve-eva00/patch-config.yaml`：
+2. `eva-eva00/patch-config.yaml`：
 
    ```yaml
    data:
-     MAGI_NODE_ROLE: eve
+     MAGI_NODE_ROLE: eva
      MAGI_ADAM_URL: http://adam-magi:42069
    ```
 
-3. 创建 EVA 的 Telegram Secret。因为 overlay 使用了 `eve-eva00-` 前缀，
+3. 创建 EVA 的 Telegram Secret。因为 overlay 使用了 `eva-eva00-` 前缀，
    Secret 名称也要带前缀：
 
    ```bash
-   kubectl -n magi create secret generic eve-eva00-magi-secrets \
-     --from-literal=MAGI_BOT_TOKEN='eva00-eves-bot-token' \
+   kubectl -n magi create secret generic eva-eva00-magi-secrets \
+     --from-literal=MAGI_BOT_TOKEN='eva00-evas-bot-token' \
      --from-literal=MAGI_SHARED_SECRET='same-adam-shared-secret'
    ```
 
 4. 预览并部署：
 
    ```bash
-   kubectl kustomize deploy/k8s/overlays/eve-eva00
-   kubectl apply -k deploy/k8s/overlays/eve-eva00
+   kubectl kustomize deploy/k8s/overlays/eva-eva00
+   kubectl apply -k deploy/k8s/overlays/eva-eva00
    ```
 
 每个由 orchestrator 启动的 MAGI 都会得到自己的资源，例如：
 
 ```text
-Deployment: eve-eva00-magi-node
-PVC:       eve-eva00-magi-workspace
-ConfigMap:  eve-eva00-magi-config
+Deployment: eva-eva00-magi-node
+PVC:       eva-eva00-magi-workspace
+ConfigMap:  eva-eva00-magi-config
 MAGIS DB:   magi-magis-<magis-id>-<name>-db（共享，不是每个 MAGI 一个）
 ```
 
@@ -271,8 +271,8 @@ MAGIS DB:   magi-magis-<magis-id>-<name>-db（共享，不是每个 MAGI 一个�
 
 ```text
 ADAM       → adam-magi-workspace PVC → /workspace
-EVA Eva00  → eve-eva00-magi-workspace PVC → /workspace
-EVA Bob    → eve-bob-magi-workspace PVC → /workspace
+EVA Eva00  → eva-eva00-magi-workspace PVC → /workspace
+EVA Bob    → eva-bob-magi-workspace PVC → /workspace
 ```
 
 各个 MAGI 的 `/workspace` 相互隔离，不共享 SQLite、SOUL、skills 或 session。

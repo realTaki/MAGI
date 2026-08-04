@@ -15,7 +15,7 @@ from sqlalchemy import engine_from_config, pool
 # `alembic upgrade head`.
 import magi.bus.models.local.action_item  # noqa: F401,E402
 import magi.bus.models.local.contact  # noqa: F401,E402
-import magi.bus.models.magis.eve_runtime  # noqa: F401,E402
+import magi.bus.models.magis.eva_runtime  # noqa: F401,E402
 import magi.bus.models.magis.magic  # noqa: F401,E402
 import magi.bus.models.local.memory  # noqa: F401,E402
 import magi.bus.models.magis.magis  # noqa: F401,E402

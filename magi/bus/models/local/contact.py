@@ -79,7 +79,7 @@ from magi.bus.db.base import Base, utcnow_naive
 
 # Sources — mirrors :mod:`magi.agent.memory.self.models`.
 SOURCE_MANUAL = "manual"
-SOURCE_EVE = "eve"
+SOURCE_EVA = "eva"
 SOURCE_SYSTEM = "system"
 
 
@@ -197,7 +197,7 @@ class ContactNote(Base):
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SOURCE_EVE,
+        String(16), nullable=False, default=SOURCE_EVA,
     )
     # Memory kind. Permanent rows are individual facts; daily
     # rows are the running log the agent loop appends to.

@@ -39,7 +39,7 @@ Tables owned (alphabetical)
   - ``control_settings``     — singleton WebUI control-plane KV.
   - ``deliveries``           — durable committed channel delivery
                                outbox (BusStore.DeliveryOutbox).
-  - ``eve_runtimes``         — desired/observed state for EVA
+  - ``eva_runtimes``         — desired/observed state for EVA
                                Kubernetes Deployments.
   - ``magic``                — individual MAGI agent rows.
   - ``magis``                — MAGI Society tree.
@@ -106,7 +106,7 @@ def upgrade() -> None:
         sa.Column("contact_id", sa.Integer(),
                   sa.ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False),
         sa.Column("note", sa.Text(), nullable=False),
-        sa.Column("source", sa.String(length=16), nullable=False, server_default="eve"),
+        sa.Column("source", sa.String(length=16), nullable=False, server_default="eva"),
         sa.Column("kind", sa.String(length=16), nullable=False, server_default="permanent"),
         sa.Column("note_date", sa.DateTime()),
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -123,7 +123,7 @@ def upgrade() -> None:
         sa.Column("subject", sa.String(length=200), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("importance", sa.Integer(), nullable=False, server_default="3"),
-        sa.Column("source", sa.String(length=16), nullable=False, server_default="eve"),
+        sa.Column("source", sa.String(length=16), nullable=False, server_default="eva"),
         sa.Column("completed_at", sa.DateTime()),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
@@ -676,7 +676,7 @@ def upgrade() -> None:
     )
 
     op.create_table(
-        "eve_runtimes",
+        "eva_runtimes",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("magic_id", sa.Integer(),
                   sa.ForeignKey("magic.id", ondelete="CASCADE"),
@@ -744,7 +744,7 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS chat_messages_fts")
     op.execute("DROP TABLE IF EXISTS control_operators")
     op.execute("DROP TABLE IF EXISTS control_settings")
-    op.execute("DROP TABLE IF EXISTS eve_runtimes")
+    op.execute("DROP TABLE IF EXISTS eva_runtimes")
     op.execute("DROP TABLE IF EXISTS magis_admins")
     op.execute("DROP TABLE IF EXISTS magis_memberships")
     op.execute("DROP TABLE IF EXISTS magis_roles")

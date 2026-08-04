@@ -71,7 +71,7 @@ class MemoryService:
             return _view(row) if row is not None else None
 
     def add(
-        self, uid: int, *, kind: str, subject: str, body: str, importance: int = 3, source: str = "eve",
+        self, uid: int, *, kind: str, subject: str, body: str, importance: int = 3, source: str = "eva",
     ) -> MemoryView:
         from magi.bus.models.local.memory import MemoryEntry
         from magi.bus.db import open_session

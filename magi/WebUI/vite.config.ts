@@ -23,7 +23,7 @@ export default defineConfig({
     // reuses the same port so the dev URL matches the prod URL.
     port: 42069,
     // In Kind development, MAGI runtimes call one another through internal
-    // Services (`magi`, `magi-eve-…`). Vite's default host allowlist rejects
+    // Services (`magi`, `magi-eva-…`). Vite's default host allowlist rejects
     // those Service DNS names before the /api proxy reaches FastAPI. This is
     // dev-only; production does not run Vite.
     allowedHosts: true,

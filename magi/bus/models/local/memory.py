@@ -13,7 +13,7 @@ KIND_IMPORTANT = "important"
 KIND_ONGOING = "ongoing"
 ALL_KINDS = frozenset({KIND_IMPORTANT, KIND_ONGOING})
 SOURCE_MANUAL = "manual"
-SOURCE_EVE = "eve"
+SOURCE_EVA = "eva"
 SOURCE_SYSTEM = "system"
 
 
@@ -26,7 +26,7 @@ class MemoryEntry(Base):
     subject: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
-    source: Mapped[str] = mapped_column(String(16), nullable=False, default=SOURCE_EVE)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default=SOURCE_EVA)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -17,7 +17,7 @@ TOOLS_DIR="$ROOT_DIR/deploy/.tools"
 K8S_DIR="$ROOT_DIR/deploy/k8s"
 KUBECTL_VERSION="${KUBECTL_VERSION:-v1.31.0}"
 MAGI_IMAGE="${MAGI_IMAGE:-magi:0.1.0}"
-EVE_IMAGE="${EVE_IMAGE:-$MAGI_IMAGE}"
+EVA_IMAGE="${EVA_IMAGE:-$MAGI_IMAGE}"
 ADAM_OVERLAY="${ADAM_OVERLAY:-$K8S_DIR/overlays/adam}"
 ADAM_DEPLOYMENT="${ADAM_DEPLOYMENT:-magi-node}"
 WEBUI_DEPLOYMENT="${WEBUI_DEPLOYMENT:-magi-webui}"
@@ -45,7 +45,7 @@ if ! "$KUBECTL" -n magi get secret magi-control >/dev/null 2>&1; then
   "$KUBECTL" -n magi create secret generic magi-control --from-literal="MAGI_CONTROL_SECRET=$CONTROL_SECRET"
 fi
 "$KUBECTL" -n magi create configmap magi-orchestrator-config \
-  --from-literal=MAGI_K8S_NAMESPACE=magi --from-literal=MAGI_EVE_IMAGE="$EVE_IMAGE" \
+  --from-literal=MAGI_K8S_NAMESPACE=magi --from-literal=MAGI_EVA_IMAGE="$EVA_IMAGE" \
   --dry-run=client -o yaml | "$KUBECTL" apply -f -
 "$KUBECTL" apply -k "$CONTROL_OVERLAY"
 "$KUBECTL" apply -k "$ADAM_OVERLAY"

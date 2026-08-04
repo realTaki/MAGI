@@ -61,13 +61,13 @@ the ADAM / EVA archetype mapping.
 **One agent = one container = one runtime process.**
 
 There is one binary (`magi`). At boot, `MAGI_NODE_ROLE` selects the archetype
-preset (`adam` or `eve`). The actual role, instructions and provider
+preset (`adam` or `eva`). The actual role, instructions and provider
 configuration are read through BUS from the MAGIS database. Every
 architectural choice is an independent configuration axis:
 
 | Axis | Env var | Default by archetype |
 |---|---|---|
-| Position | `MAGI_NODE_ROLE` | `adam` = leader, `eve` = member |
+| Position | `MAGI_NODE_ROLE` | `adam` = leader, `eva` = member |
 | Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
 | Private state | `/workspace/memories/magi.db` | SQLite, one per MAGI |
 | MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL (K8s) or separate SQLite (Local) |
@@ -98,8 +98,8 @@ Local Launcher / Supervisor
 ├── channels.api + SPA     127.0.0.1:42069
 ├── Local Orchestrator     127.0.0.1:42100
 ├── Adam Runtime           127.0.0.1:42101
-├── EVE Runtime            127.0.0.1:<allocated>
-└── EVE Runtime            127.0.0.1:<allocated>
+├── EVA Runtime            127.0.0.1:<allocated>
+└── EVA Runtime            127.0.0.1:<allocated>
 ```
 
 Each runtime is an independent OS process with its own workspace, SQLite,
@@ -190,7 +190,7 @@ Two storage domains, both reached only through BUS:
 | Domain | Tables / files | Owner |
 |---|---|---|
 | Private SQLite + `/workspace` | sessions, memory, contacts, tasks, settings, SOUL, skills | one MAGI |
-| MAGIS database + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eve_runtimes` | one MAGIS |
+| MAGIS database + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eva_runtimes` | one MAGIS |
 
 ### Local Profile storage
 

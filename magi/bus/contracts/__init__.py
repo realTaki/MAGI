@@ -18,7 +18,7 @@ from magi.bus.contracts.channels import (
     OutboundDelivery,
 )
 from magi.bus.contracts.magis import (
-    EveRuntimeView,
+    EvaRuntimeView,
     MagisAdminView,
     MagisMembershipView,
     MagisRoleView,
@@ -56,7 +56,7 @@ __all__ = [
     # channels
     "Channel", "ChannelEnum", "DeliveryResult", "InboundMessage", "OutboundDelivery",
     # magis
-    "EveRuntimeView", "MagisAdminView", "MagisMembershipView", "MagisRoleView",
+    "EvaRuntimeView", "MagisAdminView", "MagisMembershipView", "MagisRoleView",
     "MagisView", "MagicView", "MemberRole", "MembershipBrief",
     "OperatorView", "ProviderConfiguration", "RuntimeIdentity",
     # session

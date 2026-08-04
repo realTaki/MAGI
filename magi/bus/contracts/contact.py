@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 SOURCE_MANUAL = "manual"
-SOURCE_EVE = "eve"
+SOURCE_EVA = "eva"
 SOURCE_SYSTEM = "system"
 
 

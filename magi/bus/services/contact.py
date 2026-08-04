@@ -183,7 +183,7 @@ class ContactsService:
 
     def create_contact(
         self, *, name: str, display_name: str | None = None, role: str = "guest",
-        telegram_id: int | None = None, notes: str = "", source: str = "eve",
+        telegram_id: int | None = None, notes: str = "", source: str = "eva",
     ) -> ContactView:
         from magi.bus.models.local.contact import Contact
         from magi.bus.db import open_session
@@ -205,7 +205,7 @@ class ContactsService:
             session.refresh(row)
             return _contact_view(row)
 
-    def add_note(self, contact_id: int, note: str, *, source: str = "eve") -> NoteView:
+    def add_note(self, contact_id: int, note: str, *, source: str = "eva") -> NoteView:
         from magi.bus.models.local.contact import Contact, ContactNote
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
@@ -276,7 +276,7 @@ class ContactsService:
             ))
             if row is None:
                 row = ContactNote(
-                    contact_id=contact_id, note=content, source="eve", kind="daily", note_date=note_date,
+                    contact_id=contact_id, note=content, source="eva", kind="daily", note_date=note_date,
                 )
                 session.add(row)
             else:

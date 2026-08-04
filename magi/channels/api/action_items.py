@@ -3,7 +3,7 @@
 A small surface that surfaces a list of to-dos in the
 dashboard's Action Items sidebar pane. Each row is keyed on a
 stable ``kind`` string ("llm_credentials_missing" today;
-``eve_followup_*`` kinds land later when C4 ships) and carries
+``eva_followup_*`` kinds land later when C4 ships) and carries
 human-readable ``title`` / ``description`` / ``target_url``
 columns. The dashboard renders the columns straight to the
 screen — no payload blob, no kind-specific column.
@@ -11,7 +11,7 @@ screen — no payload blob, no kind-specific column.
 Created by system paths (currently ``onboarding/complete``
 inserts one ``llm_credentials_missing`` row per admin). From
 C4, EVA-driven rows land via a future ``POST /api/action_items``
-endpoint — schema already accommodates them (``source='eve'``,
+endpoint — schema already accommodates them (``source='eva'``,
 ``priority='high'``).
 
 Dismissed / completed by the operator via the
@@ -181,7 +181,7 @@ def list_action_items(
       open rows. The dashboard mixes them in the same
       scroll, so the default fits the typical panel.
     - ``kind`` narrows by the stable kind code
-      (``llm_credentials_missing``, future ``eve_*``).
+      (``llm_credentials_missing``, future ``eva_*``).
 
     Only items whose ``uid`` matches the current
     admin are returned. The endpoint resolves the admin id

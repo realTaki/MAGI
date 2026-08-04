@@ -1,7 +1,7 @@
 /**
  * AgenticSocietyTab — MAGIS and MAGIC panes.
  *
- * Adam-only — EVE doesn't see this tab.
+ * Adam-only — EVA doesn't see this tab.
  *
  * Two sidebar sections:
  *   - MAGI Societies (magis) — group tree.

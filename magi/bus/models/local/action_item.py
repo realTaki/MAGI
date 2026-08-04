@@ -101,7 +101,7 @@ class ActionItem(Base):
         DateTime, nullable=True
     )
     # Who created the row. "system" for save_admin /
-    # similar, "eve" when C4 EVA-driven rows land, "user"
+    # similar, "eva" when C4 EVA-driven rows land, "user"
     # for future operator-authored reminders. Useful for
     # grouping + filtering later.
     source: Mapped[str] = mapped_column(

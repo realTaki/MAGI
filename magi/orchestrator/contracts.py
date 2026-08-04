@@ -24,14 +24,14 @@ class MagisRuntimeConfiguration(BaseModel):
     api_key: str | None = Field(default=None, max_length=256)
 
 
-class EveSpec(BaseModel):
+class EvaSpec(BaseModel):
     magic_id: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=100)
     magis: MagisBinding | None = None
     configuration: MagisRuntimeConfiguration | None = None
 
 
-class EveOperationResult(BaseModel):
+class EvaOperationResult(BaseModel):
     observed_state: str
     namespace: str
     deployment_name: str

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from magi.bus.contracts.magis import (
-    EveRuntimeView,
+    EvaRuntimeView,
     MagicView,
     MembershipBrief,
     ProviderConfiguration,
@@ -46,7 +46,7 @@ def _default_dispatcher() -> Any:
     return _DEFAULT_DISPATCHER
 
 
-def _runtime_view(runtime: Any) -> EveRuntimeView:
+def _runtime_view(runtime: Any) -> EvaRuntimeView:
     # Phase 2 — populate platform-neutral projection when the ORM row
     # carries it (Phase 4 will write these columns); fall back to
     # inferring from the legacy K8s fields for old rows.
@@ -62,7 +62,7 @@ def _runtime_view(runtime: Any) -> EveRuntimeView:
         and str(runtime.observed_state or "") not in {"stopped", "deleted"}
         else None
     )
-    return EveRuntimeView(
+    return EvaRuntimeView(
         desired_state=str(runtime.desired_state),
         observed_state=str(runtime.observed_state),
         namespace=runtime.namespace,
@@ -215,7 +215,7 @@ class MagicService:
         with open_magis_session() as session:
             return can_route_a2a(session, sender_magic_id, int(runtime_id))
 
-    def get_runtime(self, magic_id: int) -> EveRuntimeView | None:
+    def get_runtime(self, magic_id: int) -> EvaRuntimeView | None:
         """Return the EVA runtime view for ``magic_id`` (or ``None``).
 
         Used by the WebUI runtime-proxy to decide whether a
@@ -225,12 +225,12 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
             row = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic_id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic_id)
             )
             return _runtime_view(row) if row is not None else None
 
@@ -245,7 +245,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -254,8 +254,8 @@ class MagicService:
             runtimes = {
                 r.magic_id: r
                 for r in session.scalars(
-                    select(EveRuntime).where(
-                        EveRuntime.magic_id.in_([m.id for m in rows])
+                    select(EvaRuntime).where(
+                        EvaRuntime.magic_id.in_([m.id for m in rows])
                     )
                 ).all()
             } if rows else {}
@@ -277,7 +277,7 @@ class MagicService:
 
         A MAGIC is "available" when either it is the root MAGIS's
         ADAM (the static control-plane entry) or it has an
-        ``EveRuntime`` whose ``desired_state == "running"`` (the
+        ``EvaRuntime`` whose ``desired_state == "running"`` (the
         orchestrator has been asked to start a Deployment for it;
         Kubernetes does not synchronously write a later observed
         state back to the registry, so the desired state is the
@@ -288,7 +288,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
@@ -297,7 +297,7 @@ class MagicService:
             rows = session.scalars(select(MAGIC).order_by(MAGIC.id)).all()
             runtimes = {
                 row.magic_id: row
-                for row in session.scalars(select(EveRuntime)).all()
+                for row in session.scalars(select(EvaRuntime)).all()
             }
             root = session.scalar(
                 select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id)
@@ -335,7 +335,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -354,7 +354,7 @@ class MagicService:
                 runtimes = {
                     r.magic_id: r
                     for r in session.scalars(
-                        select(EveRuntime).where(EveRuntime.magic_id.in_([m.id for m in rows]))
+                        select(EvaRuntime).where(EvaRuntime.magic_id.in_([m.id for m in rows]))
                     ).all()
                 }
             return [
@@ -364,7 +364,7 @@ class MagicService:
     def get_magic(self, magic_id: int) -> MagicView | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -373,7 +373,7 @@ class MagicService:
             if magic is None:
                 return None
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic.id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             return _magic_view(session, magic, runtime)
 
@@ -407,7 +407,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -423,7 +423,7 @@ class MagicService:
                 magic.api_key = api_key or None
             session.commit()
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic.id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             return _magic_view(session, magic, runtime)
 
@@ -438,7 +438,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -452,7 +452,7 @@ class MagicService:
                     "cannot delete the MAGI currently serving this session"
                 )
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic.id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             if runtime is not None and runtime.deployment_name:
                 # Phase 2 — replaced direct ``magi.orchestrator.client``
@@ -477,7 +477,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -488,7 +488,7 @@ class MagicService:
             magic.instruction = instruction
             session.commit()
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic.id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             return _magic_view(session, magic, runtime)
 
@@ -505,8 +505,8 @@ class MagicService:
         desired_state: str,
         *,
         lifecycle_action: str | None = None,
-    ) -> EveRuntimeView:
-        """Persist ``desired_state`` on the MAGIC's ``EveRuntime`` row.
+    ) -> EvaRuntimeView:
+        """Persist ``desired_state`` on the MAGIC's ``EvaRuntime`` row.
 
         When ``lifecycle_action`` is ``"start"`` or ``"stop"``, the
         service also calls the orchestrator control plane to apply the
@@ -519,7 +519,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -535,10 +535,10 @@ class MagicService:
                     "cannot stop or restart the MAGI currently serving this session"
                 )
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic.id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             if runtime is None:
-                runtime = EveRuntime(magic_id=magic.id)
+                runtime = EvaRuntime(magic_id=magic.id)
                 session.add(runtime)
                 session.flush()
 
@@ -622,11 +622,11 @@ class MagicService:
             )
             return int(root.adam_id) if root and root.adam_id else None
 
-    def ensure_runtime(self, magic_id: int) -> EveRuntimeView:
-        """Return the EveRuntimeView for ``magic_id``, creating one if missing."""
+    def ensure_runtime(self, magic_id: int) -> EvaRuntimeView:
+        """Return the EvaRuntimeView for ``magic_id``, creating one if missing."""
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
@@ -634,10 +634,10 @@ class MagicService:
             if session.get(MAGIC, magic_id) is None:
                 raise LookupError(f"magic {magic_id} not found")
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic_id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic_id)
             )
             if runtime is None:
-                runtime = EveRuntime(magic_id=magic_id)
+                runtime = EvaRuntime(magic_id=magic_id)
                 session.add(runtime)
                 session.commit()
                 session.refresh(runtime)

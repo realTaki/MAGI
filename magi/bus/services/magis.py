@@ -127,7 +127,7 @@ class MagisService:
             return int(root.adam_id) if root and root.adam_id else None
 
     def derive_runtime_role(self, magic_id: int) -> str:
-        """Return ``"adam"`` if ``magic_id`` is the ADAM of its MAGIS, else ``"eve"``.
+        """Return ``"adam"`` if ``magic_id`` is the ADAM of its MAGIS, else ``"eva"``.
 
         Looks up the MAGIC's direct MAGIS membership and compares its
         ``id`` against the membership's ``MAGIS.adam_id``. This is the
@@ -152,7 +152,7 @@ class MagisService:
             magis = session.get(MAGIS, binding.magis_id)
             if magis is None:
                 raise LookupError(f"MAGIS {binding.magis_id} not found")
-            return "adam" if int(magis.adam_id) == magic_id else "eve"
+            return "adam" if int(magis.adam_id) == magic_id else "eva"
 
     def served_direct_magis_id(self) -> int | None:
         """The single MAGIS id this WebUI may administer directly.
@@ -200,7 +200,7 @@ class MagisService:
 
         Convenience wrapper around :meth:`list_memberships_for_magic`
         for API handlers that need the role/magis context to render
-        a card or to build an orchestrator ``EveSpec``.
+        a card or to build an orchestrator ``EvaSpec``.
         """
         return self.list_memberships_for_magic(magic_id)
 
@@ -294,7 +294,7 @@ class MagisService:
         the pre-login /api/access/* call; ``RuntimeError`` is mapped
         to a 503 by the caller.
         """
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magic import MAGIC
         from magi.bus.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
@@ -305,7 +305,7 @@ class MagisService:
             if magic is None:
                 raise RuntimeError(f"MAGIC {magic_id} not found")
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magic_id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magic_id)
             )
             if runtime and runtime.deployment_name and runtime.observed_state not in {"stopped", "deleted"}:
                 return f"http://{runtime.deployment_name}:42069"
@@ -1013,7 +1013,7 @@ class MagisService:
             ]
 
     def get_magis_adam_url(self, magis_id: int, current_magic_id: int) -> tuple[int, str] | None:
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
@@ -1022,7 +1022,7 @@ class MagisService:
             if magis is None or magis.adam_id is None or magis.adam_id == current_magic_id:
                 return None
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magis.adam_id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magis.adam_id)
             )
             if runtime and runtime.deployment_name and runtime.observed_state not in {"stopped", "deleted"}:
                 return magis.adam_id, f"http://{runtime.deployment_name}:42069"
@@ -1052,7 +1052,7 @@ class MagisService:
     def adam_url(self, magis_id: int, current_magic_id: int) -> tuple[int, str] | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eve_runtime import EveRuntime
+        from magi.bus.models.magis.eva_runtime import EvaRuntime
         from magi.bus.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
@@ -1061,7 +1061,7 @@ class MagisService:
             if magis is None or magis.adam_id is None or magis.adam_id == current_magic_id:
                 return None
             runtime = session.scalar(
-                select(EveRuntime).where(EveRuntime.magic_id == magis.adam_id)
+                select(EvaRuntime).where(EvaRuntime.magic_id == magis.adam_id)
             )
             if (
                 runtime
@@ -1155,7 +1155,7 @@ def _project_runtime_configuration(spec: RuntimeConfigurationProjection, databas
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
-    from magi.bus.models.magis.eve_runtime import EveRuntime  # noqa: F401  # ensure table is registered
+    from magi.bus.models.magis.eva_runtime import EvaRuntime  # noqa: F401  # ensure table is registered
     from magi.bus.models.magis.magic import MAGIC
     from magi.bus.models.magis.magis import MAGIS
     from magi.bus.models.magis.magis_admin import MAGISAdmin  # noqa: F401

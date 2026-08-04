@@ -54,8 +54,8 @@ class KubernetesEveBackendAdapter:
         )
 
     def _resolve(self, spec: RuntimeSpec) -> tuple[str, MagisBinding | None]:
-        name = _slug(spec.name or "eve", "eve")
-        deployment_name = f"magi-eve-{spec.magic_id}-{name}"[:63].rstrip("-")
+        name = _slug(spec.name or "eva", "eva")
+        deployment_name = f"magi-eva-{spec.magic_id}-{name}"[:63].rstrip("-")
         binding = (
             MagisBinding(id=spec.magis_id, name=spec.magis_name or f"magis-{spec.magis_id}")
             if spec.magis_id is not None
@@ -102,9 +102,9 @@ class KubernetesEveBackendAdapter:
         # spec.name.  Phase 2 keeps ``magis`` out of the BUS in the
         # DTO body because the legacy backend writes its own MAGIS
         # projection when ``spec.magis`` is provided.  We pass a thin
-        # EveSpec shim through the legacy constructor so the
+        # EvaSpec shim through the legacy constructor so the
         # Kubernetes manifest is identical.
-        from magi.orchestrator.contracts import EveSpec, MagisBinding, MagisRuntimeConfiguration
+        from magi.orchestrator.contracts import EvaSpec, MagisBinding, MagisRuntimeConfiguration
 
         magis = (
             MagisBinding(id=spec.magis_id, name=spec.magis_name or f"magis-{spec.magis_id}")
@@ -112,7 +112,7 @@ class KubernetesEveBackendAdapter:
             else None
         )
         legacy = self._inner.start(
-            EveSpec(
+            EvaSpec(
                 magic_id=spec.magic_id,
                 name=spec.name,
                 magis=magis,
@@ -122,17 +122,17 @@ class KubernetesEveBackendAdapter:
         return self._to_result(legacy, spec, deployment_name)
 
     def stop(self, spec: RuntimeSpec) -> RuntimeOperationResult:
-        from magi.orchestrator.contracts import EveSpec
+        from magi.orchestrator.contracts import EvaSpec
 
         deployment_name, _ = self._resolve(spec)
-        legacy = self._inner.stop(EveSpec(magic_id=spec.magic_id, name=spec.name))
+        legacy = self._inner.stop(EvaSpec(magic_id=spec.magic_id, name=spec.name))
         return self._to_result(legacy, spec, deployment_name)
 
     def delete(self, spec: RuntimeSpec) -> RuntimeOperationResult:
-        from magi.orchestrator.contracts import EveSpec
+        from magi.orchestrator.contracts import EvaSpec
 
         deployment_name, _ = self._resolve(spec)
-        legacy = self._inner.delete(EveSpec(magic_id=spec.magic_id, name=spec.name))
+        legacy = self._inner.delete(EvaSpec(magic_id=spec.magic_id, name=spec.name))
         return self._to_result(legacy, spec, deployment_name)
 
     def endpoint_for(self, spec: RuntimeSpec) -> RuntimeOperationResult:

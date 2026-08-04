@@ -4,4 +4,4 @@ metadata:
   name: magi-orchestrator-config
 data:
   MAGI_K8S_NAMESPACE: magi
-  MAGI_EVE_IMAGE: magi:0.1.0
+  MAGI_EVA_IMAGE: magi:0.1.0

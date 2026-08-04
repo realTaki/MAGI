@@ -2,7 +2,7 @@
 
 Phase 3 close-out — the SQLite-backed ``local-registry.db`` lives here.
 K8s Profile does not write to this database (it reads/writes the
-``eve_runtime`` table in the central PostgreSQL MAGIS instead); the
+``eva_runtime`` table in the central PostgreSQL MAGIS instead); the
 Local Profile keeps everything the launcher, supervisor, and
 ``LocalProcessRuntimeBackend`` need to find an existing Runtime on
 disk after a launcher restart.

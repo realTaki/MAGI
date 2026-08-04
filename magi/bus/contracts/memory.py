@@ -8,7 +8,7 @@ KIND_IMPORTANT = "important"
 KIND_ONGOING = "ongoing"
 ALL_KINDS = frozenset({KIND_IMPORTANT, KIND_ONGOING})
 SOURCE_MANUAL = "manual"
-SOURCE_EVE = "eve"
+SOURCE_EVA = "eva"
 SOURCE_SYSTEM = "system"
 
 

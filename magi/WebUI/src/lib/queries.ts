@@ -63,7 +63,7 @@ export type MAGICRow = {
   id: number; name: string | null;
   provider: string | null; api_key_set: boolean; api_key_last4: string | null;
   memberships: { magis_id: number; magis_name: string; role_id: number; role_name: string }[];
-  runtime: EveRuntimeRow | null;
+  runtime: EvaRuntimeRow | null;
   created_at: string; updated_at: string;
 };
 export type MAGICBrief = MAGICRow;
@@ -75,7 +75,7 @@ export function useMagic() {
   });
 }
 
-export type EveRuntimeRow = {
+export type EvaRuntimeRow = {
   desired_state: "draft" | "running" | "stopped" | "deleted";
   observed_state: "draft" | "provisioning" | "running" | "stopped" | "failed" | "deleting" | "deleted";
   namespace: string | null; deployment_name: string | null;

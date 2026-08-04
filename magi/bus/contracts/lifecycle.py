@@ -1,7 +1,7 @@
 """Platform-neutral Runtime lifecycle DTOs.
 
 These replace the K8s-flavored fields in
-:class:`magi.orchestrator.contracts.EveOperationResult` /
+:class:`magi.orchestrator.contracts.EvaOperationResult` /
 :class:`magi.orchestrator.contracts.MagisProvisionResult`.  The
 :class:`KubernetesBackendDetail` nested DTO carries the legacy fields
 when the adapter needs to surface them (today, every backend; in
@@ -20,7 +20,7 @@ from magi.bus.contracts.runtime import BackendKind, RuntimeEndpoint
 class RuntimeSpec(BaseModel):
     """Specification of one runtime lifecycle operation.
 
-    Replaces :class:`magi.orchestrator.contracts.EveSpec`.  Phase 2 keeps
+    Replaces :class:`magi.orchestrator.contracts.EvaSpec`.  Phase 2 keeps
     ``magic_id`` as the primary identifier; the optional
     ``magis_id`` / ``magis_name`` pair is required for ``start`` so the
     backend can wire the new runtime to its direct MAGIS.
@@ -49,7 +49,7 @@ class KubernetesBackendDetail(BaseModel):
 class RuntimeOperationResult(BaseModel):
     """Platform-neutral result of a lifecycle operation.
 
-    Replaces :class:`magi.orchestrator.contracts.EveOperationResult`.
+    Replaces :class:`magi.orchestrator.contracts.EvaOperationResult`.
     K8s-specific detail migrates into ``kubernetes_detail`` (optional).
     """
 

@@ -46,7 +46,7 @@ adam = [
     # typical ADAM deployment uses MCP.
     "mcp>=1.0.0",
 ]
-eve = [
+eva = [
     "python-telegram-bot[ext]>=21.7",
     "apscheduler>=3.10.4",
     "anthropic>=0.39.0",

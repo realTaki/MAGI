@@ -51,16 +51,16 @@ code branches at deploy time. They are not two separate products.
 | 旧名 | 含义 |
 |------|------|
 | **Adam** (PascalCase) | 已被 **ADAM** 替代。|
-| **EVE** (= *Everyday Virtual Employee*) | 单数 EVE 在 2026-07 命名刷新前代表"整天干活的虚拟员工";新语境下"EVE"仅是 EVA 的前身拼写,**不再是 acronym**,所有正式文档、role 名称、soul prompt 都用 EVA。|
+| **EVA** (= *Everyday Virtual Employee*) | 单数 EVA 在 2026-07 命名刷新前代表"整天干活的虚拟员工";新语境下"EVA"仅是 EVA 的前身拼写,**不再是 acronym**,所有正式文档、role 名称、soul prompt 都用 EVA。|
 
 | Old name | Meaning |
 |----------|---------|
 | **Adam** (PascalCase) | Superseded by **ADAM** (all caps). |
-| **EVE** (formerly *Everyday Virtual Employee*) | In the pre-2026-07 framing, "EVE" was a single employee-facing agent. The 2026-07 rename reframed it as a role inside a Society; **EVE is no longer an acronym**, all product copy now uses EVA. |
+| **EVA** (formerly *Everyday Virtual Employee*) | In the pre-2026-07 framing, "EVA" was a single employee-facing agent. The 2026-07 rename reframed it as a role inside a Society; **EVA is no longer an acronym**, all product copy now uses EVA. |
 
 > **Renamed in 2026-08:** *Adam* → *ADAM* (case + new backronym),
-> *EVE* → *EVA* (different word + new backronym). The internal identifier
-> `magic_position='eve'` (lowercase, used as a token in `MAGI_NODE_ROLE`
+> *EVA* → *EVA* (different word + new backronym). The internal identifier
+> `magic_position='eva'` (lowercase, used as a token in `MAGI_NODE_ROLE`
 > and SQL `CASE` expressions) is **not** changed.
 
 ---
@@ -70,12 +70,12 @@ code branches at deploy time. They are not two separate products.
 | 名词                       | 含义 |
 |----------------------------|------|
 | **MAGI 节点**                | 一个正在跑的 MAGI 进程 (容器)。可能是 ADAM,也可能是 EVA。节点凭 `MAGI_NODE_ROLE` 选择 archetype,凭 `MAGI_RUNTIME_ID` 标识自己的身份。|
-| **`MAGI_NODE_ROLE`**         | 环境变量,值为 `adam` 或 `eve`(小写,在代码 `magi/__main__.py` 内做 `{"adam","eve"}` 校验)。值是**内部 identifier**,不参与 UI 显示;**不要**和角色显示名 ADAM/EVA 混为一谈。|
+| **`MAGI_NODE_ROLE`**         | 环境变量,值为 `adam` 或 `eva`(小写,在代码 `magi/__main__.py` 内做 `{"adam","eva"}` 校验)。值是**内部 identifier**,不参与 UI 显示;**不要**和角色显示名 ADAM/EVA 混为一谈。|
 
 | Term                      | Meaning |
 |---------------------------|---------|
 | **MAGI node**             | A running MAGI process (container). May be ADAM or EVA. Identified by its `MAGI_NODE_ROLE` (archetype) + `MAGI_RUNTIME_ID` (identity). |
-| **`MAGI_NODE_ROLE`**      | Env var, value `adam` or `eve` (lowercase — internal token, **not** a display name). Validated in `magi/__main__.py` against `{"adam","eve"}`. |
+| **`MAGI_NODE_ROLE`**      | Env var, value `adam` or `eva` (lowercase — internal token, **not** a display name). Validated in `magi/__main__.py` against `{"adam","eva"}`. |
 
 ---
 
@@ -149,14 +149,14 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                       | 含义 |
 |----------------------------|------|
-| **`Source.EVE`** (column value) | `source = "eve"` 是一个**数据来源标识**,表示这条 `action_items` / `contacts.note` / `memory_entries` 行由 EVA 写入。该字符串保留为**小写 `eve`** —— 因为它和 `MAGI_NODE_ROLE=eve` 走同一份"角色枚举",与 SQL/Python 标识符保持一致,与 ADAM/EVA 角色**显示**名分开。|
+| **`Source.EVA`** (column value) | `source = "eva"` 是一个**数据来源标识**,表示这条 `action_items` / `contacts.note` / `memory_entries` 行由 EVA 写入。该字符串保留为**小写 `eva`** —— 因为它和 `MAGI_NODE_ROLE=eva` 走同一份"角色枚举",与 SQL/Python 标识符保持一致,与 ADAM/EVA 角色**显示**名分开。|
 | **`Magi` (class)**         | ORM 模型名,table = `magic`。单数。|
 | **`MAGIC` (constant)**     | ORM 模型名,同上。**大写** 是 SQLAlchemy class convention,不是 ADAM/EVA role 显示名。|
 | **`magis_*` (table prefix)** | 所有 MAGIS 级表都加 `magis_` 前缀,用于在公共 PostgreSQL 里和未来的其他 schema 隔离。|
 
 | Term                       | Meaning |
 |----------------------------|---------|
-| **`Source.EVE`** (`source='eve'`) | The **data-source tag** on `action_items` / `contact_notes` / `memory_entries` rows written by an EVA. The literal string stays lowercase `eve` — it shares the same internal role token (`MAGI_NODE_ROLE=eve`), distinct from the ADAM/EVA **display** names. |
+| **`Source.EVA`** (`source='eva'`) | The **data-source tag** on `action_items` / `contact_notes` / `memory_entries` rows written by an EVA. The literal string stays lowercase `eva` — it shares the same internal role token (`MAGI_NODE_ROLE=eva`), distinct from the ADAM/EVA **display** names. |
 | **`MAGIC` (ORM class)**    | The single-MAGI ORM row (table `magic`). All caps — SQLAlchemy convention, not the ADAM/EVA role labels. |
 | **`magis_*` (table prefix)** | All MAGIS-level tables are prefixed `magis_` so they stay isolated in the shared public PostgreSQL. |
 

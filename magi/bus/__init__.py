@@ -19,7 +19,7 @@ from magi.bus.contracts import (
     ContactView,
     DeliveryClaim,
     DeliveryResult,
-    EveRuntimeView,
+    EvaRuntimeView,
     InboundMessage,
     MagisAdminView,
     MagisMembershipView,
@@ -94,7 +94,7 @@ __all__ = [
     "MemoryView",
     # magis DTOs
     "MagisView", "MagisAdminView", "MagisRoleView", "MagisMembershipView",
-    "MagicView", "MembershipBrief", "EveRuntimeView", "OperatorView",
+    "MagicView", "MembershipBrief", "EvaRuntimeView", "OperatorView",
     "MemberRole", "RuntimeIdentity", "ProviderConfiguration",
     # auth DTOs
     "CallerIdentity",

@@ -94,8 +94,8 @@ MAGI Local Launcher / Supervisor
 ├── Local Orchestrator     127.0.0.1:42100
 ├── channels.api + SPA     127.0.0.1:42069
 ├── Adam Runtime           127.0.0.1:42101
-├── EVE Runtime            127.0.0.1:<allocated>
-└── EVE Runtime            127.0.0.1:<allocated>
+├── EVA Runtime            127.0.0.1:<allocated>
+└── EVA Runtime            127.0.0.1:<allocated>
 ```
 
 每个 Runtime 必须是独立 OS process，并拥有：
@@ -704,7 +704,7 @@ tests/integration/local_profile/
 
 ## 14. Schema 与 migration
 
-需要审计现有 `EveRuntime` schema。建议平台无关字段：
+需要审计现有 `EvaRuntime` schema。建议平台无关字段：
 
 ```text
 backend_kind
@@ -825,7 +825,7 @@ updated_at
 
 - `deploy/k8s-dev/bootstrap-k8s-dev.sh` / kind 流程仍工作；
 - `channels.api` 仍可通过 BUS query 获得并代理 ClusterIP endpoint；
-- EVE start/stop/delete 行为不变；
+- EVA start/stop/delete 行为不变；
 - MAGIS PostgreSQL 与 PVC provisioning 不变；
 - Secret/RBAC/ServiceAccount 边界不被 Local Profile 放宽；
 - Docker image build 仍包含同一 SPA 与 Python Runtime。

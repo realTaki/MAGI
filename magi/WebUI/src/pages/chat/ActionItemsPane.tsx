@@ -37,7 +37,7 @@ type ActionItem = {
   target_url: string | null;
   priority: "normal" | "high";
   due_date: string | null;
-  source: "system" | "eve" | "user";
+  source: "system" | "eva" | "user";
   created_at: string;
   completed_at: string | null;
   completed_by_uid: number | null;

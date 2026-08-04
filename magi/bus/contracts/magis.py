@@ -135,11 +135,11 @@ class MembershipBrief:
 
 
 @dataclass(frozen=True, slots=True)
-class EveRuntimeView:
+class EvaRuntimeView:
     """View of a MAGIC's EVA runtime state.
 
-    Mirrors the WebUI's ``EveRuntimeOut`` Pydantic model.  Returned to
-    callers instead of leaking the ORM ``EveRuntime`` row.
+    Mirrors the WebUI's ``EvaRuntimeOut`` Pydantic model.  Returned to
+    callers instead of leaking the ORM ``EvaRuntime`` row.
 
     The legacy K8s-specific fields (``namespace`` / ``deployment_name`` /
     ``workspace_claim_name`` / ``credential_secret_name``) remain for
@@ -181,7 +181,7 @@ class MagicView:
     api_key_set: bool
     api_key_last4: Optional[str]
     memberships: list[MembershipBrief]
-    runtime: Optional[EveRuntimeView]
+    runtime: Optional[EvaRuntimeView]
     created_at: str
     updated_at: str
 

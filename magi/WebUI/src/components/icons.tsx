@@ -28,7 +28,7 @@ function Icon({ children, className = "h-5 w-5" }: IconProps & { children: React
   );
 }
 
-// -- chat: 6 EVE-output categories ------------------------------------------
+// -- chat: 6 EVA-output categories ------------------------------------------
 
 export const IconActionItems = ({ className }: IconProps) => (
   <Icon className={className}>
@@ -113,7 +113,7 @@ export const IconContacts = ({ className }: IconProps) => (
 
 // "MAGI Society" — a tree/council structure. Three connected
 // nodes in a hierarchy: the top node is the ADAM, the two
-// below are EVEs.
+// below are EVAs.
 export const IconMagis = ({ className }: IconProps) => (
   <Icon className={className}>
     <circle cx="12" cy="5" r="2.2" />

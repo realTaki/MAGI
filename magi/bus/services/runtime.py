@@ -142,7 +142,7 @@ class RuntimeRegistryService:
     """BUS facade for resolving :class:`RuntimeEndpoint` for a magic_id.
 
     Phase 2 derives the endpoint from the legacy
-    :class:`~magi.bus.models.magis.eve_runtime.EveRuntime` row when
+    :class:`~magi.bus.models.magis.eva_runtime.EvaRuntime` row when
     present, falling back to the dispatcher's ``endpoint_for`` query.
     Phase 4 will replace the implementation with a Local-registry
     table (``magi.db.control``); the public API stays stable.
@@ -154,12 +154,12 @@ class RuntimeRegistryService:
     def _legacy_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
         try:
             from magi.bus.db.magis import open_magis_session
-            from magi.bus.models.magis.eve_runtime import EveRuntime
+            from magi.bus.models.magis.eva_runtime import EvaRuntime
 
             with open_magis_session() as session:
                 runtime = (
-                    session.query(EveRuntime)
-                    .filter(EveRuntime.magic_id == magic_id)
+                    session.query(EvaRuntime)
+                    .filter(EvaRuntime.magic_id == magic_id)
                     .one_or_none()
                 )
             if runtime is None or not runtime.deployment_name:
@@ -213,7 +213,7 @@ class RuntimeRegistryService:
         Phase 7 — Local Profile is checked first when present,
         because the Local control registry is the authoritative source
         for live ``base_url`` values.  K8s Profile falls back to the
-        legacy ``eve_runtime.deployment_name`` URL forging.
+        legacy ``eva_runtime.deployment_name`` URL forging.
         """
         local = self._local_endpoint(magic_id)
         if local is not None and local.observed_state not in {"stopped", "deleted"}:

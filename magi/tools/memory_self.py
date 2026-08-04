@@ -35,7 +35,7 @@ import logging
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.contracts.memory import ALL_KINDS, SOURCE_EVE
+from magi.bus.contracts.memory import ALL_KINDS, SOURCE_EVA
 from magi.tools.base import (
     Tool,
     ToolContext,
@@ -165,7 +165,7 @@ class AddMemoryTool(Tool):
                 subject=kwargs["subject"],
                 body=kwargs["body"],
                 importance=kwargs.get("importance", 3),
-                source=SOURCE_EVE,
+                source=SOURCE_EVA,
             )
         except (ValueError, KeyError) as e:
             return _err(f"add_memory failed: {e}")

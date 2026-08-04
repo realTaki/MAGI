@@ -15,7 +15,7 @@ from magi.bus.contracts.lifecycle import (
     RuntimeSpec,
 )
 from magi.orchestrator.backends.factory import create as create_backend
-from magi.orchestrator.contracts import EveSpec, MagisBinding
+from magi.orchestrator.contracts import EvaSpec, MagisBinding
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:
@@ -61,12 +61,12 @@ def create_app() -> FastAPI:
 
     async def _spec_and_auth(
         request: Request, x_magi_timestamp: str | None, x_magi_signature: str | None
-    ) -> EveSpec:
+    ) -> EvaSpec:
         body = await request.body()
         _verify_request(body, x_magi_timestamp, x_magi_signature)
-        return EveSpec.model_validate_json(body)
+        return EvaSpec.model_validate_json(body)
 
-    def _to_runtime_spec(legacy: EveSpec) -> RuntimeSpec:
+    def _to_runtime_spec(legacy: EvaSpec) -> RuntimeSpec:
         return RuntimeSpec(
             magic_id=legacy.magic_id,
             name=legacy.name,
@@ -74,8 +74,8 @@ def create_app() -> FastAPI:
             magis_name=(legacy.magis.name if legacy.magis is not None else None),
         )
 
-    @app.post("/v1/eves/{magic_id}/start", response_model=RuntimeOperationResult)
-    async def start_eve(
+    @app.post("/v1/evas/{magic_id}/start", response_model=RuntimeOperationResult)
+    async def start_eva(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
@@ -87,8 +87,8 @@ def create_app() -> FastAPI:
         backend = create_backend()
         return backend.start(_to_runtime_spec(legacy))
 
-    @app.post("/v1/eves/{magic_id}/stop", response_model=RuntimeOperationResult)
-    async def stop_eve(
+    @app.post("/v1/evas/{magic_id}/stop", response_model=RuntimeOperationResult)
+    async def stop_eva(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
@@ -100,8 +100,8 @@ def create_app() -> FastAPI:
         backend = create_backend()
         return backend.stop(_to_runtime_spec(legacy))
 
-    @app.post("/v1/eves/{magic_id}/delete", response_model=RuntimeOperationResult)
-    async def delete_eve(
+    @app.post("/v1/evas/{magic_id}/delete", response_model=RuntimeOperationResult)
+    async def delete_eva(
         magic_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
