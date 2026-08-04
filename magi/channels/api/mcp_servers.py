@@ -324,9 +324,7 @@ def list_mcp_server_tools(
         the subprocess couldn't connect (the row is
         misconfigured, or the binary is missing).
     """
-    from magi.mcp import loader as mcp_loader
-
-    tools = mcp_loader.list_tools_for_server(name)
+    tools = _bus().mcp.list_live_tools(name)
     if tools is None:
         raise MagiHTTPException(
             status_code=404,
