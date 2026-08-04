@@ -137,11 +137,11 @@ RULES: list[tuple[str, list[str]]] = [
     ("magi.bus.services.runtime", ["magi.orchestrator.kubernetes"]),
 ]
 
-# ``magi.deploy`` is the Composition-Root namespace — it is the sole
+# ``magi.launcher`` is the Composition-Root namespace — it is the sole
 # package allowed to import everything (including storage + the
 # orchestrator package).  The exemption is applied inside
 # ``_rule_violations`` below.
-COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.deploy", "magi.local"}
+COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.launcher"}
 
 # ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
 # ``magi.bus.models.*`` — that's the whole point of the consolidation.
@@ -233,9 +233,9 @@ def _rule_violations() -> list[tuple[Path, int, str, str, str]]:
         source_module = _module_name_from_path(py_path)
         if source_module is None:
             continue
-        # Composition-Root exemption: ``magi.deploy`` and ``magi.local``
-        # are the only packages allowed to import everything (including
-        # storage + the orchestrator package).  Plan §5.3.
+        # Composition-Root exemption: ``magi.launcher`` is the sole
+        # package allowed to import everything (including storage + the
+        # orchestrator package).
         if any(
             _is_internal(exempt, source_module) for exempt in COMPOSITION_ROOT_PREFIXES
         ):
