@@ -103,7 +103,6 @@ class PeriodUsage:
 
 
 def _aggregate_period(
-    state_dir: str,
     uid: int,
     period: str,
     tz: zoneinfo.ZoneInfo,
@@ -180,9 +179,9 @@ def get_contact_token_usage(
     tz_name = get_bus().settings.system_timezone()
     tz = zoneinfo.ZoneInfo(tz_name)
 
-    week = _aggregate_period(state_dir, uid, "week", tz)
-    month = _aggregate_period(state_dir, uid, "month", tz)
-    total = _aggregate_period(state_dir, uid, "total", tz)
+    week = _aggregate_period(uid, "week", tz)
+    month = _aggregate_period(uid, "month", tz)
+    total = _aggregate_period(uid, "total", tz)
 
     return TokenUsageOut(
         uid=uid,

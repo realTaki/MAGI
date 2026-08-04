@@ -3,17 +3,34 @@
 from __future__ import annotations
 
 
-def test_eve_node_config_requires_runtime_id(monkeypatch):
+def test_node_config_rejects_non_integer_runtime_id(monkeypatch):
     from magi.__main__ import NodeConfig
 
-    monkeypatch.setenv("MAGI_NODE_ROLE", "eve")
-    monkeypatch.delenv("MAGI_RUNTIME_ID", raising=False)
+    monkeypatch.setenv("MAGI_RUNTIME_ID", "not-a-number")
     try:
         NodeConfig.from_env()
     except ValueError as exc:
         assert "MAGI_RUNTIME_ID" in str(exc)
     else:
-        raise AssertionError("an EVA without a runtime identity must be rejected")
+        raise AssertionError("a non-integer MAGI_RUNTIME_ID must be rejected")
+
+
+def test_node_config_without_runtime_id_is_genesis(monkeypatch):
+    from magi.__main__ import NodeConfig
+
+    monkeypatch.delenv("MAGI_RUNTIME_ID", raising=False)
+    cfg = NodeConfig.from_env()
+    assert cfg.is_genesis is True
+    assert cfg.runtime_id is None
+
+
+def test_node_config_with_runtime_id_is_not_genesis(monkeypatch):
+    from magi.__main__ import NodeConfig
+
+    monkeypatch.setenv("MAGI_RUNTIME_ID", "42")
+    cfg = NodeConfig.from_env()
+    assert cfg.is_genesis is False
+    assert cfg.runtime_id == "42"
 
 
 def test_eve_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_path):

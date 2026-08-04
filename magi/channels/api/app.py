@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from magi import __version__
 from magi.channels.api import auth, contacts, magic, magis, onboarding
-from magi.constants import STATE_DIR
+from magi.launcher.paths import state_dir
 
 logger = logging.getLogger("magi.channels.api")
 
@@ -117,7 +117,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         # container-only ``/workspace`` mount to exist. Node.run() initialises
         # the workspace before serving in production.
         try:
-            t = start_bot(STATE_DIR)
+            t = start_bot(str(state_dir()))
         except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
             t = None
             _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)

@@ -29,7 +29,7 @@ from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.constants import STATE_DIR
+from magi.launcher.paths import state_dir
 from magi.channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,
     DEFAULT_READ_REACTION_EMOJI,
@@ -46,8 +46,13 @@ router = APIRouter(tags=["tg-settings"])
 
 
 def _state_dir() -> str:
-    import os
-    return STATE_DIR
+    """Resolve the current state directory.
+
+    Replaced in Phase D2 by direct ``get_bus().settings.get(...)`` reads
+    — the TG config helpers will stop taking ``state_dir`` once all
+    routes go through the bus facade.
+    """
+    return str(state_dir())
 
 
 class ReactionChoice(BaseModel):

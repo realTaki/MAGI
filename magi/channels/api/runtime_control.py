@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
 from magi.bus import get_bus
+from magi.launcher.paths import state_dir
 
 router = APIRouter(tags=["runtime-control"])
 
@@ -44,12 +45,14 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
     _require_control(request)
     from magi.channels.telegram import bot as tg_bot
 
-    state_dir = STATE_DIR
     bus = _bus()
     bus.settings.set("telegram.bot_token", payload.token)
     bus.settings.set("telegram.bot_username", payload.username)
     if tg_bot.get_telegram_bot() is None:
-        tg_bot.start_bot(state_dir)
+        # Phase D1 will drop the ``state_dir`` parameter from
+        # ``start_bot`` entirely — for now pass it through so the
+        # call site keeps compiling.
+        tg_bot.start_bot(str(state_dir()))
     return {"ok": True}
 
 

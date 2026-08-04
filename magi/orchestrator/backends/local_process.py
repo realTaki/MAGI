@@ -162,7 +162,7 @@ class LocalProcessRuntimeBackend:
                 slug=slug,
                 argv=self._build_argv(spec, alloc.port),
                 env={
-                    "MAGI_STATE_DIR": str(Path("/tmp").resolve()),  # runtime manages its own
+                    "MAGI_WORKSPACE_DIR": str(Path("/tmp").resolve()),  # runtime derives state
                     "MAGI_RUNTIME_PORT": str(alloc.port),
                     "MAGI_RUNTIME_SLUG": slug,
                 },
