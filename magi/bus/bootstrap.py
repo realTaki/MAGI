@@ -18,6 +18,7 @@ from magi.bus.services import (
     SessionService,
     SettingsService,
     TaskService,
+    TaskSchedulerBridge,
     TokenUsageService,
     ToolCatalogService,
     ToolJobsService,
@@ -40,6 +41,7 @@ class Bus:
     memory: MemoryService
     mcp: McpService
     task: TaskService
+    task_scheduler: TaskSchedulerBridge
     action_item: ActionItemService
     auth: AuthService
     magic: MagicService
@@ -68,6 +70,7 @@ def bootstrap(state_dir: str, *, initialise_local: bool = False) -> Bus:
         memory=MemoryService(state_dir),
         mcp=McpService(state_dir),
         task=TaskService(state_dir),
+        task_scheduler=TaskSchedulerBridge(state_dir),
         action_item=ActionItemService(state_dir),
         auth=AuthService(state_dir),
         magic=MagicService(state_dir),

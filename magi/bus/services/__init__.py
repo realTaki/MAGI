@@ -23,6 +23,7 @@ from magi.bus.services.mcp import McpService
 from magi.bus.services.session import SessionService
 from magi.bus.services.setting import SettingsService
 from magi.bus.services.task import TaskService
+from magi.bus.services.task_scheduler_bridge import TaskSchedulerBridge
 from magi.bus.services.token_usage import TokenUsageService
 from magi.bus.services.tool_catalog import (
     CatalogRevisionConflict,
@@ -51,6 +52,7 @@ __all__ = [
     "SessionService",
     "SettingsService",
     "TaskService",
+    "TaskSchedulerBridge",
     "TokenUsageService",
     "ToolCatalogService",
     "ToolCatalogSnapshot",

@@ -51,6 +51,7 @@ from magi.bus.services.contact import ContactsService
 from magi.bus.services.session import SessionService
 from magi.bus.services.setting import SettingsService
 from magi.bus.services.task import TaskService
+from magi.bus.services.task_scheduler_bridge import TaskSchedulerBridge
 from magi.bus.task_schedule import (
     preset_to_cron,
     validate_cron,
@@ -58,7 +59,6 @@ from magi.bus.task_schedule import (
     validate_run_at_future,
 )
 from magi.channels import Channel
-from magi.channels.tasks.scheduler import get_scheduler
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 
@@ -662,20 +662,21 @@ def run_task_now(
         task_id=task_id, run_id=run_id, trigger="manual",
         started_at=_now_iso(), session_id=view.session_id,
     )
+    # Route through the BUS-side scheduler bridge so this module
+    # never holds a direct Python reference to
+    # ``magi.channels.tasks.scheduler`` / ``TaskChannel`` (per
+    # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §5.6 +
+    # §6 — ``channels.api ⊥ channels.tasks``). The bridge owns both
+    # the in-process scheduler path and the dev-mode sync fallback.
+    bridge = TaskSchedulerBridge(_state_dir())
     try:
-        get_scheduler().submit_now(task_id, run_id=run_id)
+        bridge.request_manual_fire(task_id, run_id=run_id)
     except RuntimeError:
-        # Scheduler not running — dev-only sync
-        # fallback so the button still works in
-        # ``pytest`` mode. The runner writes the row's
-        # terminal state directly.
-        from magi.channels.tasks.channel import TaskChannel
-        import asyncio
+        # Scheduler not running (dev / single-container / pytest
+        # mode). The bridge still owns the sync fallback so the
+        # button works without booting apscheduler.
         try:
-            asyncio.run(TaskChannel.dispatch(
-                _state_dir(), task_id,
-                manual=True, pre_created_run_id=run_id,
-            ))
+            bridge.fire_now_sync_threadsafe(task_id, run_id=run_id)
         except Exception as exc:  # noqa: BLE001
             logger.exception("sync fallback runner failed: %s", exc)
     return RunResponse(run_id=run_id)
@@ -784,32 +785,26 @@ def _enforce_creator_can_create(*, admin: bool, role: str) -> None:
 
 
 def _register_with_scheduler_view(view: TaskFullView) -> None:
-    """Best-effort nudge using the bus view. Swallow + log on failure."""
-    from magi.bus.contracts.task import TaskScheduleView
-    schedule_view = TaskScheduleView(
-        id=view.id, enabled=view.enabled, cron=view.cron, run_at=view.run_at,
-    )
-    try:
-        get_scheduler().register(schedule_view)
-    except RuntimeError:
-        logger.info(
-            "scheduler not running yet; task %s will activate on next start",
-            view.id,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "scheduler.register(%s) failed (DB row is still authoritative): %s",
-            view.id, exc,
-        )
+    """Best-effort nudge via the BUS-side scheduler bridge.
+
+    Routes through :class:`TaskSchedulerBridge` so this API module
+    never holds a direct Python reference to
+    ``magi.channels.tasks.scheduler`` (the doc's ``channels.api ⊥
+    channels.tasks`` rule). The bridge swallows the "scheduler not
+    running" case for us; the DB row is still authoritative and the
+    scheduler rehydrates from DB on its next start.
+    """
+    TaskSchedulerBridge(_state_dir()).notify_scheduled(view)
 
 
 def _unregister_from_scheduler(task_id: str) -> None:
-    try:
-        get_scheduler().unregister(task_id)
-    except RuntimeError:
-        pass
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("scheduler.unregister(%s) failed: %s", task_id, exc)
+    """Best-effort remove via the BUS-side scheduler bridge.
+
+    Same rationale as :func:`_register_with_scheduler_view`: keep the
+    scheduler interaction behind ``magi.bus`` so the boundary test
+    keeps enforcing the doc.
+    """
+    TaskSchedulerBridge(_state_dir()).notify_unscheduled(task_id)
 
 
 # The creator-role gate moved from a constant to a helper
