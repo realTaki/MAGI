@@ -56,7 +56,7 @@ class KubernetesEvaBackend:
             f"https://{host}:{port}" if host else ""
         )
         self.namespace = os.environ.get("MAGI_K8S_NAMESPACE", "magi")
-        self.image = os.environ.get("MAGI_EVA_IMAGE", "magi:0.1.0")
+        self.image = os.environ.get("MAGI_IMAGE", "magi:0.1.0")
         if not self.base_url or not _TOKEN_PATH.is_file():
             raise RuntimeError("Kubernetes service-account credentials are unavailable")
         self.token = _TOKEN_PATH.read_text().strip()

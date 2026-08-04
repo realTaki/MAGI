@@ -23,6 +23,18 @@
   the `magi-webui` Kubernetes Service, `WEBUI_PORT`/`WEBUI_HOST` env vars,
   and the `magi/WebUI/` React frontend are unchanged: those refer to the
   frontend service, not the renamed Python package.
+- **Eve → Eva rename (full sweep)**: every remaining `Eve`/`EVE`/`eve`
+  identifier, file, directory, and runtime token is now `Eva`/`EVA`/`eva`.
+  - `EveRuntime` → `EvaRuntime`; `magi/bus/models/magis/eve_runtime.py` → `eva_runtime.py`
+  - `KubernetesEveBackend` → `KubernetesEvaBackend`
+  - `eve_runtimes` table → `eva_runtimes` (Alembic 0001 baseline edited in place; recreate dev DBs)
+  - `eve-example` overlay dir → `eva-example`; matching secrets example file renamed
+  - `EVE_IMAGE` / `MAGI_EVE_IMAGE` → `EVA_IMAGE` / `MAGI_EVA_IMAGE`
+  - `MAGI_NODE_ROLE=eve` → `eva`; validation set `{"adam","eva"}`
+  - `source='eve'` default → `eva` (alembic baseline + model defaults)
+  - `[eve]` pyproject extra → `[eva]`
+  - i18n keys `positionEve`/`startEve`/`stopEve` → `positionEva`/`startEva`/`stopEva`
+  - `docs/terms.md` rationale updated to record the token flip
 
 ### Removed
 - `departments` table and all related code

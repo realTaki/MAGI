@@ -37,8 +37,7 @@ docker build -f "$ROOT_DIR/deploy/Dockerfile" -t magi:0.1.0 "$ROOT_DIR"
 docker build -f "$ROOT_DIR/deploy/Dockerfile.dev" -t magi:dev "$ROOT_DIR"
 "$KIND" load docker-image magi:0.1.0 --name magi
 "$KIND" load docker-image magi:dev --name magi
-MAGI_IMAGE=magi:dev \
-  EVA_IMAGE=magi:0.1.0 \
+MAGI_IMAGE=magi:0.1.0 \
   ADAM_OVERLAY="$K8S_DEV_DIR/overlays/dev-eva00" \
   CONTROL_OVERLAY="$K8S_DEV_DIR/control-dev" \
   ADAM_DEPLOYMENT=magi-node \
