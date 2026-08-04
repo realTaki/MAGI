@@ -86,23 +86,27 @@ orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围�
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
 - **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
 
-## 快速开始：本地开发集群
+## 快速开始
 
-最快的路径会启动本地 `kind` 集群和第一个开发 MAGI 节点。宿主机只需要 Docker。
-脚本会按需下载固定版本的 `kind` 与 `kubectl`、构建镜像、创建集群，并以后端 reload 与
-Vite HMR 部署开发节点。
+按你的场景选一条部署路径，三种都同等支持并放在 `deploy/` 下：
 
-```bash
-git clone https://github.com/realTaki/MAGI.git
-cd MAGI
-./deploy/bootstrap-local.sh
-```
+| 场景 | 路径 | 入口 |
+| --- | --- | --- |
+| 我只想在单机上跑一个 MAGI | [deploy/local/](deploy/local/) | `./deploy/local/install.sh`，然后 `magi local start` |
+| 我在迭代 k8s 模块化方案 | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
+| 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
-打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成 onboarding。系统初始化时，
-会自动创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI（**EVA-00 PROTO TYPE**），
-并让它担任 Genesis 的 ADAM。
+**单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker 也没
+有 k8s），状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`
+（macOS、Windows）。打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，
+先选择正在运行的 MAGI，再完成 onboarding。系统初始化时，会自动
+创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI
+（**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 ADAM。
 
-本地开发部署会挂载：
+**k8s-dev** 会在本地启动一个 `kind` 集群并部署第一个开发 MAGI
+节点。宿主机只需要 Docker。脚本会按需下载固定版本的 `kind` 与
+`kubectl`、构建镜像、创建集群，并以后端 reload 与 Vite HMR 部署
+开发节点。开发部署会挂载：
 
 ```text
 宿主仓库             → /app/magi        源码热加载
@@ -114,10 +118,10 @@ workspace/MAGIS/Genesis → /magis         Genesis 的公共工作区
 
 ```bash
 MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/bootstrap-k8s.sh
+  ./deploy/k8s/bootstrap-k8s.sh
 ```
 
-镜像、存储、网络、Secret 与环境配置请见 [Kubernetes 部署指南](deploy/k8s/README.md)。
+镜像、存储、网络、Secret 与环境配置请见各部署路径下的 README。
 
 ## 从第一个 MAGIS 到组织成长
 
@@ -177,7 +181,7 @@ Bot 代发验证码。
 - [统一 WebUI 与 Runtime API](docs/unified-webui.md)
 - [关键业务流程](docs/business-flows.md)
 - [数据库与迁移说明](docs/database-migrations.md)
-- [Kubernetes 部署](deploy/k8s/README.md)
+- [部署总览](deploy/README.md)
 - [路线图](docs/ROADMAP.md)
 
 ## 项目状态

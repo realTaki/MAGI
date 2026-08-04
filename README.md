@@ -104,26 +104,32 @@ plus the PostgreSQL and public workspace resources for a MAGIS when needed.
 - **Provider independence** — MAGI hold their own provider configuration
   and API credentials rather than sharing one global model account.
 
-## Quick start: a local dev cluster
+## Quick start
 
-The fastest path starts a local `kind` cluster and the first development MAGI
-node. Docker is the only host prerequisite. The script downloads its pinned
-`kind` and `kubectl` tools locally when needed, builds the images, creates
-the cluster, and deploys the dev node with backend reload and Vite HMR.
+Pick the deployment that matches your situation. All three are equally
+supported and live under `deploy/`:
 
-```bash
-git clone https://github.com/realTaki/MAGI.git
-cd MAGI
-./deploy/bootstrap-local.sh
-```
+| Situation | Path | Entry point |
+| --- | --- | --- |
+| I want a single-machine MAGI on my laptop/desktop | [deploy/local/](deploy/local/) | `./deploy/local/install.sh` then `magi local start` |
+| I'm iterating on the k8s modular approach | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
+| I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
-Open [http://127.0.0.1:42069](http://127.0.0.1:42069), select the running
-MAGI, and complete onboarding.
-During system initialization, MAGI automatically creates the root MAGI Society,
-**Genesis**. It then creates **EVA-00 PROTO TYPE**, the first MAGI,
+The **single-machine path** is the fastest way to take MAGI for a
+spin. It runs directly on the host (no Docker, no k8s) and stores
+state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
+Windows). Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
+select the running MAGI, and complete onboarding. During system
+initialization, MAGI automatically creates the root MAGI Society,
+**Genesis**, then creates **EVA-00 PROTO TYPE**, the first MAGI,
 as Genesis's ADAM.
 
-The local development deployment mounts:
+The **k8s-dev path** starts a local `kind` cluster and the first
+development MAGI node. Docker is the only host prerequisite. The
+script downloads its pinned `kind` and `kubectl` tools locally
+when needed, builds the images, creates the cluster, and deploys
+the dev node with backend reload and Vite HMR. The dev deployment
+mounts:
 
 ```text
 host repository      → /app/magi        source hot reload
@@ -131,15 +137,16 @@ workspace/MAGIC/eva-00 → /workspace     dev MAGI's private workspace
 workspace/MAGIS/Genesis → /magis         Genesis public workspace
 ```
 
-For an existing cluster or a production-style deployment, use:
+For an existing cluster or a production-style deployment, use the
+k8s production path:
 
 ```bash
 MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/bootstrap-k8s.sh
+  ./deploy/k8s/bootstrap-k8s.sh
 ```
 
-See [the Kubernetes deployment guide](deploy/k8s/README.md) for image,
-storage, networking, Secrets, and environment-specific configuration.
+See the deployment guides for image, storage, networking, Secrets,
+and environment-specific configuration.
 
 ## From the first MAGIS to a growing organization
 
@@ -210,7 +217,7 @@ For the implementation-level view, see:
 - [Unified WebUI and Runtime API](docs/unified-webui.md)
 - [Business flows](docs/business-flows.md)
 - [Database and migration notes](docs/database-migrations.md)
-- [Kubernetes deployment](deploy/k8s/README.md)
+- [Deployment overview](deploy/README.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## Project status

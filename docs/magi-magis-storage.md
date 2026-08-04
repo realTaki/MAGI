@@ -44,7 +44,7 @@ Genesis 使用：
 - `magi-magis-1-genesis-workspace`：公共工作区 PVC；
 - `magi-magis-1-genesis-db` Secret：`POSTGRES_PASSWORD` 和 `MAGIS_DATABASE_URL`。
 
-复制 `deploy/k8s/secrets/magis-genesis-db.example.yaml` 到不提交 Git 的位置，填入强随机密码后先 apply。`adam` overlay 会把数据库 URL 从该 Secret 注入初始节点；`dev-eva00` overlay 生成仅供本地 kind 使用的开发 Secret。
+复制 `deploy/k8s/secrets/magis-genesis-db.example.yaml` 到不提交 Git 的位置，填入强随机密码后先 apply。`adam` overlay 会把数据库 URL 从该 Secret 注入初始节点；`deploy/k8s-dev/overlays/dev-eva00` overlay 生成仅供本地 kind 使用的开发 Secret。
 
 新 MAGIS 由受限的 orchestrator 创建同构资源。新 MAGI 由 orchestrator 只注入其直属 MAGIS 的 `MAGIS_DATABASE_URL` 和 `MAGIS_ID`，并挂载 `/magis`。它不接收 provider、API Key、角色或 instruction 环境变量。代码中该边界对应：`magi.db.engine`（私有 SQLite）与 `magi.db.magis`（公共 MAGIS PostgreSQL）。
 

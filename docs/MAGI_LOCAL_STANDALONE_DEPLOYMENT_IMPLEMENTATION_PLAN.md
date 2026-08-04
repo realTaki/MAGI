@@ -823,7 +823,7 @@ updated_at
 
 ### 15.4 K8s regression
 
-- `bootstrap-local.sh`/kind 流程仍工作；
+- `deploy/k8s-dev/bootstrap-k8s-dev.sh` / kind 流程仍工作；
 - `channels.api` 仍可通过 BUS query 获得并代理 ClusterIP endpoint；
 - EVE start/stop/delete 行为不变；
 - MAGIS PostgreSQL 与 PVC provisioning 不变；

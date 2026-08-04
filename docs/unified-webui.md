@@ -74,11 +74,13 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
 - orchestrator 在启动新的 MAGI 时，同时创建同名的内部 ClusterIP Service；停止时保留，
   删除 MAGI 时一并删除。
-- `deploy/k8s/control-dev/`：kind 开发 overlay。仍使用 `magi:dev` 这个同一镜像标签，
+- `deploy/k8s-dev/control-dev/`：kind 开发 overlay。仍使用 `magi:dev` 这个同一镜像标签，
   但用 Vite HMR 服务统一 WebUI，后端监听容器内 `:8000`。
 
-生产启动使用 `deploy/bootstrap-k8s.sh`；脚本会部署 orchestrator、初始 runtime 和
-`magi-webui`，并提示将本地端口转发到 `svc/magi-webui`。
+生产启动使用 `deploy/k8s/bootstrap-k8s.sh`；脚本会部署 orchestrator、初始 runtime 和
+`magi-webui`，并提示将本地端口转发到 `svc/magi-webui`。dev 模式请改用
+`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/local/`（与 k8s
+无关）。
 
 ## 仍需后续增强的部分
 
