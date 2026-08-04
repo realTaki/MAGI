@@ -127,7 +127,6 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     only channel adapters participate in.
     """
     _ADAPTERS[adapter.name] = adapter
-    state_dir = STATE_DIR
     try:
         bus = get_bus()
         bus.dispatcher.register(adapter)

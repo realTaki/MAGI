@@ -25,7 +25,7 @@ from magi.bus.db import (
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     init_orm(str(tmp_path), seed_root=False)
     return BusStore(str(tmp_path))
 
@@ -48,7 +48,7 @@ def test_migration_0009_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     this, every boot would re-attempt ``ADD COLUMN`` / ``CREATE INDEX``
     and crash on the second one.
     """
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
     init_orm(str(tmp_path), seed_root=False)

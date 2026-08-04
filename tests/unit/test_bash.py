@@ -39,7 +39,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     Each test gets its own tmp_path so concurrent
     background-process tests don't share state.
     """
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
     return ToolContext(
         state_dir=str(tmp_path / "state"),
         workspace=tmp_path,
@@ -383,7 +383,7 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     can build the SQLAlchemy engine (the LLM tools
     gate on roles which require a DB lookup).
     """
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
     # The registry builds each tool on first call;
     # the role-gate tools open a session lazily so
     # the engine only needs to be importable here.

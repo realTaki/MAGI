@@ -60,7 +60,7 @@ def fresh_state_dir(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     ``stop_scheduler`` in the teardown handles that.
     """
     sd = tempfile.mkdtemp(prefix="magi-scheduler-test-")
-    monkeypatch.setenv("MAGI_STATE_DIR", sd)
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", sd)
     yield sd
     # Defensive: stop in case a test forgot. Idempotent.
     try:

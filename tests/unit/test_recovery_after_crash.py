@@ -30,7 +30,7 @@ from magi.bus.db.base import utcnow_naive
 
 @pytest.fixture()
 def store(tmp_path: Path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     init_orm(str(tmp_path), seed_root=False)
     return BusStore(str(tmp_path))
 
@@ -85,7 +85,7 @@ def test_pending_delivery_resumes_after_process_restart(
     survives the restart because it was never leased (and is
     therefore not subject to lease-expiry recovery).
     """
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     init_orm(str(tmp_path), seed_root=False)
     store = BusStore(str(tmp_path))
     run_id = store.publish_agent_message(AgentMessage(

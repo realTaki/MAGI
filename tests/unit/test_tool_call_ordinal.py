@@ -20,7 +20,7 @@ from magi.bus.db import init_orm
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     init_orm(str(tmp_path), seed_root=False)
     return BusStore(str(tmp_path))
 

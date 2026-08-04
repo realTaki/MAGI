@@ -44,7 +44,7 @@ from magi.tools.base import (
 def fresh_db(monkeypatch, tmp_path):
     state = tmp_path / "state"
     state.mkdir()
-    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
 
     import magi.bus.db.engine as orm_mod
     orm_mod._engine = None

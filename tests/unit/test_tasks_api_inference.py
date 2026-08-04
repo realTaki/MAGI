@@ -67,7 +67,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     state.mkdir()
     ws = tmp_path / "workspace"
     ws.mkdir()
-    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
     
     import magi.bus.db.engine as orm_mod
     orm_mod._engine = None

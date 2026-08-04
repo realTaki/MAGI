@@ -11,7 +11,7 @@ from magi.bus.db import init_orm
 @pytest.fixture()
 def worker_state(tmp_path, monkeypatch) -> str:
     state = tmp_path / "state"
-    monkeypatch.setenv("MAGI_STATE_DIR", str(state))
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
     init_orm(str(state), seed_root=False)
     return str(state)
 
