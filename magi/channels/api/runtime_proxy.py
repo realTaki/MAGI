@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import httpx
 from fastapi import APIRouter, Request, Response
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
 
@@ -23,7 +21,7 @@ def _runtime_url(magic_id: int) -> str:
     Falls back to the legacy ``bus.magis.root_runtime_url`` for the
     root-runtime case so K8s behaviour stays bit-identical.
     """
-    bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    bus = get_bus()
     endpoint = bus.registry.resolve_endpoint(magic_id)
     if endpoint is not None:
         return endpoint.base_url

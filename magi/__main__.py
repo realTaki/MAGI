@@ -178,7 +178,7 @@ def run() -> None:
     # The composition root is the only place that initialises local storage.
     # Workers and channels receive the public BUS facade after this point.
     from magi.bus import bootstrap
-    bootstrap(state_dir, initialise_local=True)
+    bus = bootstrap(state_dir, initialise_local=True)
     logger.info("local BUS bootstrapped", extra={"state_dir": state_dir})
 
     # Direct MAGIS PostgreSQL holds identity, memberships, instructions and
@@ -189,7 +189,7 @@ def run() -> None:
 
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
-    from magi.agent.workspace import bootstrap_workspace, workspace_root as wr
+    from magi.launcher.paths import workspace_root as wr
     bootstrap_workspace(wr(state_dir))
 
     # MCP tool discovery moved to the ToolWorker's startup seed
@@ -232,10 +232,10 @@ def run() -> None:
     except Exception as e:  # noqa: BLE001
         logger.warning("connector bootstrap skipped: %s", e)
 
-    # Start the scheduled-task channel.
+    # Start the scheduled-task channel (Phase 5: routed via the BUS
+    # bridge so ``__main__`` no longer reaches into ``magi.channels.tasks``).
     try:
-        from magi.channels.tasks.scheduler import start_scheduler
-        start_scheduler(state_dir)
+        bus.task_scheduler.start()
     except Exception as e:  # noqa: BLE001
         logger.warning("scheduler bootstrap skipped: %s", e)
 
@@ -251,8 +251,7 @@ def run() -> None:
     # Register a shutdown hook.
     try:
         import atexit
-        from magi.channels.tasks.scheduler import stop_scheduler
-        atexit.register(stop_scheduler)
+        atexit.register(bus.task_scheduler.stop)
     except Exception:  # noqa: BLE001
         pass
 

@@ -25,6 +25,17 @@ from pathlib import Path
 _PLATFORM = sys.platform
 
 
+def workspace_root(state_dir: str | os.PathLike[str]) -> Path:
+    """Derive the workspace root from the state directory.
+
+    The default layout puts the SQLite at
+    ``<workspace>/state/magi.db``, so the workspace root is
+    ``Path(state_dir).parent``. Used by every module that needs to
+    resolve operator-facing paths (SOUL.md, skills/, memories/).
+    """
+    return Path(state_dir).parent
+
+
 def default_data_root() -> Path:
     """Return the OS-specific default data root for the Local Profile."""
     override = os.environ.get("MAGI_DATA_ROOT")

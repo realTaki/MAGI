@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from magi.bus import bootstrap, get_stream_hub
+from magi.bus import get_bus, get_stream_hub
 from magi.channels.api.auth_gates import AdminGate
 
 router = APIRouter(tags=["runs"])
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    return get_bus()
 
 
 class RunStatusResponse(BaseModel):

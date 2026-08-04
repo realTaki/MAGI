@@ -7,13 +7,12 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 
 from __future__ import annotations
 
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.magis import (
     MagisAdminView,
     MagisMembershipView,
@@ -111,7 +110,7 @@ class MAGISAdminCreate(BaseModel):
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    return get_bus()
 
 
 def _magis_out(view: MagisView) -> MAGISOut:
@@ -249,10 +248,9 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate) -> MAGISOut:
     # Phase 2 — routed through the BUS dispatcher (plan §4.5: API
     # publishes BUS commands, never calls orchestrator directly).
     try:
-        from magi.bus import bootstrap
         from magi.bus.services.runtime import OrchestratorUnavailable
 
-        bus = bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+        bus = get_bus()
         bus.runtime.provision_magis(magis_id=view.id, magis_name=view.name)
     except OrchestratorUnavailable as exc:
         raise MagiHTTPException(

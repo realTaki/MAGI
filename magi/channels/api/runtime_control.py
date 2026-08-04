@@ -6,21 +6,18 @@ same target-bound HMAC used for normal runtime proxying.
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
-from magi.bus import bootstrap
-from magi.constants import STATE_DIR
+from magi.bus import get_bus
 
 router = APIRouter(tags=["runtime-control"])
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+    return get_bus()
 
 
 def _require_control(request: Request) -> None:

@@ -22,7 +22,7 @@ import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator
@@ -73,7 +73,7 @@ class VerifyLoginCodeResponse(BaseModel):
 
 def _bus():
     """Resolve the bus facade for this runtime's state dir."""
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    return get_bus()
 
 
 def _require_webui(request: Request) -> None:

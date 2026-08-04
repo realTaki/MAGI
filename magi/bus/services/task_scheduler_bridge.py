@@ -141,6 +141,32 @@ class TaskSchedulerBridge:
         """
         asyncio.run(self.fire_now_sync(task_id, run_id=run_id))
 
+    # -- lifecycle (Phase 5: keep __main__.py from reaching scheduler) --
+
+    def start(self, *, rehydrate: bool = True) -> None:
+        """Start the apscheduler-backed task worker.
+
+        Phase 5 — keeps callers (``magi __main__.py`` and the
+        runtime's :func:`worker_lifespan`) from importing
+        ``magi.channels.tasks.scheduler`` directly.  This bridge
+        remains the single Python seam between the BUS and the
+        scheduler (per plan §5.5 / boundary-test rule).
+        """
+        from magi.channels.tasks.scheduler import start_scheduler
+
+        start_scheduler(self._state_dir, rehydrate=rehydrate)
+        logger.info(
+            "task scheduler started via bridge",
+            extra={"state_dir": self._state_dir},
+        )
+
+    def stop(self) -> None:
+        """Stop the task worker if it's running; idempotent."""
+        from magi.channels.tasks.scheduler import stop_scheduler
+
+        stop_scheduler(self._state_dir)
+        logger.info("task scheduler stopped via bridge")
+
     # -- internal --------------------------------------------------------
 
     def _scheduler(self):

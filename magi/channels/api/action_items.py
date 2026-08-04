@@ -42,16 +42,14 @@ Indexes used
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.action_items")
 
@@ -128,7 +126,7 @@ _COMPLETED_VISIBLE_DAYS = 7
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+    return get_bus()
 
 
 def _current_admin_id(request: Request) -> int:

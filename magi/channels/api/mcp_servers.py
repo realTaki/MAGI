@@ -51,16 +51,14 @@ sends ``""`` and the server treats that as "clear".
 from __future__ import annotations
 
 import logging
-import os
 from typing import Literal
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.mcp_servers")
 
@@ -179,7 +177,7 @@ def _serialize(row) -> McpServerOut:
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+    return get_bus()
 
 
 def _validate_payload_for_connection_type(payload: McpServerIn) -> None:

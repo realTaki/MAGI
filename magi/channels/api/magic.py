@@ -12,13 +12,12 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 from __future__ import annotations
 
 import logging
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.contracts.magis import (
     EveRuntimeView,
     MagicView,
@@ -96,7 +95,7 @@ class InstructionOut(BaseModel):
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", ""))
+    return get_bus()
 
 
 def _runtime_out(view: EveRuntimeView | None) -> EveRuntimeOut | None:

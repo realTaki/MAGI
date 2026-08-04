@@ -14,7 +14,6 @@ so the API layer never crosses the channels → db boundary.
 from __future__ import annotations
 
 import logging
-import os
 import zoneinfo
 from typing import Annotated
 
@@ -42,7 +41,7 @@ from magi.bus.services.setting import (
     SYSTEM_TZ_KEY,
     TOOL_MAX_ITERATIONS_KEY,
 )
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.channels.api.auth_gates import AdminGate
 
 logger = logging.getLogger("magi.api.system_settings")
@@ -52,7 +51,7 @@ router = APIRouter(tags=["system-settings"])
 
 def _settings():
     """Return the bus settings service for the active state dir."""
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).settings
+    return get_bus().settings
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -245,10 +244,10 @@ def put_compact_config(
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
 def get_show_daily_note(state_dir: str) -> bool:
-    from magi.bus import bootstrap
-    return bootstrap(state_dir).settings.show_daily_note()
+    from magi.bus import get_bus as _bus
+    return _bus().settings.show_daily_note()
 
 
 def get_show_daily_note_prompt(state_dir: str) -> bool:
-    from magi.bus import bootstrap
-    return bootstrap(state_dir).settings.show_daily_note_prompt()
+    from magi.bus import get_bus as _bus
+    return _bus().settings.show_daily_note_prompt()

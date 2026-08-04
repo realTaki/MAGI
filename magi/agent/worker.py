@@ -175,7 +175,7 @@ class AgentWorker:
     ) -> None:
         from magi.agent.agent_context import DEFAULT_MAX_TOKENS
         from magi.agent.step import run_agent_step
-        from magi.agent.workspace import workspace_root
+        from magi.launcher.paths import workspace_root
 
         attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)
         hub = get_stream_hub()

@@ -68,22 +68,21 @@ def _format_daily_note_block(note) -> str:
 def read_soul(state_dir: str) -> str:
     """Load the persona text from the workspace's ``SOUL.md``.
 
-    Path resolution goes through :func:`magi.agent.workspace.workspace_root`
+    Path resolution goes through :func:`magi.launcher.paths.workspace_root`
     which derives the workspace from ``MAGI_STATE_DIR`` (always
     ``/workspace`` inside the container).
 
     This is a **read** function — it does not bootstrap or write
-    to disk. :func:`magi.agent.workspace.bootstrap_workspace`
-    runs once at boot from ``magi.__main__`` and is responsible
-    for keeping ``SOUL.md`` in place. If the file is still
-    missing (e.g. operator wiped the workspace mid-run, or the
-    bundled prompt is absent from the install), we fall back to
-    the bundled ``prompts/fallback_persona.md`` rather than
-    write anything — the agent loop should never silently
-    mutate on-disk state.
+    to disk. The workspace bootstrap runs once at boot from
+    ``magi.__main__`` and is responsible for keeping ``SOUL.md``
+    in place. If the file is still missing (e.g. operator wiped
+    the workspace mid-run, or the bundled prompt is absent from
+    the install), we fall back to the bundled
+    ``prompts/fallback_persona.md`` rather than write anything —
+    the agent loop should never silently mutate on-disk state.
     """
     from magi.prompts import load_fallback_persona
-    from magi.agent.workspace import workspace_root
+    from magi.launcher.paths import workspace_root
 
     soul_path = workspace_root(state_dir) / SOUL_FILENAME
     try:

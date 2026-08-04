@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from magi.agent.compaction import maybe_compact
 from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.system_prompt import build_system_prompt, read_soul
-from magi.agent.workspace import workspace_root
+from magi.launcher.paths import workspace_root
 from magi.bus import ToolContext, bootstrap
 from magi.prompts import load_bot_replies
 

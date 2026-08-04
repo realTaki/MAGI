@@ -120,9 +120,9 @@ def ensure_runtime_operator(request: Request) -> int | None:
     is_admin, is_assigned = scope
     import os
 
-    from magi.bus import bootstrap
+    from magi.bus import get_bus
 
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).contacts.ensure_runtime_operator(
+    return get_bus().contacts.ensure_runtime_operator(
         operator_id=operator_id,
         name=name,
         telegram_id=telegram_id,

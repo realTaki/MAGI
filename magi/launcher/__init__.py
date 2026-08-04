@@ -259,11 +259,6 @@ async def worker_lifespan():
         await stop_agent_worker()
 
 
-# §4. Back-compat re-export -----------------------------------------------------
-
-from magi.agent.workspace import workspace_root  # noqa: E402, F401
-
-
 __all__ = [
     # §1
     "LocalPathLayout",
@@ -276,6 +271,4 @@ __all__ = [
     "start_connector_bridge",
     "stop_connector_bridge",
     "worker_lifespan",
-    # §4
-    "workspace_root",
 ]

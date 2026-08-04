@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import os
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 
 
 def _control():
     """Resolve the bus MagisService that owns the control-plane KV."""
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", "")).magis
+    return get_bus().magis
 
 
 def enabled() -> bool:

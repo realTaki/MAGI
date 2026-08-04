@@ -32,19 +32,17 @@ them.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Literal, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.bus import bootstrap
+from magi.bus import get_bus
 from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
 )
 from magi.channels.api.auth_gates import AdminGate
-from magi.constants import STATE_DIR
 
 logger = logging.getLogger("magi.api.task_presets")
 
@@ -149,7 +147,7 @@ def _preset_to_out(p) -> TaskPresetOut:
 
 
 def _bus():
-    return bootstrap(os.environ.get("MAGI_STATE_DIR", STATE_DIR))
+    return get_bus()
 
 
 # ──────────────────────────────────────────────────────────────────────── #
