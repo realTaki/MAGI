@@ -29,7 +29,6 @@ from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.launcher.paths import state_dir
 from magi.channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,
     DEFAULT_READ_REACTION_EMOJI,
@@ -45,14 +44,7 @@ logger = logging.getLogger("magi.api.tg_settings")
 router = APIRouter(tags=["tg-settings"])
 
 
-def _state_dir() -> str:
-    """Resolve the current state directory.
 
-    Replaced in Phase D2 by direct ``get_bus().settings.get(...)`` reads
-    — the TG config helpers will stop taking ``state_dir`` once all
-    routes go through the bus facade.
-    """
-    return str(state_dir())
 
 
 class ReactionChoice(BaseModel):
@@ -114,7 +106,7 @@ class DoneReactionUpdateRequest(BaseModel):
 @router.get("/tg-settings/read-reaction", response_model=ReadReactionOut)
 def get_read_reaction(_admin: AdminGate) -> ReadReactionOut:
     return ReadReactionOut(
-        current=get_read_reaction_emoji(_state_dir()),
+        current=get_read_reaction_emoji(),
         default=DEFAULT_READ_REACTION_EMOJI,
         choices=[
             ReactionChoice(value=v, label=lbl)
@@ -148,7 +140,7 @@ def put_read_reaction(
             ),
         )
 
-    set_read_reaction_emoji(_state_dir(), payload.emoji)
+    set_read_reaction_emoji(payload.emoji)
     logger.info("tg read-reaction emoji set to %r", payload.emoji)
     return ReadReactionOut(
         current=payload.emoji,
@@ -164,7 +156,7 @@ def put_read_reaction(
 def get_done_reaction(_admin: AdminGate) -> DoneReactionOut:
     """Return the configured done-reaction emoji + choices."""
     return DoneReactionOut(
-        current=get_done_reaction_emoji(_state_dir()),
+        current=get_done_reaction_emoji(),
         default=DEFAULT_DONE_REACTION_EMOJI,
         choices=[
             ReactionChoice(value=v, label=lbl)
@@ -200,7 +192,7 @@ def put_done_reaction(
             ),
         )
 
-    set_done_reaction_emoji(_state_dir(), payload.emoji)
+    set_done_reaction_emoji(payload.emoji)
     logger.info("tg done-reaction emoji set to %r", payload.emoji)
     return DoneReactionOut(
         current=payload.emoji,

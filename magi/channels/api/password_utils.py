@@ -159,7 +159,7 @@ class Attempt:
     """Unix timestamp of the last login attempt (any outcome)."""
 
 
-def _store_get(state_dir: str, uid: int) -> dict | None:
+def _store_get(uid: int) -> dict | None:
     from magi.bus import get_bus
     raw = get_bus().settings.get(f"{_PASSWORD_KEY_PREFIX}.{uid}")
     if not raw:
@@ -170,12 +170,12 @@ def _store_get(state_dir: str, uid: int) -> dict | None:
         return None
 
 
-def _store_set(state_dir: str, uid: int, value: dict) -> None:
+def _store_set(uid: int, value: dict) -> None:
     from magi.bus import get_bus
     get_bus().settings.set(f"{_PASSWORD_KEY_PREFIX}.{uid}", json.dumps(value))
 
 
-def _store_clear(state_dir: str, uid: int) -> None:
+def _store_clear(uid: int) -> None:
     from magi.bus import get_bus
     get_bus().settings.delete(f"{_PASSWORD_KEY_PREFIX}.{uid}")
 
@@ -184,14 +184,14 @@ def _now_ts() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
-def check_cooldown(state_dir: str, uid: int, *, cooldown_seconds: int) -> bool:
+def check_cooldown(uid: int, *, cooldown_seconds: int) -> bool:
     """Return ``True`` if a new login attempt is allowed.
 
     On a successful verify the caller should call
     :func:`record_attempt` (or :func:`clear_attempt`) to
     reset the timer.
     """
-    record = _store_get(state_dir, uid)
+    record = _store_get(uid)
     if not record:
         return True
     try:
@@ -201,18 +201,18 @@ def check_cooldown(state_dir: str, uid: int, *, cooldown_seconds: int) -> bool:
     return (_now_ts() - last) >= cooldown_seconds
 
 
-def record_attempt(state_dir: str, uid: int) -> None:
+def record_attempt(uid: int) -> None:
     """Stamp the current time as the last attempt.
 
     Called whether the password was correct or not — the
     60s lock applies to both outcomes.
     """
-    _store_set(state_dir, uid, {"last_attempt_at": _now_ts()})
+    _store_set(uid, {"last_attempt_at": _now_ts()})
 
 
-def clear_attempt(state_dir: str, uid: int) -> None:
+def clear_attempt(uid: int) -> None:
     """Drop the cooldown row (called on a successful login)."""
-    _store_clear(state_dir, uid)
+    _store_clear(uid)
 
 
 __all__ = [

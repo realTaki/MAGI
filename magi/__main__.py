@@ -3,7 +3,7 @@
 A MAGI process is a node. Private runtime settings and state live in the
 SQLite database under ``/workspace/memories/magi.db``.  Organisation identity,
 instructions and provider configuration live in the direct MAGIS PostgreSQL
-database. Hardcoded paths live in :mod:`magi.constants`.
+database. Hardcoded paths live in :mod:`magi.launcher.paths`.
 
 ``MAGI_RUNTIME_ID`` binds a running container to its deployment identity;
 ``MAGIS_DATABASE_URL`` identifies the one direct MAGIS database an isolated
@@ -261,7 +261,7 @@ def run() -> None:
     # Reads the private SQLite; absent table → no-op.
     try:
         from magi.connectors.boot import load_connectors_from_db
-        load_connectors_from_db(state_dir)
+        load_connectors_from_db()
     except Exception as e:  # noqa: BLE001
         logger.warning("connector bootstrap skipped: %s", e)
 

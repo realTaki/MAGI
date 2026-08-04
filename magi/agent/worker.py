@@ -320,14 +320,8 @@ def _error_code(exc: Exception) -> str:
 _worker: AgentWorker | None = None
 
 
-async def start_agent_worker(state_dir: str | None = None) -> AgentWorker:
-    """Start the process-local worker after SQLite has been initialised.
-
-    ``state_dir`` is unused directly here — :meth:`AgentWorker.start`
-    reads it from :func:`magi.launcher.paths.state_dir` — but the
-    parameter is part of the legacy wiring so caller compatibility
-    is preserved.
-    """
+async def start_agent_worker() -> AgentWorker:
+    """Start the process-local worker after SQLite has been initialised."""
     global _worker
     if _worker is None:
         _worker = AgentWorker()
@@ -342,17 +336,8 @@ async def stop_agent_worker() -> None:
         _worker = None
 
 
-async def submit_agent_message(
-    message: AgentMessage,
-    *,
-    state_dir: str | None = None,
-) -> str:
-    """Durably publish a turn from any async channel context.
-
-    ``state_dir`` is a legacy parameter — the store is reached via
-    :func:`magi.launcher.paths.state_dir`.  Kept on the signature so
-    caller compatibility is preserved.
-    """
+async def submit_agent_message(message: AgentMessage) -> str:
+    """Durably publish a turn from any async channel context."""
     store = get_bus_store()
     run_id = store.publish_agent_message(message)
     if _worker is not None:
@@ -365,14 +350,8 @@ async def wait_for_agent_run(
     *,
     timeout_seconds: float = 180.0,
     poll_seconds: float = 0.1,
-    state_dir: str | None = None,
 ) -> str:
-    """Wait for a durable run result without depending on the worker's loop.
-
-    ``state_dir`` is a legacy parameter — the store is reached via
-    :func:`magi.launcher.paths.state_dir`.  Kept on the signature so
-    caller compatibility is preserved.
-    """
+    """Wait for a durable run result without depending on the worker's loop."""
     store = get_bus_store()
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while True:

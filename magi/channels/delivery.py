@@ -9,7 +9,6 @@ from contextlib import suppress
 
 from magi.bus import DeliveryClaim, get_bus
 from magi.bus.contracts.session import SessionMessage, utcnow_iso
-from magi.launcher.paths import state_dir as _launcher_state_dir
 
 logger = logging.getLogger("magi.channels.delivery")
 
@@ -17,8 +16,7 @@ logger = logging.getLogger("magi.channels.delivery")
 class DeliveryWorker:
     """Send durable outbox records without blocking the agent actor."""
 
-    def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
-        self.state_dir = state_dir or str(_launcher_state_dir())
+    def __init__(self, *, poll_seconds: float = 0.25) -> None:
         self.bus = get_bus()
         self.worker_id = f"delivery-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
@@ -86,10 +84,10 @@ class DeliveryWorker:
 _worker: DeliveryWorker | None = None
 
 
-async def start_delivery_worker(state_dir: str | None = None) -> DeliveryWorker:
+async def start_delivery_worker() -> DeliveryWorker:
     global _worker
     if _worker is None:
-        _worker = DeliveryWorker(state_dir)
+        _worker = DeliveryWorker()
         await _worker.start()
     return _worker
 

@@ -69,7 +69,7 @@ def _default_configs() -> list[ConnectorConfig]:
     ]
 
 
-def _configs_from_db(state_dir: str) -> list[ConnectorConfig] | None:
+def _configs_from_db() -> list[ConnectorConfig] | None:
     """Read ``connector_configs`` from the private SQLite.
 
     Returns ``None`` when the table doesn't exist yet
@@ -103,14 +103,14 @@ def _configs_from_db(state_dir: str) -> list[ConnectorConfig] | None:
     ) for row in rows]
 
 
-def _build_configs(state_dir: str) -> list[ConnectorConfig]:
-    db_configs = _configs_from_db(state_dir)
+def _build_configs() -> list[ConnectorConfig]:
+    db_configs = _configs_from_db()
     if db_configs is None:
         return _default_configs()
     return db_configs
 
 
-def load_connectors_from_db(state_dir: str) -> int:
+def load_connectors_from_db() -> int:
     """Construct + connect every enabled config.
 
     Returns the number of connectors successfully
@@ -125,7 +125,7 @@ def load_connectors_from_db(state_dir: str) -> int:
     :func:`magi.connectors.registry.load_connectors`
     directly instead.
     """
-    configs = _build_configs(state_dir)
+    configs = _build_configs()
     if not configs:
         logger.info("connectors: no enabled configs")
         return 0

@@ -54,7 +54,6 @@ from pydantic import BaseModel, Field
 from magi.bus import get_bus
 from magi.bus.contracts.contact import ContactView
 from magi.bus.contracts.magis import OperatorView
-from magi.bus.services.setting import SettingsService
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.api import control_store
@@ -75,10 +74,6 @@ SESSION_COOKIE_NAME = "magi_session"
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
-def _state_dir() -> str:
-    return SettingsService.require_state_dir()
-
-
 def _signing_key() -> bytes:
     """Derive a signing key from the state directory path.
     Not cryptographically random, but prevents casual cookie
@@ -88,8 +83,9 @@ def _signing_key() -> bytes:
         secret = os.environ.get("MAGI_CONTROL_SECRET")
         if secret:
             return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
+    from magi.constants import WORKSPACE_DIR
     return hashlib.sha256(
-        _state_dir().encode() + b"magi-session-signing"
+        WORKSPACE_DIR.encode() + b"magi-session-signing"
     ).digest()
 
 
@@ -629,7 +625,7 @@ async def send_login_code(
         # retry dispatcher send briefly before falling back
         # to raw HTTP send.
         try:
-            tg_bot.start_bot(_state_dir())
+            tg_bot.start_bot()
             for _ in range(4):
                 await asyncio.sleep(0.25)
                 if tg_bot.get_telegram_bot() is not None:
@@ -967,11 +963,10 @@ async def login_password(
     bus = get_bus()
     from magi.channels.api import password_utils
 
-    state_dir = _state_dir()
     if not password_utils.check_cooldown(
-        state_dir, payload.uid, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
+        payload.uid, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
     ):
-        record = password_utils._store_get(state_dir, payload.uid) or {}
+        record = password_utils._store_get(payload.uid) or {}
         last = float(record.get("last_attempt_at", 0))
         remaining = max(1, int(_RESEND_COOLDOWN_SECONDS - (_now_ts() - last)))
         return LoginPasswordResponse(
@@ -983,7 +978,7 @@ async def login_password(
     # Always record the attempt — even on success — so
     # the post-login window is honest. The verify helper
     # clears the row on success below.
-    password_utils.record_attempt(state_dir, payload.uid)
+    password_utils.record_attempt(payload.uid)
 
     stored = bus.auth.get_password_credential(payload.uid)
     if not stored or not password_utils.verify_password(stored, payload.password):
@@ -993,7 +988,7 @@ async def login_password(
             retry_after=_RESEND_COOLDOWN_SECONDS,
         )
 
-    password_utils.clear_attempt(state_dir, payload.uid)
+    password_utils.clear_attempt(payload.uid)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=_sign_uid(payload.uid),

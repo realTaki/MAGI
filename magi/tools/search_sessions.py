@@ -222,7 +222,7 @@ class SearchSessionsTool(Tool):
         truncated_at: int | None = None
         for i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
-                hit, ctx.state_dir, context_n,
+                hit, context_n,
                 ctx.uid,
             )
             block_bytes = len(block.encode("utf-8"))
@@ -253,7 +253,7 @@ class SearchSessionsTool(Tool):
         return ToolResult(content=header + body + footer)
 
 
-def _format_hit_block(hit, state_dir: str, context_n: int, uid: int) -> str:
+def _format_hit_block(hit, context_n: int, uid: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 

@@ -36,7 +36,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.bus import get_bus
-from magi.bus.services.setting import SettingsService
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.api import control_store
@@ -46,9 +45,6 @@ logger = logging.getLogger("magi.api.onboarding")
 router = APIRouter(tags=["onboarding"])
 
 
-def _state_dir() -> str:
-    """Return the state dir from the runtime workspace — keeps state_dir testable + env-friendly."""
-    return SettingsService.require_state_dir()
 
 
 def _bus():
@@ -201,7 +197,6 @@ async def get_status() -> OnboardingStatus:
     "OK, got it") and cleared by ``/restart``. Everything else is
     informational / for the wizard's own resume logic.
     """
-    state_dir = _state_dir()
     bus = _bus()
 
     if control_store.enabled():
@@ -513,7 +508,6 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
             return SaveBotResponse(ok=False, error=str(exc))
         return SaveBotResponse(ok=True)
 
-    state_dir = _state_dir()
     bus = _bus()
     try:
         bus.settings.set("telegram.bot_token", payload.token)
@@ -527,13 +521,13 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
     # manual node restart.
     try:
         if tg_bot.get_telegram_bot() is None:
-            tg_bot.start_bot(state_dir)
+            tg_bot.start_bot()
     except Exception:
         logger.exception("failed to auto-start telegram bot after save-bot")
 
     logger.info(
         "bot token saved",
-        extra={"username": payload.username, "state_dir": state_dir},
+        extra={"username": payload.username, "state_dir": "<from workspace>"},
     )
     return SaveBotResponse(ok=True)
 
@@ -594,7 +588,6 @@ async def _send_admin_code_inner(payload: SendAdminCodeRequest) -> SendAdminCode
     every subsequent outbound goes through the dispatcher.
     """
     from datetime import datetime, timezone
-    state_dir = _state_dir()
     bus = _bus()
 
     if control_store.enabled():
@@ -731,7 +724,6 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest) -> VerifyAdminCodeR
     4. Fetch a display name via ``getChat`` for the frontend.
     """
     from datetime import datetime, timezone
-    state_dir = _state_dir()
     bus = _bus()
 
     if control_store.enabled():
@@ -841,7 +833,6 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     gate (``_is_admin_or_assigned_contact`` in
     ``contacts.py``) reads exclusively from this table.
     """
-    state_dir = _state_dir()
     bus = _bus()
 
     if control_store.enabled():

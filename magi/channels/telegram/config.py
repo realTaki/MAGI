@@ -115,7 +115,7 @@ DEFAULT_DONE_REACTION_EMOJI = "🏆"
 _VALID_EMOJI: frozenset[str] = frozenset(v for v, _ in REACTION_CHOICES)
 
 
-def get_read_reaction_emoji(state_dir: str) -> str:
+def get_read_reaction_emoji() -> str:
     """Return the configured read-reaction emoji.
 
     Falls back to :data:`DEFAULT_READ_REACTION_EMOJI` when:
@@ -143,7 +143,7 @@ def get_read_reaction_emoji(state_dir: str) -> str:
     return raw
 
 
-def set_read_reaction_emoji(state_dir: str, emoji: str) -> None:
+def set_read_reaction_emoji(emoji: str) -> None:
     """Persist a new read-reaction emoji.
 
     ``emoji`` must be one of :data:`REACTION_CHOICES` —
@@ -156,7 +156,7 @@ def set_read_reaction_emoji(state_dir: str, emoji: str) -> None:
     get_bus().settings.set(_READ_META_KEY, emoji)
 
 
-def get_done_reaction_emoji(state_dir: str) -> str:
+def get_done_reaction_emoji() -> str:
     """Return the configured done-reaction emoji.
 
     Same fallback semantics as
@@ -182,7 +182,7 @@ def get_done_reaction_emoji(state_dir: str) -> str:
     return raw
 
 
-def set_done_reaction_emoji(state_dir: str, emoji: str) -> None:
+def set_done_reaction_emoji(emoji: str) -> None:
     """Persist a new done-reaction emoji.
 
     Same allowlist contract as

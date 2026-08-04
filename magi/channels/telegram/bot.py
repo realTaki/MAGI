@@ -39,7 +39,6 @@ logger = logging.getLogger("magi.channels.telegram.bot")
 # means a single YAML read per process; the dispatchers
 # don't need to worry about the file system.
 from magi.channels import Channel  # noqa: E402
-from magi.launcher.paths import state_dir as _launcher_state_dir  # noqa: E402
 from magi.prompts import load_bot_replies  # noqa: E402
 
 # Loaded once per process. The dict is shared across
@@ -157,8 +156,6 @@ async def send_text_auto(chat_id: int, text: str) -> None:
     or raw HTTP directly.
     """
     from magi.bus import get_bus
-    import os
-
     bot_token = get_bus().settings.get("telegram.bot_token")
     if not bot_token:
         raise RuntimeError("telegram: no bot token saved; cannot send")
@@ -297,9 +294,6 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         or update.effective_chat.title
     )
 
-    import os
-    state_dir = str(_launcher_state_dir())
-
     # 1+2. Look up the bound contact. Single ORM read by
     # ``telegram_id``; the role decides what we do next.
     # Dispatch rules (per-MAGI perspective):
@@ -324,7 +318,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     #                    tgid discovery path can be
     #                    surfaced ("here's your tgid,
     #                    ask your admin to invite you").
-    bound = _find_contact_by_telegram_id(state_dir, tgid)
+    bound = _find_contact_by_telegram_id(tgid)
     if bound is not None:
         contact_id, contact_role, contact_name, contact_separated, contact_admin = bound
         # After the 2024 role/admin split, ``admin`` is a
@@ -360,9 +354,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # ``admin`` and ``assigned`` both flow through the
         # same handler. Good — TG chat-with-EVA is a real
         # affordance for mobile operators too.
-        await _handle_contact_message(
-            update,
-            state_dir,
+        await _handle_contact_message(update,
             tgid,
             contact_id,
             contact_name,
@@ -390,7 +382,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # or ``{"admin": true}`` after which the next
     # inbound message from this tgid will pass the dispatch
     # gate and route through the agent loop.
-    bound = _auto_create_stranger_contact(state_dir, tgid, display_name)
+    bound = _auto_create_stranger_contact(tgid, display_name)
     if bound is not None:
         contact_id, contact_role, _, _, _, _, _ = bound
         logger.info(
@@ -419,8 +411,7 @@ async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     return
 
 
-def _auto_create_stranger_contact(
-    state_dir: str, tgid: str, display_name: str | None,
+def _auto_create_stranger_contact(tgid: str, display_name: str | None,
 ) -> tuple[int, str, str, bool, str | None, str | None] | None:
     """Create a Contact row for an unknown tgid on first message.
 
@@ -461,11 +452,10 @@ def _auto_create_stranger_contact(
         )
         return None
 
-    return _find_contact_by_telegram_id(state_dir, tgid)
+    return _find_contact_by_telegram_id(tgid)
 
 
-def _find_contact_by_telegram_id(
-    state_dir: str, tgid: str
+def _find_contact_by_telegram_id(tgid: str
 ) -> tuple[int, str, str, bool, bool] | None:
     """Resolve a TG tgid to its bound contact.
 
@@ -514,9 +504,7 @@ def _find_contact_by_telegram_id(
     return None
 
 
-async def _handle_contact_message(
-    update: Update,
-    state_dir: str,
+async def _handle_contact_message(update: Update,
     delivery_address: str,
     uid: int,
     contact_name: str,
@@ -587,7 +575,7 @@ async def _handle_contact_message(
     # later; the message still gets a real reply.
     from magi.channels.telegram.config import get_read_reaction_emoji
     try:
-        reaction = get_read_reaction_emoji(state_dir)
+        reaction = get_read_reaction_emoji()
         if reaction:
             await update.get_bot().set_message_reaction(
                 chat_id=update.effective_chat.id,
@@ -964,7 +952,7 @@ def start_bot() -> threading.Thread | None:
     thread.start()
     logger.info(
         "telegram bot started",
-        extra={"username": username, "state_dir": state_dir},
+        extra={"username": username},
     )
     return thread
 

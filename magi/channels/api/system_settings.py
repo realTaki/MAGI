@@ -243,11 +243,11 @@ def put_compact_config(
 # Re-export the read helpers so any code that imported them from this
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
-def get_show_daily_note(state_dir: str) -> bool:
+def get_show_daily_note() -> bool:
     from magi.bus import get_bus as _bus
     return _bus().settings.show_daily_note()
 
 
-def get_show_daily_note_prompt(state_dir: str) -> bool:
+def get_show_daily_note_prompt() -> bool:
     from magi.bus import get_bus as _bus
     return _bus().settings.show_daily_note_prompt()
