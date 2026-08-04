@@ -102,10 +102,6 @@ from magi.connectors.bus import (
     reset_bus,
     subscribe,
 )
-from magi.connectors.bridge import (
-    start_connector_bridge,
-    stop_connector_bridge,
-)
 from magi.connectors.registry import (
     get_connector,
     get_factory,
@@ -139,7 +135,4 @@ __all__ = [
     "register_connector_factory",
     "reset_registry",
     "unload_all",
-    # Bus bridge
-    "start_connector_bridge",
-    "stop_connector_bridge",
 ]

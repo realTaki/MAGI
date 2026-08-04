@@ -213,10 +213,7 @@ def run() -> None:
         from magi.plugins.samples.audit_log import (
             install_audit_log_plugin,
         )
-        from magi.connectors.bridge import (
-            start_connector_bridge,
-            stop_connector_bridge,
-        )
+        from magi.runtime import start_connector_bridge, stop_connector_bridge
         reset_bus()  # fresh per-boot singleton
         install_audit_log_plugin()
         install_all(get_bus())
