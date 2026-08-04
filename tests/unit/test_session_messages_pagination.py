@@ -2,7 +2,7 @@
 
 Three surfaces pinned:
 
-  1. **SessionStore.get_messages_page** — the underlying
+  1. **SessionService.get_messages_page** — the underlying
      storage primitive. Returns ``(messages, total_active,
      total_all)`` for the requested tail slice. Sorts
      chronologically within the page; the offset counts
@@ -90,16 +90,16 @@ def _seed_messages(store, delivery_address: str, count: int) -> str:
 
 
 # ────────────────────────────────────────────────────────────────── #
-# SessionStore.get_messages_page — storage layer
+# SessionService.get_messages_page — storage layer
 # ────────────────────────────────────────────────────────────────── #
 
 
 def test_get_messages_page_returns_tail_slice(admin_env):
     """Newest ``limit`` active messages in chronological
     order. ``offset=0`` is the latest page."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, total_all = store.get_messages_page(
@@ -115,9 +115,9 @@ def test_get_messages_page_returns_tail_slice(admin_env):
 def test_get_messages_page_offset_skips_newest(admin_env):
     """``offset=limit`` returns the next older page — msg-1
     and msg-2, in that order."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
 
     msgs, total_active, _ = store.get_messages_page(
@@ -131,9 +131,9 @@ def test_get_messages_page_offset_zero_size_limit(admin_env):
     messages with no gaps and no duplicates. Offset
     counts from the newest end, so page 0 is msg-4,
     page 1 is msg-3, etc."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
 
     seen = []
@@ -149,9 +149,9 @@ def test_get_messages_page_past_end_returns_empty(admin_env):
     """Asking past the end returns ``[]`` but the totals
     still reflect the full count — the UI uses this to
     hide the load-more button."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 3)
 
     msgs, total_active, total_all = store.get_messages_page(
@@ -167,11 +167,11 @@ def test_get_messages_page_excludes_archive_by_default(admin_env):
     differ — the UI uses this to decide whether to show
     a separate "show archive" affordance later."""
     from bus.services.session import SessionMessage, new_session_id
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.models.local.session import ChatMessage
     from magi.bus.db import open_session
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 3)
 
     # Manually insert 2 archive rows.
@@ -198,11 +198,11 @@ def test_get_messages_page_include_archived_appends_archive(admin_env):
     order — they sort by ``id`` ASC, which is the
     insertion order)."""
     from bus.services.session import new_session_id
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.models.local.session import ChatMessage
     from magi.bus.db import open_session
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 2)
     with open_session() as db:
         db.add(ChatMessage(
@@ -228,9 +228,9 @@ def test_get_messages_page_unknown_session_returns_zeros(admin_env):
     """An unknown session_id returns zeros and an empty
     page. The HTTP layer is responsible for translating
     ``([], 0, 0)`` into a 404 when offset==0."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     msgs, total_active, total_all = store.get_messages_page(
         "9001", "01ABCDEFGHJKMNPQRSTVWXYZAB", limit=10, offset=0)
     assert msgs == []
@@ -248,9 +248,9 @@ def test_get_messages_page_respects_uid_scope(admin_env):
     terms of the new key, since the delivery_address column no
     longer drives the WHERE clause.
     """
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9002", 3)
     # _seed_messages uses uid=1 (TA-pagination);
     # the second admin row (TB-other) gets uid=2
@@ -285,9 +285,9 @@ def client(admin_env):
 def test_messages_route_default_page(client, admin_env):
     """``GET /api/chat/sessions/{id}/messages`` (no params)
     returns up to 50 active messages + totals."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
 
     r = client.get(f"/api/chat/sessions/{sid}/messages")
@@ -305,9 +305,9 @@ def test_messages_route_pagination_via_offset(client, admin_env):
     """Two pages with ``limit=2, offset=0`` and
     ``offset=2`` cover a 5-message session without gaps
     or duplicates."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 5)
 
     p0 = client.get(
@@ -357,9 +357,9 @@ def test_messages_route_cross_contact_isolation(client, admin_env):
     clause by ``uid`` (D.23); an attacker who
     knows the session_id still gets a 404.
     """
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     # Bob's session: uid=2,  (the
     # delivery_address is the per-channel delivery address —
     # historical / metadata only now).
@@ -374,9 +374,9 @@ def test_messages_route_past_end_returns_empty_with_totals(client, admin_env):
     """``offset`` past the end returns ``messages: []`` but
     the totals still reflect the full session size — the
     UI hides the load-more button on this signal."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(admin_env))
+    store = SessionService(str(admin_env))
     sid = _seed_messages(store, "9001", 2)
 
     r = client.get(f"/api/chat/sessions/{sid}/messages?limit=10&offset=99")

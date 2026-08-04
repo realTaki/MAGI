@@ -2,7 +2,7 @@
 
 D.18 moved sessions from per-file JSON into two SQLAlchemy
 tables (``chat_sessions`` + ``chat_messages``). The tests below
-exercise the new SQLite-backed ``SessionStore`` against a fresh
+exercise the new SQLite-backed ``SessionService`` against a fresh
 in-memory-ish DB (per-test tmp dir + engine reset). No FastAPI,
 no async — purely the storage layer.
 
@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import pytest
 
-from bus.services.session import Session, SessionMessage, new_session_id, summary_from_session
+from magi.bus.services.session import Session, SessionMessage, new_session_id
 
-from bus.contracts.session import SessionStore
+from magi.bus.services.session import SessionService
 
 # Crockford base32 alphabet — used to assert ULID shape.
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -38,7 +38,7 @@ def fresh_db(monkeypatch, tmp_path):
 
     Resets the process-wide ``orm._engine`` singleton so each
     test gets its own DB at ``tmp_path / state / magi.db``.
-    Sessions writes target this DB; the SessionStore wraps it.
+    Sessions writes target this DB; the SessionService wraps it.
     """
     state = tmp_path / "state"
     state.mkdir()
@@ -57,9 +57,9 @@ def fresh_db(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def store(fresh_db) -> SessionStore:
-    """SessionStore pointing at the per-test DB."""
-    return SessionStore(str(fresh_db))
+def store(fresh_db) -> SessionService:
+    """SessionService pointing at the per-test DB."""
+    return SessionService(str(fresh_db))
 
 
 def _msg(role: str, text: str = "hi", ts: str = "2026-07-03T00:00:00Z") -> SessionMessage:

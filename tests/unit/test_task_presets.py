@@ -112,7 +112,7 @@ def test_seed_inserts_a_task_per_enabled_preset_for_assigned_contact(state):
     in sync as new presets are added."""
     from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
     from magi.proactive.models import TaskPreset
 
     with open_session() as db:
@@ -154,7 +154,7 @@ def test_seed_is_idempotent_on_repeat_call(state):
     short-circuit) and leave the row count unchanged."""
     from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
 
     with open_session() as db:
         alice = Contact(name="Alice", role="assigned", telegram_id=9202)
@@ -189,7 +189,7 @@ def test_seed_skips_admin_contacts(state):
     """
     from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
 
     with open_session() as db:
         admin2 = Contact(name="Admin2", admin=True, role='guest', telegram_id=9203)
@@ -212,7 +212,7 @@ def test_seed_skips_disabled_presets(state):
     rows)."""
     from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
     from magi.proactive.models import TaskPreset
 
     with open_session() as db:
@@ -246,7 +246,7 @@ def test_seed_snapshot_semantics_edits_preset_after_seed(state):
     row keeps its snapshotted ``prompt``."""
     from magi.bus.db import open_session
     from magi.proactive.task_presets import seed_presets_for_contact
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
     from magi.proactive.models import TaskPreset
 
     # 1. Seed an assigned contact.
@@ -295,4 +295,4 @@ def test_seed_returns_zero_for_unknown_contact(state):
 # complain and so the bodies read cleanly. The first test
 # pulls it explicitly; the others rely on this namespace
 # binding.
-from magi.db import Contact  # noqa: E402,F401  (used in test bodies)
+from magi.bus.models.local.contact import Contact  # noqa: E402,F401  (used in test bodies)

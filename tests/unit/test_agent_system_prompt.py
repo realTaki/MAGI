@@ -480,7 +480,7 @@ def test_prompt_continues_when_memory_load_fails(
     def _boom(_state_dir):
         raise RuntimeError("simulated ORM hiccup")
 
-    monkeypatch.setattr(store_mod.MemoryStore, "list_for_owner", _boom)
+    monkeypatch.setattr(store_mod.MemoryService, "list_for_owner", _boom)
 
     rendered = build_system_prompt(
         str(state_dir),

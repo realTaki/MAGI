@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from bus.contracts.session import SessionStore
+from magi.bus.services.session import SessionService
 from magi.bus.db import init_sqlite
 from magi.bus.models.local.session import ChatSession
 from magi.bus.db import (
@@ -68,7 +68,7 @@ def test_first_call_creates_session(tg_session_env):
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     sid = _resolve_or_create_tg_session(store, "6240201712", uid=42)
 
@@ -96,7 +96,7 @@ def test_second_call_reuses_same_session(tg_session_env):
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     sid1 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     sid2 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
@@ -128,7 +128,7 @@ def test_call_after_session_deleted_mints_fresh(tg_session_env):
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     sid1 = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     # Operator wipes the session.
@@ -148,7 +148,7 @@ def test_different_tgids_get_different_sessions(tg_session_env):
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     sid_a = _resolve_or_create_tg_session(store, "6240201712", uid=1)
     sid_b = _resolve_or_create_tg_session(store, "9876543210", uid=2)
@@ -172,7 +172,7 @@ def test_messages_persist_to_session(tg_session_env):
     from bus.services.session import SessionMessage, new_session_id
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     sid = _resolve_or_create_tg_session(store, "6240201712", uid=42)
     # D.23: store key is uid (int) — match what
@@ -243,7 +243,7 @@ def test_tg_session_reused_after_webui_message_in_between(
     from magi.channels.telegram.bot import _resolve_or_create_tg_session
 
     state_dir, _workspace = tg_session_env
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
 
     # Round 1: first TG inbound.
     sid_a = _resolve_or_create_tg_session(store, "6240201712", uid=42)

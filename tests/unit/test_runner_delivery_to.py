@@ -47,9 +47,9 @@ from magi.bus.db import (
     # Avoid circular import; the runner imports db from     # here as well.,
 )
 from magi.channels.tasks.runner import execute_task
-from bus.services.session import new_session_id
+from magi.bus.services.session import new_session_id
 from magi.channels.tasks.scheduler import _reset_for_tests, stop_scheduler
-from magi.channels.tasks.models import Task, TaskRun
+from magi.bus.models.local.task import Task, TaskRun
 
 # -- fixtures --------------------------------------------------------------
 
@@ -156,7 +156,7 @@ def _seed_task(
 async def test_fire_appends_prompt_and_reply_to_task_session(state_dir: Path) -> None:
     """The runner loads ``task.session_id`` (allocated
     at task creation) and persists BOTH the prompt and
-    the agent's reply via ``SessionStore.append_messages``
+    the agent's reply via ``SessionService.append_messages``
     — same shape as the WebUI + TG channel paths so the
     runs drawer's chat bubbles render a full conversation
     instead of a one-sided prompt-only thread.

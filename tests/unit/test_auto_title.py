@@ -26,7 +26,7 @@ import pytest
 def state_dir(monkeypatch, tmp_path):
     """An isolated ``MAGI_STATE_DIR``.
 
-    Pinning it lets ``SessionStore`` and the worker
+    Pinning it lets ``SessionService`` and the worker
     helper (``_state_dir_for_job``) read the same path.
     """
     sd = tmp_path / "state"
@@ -109,7 +109,7 @@ def _install_fake_provider(monkeypatch, *, title_text: str | None = "Untitled ch
     """
     # Late import — so the patch lands after the real symbol
     # is bound at module import time.
-    from bus.services.session import * as at_mod
+    from magi.bus.services import session as at_mod
 
     instances: list[FakeProvider] = []
 
@@ -174,14 +174,14 @@ async def test_summarize_happy_path_persists_title(state_dir, monkeypatch):
     """End-to-end: create session → append user message → run
     ``_summarize_to_title`` → title is set on the DB row."""
     from bus.services.session import SessionMessage, new_session_id as _mk_id
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(
         monkeypatch, title_text="My first question"
     )
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     sess = store.create(admin.id)
     sid = sess.session_id
     msg_id = _mk_id()
@@ -219,14 +219,14 @@ async def test_summarize_idempotent_second_run_skips(state_dir, monkeypatch):
     """Second invocation sees ``title`` set and bails without
     calling the provider again."""
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(
         monkeypatch, title_text="First run title"
     )
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     from bus.services.session import new_session_id as _mk_id
     sess = store.create(admin.id)
     sid = sess.session_id
@@ -258,13 +258,13 @@ async def test_summarize_skipped_when_no_user_message(state_dir, monkeypatch):
     """A session with only assistant messages (or empty)
     shouldn't fire the LLM."""
     from bus.services.session import new_session_id as _mk_id
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(monkeypatch, title_text="x")
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     # Create an empty session (no user messages) — the worker
     # should see no first-user-message and bail without
     # calling the provider. (Match the real id from
@@ -282,7 +282,7 @@ session_id=sess.session_id, uid=admin.id,
 async def test_summarize_skipped_when_session_missing(state_dir, monkeypatch):
     """A deleted-mid-job session is silently ignored. Title
     worker must not raise into the consumer loop."""
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
@@ -304,9 +304,9 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
     from magi.agent.llm.errors import LLMAuthError
     from magi.agent.llm.provider import ChatMessage as _CM  # noqa: F401
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
-    from bus.services.session import * as at_mod
+    from magi.bus.services import session as at_mod
 
     admin = _seed_admin()
     providers, _ = _install_fake_provider(monkeypatch, title_text="x")
@@ -320,7 +320,7 @@ async def test_summarize_swallowed_llm_error(state_dir, monkeypatch):
 
     monkeypatch.setattr(at_mod, "get_provider", _raising_factory)
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
@@ -341,9 +341,9 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
     """If the worker fails to construct a provider (some
     ad-hoc bug), the worker still survives."""
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
-    from bus.services.session import * as at_mod
+    from magi.bus.services import session as at_mod
 
     admin = _seed_admin()
 
@@ -352,7 +352,7 @@ async def test_summarize_swallowed_unknown_provider_error(state_dir, monkeypatch
 
     monkeypatch.setattr(at_mod, "get_provider", _boom)
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
@@ -371,13 +371,13 @@ session_id=sid, uid=admin.id,
 @pytest.mark.asyncio
 async def test_summarize_clamps_long_reply(state_dir, monkeypatch):
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     _install_fake_provider(monkeypatch, title_text="x" * 200)
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
@@ -396,13 +396,13 @@ session_id=sid, uid=admin.id,
 async def test_summarize_swallowed_empty_reply(state_dir, monkeypatch):
     """Empty / cleansed-empty responses don't set a title."""
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import _summarize_to_title, TitleJob
 
     admin = _seed_admin()
     _install_fake_provider(monkeypatch, title_text="")
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     sess = store.create(admin.id)
     sid = sess.session_id
     store.append_messages(
@@ -425,7 +425,7 @@ session_id=sid, uid=admin.id,
 async def test_worker_loop_drains_queue(state_dir, monkeypatch):
     """The worker loop processes enqueued jobs."""
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.services.session import (
         TitleJob,
         enqueue_title_job,
@@ -437,7 +437,7 @@ async def test_worker_loop_drains_queue(state_dir, monkeypatch):
 
     await start_title_worker()
 
-    store = SessionStore(os.environ["MAGI_STATE_DIR"])
+    store = SessionService(os.environ["MAGI_STATE_DIR"])
     from bus.services.session import new_session_id as _mk_id
     for _ in range(2):
         sess = store.create(admin.id)
@@ -479,7 +479,7 @@ async def test_start_stop_worker_lifecycle(state_dir, monkeypatch):
     ... import`` would capture the value at collection time,
     which is always ``None`` (the module default).
     """
-    from bus.services.session import * as at_mod
+    from magi.bus.services import session as at_mod
 
     await at_mod.start_title_worker()
     assert at_mod._worker_task is not None

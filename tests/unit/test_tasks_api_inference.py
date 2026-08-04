@@ -42,7 +42,7 @@ from magi.bus.db import (
     init_sqlite,
     open_session,
 )
-from magi.channels.tasks.models import Task
+from magi.bus.models.local.task import Task
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.tasks import (
     TaskIn,
@@ -83,7 +83,7 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # open_session forces the FK-respecting order.
     try:
         from magi.bus.db import open_session as _os
-        from magi.channels.tasks.models import Task, TaskRun
+        from magi.bus.models.local.task import Task, TaskRun
         from magi.bus.models.local.session import (
             ChatSession as _CS,
             ChatMessage as _CM,
@@ -320,7 +320,7 @@ def test_create_task_once_with_past_run_at_rejected_at_helper(
     without going through the broken-on-TypeAdapter
     route handler.
     """
-    from magi.channels.tasks.cron_utils import (
+    from magi.bus.task_schedule import (
         validate_run_at,
         validate_run_at_future)
     from magi.channels.api.errors import MagiHTTPException
@@ -348,7 +348,7 @@ def test_create_task_once_with_future_run_at_passes_helper(
     fresh_db: Path, seeded: dict[str, Contact]) -> None:
     """Symmetric sanity: a future ``run_at`` clears the
     check and reaches the rest of the create flow."""
-    from magi.channels.tasks.cron_utils import (
+    from magi.bus.task_schedule import (
         validate_run_at,
         validate_run_at_future)
     future_iso = (

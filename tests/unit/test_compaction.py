@@ -48,9 +48,9 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
     pins that.
     """
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(fresh_db))
+    store = SessionService(str(fresh_db))
     s = store.create(2, )
     # Write the new fields via direct ORM and re-read via the
     # store.
@@ -73,13 +73,13 @@ def test_session_orm_round_trip_includes_new_fields(fresh_db):
 
 def test_session_archive_round_trip_via_orm(fresh_db):
     """Archived rows (``archived=1``) round-trip through
-    ``SessionStore.get()`` and end up in ``Session.archive``,
+    ``SessionService.get()`` and end up in ``Session.archive``,
     not in ``Session.messages`` (the active view).
     """
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(fresh_db))
+    store = SessionService(str(fresh_db))
     s = store.create(2, )
     # Active + archived rows.
     # D.23: store key is uid (int), delivery_address is the
@@ -303,11 +303,11 @@ def test_build_messages_from_session_maps_system_to_user(fresh_db):
     from magi.agent.llm.provider import ChatMessage
     from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.models.local.session import ChatMessage
     from magi.bus.db import open_session
 
-    store = SessionStore(str(fresh_db))
+    store = SessionService(str(fresh_db))
     sess = store.create(2, )
 
     # Simulate a post-compaction session by inserting
@@ -358,12 +358,12 @@ def test_build_messages_from_session_does_not_load_archive(
     ``GET /api/chat/sessions/{id}``."""
     from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
     state_dir = str(tmp_path / "state")
     (tmp_path / "state").mkdir()
     monkeypatch.setenv("MAGI_STATE_DIR", state_dir)
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
     sess = store.create(2, )
     sess.messages = [
         SessionMessage(role="user", text="only-active",
@@ -395,9 +395,9 @@ def test_build_messages_from_session_handles_session_without_archive(fresh_db):
     """
     from magi.agent.agent_context import build_messages_from_session
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
-    store = SessionStore(str(fresh_db))
+    store = SessionService(str(fresh_db))
     sess = store.create(2, )
     # D.23: store key is uid (int).
     store.append_messages(2, sess.session_id, [
@@ -425,7 +425,7 @@ async def test_maybe_compact_noop_when_under_threshold(
     from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
     from magi.bus.db.settings import state_set
 
@@ -441,7 +441,7 @@ async def test_maybe_compact_noop_when_under_threshold(
 
     # Create a session with 3 short messages — well under
     # the threshold of 80K tokens.
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
     sess = store.create(2, )
     for i in range(3):
         sess.messages.append(SessionMessage(
@@ -477,7 +477,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     from magi.agent.compaction import maybe_compact
     from magi.agent.llm.provider import ChatMessage
     from bus.services.session import SessionMessage
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
 
     from magi.bus.db.settings import state_set
 
@@ -489,7 +489,7 @@ async def test_maybe_compact_noop_when_message_count_below_keep_recent(
     state_set(state_dir, "system.compact_threshold_pct", "1")
     state_set(state_dir, "system.compact_keep_recent", "20")
 
-    store = SessionStore(state_dir)
+    store = SessionService(state_dir)
     sess = store.create(2, )
     sess.messages = [
         SessionMessage(role="user", text="only msg",

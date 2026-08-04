@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from bus.contracts.session import SessionStore
+from magi.bus.services.session import SessionService
 from magi.bus.db import init_sqlite
 from magi.bus.models.local.session import ChatMessage
 from magi.bus.db import (
@@ -73,7 +73,7 @@ def _seed(
     from bus.services.session import SessionMessage, new_session_id
 
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    store = SessionStore(str(state_dir))
+    store = SessionService(str(state_dir))
     # D.23: store key is uid (int); the delivery_address arg
     # is the per-channel delivery address stamped on the
     # row's delivery_address column.
@@ -450,7 +450,7 @@ async def test_search_sessions_truncation_footer_counts_correctly(
 
     from datetime import datetime, timezone
 
-    store = SessionStore(str(state_dir))
+    store = SessionService(str(state_dir))
     n_sessions = 20
     for k in range(n_sessions):
         sess = store.create(

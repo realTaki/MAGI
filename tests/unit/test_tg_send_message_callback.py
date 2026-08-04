@@ -23,7 +23,7 @@ The test:
   4. Calls the real ``_handle_contact_message`` end-to-end
      (so we exercise the actual wiring).
 
-Everything else (real ``SessionStore``, real ORM, real state
+Everything else (real ``SessionService``, real ORM, real state
 dir) is genuine — we only intercept the boundaries that would
 otherwise require an LLM or a live TG connection.
 """

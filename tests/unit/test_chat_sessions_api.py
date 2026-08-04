@@ -18,7 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from bus.contracts.session import SessionStore
+from magi.bus.services.session import SessionService
 from magi.bus.db import init_sqlite
 from magi.bus.models.local.contact import Contact
 from magi.bus.db import (
@@ -220,7 +220,7 @@ def test_send_without_session_id_autocreates(client, admin):
     body = r.json()
     assert body["run_id"] == "run-test"
     sid = body["session_id"]
-    s = SessionStore(os.environ["MAGI_STATE_DIR"]).get(admin.id, sid)
+    s = SessionService(os.environ["MAGI_STATE_DIR"]).get(admin.id, sid)
     assert s is not None
     assert [m.role for m in s.messages] == ["user"]
 

@@ -117,7 +117,7 @@ def _preset_task_count(contact_id: int) -> int:
     the dashboard uses; this matches that exactly). The
     dashboard's two-list layout depends on this."""
     from magi.bus.db import open_session
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
 
     with open_session() as db:
         return db.query(Task).filter(
@@ -129,7 +129,7 @@ def _all_task_count(contact_id: int) -> int:
     """Helper: count ALL tasks owned by ``contact_id``
     (preset + custom), directly via the DB."""
     from magi.bus.db import open_session
-    from magi.channels.tasks.models import Task
+    from magi.bus.models.local.task import Task
 
     with open_session() as db:
         return db.query(Task).filter(Task.uid == contact_id).count()

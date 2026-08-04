@@ -77,7 +77,7 @@ def _seed_chat_message(delivery_address: str, text: str) -> str:
 @pytest.fixture
 def seed_messages(search_env):
     from bus.services.session import new_session_id
-    from bus.contracts.session import SessionStore
+    from bus.contracts.session import SessionService
     from magi.bus.models.local.session import ChatMessage
     from magi.bus.db import open_session
 
@@ -89,7 +89,7 @@ def seed_messages(search_env):
         # reject the second seed in the same session.
         counter["n"] += 1
         msg_id = f"m{delivery_address}-{counter['n']:04d}"
-        store = SessionStore(str(search_env))
+        store = SessionService(str(search_env))
         # D.23: first arg is uid, delivery_address is the
         # per-channel delivery address stamped on the row.
         sess = store.create(uid)

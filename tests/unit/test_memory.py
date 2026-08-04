@@ -6,7 +6,7 @@ live in the contacts package, tested separately in
 
 Four surfaces pinned:
 
-  - :class:`MemoryStore` CRUD round-trips: ``add``,
+  - :class:`MemoryService` CRUD round-trips: ``add``,
     ``get``, ``update``, ``complete``, ``delete``,
     ``list_for_owner`` (incl. the completed-filter).
   - :func:`format_memory_block` produces a Markdown
@@ -35,10 +35,10 @@ from magi.bus.db import (
     init_orm,
     open_session,
 )
-from bus.contracts.memory import KIND_IMPORTANT, KIND_ONGOING
-from bus.services.memory import MemoryStore, format_memory_block
+from magi.bus.contracts.memory import KIND_IMPORTANT, KIND_ONGOING
+from magi.bus.services.memory import MemoryService, format_memory_block
 
-from bus.services.memory import MemoryView
+from magi.bus.services.memory import MemoryView
 from magi.tools.memory_self import (
     AddMemoryTool,
     CompleteMemoryTool,
@@ -105,11 +105,11 @@ def _ctx(state: Path, contact: Contact) -> ToolContext:
         channel="webui")
 
 
-# -- MemoryStore -----------------------------------------------------------
+# -- MemoryService -----------------------------------------------------------
 
 
 def test_store_adds_important_row(fresh_db, seed_contacts):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     view = store.add(
         seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
@@ -123,12 +123,12 @@ def test_store_adds_important_row(fresh_db, seed_contacts):
 
 
 def test_store_get_returns_none_for_missing_id(fresh_db):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     assert store.get(99999) is None
 
 
 def test_store_update_patches_mutable_fields(fresh_db, seed_contacts):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     view = store.add(
         seed_contacts["alice"].id,
         kind=KIND_ONGOING,
@@ -146,7 +146,7 @@ def test_store_update_patches_mutable_fields(fresh_db, seed_contacts):
 
 
 def test_store_complete_marks_ongoing_done(fresh_db, seed_contacts):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     view = store.add(
         seed_contacts["alice"].id,
         kind=KIND_ONGOING,
@@ -165,7 +165,7 @@ def test_store_complete_marks_ongoing_done(fresh_db, seed_contacts):
 
 
 def test_store_delete_is_idempotent(fresh_db, seed_contacts):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     view = store.add(
         seed_contacts["alice"].id,
         kind=KIND_IMPORTANT,
@@ -179,7 +179,7 @@ def test_store_delete_is_idempotent(fresh_db, seed_contacts):
 def test_store_list_orders_by_importance_then_recency(
     fresh_db, seed_contacts
 ):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     owner = seed_contacts["alice"].id
     store.add(owner, kind=KIND_IMPORTANT, subject="Low", body="...", importance=1)
     store.add(owner, kind=KIND_IMPORTANT, subject="High", body="...", importance=5)
@@ -197,7 +197,7 @@ def test_format_memory_block_empty_when_no_rows():
 
 
 def test_format_memory_block_groups_by_kind(fresh_db, seed_contacts):
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     owner = seed_contacts["alice"].id
     store.add(
         owner, kind=KIND_IMPORTANT,
@@ -265,7 +265,7 @@ def test_add_memory_tool_contact_role_blocked(fresh_db, seed_contacts):
     assert result.is_error
     assert "role" in result.content
     # No row written.
-    store = MemoryStore(fresh_db)
+    store = MemoryService(fresh_db)
     assert store.list_for_owner(seed_contacts["charlie"].id) == []
 
 

@@ -131,7 +131,7 @@ def _seed_memory(
     updated_at: datetime | None = None):
     """Insert one MemoryEntry with the given fields.
 
-    Bypasses ``MemoryStore.add`` so the test can stamp
+    Bypasses ``MemoryService.add`` so the test can stamp
     arbitrary ``updated_at`` / ``completed_at`` values
     (the store validates kind / clamps importance but
     always sets timestamps to ``now``). The endpoint

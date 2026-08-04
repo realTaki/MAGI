@@ -3,7 +3,7 @@
 Two layers:
 
   1. **Store layer** —
-     :meth:`SessionStore.append_messages` rejects writes
+     :meth:`SessionService.append_messages` rejects writes
      when ``channel=`` is provided AND the stored row's
      channel doesn't match. Reads (``get``, ``list``) are
      not gated — same contact can browse TG history from
@@ -40,8 +40,8 @@ from magi.bus.db import (
     init_sqlite,
     open_session,
 )
-from bus.services.session import ChannelMismatchError, SessionMessage, new_session_id, utcnow_iso
-from bus.contracts.session import SessionStore
+from magi.bus.services.session import ChannelMismatchError, SessionMessage, new_session_id, utcnow_iso
+from magi.bus.services.session import SessionService
 
 # -- helpers / fixtures --------------------------------------------------
 
@@ -93,19 +93,19 @@ def _make_session(
     delivery_address argument here is the per-channel delivery
     address stamped on the row's ``delivery_address`` column.
     """
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sess = store.create(
         uid, channel=channel)
     return sess.session_id
 
 # ────────────────────────────────────────────────────────────────── #
-# SessionStore.append_messages — channel guard
+# SessionService.append_messages — channel guard
 # ────────────────────────────────────────────────────────────────── #
 
 def test_append_with_matching_channel_succeeds(state: Path) -> None:
     """Same channel as the session owner → write goes
     through."""
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sid = _make_session(state, "tg")
 
     msg = SessionMessage(
@@ -119,7 +119,7 @@ def test_append_with_matching_channel_succeeds(state: Path) -> None:
 def test_append_with_mismatched_channel_raises(state: Path) -> None:
     """A WebUI caller trying to append to a TG-owned
     session triggers the guard."""
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sid = _make_session(state, "tg")
 
     msg = SessionMessage(
@@ -136,7 +136,7 @@ def test_append_with_omitted_channel_skips_check(state: Path) -> None:
     """``channel=None`` (the default) bypasses the guard —
     useful for back-fill tooling that operates on
     historical rows without an inbound channel."""
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sid = _make_session(state, "tg")
 
     msg = SessionMessage(
@@ -151,26 +151,26 @@ def test_append_to_legacy_session_with_empty_channel_skips_check(
     """Pinned but skipped at the SQL layer: the
     ``chat_sessions.channel`` column is ``NOT NULL`` so a
     row with an empty ``channel`` value can't exist via
-    the public ``SessionStore.create`` path. The
+    the public ``SessionService.create`` path. The
     guard's "empty stored channel → writer wins" branch
     is therefore unreachable in v0; it exists as
     defense in depth for a future migration that
     relaxes the NOT NULL (e.g. back-filling the
     ``channel`` column from a separate ``inbound_from``
     column). See the docstring on
-    :meth:`SessionStore.append_messages` for the
+    :meth:`SessionService.append_messages` for the
     rationale.
     """
     pytest.skip(
         "channel column is NOT NULL; empty-channel branch is "
-        "unreachable via public SessionStore.create — covered "
+        "unreachable via public SessionService.create — covered "
         "by the unit-level guard test above."
     )
 
 def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
     """The mismatch raises BEFORE any INSERT runs — the
     session's existing messages are untouched."""
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sid = _make_session(state, "tg")
     # Seed one legitimate TG message first.
     seed = SessionMessage(
@@ -195,7 +195,7 @@ def test_append_mismatch_does_not_corrupt_session(state: Path) -> None:
 def test_get_does_not_check_channel(state: Path) -> None:
     """Reads are cross-channel by design — the same
     contact may browse their TG history from WebUI."""
-    store = SessionStore(str(state))
+    store = SessionService(str(state))
     sid = _make_session(state, "tg")
     seed = SessionMessage(
         role="user", text="hi", ts=utcnow_iso(),
@@ -255,7 +255,7 @@ def test_webui_send_to_tg_owned_session_is_403(
     # The session's history is unchanged.
     # D.23: store key is uid (int), not the
     # channel's delivery_address string.
-    sess = SessionStore(str(state)).get(admin.id, sid)
+    sess = SessionService(str(state)).get(admin.id, sid)
     assert sess is not None
     user_texts = [m.text for m in sess.messages if m.role == "user"]
     assert user_texts == []
@@ -276,7 +276,7 @@ def test_webui_send_to_webui_owned_session_is_200(
     # Only the inbound is persisted on the request path. The agent/delivery
     # workers append any eventual assistant reply.
     # D.23: store key is uid (int).
-    sess = SessionStore(str(state)).get(admin.id, sid)
+    sess = SessionService(str(state)).get(admin.id, sid)
     assert sess is not None
     roles = [m.role for m in sess.messages]
     assert roles == ["user"]

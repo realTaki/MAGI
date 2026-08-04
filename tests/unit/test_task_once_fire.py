@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.channels.tasks.cron_utils import (
+from magi.bus.task_schedule import (
     validate_run_at,
     validate_run_at_future)
 from magi.channels.tasks.scheduler import (
@@ -40,7 +40,7 @@ from magi.bus.db import (
     init_sqlite,
     open_session,
 )
-from magi.channels.tasks.models import Task
+from magi.bus.models.local.task import Task
 
 
 # -- validate_run_at --------------------------------------------------------
@@ -107,7 +107,7 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     """Insert a row directly via ORM. Bypass the ``schedule_task``
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
-    from magi.channels.tasks import models as _  # noqa: F401  (registers Task on Base)
+    from magi.bus.models.local import task as _  # noqa: F401  (registers Task on Base)
     from magi.bus.models.local.contact import Contact
 
     task_id = "T" + "0" * 25
