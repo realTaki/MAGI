@@ -34,7 +34,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from magi.bus.db.alembic_runner import stamp_baseline, upgrade_head
 from magi.bus.db.base import Base
-from magi.bus.db.migrations import _run_inline_migrations
 
 logger = logging.getLogger("magi.bus.db.engine")
 
@@ -346,14 +345,11 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     has_legacy_application_tables = bool(application_tables & existing_tables)
 
     if is_legacy and has_legacy_application_tables:
-        # Compatibility only: this path is for databases created before
-        # Alembic did not exist yet. Repair legacy schemas before adoption;
-        # this compatibility path must not receive new schema changes.
-        Base.metadata.create_all(engine)
-        _run_inline_migrations(engine)
-        # The explicit baseline migration is for fresh databases. Legacy
-        # databases already have those tables, so stamp rather than replay
-        # CREATE TABLE statements, then let later revisions run normally.
+        # Legacy databases already have those tables; stamp rather than
+        # replay CREATE TABLE statements, then let later revisions run
+        # normally. Pre-Alembic inline repairs were removed — any in-the-
+        # wild DB without ``alembic_version`` must adopt the baseline
+        # schema as-is and migrate forward via the Alembic chain.
         stamp_baseline(state_dir or require_state_dir())
 
     upgrade_head(state_dir or require_state_dir(), engine)

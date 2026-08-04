@@ -279,7 +279,6 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     """
     global _mcp_tools_cache, _mcp_loaded_at_db
     from magi.bus import get_bus
-    from magi.constants import STATE_DIR
     from magi.mcp.loader import load_mcp_tools_blocking
 
     tools = load_mcp_tools_blocking()
@@ -334,7 +333,6 @@ def maybe_reload_mcp_tools() -> list["Tool"] | None:
     — no logging, no churn.
     """
     from magi.bus import get_bus
-    from magi.constants import STATE_DIR
 
     try:
         latest = get_bus().mcp.revision_stamp()

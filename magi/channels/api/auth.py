@@ -186,37 +186,7 @@ def _super_admins() -> set[int]:
     if control_store.enabled():
         return {op.id for op in bus.magis.list_control_operators(admin_only=True)}
     contacts = bus.contacts.list_admins()
-    if contacts:
-        return {contact.id for contact in contacts}
-
-    raw = bus.settings.get("telegram.super_admins")
-    if not raw:
-        return set()
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return set()
-    if not isinstance(parsed, list):
-        return set()
-    # Legacy entries were TG chat ids (decimal digit
-    # strings). Resolve each to the current Contact.id via
-    # the ``telegram_id`` column (the bot's inbound-handler
-    # read-cache) so the cookie identity matches the new
-    # schema.
-    legacy_chat_ids: list[int] = []
-    for x in parsed:
-        try:
-            legacy_chat_ids.append(int(x))
-        except (TypeError, ValueError):
-            continue
-    if not legacy_chat_ids:
-        return set()
-    resolved: set[int] = set()
-    for tgid in legacy_chat_ids:
-        contact = bus.contacts.find_by_telegram_id(tgid)
-        if contact is not None:
-            resolved.add(contact.id)
-    return resolved
+    return {contact.id for contact in contacts}
 
 
 # -- request / response schemas -----------------------------------------

@@ -14,13 +14,12 @@ from contextlib import suppress
 from pathlib import Path
 
 from magi.bus import ToolClaim, ToolContext, ToolDefinition, get_bus
-from magi.constants import STATE_DIR
 from magi.tools.registry import get_tool
 
 logger = logging.getLogger("magi.tools.worker")
 
 
-def _seed_tools(state_dir: str) -> None:
+def _seed_tools() -> None:
     """Publish the executable registry as an atomic BUS catalog snapshot.
 
     Loads both built-in tools and MCP-discovered tools, then publishes
@@ -59,8 +58,7 @@ def _seed_tools(state_dir: str) -> None:
 class ToolWorker:
     """Single durable tool consumer for one MAGI process."""
 
-    def __init__(self, state_dir: str | None = None, *, poll_seconds: float = 0.25) -> None:
-        self.state_dir = state_dir or __import__("os").environ.get("MAGI_STATE_DIR") or STATE_DIR
+    def __init__(self, *, poll_seconds: float = 0.25) -> None:
         self.bus = get_bus()
         self.worker_id = f"tools-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
@@ -73,7 +71,7 @@ class ToolWorker:
             # Publish the durable catalog before the poll loop starts. The
             # replacement is idempotent — code
             # changes that add/modify tools are reflected on restart.
-            _seed_tools(self.state_dir)
+            _seed_tools()
             self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
 
     async def stop(self) -> None:
@@ -114,16 +112,13 @@ class ToolWorker:
             self.bus.tool_jobs.complete(
                 claim, content=f"unknown or unauthorized tool: {claim.tool_name!r}", is_error=True
             )
-            # Unknown tool can't be retried — same dead-letter path
-            # as exhausted retries below. Synthetic failure
-            # unblocks the run.
             self.bus.tool_jobs.retry(claim.job_id)
             return
         try:
             result = await tool.run(
                 ToolContext(
-                    state_dir=self.state_dir,
-                    workspace=str(Path(str(context_data["workspace"]))),
+                    state_dir=self.bus.settings.require_state_dir(),
+                    workspace=str(context_data.get("workspace") or ""),
                     uid=int(context_data.get("uid") or 0),
                     channel=str(context_data.get("channel") or ""),
                     session_id=str(context_data.get("session_id") or ""),
@@ -137,12 +132,6 @@ class ToolWorker:
             content = f"tool {claim.tool_name!r} crashed: {exc}"[:8000]
             is_error = True
         self.bus.tool_jobs.complete(claim, content=content, is_error=is_error)
-        # Retry / dead-letter policy: ``retry_tool_job`` owns the
-        # attempt budget (see BusStore._MAX_TOOL_JOB_ATTEMPTS). A
-        # job with attempts < cap goes back to ``retry``; once the
-        # cap is hit, the job is dead-lettered and the actor
-        # worker unblocks the run with a synthetic tool.failed
-        # event.
         if is_error:
             self.bus.tool_jobs.retry(claim.job_id)
 
@@ -150,10 +139,10 @@ class ToolWorker:
 _worker: ToolWorker | None = None
 
 
-async def start_tool_worker(state_dir: str | None = None) -> ToolWorker:
+async def start_tool_worker() -> ToolWorker:
     global _worker
     if _worker is None:
-        _worker = ToolWorker(state_dir)
+        _worker = ToolWorker()
         await _worker.start()
     return _worker
 
