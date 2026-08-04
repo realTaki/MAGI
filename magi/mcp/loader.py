@@ -119,7 +119,6 @@ def _timeout_from_settings(key: str, default: float) -> float:
     """Read a float setting, falling back to *default*."""
     try:
         from magi.bus import get_bus
-        from magi.constants import STATE_DIR
         raw = get_bus().settings.get(key)
         if raw:
             return float(raw)
@@ -503,7 +502,6 @@ def _load_servers_from_db() -> list[MCPServerConnection]:
     """
     try:
         from magi.bus import get_bus
-        from magi.constants import STATE_DIR
         rows = get_bus().mcp.enabled_configs()
     except Exception:
         # Defensive: a missing table (pre-init) or a busy
@@ -670,7 +668,6 @@ def list_tools_for_server(name: str) -> list["MCPTool"] | None:
     # 2. Row still in the table? On-demand connect.
     try:
         from magi.bus import get_bus
-        from magi.constants import STATE_DIR
         row = get_bus().mcp.get_config(name)
     except Exception:
         logger.exception(
