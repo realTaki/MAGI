@@ -1,5 +1,0 @@
-[
-  {"op": "remove", "path": "/spec/template/spec/containers/0/startupProbe/exec"},
-  {"op": "remove", "path": "/spec/template/spec/containers/0/livenessProbe/exec"},
-  {"op": "remove", "path": "/spec/template/spec/containers/0/readinessProbe/exec"}
-]

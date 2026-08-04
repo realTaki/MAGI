@@ -29,7 +29,10 @@
   - `KubernetesEveBackend` → `KubernetesEvaBackend`
   - `eve_runtimes` table → `eva_runtimes` (Alembic 0001 baseline edited in place; recreate dev DBs)
   - `eve-example` overlay dir → `eva-example`; matching secrets example file renamed
-  - `EVE_IMAGE` / `MAGI_EVE_IMAGE` → `EVA_IMAGE` / `MAGI_EVA_IMAGE`
+  - `EVE_IMAGE` / `MAGI_EVE_IMAGE` env var removed (was misleading — both
+    ADAM and EVA pods run the same `magi` image). Renamed to `MAGI_IMAGE`
+    in `magi/orchestrator/kubernetes.py`, `deploy/k8s/bootstrap-k8s.sh`,
+    `deploy/k8s-dev/bootstrap-k8s-dev.sh`, and `deploy/k8s/control/configmap.yaml`
   - `MAGI_NODE_ROLE=eve` → `eva`; validation set `{"adam","eva"}`
   - `source='eve'` default → `eva` (alembic baseline + model defaults)
   - `[eve]` pyproject extra → `[eva]`
