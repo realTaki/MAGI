@@ -288,10 +288,10 @@ def run() -> None:
     except Exception:  # noqa: BLE001
         pass
 
-    # Read optional messaging channels from the MAGI's private DB. WebUI is
+    # Read optional messaging channels from the BUS. WebUI is
     # now a separate control-plane service, while this runtime API is always
     # started so that service can reach the selected MAGI.
-    channels = _read_channels_from_db(state_dir)
+    channels = _read_channels_from_db()
     messaging = [channel for channel in channels if channel != Channel.WEBUI]
     logger.info("messaging channels resolved: %s", messaging)
     for channel in messaging:
@@ -351,19 +351,25 @@ def _launch_channel(name: str, cfg: NodeConfig) -> None:
 
 # -- DB-driven channel state -----------------------------------------------
 
-def _read_channels_from_db(state_dir: str) -> list[str]:
+def _read_channels_from_db() -> list[str]:
     """Return the enabled-channels list from ``settings.channels.enabled``.
 
     On first boot (key absent), seeds [``webui``] — the control plane is
     always on.  The operator can then toggle TG on via the Settings →
     Channels card.
+
+    Reads/writes go through the BUS settings service once the runtime
+    is up; the caller is the composition root, which runs after
+    ``bootstrap(initialise_local=True)``.
     """
-    from magi.bus.db.settings import state_get, state_set
-    raw = state_get(state_dir, _CHANNELS_SETTINGS_KEY)
+    from magi.bus import get_bus
+
+    bus = get_bus()
+    raw = bus.settings.get(_CHANNELS_SETTINGS_KEY)
     if not raw:
         # Seed on first boot
         default = [Channel.WEBUI]
-        state_set(state_dir, _CHANNELS_SETTINGS_KEY, json.dumps(default))
+        bus.settings.set(_CHANNELS_SETTINGS_KEY, json.dumps(default))
         return default
     try:
         parsed = json.loads(raw)
@@ -373,7 +379,7 @@ def _read_channels_from_db(state_dir: str) -> list[str]:
         pass
     # Corrupt value — fix with safe default
     default = [Channel.WEBUI]
-    state_set(state_dir, _CHANNELS_SETTINGS_KEY, json.dumps(default))
+    bus.settings.set(_CHANNELS_SETTINGS_KEY, json.dumps(default))
     return default
 
 

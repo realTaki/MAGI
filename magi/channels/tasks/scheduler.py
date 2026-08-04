@@ -29,7 +29,7 @@ real event loop.
 
 ## Lifecycle
 
-1. :func:`start_scheduler(state_dir)` — called once from
+1. :func:`start_scheduler()` — called once from
    :func:`magi.__main__.run` after ``init_orm``. Builds the
    singleton, starts the loop thread + scheduler, reads
    enabled tasks from the DB and re-registers each.

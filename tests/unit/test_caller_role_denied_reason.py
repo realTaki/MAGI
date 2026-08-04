@@ -79,9 +79,7 @@ def _ctx(state: Path, uid: object) -> ToolContext:
     tests can drive the int-parsing path with arbitrary
     inputs (strings, ``None``, ``0``)."""
     return ToolContext(
-        state_dir=str(state),
         workspace=state.parent,
-        
         uid=uid,  # type: ignore[arg-type]
         channel="webui")
 

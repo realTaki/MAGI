@@ -186,7 +186,7 @@ def _default_path() -> Path:
     is imported still gets the right path.
 
     When the env var is unset, falls back to
-    ``<state_dir>/../audit/audit.log``.  Inside the K8s container this
+    ``<workspace>/audit/audit.log``.  Inside the K8s container this
     resolves to ``/workspace/audit/audit.log`` (bit-identical with the
     legacy literal); inside the Local Profile it lands at
     ``<data_root>/audit/audit.log`` per

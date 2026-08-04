@@ -19,7 +19,7 @@ Two roots are scanned, in this order:
     can customise away.
   - ``<workspace>/skills/`` — the **operator** directory.
     Workspace path derived from ``MAGI_WORKSPACE_DIR``.
-    ``<state_dir>/..`` — always ``/workspace`` inside the
+    ``<workspace>`` — always ``/workspace`` inside the
     container). Operator-edited SKILL.md files here override bundle entries with the same name
     without warning — that is the normal "I want to
     customise this skill" flow.

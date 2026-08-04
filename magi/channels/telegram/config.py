@@ -17,8 +17,7 @@ bot on the same message, so the user sees the read-receipt
 get "upgraded" to done when the reply lands. No state to
 keep — the API call is idempotent.
 
-Storage: ``state_set(state_dir, key, value)`` /
-``state_get(state_dir, key)``. The data is small (one short
+Storage: ``get_bus().settings`` KV store. The data is small (one short
 string), the access pattern is read-on-every-inbound, and
 we don't need schema migrations for a single emoji. C1.1
 will move this into a proper ``enterprise_settings`` SQL

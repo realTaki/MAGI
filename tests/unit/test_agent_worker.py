@@ -43,7 +43,7 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
         )
 
     monkeypatch.setattr(step_mod, "run_agent_step", fake_step)
-    await start_agent_worker(state)
+    await start_agent_worker()
     try:
         run_id = await submit_agent_message(
             AgentMessage(
@@ -53,9 +53,8 @@ async def test_worker_consumes_one_durable_turn(worker_state, monkeypatch) -> No
                 session_id="01KZ568F25VXD7AKTK7CQA6H45",
                 uid=1,
             ),
-            state_dir=state,
         )
-        reply = await wait_for_agent_run(run_id, state_dir=state, timeout_seconds=2)
+        reply = await wait_for_agent_run(run_id, timeout_seconds=2)
     finally:
         await stop_agent_worker()
 
@@ -117,15 +116,14 @@ async def test_worker_resumes_after_durable_tool_result(worker_state, monkeypatc
 
     monkeypatch.setattr(step_mod, "run_agent_step", fake_step)
     monkeypatch.setattr(tool_worker_mod, "get_tool", lambda *_args, **_kwargs: FakeTool())
-    await start_agent_worker(worker_state)
-    tool_worker = tool_worker_mod.ToolWorker(worker_state, poll_seconds=0.01)
+    await start_agent_worker()
+    tool_worker = tool_worker_mod.ToolWorker(poll_seconds=0.01)
     await tool_worker.start()
     try:
         run_id = await submit_agent_message(
             AgentMessage(event_id="tool-run", text="hello", channel="webui", uid=1),
-            state_dir=worker_state,
         )
-        reply = await wait_for_agent_run(run_id, state_dir=worker_state, timeout_seconds=2)
+        reply = await wait_for_agent_run(run_id, timeout_seconds=2)
     finally:
         await tool_worker.stop()
         await stop_agent_worker()

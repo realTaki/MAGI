@@ -85,17 +85,6 @@ class SettingsService:
 
         state_delete(self._state_dir, key)
 
-    @staticmethod
-    def require_state_dir() -> str:
-        """Return the runtime's configured state directory.
-
-        This is a process-wide constant set by the runtime entry
-        point; tools and workers that don't receive ``state_dir`` on
-        their context fall back to this.
-        """
-        from magi.bus.db.engine import require_state_dir
-        return require_state_dir()
-
     def system_timezone(self) -> str:
         """Read the configured system timezone, with safe fallbacks.
 

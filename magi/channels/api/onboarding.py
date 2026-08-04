@@ -527,7 +527,7 @@ async def save_bot(payload: SaveBotRequest) -> SaveBotResponse:
 
     logger.info(
         "bot token saved",
-        extra={"username": payload.username, "state_dir": "<from workspace>"},
+        extra={"username": payload.username},
     )
     return SaveBotResponse(ok=True)
 
