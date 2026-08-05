@@ -709,8 +709,8 @@ magi/orchestrator/kubernetes.py
 ### 13.2 建议新增
 
 ```text
-magi/bus/contracts/runtimes.py
-magi/bus/contracts/tasks.py
+magi/bus/protocols/runtimes.py
+magi/bus/protocols/tasks.py
 magi/bus/services/runtime_registry.py
 magi/db/control/*
 

@@ -8,7 +8,7 @@ import uuid
 from contextlib import suppress
 
 from magi.bus import DeliveryClaim, get_bus
-from magi.bus.contracts.session import SessionMessage, utcnow_iso
+from magi.bus.protocols.session import SessionMessage, utcnow_iso
 
 logger = logging.getLogger("magi.channels.delivery")
 

@@ -8,21 +8,21 @@ the BUS never sees K8s-shaped fields.
 
 This file is the **only** place the runtime/lifecycle result types are
 populated with K8s-specific fields; every other BUS consumer sees only
-the :class:`~magi.bus.contracts.runtime.RuntimeEndpoint` /
-:class:`~magi.bus.contracts.lifecycle.RuntimeOperationResult` surface.
+the :class:`~magi.bus.protocols.runtime.RuntimeEndpoint` /
+:class:`~magi.bus.protocols.lifecycle.RuntimeOperationResult` surface.
 """
 
 from __future__ import annotations
 
 import re
 
-from magi.bus.contracts.lifecycle import (
+from magi.bus.protocols.lifecycle import (
     KubernetesBackendDetail,
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.bus.contracts.runtime import RuntimeEndpoint
+from magi.bus.protocols.runtime import RuntimeEndpoint
 from magi.orchestrator.contracts import MagisBinding
 from magi.orchestrator.kubernetes import KubernetesEvaBackend
 

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.bus import get_bus
-from magi.bus.contracts.magis import (
+from magi.bus.protocols.magis import (
     EvaRuntimeView,
     MagicView,
     MembershipBrief as MembershipBriefDTO,

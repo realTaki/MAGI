@@ -6,7 +6,7 @@ must implement.  See plan §4.2.
 The Protocol shape is what
 :class:`~magi.bus.services.runtime.BackendDispatcherService` consumes;
 K8s-specific fields live in
-:class:`~magi.bus.contracts.lifecycle.KubernetesBackendDetail` and are
+:class:`~magi.bus.protocols.lifecycle.KubernetesBackendDetail` and are
 populated only by the K8s adapter.
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from magi.bus.contracts.lifecycle import (
+from magi.bus.protocols.lifecycle import (
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,

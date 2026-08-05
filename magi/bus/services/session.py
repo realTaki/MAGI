@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 from sqlalchemy import func, select, text, update
 
-from magi.bus.contracts.session import (
+from magi.bus.protocols.session import (
     ChannelMismatchError,
     SCHEMA_VERSION,
     SearchHit,

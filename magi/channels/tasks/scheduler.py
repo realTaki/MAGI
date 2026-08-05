@@ -74,7 +74,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from magi.bus import get_bus
-from magi.bus.contracts.task import TaskScheduleView
+from magi.bus.protocols.task import TaskScheduleView
 from magi.channels.tasks.channel import TaskChannel
 
 logger = logging.getLogger("magi.channels.tasks.scheduler")

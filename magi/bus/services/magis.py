@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from magi.bus.contracts.magis import (
+from magi.bus.protocols.magis import (
     MagisAdminView,
     MagisMembershipView,
     MagisRoleView,

@@ -35,7 +35,7 @@ import logging
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.contracts.memory import ALL_KINDS, SOURCE_EVA
+from magi.bus.protocols.memory import ALL_KINDS, SOURCE_EVA
 from magi.tools.base import (
     Tool,
     ToolContext,

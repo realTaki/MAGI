@@ -28,7 +28,7 @@ class Channel(StrEnum):
     ``"tg"`` is now caught by the type checker.
 
     The bus owns this vocabulary: tools, agent, and channel
-    adapters all import it from :mod:`magi.bus.contracts`.
+    adapters all import it from :mod:`magi.bus.protocols`.
     The legacy ``magi.channels.Channel`` re-export is kept
     so adapter code that says ``from magi.channels import
     Channel`` keeps working.
@@ -82,7 +82,7 @@ class InboundMessage:
 class OutboundDelivery:
     """A committed channel delivery effect awaiting external I/O.
 
-    Returned by the bus (via :class:`magi.bus.contracts.DeliveryClaim`)
+    Returned by the bus (via :class:`magi.bus.protocols.DeliveryClaim`)
     to channel delivery workers for actual transmission.
     """
 

@@ -9,7 +9,7 @@ Phase 2 introduces two new BUS facade services:
   Orchestrator Worker can consume commands asynchronously.
 
 - :class:`RuntimeRegistryService` — resolves a
-  :class:`~magi.bus.contracts.runtime.RuntimeEndpoint` for a magic_id,
+  :class:`~magi.bus.protocols.runtime.RuntimeEndpoint` for a magic_id,
   replacing the legacy ``f"http://{deployment_name}:42069"`` URL forging
   done at :mod:`magi.channels.api.runtime_proxy`.
 
@@ -23,12 +23,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.contracts.lifecycle import (
+from magi.bus.protocols.lifecycle import (
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.bus.contracts.runtime import RuntimeEndpoint
+from magi.bus.protocols.runtime import RuntimeEndpoint
 
 logger = logging.getLogger("magi.bus.services.runtime")
 

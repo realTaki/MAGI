@@ -30,7 +30,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from magi.bus import get_bus
-from magi.bus.contracts.session import (
+from magi.bus.protocols.session import (
     Session, SessionCorruptError, SessionError, SessionMessage,
     SessionNotFoundError, SessionPathError, SessionSummary,
 )

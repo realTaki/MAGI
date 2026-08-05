@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from magi.bus.contracts.memory import (
+from magi.bus.protocols.memory import (
     ALL_KINDS,
     KIND_IMPORTANT,
     KIND_ONGOING,

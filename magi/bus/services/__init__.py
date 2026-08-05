@@ -9,7 +9,7 @@ backed by ``magi.bus.models``).
 from __future__ import annotations
 
 from magi.bus.services.action_item import ActionItemService
-from magi.bus.contracts.action_item import ActionItemView
+from magi.bus.protocols.action_item import ActionItemView
 from magi.bus.services.agent_runs import AgentRunsService
 from magi.bus.services.auth import AuthService
 from magi.bus.services.contact import ContactsService

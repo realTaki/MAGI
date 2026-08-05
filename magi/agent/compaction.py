@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from magi.providers import ChatMessage, get_provider
 from magi.providers import estimate_messages_tokens
-from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
+from magi.bus.protocols.session import SessionMessage, new_session_id, utcnow_iso
 
 if TYPE_CHECKING:
     pass

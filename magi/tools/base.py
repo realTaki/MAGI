@@ -35,7 +35,7 @@ from typing import Any
 
 # Re-export BUS contracts so implementations keep their historical import
 # path without taking a direct dependency on ``magi.db``.
-from magi.bus.contracts.tools import ToolContext, ToolResult  # noqa: F401
+from magi.bus.protocols.tools import ToolContext, ToolResult  # noqa: F401
 
 
 class Tool(ABC):

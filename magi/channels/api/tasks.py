@@ -44,8 +44,8 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from magi.bus.contracts.session import new_session_id
-from magi.bus.contracts.task import TaskFullView, TaskRunView
+from magi.bus.protocols.session import new_session_id
+from magi.bus.protocols.task import TaskFullView, TaskRunView
 from magi.bus.services.contact import ContactsService
 from magi.bus.services.session import SessionService
 from magi.bus.services.setting import SettingsService

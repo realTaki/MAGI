@@ -7,14 +7,14 @@ from typing import Optional
 
 from sqlalchemy import func, select
 
-from magi.bus.contracts.task import (
+from magi.bus.protocols.task import (
     TaskExecution,
     TaskFullView,
     TaskPresetView,
     TaskRunView,
     TaskScheduleView,
 )
-from magi.bus.contracts.session import new_session_id
+from magi.bus.protocols.session import new_session_id
 
 
 def _schedule_view(row) -> TaskScheduleView:
@@ -153,7 +153,7 @@ class TaskService:
 
     def create_preset(self, **values) -> TaskPresetView | None:
         from magi.bus.models.local.task_preset import TaskPreset
-        from magi.bus.contracts.session import new_session_id
+        from magi.bus.protocols.session import new_session_id
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -400,7 +400,7 @@ class TaskService:
         """
         from sqlalchemy import select
 
-        from magi.bus.contracts.session import new_session_id, utcnow_iso
+        from magi.bus.protocols.session import new_session_id, utcnow_iso
         from magi.bus.db import open_session
         from magi.bus.models.local.contact import Contact
         from magi.bus.models.local.session import ChatSession
@@ -560,7 +560,7 @@ class TaskService:
         from magi.bus.models.local.contact import Contact
         from magi.bus.models.local.session import ChatSession
         from magi.bus.models.local.task import Task, TaskRun
-        from magi.bus.contracts.session import new_session_id, utcnow_iso
+        from magi.bus.protocols.session import new_session_id, utcnow_iso
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:

@@ -146,7 +146,7 @@ class EvaRuntimeView:
     backward compatibility with the K8s Profile — they are populated by
     the K8s backend and ``None`` for Local runtimes.  New code should
     resolve endpoints via
-    :class:`~magi.bus.contracts.runtime.RuntimeEndpoint` (the platform-neutral
+    :class:`~magi.bus.protocols.runtime.RuntimeEndpoint` (the platform-neutral
     descriptor) rather than forging URLs from ``deployment_name``.
     """
 

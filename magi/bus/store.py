@@ -16,14 +16,14 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from magi.bus.contracts.agent import (
+from magi.bus.protocols.agent import (
     AgentMessage,
     A2AInvocationRequest,
     BusClaim,
     DeliveryClaim,
     RunResult,
 )
-from magi.bus.contracts.tools import ToolClaim
+from magi.bus.protocols.tools import ToolClaim
 from magi.bus.models.queue import (
     AgentInbox,
     AgentRun,
@@ -355,7 +355,7 @@ class BusStore:
                             )
                         )
                     if existing_message is None and session_exists:
-                        from magi.bus.contracts.session import utcnow_iso
+                        from magi.bus.protocols.session import utcnow_iso
 
                         session.add(
                             ChatMessage(

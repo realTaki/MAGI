@@ -4,7 +4,7 @@ These DTOs replace the K8s-flavored fields that previously leaked into the
 BUS facade (``namespace``, ``deployment_name``, ``workspace_claim_name``,
 ``credential_secret_name``).  Per plan §4.3 the public API carries only
 platform-neutral fields; the legacy fields stay reachable via the
-optional :class:`~magi.bus.contracts.lifecycle.KubernetesBackendDetail`
+optional :class:`~magi.bus.protocols.lifecycle.KubernetesBackendDetail`
 nested DTO for backward compatibility with the K8s adapter.
 
 BUS services (``magi.bus.services.runtime.RuntimeRegistryService``,

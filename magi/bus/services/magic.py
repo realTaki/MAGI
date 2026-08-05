@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from typing import Any
 
-from magi.bus.contracts.magis import (
+from magi.bus.protocols.magis import (
     EvaRuntimeView,
     MagicView,
     MembershipBrief,
@@ -458,7 +458,7 @@ class MagicService:
                 # internally still hits the legacy K8s client so the
                 # K8s Profile is bit-identical; Phase 4 substitutes the
                 # body with a real BUS command queue.
-                from magi.bus.contracts.lifecycle import RuntimeSpec
+                from magi.bus.protocols.lifecycle import RuntimeSpec
 
                 spec = RuntimeSpec(magic_id=magic.id, name=magic.name)
                 dispatcher = self._runtime_dispatcher or _default_dispatcher()
@@ -557,7 +557,7 @@ class MagicService:
                 # internally still hits the legacy K8s client so the
                 # K8s Profile is bit-identical; Phase 4 substitutes the
                 # body with a real BUS command queue.
-                from magi.bus.contracts.lifecycle import RuntimeSpec
+                from magi.bus.protocols.lifecycle import RuntimeSpec
 
                 binding = _direct_magis_binding(session, magic.id)
                 spec = RuntimeSpec(

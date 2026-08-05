@@ -24,7 +24,7 @@ class ToolDefinitionRecord(Base):
     """Durable Tool Catalog row owned by :mod:`magi.bus`.
 
     It is an internal persistence model. Callers use the immutable
-    ``magi.bus.contracts.ToolDefinition`` DTO via the catalog service.
+    ``magi.bus.protocols.ToolDefinition`` DTO via the catalog service.
     """
 
     __tablename__ = "tool_definitions"

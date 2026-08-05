@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 from magi.bus import get_bus
-from magi.bus.contracts.session import SearchHit, SearchUnavailable
+from magi.bus.protocols.session import SearchHit, SearchUnavailable
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
 from magi.channels.api.errors import MagiHTTPException

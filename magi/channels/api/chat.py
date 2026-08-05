@@ -35,7 +35,7 @@ import logging
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 from magi.bus import AgentMessage, get_bus
-from magi.bus.contracts.session import (
+from magi.bus.protocols.session import (
     ChannelMismatchError, SessionMessage, SessionPathError, new_session_id,
     utcnow_iso as _utcnow_iso,
 )

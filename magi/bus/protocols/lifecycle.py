@@ -14,7 +14,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from magi.bus.contracts.runtime import BackendKind, RuntimeEndpoint
+from magi.bus.protocols.runtime import BackendKind, RuntimeEndpoint
 
 
 class RuntimeSpec(BaseModel):

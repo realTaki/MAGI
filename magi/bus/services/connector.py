@@ -6,7 +6,7 @@ import json
 
 from sqlalchemy import text
 
-from magi.bus.contracts.connector import ConnectorConfiguration
+from magi.bus.protocols.connector import ConnectorConfiguration
 
 
 class ConnectorService:

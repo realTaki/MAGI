@@ -535,7 +535,7 @@ async def _handle_contact_message(update: Update,
     splits are a future C7+ affordance.
     """
     from magi.bus import get_bus
-    from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
+    from magi.bus.protocols.session import SessionMessage, new_session_id, utcnow_iso
     from magi.bus import AgentMessage
 
     # LLM credentials remain local to the agent. Telegram only publishes a

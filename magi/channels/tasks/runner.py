@@ -57,7 +57,7 @@ import logging
 from datetime import datetime, timezone
 
 from magi.bus import AgentMessage, get_bus
-from magi.bus.contracts.session import SessionMessage, new_session_id
+from magi.bus.protocols.session import SessionMessage, new_session_id
 
 # D.28: the runner no longer touches the TG client API
 # directly. The channel dispatcher is the single dispatch

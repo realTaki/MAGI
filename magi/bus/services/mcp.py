@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 from sqlalchemy import select
-from magi.bus.contracts.mcp import McpServerConfig, McpServerView
+from magi.bus.protocols.mcp import McpServerConfig, McpServerView
 
 if TYPE_CHECKING:
     from magi.mcp.loader import MCPTool

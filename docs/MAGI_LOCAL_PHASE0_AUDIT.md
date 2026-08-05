@@ -69,23 +69,23 @@ No code path uses `/magis` as a Python literal; the K8s adapter reads the Postgr
 ```
 magi/constants.py:26                WEBUI_PORT: int = 42069                (K8s dev port)
 magi/__main__.py:75                 comment only
-magi/bus/contracts/runtime.py:31    comment only ("Replaces the legacy f"http://{deployment_name}:42069" URL forging")
+magi/bus/protocols/runtime.py:31    comment only ("Replaces the legacy f"http://{deployment_name}:42069" URL forging")
 magi/bus/services/runtime.py:171    base_url=f"http://{runtime.deployment_name}:42069"
 magi/bus/services/magic.py:60       f"http://{runtime.deployment_name}:42069"
 magi/bus/services/magis.py:283,1000 f"http://{runtime.deployment_name}:42069"
 magi/bus/services/magis.py:286,1003 MAGI_ROOT_RUNTIME_URL fallback  "http://magi:42069"
 ```
 
-The four live `f"http://...:42069"` forgeries are exactly the anti-pattern `MAGI_BUS_CENTRIC_ARCHITECTURE.md` §4.4 documents. The `RuntimeEndpoint` DTO ([magi/bus/contracts/runtime.py:28](magi/bus/contracts/runtime.py)) was introduced so that future callers read the URL from `bus.registry.resolve_endpoint(magic_id)` instead.  Phase 7 ("multi-MAGI") finishes rolling these forgeries out — they still appear in `magic.py:60`, `magis.py:283/1000` because those service paths have not yet been re-wired through the registry.
+The four live `f"http://...:42069"` forgeries are exactly the anti-pattern `MAGI_BUS_CENTRIC_ARCHITECTURE.md` §4.4 documents. The `RuntimeEndpoint` DTO ([magi/bus/protocols/runtime.py:28](magi/bus/protocols/runtime.py)) was introduced so that future callers read the URL from `bus.registry.resolve_endpoint(magic_id)` instead.  Phase 7 ("multi-MAGI") finishes rolling these forgeries out — they still appear in `magic.py:60`, `magis.py:283/1000` because those service paths have not yet been re-wired through the registry.
 
 ### 2.4 `deployment_name`
 
 ```
-magi/bus/contracts/runtime.py:4         docstring
-magi/bus/contracts/runtime.py:31        docstring
+magi/bus/protocols/runtime.py:4         docstring
+magi/bus/protocols/runtime.py:31        docstring
 magi/bus/db/alembic/versions/0001_initial_schema.py:689   column on k8s_runtime table
-magi/bus/contracts/lifecycle.py:44       base field  (K8s legacy, optional)
-magi/bus/contracts/magis.py:144,156      docstring + field  (K8s legacy, optional)
+magi/bus/protocols/lifecycle.py:44       base field  (K8s legacy, optional)
+magi/bus/protocols/magis.py:144,156      docstring + field  (K8s legacy, optional)
 magi/bus/services/magic.py:54,57,60      forge K8s URL from deployment_name
 ```
 
@@ -187,8 +187,8 @@ Contracts (BUS DTOs):
 
 | File | Phase | Purpose |
 |---|---|---|
-| `magi/bus/contracts/runtime.py` | 2 | `RuntimeEndpoint` — replaces `deployment_name + :42069` URL forging |
-| `magi/bus/contracts/lifecycle.py` | 2 | Runtime lifecycle command/query DTOs (`Start`/`Stop`/`Inspect`/`Delete`/`Reconcile`) |
+| `magi/bus/protocols/runtime.py` | 2 | `RuntimeEndpoint` — replaces `deployment_name + :42069` URL forging |
+| `magi/bus/protocols/lifecycle.py` | 2 | Runtime lifecycle command/query DTOs (`Start`/`Stop`/`Inspect`/`Delete`/`Reconcile`) |
 | `magi/bus/db/magis/local_engine.py` | 3 | Per-MAGIS SQLite engine for Local Profile |
 
 Services wired into [`magi/bus/bootstrap.py`](../magi/bus/bootstrap.py):

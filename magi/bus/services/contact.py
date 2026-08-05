@@ -10,7 +10,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from magi.bus.contracts.contact import ContactView, NoteView
+from magi.bus.protocols.contact import ContactView, NoteView
 
 
 def _iso(value: datetime | None) -> str | None:

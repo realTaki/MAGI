@@ -1,6 +1,6 @@
 """Stable public DTO namespace for the BUS."""
 
-from magi.bus.contracts.agent import (
+from magi.bus.protocols.agent import (
     A2AInvocationRequest,
     AgentMessage,
     BusClaim,
@@ -10,14 +10,14 @@ from magi.bus.contracts.agent import (
     RunResult,
     RunStatus,
 )
-from magi.bus.contracts.channels import (
+from magi.bus.protocols.channels import (
     Channel,
     ChannelEnum,
     DeliveryResult,
     InboundMessage,
     OutboundDelivery,
 )
-from magi.bus.contracts.magis import (
+from magi.bus.protocols.magis import (
     EvaRuntimeView,
     MagisAdminView,
     MagisMembershipView,
@@ -30,24 +30,24 @@ from magi.bus.contracts.magis import (
     ProviderConfiguration,
     RuntimeIdentity,
 )
-from magi.bus.contracts.session import (
+from magi.bus.protocols.session import (
     SearchHit,
     Session,
     SessionMessage,
     SessionSummary,
 )
-from magi.bus.contracts.contact import ContactView, NoteView
-from magi.bus.contracts.memory import MemoryView
-from magi.bus.contracts.tools import (
+from magi.bus.protocols.contact import ContactView, NoteView
+from magi.bus.protocols.memory import MemoryView
+from magi.bus.protocols.tools import (
     ToolCatalogSnapshot,
     ToolClaim,
     ToolContext,
     ToolDefinition,
     ToolResult,
 )
-from magi.bus.contracts.auth import CallerIdentity
-from magi.bus.contracts.action_item import ActionItemView
-from magi.bus.contracts.provider_jobs import ProviderJob, ProviderJobResult
+from magi.bus.protocols.auth import CallerIdentity
+from magi.bus.protocols.action_item import ActionItemView
+from magi.bus.protocols.provider_jobs import ProviderJob, ProviderJobResult
 
 
 __all__ = [

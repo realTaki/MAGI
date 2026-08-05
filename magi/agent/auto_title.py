@@ -47,7 +47,7 @@ from typing import Optional
 
 from magi.providers.errors import LLMError
 from magi.bus import get_bus
-from magi.bus.contracts.session import utcnow_iso
+from magi.bus.protocols.session import utcnow_iso
 from magi.providers.factory import get_provider
 from magi.providers.provider import ChatMessage
 from magi.prompts import load_chat_title_prompt

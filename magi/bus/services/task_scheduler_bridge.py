@@ -41,7 +41,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.contracts.task import TaskFullView, TaskScheduleView
+from magi.bus.protocols.task import TaskFullView, TaskScheduleView
 
 if TYPE_CHECKING:
     from magi.bus.services.task import TaskService

@@ -28,7 +28,7 @@ which submodule a class lives in::
     )
 """
 
-from magi.bus.contracts.provider_jobs import ProviderJob, ProviderJobResult
+from magi.bus.protocols.provider_jobs import ProviderJob, ProviderJobResult
 from magi.providers.errors import (
     LLMError,
     LLMAuthError,

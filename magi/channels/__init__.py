@@ -12,11 +12,11 @@ private ``magi.bus``; the MAGI-owned agent worker consumes them sequentially.
 - ``channels.webui``    — ADAM side, FastAPI + HTMX + WS (C1 for CRUD, C7 for chat console).
 
 The :class:`Channel` enum is owned by the bus (see
-:mod:`magi.bus.contracts.channels`); this module re-exports it for
+:mod:`magi.bus.protocols.channels`); this module re-exports it for
 back-compat with code that still does ``from magi.channels import Channel``.
 """
 
-from magi.bus.contracts.channels import Channel
+from magi.bus.protocols.channels import Channel
 
 __all__ = ["base", "Channel"]
 

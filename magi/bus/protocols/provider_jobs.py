@@ -6,7 +6,7 @@ A :class:`ProviderJob` is published onto the durable queue (one
 and writes back a :class:`ProviderJobResult` on the same row's
 ``response`` (success) or ``error`` (failure) JSON column. The
 result also surfaces to the caller via the ``provider.completed``
-``AgentInbox`` event — see :data:`magi.bus.contracts.agent.InboxKind`.
+``AgentInbox`` event — see :data:`magi.bus.protocols.agent.InboxKind`.
 
 Design principle
 ================

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from magi.bus.contracts.action_item import ActionItemView
+from magi.bus.protocols.action_item import ActionItemView
 
 
 def _iso(value: datetime | None) -> str | None:
