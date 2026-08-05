@@ -276,8 +276,16 @@ async def worker_lifespan():
     """Run local durable workers for the lifetime of an ASGI process."""
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
+    from magi.providers.worker import (
+        start_provider_worker,
+        stop_provider_worker,
+    )
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
+    # Provider worker goes first so it can drain any orphans
+    # picked up by ``recover_expired_provider_leases`` on boot
+    # before the agent loop starts claiming new input.
+    await start_provider_worker()
     await start_agent_worker()
     await start_tool_worker()
     await start_delivery_worker()
@@ -287,6 +295,7 @@ async def worker_lifespan():
         await stop_delivery_worker()
         await stop_tool_worker()
         await stop_agent_worker()
+        await stop_provider_worker()
 
 
 __all__ = [

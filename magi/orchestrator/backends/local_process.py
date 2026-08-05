@@ -71,24 +71,30 @@ class LocalProcessRuntimeBackend:
         magis_id: int,
         magis_name: str,
     ) -> MagisProvisionResult:
-        """Create the per-MAGIS SQLite and ensure the schema exists.
+        """Return the platform-neutral provision result for Local Profile.
 
-        Idempotent — calling on an already-provisioned MAGIS is a no-op
-        apart from running Alembic ``upgrade head`` again (safe).
+        The Local Profile provisions its MAGIS SQLite through
+        :func:`magi.launcher.bootstrap_local` (composition-root stage)
+        before any backend method is invoked.  This backend therefore
+        treats ``provision_magis`` as a no-op — it returns the
+        platform-neutral DTO so the BUS / API layer can observe the
+        intent, but does not create or migrate storage on its own.
+        The K8s backend, by contrast, creates a fresh PostgreSQL on
+        every call; the asymmetry is by design (Local is single-host,
+        K8s is multi-tenant).
         """
-        from magi.bus.db.magis.local_engine import build as build_local_engine
-        from magi.bus.db import init_magis_public_db
         from magi.launcher.paths import magis_db_path
 
         magis_db = magis_db_path(_data_root(), magis_id, magis_name)
-        engine = build_local_engine(magis_db.parent)
-        init_magis_public_db(seed_root=True)
         return MagisProvisionResult(
             magis_id=magis_id,
             backend_kind="local",
             database_service_name=None,
             workspace_claim_name=None,
-            message=f"Local Profile — SQLite at {magis_db}",
+            message=(
+                f"Local Profile — per-MAGIS SQLite pre-created at "
+                f"{magis_db} by bootstrap_local(); this backend is a no-op"
+            ),
         )
 
     # ── start / stop / delete / endpoint_for ─────────────────────────── #
