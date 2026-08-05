@@ -608,9 +608,16 @@ class BusStore:
         docstring). When supplied and an existing row already carries
         the same value, the existing ``delivery_id`` is returned
         unchanged rather than creating a duplicate outbox row.
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to the ``DELIVERY_PENDING`` hook
+        point -- so plugin workers have a chance to observe the
+        row before :meth:`claim_next_delivery` releases it to a
+        delivery worker.
         """
         delivery_id = delivery_id or _new_id("delivery")
         now = utcnow_naive()
+        persisted_new = False
         with open_session(self._state_dir) as session:
             if event_id is not None:
                 existing = session.scalar(
@@ -646,6 +653,14 @@ class BusStore:
                     )
                 )
                 session.commit()
+                persisted_new = True
+        if persisted_new:
+            _dispatch_hook_signoffs(
+                state_dir=self._state_dir,
+                subject_type="delivery_outbox",
+                subject_id=delivery_id,
+                hook_point="delivery.pending",
+            )
         return delivery_id
 
     def complete_delivery(self, delivery_id: str) -> None:
@@ -661,6 +676,17 @@ class BusStore:
             row.leased_until = None
             row.updated_at = now
             session.commit()
+        # Dispatch ``DELIVERY_DISPATCHED`` signoffs so plugins
+        # subscribed to the post-send hook point can run before
+        # the run row is fully retired.  The claim filter does not
+        # need to look at this row any more (its status is
+        # ``delivered``), so this dispatch is purely advisory.
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="delivery_outbox",
+            subject_id=delivery_id,
+            hook_point="delivery.dispatched",
+        )
 
     def retry_delivery(self, delivery_id: str, *, delay_seconds: int | None = None) -> None:
         now = utcnow_naive()
