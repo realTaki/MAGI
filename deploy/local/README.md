@@ -37,7 +37,7 @@
 `install.sh` 仅做三件事：
 
 1. 确认 `magi` 在 PATH 上（缺失时会用 `uv tool install` 装一份）；
-2. 建好数据根目录（带 `control/`, `MAGIC/`, `MAGIS/local/` 三个子目录）；
+2. 建好数据根目录（带 `control/`, `MAGIC/`, `MAGIS/` 三个子目录）；
 3. 打印一段 cheat sheet。
 
 它**不会**主动启动 MAGI、**不会**注册服务。
@@ -52,23 +52,25 @@
 ├── control/                                   # launchpad-only state
 │   ├── local-registry.db                      # SQLite: 启动的 runtime / 端口 / PID
 │   ├── control-secret                         # 0600，随机生成的 HMAC 密钥
-│   └── launcher.json
+│   ├── launcher.json
+│   └── launcher-state/                        # launcher 自己的 BUS scratch 库
 ├── MAGIC/                                     # 私有 MAGI 工作区
 │   └── 1-adam/workspace/
 │       ├── SOUL.md
 │       ├── memories/
-│       │   ├── magi.db
+│       │   ├── magi.db                        # 私有 SQLite（contacts/sessions/...）
 │       │   └── sessions/
 │       ├── skills/
 │       ├── logs/
 │       └── tmp/
-└── MAGIS/local/                               # 直属 MAGIS（Genesis）数据库
-    └── magis.db
+└── MAGIS/                                     # 每个 MAGIS 一个目录
+    └── 1-genesis/
+        └── magis.db                           # 公共组织架构 SQLite
 ```
 
 每个 EVA 由 `magi local start` 引导 ADAM 之后，按 MAGIS 树创建。它们的
 工作区就落在 `~/.magi/MAGIC/<id>-<slug>/workspace/`，与生产里
-的 PVC 命名规则一致。
+的 PVC 命名规则一致。MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
 
 ## CLI 命令
 
@@ -109,12 +111,14 @@ journalctl --user -u magi.service -f
 
 ## 设计要点
 
-- **不动 `/workspace`**：容器化的生产 k8s 把 `/workspace` 挂成
-  PVC；本路径只是把同样的目录树放在 `~/.magi/MAGIC/<id>-<slug>/workspace/`
-  下。`magi/launcher/paths.py` 是唯一暴露这个布局的位置。
-- **不复用 `MAGI_WORKSPACE_DIR`**：那个变量专属于 BUS 容器化
-  路径；本地路径必须用 `MAGI_DATA_ROOT` 切换——这是有意为之，
-  避免任何模块偷偷把宿主目录穿到容器抽象里。
+- **与 k8s 一致的 `workspace/memories/magi.db`**：k8s Pod 的 SQLite
+  在 `<workspace>/memories/magi.db`；本路径保持相同约定
+  `~/.magi/MAGIC/<id>-<slug>/workspace/memories/magi.db`。
+  `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
+- **`MAGI_DATA_ROOT` 驱动路径解析**：`paths.state_dir()` 根据
+  `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG` 三个
+  环境变量自动切换到 per-MAGI 的 `MAGIC/<id>-<slug>/workspace/memories/`。
+  容器化 k8s 下无 `MAGI_DATA_ROOT` 则回退到 `/workspace/memories`。
 - **不依赖 Docker / podman / k8s**：唯一外部依赖是 Python 3.12+。
   这与 openclaw 的"单个可执行"思想一致。
 - **0-arg `magi local start` 是幂等的**：第一次跑会初始化 SQLite

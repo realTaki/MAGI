@@ -430,7 +430,7 @@ class BashRunTool(Tool):
             timeout = _FOREGROUND_TIMEOUT_MAX
 
         run_in_background = bool(kwargs.get("run_in_background"))
-        cwd = str(ctx.workspace) if ctx.workspace else None
+        cwd = str(_ctx.workspace) if _ctx.workspace else None
 
         try:
             if run_in_background:
