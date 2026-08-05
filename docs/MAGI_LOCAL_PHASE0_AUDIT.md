@@ -3,7 +3,9 @@
 > **状态**：此审计于 Phase 0 时完成，其中记录的多个问题已在后续 Phase 中修复。
 > 截至 2026-08-04：
 > - `/workspace` 硬编码已移除（K8s 通过 `MAGI_WORKSPACE_DIR` env var 注入）
-> - `LocalProcessRuntimeBackend` 已删除（每 MAGI 独立 OS 进程）
+> - `LocalProcessRuntimeBackend` 现以 subprocess spawn 形态回归 (Phase 4 commit)：
+>   每个 MAGI 一个独立 OS 进程，launcher 退出后被 reparent 到 init，与 K8s Pod
+>   对称。Supervisor / restart policy / orchestrator daemon 仍在 Phase 5。
 > - `magi/constants.py` 已废弃
 > - 路径解析统一由 `magi/launcher/paths.py` 负责
 >
