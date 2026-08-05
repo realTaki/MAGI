@@ -508,7 +508,7 @@ async def _handle_contact_message(update: Update,
     delivery_address: str,
     uid: int,
     contact_name: str,
-    display_name: str | None,
+    _display_name: str | None,
     contact_separated: bool,
     contact_role: str,
 ) -> None:
