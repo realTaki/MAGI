@@ -1,7 +1,7 @@
 """MAGI launcher — composition-root package for both deploy profiles.
 
 This package is the single Composition-Root home for MAGI. It is the
-only place that knows about path layouts, Local-vs-K8s bootstrap
+only place that knows about path layouts, CLI-vs-K8s bootstrap
 selection, or process-lifecycle wiring for channels / workers / the
 connector-to-plugin bridge.  Business modules (``magi.bus``,
 ``magi.agent``, ``magi.tools``, ``magi.channels``, ``magi.mcp``,
@@ -10,8 +10,8 @@ connector-to-plugin bridge.  Business modules (``magi.bus``,
 
 Layout:
 
-- ``LocalPathLayout`` (here)             — path layout dataclass
-- ``bootstrap_local`` (here)             — Local Profile Composition Root
+- ``CLIProfileLayout`` (here)            — path layout dataclass
+- ``bootstrap_cli`` (here)               — CLI Profile Composition Root
 - ``start_channel`` / ``stop_channel`` /
   ``is_channel_running`` / ``start_connector_bridge`` /
   ``stop_connector_bridge`` /
@@ -19,7 +19,7 @@ Layout:
 - ``paths``                              — OS-specific data-root resolution
 - ``platform``                           — OS detection + browser open
 - ``security``                           — launcher control-secret helpers
-- ``cli``                                — ``magi local start|status|stop|doctor|install-service|uninstall-service``
+- ``cli``                                — ``magi cli start|status|stop|doctor|install-service|uninstall-service``
 
 The architecture test (``tests/architecture/test_import_boundaries.py``)
 treats this package as a Composition-Root prefix, exempt from the

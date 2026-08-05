@@ -8,8 +8,14 @@ API call in MAGI goes through. It owns:
 - the streaming deltas (``StreamHub`` publishes keyed by ``run_id``
   so existing WebSocket / SSE consumers don't need to know about
   the worker);
-- the plugin hooks (``Hook.BEFORE_LLM_CALL`` /
-  ``Hook.AFTER_LLM_CALL``) — the only emit site that drives them.
+- the **plugin hook interception seam** — every LLM call in the
+  process passes through :meth:`ProvidersWorker._emit_hook`, which
+  fires both the legacy ``Hook.BEFORE_LLM_CALL`` /
+  ``Hook.AFTER_LLM_CALL` set and (when the upstream rewrite lands)
+  the new ``HookPoint.LLM_REQUEST_PREPARED`` /
+  ``HookPoint.LLM_RESPONSE_RECEIVED`` pair. Plugins that want to
+  intercept, rate-limit, redact, or audit LLM I/O listen on this
+  worker — they do NOT wrap the provider directly.
 
 Design principle
 ================
@@ -19,6 +25,29 @@ queued job came from an agent turn, chat-history compaction, or a
 session-title job. The origin caller reads the result off the
 ``LLMAttempt.response`` row (or via the ``provider.completed`` inbox
 event) and does its own post-processing in its own layer.
+
+Hook interception contract (Phase E)
+====================================
+
+The legacy contract (:class:`magi.plugins.Hook.BEFORE_LLM_CALL` /
+``AFTER_LLM_CALL`` in the ``magi.plugins`` namespace) is preserved by
+:meth:`ProvidersWorker._emit_hook`. The call is best-effort: if the
+legacy symbols aren't installed (because the upstream rewrite
+switched to ``HookPoint`` / ``HookEnvelope``), the worker silently
+no-ops rather than crashing the LLM call. The migration of the
+``audit_log`` plugin to ``HookPoint.LLM_RESPONSE_RECEIVED`` lives in
+:meth:`magi.plugins.hooks.audit_log.__init_subclass__`; the
+provider worker will gain a parallel fire site for the new API
+once the upstream hook-rewrite PR merges.
+
+Plugins that want to intercept, redact, or audit every LLM call
+subscribe to **one of** (whichever is present in the running build):
+
+  - legacy: :func:`magi.plugins.bus.register_plugin` listening for
+    ``Hook.BEFORE_LLM_CALL`` and ``Hook.AFTER_LLM_CALL``;
+  - new:    :func:`magi.plugins.hooks.register_handler` listening
+    for ``HookPoint.LLM_REQUEST_PREPARED`` /
+    ``HookPoint.LLM_RESPONSE_RECEIVED``.
 """
 
 from __future__ import annotations

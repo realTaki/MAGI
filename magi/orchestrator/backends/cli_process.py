@@ -1,13 +1,13 @@
-"""Local Profile ``RuntimeBackend`` — subprocess spawn, one MAGI per process.
+"""CLI Profile ``RuntimeBackend`` — subprocess spawn, one MAGI per process.
 
-Per architecture intent, each Local MAGI is an independent OS process.
-This backend wraps :class:`subprocess.Popen` with
+Per architecture intent, each CLI-deploy MAGI is an independent OS
+process. This backend wraps :class:`subprocess.Popen` with
 ``start_new_session=True`` so the child is detached from the launcher
 and reparented to ``init`` when the launcher exits — one MAGI crashing
 does not affect any other.
 
 ``bus.runtime.start`` / ``stop`` / ``delete`` is the single lifecycle
-entry point, identical to the K8s path.  ``magi local start <name>``
+entry point, identical to the K8s path.  ``magi cli start <name>``
 calls :class:`magi.bus.services.runtime.BackendDispatcherService` →
 :func:`magi.orchestrator.backends.factory.create` → :meth:`start`.
 
@@ -49,8 +49,8 @@ STOP_GRACE_S = 10.0
 STOP_POLL_INTERVAL_S = 0.2
 
 
-class LocalProcessRuntimeBackend:
-    kind = "local"
+class CLIProcessRuntimeBackend:
+    kind = "cli"
 
     def __init__(
         self,
@@ -88,12 +88,12 @@ class LocalProcessRuntimeBackend:
         magis_db = magis_db_path(_data_root(), magis_id, magis_name)
         return MagisProvisionResult(
             magis_id=magis_id,
-            backend_kind="local",
+            backend_kind="cli",
             database_service_name=None,
             workspace_claim_name=None,
             message=(
-                f"Local Profile — per-MAGIS SQLite pre-created at "
-                f"{magis_db} by bootstrap_local(); this backend is a no-op"
+                f"CLI Profile — per-MAGIS SQLite pre-created at "
+                f"{magis_db} by bootstrap_cli(); this backend is a no-op"
             ),
         )
 
@@ -109,7 +109,7 @@ class LocalProcessRuntimeBackend:
                 pass
             return RuntimeOperationResult(
                 runtime_id=spec.magic_id,
-                backend_kind="local",
+                backend_kind="cli",
                 backend_ref=backend_ref,
                 observed_state="failed",
                 endpoint=None,
@@ -130,12 +130,12 @@ class LocalProcessRuntimeBackend:
                 )
         return RuntimeOperationResult(
             runtime_id=spec.magic_id,
-            backend_kind="local",
+            backend_kind="cli",
             backend_ref=backend_ref,
             observed_state="running",
             endpoint=RuntimeEndpoint(
                 runtime_id=spec.magic_id,
-                backend_kind="local",
+                backend_kind="cli",
                 base_url=base_url,
                 backend_ref=backend_ref,
                 observed_state="running",
@@ -158,8 +158,8 @@ class LocalProcessRuntimeBackend:
                 )
         return RuntimeOperationResult(
             runtime_id=spec.magic_id,
-            backend_kind="local",
-            backend_ref=f"local://{pid if pid is not None else '?'}",
+            backend_kind="cli",
+            backend_ref=f"cli://{pid if pid is not None else '?'}",
             observed_state="stopped",
             endpoint=None,
             kubernetes_detail=None,
@@ -183,12 +183,12 @@ class LocalProcessRuntimeBackend:
                 )
         return RuntimeOperationResult(
             runtime_id=spec.magic_id,
-            backend_kind="local",
-            backend_ref=f"local://{pid if pid is not None else '?'}",
+            backend_kind="cli",
+            backend_ref=f"cli://{pid if pid is not None else '?'}",
             observed_state="deleted",
             endpoint=None,
             kubernetes_detail=None,
-            message="Local Profile — workspace preserved; port released",
+            message="CLI Profile — workspace preserved; port released",
         )
 
     def endpoint_for(self, spec: RuntimeSpec) -> RuntimeOperationResult:
@@ -203,15 +203,15 @@ class LocalProcessRuntimeBackend:
                     if hasattr(row.observed_state, "value")
                     else str(row.observed_state)
                 )
-                backend_ref = row.backend_ref or f"local://{row.pid or '?'}"
+                backend_ref = row.backend_ref or f"cli://{row.pid or '?'}"
                 return RuntimeOperationResult(
                     runtime_id=spec.magic_id,
-                    backend_kind="local",
+                    backend_kind="cli",
                     backend_ref=backend_ref,
                     observed_state=observed,
                     endpoint=RuntimeEndpoint(
                         runtime_id=spec.magic_id,
-                        backend_kind="local",
+                        backend_kind="cli",
                         base_url=row.base_url,
                         backend_ref=backend_ref,
                         observed_state=observed,
@@ -220,15 +220,15 @@ class LocalProcessRuntimeBackend:
                     message="endpoint from control registry",
                 )
         port = int(os.environ.get("MAGI_PORT", str(DEFAULT_PORT)))
-        backend_ref = f"local://{os.getpid()}"
+        backend_ref = f"cli://{os.getpid()}"
         return RuntimeOperationResult(
             runtime_id=spec.magic_id,
-            backend_kind="local",
+            backend_kind="cli",
             backend_ref=backend_ref,
             observed_state="unknown",
             endpoint=RuntimeEndpoint(
                 runtime_id=spec.magic_id,
-                backend_kind="local",
+                backend_kind="cli",
                 base_url=f"http://127.0.0.1:{port}",
                 backend_ref=backend_ref,
                 observed_state="unknown",
@@ -274,7 +274,7 @@ class LocalProcessRuntimeBackend:
                 "MAGI_NAME": slug,
                 "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
                 "MAGI_PORT": str(port),
-                "MAGI_BACKEND": "local",
+                "MAGI_BACKEND": "cli",
             }
         )
 
@@ -311,7 +311,7 @@ class LocalProcessRuntimeBackend:
             },
         )
         proc = subprocess.Popen(argv, **popen_kwargs)
-        return f"local://{proc.pid}", proc.pid
+        return f"cli://{proc.pid}", proc.pid
 
     def _wait_healthy(self, port: int) -> bool:
         deadline = time.monotonic() + HEALTH_POLL_TIMEOUT_S
@@ -384,7 +384,7 @@ def _resolve_slug(spec: RuntimeSpec, data_root: Path) -> str:
 
 import logging
 
-logger = logging.getLogger("magi.orchestrator.backends.local_process")
+logger = logging.getLogger("magi.orchestrator.backends.cli_process")
 
 
-__all__ = ["LocalProcessRuntimeBackend"]
+__all__ = ["CLIProcessRuntimeBackend"]
