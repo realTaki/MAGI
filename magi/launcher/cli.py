@@ -442,8 +442,9 @@ def cmd_webui(args: argparse.Namespace) -> int:
         # Production path — same as ``magi webui`` directly on 42069.
         env = os.environ.copy()
         env["MAGI_DATA_ROOT"] = str(data_root)
+        from magi.launcher.paths import magis_db_path
         env["MAGIS_DATABASE_URL"] = (
-            f"sqlite:///{data_root}/MAGIS/1-genesis/magis.db"
+            f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"
         )
         logger.info("launching magi webui on :42069 (no vite, built SPA)")
         os.execvpe(

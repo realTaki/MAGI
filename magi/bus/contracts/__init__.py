@@ -47,6 +47,7 @@ from magi.bus.contracts.tools import (
 )
 from magi.bus.contracts.auth import CallerIdentity
 from magi.bus.contracts.action_item import ActionItemView
+from magi.bus.contracts.provider_jobs import ProviderJob, ProviderJobResult
 
 
 __all__ = [
@@ -71,5 +72,7 @@ __all__ = [
     "CallerIdentity",
     # action_item
     "ActionItemView",
-]
-
+    # provider jobs (PR 2 — Phase B)
+    "ProviderJob",
+    "ProviderJobResult",
+]  # closes __all__

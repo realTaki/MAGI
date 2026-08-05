@@ -25,5 +25,11 @@ class LLMAttempt(Base):
     error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     started_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     completed_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
+    # Lease tracking — Phase B (provider-worker queue). NULL when the
+    # row is in its free state; populated while a :class:`ProvidersWorker`
+    # is in flight. ``recover_expired_provider_leases`` reclaims rows
+    # whose lease has passed without a terminal write.
+    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_until: Mapped[object | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (Index("ix_llm_attempts_run_started", "run_id", "started_at"),)

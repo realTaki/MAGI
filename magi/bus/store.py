@@ -810,8 +810,19 @@ class BusStore:
                     )
             session.commit()
 
-    def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
-        """Persist an inference lifecycle record before external LLM I/O."""
+    # --- LLM attempt lifecycle (Phase B: provider-worker queue) -----------
+    #
+    # A ``ProviderJob`` is one row in ``llm_attempts`` with
+    # ``status="queued"`` carrying the serialized request JSON. The
+    # worker claims the row, runs the provider, and writes the result
+    # back via :meth:`complete_llm_attempt`. ``phase`` carries the
+    # caller-supplied ``kind`` string (audit-only label; the worker
+    # does not branch on it).
+
+    def enqueue_provider_job(
+        self, *, run_id: str, inbox_event_id: str | None, kind: str,
+    ) -> str:
+        """Insert a queued LLMAttempt row. Returns the new attempt_id."""
         attempt_id = _new_id("llm")
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
@@ -820,24 +831,136 @@ class BusStore:
                     attempt_id=attempt_id,
                     run_id=run_id,
                     inbox_event_id=inbox_event_id,
-                    phase="agent.step",
-                    status="started",
+                    phase=kind,
+                    status="queued",
                     started_at=now,
                 )
             )
             session.commit()
         return attempt_id
 
-    def fail_llm_attempt(self, attempt_id: str, error: str) -> None:
-        """Record a failed/incomplete inference without committing a draft."""
+    def claim_next_provider_job(
+        self, worker_id: str, *, lease_seconds: int = 60,
+    ) -> tuple[str, str, str | None] | None:
+        """Lease the oldest queued LLM attempt.
+
+        Returns ``(attempt_id, run_id, inbox_event_id)`` or ``None``
+        if the queue is empty. Crashed workers' leases expire on
+        :meth:`recover_expired_provider_leases` and the row becomes
+        claimable again.
+        """
+        now = utcnow_naive()
+        until = now + timedelta(seconds=lease_seconds)
+        with open_session(self._state_dir) as session:
+            row = session.scalar(
+                select(LLMAttempt)
+                .where(LLMAttempt.status == "queued")
+                .order_by(LLMAttempt.started_at, LLMAttempt.id)
+                .limit(1)
+            )
+            if row is None:
+                return None
+            row.status = "claimed"
+            row.leased_by = worker_id
+            row.leased_until = until
+            session.commit()
+            return row.attempt_id, row.run_id, row.inbox_event_id
+
+    def complete_llm_attempt(
+        self,
+        attempt_id: str,
+        *,
+        response: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None:
+        """Unified terminal write for a claimed/started attempt.
+
+        Exactly one of ``response`` / ``error`` should be set:
+        ``response`` for successes, ``error`` for failures. Setting
+        neither leaves the row in its current status (useful for
+        "discarded" without an explicit terminal state).
+        """
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
-            attempt = session.scalar(select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id))
-            if attempt is not None:
+            attempt = session.scalar(
+                select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id)
+            )
+            if attempt is None:
+                return
+            attempt.completed_at = now
+            attempt.leased_until = None
+            attempt.leased_by = None
+            if response is not None:
+                attempt.status = "completed"
+                attempt.response = response
+                attempt.error = None
+            elif error is not None:
                 attempt.status = "failed"
-                attempt.error = {"detail": error}
-                attempt.completed_at = now
+                attempt.error = error
+                attempt.response = None
+            session.commit()
+
+    def recover_expired_provider_leases(self) -> int:
+        """Return abandoned provider jobs to the queue.
+
+        Called once at worker start. Rows with ``status="claimed"``
+        and a lease in the past are set back to ``queued`` so a fresh
+        worker can pick them up.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            rows = list(
+                session.scalars(
+                    select(LLMAttempt).where(
+                        LLMAttempt.status == "claimed",
+                        LLMAttempt.leased_until.is_not(None),
+                        LLMAttempt.leased_until < now,
+                    )
+                )
+            )
+            for row in rows:
+                row.status = "queued"
+                row.leased_by = None
+                row.leased_until = None
+            if rows:
                 session.commit()
+            return len(rows)
+
+    def persist_provider_job_request(
+        self, attempt_id: str, *, request: dict[str, Any],
+    ) -> None:
+        """Write the serialized request onto a queued attempt row."""
+        with open_session(self._state_dir) as session:
+            attempt = session.scalar(
+                select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id)
+            )
+            if attempt is None:
+                return
+            attempt.request = request
+            session.commit()
+
+    def load_provider_job_request(self, attempt_id: str) -> dict[str, Any] | None:
+        """Read back the serialized request the worker should run."""
+        with open_session(self._state_dir) as session:
+            attempt = session.scalar(
+                select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id)
+            )
+            if attempt is None:
+                return None
+            return dict(attempt.request) if attempt.request else None
+
+    # ---- deprecated thin aliases (kept so PR 2 doesn't have to touch
+    # every existing caller; will be removed in Phase D) ----------------
+
+    def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
+        """Deprecated. Use :meth:`enqueue_provider_job` instead."""
+        return self.enqueue_provider_job(
+            run_id=run_id, inbox_event_id=inbox_event_id, kind="agent.step",
+        )
+
+    def fail_llm_attempt(self, attempt_id: str, error: str) -> None:
+        """Deprecated. Use :meth:`complete_llm_attempt` with ``error=``."""
+        self.complete_llm_attempt(attempt_id, error={"detail": error})
 
     def load_tool_continuation(
         self, run_id: str
