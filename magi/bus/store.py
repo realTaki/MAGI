@@ -37,6 +37,105 @@ from magi.bus.models.queue import (
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import open_session
 from magi.bus.models.local.tool import ToolDefinitionRecord
+from magi.bus.models.local.hook_signoff import HookSignoff
+
+
+# Subject-type ↔ hook-point mapping.  Every bus.store boundary
+# method declares its (subject_type, hook_point) pair so the
+# dispatch helper can stamp the row without each call site
+# spelling out the literal.  Hook points keep the original
+# ``HookPoint`` enum string values so the public ``hook_plugin_configs``
+# table can route plugins without code changes.
+SUBJECT_TYPE_FOR_HOOK_POINT: dict[str, str] = {
+    "llm.request.prepared": "llm_attempt",
+    "llm.response.received": "llm_attempt",
+    "tool.call.pending": "tool_job",
+    "tool.result.received": "tool_job",
+    "delivery.pending": "delivery_outbox",
+    "delivery.dispatched": "delivery_outbox",
+}
+
+
+def _dispatch_hook_signoffs(
+    *,
+    state_dir: str | None,
+    subject_type: str,
+    subject_id: str,
+    hook_point: str,
+) -> int:
+    """Insert one ``hook_signoffs`` row per enabled plugin subscribed to ``hook_point``.
+
+    Reads the persistent ``hook_plugin_configs`` table and creates
+    one pending signoff for each ``enabled`` row whose JSON
+    ``hook_points`` list contains the given hook point.  The
+    unique constraint on ``(subject_type, subject_id, hook_point,
+    plugin_id)`` makes the dispatch idempotent: re-enqueueing the
+    same subject (e.g. via a retry path) does not duplicate the
+    signoff.
+
+    Returns the number of signoffs inserted.  ``0`` is the
+    expected default when no plugin subscribes to the hook point
+    — downstream workers don't filter on empty result, the
+    WHERE clause just becomes a no-op.
+    """
+    from magi.bus.models.local.control_plane import HookPluginConfigRow
+
+    now = utcnow_naive()
+    inserted = 0
+    with open_session(state_dir) as session:
+        plugin_rows = session.query(HookPluginConfigRow).filter_by(enabled=True).all()
+        for row in plugin_rows:
+            hook_points = row.hook_points or []
+            if hook_point not in hook_points:
+                continue
+            # Use raw SQL to leverage the ON CONFLICT clause so a
+            # concurrent dispatcher (e.g. retry path) does not
+            # raise UniqueConstraint; the existing pending row is
+            # left in place.
+            from sqlalchemy import text as _text
+            session.execute(
+                _text(
+                    "INSERT OR IGNORE INTO hook_signoffs "
+                    "(subject_type, subject_id, hook_point, plugin_id, "
+                    " pending, created_at, acked_at) "
+                    "VALUES (:st, :sid, :hp, :pid, 1, :now, NULL)"
+                ),
+                {
+                    "st": subject_type,
+                    "sid": subject_id,
+                    "hp": hook_point,
+                    "pid": row.hook_id,
+                    "now": now,
+                },
+            )
+            inserted += 1
+        session.commit()
+    return inserted
+
+
+def _has_pending_signoff(
+    *,
+    state_dir: str | None,
+    subject_type: str,
+    subject_id: str,
+) -> bool:
+    """Return ``True`` if at least one plugin still owes a signoff for this subject.
+
+    Used by ``claim_next_*`` methods to keep a job invisible to
+    downstream workers until every subscribed plugin has acked.
+    """
+    from sqlalchemy import text as _text
+
+    with open_session(state_dir) as session:
+        row = session.execute(
+            _text(
+                "SELECT 1 FROM hook_signoffs "
+                "WHERE subject_type = :st AND subject_id = :sid "
+                "AND pending = 1 LIMIT 1"
+            ),
+            {"st": subject_type, "sid": subject_id},
+        ).first()
+    return row is not None
 
 
 def _new_id(prefix: str) -> str:
@@ -444,7 +543,15 @@ class BusStore:
     def claim_next_delivery(
         self, worker_id: str, *, lease_seconds: int = 60
     ) -> DeliveryClaim | None:
-        """Lease one committed channel delivery for external I/O."""
+        """Lease one committed channel delivery for external I/O.
+
+        Rows are invisible until every subscribed plugin has acked
+        their ``hook_signoffs`` row (see
+        :func:`_dispatch_hook_signoffs`).  The worker that claimed
+        the row is allowed to send the IM message; the row's status
+        becomes ``processing`` and stays leased until
+        :meth:`complete_delivery` settles it.
+        """
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
             row = session.scalar(
@@ -457,6 +564,16 @@ class BusStore:
                 .limit(1)
             )
             if row is None:
+                return None
+            # Filter on pending signoffs.  If any plugin still owes
+            # a signoff for this row, refuse the claim -- the
+            # worker is not allowed to send until every plugin
+            # has had its chance to observe the row.
+            if _has_pending_signoff(
+                state_dir=self._state_dir,
+                subject_type="delivery_outbox",
+                subject_id=row.delivery_id,
+            ):
                 return None
             row.status = "processing"
             row.leased_by = worker_id

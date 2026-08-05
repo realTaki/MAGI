@@ -47,6 +47,10 @@ from magi.bus.protocols.tools import (
 )
 from magi.bus.protocols.auth import CallerIdentity
 from magi.bus.protocols.action_item import ActionItemView
+from magi.bus.protocols.control_jobs import (
+    PROVIDER_CONFIG_CHANGED,
+    ControlJobKind,
+)
 from magi.bus.protocols.llm_jobs import LLMJob, LLMJobKind, LLMJobResult
 
 
@@ -76,4 +80,7 @@ __all__ = [
     "LLMJob",
     "LLMJobKind",
     "LLMJobResult",
+    # transient control jobs (provider.config_changed)
+    "ControlJobKind",
+    "PROVIDER_CONFIG_CHANGED",
 ]  # closes __all__

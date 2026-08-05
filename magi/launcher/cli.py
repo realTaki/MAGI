@@ -187,6 +187,14 @@ def cmd_start(args: argparse.Namespace) -> int:
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
+    # Propagate the resolved data root into the env so downstream
+    # ``magi.launcher.paths`` resolvers (and ``init_orm`` →
+    # ``get_engine()``) see the same root the launcher is using.
+    # The Composition Root owns this for the lifetime of cmd_start;
+    # child runtimes re-derive it from the systemd ``Environment=``
+    # block, so no cross-process pollution.
+    os.environ["HOST_WORKSPACE_DIR"] = str(data_root)
+
     # ── control-plane bootstrap (first run only) ──
     home = magis_home(data_root)
     secret_path = control_secret_path(home)

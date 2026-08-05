@@ -230,13 +230,13 @@ def start_connector_bridge(hook_service: object) -> None:
     from magi.connectors.base import ConnectorEventKind
     from magi.connectors.bus import get_bus as get_connector_bus
     from magi.bus.hooks.contracts import (
-        EvaluationRequest,
         HookPoint,
         PrincipalHookContext,
         PrincipalType,
         RuntimeHookContext,
         SecurityHookContext,
     )
+    from magi.bus.hooks.service import EvaluationRequest
     from magi.bus.db.base import utcnow_naive
 
     connector_bus = get_connector_bus()
