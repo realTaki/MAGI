@@ -13,20 +13,16 @@ logger = logging.getLogger("magi.db.alembic_runner")
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
 #: The terminal revision every current MAGI database should be at.
-#: The chain is ``0001_initial_schema`` (the dev-mode baseline
-#: that absorbs every earlier schema change) → ``0007_control_jobs``
-#: (the transient BUS-to-worker refresh signal added on top).
-#: Anything between them — 0002-0006 — was folded back into
-#: 0001 and removed; ``0007``'s ``down_revision`` was rebased
-#: to point at 0001 so the chain has no orphans.
-#:
-#: The rebase guard below handles the post-fold case where a
-#: developer's local DB still has an ``alembic_version`` row
-#: pointing at a deleted revision: it blanks the row so the
-#: upgrade replays the canonical chain. The static
+#: ``0001_initial_schema`` is the **only** alembic revision —
+#: every schema feature (including the transient BUS-to-worker
+#: refresh signal that used to live in ``0007_control_jobs``)
+#: is folded into this single baseline. The rebase guard
+#: below handles dev snapshots whose ``alembic_version`` row
+#: still points at a deleted revision. The static
 #: ``test_canonical_head_equals_real_head`` guard fails CI the
-#: moment a new head is added without bumping this constant.
-CANONICAL_HEAD = "0007_control_jobs"
+#: moment a second revision is added without un-squashing the
+#: chain.
+CANONICAL_HEAD = "0001_initial_schema"
 
 
 def _find_alembic_ini() -> Path:

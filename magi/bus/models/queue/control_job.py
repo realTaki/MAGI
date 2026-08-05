@@ -11,6 +11,11 @@ drains that kind on every poll tick and rebuilds its cached
 ``LLMProvider`` if at least one row was deleted. Adding a second
 kind requires extending :class:`magi.bus.protocols.control_jobs.ControlJobKind`
 and the consumer's drain call — the model itself stays generic.
+
+Note: the runtime ships a single alembic revision
+(``0001_initial_schema``) that declares this table; the ORM model
+here exists so SQLAlchemy ``Base.metadata.create_all`` (the public
+PG schema bootstrap) stays in sync with the SQLite baseline.
 """
 
 from __future__ import annotations

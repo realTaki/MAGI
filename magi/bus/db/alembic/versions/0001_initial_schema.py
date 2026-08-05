@@ -35,6 +35,10 @@ Tables owned (alphabetical)
   - ``chat_sessions``          — chat session header.
   - ``contact_notes``          — long-arc facts about people.
   - ``contacts``               — unified people directory.
+  - ``control_jobs``           — transient BUS-to-worker refresh
+                                 signal (``provider.config_changed``
+                                 wakes the provider worker to rebuild
+                                 its cached SDK client).
   - ``control_operators``      — singleton WebUI control-plane admins.
   - ``control_settings``       — singleton WebUI control-plane KV.
   - ``deliveries``             — durable committed channel delivery
@@ -686,6 +690,26 @@ def upgrade() -> None:
         ["subject_type", "subject_id"],
     )
 
+    # Transient control-job queue (provider-config cache refactor).
+    # Rows are inserted by ``save_runtime_settings`` and deleted by
+    # ``BusStore.drain_control_jobs`` on the worker's next poll
+    # tick; this is a queue, not an audit log. ``hook_evaluations``
+    # and ``llm_attempts`` continue to own the durable trace.
+    op.create_table(
+        "control_jobs",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("job_id", sa.String(length=64), nullable=False),
+        sa.Column("kind", sa.String(length=64), nullable=False),
+        sa.Column("payload", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint("job_id", name="uq_control_jobs_job_id"),
+    )
+    op.create_index(
+        "ix_control_jobs_drain",
+        "control_jobs",
+        ["kind", "id"],
+    )
+
     op.create_table(
         "tool_definitions",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -862,6 +886,7 @@ def downgrade() -> None:
     op.execute("DROP TRIGGER IF EXISTS chat_messages_ad")
     op.execute("DROP TRIGGER IF EXISTS chat_messages_ai")
     op.execute("DROP TABLE IF EXISTS chat_messages_fts")
+    op.execute("DROP TABLE IF EXISTS control_jobs")
     op.execute("DROP TABLE IF EXISTS control_operators")
     op.execute("DROP TABLE IF EXISTS control_settings")
     op.execute("DROP TABLE IF EXISTS eva_runtimes")
