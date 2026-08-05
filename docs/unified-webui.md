@@ -80,7 +80,7 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 
 生产启动使用 `deploy/k8s/bootstrap-k8s.sh`；脚本会部署 orchestrator、初始 runtime 和
 `magi-webui`，并提示将本地端口转发到 `svc/magi-webui`。dev 模式请改用
-`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/local/`，每个 MAGI
+`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/cli/`，每个 MAGI
 是独立 OS 进程（`magi local start` 或 systemd 管理）。
 
 ## 仍需后续增强的部分

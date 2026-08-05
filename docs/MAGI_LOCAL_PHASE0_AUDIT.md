@@ -9,7 +9,7 @@
 > - `magi/constants.py` 已废弃
 > - 路径解析统一由 `magi/launcher/paths.py` 负责
 >
-> 权威文档请参阅 `docs/ARCHITECTURE.md` 和 `deploy/local/README.md`。
+> 权威文档请参阅 `docs/ARCHITECTURE.md` 和 `deploy/cli/README.md`。
 
 Audit companion to [`MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md`](MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md) §12 ("Phase 0：基线审计").  Walked the tree as of the launch-pad consolidation commit (where `magi.runtime`, `magi.workspace`, `magi.deploy`, `magi.local` were folded into `magi.launcher`).
 

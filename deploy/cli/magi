@@ -14,10 +14,10 @@
 # ``magi local install-service`` registers one systemd unit per MAGI.
 #
 # Usage:
-#   deploy/local/magi local start        # run first MAGI (eva-000)
-#   deploy/local/magi local start --name eva-001  # run a specific MAGI
-#   deploy/local/magi local install-service       # systemd units for all
-#   deploy/local/magi --help
+#   deploy/cli/magi local start        # run first MAGI (eva-000)
+#   deploy/cli/magi local start --name eva-001  # run a specific MAGI
+#   deploy/cli/magi local install-service       # systemd units for all
+#   deploy/cli/magi --help
 set -euo pipefail
 
 resolve_data_root() {
@@ -39,7 +39,7 @@ if command -v magi >/dev/null 2>&1; then
 elif [ -x "$SCRIPT_DIR/../../.venv/bin/magi" ]; then
   MAGI_BIN="$SCRIPT_DIR/../../.venv/bin/magi"
 else
-  echo "[magi] 'magi' is not on PATH. Run deploy/local/install.sh first." >&2
+  echo "[magi] 'magi' is not on PATH. Run deploy/cli/install.sh first." >&2
   exit 127
 fi
 

@@ -9,7 +9,7 @@
 #
 #   deploy/k8s/bootstrap-k8s.sh          ← this file
 #   deploy/k8s-dev/bootstrap-k8s-dev.sh  ← single-node kind dev cluster
-#   deploy/local/                        ← non-container openclaw-style
+#   deploy/cli/                        ← non-container openclaw-style
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"

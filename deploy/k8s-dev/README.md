@@ -10,7 +10,7 @@ orchestrator 边界是否如设计一样工作；同时给后端 + WebUI 提供�
 
 | 部署 | 路径 | 用途 |
 | --- | --- | --- |
-| [本地单机（非容器）](../local/) | `deploy/local/` | openclaw 风格一键启动 |
+| [本地单机（非容器）](../local/) | `deploy/cli/` | openclaw 风格一键启动 |
 | **k8s 单机（dev）** ← 当前 | `deploy/k8s-dev/` | 调试 k8s 模块化方案 |
 | [k8s 生产](../k8s/README.md) | `deploy/k8s/` | 现有集群当生产环境 |
 

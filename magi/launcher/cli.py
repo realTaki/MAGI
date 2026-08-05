@@ -534,8 +534,8 @@ def cmd_install_service(args: argparse.Namespace) -> int:
     if current_platform() != "linux":
         print(
             f"error: install-service is Linux-only (current platform: {current_platform()}). "
-            "On macOS, see deploy/local/service/magi.plist.example.  "
-            "On Windows, see deploy/local/service/magi-task.xml.",
+            "On macOS, see deploy/cli/service/magi.plist.example.  "
+            "On Windows, see deploy/cli/service/magi-task.xml.",
             file=sys.stderr,
         )
         return 2

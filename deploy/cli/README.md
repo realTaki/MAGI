@@ -23,19 +23,19 @@
 
 ```bash
 # 1. 安装
-./deploy/local/install.sh
+./deploy/cli/install.sh
 
 # 2. 启动 Adam（第一个 MAGI，前台 + 自动打开浏览器）
-./deploy/local/magi local start
+./deploy/cli/magi local start
 
 # 3. 启动其他 MAGI（如 eva-00）
-./deploy/local/magi local start --name eva-00 --port 42070
+./deploy/cli/magi local start --name eva-00 --port 42070
 
 # 4. （可选）为所有 MAGI 注册 systemd user unit
-./deploy/local/magi local install-service
+./deploy/cli/magi local install-service
 
 # 5. 卸载服务
-./deploy/local/magi local uninstall-service
+./deploy/cli/magi local uninstall-service
 ```
 
 `install.sh` 仅做三件事：

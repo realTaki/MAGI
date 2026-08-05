@@ -10,13 +10,13 @@
 > - **systemd**：本文设计单个 launcher service（§8），实际实现为每 MAGI
 >   独立 unit（`magi-adam.service`, `magi-eva-00.service`, ...）。
 > - **数据根路径**：本文建议 `~/.local/share/magi`（XDG），实际使用 `~/.magi`
->   （openclaw 风格），见 `deploy/local/README.md`。
+>   （openclaw 风格），见 `deploy/cli/README.md`。
 > - **LocalProcessRuntimeBackend**：本文设计的 backend 已移除，不再需要。
 > - **硬编码 `/workspace`**：已消除，K8s 通过 `MAGI_WORKSPACE_DIR` env var 显式注入，
 >   Local 通过 `HOST_WORKSPACE_DIR` 推导。
 >
 > 权威文档请参阅：
-> - `deploy/local/README.md` — 本地部署完整指南
+> - `deploy/cli/README.md` — 本地部署完整指南
 > - `deploy/README.md` — 三种部署方式对比
 > - `docs/ARCHITECTURE.md` — 架构文档
 >
@@ -259,7 +259,7 @@ channels.tasks Worker
 ## 5. Cross-platform data layout
 
 > **注意**：本节为设计计划，实际实现采用 openclaw 风格路径。
-> 权威布局见 `deploy/local/README.md`。以下为设计记录。
+> 权威布局见 `deploy/cli/README.md`。以下为设计记录。
 
 ### 5.1 默认数据根目录
 
@@ -446,7 +446,7 @@ Registry 不能只保存 PID。至少保存：
 
 ## 8. CLI 与启动流程
 
-> **注意**：实际 CLI 实现与本节计划有差异。当前命令见 `deploy/local/README.md`。
+> **注意**：实际 CLI 实现与本节计划有差异。当前命令见 `deploy/cli/README.md`。
 > `magi local start` 使用 `execve` 替换进程而非 spawn 子进程；
 > `magi local install-service` 为每 MAGI 注册独立 systemd 单元。
 

@@ -4,14 +4,14 @@
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 单机本地（非容器） | [deploy/local/](local/) | `./deploy/local/install.sh` + `magi local start` |
+| 单机本地（非容器） | [deploy/cli/](local/) | `./deploy/cli/install.sh` + `magi local start` |
 | k8s 单机（dev 模式） | [deploy/k8s-dev/](k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | k8s 生产（已有集群） | [deploy/k8s/](k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 下面这张决策树帮你选路径：
 
 ```text
-                    ┌─ 我只想跑一个本地 MAGI 试试 ─── deploy/local/
+                    ┌─ 我只想跑一个本地 MAGI 试试 ─── deploy/cli/
                     │
 你想做什么？ ────────┼─ 我在改 k8s 清单 / 想用 Vite HMR ── deploy/k8s-dev/
                     │

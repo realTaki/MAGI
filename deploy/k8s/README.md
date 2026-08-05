@@ -9,7 +9,7 @@
 
 | 目录 | 形态 | 用途 |
 | --- | --- | --- |
-| [deploy/local/](../local/) | 单机非容器 | openclaw 风格一键本地启动 |
+| [deploy/cli/](../local/) | 单机非容器 | openclaw 风格一键本地启动 |
 | [deploy/k8s-dev/](../k8s-dev/) | k8s 单机（kind dev） | 调试 k8s 模块化方案 |
 | `deploy/k8s/` ← 当前 | k8s 生产 | 把现有集群当生产环境使用 |
 
@@ -282,7 +282,7 @@ EVA Bob    → eva-bob-magi-workspace PVC → /workspace
 ## 5. 持久化布局
 
 Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供（`MAGI_WORKSPACE_DIR=/workspace`）；非生产
-部署（`deploy/local/` 单机本地、`deploy/k8s-dev/` kind dev）虽然
+部署（`deploy/cli/` 单机本地、`deploy/k8s-dev/` kind dev）虽然
 底层是宿主目录，但应用看到的目录树与生产 PVC 完全一致：
 
 ```text
@@ -290,7 +290,7 @@ Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供（`MAGI_WORKSPACE_DIR=
 PVC /workspace                                       per-MAGI 私有 (MAGI_WORKSPACE_DIR=/workspace)
 PVC /magis                                            直属 MAGIS 公共
 
-# 非容器单机 (deploy/local/)
+# 非容器单机 (deploy/cli/)
 ~/.magi/MAGIC/<slug>/workspace/             per-MAGI 私有
 ~/.magi/MAGIS/<magis_id>-<slug>/           直属 MAGIS 公共
 
