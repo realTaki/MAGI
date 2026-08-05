@@ -135,9 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"magi {__version__}")
     parser.add_argument(
         "service",
-        nargs="?",
-        choices=("runtime", "webui", "local"),
-        default="runtime",
+        nargs="*",
         help="service role: runtime (default), webui control plane, or `local` (Local Profile launcher — start/status/stop/doctor after the verb)",
     )
     parser.add_argument(
@@ -145,12 +143,26 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print resolved config as JSON and exit. Used by container readiness probes.",
     )
-    args = parser.parse_args(argv)
+    args, extras = parser.parse_known_args(argv)
+    # Materialise argv so downstream dispatchers (e.g. ``_run_local``)
+    # don't depend on whether ``main()`` was called from the console
+    # script wrapper (where ``argv`` arrives as ``None``).
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # Default to runtime when no service is given.
+    if not args.service:
+        args.service = ["runtime"]
+    # Validate the chosen service role; trailing positionals are reserved
+    # for the per-service CLI (e.g. ``magi local start``).
+    if args.service[0] not in ("runtime", "webui", "local"):
+        parser.error(
+            f"unknown service {args.service[0]!r} "
+            "(expected runtime | webui | local)"
+        )
     if args.check:
         return check()
-    if args.service == "webui":
+    if args.service[0] == "webui":
         run_webui()
-    elif args.service == "local":
+    elif args.service[0] == "local":
         return _run_local(argv)
     else:
         run()

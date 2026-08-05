@@ -32,13 +32,18 @@ if config.config_file_name is not None:
 
 # State directory is <WORKSPACE>/memories (container /workspace/memories,
 # local dev from MAGI_WORKSPACE_DIR env).  The programmatic runner sets
-# the URL directly; this is only a convenience for CLI workflows.
+# the URL directly; this is only a convenience for CLI workflows, so we
+# only fall back to the global ``state_dir()`` resolution when no URL
+# has been provided by the caller — otherwise the caller's resolved path
+# (e.g. the Local Profile's ``<data_root>/state``) would be silently
+# shadowed by the container default.
 from magi.launcher.paths import state_dir as _state_dir
 
-config.set_main_option(
-    "sqlalchemy.url",
-    f"sqlite:///{Path(_state_dir()).resolve() / 'magi.db'}",
-)
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"sqlite:///{Path(_state_dir()).resolve() / 'magi.db'}",
+    )
 
 target_metadata = Base.metadata
 

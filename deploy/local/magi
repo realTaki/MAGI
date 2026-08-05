@@ -43,4 +43,9 @@ else
 fi
 
 export MAGI_DATA_ROOT="$(resolve_data_root)"
+# Local Profile launches runtimes via the in-process backend, not via
+# the Kubernetes operator. The factory defaults to ``kubernetes``; the
+# Local wrapper overrides that so ``magi local start`` boots the Adam
+# without needing cluster credentials.
+export MAGI_BACKEND="${MAGI_BACKEND:-local_process}"
 exec "$MAGI_BIN" "$@"

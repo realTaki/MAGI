@@ -88,6 +88,15 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("error: control registry was not initialised", file=sys.stderr)
         return 2
 
+    # Local Profile seeds the public MAGIS schema (Adam + Genesis MAGIS)
+    # directly into the Local SQLite engine — the same ``seed_root=True``
+    # path ``magi runtime`` uses in the container. Without this, the
+    # private SQLite has the runtime tables but the MAGIS engine has
+    # nothing and ``list_all_magic`` raises ``no such table: magic``.
+    from magi.bus.db.magis import init_magis_public_db
+
+    init_magis_public_db(seed_root=True)
+
     # Phase 6 baseline: ensure the Adam runtime exists.
     magic_id = _ensure_adam(bus)
     bus.control_registry.upsert_desired_state(
@@ -324,7 +333,7 @@ def _ensure_adam(bus) -> int:
     from magi.bus.services.magic import MagicService
 
     svc: MagicService = bus.magic
-    magics = svc.list()
+    magics = svc.list_all_magic()
     if magics:
         return magics[0].id
     raise RuntimeError(

@@ -150,7 +150,7 @@ def bootstrap_local(
 
         control_engine = build_control_engine(control_dir(layout.data_root))
 
-    return _bootstrap(
+    return _bus_bootstrap(
         str(layout.state_dir),
         initialise_local=initialise,
         magis_engine=magis_engine,

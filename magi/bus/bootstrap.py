@@ -140,7 +140,7 @@ def _bootstrap(
             ControlRepository(control_engine)
         )
 
-    return Bus(
+    bus = Bus(
         agent_runs=AgentRunsService(store),
         tool_catalog=ToolCatalogService(state_dir),
         tool_jobs=ToolJobsService(store),
@@ -163,6 +163,17 @@ def _bootstrap(
         registry=RuntimeRegistryService(dispatcher=runtime_service),
         control_registry=control_registry_service,
     )
+    # ``_bootstrap`` is the only place a Bus is constructed. Registering it
+    # as the process-wide singleton here lets lazy resolvers (e.g.
+    # ``RuntimeService.backend`` falling back to ``get_bus().control_registry``
+    # in ``LocalProcessRuntimeBackend.__init__``) see the same
+    # control_registry the Composition Root injected — without this, the
+    # Local Profile's ``bootstrap_local`` builds a wired Bus but the first
+    # ``get_bus()`` call from the backend would construct a fresh one with
+    # ``control_registry=None`` and crash on the ``None`` deref.
+    global _bus
+    _bus = bus
+    return bus
 
 
 # --------------------------------------------------------------------------- #
