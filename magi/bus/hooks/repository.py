@@ -141,7 +141,7 @@ class HookEvaluationRepository:
                 completed_at=None,
                 duration_ms=None,
                 attempt_count=pending.attempt,
-                metadata=dict(pending.metadata or {}),
+                meta=dict(pending.metadata or {}),
                 created_at=now,
             )
             session.add(row)
@@ -213,7 +213,7 @@ class HookEvaluationRepository:
             row.error_type = completion.error_type
             row.sanitized_error = completion.sanitized_error
             if completion.metadata is not None:
-                row.metadata = dict(completion.metadata)
+                row.meta = dict(completion.metadata)
             row.completed_at = now
             session.commit()
             session.refresh(row)
@@ -340,7 +340,7 @@ def _row_to_dto(row: HookEvaluationRow) -> HookEvaluation:
         sanitized_error=row.sanitized_error,
         attempt_count=row.attempt_count,
         created_at=row.created_at,
-        metadata=dict(row.metadata or {}),
+        metadata=dict(row.meta or {}),
     )
 
 

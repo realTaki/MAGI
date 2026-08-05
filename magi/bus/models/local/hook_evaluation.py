@@ -45,7 +45,7 @@ class HookEvaluation(Base):
     error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sanitized_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    meta: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[object] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
     __table_args__ = (

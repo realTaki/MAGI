@@ -30,19 +30,20 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
-# NOTE: imports go direct to submodules, not through ``magi.bus``.
-# ``magi.bus`` lazily exposes the bootstrap facade; importing it
-# transitively registers the ORM (including
-# ``HookEvaluation.metadata`` which collides with the SQLAlchemy
-# reserved name ``Base.metadata``). Calling bootstrap is fine —
-# eagerly importing it isn't. The worker never needs the
-# facade; it only needs ``AgentMessage`` + ``StreamEvent`` +
-# the ``get_bus_store`` / ``get_stream_hub`` accessors.
-from magi.bus.contracts.agent import BusStoreProtocol
-from magi.bus.protocols.agent import AgentMessage, InboxKind
+# ``magi.bus.bootstrap`` and ``magi.bus.store`` are *deferred*
+# to runtime (inside the methods that need them). Eager import
+# would transitively register ``magi.bus.models.local.hook_evaluation``
+# which carries a SQLAlchemy ``Mapped`` named ``metadata`` — that
+# collides with the reserved ``Base.metadata`` on SQLAlchemy's
+# declarative API. The double-registration trips the error any
+# time ``magi.bus.bootstrap`` is statically imported after the
+# app's own bootstrap has already registered the model. Touching
+# only the leaf modules here keeps the worker module load cheap
+# and lets the runtime's first ``bootstrap()`` call register each
+# model exactly once.
+from magi.bus.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
 from magi.bus.protocols.provider_jobs import ProviderJob
-from magi.bus.stream import StreamEvent, get_stream_hub
-from magi.bus.bootstrap import get_bus_store
+from magi.bus.stream import StreamEvent
 from magi.providers import get_provider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
@@ -74,7 +75,10 @@ class ProvidersWorker:
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        self.store = store or get_bus_store()
+        # Lazy-resolve the store so the module load doesn't trigger
+        # the bus.bootstrap double-import chain (see top-of-file
+        # note). Tests injecting a store skip this entirely.
+        self.store = store or _lazy_get_bus_store()
         self.worker_id = f"provider-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         if concurrency is None:
@@ -254,7 +258,8 @@ class ProvidersWorker:
             return
 
         # 4. Emit ``llm.started`` deltas + the BEFORE_LLM_CALL hook.
-        hub = get_stream_hub()
+        from magi.bus.stream import get_stream_hub as _get_hub
+        hub = _get_hub()
         hub.publish(StreamEvent(run_id, attempt_id, 1, "llm.started", {}))
         self._emit_hook(
             "before",
@@ -440,6 +445,19 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _lazy_get_bus_store() -> BusStoreProtocol:
+    """Resolve the process-global ``BusStore`` lazily.
+
+    Importing ``magi.bus.bootstrap`` at module load would trigger a
+    SQLAlchemy model double-registration against
+    ``Base.metadata`` (see top-of-file note). Defer the import to
+    first use; by then the runtime's own ``bootstrap()`` has run
+    and the model is registered exactly once.
+    """
+    from magi.bus.bootstrap import get_bus_store as _get
+    return _get()
+
+
 # ----- module-level singletons ---------------------------------------
 
 
@@ -473,7 +491,7 @@ async def enqueue_provider_job(job: ProviderJob) -> str:
     Wakes the local worker (no-op across processes; that's fine —
     the poller will pick the row up on its next tick).
     """
-    store = get_bus_store()
+    store = _lazy_get_bus_store()
     attempt_id = store.enqueue_provider_job(
         run_id=job.run_id,
         inbox_event_id=job.inbox_event_id,

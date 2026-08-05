@@ -24,6 +24,8 @@ from magi.bus.services import (
     ToolCatalogService,
     ToolJobsService,
 )
+from magi.bus.hooks import HookService
+from magi.bus.hooks.hooks_service_init import install_hooks_into_bus
 from magi.bus.services.control_registry import ControlRegistryService
 from magi.bus.services.dispatcher import DispatcherService
 from magi.bus.services.runtime import BackendDispatcherService, RuntimeRegistryService
@@ -59,6 +61,12 @@ class Bus:
     # Phase 3 close-out — Local control-plane registry (no-op on K8s
     # For Local Profile the MAGIS engine backs it).
     control_registry: Optional[ControlRegistryService] = None
+    # Hook subsystem — owns the audit + GATE pipeline for every
+    # observable BUS event.  The composition root (or a test)
+    # populates ``bus.hooks`` with registered handlers via
+    # :func:`magi.bus.hooks.install_hooks_into_bus`; an empty
+    # service is shipped here so ``bus.hooks`` is always defined.
+    hooks: HookService = None  # type: ignore[assignment]
 
 
 def bootstrap(
@@ -155,6 +163,14 @@ def _bootstrap(
         runtime=runtime_service,
         registry=RuntimeRegistryService(dispatcher=runtime_service),
         control_registry=control_registry_service,
+        # ``hooks`` is installed by the composition root after the
+        # Bus singleton exists.  An empty service keeps every
+        # ``bus.hooks.<method>(...)`` call site stable whether or
+        # not the launcher has registered any handlers.
+        hooks=install_hooks_into_bus(
+            state_dir=state_dir,
+            config_source=None,
+        ),
     )
     # ``_bootstrap`` is the only place a Bus is constructed. Registering it
     # as the process-wide singleton here lets lazy resolvers see the same
