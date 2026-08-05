@@ -22,9 +22,8 @@ from magi.bus.db.control.repository import (
     UnknownRuntime,
 )
 
-# Re-export the desired / observed state enums so consumers
-# (``magi.orchestrator.backends.local_process``) can import them via
-# the BUS façade rather than reaching into ``magi.bus.db.control.models``
+# Re-export the desired / observed state enums so consumers can import
+# them via the BUS façade rather than reaching into ``magi.bus.db.control.models``
 # (boundary test rule: ``magi.orchestrator ⊥ magi.bus.db``).
 from magi.bus.db.control.models import (  # noqa: E402
     RuntimeDesiredState,

@@ -44,7 +44,7 @@ def repo(tmp_path: Path) -> ControlRepository:
 
 def test_upsert_then_record_spawn_then_get(repo: ControlRepository) -> None:
     repo.upsert_desired_state(
-        1, "local_process", RuntimeDesiredState.STARTED
+        1, "local", RuntimeDesiredState.STARTED
     )
     repo.attach_paths(
         1,
@@ -84,7 +84,7 @@ def test_port_allocator_unique_per_runtime(repo: ControlRepository) -> None:
 
 
 def test_record_stop_clears_pid(repo: ControlRepository) -> None:
-    repo.upsert_desired_state(9, "local_process", RuntimeDesiredState.STARTED)
+    repo.upsert_desired_state(9, "local", RuntimeDesiredState.STARTED)
     repo.record_spawn(9, pid=99, base_url="http://127.0.0.1:42150", port=42150)
     repo.record_stop(9)
     snap = repo.get_runtime(9)
@@ -148,7 +148,7 @@ def test_concurrent_port_allocations(tmp_path: Path) -> None:
 
 
 def test_archive_then_forget(repo: ControlRepository) -> None:
-    repo.upsert_desired_state(11, "local_process", RuntimeDesiredState.STARTED)
+    repo.upsert_desired_state(11, "local", RuntimeDesiredState.STARTED)
     repo.record_spawn(11, pid=11111, base_url="http://127.0.0.1:42160", port=42160)
     repo.archive_workspace(11, Path("/tmp/archive/adam-old"))
     repo.forget(11)

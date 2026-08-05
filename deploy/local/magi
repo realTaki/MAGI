@@ -9,13 +9,14 @@
 #   2. Forward all arguments to the underlying `magi` binary so the
 #      Python implementation remains the single source of truth.
 #
-# Operators who prefer the raw `magi` command can keep using it; this
-# wrapper only adds the `MAGI_DATA_ROOT` glue so a fresh terminal
-# `magi local start` does the right thing with no extra flags.
+# Each MAGI is an independent OS process. ``magi local start`` bootstraps
+# once (first run) then becomes the MAGI runtime in the current process.
+# ``magi local install-service`` registers one systemd unit per MAGI.
 #
 # Usage:
-#   deploy/local/magi local start
-#   deploy/local/magi local install-service
+#   deploy/local/magi local start        # run Adam (first MAGI)
+#   deploy/local/magi local start --name eva-00  # run a specific MAGI
+#   deploy/local/magi local install-service       # systemd units for all
 #   deploy/local/magi --help
 set -euo pipefail
 
@@ -44,16 +45,6 @@ fi
 
 export MAGI_DATA_ROOT="$(resolve_data_root)"
 # The Local Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
-# matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``. Exporting
-# it as ``MAGIS_DATABASE_URL`` lets any subprocess the launcher spawns
-# (Adam runtime, WebUI control plane) resolve the public MAGIS schema via
-# the same env-var path the K8s Profile uses. ``magi local start`` also
-# injects the engine in-process, but the subprocesses don't inherit that
-# injection — they read this env var instead.
+# matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``.
 export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/1-genesis/magis.db}"
-# Local Profile launches runtimes via the in-process backend, not via
-# the Kubernetes operator. The factory defaults to ``kubernetes``; the
-# Local wrapper overrides that so ``magi local start`` boots the Adam
-# without needing cluster credentials.
-export MAGI_BACKEND="${MAGI_BACKEND:-local_process}"
 exec "$MAGI_BIN" "$@"

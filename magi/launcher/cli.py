@@ -76,17 +76,31 @@ def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
     Scans the MAGIC directory for ``<id>-<slug>`` slots, then picks:
     - exact match on ``name`` (matches slug or ``<id>-<slug>``)
     - the single slot if only one exists
+    - on first run (no slots yet) the seed has already created the
+      Adam row, so we return ``(1, "eva-00")`` — the Adam gets its
+      slot created below by ``_exec_runtime``'s ``bootstrap_workspace``.
     - raises if multiple exist and name is ambiguous
     """
     magic_dir = data_root / "MAGIC"
+    if not magic_dir.exists():
+        # First run — seed created Adam as id=1 / "eva-00".  Return
+        # that so ``_exec_runtime`` can carve the per-MAGI slot.
+        if name and name.strip().lower() not in ("adam", "eva-00", "1", "1-eva-00"):
+            raise SystemExit(
+                f"--name={name!r} requested but no MAGIC slots exist yet. "
+                "Run `magi local start` once first (defaults to Adam)."
+            )
+        return 1, "eva-00"
     slots = sorted(
         p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
     )
     if not slots:
-        raise SystemExit(
-            "No MAGIC slots found under "
-            f"{magic_dir}.  Run `magi local start` once first."
-        )
+        if name and name.strip().lower() not in ("adam", "eva-00", "1", "1-eva-00"):
+            raise SystemExit(
+                f"--name={name!r} requested but no MAGIC slots exist yet. "
+                "Run `magi local start` once first (defaults to Adam)."
+            )
+        return 1, "eva-00"
 
     if name:
         name_lower = name.strip().lower()
