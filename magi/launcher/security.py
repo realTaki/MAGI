@@ -25,20 +25,6 @@ def ensure_control_secret(path: Path) -> str:
     ``path`` is the on-disk file (``<magis_home>/control-secret``).
     The file is forced to ``0600`` on POSIX systems.
     """
-
-from __future__ import annotations
-
-import os
-import secrets
-from pathlib import Path
-
-
-def ensure_control_secret(path: Path) -> str:
-    """Return the persisted secret; generate a new one if missing.
-
-    ``path`` is the on-disk file (``<magis_home>/control-secret``).
-    The file is forced to ``0600`` on POSIX systems.
-    """
     path = Path(path)
     if path.exists():
         raw = path.read_text(encoding="utf-8").strip()

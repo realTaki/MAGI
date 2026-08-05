@@ -453,7 +453,7 @@ def cmd_webui(args: argparse.Namespace) -> int:
         return 0  # unreachable
 
     # ── Dev path: vite on 42069 + FastAPI control plane on 8000 ──
-    webui_dir = Path(__file__).resolve().parents[2] / "WebUI"
+    webui_dir = Path(__file__).resolve().parents[1] / "WebUI"
     if not webui_dir.is_dir():
         print(
             f"error: WebUI sources not found at {webui_dir}",
@@ -665,6 +665,24 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("doctor", help="print diagnostic state")
     p.add_argument("--data-dir", default=None, help="override the data root")
     p.set_defaults(handler=cmd_doctor)
+
+    # webui — Vite dev server (HMR) + FastAPI control plane
+    p = sub.add_parser(
+        "webui",
+        help="run Vite dev server (HMR) + FastAPI control plane on :42069",
+    )
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.add_argument(
+        "--no-dev",
+        action="store_true",
+        help="run the built SPA directly (no Vite, no HMR)",
+    )
+    p.add_argument(
+        "--no-reload",
+        action="store_true",
+        help="don't enable uvicorn autoreload on the control plane",
+    )
+    p.set_defaults(handler=cmd_webui)
 
     # install-service
     p = sub.add_parser("install-service", help="register one systemd unit per MAGI")
