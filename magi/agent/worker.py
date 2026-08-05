@@ -249,28 +249,12 @@ class AgentWorker:
             "caller_role": payload.get("caller_role"),
             "text": str(payload.get("text") or ""),
         }
-        # Build the hook context that drives the LLM_REQUEST_PREPARED
-        # GATE. The bus.store.enqueue_llm_job fires the hook and
-        # returns the aggregated decision; a DENY aborts the agent
-        # turn with a synthetic fallback so the rest of the actor
-        # loop can resume.
-        from magi.bus.hooks.contracts import (
-            HookContext,
-            HookDataClassification,
-            PrincipalType,
-        )
-        hook_context = HookContext(
-            requested_by="agent.worker",
-            principal_type=PrincipalType.USER if payload.get("uid") is not None else PrincipalType.SYSTEM,
-            principal_id=str(payload.get("uid") or "system"),
-            role=payload.get("caller_role"),
-            source_type=str(payload.get("channel") or ""),
-            source_id=str(payload.get("uid") or ""),
-            session_id=payload.get("session_id"),
-            run_id=claim.run_id,
-            event_id=claim.event_id,
-            data_classification=HookDataClassification.CONFIDENTIAL,
-        )
+        # Hook firing is handled inside bus.store.enqueue_llm_job:
+        # it dispatches one ``hook_signoffs`` row per enabled
+        # plugin subscribed to ``LLM_REQUEST_PREPARED``.  Plugin
+        # workers consume the signoffs before the provider
+        # worker claims the row.  The agent loop does not need
+        # to know about any of this -- it just enqueues the job.
         job = LLMJob(
             attempt_id="",  # assigned by enqueue_llm_job
             run_id=claim.run_id,
@@ -282,19 +266,8 @@ class AgentWorker:
             tools=tuple(tools) if tools else None,
             streaming=False,
             extra=extra,
-            hook_context=hook_context,
         )
-        attempt_id = await enqueue_llm_job(job)
-        # If the GATE denied the request, the bus.store did NOT
-        # persist the row; the worker won't pick it up.  We
-        # synthesise a fallback so the run still settles cleanly.
-        # (Detection: enqueue_llm_job returns the same attempt_id
-        # we already wrote via start_llm_attempt iff the new
-        # contract is in place; with the legacy contract it
-        # returns a fresh id.  We don't try to detect denial here --
-        # the hook evaluation materialises the audit row and the
-        # agent turn will see the absence of a provider.completed
-        # event and fall back to the run's deadline path.)
+        await enqueue_llm_job(job)
         self.store.complete_agent_input(claim.event_id)
 
     async def _apply_provider_result(self, claim: BusClaim) -> None:

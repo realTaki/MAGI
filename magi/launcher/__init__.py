@@ -13,8 +13,7 @@ Layout:
 - ``LocalPathLayout`` (here)            — path layout dataclass
 - ``bootstrap_local`` (here)            — Local Profile Composition Root
 - ``start_channel`` / ``stop_channel`` /
-  ``is_channel_running`` / ``start_connector_bridge`` /
-  ``stop_connector_bridge`` /
+  ``is_channel_running`` /
   ``worker_lifespan`` (here)             — process lifecycle adapter
 - ``paths``                              — OS-specific data-root resolution
 - ``platform``                           — OS detection + browser open
@@ -207,118 +206,11 @@ def is_channel_running(name: str) -> bool:
     return name == "webui"
 
 
-# -- connector→plugin bridge (composition wiring) ------------------------------
-
-_BRIDGE_HANDLERS: list[tuple] = []
-
-
-def start_connector_bridge(hook_service: object) -> None:
-    """Wire connector events into the BUS hook subsystem.
-
-    Connectors emit *external* events (Gmail push, Calendar reminder);
-    plugins observe *internal* events (tool calls, channel sends).  This
-    bridge maps every connector event to a
-    :class:`~magi.bus.hooks.contracts.HookPoint.RUN_TRANSITION_COMMITTED`
-    observation so the audit_log plugin records connector events
-    alongside tool calls without re-implementing the subscription.
-
-    Lives here — not in ``magi.connectors`` — because it depends on both
-    subsystems: it is composition wiring, not connector domain logic.
-    """
-    stop_connector_bridge()
-
-    from magi.connectors.base import ConnectorEventKind
-    from magi.connectors.bus import get_bus as get_connector_bus
-    from magi.bus.hooks.contracts import (
-        HookPoint,
-        PrincipalHookContext,
-        PrincipalType,
-        RuntimeHookContext,
-        SecurityHookContext,
-    )
-    from magi.bus.hooks.service import EvaluationRequest
-    from magi.bus.db.base import utcnow_naive
-
-    connector_bus = get_connector_bus()
-
-    async def _forward(event: object) -> None:
-        try:
-            now = utcnow_naive()
-            request = EvaluationRequest(
-                hook_point=HookPoint.RUN_TRANSITION_COMMITTED,
-                subject_type="connector_event",
-                subject_id=str(getattr(event, "id", "")) or "unknown",
-                requested_by="connector_bridge",
-                runtime=RuntimeHookContext(
-                    magi_id=None,
-                    magis_id=None,
-                    runtime_id="connector-bridge",
-                    runtime_instance_id="connector-bridge",
-                    environment="runtime",
-                    workspace_id="default",
-                ),
-                principal=PrincipalHookContext(
-                    principal_type=PrincipalType.SYSTEM,
-                    principal_id="connector-bridge",
-                    role=None,
-                    permissions=(),
-                    membership_id=None,
-                    source_type=getattr(event, "connector", None),
-                    source_id=None,
-                ),
-                security=SecurityHookContext(
-                    attempt=0,
-                    deadline=None,
-                    created_at=now,
-                    available_at=now,
-                    policy_labels=(),
-                    security_labels=(),
-                    data_classification=__import__(
-                        "magi.bus.hooks.contracts",
-                        fromlist=["HookDataClassification"],
-                    ).HookDataClassification.INTERNAL,
-                ),
-                metadata={
-                    "connector_event": getattr(event, "connector", None),
-                    "event_kind": str(
-                        getattr(getattr(event, "kind", None), "value", "unknown")
-                    ),
-                    "event_id": getattr(event, "id", None),
-                },
-            )
-            await hook_service.publish_observation(request)  # type: ignore[union-attr]
-        except Exception:
-            import logging
-
-            logging.getLogger("magi.launcher").exception(
-                "connector→hook bridge forward failed"
-            )
-
-    for kind in ConnectorEventKind:
-        connector_bus.subscribe(kind.value, _forward)
-        _BRIDGE_HANDLERS.append((kind, _forward))
-
-    import logging
-
-    logging.getLogger("magi.launcher").info(
-        "connector→hook bridge started: kinds=%d", len(_BRIDGE_HANDLERS),
-    )
-
-
-def stop_connector_bridge() -> None:
-    """Drop connector bus subscriptions (test + atexit)."""
-    global _BRIDGE_HANDLERS
-    if not _BRIDGE_HANDLERS:
-        return
-    try:
-        from magi.connectors.bus import get_bus as get_connector_bus
-
-        connector_bus = get_connector_bus()
-        for kind, handler in _BRIDGE_HANDLERS:
-            connector_bus.unsubscribe(kind.value, handler)
-    except Exception:
-        pass
-    _BRIDGE_HANDLERS = []
+# The connector→plugin bridge is retired.  Connectors still emit
+# events on the in-process bus (see ``magi.connectors.bus``);
+# plugin workers subscribe to whichever ``subject_type`` rows they
+# care about via the ``hook_signoffs`` queue directly.  No
+# composition-root wiring is required.
 
 
 @asynccontextmanager
@@ -357,7 +249,5 @@ __all__ = [
     "start_channel",
     "stop_channel",
     "is_channel_running",
-    "start_connector_bridge",
-    "stop_connector_bridge",
     "worker_lifespan",
 ]

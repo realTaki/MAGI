@@ -216,39 +216,16 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
             f"user {uid} has no {channel!r} binding"
         )
 
-    # Build the hook context that drives the DELIVERY_PENDING GATE.
-    # The bus.store.enqueue_delivery fires the GATE; a DENY aborts
-    # the send silently (the gate is the audit / intercept seam,
-    # not an interactive prompt).
-    from magi.bus.hooks.contracts import (
-        HookContext,
-        HookDataClassification,
-        PrincipalType,
-    )
-
     from magi.bus import get_bus
 
-    hook_context = HookContext(
-        requested_by="channels.dispatcher",
-        principal_type=PrincipalType.USER,
-        principal_id=str(uid),
-        role=None,
-        source_type=str(channel),
-        source_id=str(uid),
-        data_classification=HookDataClassification.INTERNAL,
-        metadata={
-            "channel": str(channel),
-            "uid": uid,
-            "text_preview": (text or "")[:256],
-        },
-    )
-
+    # bus.store.enqueue_delivery fires the DELIVERY_PENDING signoff
+    # row automatically based on the persistent ``hook_plugin_configs``
+    # table -- the dispatcher does not construct any hook context.
     delivered = get_bus().delivery.enqueue_and_wait(
         channel=str(channel),
         destination=im_id,
         payload={"text": text or ""},
         run_id=None,
-        hook_context=hook_context,
         timeout_seconds=8.0,
     )
     if not delivered:

@@ -349,3 +349,225 @@ async def test_load_llm_job_result_returns_none_on_timeout(magi_state):
     with open_session(store._state_dir) as s:
         ar = s.query(LLMAttempt).filter_by(attempt_id=aid).one()
     assert ar.status == "queued"
+
+
+def _install_counting_fake(fake: "FakeProvider"):
+    """Wrap ``fake`` so ``get_provider`` increments a per-process counter.
+
+    The worker caches one provider per ``start()``; the counter lets
+    tests assert ``get_provider`` was called exactly once across N
+    jobs (the cache invariant) and that a drained control-job row
+    forced a second call.
+    """
+    import magi.providers
+    import magi.providers.factory as _factory
+    import magi.providers.worker as _worker
+
+    state = {"calls": 0, "current": fake}
+
+    def _fake_get(*_args, **_kwargs):
+        state["calls"] += 1
+        return state["current"]
+
+    _factory.get_provider = _fake_get
+    _worker.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+
+    return state
+
+
+def _enqueue_simple(store, *, content: str = "hello") -> str:
+    """Helper used by the new cache / rebuild tests."""
+    aid = store.enqueue_llm_job(
+        run_id=f"run-{uuid.uuid4().hex[:6]}",
+        inbox_event_id=f"ev-{uuid.uuid4().hex[:6]}",
+        kind="chat",
+    )
+    store.persist_llm_job_request(
+        aid,
+        request={
+            "system": "",
+            "messages": [
+                {"role": "user", "content": content, "content_blocks": None},
+            ],
+            "max_tokens": 16,
+            "tools": None,
+            "streaming": False,
+            "extra": {},
+        },
+    )
+    return aid
+
+
+@pytest.mark.asyncio
+async def test_worker_caches_provider_across_jobs(magi_state):
+    """One ``get_provider`` call covers every job until a rebuild signal."""
+    state = _install_counting_fake(FakeProvider(reply="ok"))
+    await start_provider_worker()
+    try:
+        store = get_bus_store()
+        ids = [_enqueue_simple(store) for _ in range(3)]
+        for aid in ids:
+            result = await asyncio.to_thread(
+                store.load_llm_job_result, aid,
+                wait_seconds=5, poll_seconds=0.05,
+            )
+            assert result["status"] == "completed", result
+        assert state["calls"] == 1, (
+            f"expected one cached provider, got {state['calls']} get_provider calls"
+        )
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_worker_starts_without_config_and_fails_jobs(magi_state):
+    """Missing config does NOT block boot; jobs settle with credentials code."""
+    state = _install_counting_fake(FakeProvider())  # never raised here
+    state["get_provider"] = state["get_provider"]  # keep linter happy
+
+    def _raise_not_configured(*_a, **_k):
+        state["calls"] += 1
+        raise LLMNotConfiguredError("MAGI runtime has no LLM provider / API key")
+
+    import magi.providers
+    import magi.providers.factory as _factory
+    import magi.providers.worker as _worker
+
+    _factory.get_provider = _raise_not_configured
+    _worker.get_provider = _raise_not_configured
+    magi.providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
+
+    await start_provider_worker()  # MUST NOT raise
+    try:
+        store = get_bus_store()
+        aid = _enqueue_simple(store)
+        result = await asyncio.to_thread(
+            store.load_llm_job_result, aid,
+            wait_seconds=5, poll_seconds=0.05,
+        )
+        assert result["status"] == "failed"
+        assert result["error"]["code"] == "magi.llm_credentials_required"
+        assert "MAGI management" in result["error"]["detail"]
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_worker_starts_without_config_then_rebuilds_on_signal(magi_state):
+    """A drained ``provider.config_changed`` row triggers a rebuild."""
+    import magi.providers
+    import magi.providers.factory as _factory
+    import magi.providers.worker as _worker
+
+    current = {"provider": None}
+    calls = {"n": 0}
+
+    def _switch(*_a, **_k):
+        calls["n"] += 1
+        return current["provider"]  # may be None; worker fails fast
+
+    _factory.get_provider = _switch
+    _worker.get_provider = _switch
+    magi.providers.get_provider = _switch  # type: ignore[attr-defined]
+
+    await start_provider_worker()
+    store = get_bus_store()
+    try:
+        # First job: no provider configured → fails with credentials code.
+        aid1 = _enqueue_simple(store, content="first")
+        result1 = await asyncio.to_thread(
+            store.load_llm_job_result, aid1,
+            wait_seconds=5, poll_seconds=0.05,
+        )
+        assert result1["status"] == "failed"
+        assert result1["error"]["code"] == "magi.llm_credentials_required"
+
+        # Swap to a working provider and publish the BUS signal.
+        current["provider"] = FakeProvider(reply="rebuilt-ok")
+        store.enqueue_control_job(
+            kind="provider.config_changed",
+            payload={"provider": "openai"},
+        )
+        aid2 = _enqueue_simple(store, content="second")
+        result2 = await asyncio.to_thread(
+            store.load_llm_job_result, aid2,
+            wait_seconds=5, poll_seconds=0.05,
+        )
+        assert result2["status"] == "completed", result2
+        assert result2["response"]["text"] == "rebuilt-ok"
+        assert calls["n"] >= 2, (
+            f"expected at least 2 get_provider calls (start + rebuild), got {calls['n']}"
+        )
+        # The control row must be gone after drain.
+        from magi.bus.models.queue import ControlJob
+        with open_session(store._state_dir) as s:
+            leftovers = s.query(ControlJob).count()
+        assert leftovers == 0
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_worker_rebuilds_only_when_control_signal_present(magi_state):
+    """A second job with no signal between still uses the cached provider."""
+    import magi.providers
+    import magi.providers.factory as _factory
+    import magi.providers.worker as _worker
+
+    calls = {"n": 0}
+
+    def _fake_get(*_a, **_k):
+        calls["n"] += 1
+        return FakeProvider(reply=f"call#{calls['n']}")
+
+    _factory.get_provider = _fake_get
+    _worker.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+
+    await start_provider_worker()
+    store = get_bus_store()
+    try:
+        for expected in ("call#1", "call#1"):
+            aid = _enqueue_simple(store)
+            result = await asyncio.to_thread(
+                store.load_llm_job_result, aid,
+                wait_seconds=5, poll_seconds=0.05,
+            )
+            assert result["status"] == "completed"
+            assert result["response"]["text"] == expected
+        # Only one build across both jobs.
+        assert calls["n"] == 1
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_drain_control_jobs_ignores_other_kinds(magi_state):
+    """Draining ``provider.config_changed`` leaves unrelated rows alone."""
+    state = _install_counting_fake(FakeProvider(reply="ok"))
+    await start_provider_worker()
+    try:
+        store = get_bus_store()
+        # Insert a row of a kind no consumer cares about; the worker
+        # should drain its own kind (returning 0) without touching it.
+        store.enqueue_control_job(
+            kind="some.future.kind",
+            payload={"x": 1},
+        )
+        from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
+        from magi.bus.models.queue import ControlJob
+
+        drained = await asyncio.to_thread(
+            store.drain_control_jobs,
+            worker_id="test-worker",
+            kind=PROVIDER_CONFIG_CHANGED,
+        )
+        assert drained == 0
+        with open_session(store._state_dir) as s:
+            leftovers = s.query(ControlJob).filter_by(
+                kind="some.future.kind",
+            ).count()
+        assert leftovers == 1
+    finally:
+        await stop_provider_worker()

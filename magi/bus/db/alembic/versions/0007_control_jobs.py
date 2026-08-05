@@ -21,8 +21,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0006_control_jobs"
-down_revision = "0005_magic_name_unique"
+revision = "0007_control_jobs"
+down_revision = "0006_hook_signoffs"
 branch_labels = None
 depends_on = None
 

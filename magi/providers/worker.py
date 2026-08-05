@@ -21,19 +21,21 @@ event) and does its own post-processing in its own layer.
 Hook firing
 ===========
 
-The worker does NOT fire hooks itself.  All hook firing lives in
-the bus.store boundary methods (``enqueue_llm_job`` fires
-``LLM_REQUEST_PREPARED`` GATE, ``complete_llm_attempt`` fires
-``LLM_RESPONSE_RECEIVED`` OBSERVE).  The caller (agent turn,
-auto_title, compaction) attaches a :class:`HookContext` to the
-``LLMJob`` and the helper :func:`enqueue_llm_job` passes it through
-to ``bus.store.enqueue_llm_job``.
+The worker does NOT fire hooks itself.  All hook dispatching
+happens inside the bus.store boundary methods:
+``enqueue_llm_job`` stamps a ``hook_signoffs`` row per enabled
+plugin subscribed to ``LLM_REQUEST_PREPARED``; ``complete_llm_attempt``
+stamps one for ``LLM_RESPONSE_RECEIVED``.  The provider worker
+is the *last* thing that touches the LLM row in the lifecycle
+because it is filtered by ``claim_next_llm_job`` until every
+plugin has acked its signoff.
 
 The provider worker is hook-agnostic: it never imports
-``magi.plugins`` or ``magi.bus.hooks.contracts``.  Plugins that
-want to intercept LLM I/O subscribe to the BUS hooks via
-:func:`magi.plugins.hooks.register_handler` -- they see every
-request and response through the BUS, not the worker.
+``magi.plugins`` or ``magi.bus.hooks``.  Plugins that want to
+observe LLM I/O consume the ``hook_signoffs`` queue directly via
+``bus.store.claim_pending_signoffs(plugin_id)`` --
+they see every request and response through the BUS, not the
+worker.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ from typing import Any
 # and lets the runtime's first ``bootstrap()`` call register each
 # model exactly once.
 from magi.bus.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
+from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
 from magi.bus.protocols.llm_jobs import LLMJob
 from magi.bus.stream import StreamEvent
 from magi.providers import get_provider
@@ -109,6 +112,15 @@ class ProvidersWorker:
         self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(self.concurrency)
         self._inflight: set[asyncio.Task[None]] = set()
+        # Cached LLM client + the typed error that prevented us from
+        # building one (so a job claimed with no config can settle as
+        # ``failed`` with the operator-facing envelope). Populated in
+        # ``_rebuild_provider``; rebuilt when ``control_jobs`` carries a
+        # ``provider.config_changed`` row. ``self._provider`` is read by
+        # every parallel job slot and only written from ``_run``, so no
+        # lock is needed.
+        self._provider: LLMProvider | None = None
+        self._provider_error: LLMError | None = None
 
     # ----- lifecycle ----------------------------------------------------
 
@@ -121,6 +133,10 @@ class ProvidersWorker:
                 "providers worker: recovered %d expired leases at boot",
                 recovered,
             )
+        # Resolve the cached provider *before* the run loop starts so a
+        # missing config cannot block boot; the failure path lives in
+        # ``_rebuild_provider`` (logs + records ``_provider_error``).
+        self._rebuild_provider()
         self._stopping = False
         self._task = asyncio.create_task(self._run(), name="magi-provider-worker")
 
@@ -136,6 +152,8 @@ class ProvidersWorker:
         if self._inflight:
             await asyncio.gather(*self._inflight, return_exceptions=True)
             self._inflight.clear()
+        self._provider = None
+        self._provider_error = None
 
     def notify(self) -> None:
         """Wake the poller after an in-process publish."""
@@ -145,6 +163,16 @@ class ProvidersWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
+            # Drain transient control signals before polling LLM
+            # jobs. ``provider.config_changed`` is the only kind today;
+            # ``drain_control_jobs`` returns 0 cheaply when the queue
+            # is empty. Multiple queued rows coalesce into one rebuild
+            # (the count is what matters, not the rows themselves).
+            if self.store.drain_control_jobs(
+                worker_id=self.worker_id,
+                kind=PROVIDER_CONFIG_CHANGED,
+            ):
+                self._rebuild_provider()
             claim = self.store.claim_next_llm_job(self.worker_id)
             if claim is None:
                 self._wake.clear()
@@ -243,29 +271,30 @@ class ProvidersWorker:
             )
             return
 
-        # 3. Resolve provider (factory reads credentials from the
-        # seeded runtime MAGI row via BUS).
-        try:
-            provider = get_provider(model=request.get("model"))
-        except LLMNotConfiguredError as exc:
+        # 3. Resolve provider from the cache populated by
+        # ``_rebuild_provider`` (called in ``start()`` and after every
+        # drained ``provider.config_changed`` row). ``self._provider``
+        # is the immutable SDK client; ``self._provider_error`` carries
+        # the typed error from the last build attempt so a job claimed
+        # while config is missing settles with the right envelope.
+        provider = self._provider
+        if provider is None:
+            exc = self._provider_error or LLMNotConfiguredError(
+                "MAGI runtime has no LLM provider / API key configured; "
+                "set it in MAGI management",
+            )
+            error_code = (
+                _NOT_CONFIGURED_CODE
+                if isinstance(exc, LLMNotConfiguredError)
+                else type(exc).__name__
+            )
             self.store.complete_llm_attempt(
                 attempt_id,
-                error={"detail": str(exc), "code": _NOT_CONFIGURED_CODE},
+                error={"detail": str(exc), "code": error_code},
             )
             self._publish_completion(
                 run_id, attempt_id, "failed",
-                error_code=_NOT_CONFIGURED_CODE,
-                error_detail=str(exc),
-            )
-            return
-        except LLMError as exc:
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": str(exc), "code": type(exc).__name__},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=type(exc).__name__,
+                error_code=error_code,
                 error_detail=str(exc),
             )
             return
@@ -354,6 +383,47 @@ class ProvidersWorker:
         self._publish_completion(run_id, attempt_id, "completed")
 
     # ----- helpers ------------------------------------------------------
+
+    def _rebuild_provider(self) -> None:
+        """(Re)build the cached ``LLMProvider`` from the current config.
+
+        Synchronous: ``get_provider`` opens a SQLAlchemy session and
+        reads ``runtime_settings.toml``, then constructs the SDK
+        client. None of those steps do network I/O, so there's no
+        reason to defer to a thread. Tests inject a fake via the
+        module-level ``magi.providers.worker.get_provider`` binding,
+        so this method reads through that name (re-bound through the
+        package's ``__init__``) to keep the patch seam working.
+
+        Never raises: a missing / invalid config logs once and leaves
+        ``self._provider = None`` so the next claimed job settles
+        with the operator-facing envelope instead of crashing the
+        worker.
+        """
+        try:
+            provider = get_provider()
+        except LLMNotConfiguredError as exc:
+            self._provider = None
+            self._provider_error = exc
+            logger.warning(
+                "providers worker: no LLM configured (%s); jobs will fail-fast",
+                exc,
+            )
+            return
+        except LLMError as exc:
+            self._provider = None
+            self._provider_error = exc
+            logger.warning(
+                "providers worker: cannot build LLM (%s); jobs will fail-fast",
+                exc,
+            )
+            return
+        self._provider = provider
+        self._provider_error = None
+        logger.info(
+            "providers worker: cached LLM client (%s)",
+            type(provider).__name__,
+        )
 
     @staticmethod
     def _response_payload(result: ChatResult) -> dict[str, Any]:
@@ -452,11 +522,14 @@ async def enqueue_llm_job(job: LLMJob) -> str:
     Wakes the local worker (no-op across processes; that's fine --
     the poller will pick the row up on its next tick).
 
-    The caller-supplied ``job.hook_context`` (a
-    :class:`magi.bus.hooks.contracts.HookContext`) is forwarded to
-    ``bus.store.enqueue_llm_job`` which fires the
-    ``LLM_REQUEST_PREPARED`` GATE hook and returns the aggregated
-    decision.  When the decision is DENY, the worker will not pick
+    Hook dispatching is handled inside
+    :meth:`magi.bus.store.BusStore.enqueue_llm_job`: it stamps a
+    ``hook_signoffs`` row per enabled plugin subscribed to
+    ``LLM_REQUEST_PREPARED`` so plugin workers observe the row
+    before the provider worker claims it.  The worker is filtered
+    by ``claim_next_llm_job`` until every plugin has acked its
+    signoff, so the LLM call cannot run until plugin observers have
+    had their chance.
     the row up -- the caller (agent turn) observes the DENY and
     falls back to a synthetic response.
     """
