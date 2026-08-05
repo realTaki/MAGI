@@ -514,7 +514,8 @@ def cmd_webui(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     env["MAGI_DATA_ROOT"] = str(data_root)
     env["MAGI_PORT"] = "8000"
-    env["MAGIS_DATABASE_URL"] = f"sqlite:///{data_root}/MAGIS/1-genesis/magis.db"
+    from magi.launcher.paths import magis_db_path
+    env["MAGIS_DATABASE_URL"] = f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"
     env["MAGI_RELOAD"] = "1" if not getattr(args, "no_reload", False) else "0"
     logger.info(
         "replacing process with magi webui on :8000 (vite owns :42069)",
