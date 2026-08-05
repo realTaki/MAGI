@@ -753,7 +753,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
-eve = [
+eva = [
     { name = "anthropic" },
     { name = "apscheduler" },
     { name = "openai" },
@@ -763,29 +763,29 @@ eve = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
-    { name = "anthropic", marker = "extra == 'eve'", specifier = ">=0.39.0" },
-    { name = "apscheduler", marker = "extra == 'eve'", specifier = ">=3.10.4" },
+    { name = "anthropic", marker = "extra == 'eva'", specifier = ">=0.39.0" },
+    { name = "apscheduler", marker = "extra == 'eva'", specifier = ">=3.10.4" },
     { name = "asyncpg", marker = "extra == 'adam'", specifier = ">=0.30.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", marker = "extra == 'adam'", specifier = ">=3.1.4" },
     { name = "mcp", marker = "extra == 'adam'", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
-    { name = "openai", marker = "extra == 'eve'", specifier = ">=1.54.0" },
+    { name = "openai", marker = "extra == 'eva'", specifier = ">=1.54.0" },
     { name = "pgvector", marker = "extra == 'adam'", specifier = ">=0.3.6" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'adam'", specifier = ">=3.2.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "python-telegram-bot", extras = ["ext"], marker = "extra == 'eve'", specifier = ">=21.7" },
+    { name = "python-telegram-bot", extras = ["ext"], marker = "extra == 'eva'", specifier = ">=21.7" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.7.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'adam'", specifier = ">=2.0.36" },
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
-provides-extras = ["adam", "eve", "dev"]
+provides-extras = ["adam", "eva", "dev"]
 
 [[package]]
 name = "mako"

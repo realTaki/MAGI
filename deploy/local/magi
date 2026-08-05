@@ -43,14 +43,14 @@ else
 fi
 
 export MAGI_DATA_ROOT="$(resolve_data_root)"
-# The Local Profile's per-MAGIS SQLite lives at
-# ``<data_root>/MAGIS/local/magis.db``. Exporting it as
-# ``MAGIS_DATABASE_URL`` lets any subprocess the launcher spawns (Adam
-# runtime, WebUI control plane) resolve the public MAGIS schema via the
-# same env-var path the K8s Profile uses. ``magi.local start`` also
-# injects the engine in-process, but the subprocesses don't inherit
-# that injection — they read this env var instead.
-export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/local/magis.db}"
+# The Local Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
+# matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``. Exporting
+# it as ``MAGIS_DATABASE_URL`` lets any subprocess the launcher spawns
+# (Adam runtime, WebUI control plane) resolve the public MAGIS schema via
+# the same env-var path the K8s Profile uses. ``magi local start`` also
+# injects the engine in-process, but the subprocesses don't inherit that
+# injection — they read this env var instead.
+export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/1-genesis/magis.db}"
 # Local Profile launches runtimes via the in-process backend, not via
 # the Kubernetes operator. The factory defaults to ``kubernetes``; the
 # Local wrapper overrides that so ``magi local start`` boots the Adam

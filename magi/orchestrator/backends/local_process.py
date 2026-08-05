@@ -99,16 +99,19 @@ class LocalProcessRuntimeBackend:
             default_data_root,
             runtime_audit_log_path,
             runtime_log_dir,
+            runtime_state_dir,
             runtime_workspace_root,
         )
 
         data_root = default_data_root()
         ws = runtime_workspace_root(data_root, spec.magic_id, slug)
+        st = runtime_state_dir(data_root, spec.magic_id, slug)
         log_d = runtime_log_dir(data_root, spec.magic_id, slug)
         audit_p = runtime_audit_log_path(data_root, spec.magic_id, slug)
         self._control.attach_paths(
             spec.magic_id,
             workspace_dir=ws,
+            state_dir=st,
             log_dir=log_d,
             audit_log_path=audit_p,
             backend_ref=f"local-{slug}",
@@ -156,17 +159,26 @@ class LocalProcessRuntimeBackend:
 
         alloc = reserve_port(self._control, spec.magic_id)
         self._persist_paths(spec, slug)
-        # Subprocess env is what reconciles the Local Profile with the
-        # generic ``magi runtime`` entry point. The runtime subprocess
-        # resolves its state + magis engines the same way ``magi runtime``
-        # does in a Pod — via env vars — so we pass the Local data root
-        # and a ``sqlite:///`` URL pointing at the same per-MAGIS file
-        # the launcher just built. Both processes then walk the same
-        # ``state_dir()`` / ``get_magis_engine()`` resolution chain.
-        from magi.launcher.paths import default_data_root
+        # Subprocess env reconciles the Local Profile with the generic
+        # ``magi runtime`` entry point. The runtime subprocess resolves its
+        # state + workspace + magis engines via env vars, the same way
+        # ``magi runtime`` does in a K8s Pod — so the path resolution
+        # chain in :mod:`magi.launcher.paths` is the single source of truth.
+        #
+        # ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_ID`` + ``MAGI_RUNTIME_SLUG``
+        # drive the per-MAGI resolution in :func:`state_dir` (branch 1) and
+        # :func:`workspace_dir` (branch 2). ``MAGI_WORKSPACE_DIR`` is set
+        # redundantly so callers that only check that env var (e.g. tests)
+        # also resolve correctly.
+        from magi.launcher.paths import (
+            default_data_root,
+            magis_db_path,
+            runtime_workspace_root,
+        )
 
         data_root = Path(default_data_root())
-        magis_db = data_root / "MAGIS" / "local" / "magis.db"
+        ws_root = runtime_workspace_root(data_root, spec.magic_id, slug)
+        magis_db = magis_db_path(data_root, 1, "genesis")
         handle = self._supervisor.spawn(
             ProcessSpec(
                 runtime_id=spec.magic_id,
@@ -174,10 +186,12 @@ class LocalProcessRuntimeBackend:
                 argv=self._build_argv(alloc.port),
                 env={
                     "MAGI_DATA_ROOT": str(data_root),
+                    "MAGI_WORKSPACE_DIR": str(ws_root),
+                    "MAGI_RUNTIME_ID": str(spec.magic_id),
+                    "MAGI_RUNTIME_SLUG": slug,
                     "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
                     "MAGI_PORT": str(alloc.port),
                     "MAGI_RUNTIME_PORT": str(alloc.port),
-                    "MAGI_RUNTIME_SLUG": slug,
                 },
             )
         )
@@ -209,7 +223,8 @@ class LocalProcessRuntimeBackend:
             runtime_workspace_root,
         )
 
-        ws = runtime_workspace_root(default_data_root(), spec.magic_id, slug)
+        data_root = default_data_root()
+        ws = runtime_workspace_root(data_root, spec.magic_id, slug)
         archive = ws.parent / "archive" / slug
         archive.parent.mkdir(parents=True, exist_ok=True)
         try:

@@ -59,23 +59,21 @@ class LocalPathLayout:
         launcher's BUS services.  The launcher never runs agent work;
         the real runtime state lives in the subprocess's per-MAGI slot.
 
-    Layout under ``data_root``::
+    Layout under ``data_root`` (runtime mode)::
 
         <data_root>/
         ├── control/
         │   ├── local-registry.db
         │   ├── control-secret
         │   ├── launcher.json
-        │   └── launcher-state/magi.db
-        ├── MAGIC/<runtime-id>-<slug>/
-        │   ├── workspace/
-        │   │   ├── SOUL.md
-        │   │   ├── skills/
-        │   │   ├── memories/magi.db
-        │   │   ├── logs/
-        │   │   └── tmp/
-        │   └── state/magi.db
-        └── MAGIS/<magis-id>-<slug>/magis.db
+        │   └── launcher-state/magi.db       (launcher-only scratch)
+        ├── MAGIC/<runtime-id>-<slug>/workspace/
+        │   ├── SOUL.md
+        │   ├── skills/
+        │   ├── memories/magi.db              (SQLite — per-MAGI private)
+        │   ├── logs/
+        │   └── tmp/
+        └── MAGIS/<magis-id>-<slug>/magis.db  (SQLite — per-MAGIS public)
     """
 
     data_root: Path
@@ -99,10 +97,10 @@ class LocalPathLayout:
         object.__setattr__(self, "data_root", data_root)
 
         if self.runtime_id is not None and self.slug:
-            # Runtime mode: per-MAGI slot under MAGIC/<id>-<slug>/
-            slot = data_root / "MAGIC" / f"{self.runtime_id}-{self.slug}"
-            ws = slot / "workspace"
-            st = slot / "state"
+            # Runtime mode: per-MAGI slot under MAGIC/<id>-<slug>/workspace/
+            # state_dir = workspace/memories — matches K8s convention.
+            ws = data_root / "MAGIC" / f"{self.runtime_id}-{self.slug}" / "workspace"
+            st = ws / "memories"
             object.__setattr__(self, "state_dir", st)
             object.__setattr__(self, "workspace", ws)
             object.__setattr__(self, "local_db", st / "magi.db")

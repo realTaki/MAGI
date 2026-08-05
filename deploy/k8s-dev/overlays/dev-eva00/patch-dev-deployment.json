@@ -6,14 +6,14 @@
       {
         "name": "workspace",
         "hostPath": {
-          "path": "/mnt/magi/workspace/MAGIC/eva-00",
+          "path": "/mnt/magi-data/MAGIC/1-eva-00/workspace",
           "type": "DirectoryOrCreate"
         }
       },
       {
         "name": "magis-workspace",
         "hostPath": {
-          "path": "/mnt/magi/workspace/MAGIS/Genesis",
+          "path": "/mnt/magi-data/MAGIS/1-genesis/workspace",
           "type": "DirectoryOrCreate"
         }
       },

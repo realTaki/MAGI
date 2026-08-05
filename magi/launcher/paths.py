@@ -50,13 +50,9 @@ logger = logging.getLogger("magi.launcher.paths")
 
 # Fixed canonical subdirectory under the workspace that holds the SQLite
 # database, alembic migrations, and session history.  Not configurable —
-# this is the schema the runtime assumes.
+# this is the schema the runtime assumes.  Shared by K8s and Local Profile
+# alike so ``workspace/memories/magi.db`` is the single truth.
 _STATE_SUBDIR = "memories"
-# Local Profile keeps the SQLite one level shallower so the openclaw
-# tree reads as ``<data_root>/{state, control, MAGIC, MAGIS}`` without
-# the historical ``memories/`` indirection.  Same convention as
-# :class:`magi.launcher.LocalPathLayout.state_dir`.
-_LOCAL_STATE_SUBDIR = "state"
 
 
 def workspace_dir() -> Path:
@@ -64,15 +60,27 @@ def workspace_dir() -> Path:
 
     Resolution:
 
-    1. ``$MAGI_WORKSPACE_DIR`` when set (deployer configuration);
-    2. ``/workspace`` (K8s-mount default) when not set.
+    1. ``$MAGI_WORKSPACE_DIR`` when set (K8s / explicitly configured);
+    2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_ID`` + ``$MAGI_RUNTIME_SLUG``
+       when set (Local Profile runtime subprocess) → ``<data_root>/MAGIC/<id>-<slug>/workspace``;
+    3. ``/workspace`` (K8s-mount default).
 
-    This is the **only** host-level environment variable for path
-    layout.  The single deployer env var is ``MAGI_WORKSPACE_DIR``
-    var — those values are derived from this one.
+    This makes the Local Profile runtime subprocess resolve its workspace
+    to the same per-MAGI slot without requiring an explicit
+    ``MAGI_WORKSPACE_DIR`` env var — though
+    :class:`~magi.orchestrator.backends.local_process.LocalProcessRuntimeBackend`
+    also sets one for redundancy.
     """
     raw = os.environ.get("MAGI_WORKSPACE_DIR")
-    return Path(raw).expanduser().resolve() if raw else Path("/workspace")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    data_root = os.environ.get("MAGI_DATA_ROOT")
+    if data_root:
+        runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+        runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
+        if runtime_id and runtime_slug:
+            return Path(data_root) / "MAGIC" / f"{runtime_id}-{runtime_slug}" / "workspace"
+    return Path("/workspace")
 
 
 def state_dir() -> Path:
@@ -271,13 +279,13 @@ def runtime_workspace_root(data_root: Path, runtime_id: int, slug: str) -> Path:
 def runtime_state_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
     """Resolve the per-runtime SQLite directory.
 
-    Format: ``<data_root>/MAGIC/<runtime_id>-<slug>/state/``.  Mirrors
-    :func:`runtime_workspace_root` so each MAGI has one slot for its
-    private ``magi.db`` and a sibling slot for its workspace.  Used by
-    :class:`magi.launcher.LocalPathLayout` and by the Local
-    subprocess's path resolution via :func:`state_dir`.
+    Format: ``<data_root>/MAGIC/<runtime_id>-<slug>/workspace/memories/``.
+    Mirrors the K8s ``<workspace_dir>/memories`` convention so every
+    profile resolves to ``workspace/memories/magi.db``.  Used by
+    :class:`magi.launcher.LocalPathLayout` and by the Local subprocess's
+    path resolution via :func:`state_dir`.
     """
-    return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "state"
+    return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "workspace" / "memories"
 
 
 def runtime_log_dir(data_root: Path, runtime_id: int, slug: str) -> Path:

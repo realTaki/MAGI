@@ -1,6 +1,7 @@
 # Template consumed by bootstrap-k8s-dev.sh. The script replaces
-# __MAGI_REPO_ROOT__ with the absolute checkout path before piping this into
-# kind, so Pods can use the node-visible /mnt/magi hostPath mounts below.
+# __MAGI_REPO_ROOT__ and __MAGI_DATA_ROOT__ with absolute paths before
+# piping this into kind, so Pods can use the node-visible /mnt/magi
+# (source code) and /mnt/magi-data (persistent workspace) hostPath mounts.
 # Lives under deploy/k8s-dev/ to make it clear this is the single-node
 # dev mode, not the production deploy path at deploy/k8s/.
 kind: Cluster
@@ -10,6 +11,8 @@ nodes:
     extraMounts:
       - hostPath: __MAGI_REPO_ROOT__
         containerPath: /mnt/magi
+      - hostPath: __MAGI_DATA_ROOT__
+        containerPath: /mnt/magi-data
     # The dev instance is exposed by the local-only NodePort 30069. Map it
     # to the familiar host WebUI port so a browser can use localhost:42069
     # directly.
