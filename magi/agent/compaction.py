@@ -123,10 +123,25 @@ async def call_llm_for_summary(
     import asyncio
     import uuid as _uuid
     from magi.bus import get_bus_store
+    from magi.bus.hooks.contracts import (
+        HookContext,
+        HookDataClassification,
+        PrincipalType,
+    )
     from magi.bus.protocols.llm_jobs import LLMJob
     from magi.providers.worker import enqueue_llm_job
 
     run_id = f"compact-{_uuid.uuid4().hex}"
+    hook_context = HookContext(
+        requested_by="agent.compaction",
+        principal_type=PrincipalType.SYSTEM,
+        principal_id="compaction",
+        role=None,
+        source_type="compaction",
+        source_id=run_id,
+        run_id=run_id,
+        data_classification=HookDataClassification.INTERNAL,
+    )
     job = LLMJob(
         attempt_id="",  # assigned by enqueue_llm_job
         run_id=run_id,
@@ -138,6 +153,7 @@ async def call_llm_for_summary(
         tools=None,
         streaming=False,
         extra={},
+        hook_context=hook_context,
     )
     attempt_id = await enqueue_llm_job(job)
     store = get_bus_store()

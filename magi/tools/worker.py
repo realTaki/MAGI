@@ -14,7 +14,6 @@ from contextlib import suppress
 from pathlib import Path
 
 from magi.bus import ToolClaim, ToolContext, ToolDefinition, get_bus
-from magi.bus.hooks.contracts import HookAction
 from magi.tools.registry import get_tool
 
 logger = logging.getLogger("magi.tools.worker")
@@ -51,7 +50,7 @@ def _seed_tools() -> None:
                     for tool in tools
                 ],
             )
-            logger.info("tool catalog published source=%s revision=%d tools=%d", source, published.revision, len(tools))
+            logger.info("tool catalog published source=%s revision=%d tools=%d", source, published.revision, len(published.definitions) if hasattr(published, "definitions") else len(tools))
     except Exception:
         logger.exception("tool catalog publish failed — agent may see stale schemas")
 
@@ -116,18 +115,9 @@ class ToolWorker:
             self.bus.tool_jobs.retry(claim.job_id)
             return
 
-        # GATE — call ``bus.hooks.evaluate(TOOL_CALL_PENDING)``
-        # before invoking ``tool.run``.  A DENY blocks the call
-        # without ever reaching the executor; the worker writes a
-        # synthetic failed result so the actor loop can resume.
-        decision = await self._evaluate_tool_call_gate(claim, context_data)
-        if decision is HookAction.DENY:
-            self.bus.tool_jobs.complete(
-                claim,
-                content=f"tool {claim.tool_name!r} denied by hook policy",
-                is_error=True,
-            )
-            return  # No retry — a DENY is final.
+        # GATE — fired eagerly at enqueue time (bus.store.enqueue_tool_job
+        # + the agent commit path that called it). The worker never
+        # re-evaluates the gate; a DENY means the row was never queued.
         try:
             result = await tool.run(
                 ToolContext(
@@ -144,132 +134,62 @@ class ToolWorker:
             logger.exception("tool job %s failed", claim.job_id)
             content = f"tool {claim.tool_name!r} crashed: {exc}"[:8000]
             is_error = True
-        self.bus.tool_jobs.complete(claim, content=content, is_error=is_error)
+        # Complete the job. The bus.store.complete_tool_job fires the
+        # TOOL_RESULT_RECEIVED OBSERVE hook when the worker attached
+        # a hook_context (constructed from the claim's context data).
+        # The hook subsystem is the only place that knows about
+        # observability; the worker just persists the result.
+        hook_context = _build_observation_context(
+            claim=claim,
+            context_data=context_data,
+            worker_id=self.worker_id,
+        )
+        self.bus.tool_jobs.complete(
+            claim,
+            content=content,
+            is_error=is_error,
+            hook_context=hook_context,
+        )
         if is_error:
             self.bus.tool_jobs.retry(claim.job_id)
-        # OBSERVE — the tool result is durable by the time we get
-        # here; we emit ``TOOL_RESULT_RECEIVED`` for the audit log
-        # (and any future OBSERVE handlers) without blocking.
-        try:
-            from magi.bus.hooks.contracts import (
-                EvaluationRequest,
-                HookDataClassification,
-                HookPoint,
-                PrincipalHookContext,
-                PrincipalType,
-                RuntimeHookContext,
-                SecurityHookContext,
-            )
-
-            now = _now_naive()
-            await self.bus.hooks.publish_observation(
-                EvaluationRequest(
-                    hook_point=HookPoint.TOOL_RESULT_RECEIVED,
-                    subject_type="tool_job",
-                    subject_id=claim.job_id,
-                    requested_by=self.worker_id,
-                    runtime=RuntimeHookContext(
-                        magi_id=None, magis_id=None,
-                        runtime_id="tool-worker",
-                        runtime_instance_id=self.worker_id,
-                        environment="runtime",
-                        workspace_id="default",
-                    ),
-                    principal=PrincipalHookContext(
-                        principal_type=PrincipalType.SYSTEM,
-                        principal_id=self.worker_id,
-                        role=context_data.get("caller_role"),
-                        permissions=(),
-                        membership_id=None,
-                        source_type="tool",
-                        source_id=claim.tool_name,
-                    ),
-                    security=SecurityHookContext(
-                        attempt=claim.attempts, deadline=None,
-                        created_at=now, available_at=now,
-                        policy_labels=(), security_labels=(),
-                        data_classification=HookDataClassification.INTERNAL,
-                    ),
-                    metadata={
-                        "tool_name": claim.tool_name,
-                        "is_error": is_error,
-                        "content_size": len(content or ""),
-                    },
-                )
-            )
-        except Exception:
-            # Observation must never block tool completion.
-            logger.exception("tool_result_received observation failed")
-
-    async def _evaluate_tool_call_gate(
-        self, claim: ToolClaim, context_data: dict,
-    ) -> "HookAction":
-        """Run the ``TOOL_CALL_PENDING`` GATE handlers."""
-        try:
-            from magi.bus.hooks.contracts import (
-                EvaluationRequest,
-                HookAction,
-                HookDataClassification,
-                HookPoint,
-                PrincipalHookContext,
-                PrincipalType,
-                RuntimeHookContext,
-                SecurityHookContext,
-            )
-
-            now = _now_naive()
-            result = await self.bus.hooks.evaluate(
-                EvaluationRequest(
-                    hook_point=HookPoint.TOOL_CALL_PENDING,
-                    subject_type="tool_job",
-                    subject_id=claim.job_id,
-                    requested_by=self.worker_id,
-                    runtime=RuntimeHookContext(
-                        magi_id=None, magis_id=None,
-                        runtime_id="tool-worker",
-                        runtime_instance_id=self.worker_id,
-                        environment="runtime",
-                        workspace_id="default",
-                    ),
-                    principal=PrincipalHookContext(
-                        principal_type=PrincipalType.SYSTEM,
-                        principal_id=self.worker_id,
-                        role=context_data.get("caller_role"),
-                        permissions=(),
-                        membership_id=None,
-                        source_type="tool",
-                        source_id=claim.tool_name,
-                    ),
-                    security=SecurityHookContext(
-                        attempt=claim.attempts, deadline=None,
-                        created_at=now, available_at=now,
-                        policy_labels=(), security_labels=(),
-                        data_classification=HookDataClassification.INTERNAL,
-                    ),
-                    metadata={"tool_name": claim.tool_name},
-                )
-            )
-            return result.decision
-        except Exception:
-            logger.exception(
-                "TOOL_CALL_PENDING evaluation failed for %s; fail-open",
-                claim.job_id,
-            )
-            return HookAction.ALLOW
 
 
 _worker: ToolWorker | None = None
 
 
-def _now_naive():
-    """Return the current UTC time as a naive datetime.
+def _build_observation_context(
+    *,
+    claim: ToolClaim,
+    context_data: dict,
+    worker_id: str,
+):
+    """Build a :class:`HookContext` for the TOOL_RESULT_RECEIVED OBSERVE.
 
-    Inlined so the worker module doesn't import from
-    ``magi.bus.db.base`` (architecture test forbids it).
+    The BUS materializer pulls the durable :class:`ToolJob` row to
+    materialise the payload, so the helper only needs to forward
+    the caller-supplied identity metadata (principal + role +
+    source).  Returns ``None`` to skip the hook fire when the BUS
+    hook contracts are not yet installed.
     """
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        from magi.bus.hooks.contracts import (
+            HookContext,
+            HookDataClassification,
+            PrincipalType,
+        )
+    except Exception:
+        return None
+    return HookContext(
+        requested_by=worker_id,
+        principal_type=PrincipalType.SYSTEM,
+        principal_id=worker_id,
+        role=context_data.get("caller_role"),
+        source_type="tool",
+        source_id=claim.tool_name,
+        run_id=claim.run_id,
+        event_id=f"tool-result:{claim.tool_call_id}",
+        data_classification=HookDataClassification.INTERNAL,
+    )
 
 
 async def start_tool_worker() -> ToolWorker:

@@ -1200,6 +1200,17 @@ def _project_runtime_configuration(spec: RuntimeConfigurationProjection, databas
                         session.add(magic)
                     magic.name = spec.magic_name
                     magic.instruction = spec.personal_instruction
+                    # Back-compat write to the legacy credential
+                    # columns.  The authoritative source for new
+                    # MAGIs is the per-MAGI ``runtime_settings.toml``
+                    # in the target workspace; we still write the
+                    # columns here so the orchestrator's
+                    # ``create_runtime`` step (which may pre-date the
+                    # runtime-settings file being installed in the
+                    # PVC) can pick up credentials via the factory's
+                    # legacy fallback.  Once the Pod is up and the
+                    # operator edits the file via the runtime proxy,
+                    # the columns become redundant and are ignored.
                     magic.provider = spec.provider
                     magic.api_key = spec.api_key
 

@@ -190,8 +190,11 @@ def list_channels() -> list[str]:
 async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
     """Send ``text`` to ``uid`` via ``channel``.
 
-    The dispatcher resolves the bound IM id (via the
-    adapter's ``lookup_im_id``) and pushes. Domain code
+    The dispatcher resolves the bound IM id (via the channel
+    adapter's ``lookup_im_id``) and routes through the delivery
+    outbox.  All sends go through ``bus.delivery.enqueue_and_wait``
+    so the BUS-side ``DELIVERY_PENDING`` GATE fire site is the
+    single place hooks see outbound messages.  Domain code
     never sees the IM id.
 
     Raises:
@@ -203,100 +206,58 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         drop — domain code that hits this case is usually
         missing a setup step the wizard should have run.
     """
-    from magi.bus.hooks.contracts import (
-        EvaluationRequest,
-        HookDataClassification,
-        HookPoint,
-        PrincipalHookContext,
-        PrincipalType,
-        RuntimeHookContext,
-        SecurityHookContext,
-    )
-    from magi.bus.hooks.service import HookService
-
     _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
     if adapter is None:
         raise KeyError(f"no adapter registered for channel={channel!r}")
-    if adapter.lookup_im_id(uid) is None:
+    im_id = adapter.lookup_im_id(uid)
+    if im_id is None:
         raise RuntimeError(
             f"user {uid} has no {channel!r} binding"
         )
 
-    # The legacy fire-and-forget BEFORE/AFTER_CHANNEL_SEND events
-    # are removed.  The single authoritative gate on outbound
-    # messages is ``DELIVERY_PENDING`` at the BUS level; this
-    # call site only logs an observation so the audit_log plugin
-    # records the intent.
-    hook_service: HookService | None = _safe_hook_service()
-    request_metadata = {
-        "channel": str(channel),
-        "uid": uid,
-        "text_preview": (text or "")[:256],
-    }
-    if hook_service is not None:
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        request = EvaluationRequest(
-            hook_point=HookPoint.DELIVERY_PENDING,
-            subject_type="channel_send",
-            subject_id=f"{channel}:{uid}",
-            requested_by="dispatcher",
-            runtime=RuntimeHookContext(
-                magi_id=None, magis_id=None,
-                runtime_id="dispatcher",
-                runtime_instance_id="dispatcher",
-                environment="runtime",
-                workspace_id="default",
-            ),
-            principal=PrincipalHookContext(
-                principal_type=PrincipalType.SYSTEM,
-                principal_id="dispatcher",
-                role=None,
-                permissions=(),
-                membership_id=None,
-                source_type=str(channel),
-                source_id=str(uid),
-            ),
-            security=SecurityHookContext(
-                attempt=0, deadline=None,
-                created_at=now, available_at=now,
-                policy_labels=(), security_labels=(),
-                data_classification=HookDataClassification.INTERNAL,
-            ),
-            metadata=request_metadata,
+    # Build the hook context that drives the DELIVERY_PENDING GATE.
+    # The bus.store.enqueue_delivery fires the GATE; a DENY aborts
+    # the send silently (the gate is the audit / intercept seam,
+    # not an interactive prompt).
+    from magi.bus.hooks.contracts import (
+        HookContext,
+        HookDataClassification,
+        PrincipalType,
+    )
+
+    from magi.bus import get_bus
+
+    hook_context = HookContext(
+        requested_by="channels.dispatcher",
+        principal_type=PrincipalType.USER,
+        principal_id=str(uid),
+        role=None,
+        source_type=str(channel),
+        source_id=str(uid),
+        data_classification=HookDataClassification.INTERNAL,
+        metadata={
+            "channel": str(channel),
+            "uid": uid,
+            "text_preview": (text or "")[:256],
+        },
+    )
+
+    delivered = get_bus().delivery.enqueue_and_wait(
+        channel=str(channel),
+        destination=im_id,
+        payload={"text": text or ""},
+        run_id=None,
+        hook_context=hook_context,
+        timeout_seconds=8.0,
+    )
+    if not delivered:
+        # The delivery worker could not deliver the message in
+        # time.  Propagate the failure so the caller (e.g. the
+        # Telegram auth code flow) can decide whether to retry.
+        raise RuntimeError(
+            f"delivery to {channel}:{uid} did not complete in time"
         )
-        try:
-            await hook_service.publish_observation(request)
-        except Exception:
-            pass
-
-    try:
-        await adapter.send(uid, text)
-    except Exception:
-        # Failure is already surfaced via the adapter's own
-        # error path; the OBSERVE hook above captured the intent.
-        raise
-
-
-def _safe_hook_service():
-    """Return the BUS hook service, or ``None`` if the bus is not ready.
-
-    The dispatcher can be invoked before the BUS singleton has
-    finished bootstrapping (e.g. during tests).  Returning
-    ``None`` lets the caller skip the observation rather than
-    crash.
-    """
-    try:
-        from magi.bus import get_bus
-        from magi.bus.hooks.service import HookService
-
-        bus = get_bus()
-        if not isinstance(getattr(bus, "hooks", None), HookService):
-            return None
-        return bus.hooks
-    except Exception:
-        return None
 
 
 def lookup_im_id(uid: int, channel: Channel | str) -> str | None:

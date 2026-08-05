@@ -64,6 +64,23 @@ def test_delivery_payload_only_at_delivery_point():
             assert HookDataScope.DELIVERY_PAYLOAD not in scopes
 
 
+def test_delivery_dispatched_does_not_expose_payload():
+    """DELIVERY_DISPATCHED fires AFTER the IM send has happened.
+
+    The bytes are out the door -- the OBSERVE payload must not
+    re-expose DELIVERY_PAYLOAD (no scope leak of the rendered
+    message) nor PRINCIPAL_IDENTITY (operators reading the audit
+    log do not need to know who the recipient was on the
+    post-send trail).
+    """
+    dispatched = HOOK_POINT_ALLOWED_SCOPES[HookPoint.DELIVERY_DISPATCHED]
+    assert HookDataScope.DELIVERY_PAYLOAD not in dispatched
+    assert HookDataScope.PRINCIPAL_IDENTITY not in dispatched
+    assert HookDataScope.RUNTIME_IDENTITY in dispatched
+    assert HookDataScope.CAUSALITY in dispatched
+    assert HookDataScope.RUN_STATE in dispatched
+
+
 def test_allowed_scopes_for_unknown_raises():
     """``allowed_scopes_for`` raises ``KeyError`` for unknown points
     so a missing policy entry surfaces immediately rather than

@@ -666,22 +666,19 @@ class MagicService:
                             "assign this MAGI to a MAGIS before starting it"
                         )
                     # 2026-08 refactor: provider / API key live in
-                    # the per-MAGI runtime settings file, not on the
-                    # shared magic row.  ``provider_configuration``
-                    # already handles the legacy fallback for
-                    # pre-refactor rows, so we delegate the check
-                    # there for consistency with the factory read
-                    # path.  Open the local file outside the PG
-                    # session so we don't hold a write lock while
-                    # doing it.
-                    from magi.bus.runtime_settings import load_runtime_settings
-
-                    rs = load_runtime_settings()
-                    has_legacy = bool(magic.provider and magic.api_key)
-                    if not rs.has_credentials and not has_legacy:
-                        raise ValueError(
-                            "configure provider and API key before starting this MAGI"
-                        )
+                    # the per-MAGI ``runtime_settings.toml`` file
+                    # inside the target MAGI's workspace.  This WebUI
+                    # process has no read access to that file (K8s:
+                    # it lives inside the EVA Pod's PVC; Local: it's
+                    # the target workspace, not the shared one), so
+                    # we deliberately do NOT pre-check credentials
+                    # here — a clean install would otherwise dead-lock
+                    # because no row/file carries values until the
+                    # operator configures them via the runtime proxy
+                    # (``PATCH /api/magic/self/provider``) after the
+                    # Pod comes up.  Pre-refactor rows still carry
+                    # the values inline; those are picked up by the
+                    # runtime factory's legacy fallback.
                 # Phase 2 — replaced direct ``magi.orchestrator.client``
                 # import with the BUS dispatcher.  The dispatcher
                 # internally still hits the legacy K8s client so the

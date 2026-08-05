@@ -312,8 +312,14 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
   // Provider / API key / model editing is only meaningful after the
   // target MAGI's runtime is up — the file lives next to the
   // workspace, and writing before the runtime exists means the next
-  // read still won't see the values.
-  const isReady = magic.runtime?.desired_state === "running";
+  // read still won't see the values.  We require BOTH
+  // ``desired_state`` (operator asked for it) and ``observed_state``
+  // (the Pod actually reached ``running``) so the editor does not
+  // become enabled during the ``provisioning`` window when the
+  // proxy would 502 against a Pod that hasn't started yet.
+  const isReady =
+    magic.runtime?.desired_state === "running" &&
+    magic.runtime?.observed_state === "running";
   const help = isReady
     ? t("magic.providerHelpReady")
     : t("magic.providerHelpNotReady");
