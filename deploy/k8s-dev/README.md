@@ -94,7 +94,7 @@ rm -f .kind-kubeconfig
 - **不要**把 `overlays/dev-eva00` / `control-dev` / `kind.yaml` 套
   到远程或生产集群——它们依赖宿主机 `/mnt/magi`（源码）和 `/mnt/magi-data`
   （持久化数据）目录，且 Dockerfile.dev 的 `runAsNonRoot: false` 是 dev-only 妥协。
-- **不要**在 dev 模式下复用生产 `magi-magis-1-genesis-db` Secret
+- **不要**在 dev 模式下复用生产 `magi-magis-genesis-01-db` Secret
   ——dev 模式自动生成弱密码，仅供本地。
 - dev 模式的持久化数据在 `~/.magi/MAGIC/eva-000/workspace/`，
   与本地非容器部署共享同一 `~/.magi/` 布局。

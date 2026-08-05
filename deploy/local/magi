@@ -46,5 +46,5 @@ fi
 export MAGI_DATA_ROOT="$(resolve_data_root)"
 # The Local Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
 # matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``.
-export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/1-genesis/magis.db}"
+export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/genesis-01/magis.db}"
 exec "$MAGI_BIN" "$@"

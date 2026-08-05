@@ -13,7 +13,7 @@
       {
         "name": "magis-workspace",
         "hostPath": {
-          "path": "/mnt/magi-data/MAGIS/1-genesis/workspace",
+          "path": "/mnt/magi-data/MAGIS/genesis-01/workspace",
           "type": "DirectoryOrCreate"
         }
       },

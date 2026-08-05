@@ -53,7 +53,7 @@ class LocalPathLayout:
         └── state/                 (SQLite — per-MAGI isolation)
 
     **Launcher mode** (no ``runtime_id``):
-        ``<data_root>/MAGIS/1-genesis/launcher-state/`` — scratch space
+        ``<data_root>/MAGIS/genesis-01/launcher-state/`` — scratch space
         for the launcher's BUS services, co-located with the MAGIS
         database.  The launcher never runs agent work; the real runtime
         state lives in the subprocess's per-MAGI slot.
@@ -106,7 +106,7 @@ class LocalPathLayout:
         else:
             # Launcher mode: scratch space in MAGIS home so it never
             # collides with the Adam's per-MAGI magi.db.
-            launcher_state = data_root / "MAGIS" / "1-genesis" / "launcher-state"
+            launcher_state = data_root / "MAGIS" / "genesis-01" / "launcher-state"
             object.__setattr__(self, "state_dir", launcher_state)
             object.__setattr__(self, "workspace", data_root)  # unused
             object.__setattr__(self, "local_db", launcher_state / "magi.db")
@@ -151,7 +151,7 @@ def bootstrap_local(
     to set up a fresh ``tmp_path`` fixture.
 
     ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
-    ``None`` the function picks ``<data_root>/MAGIS/1-genesis/`` (the
+    ``None`` the function picks ``<data_root>/MAGIS/genesis-01/`` (the
     first MAGIS seeded by the Local Profile is always Genesis with id=1).
     This matches the K8s pattern ``MAGIS/<magis_id>-<slug>/magis.db`` so
     the host layout is identical across both profiles.

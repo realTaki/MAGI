@@ -47,10 +47,10 @@ PVC 或管理员数据。子 MAGIS 的成员同样不会继承父 MAGIS 的 inst
 
 Genesis 使用：
 
-- `magi-magis-1-genesis-db`：PostgreSQL Deployment 和 ClusterIP Service；
-- `magi-magis-1-genesis-db-data`：数据库 PVC；
-- `magi-magis-1-genesis-workspace`：公共工作区 PVC；
-- `magi-magis-1-genesis-db` Secret：`POSTGRES_PASSWORD` 和 `MAGIS_DATABASE_URL`。
+- `magi-magis-genesis-01-db`：PostgreSQL Deployment 和 ClusterIP Service；
+- `magi-magis-genesis-01-db-data`：数据库 PVC；
+- `magi-magis-genesis-01-workspace`：公共工作区 PVC；
+- `magi-magis-genesis-01-db` Secret：`POSTGRES_PASSWORD` 和 `MAGIS_DATABASE_URL`。
 
 复制 `deploy/k8s/secrets/magis-genesis-db.example.yaml` 到不提交 Git 的位置，填入强随机密码后先 apply。`adam` overlay 会把数据库 URL 从该 Secret 注入初始节点；`deploy/k8s-dev/overlays/dev-eva00` overlay 生成仅供本地 kind 使用的开发 Secret。
 

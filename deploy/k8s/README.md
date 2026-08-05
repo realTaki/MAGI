@@ -128,7 +128,7 @@ cp deploy/k8s/secrets/magis-genesis-db.example.yaml /tmp/magis-genesis-db.yaml
 kubectl -n magi apply -f /tmp/magis-genesis-db.yaml
 ```
 
-`MAGIS_DATABASE_URL` 必须指向 `magi-magis-1-genesis-db:5432/magis_1`。初始 ADAM
+`MAGIS_DATABASE_URL` 必须指向 `magi-magis-genesis-01-db:5432/magis_1`。初始 ADAM
 会从这个 Secret 获得连接串，并在该 PostgreSQL 中创建 Genesis 与 `EVA-00 PROTO TYPE`。
 
 默认 ADAM 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置

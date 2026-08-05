@@ -67,7 +67,7 @@ def workspace_dir() -> Path:
        when set (Local Profile runtime subprocess) →
        ``<data_root>/MAGIC/<slug>/workspace``.
     3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
-       launcher process) → ``<data_root>/MAGIS/1-genesis/launcher-workspace``.
+       launcher process) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
 
     If none of the above match, the process is running in an
     unconfigured environment and the function raises.  There is no
@@ -84,7 +84,7 @@ def workspace_dir() -> Path:
         runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
         if runtime_id and runtime_slug:
             return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
-        return Path(data_root) / "MAGIS" / "1-genesis" / "launcher-workspace"
+        return magis_home(Path(data_root)) / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
         "MAGI_DATA_ROOT (Local Profile). Neither is set."
@@ -105,7 +105,7 @@ def state_dir() -> Path:
     2. **Local Profile, launcher / supervisor process** —
        ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_ID``.  The launcher
        is not a runtime; it keeps its own scratch SQLite at
-       ``<data_root>/MAGIS/1-genesis/launcher-state`` so it never
+       ``<data_root>/MAGIS/genesis-01/launcher-state`` so it never
        collides with the Adam's per-MAGI ``magi.db``.
     3. **K8s Profile** — no ``MAGI_DATA_ROOT``.  State lives at
        ``<workspace_dir>/memories``; each Pod has its own PVC, so
@@ -127,7 +127,7 @@ def state_dir() -> Path:
                 / "workspace"
                 / _STATE_SUBDIR  # "memories"
             )
-        return Path(data_root).expanduser().resolve() / "MAGIS" / "1-genesis" / "launcher-state"
+        return magis_home(Path(data_root)) / "launcher-state"
     return workspace_dir() / _STATE_SUBDIR
 
 
@@ -260,13 +260,13 @@ def default_data_root() -> Path:
 
 
 def magis_home(data_root: Path) -> Path:
-    """Return the first MAGIS directory (``<data_root>/MAGIS/1-genesis/``).
+    """Return the first MAGIS directory (``<data_root>/MAGIS/genesis-01/``).
 
+    Delegates to :func:`magis_dir` with the default Genesis id/slug.
     This is where the launcher secret and state live, co-located with
-    the MAGIS database.  Replaces the old ``control/`` directory.
-    Creates the directory on demand.
+    the MAGIS database.
     """
-    p = Path(data_root).expanduser().resolve() / "MAGIS" / "1-genesis"
+    p = magis_dir(data_root, 1, "genesis")
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -322,13 +322,13 @@ def runtime_audit_log_path(data_root: Path, runtime_id: int, slug: str) -> Path:
 def magis_dir(data_root: Path, magis_id: int, slug: str) -> Path:
     """Resolve the per-MAGIS public SQLite directory.
 
-    Format: ``<data_root>/MAGIS/<magis_id>-<slug>/``.  Each MAGIS owns
-    one public SQLite that every MAGI in its tree reads and writes
-    (``MAGIS.adam_id`` + membership tree).  The first MAGIS seeded by
-    the Local Profile is Genesis with magis_id=1 and slug="genesis",
-    so its directory is ``<data_root>/MAGIS/1-genesis/magis.db``.
+    Format: ``<data_root>/MAGIS/<slug>-<magis_id:02d>/``.  Name first,
+    id last — same style as MAGIC's ``eva-000``.  The first MAGIS
+    seeded by the Local Profile is Genesis with magis_id=1 and
+    slug="genesis", so its directory is
+    ``<data_root>/MAGIS/genesis-01/magis.db``.
     """
-    return Path(data_root) / "MAGIS" / f"{magis_id}-{slug}"
+    return Path(data_root) / "MAGIS" / f"{slug}-{magis_id:02d}"
 
 
 def magis_db_path(data_root: Path, magis_id: int, slug: str) -> Path:

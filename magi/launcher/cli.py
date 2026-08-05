@@ -175,7 +175,8 @@ def _exec_runtime(
     ``reload=False`` for production runs (``magi local start --no-reload``).
     """
     ws_root = data_root / "MAGIC" / slug / "workspace"
-    magis_db = data_root / "MAGIS" / "1-genesis" / "magis.db"
+    from magi.launcher.paths import magis_db_path
+    magis_db = magis_db_path(data_root, 1, "genesis")
 
     env = os.environ.copy()
     env.update({
@@ -416,7 +417,8 @@ def cmd_install_service(args: argparse.Namespace) -> int:
 
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
     magi_bin = _magi_executable()
-    magis_db = data_root / "MAGIS" / "1-genesis" / "magis.db"
+    from magi.launcher.paths import magis_db_path
+    magis_db = magis_db_path(data_root, 1, "genesis")
 
     slots = _list_magic_slots(data_root)
     if not slots:

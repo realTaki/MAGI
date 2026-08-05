@@ -65,7 +65,7 @@
 │   └── eva-001/workspace/                     # 第二个 MAGI
 │       └── ...                                # （结构同上）
 └── MAGIS/                                     # 每个 MAGIS 一个目录
-    └── 1-genesis/
+    └── genesis-01/
         ├── magis.db                           # 组织架构 + 控制面 SQLite
         ├── control-secret                     # 0600，内部 API HMAC 密钥
         └── launcher.json                      # launcher 状态快照
