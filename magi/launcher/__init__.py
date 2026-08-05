@@ -60,11 +60,6 @@ class LocalPathLayout:
     Layout under ``data_root`` (runtime mode)::
 
         <data_root>/
-        ├── control/
-        │   ├── local-registry.db
-        │   ├── control-secret
-        │   ├── launcher.json
-        │   └── launcher-state/magi.db       (launcher-only scratch)
         ├── MAGIC/<slug>/workspace/
         │   ├── SOUL.md
         │   ├── skills/

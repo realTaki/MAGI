@@ -79,6 +79,12 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
     are never created in PostgreSQL.
     """
     from magi.bus.models.local.control_plane import ControlOperator, ControlSetting
+    from magi.bus.models.local.control_runtime import (
+        ControlPortAllocation,
+        ControlRuntimeState,
+        ControlSecret,
+        ControlWorkspaceArchive,
+    )
     from magi.bus.models.magis.eva_runtime import EvaRuntime
     from magi.bus.models.magis.magic import MAGIC
     from magi.bus.models.magis.magis import MAGIS
@@ -90,7 +96,14 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
         # SQLAlchemy sorts the FK dependencies (magic before magis) for us.
         MAGIS.metadata.create_all(
             engine,
-            tables=[MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__, MAGISMembership.__table__, MAGISAdmin.__table__, EvaRuntime.__table__, ControlSetting.__table__, ControlOperator.__table__],
+            tables=[
+                MAGIC.__table__, MAGIS.__table__, MAGISRole.__table__,
+                MAGISMembership.__table__, MAGISAdmin.__table__,
+                EvaRuntime.__table__, ControlSetting.__table__,
+                ControlOperator.__table__,
+                ControlRuntimeState.__table__, ControlPortAllocation.__table__,
+                ControlWorkspaceArchive.__table__, ControlSecret.__table__,
+            ],
         )
     if seed_root:
         from magi.bus.db.engine import _seed_default_root

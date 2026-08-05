@@ -1,17 +1,30 @@
-"""Launcher-issued control secret — plan §11.
+"""Launcher-issued control secret.
 
 The Local Profile creates a 256-bit URL-safe random secret the first
-time ``magi local start`` runs, writes it to ``<control_dir>/control-secret``
+time ``magi local start`` runs, writes it to ``<magis_home>/control-secret``
 with file-mode ``0600``, and the Bus-store mirrors a salted SHA-256
-digest.  The raw secret is required by the loopback-only control-plane
-HTTP API (``X-MAGI-Control-Secret`` header).
+digest in the MAGIS database.  The raw secret is required by the
+loopback-only control-plane HTTP API (``X-MAGI-Control-Secret`` header).
 
 The secret is intentionally a launcher concern, not a Business module
-concern.  Only :mod:`magi.launcher.cli` and :mod:`magi.launcher.supervisor`
-touch the raw bytes; the
+concern.  Only :mod:`magi.launcher.cli` touches the raw bytes; the
 :class:`magi.bus.services.control_registry.ControlRegistryService`
 only ever sees the salted hash via :meth:`put_secret` / :meth:`verify_secret`.
 """
+
+from __future__ import annotations
+
+import os
+import secrets
+from pathlib import Path
+
+
+def ensure_control_secret(path: Path) -> str:
+    """Return the persisted secret; generate a new one if missing.
+
+    ``path`` is the on-disk file (``<magis_home>/control-secret``).
+    The file is forced to ``0600`` on POSIX systems.
+    """
 
 from __future__ import annotations
 

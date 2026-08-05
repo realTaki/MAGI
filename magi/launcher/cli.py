@@ -20,10 +20,10 @@ from pathlib import Path
 from typing import Optional
 
 from magi.launcher.paths import (
-    control_dir as _control_dir,
     control_secret_path,
     default_data_root,
     launcher_state_path,
+    magis_home,
 )
 from magi.launcher.platform import current_platform, open_browser
 from magi.launcher.security import ensure_control_secret, reveal_control_secret
@@ -217,10 +217,10 @@ def cmd_start(args: argparse.Namespace) -> int:
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
     # ── control-plane bootstrap (first run only) ──
-    control = _control_dir(data_root)
-    secret_path = control_secret_path(control)
+    home = magis_home(data_root)
+    secret_path = control_secret_path(home)
     ensure_control_secret(secret_path)
-    state_path = launcher_state_path(control)
+    state_path = launcher_state_path(home)
     state_path.write_text(
         json.dumps(
             {
@@ -317,7 +317,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     """``magi local doctor`` — surface workspace + control-plane state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
-    control = _control_dir(data_root)
+    home = magis_home(data_root)
     magic_dir = data_root / "MAGIC"
     slots = sorted(
         p.name for p in magic_dir.iterdir() if p.is_dir()
@@ -327,13 +327,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "data_root": str(data_root),
         "platform": current_platform(),
         "paths": {
-            "control": str(control),
-            "magis": str(data_root / "MAGIS" / "1-genesis"),
+            "magis_home": str(home),
+            "magis_db": str(home / "magis.db"),
             "magic_slots": slots,
         },
-        "control_db_exists": (control / "local-registry.db").exists(),
-        "secret_exists": control_secret_path(control).exists(),
-        "launcher_state_exists": launcher_state_path(control).exists(),
+        "magis_db_exists": (home / "magis.db").exists(),
+        "secret_exists": control_secret_path(home).exists(),
+        "launcher_state_exists": launcher_state_path(home).exists(),
     }, indent=2))
     return 0
 

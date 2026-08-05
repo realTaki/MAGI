@@ -259,21 +259,33 @@ def default_data_root() -> Path:
     return Path.home() / ".magi"
 
 
-def control_dir(data_root: Path) -> Path:
-    """Return the ``<data_root>/control`` directory, creating it on demand."""
-    p = Path(data_root).expanduser().resolve() / "control"
+def magis_home(data_root: Path) -> Path:
+    """Return the first MAGIS directory (``<data_root>/MAGIS/1-genesis/``).
+
+    This is where the launcher secret and state live, co-located with
+    the MAGIS database.  Replaces the old ``control/`` directory.
+    Creates the directory on demand.
+    """
+    p = Path(data_root).expanduser().resolve() / "MAGIS" / "1-genesis"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def control_secret_path(control_dir: Path) -> Path:
-    """Path to the launcher-issued control secret file (0600, plan §11)."""
-    return Path(control_dir) / "control-secret"
+def control_secret_path(magis_home: Path) -> Path:
+    """Path to the launcher-issued control secret file (0600).
+
+    Lives alongside the MAGIS database so all control-plane state is
+    in one place.
+    """
+    return Path(magis_home) / "control-secret"
 
 
-def launcher_state_path(control_dir: Path) -> Path:
-    """Path to the launcher state JSON (``launcher.json``)."""
-    return Path(control_dir) / "launcher.json"
+def launcher_state_path(magis_home: Path) -> Path:
+    """Path to the launcher state JSON (``launcher.json``).
+
+    Lives alongside the MAGIS database.
+    """
+    return Path(magis_home) / "launcher.json"
 
 
 def runtime_workspace_root(data_root: Path, runtime_id: int, slug: str) -> Path:
@@ -333,7 +345,7 @@ __all__ = [
     # Group 2 — Local Profile data root
     "default_data_root",
     # Group 3 — per-runtime and control-plane
-    "control_dir",
+    "magis_home",
     "control_secret_path",
     "launcher_state_path",
     "runtime_workspace_root",

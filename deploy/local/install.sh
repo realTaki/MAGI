@@ -51,7 +51,7 @@ fi
 
 # 2. Materialise the data root.
 
-mkdir -p "$DATA_ROOT/control" "$DATA_ROOT/MAGIC" "$DATA_ROOT/MAGIS"
+mkdir -p "$DATA_ROOT/MAGIC" "$DATA_ROOT/MAGIS"
 log "data root ready at: $DATA_ROOT"
 
 # 3. Print the cheat sheet.

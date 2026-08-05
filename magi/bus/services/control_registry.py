@@ -1,12 +1,11 @@
-"""BUS facade for the Local control-plane registry.
+"""BUS facade for the control-plane runtime registry.
 
 Wrap :class:`magi.bus.db.control.repository.ControlRepository` so
 business modules see a stable façade on ``bus.control_registry.*``
 rather than reaching into ``magi.bus.db.control.*`` directly.
 
-Construction: :func:`magi.bus.bootstrap` injects the engine via
-``build_control_engine(control_dir)``.  Phase 6's ``magi local
-start`` is the canonical caller; tests may pass a stub repository.
+The repository is backed by the same MAGIS engine that holds
+organisation facts — no separate ``control/`` database.
 """
 
 from __future__ import annotations
