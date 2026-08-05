@@ -71,16 +71,11 @@ def workspace_dir() -> Path:
     3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
        launcher / supervisor process) → the launcher's working area
        lives at ``<data_root>/control/launcher-workspace`` so it stays
-       out of every per-MAGI slot.  The launcher is not a runtime and
-       never serves an agent; this path is only here so the helper has
-       a defined return for the supervisor.
-
-    No branch falls back to a hardcoded host path. ``/workspace`` is a
-    container-only convention (PVC mount inside a Pod); on the bare
-    host it would silently materialise a new top-level directory and
-    leak runtime state into ``/``.  If neither ``MAGI_WORKSPACE_DIR``
-    nor ``MAGI_DATA_ROOT`` is set, the caller has not configured a
-    deploy profile and the helper raises.
+       out of every per-MAGI slot.
+    4. ``/workspace`` — K8s Profile default (the PVC is mounted there).
+       This is the container-only fallback; the Local Profile always
+       sets ``MAGI_DATA_ROOT`` so this branch is never reached on bare
+       metal.
     """
     raw = os.environ.get("MAGI_WORKSPACE_DIR")
     if raw:
@@ -92,11 +87,7 @@ def workspace_dir() -> Path:
         if runtime_id and runtime_slug:
             return Path(data_root) / "MAGIC" / f"{runtime_id}-{runtime_slug}" / "workspace"
         return Path(data_root) / "control" / "launcher-workspace"
-    raise RuntimeError(
-        "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Profile) or "
-        "MAGI_DATA_ROOT (Local Profile). Neither is set — refusing to "
-        "pick a host-root path."
-    )
+    return Path("/workspace")
 
 
 def state_dir() -> Path:

@@ -114,7 +114,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 1
 
     result = bus.runtime.start(
-        RuntimeSpec(magic_id=magic_id, name="adam")
+        RuntimeSpec(magic_id=magic_id, name="eva-00")
     )
     print(json.dumps(
         {
