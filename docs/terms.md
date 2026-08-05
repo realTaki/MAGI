@@ -165,6 +165,48 @@ code branches at deploy time. They are not two separate products.
 
 ---
 
+## Hook 子系统 (Hook subsystem)
+
+BUS-centric 的统一 hook 层,覆盖 prompt-injection / tool-abuse / data-exfiltration /
+multi-agent 通信 / 输入输出审计 / 工具审批 / 外部消息投递 / 红蓝队测试。
+**Hook 只能看到 HookEnvelope,看不到 `Bus`、看不到 ORM、看不到任何可调用的句柄**
+——这是安全边界。Plugin 写代码时只能依赖 `magi.plugins.hooks` 的 contract surface。
+
+| 名词 | 含义 |
+|------|------|
+| **HookPoint** | hook 触发的稳定字符串 id,枚举类 `magi.bus.hooks.contracts.HookPoint`。第一版有 11 个:`AGENT_INPUT_PENDING`、`LLM_REQUEST_PREPARED`、`LLM_RESPONSE_RECEIVED`、`TOOL_CALL_PENDING`、`TOOL_RESULT_RECEIVED`、`A2A_INVOCATION_PENDING`、`A2A_RESULT_RECEIVED`、`DELIVERY_PENDING`、`RUN_TRANSITION_COMMITTED`、`OPERATION_FAILED`、`OPERATION_DEAD_LETTERED`。|
+| **HookMode** | `OBSERVE`(观察,不阻塞原操作;失败 fail-open)或 `GATE`(允许/拒绝;有 fail-open/fail-closed 配置)。|
+| **HookAction** | GATE handler 唯一可返回的结构化决策:`ALLOW` 或 `DENY`。未来扩展 `QUARANTINE` / `REQUIRE_APPROVAL` / `REWRITE` / `DEFER`。|
+| **HookDataScope** | handler 注册时声明想看哪些数据。BUS 物化时只把声明过的 scope 投到 envelope。强制最小权限 —— handler 拿不到 `LLM_REQUEST` 之外的任何东西。|
+| **HookEnvelope** | handler 唯一能看到的不可变、JSON-safe 数据快照。包含 runtime / principal / causality / subject / payload / context / security / metadata 八块。**不含 ORM、Session、Provider Client、Channel Adapter、callback、明文 secret**。|
+| **HookDecision** | handler 的决策结果(`action`、`reason_code`、`risk_score`、`labels`)。execution 逻辑**只**看 `action`。|
+| **HookEvaluation** | 持久化的审计行 — 每个 (handler, hook_event_id) 一行,unique key = `(hook_event_id, hook_id, hook_version)`。让重试可以复用已完成的决定。|
+| **HookPluginConfig** | composition root 持久化的 hook plugin 配置(安装在 `hook_plugin_configs` 表)。包含 `hook_id`、`module_path`、`class_name`、`enabled`、`mode`、`priority`、`required_scopes`、`timeout_ms`、`failure_mode`。**Plugin 不允许自注册**——只有 WebUI / CLI / launcher 能写这一行。|
+| **HookMaterializer** | BUS 端根据 `(HookPoint, subject, requested_scopes)` 把 BUS 记录投影成最小化 envelope 的纯函数。**只读** BUS 记录,从不修改。|
+| **HookExecutor** | 跑 handler 的执行器——timeout、fail-open/fail-closed 都在这里。**handler 永远跑在 DB 事务外**,以避免长事务。|
+| **aggregate_decisions** | 多 hook 决策聚合规则(spec §11):任意 GATE DENY 胜出;OBSERVE 不参与;fail-closed 异常/超时 → DENY;fail-open → ALLOW。|
+
+| Term | Meaning |
+|------|---------|
+| **HookPoint** | Stable string identifier for an event site. First version ships 11 points covering agent input, LLM request/response, tool call/result, A2A invocation/result, delivery, run transition, and operation failure/dead-letter. |
+| **HookMode** | `OBSERVE` (audit/metrics — never blocks) or `GATE` (allow/deny — can block the underlying operation; `failure_mode` decides what to do on timeout/error). |
+| **HookAction** | The structural decision a GATE handler can return — `ALLOW` or `DENY` in v1. Future actions `QUARANTINE` / `REQUIRE_APPROVAL` / `REWRITE` / `DEFER` will extend the enum. |
+| **HookDataScope** | The data a handler declares it needs at registration. The BUS materializes ONLY the declared scopes into the envelope — a handler subscribed to `TOOL_CALL_PENDING` asking for `LLM_REQUEST` is rejected. |
+| **HookEnvelope** | The frozen, JSON-safe snapshot handed to a handler. Contains runtime/principal/causality/subject/payload/context/security/metadata. **No ORM, no SQLAlchemy session, no Provider/Channel/MCP/Connector client, no callbacks, no plaintext secrets.** |
+| **HookDecision** | A handler's verdict on one envelope. Execution logic depends ONLY on `action`; other fields are for audit. |
+| **HookEvaluation** | Persisted audit row — one per (handler, hook_event_id, hook_version). Unique key = `(hook_event_id, hook_id, hook_version)` so retries reuse the cached decision. |
+| **HookPluginConfig** | Persistent plugin enablement row. Lives in `hook_plugin_configs`. **Plugins cannot self-register** — only the WebUI / CLI / launcher write here. |
+| **HookMaterializer** | Pure function that projects a BUS record into a minimal envelope based on the handler's declared scopes. Read-only — never mutates BUS state. |
+| **HookExecutor** | The runner that invokes handlers with timeout + fail-open/fail-closed policy. **Handlers never run inside a DB transaction.** |
+| **aggregate_decisions** | The aggregation rule for multiple hook handlers (spec §11): any GATE-DENY wins; OBSERVE doesn't affect the action; fail-closed timeout/error → DENY; fail-open → ALLOW. |
+
+**Why DataScope-as-Snapshot (而非 `bus.session.list(...)`)?**
+即使形式上 plugin 只依赖 `magi.bus`,允许 handler 自由调用 BUS 接口会把 BUS
+表面变成高权限后门(handler 能扫描所有会话、所有记忆、所有 tool 调用)。
+强制 DataScope 声明 + BUS 物化最小快照是这一层安全架构的核心。
+
+---
+
 ## 部署形态 (Deployment profiles)
 
 | 名词 | 含义 |

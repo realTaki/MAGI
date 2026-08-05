@@ -1,22 +1,23 @@
 """LLM provider layer — abstracts the upstream chat API.
 
 The runtime speaks one interface (``LLMProvider``) regardless of
-which vendor actually serves the request. v0 ships three
-concrete implementations, all on the Anthropic Messages API
-wire format:
+which vendor actually serves the request. v0 ships four
+concrete implementations:
 
-  - :class:`magi.providers.claude.ClaudeProvider` — Anthropic's
+  - :class:`magi.providers.claude_code.ClaudeProvider` — Anthropic's
     first-party API.
   - :class:`magi.providers.minimax.MinimaxProvider` — Minimax's
     two regions (China + Global).
-  - Both subclass :class:`magi.providers.anthropic.AnthropicProvider`
-    which centralises the SDK call, error mapping, and
-    response walking.
+  - :class:`magi.providers.openai.OpenAIProvider` — OpenAI's
+    official chat-completions endpoint.
 
-New vendors on a different wire format (e.g. OpenAI) would
-land as a new file subclassing :class:`LLMProvider` directly,
-plus a one-line branch in
-:func:`magi.providers.factory.get_provider`.
+The Claude + Minimax pair subclass
+:class:`magi.providers.anthropic.AnthropicProvider`, which
+centralises the SDK call, error mapping, and response walking.
+OpenAI is on a different wire format and subclasses
+:class:`LLMProvider` directly. The factory in
+:mod:`magi.providers.factory` is the single source of truth for
+which provider id maps to which class.
 
 Public surface re-exported here so callers don't need to know
 which submodule a class lives in::
@@ -30,18 +31,18 @@ which submodule a class lives in::
 
 from magi.bus.protocols.provider_jobs import ProviderJob, ProviderJobResult
 from magi.providers.errors import (
-    LLMError,
     LLMAuthError,
-    LLMRateLimitError,
-    LLMNetworkError,
     LLMContextLengthError,
+    LLMError,
+    LLMNetworkError,
     LLMNotConfiguredError,
+    LLMRateLimitError,
 )
 from magi.providers.factory import get_provider, is_known_provider, known_providers
 from magi.providers.provider import (
-    LLMProvider,
     ChatMessage,
     ChatResult,
+    LLMProvider,
     LLMStreamEvent,
 )
 from magi.providers.tokens import estimate_messages_tokens, estimate_string_tokens

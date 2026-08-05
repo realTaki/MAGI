@@ -2,20 +2,23 @@
 ``provider``/``api_key``/``model`` into a ready-to-call
 ``LLMProvider``.
 
-Three providers ship in v0, all on the Anthropic
-Messages API:
+Four providers ship in v0:
 
-  - :class:`magi.providers.claude.ClaudeProvider` —
+  - :class:`magi.providers.claude_code.ClaudeProvider` —
     Anthropic's first-party Claude API.
   - :class:`magi.providers.minimax.MinimaxProvider` —
     Minimax's two regions (China + Global), via the
     Anthropic-compatible endpoints.
+  - :class:`magi.providers.openai.OpenAIProvider` —
+    OpenAI's official chat-completions endpoint.
 
-All three subclass
+The Claude and Minimax providers subclass
 :class:`magi.providers.anthropic.AnthropicProvider`,
 which centralises the SDK call, error mapping, and
-response walking. The factory's job is just to pick
-the right class + per-vendor config.
+response walking. OpenAI is on a different wire format,
+so it subclasses :class:`LLMProvider` directly. The
+factory's job is just to pick the right class +
+per-vendor config.
 
 The factory is the **single source of truth** for the
 MAGI runtime's LLM credentials. Every chat turn, task
@@ -49,11 +52,11 @@ the operator sees a 400 on a typo) and here (defensive
 from __future__ import annotations
 
 import logging
-import os
 
-from magi.providers.claude import ClaudeProvider
+from magi.providers.claude_code import ClaudeProvider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.minimax import MinimaxProvider
+from magi.providers.openai import OpenAIProvider
 from magi.providers.provider import LLMProvider
 
 logger = logging.getLogger("magi.agent.llm.factory")
@@ -64,16 +67,16 @@ def known_providers() -> list[str]:
 
     v0 ships the Anthropic-API-compatible family:
     Claude (Anthropic's first-party API) and the two
-    Minimax regions. Order matches the dropdown:
-    Claude first for international deployers, then
-    the two Minimax regions for Asia-Pacific
-    deployers. ``"minimax"`` (bare alias) is
+    Minimax regions, plus OpenAI. Order matches the
+    dropdown: Claude first for international deployers,
+    then the two Minimax regions for Asia-Pacific
+    deployers, then OpenAI. ``"minimax"`` (bare alias) is
     intentionally NOT listed here — operators pick a
     region explicitly so there's no ambiguity.
     :func:`get_provider` still accepts ``"minimax"`` for
     backward compat with any pre-v0 MAGIC rows.
     """
-    return ["claude", "minimax-global", "minimax-cn"]
+    return ["claude", "minimax-global", "minimax-cn", "openai"]
 
 
 def get_provider(model: str | None = None) -> LLMProvider:
@@ -127,6 +130,8 @@ def get_provider(model: str | None = None) -> LLMProvider:
         return MinimaxProvider.for_region("minimax-global", api_key=api_key, model=effective_model)
     if name == "claude":
         return ClaudeProvider(api_key=api_key, model=effective_model)
+    if name == "openai":
+        return OpenAIProvider(api_key=api_key, model=effective_model)
 
     raise LLMError(
         f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(known_providers())}"
@@ -140,14 +145,15 @@ def provider_options_for_ui() -> list[dict[str, str]]:
     just add a row here.
 
     v0 ships the Anthropic-API-compatible family
-    (Claude + the two Minimax regions). The factory
-    and the picker stay in sync via
+    (Claude + the two Minimax regions) plus OpenAI. The
+    factory and the picker stay in sync via
     :func:`known_providers`.
     """
     return [
         {"value": "claude", "label": "Anthropic (Claude)"},
         {"value": "minimax-global", "label": "Minimax (Global)"},
         {"value": "minimax-cn", "label": "Minimax (China)"},
+        {"value": "openai", "label": "OpenAI"},
     ]
 
 

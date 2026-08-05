@@ -1,6 +1,6 @@
 """Shared base for Anthropic-API-compatible chat completions.
 
-Both :class:`magi.providers.claude.ClaudeProvider`
+Both :class:`magi.providers.claude_code.ClaudeProvider`
 (Anthropic's first-party API) and
 :class:`magi.providers.minimax.MinimaxProvider`
 (Minimax's Anthropic-compatible endpoints) subclass

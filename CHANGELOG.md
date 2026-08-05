@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Added
+- **BUS-centric Hook subsystem** (`magi.bus.hooks` + `magi.plugins.hooks`).
+  11 first-version hook points: `agent.input.pending`,
+  `llm.request.prepared`, `llm.response.received`, `tool.call.pending`,
+  `tool.result.received`, `a2a.invocation.pending`, `a2a.result.received`,
+  `delivery.pending`, `run.transition.committed`, `operation.failed`,
+  `operation.dead_lettered`. Hooks declare required `HookDataScope`s at
+  registration; BUS materializes a frozen `HookEnvelope` with only the
+  declared scopes. Handlers NEVER receive a `Bus` reference — the
+  envelope is the only input. Two new persistent tables
+  (`hook_evaluations`, `hook_plugin_configs`) + Alembic revisions 0003
+  and 0004. Architecture tests (`test_hook_import_boundaries.py`,
+  `test_hook_envelope_purity.py`) enforce the boundary; the legacy
+  fire-and-forget `magi.plugins.bus` is removed. Tool worker now
+  gates on `TOOL_CALL_PENDING` before invoking executors; agent step
+  gates on `LLM_REQUEST_PREPARED` before provider calls.
 - Unified `contacts` table (merges `employees` + `contact_entries` + `user_im_bindings`)
 - `magics` + `magis` tables replacing the old `departments` tree
 - Full CRUD APIs for MAGIC teams and Magi agents
