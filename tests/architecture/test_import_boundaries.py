@@ -119,7 +119,6 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.channels.dispatcher",
             "magi.channels.delivery",
             "magi.agent.worker",
-            "magi.agent.step",
             "magi.providers",
         ],
     ),

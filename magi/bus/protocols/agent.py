@@ -108,7 +108,22 @@ class RunResult:
 
 
 class BusStoreProtocol(Protocol):
-    """Runtime-facing store boundary; SQLite is an implementation detail."""
+    """Runtime-facing store boundary; SQLite is an implementation detail.
+
+    Hook firing contract
+    ---------------------
+
+    Boundary methods that fire BUS hooks accept an optional
+    ``hook_context: HookContext | None = None`` kwarg.  When
+    ``None``, no hook fires (the boundary is a pure data write).
+    When supplied, the bus.store fires the corresponding hook
+    point (GATE for enqueue, OBSERVE for complete) and the
+    aggregated decision is returned on
+    :class:`EnqueueResult` for the caller to react to.
+
+    Business modules never import :class:`HookService` — they
+    only construct a :class:`HookContext` and pass it through.
+    """
 
     def publish_agent_message(self, message: AgentMessage) -> str: ...
     def claim_next_agent_message(self, worker_id: str, *, lease_seconds: int = 60) -> BusClaim | None: ...
@@ -127,8 +142,14 @@ class BusStoreProtocol(Protocol):
     # / "auto_title"); ``status`` carries the lifecycle ("queued" / "claimed"
     # / "completed" / "failed" / the existing "started" / "streaming" etc.).
     def enqueue_llm_job(
-        self, *, run_id: str, inbox_event_id: str | None, kind: str,
-    ) -> str: ...
+        self,
+        *,
+        run_id: str,
+        request: dict[str, Any] | None = None,
+        inbox_event_id: str | None,
+        kind: str,
+        hook_context: Any | None = None,
+    ) -> Any: ...
     def claim_next_llm_job(
         self, worker_id: str, *, lease_seconds: int = 60,
     ) -> tuple[str, str, str | None] | None: ...
@@ -138,6 +159,7 @@ class BusStoreProtocol(Protocol):
         *,
         response: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
+        hook_context: Any | None = None,
     ) -> None: ...
     def recover_expired_llm_job_leases(self) -> int: ...
     def persist_llm_job_request(
@@ -151,6 +173,46 @@ class BusStoreProtocol(Protocol):
         wait_seconds: float = 30.0,
         poll_seconds: float = 0.1,
     ) -> dict[str, Any] | None: ...
+    def enqueue_delivery(
+        self,
+        *,
+        channel: str,
+        destination: str | None,
+        payload: dict[str, Any],
+        run_id: str | None = None,
+        delivery_id: str | None = None,
+        event_id: str | None = None,
+        idempotency_key: str | None = None,
+        hook_context: Any | None = None,
+    ) -> Any: ...
+    def complete_delivery(
+        self,
+        delivery_id: str,
+        *,
+        hook_context: Any | None = None,
+    ) -> None: ...
+    def enqueue_tool_job(
+        self,
+        *,
+        run_id: str,
+        tool_call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+        idempotency_key: str | None = None,
+        tool_source: str | None = None,
+        catalog_revision: int | None = None,
+        schema_hash: str | None = None,
+        hook_context: Any | None = None,
+    ) -> Any: ...
+    def complete_tool_job(
+        self,
+        claim: Any,
+        *,
+        content: str,
+        is_error: bool,
+        hook_context: Any | None = None,
+    ) -> None: ...
     def complete_agent_message(
         self,
         event_id: str,

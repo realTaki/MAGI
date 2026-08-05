@@ -1,9 +1,8 @@
 """System prompt assembly (D.4 / D.16 prompt-building).
 
-Kept separate from :mod:`magi.agent.step`,
-:mod:`magi.agent.token_usage`, and :mod:`magi.agent.compaction`:
-prompt assembly is reusable and does not belong in the provider-step
-implementation.
+Kept separate from :mod:`magi.agent.token_usage` and
+:mod:`magi.agent.compaction`: prompt assembly is reusable and does
+not belong in the provider-step implementation.
 
 Two surfaces pinned:
 

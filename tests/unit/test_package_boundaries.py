@@ -37,7 +37,6 @@ SCAN_PREFIXES: tuple[str, ...] = (
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "magi/agent/worker.py",
     "magi/agent/agent_context.py",
-    "magi/agent/step.py",
     "magi/tools/base.py",
     "magi/tools/worker.py",
     "magi/channels/delivery.py",

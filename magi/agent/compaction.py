@@ -1,9 +1,8 @@
 """Auto-compaction for long chat sessions (D.17).
 
-Kept separate from :mod:`magi.agent.step` for the same
-size-budget reason as :mod:`magi.agent.token_usage`: prompt
-building, compaction, and token accounting do not belong in
-the single provider-step implementation.
+Kept separate from :mod:`magi.agent.token_usage` for the same
+size-budget reason: prompt building, compaction, and token
+accounting do not belong in the single provider-step implementation.
 
 Two surfaces pinned:
 

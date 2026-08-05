@@ -53,6 +53,45 @@
   - `[eve]` pyproject extra → `[eva]`
   - i18n keys `positionEve`/`startEve`/`stopEve` → `positionEva`/`startEva`/`stopEva`
   - `docs/terms.md` rationale updated to record the token flip
+- **MAGI creation-flow refactor** — split create-time identity from
+  runtime configuration. Provider / API key / model no longer ride in
+  on `POST /api/magic`; they live in a per-MAGI `runtime_settings.toml`
+  written by the new `PATCH /api/magic/self/provider` endpoint after
+  the runtime starts. Highlights:
+  - Bootstrap seeds the root MAGIS (`Genesis`) and its ADAM (`EVA-000`)
+    with explicit `id=0`; both DB engines (SQLite + Postgres) accept
+    the explicit id and the Postgres sequence is reset to advance from
+    `max(id)`. Application-layer `_next_id` is the single source of
+    truth for new rows on either backend.
+  - `MAGICCreate` now requires `magis_id`; the service auto-creates
+    the direct MAGIS membership (defaulting to the target MAGIS's
+    reserved `EVA` role when `role_id` is omitted). New `magic_name_duplicate`
+    error code on collision.
+  - New Alembic 0005 `magic.name` UNIQUE index (de-dupes pre-existing
+    duplicates by suffixing with id, then builds the index).
+  - New `magi/bus/runtime_settings.py` — JSON file read/write with
+    atomic temp-file + rename; `load_runtime_settings` returns
+    defaults on missing / corrupt files. `MagicService.provider_configuration`
+    reads from the file, with a legacy fallback to the `magic.provider` /
+    `magic.api_key` columns for pre-refactor rows.
+  - New `runtime_provider` router mounted on every MAGI runtime:
+    `GET / PATCH / DELETE /api/magic/self/provider`. WebUI proxy
+    (`/api/runtime/{magic_id}/magic/self/provider`) lets an admin edit
+    a non-session MAGI's settings without first switching sessions;
+    non-admin sessions stay pinned to their selected MAGI.
+  - `MagicPane.tsx` create form now has MAGIS + role selectors with
+    `EVA-NNN` default name; the per-row edit panel disables the
+    Provider / API key / model inputs until the runtime reaches
+    `running` (the file lives next to the runtime's workspace).
+  - Bug fix: `MagicService._runtime_magic` (and the matching
+    `MagisService.current_runtime_magic_id`) used `if root and root.adam_id`
+    which silently treated `adam_id == 0` as falsy. Replaced with
+    `root.adam_id is not None` so the seeded ADAM resolves correctly.
+  - 10 new integration tests in
+    `tests/integration/test_magic_creation.py` covering bootstrap ids,
+    auto-bind membership, ADAM role uniqueness, name duplicates,
+    missing MAGIS, runtime-settings round-trip / missing / corrupt
+    files, and `provider_configuration` reading the file.
 
 ### Removed
 - `departments` table and all related code
