@@ -213,7 +213,6 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         SecurityHookContext,
     )
     from magi.bus.hooks.service import HookService
-    from magi.bus.db.base import utcnow_naive
 
     _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
@@ -236,7 +235,8 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         "text_preview": (text or "")[:256],
     }
     if hook_service is not None:
-        now = utcnow_naive()
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         request = EvaluationRequest(
             hook_point=HookPoint.DELIVERY_PENDING,
             subject_type="channel_send",

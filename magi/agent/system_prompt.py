@@ -65,7 +65,7 @@ def read_soul() -> str:
     """Load the persona text from the workspace's ``SOUL.md``.
 
     The workspace path is resolved from ``MAGI_WORKSPACE_DIR``
-    (K8s Pod) or ``MAGI_DATA_ROOT`` (Local Profile) — never a
+    (K8s Pod) or ``HOST_WORKSPACE_DIR`` (Local Profile) — never a
     hardcoded path.
 
     This is a **read** function — it does not bootstrap or write

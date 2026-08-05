@@ -268,10 +268,10 @@ class LocalProcessRuntimeBackend:
         env = os.environ.copy()
         env.update(
             {
-                "MAGI_DATA_ROOT": str(data_root),
+                "HOST_WORKSPACE_DIR": str(data_root),
                 "MAGI_WORKSPACE_DIR": str(ws_root),
                 "MAGI_RUNTIME_ID": str(spec.magic_id),
-                "MAGI_RUNTIME_SLUG": slug,
+                "MAGI_NAME": slug,
                 "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
                 "MAGI_PORT": str(port),
                 "MAGI_BACKEND": "local",
@@ -365,7 +365,7 @@ class LocalProcessRuntimeBackend:
 def _data_root() -> Path:
     from magi.launcher.paths import default_data_root
 
-    raw = os.environ.get("MAGI_DATA_ROOT")
+    raw = os.environ.get("HOST_WORKSPACE_DIR")
     return Path(raw) if raw else default_data_root()
 
 

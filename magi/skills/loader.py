@@ -126,7 +126,7 @@ def _workspace_root() -> Path:
     """Return the workspace root path.
 
     Resolved from ``MAGI_WORKSPACE_DIR`` (K8s Pod) or
-    ``MAGI_DATA_ROOT`` (Local Profile) — never a hardcoded path.
+    ``HOST_WORKSPACE_DIR`` (Local Profile) — never a hardcoded path.
     """
     return workspace_dir()
 

@@ -55,7 +55,7 @@ deploy/
 
 路径解析由环境变量驱动：
 - K8s 容器内：`MAGI_WORKSPACE_DIR` 指向 PVC 挂载点
-- 本地进程：`MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`
+- 本地进程：`HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`
 
 不存在硬编码的 `/workspace` 路径。`magi/launcher/paths.py` 是唯一暴露
 路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。

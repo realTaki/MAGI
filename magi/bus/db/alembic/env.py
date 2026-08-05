@@ -31,7 +31,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # State directory is <workspace>/memories — resolved from
-# MAGI_WORKSPACE_DIR (K8s) or MAGI_DATA_ROOT (Local Profile).
+# MAGI_WORKSPACE_DIR (K8s) or HOST_WORKSPACE_DIR (Local Profile).
 # The programmatic runner sets the URL directly; this is only a
 # convenience for CLI workflows, so we only fall back to the global
 # ``state_dir()`` resolution when no URL has been provided by the

@@ -16,7 +16,7 @@ Wants=network-online.target
 Type=simple
 Environment=MAGI_DATA_ROOT=%h/.magi
 Environment=MAGI_RUNTIME_ID=1
-Environment=MAGI_RUNTIME_SLUG=eva-000
+Environment=MAGI_NAME=eva-000
 Environment=MAGI_PORT=42069
 Environment=MAGIS_DATABASE_URL=sqlite:///%h/.magi/MAGIS/genesis-01/magis.db
 ExecStart=magi runtime --host 127.0.0.1 --port 42069

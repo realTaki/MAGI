@@ -360,9 +360,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=MAGI_DATA_ROOT={data_root}
+Environment=HOST_WORKSPACE_DIR={data_root}
 Environment=MAGI_RUNTIME_ID={magic_id}
-Environment=MAGI_RUNTIME_SLUG={slug}
+Environment=MAGI_NAME={slug}
 Environment=MAGI_PORT={port}
 Environment=MAGIS_DATABASE_URL=sqlite:///{magis_db}
 ExecStart={magi_bin} runtime --host 127.0.0.1 --port {port}
@@ -441,7 +441,7 @@ def cmd_webui(args: argparse.Namespace) -> int:
     if getattr(args, "no_dev", False):
         # Production path — same as ``magi webui`` directly on 42069.
         env = os.environ.copy()
-        env["MAGI_DATA_ROOT"] = str(data_root)
+        env["HOST_WORKSPACE_DIR"] = str(data_root)
         from magi.launcher.paths import magis_db_path
         env["MAGIS_DATABASE_URL"] = (
             f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"
@@ -512,7 +512,7 @@ def cmd_webui(args: argparse.Namespace) -> int:
     # Replace this process with ``magi webui`` on :8000 — vite proxies
     # /api → :8000 from the browser's perspective.
     env = os.environ.copy()
-    env["MAGI_DATA_ROOT"] = str(data_root)
+    env["HOST_WORKSPACE_DIR"] = str(data_root)
     env["MAGI_PORT"] = "8000"
     from magi.launcher.paths import magis_db_path
     env["MAGIS_DATABASE_URL"] = f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"

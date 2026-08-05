@@ -22,8 +22,8 @@ KUBECONFIG_PATH="${MAGI_KUBECONFIG:-$ROOT_DIR/.kind-kubeconfig}"
 # OS-specific data root — matches the openclaw-style layout used by
 # ``deploy/local/magi`` and ``magi.launcher.paths.default_data_root``.
 resolve_data_root() {
-  if [ -n "${MAGI_DATA_ROOT:-}" ]; then
-    printf '%s\n' "$MAGI_DATA_ROOT"
+  if [ -n "${HOST_WORKSPACE_DIR:-}" ]; then
+    printf '%s\n' "$HOST_WORKSPACE_DIR"
     return
   fi
   case "$(uname -s)" in
@@ -31,8 +31,8 @@ resolve_data_root() {
     *)                           printf '%s\n' "$HOME/.magi" ;;
   esac
 }
-MAGI_DATA_ROOT="$(resolve_data_root)"
-mkdir -p "$MAGI_DATA_ROOT"/{control,MAGIC,MAGIS}
+HOST_WORKSPACE_DIR="$(resolve_data_root)"
+mkdir -p "$HOST_WORKSPACE_DIR"/{control,MAGIC,MAGIS}
 
 mkdir -p "$TOOLS_DIR"
 command -v docker >/dev/null || { echo "Docker is required for local bootstrap" >&2; exit 1; }
@@ -46,7 +46,7 @@ if [ ! -x "$KIND" ]; then
 fi
 if ! "$KIND" get clusters | grep -qx magi; then
   sed -e "s|__MAGI_REPO_ROOT__|$ROOT_DIR|g" \
-      -e "s|__MAGI_DATA_ROOT__|$MAGI_DATA_ROOT|g" \
+      -e "s|__HOST_WORKSPACE_DIR__|$HOST_WORKSPACE_DIR|g" \
       "$K8S_DEV_DIR/kind.yaml" \
     | "$KIND" create cluster --name magi --config=-
 fi

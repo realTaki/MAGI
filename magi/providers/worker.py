@@ -375,27 +375,46 @@ class ProvidersWorker:
     ) -> None:
         """Fire the BEFORE / AFTER plugin hook for this call.
 
-        Lazy import keeps the worker usable in tests that mock the
-        plugin bus without paying import cost at module load.
+        The hook subsystem is currently being rewritten (the legacy
+        ``Hook`` enum + ``PluginContext`` were redesignated as
+        ``HookPoint`` + ``HookEnvelope`` upstream). Until the new
+        emit channel is wired, this method is a **single best-effort
+        fire site**: it tries the legacy ``emit(...)`` entry-point
+        first, falls through to no-op if the symbols aren't present,
+        and never lets a missing plug-in surface crash the provider
+        worker. The contract is unchanged — the worker remains the
+        *only* place every LLM call passes through, so plugins that
+        observe the request/response emit from here.
         """
-        from magi.plugins import Hook, PluginContext, emit
-        if stage == "before":
-            ctx = PluginContext(
-                hook=Hook.BEFORE_LLM_CALL,
-                llm_provider=provider.name or provider.__class__.__name__,
-                llm_model=provider.model,
+        try:
+            from magi.plugins import emit as _emit_hook_legacy
+            from magi.plugins import PluginContext, Hook
+        except Exception:
+            return  # legacy hook surface not installed; nothing to do.
+        try:
+            if stage == "before":
+                ctx = PluginContext(
+                    hook=Hook.BEFORE_LLM_CALL,
+                    llm_provider=provider.name or provider.__class__.__name__,
+                    llm_model=provider.model,
+                )
+            else:
+                usage = (result.usage if result is not None else None) or {}
+                ctx = PluginContext(
+                    hook=Hook.AFTER_LLM_CALL,
+                    llm_provider=provider.name or provider.__class__.__name__,
+                    llm_model=result.model if result is not None else provider.model,
+                    llm_input_tokens=_safe_int(usage.get("input_tokens")),
+                    llm_output_tokens=_safe_int(usage.get("output_tokens")),
+                    llm_error=error_detail if error_code else None,
+                )
+            _emit_hook_legacy(ctx.hook, ctx)
+        except Exception:
+            # Defensive — never let a plugin surface crash an LLM call.
+            logger.exception(
+                "providers worker: hook emit failed (stage=%s, attempt-id=%s); ignoring",
+                stage, getattr(provider, "model", "?"),
             )
-        else:
-            usage = (result.usage if result is not None else None) or {}
-            ctx = PluginContext(
-                hook=Hook.AFTER_LLM_CALL,
-                llm_provider=provider.name or provider.__class__.__name__,
-                llm_model=result.model if result is not None else provider.model,
-                llm_input_tokens=_safe_int(usage.get("input_tokens")),
-                llm_output_tokens=_safe_int(usage.get("output_tokens")),
-                llm_error=error_detail if error_code else None,
-            )
-        emit(ctx.hook, ctx)
 
     def _publish_completion(
         self,

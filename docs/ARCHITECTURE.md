@@ -69,7 +69,7 @@ architectural choice is an independent configuration axis:
 |---|---|---|
 | Position | `MAGI_NODE_ROLE` | `adam` = leader, `eva` = member |
 | Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
-| Private state | `<workspace>/memories/magi.db` | SQLite, one per MAGI; resolved from `MAGI_WORKSPACE_DIR` (K8s) or `MAGI_DATA_ROOT` (Local) |
+| Private state | `<workspace>/memories/magi.db` | SQLite, one per MAGI; resolved from `MAGI_WORKSPACE_DIR` (K8s) or `HOST_WORKSPACE_DIR` (Local) |
 | MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL (K8s) or separate SQLite (Local) |
 | LLM provider | MAGIS database (via BUS) | per-MAGI configuration; not injected as an env var |
 
@@ -217,7 +217,7 @@ MAGIS data is never written into a MAGI's private `magi.db`; each MAGIS has
 its own SQLite file with WAL, busy timeout, and foreign keys. The
 `workspace/memories/magi.db` convention is identical across all three
 deployment modes — K8s Pods resolve `<workspace>` from `MAGI_WORKSPACE_DIR`,
-Local processes resolve it from `MAGI_DATA_ROOT`.
+Local processes resolve it from `HOST_WORKSPACE_DIR`.
 
 ### Private SQLite tables
 
@@ -827,7 +827,7 @@ network filesystem sharing. Local MAGIS SQLite uses the same WAL/busy/FK
 configuration.
 
 Path resolution: K8s Pods set `MAGI_WORKSPACE_DIR` to the PVC mount point;
-Local processes set `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`.
+Local processes set `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`.
 There is no hardcoded `/workspace` path anywhere in the codebase.
 
 BUS commits durable work before signaling an in-memory wake-up. Bounded polling

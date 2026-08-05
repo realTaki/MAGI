@@ -42,7 +42,7 @@ def require_state_dir() -> str:
     """Return the state directory path.
 
     Delegates to :func:`magi.launcher.paths.state_dir`.  The K8s Pod
-    sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``MAGI_DATA_ROOT``.
+    sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``HOST_WORKSPACE_DIR``.
     """
     from magi.launcher.paths import state_dir as _state_dir
     return str(_state_dir())

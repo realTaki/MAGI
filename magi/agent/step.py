@@ -210,13 +210,12 @@ async def _gate_llm_request(
         RuntimeHookContext,
         SecurityHookContext,
     )
-    from magi.bus.db.base import utcnow_naive
 
     bus = get_bus()
     hook_service = getattr(bus, "hooks", None)
     if hook_service is None:
         return HookAction.ALLOW, request
-    now = utcnow_naive()
+    now = _now_naive()
     request_metadata = {
         "provider": provider_name,
         "model": model,
@@ -267,6 +266,18 @@ async def _gate_llm_request(
     return result.decision, request
 
 
+def _now_naive() -> "datetime":
+    """Return the current UTC time as a naive datetime.
+
+    Inlined so domain modules (agent / tools / channels) don't
+    import from ``magi.bus.db.base`` — the architecture test
+    forbids that boundary.  The semantics are bit-identical
+    with :func:`magi.bus.db.base.utcnow_naive`.
+    """
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 async def _observe_llm_response(
     *,
     provider_name: str,
@@ -294,13 +305,12 @@ async def _observe_llm_response(
         RuntimeHookContext,
         SecurityHookContext,
     )
-    from magi.bus.db.base import utcnow_naive
 
     bus = get_bus()
     hook_service = getattr(bus, "hooks", None)
     if hook_service is None:
         return
-    now = utcnow_naive()
+    now = _now_naive()
     eval_request = EvaluationRequest(
         hook_point=HookPoint.LLM_RESPONSE_RECEIVED,
         subject_type="agent_step",

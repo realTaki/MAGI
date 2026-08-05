@@ -17,7 +17,7 @@
 # actually comes up.
 set -euo pipefail
 
-MAGI_DATA_ROOT_DEFAULT() {
+HOST_WORKSPACE_DIR_DEFAULT() {
   case "$(uname -s)" in
     Darwin)  echo "$HOME/Documents/.magi" ;;
     Linux)   echo "$HOME/.magi" ;;
@@ -27,7 +27,7 @@ MAGI_DATA_ROOT_DEFAULT() {
 }
 
 REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
-DATA_ROOT="${MAGI_DATA_ROOT:-$(MAGI_DATA_ROOT_DEFAULT)}"
+DATA_ROOT="${HOST_WORKSPACE_DIR:-$(HOST_WORKSPACE_DIR_DEFAULT)}"
 
 log() { printf '\033[1;34m[magi-install]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m[magi-install]\033[0m %s\n' "$*" >&2; }
@@ -66,7 +66,7 @@ cat <<EOF
 
 Optional environment overrides:
 
-    MAGI_DATA_ROOT=/some/path     # relocate the data root before 'start'
+    HOST_WORKSPACE_DIR=/some/path     # relocate the data root before 'start'
     MAGI_KUBECONFIG=...           # only relevant for the k8s deploy paths
 
 EOF

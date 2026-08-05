@@ -21,8 +21,8 @@
 set -euo pipefail
 
 resolve_data_root() {
-  if [ -n "${MAGI_DATA_ROOT:-}" ]; then
-    printf '%s\n' "$MAGI_DATA_ROOT"
+  if [ -n "${HOST_WORKSPACE_DIR:-}" ]; then
+    printf '%s\n' "$HOST_WORKSPACE_DIR"
     return
   fi
   case "$(uname -s)" in
@@ -43,8 +43,8 @@ else
   exit 127
 fi
 
-export MAGI_DATA_ROOT="$(resolve_data_root)"
+export HOST_WORKSPACE_DIR="$(resolve_data_root)"
 # The Local Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
 # matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``.
-export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$MAGI_DATA_ROOT/MAGIS/genesis-01/magis.db}"
+export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$HOST_WORKSPACE_DIR/MAGIS/genesis-01/magis.db}"
 exec "$MAGI_BIN" "$@"

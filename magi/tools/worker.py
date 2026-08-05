@@ -160,9 +160,8 @@ class ToolWorker:
                 RuntimeHookContext,
                 SecurityHookContext,
             )
-            from magi.bus.db.base import utcnow_naive
 
-            now = utcnow_naive()
+            now = _now_naive()
             await self.bus.hooks.publish_observation(
                 EvaluationRequest(
                     hook_point=HookPoint.TOOL_RESULT_RECEIVED,
@@ -217,9 +216,8 @@ class ToolWorker:
                 RuntimeHookContext,
                 SecurityHookContext,
             )
-            from magi.bus.db.base import utcnow_naive
 
-            now = utcnow_naive()
+            now = _now_naive()
             result = await self.bus.hooks.evaluate(
                 EvaluationRequest(
                     hook_point=HookPoint.TOOL_CALL_PENDING,
@@ -261,6 +259,17 @@ class ToolWorker:
 
 
 _worker: ToolWorker | None = None
+
+
+def _now_naive():
+    """Return the current UTC time as a naive datetime.
+
+    Inlined so the worker module doesn't import from
+    ``magi.bus.db.base`` (architecture test forbids it).
+    """
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 async def start_tool_worker() -> ToolWorker:

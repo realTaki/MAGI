@@ -12,9 +12,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=MAGI_DATA_ROOT=__DATA_ROOT__
+Environment=HOST_WORKSPACE_DIR=__DATA_ROOT__
 Environment=MAGI_RUNTIME_ID=__MAGIC_ID__
-Environment=MAGI_RUNTIME_SLUG=__SLUG__
+Environment=MAGI_NAME=__SLUG__
 Environment=MAGI_PORT=__PORT__
 Environment=MAGIS_DATABASE_URL=sqlite:///__MAGIS_DB__
 ExecStart=__MAGI_BIN__ runtime --host 127.0.0.1 --port __PORT__

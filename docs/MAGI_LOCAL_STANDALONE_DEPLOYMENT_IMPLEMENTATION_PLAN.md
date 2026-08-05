@@ -13,7 +13,7 @@
 >   （openclaw 风格），见 `deploy/local/README.md`。
 > - **LocalProcessRuntimeBackend**：本文设计的 backend 已移除，不再需要。
 > - **硬编码 `/workspace`**：已消除，K8s 通过 `MAGI_WORKSPACE_DIR` env var 显式注入，
->   Local 通过 `MAGI_DATA_ROOT` 推导。
+>   Local 通过 `HOST_WORKSPACE_DIR` 推导。
 >
 > 权威文档请参阅：
 > - `deploy/local/README.md` — 本地部署完整指南

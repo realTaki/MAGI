@@ -8,7 +8,7 @@ defined.  Two path families live here:
    ``tmp_path``).
 
    - :func:`workspace_dir` reads ``$MAGI_WORKSPACE_DIR`` (K8s Pod)
-     or derives from ``$MAGI_DATA_ROOT`` (Local Profile).
+     or derives from ``$HOST_WORKSPACE_DIR`` (Local Profile).
    - :func:`state_dir` derives the SQLite + sessions directory as
      ``<workspace_dir>/memories``.
 
@@ -61,9 +61,9 @@ def workspace_dir() -> Path:
     Resolution — three branches, no host-root fallback:
 
     1. ``$MAGI_WORKSPACE_DIR`` when set (K8s Pod / explicitly configured).
-    2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_SLUG`` when set (Local
+    2. ``$HOST_WORKSPACE_DIR`` + ``$MAGI_NAME`` when set (Local
        Profile runtime process) → ``<data_root>/MAGIC/<slug>/workspace``.
-    3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_SLUG`` (Local Profile
+    3. ``$HOST_WORKSPACE_DIR`` set, no ``$MAGI_NAME`` (Local Profile
        launcher) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
 
     The slug alone is sufficient — ``EVA-000`` is both the MAGIC display
@@ -73,15 +73,15 @@ def workspace_dir() -> Path:
     raw = os.environ.get("MAGI_WORKSPACE_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
-    data_root = os.environ.get("MAGI_DATA_ROOT")
+    data_root = os.environ.get("HOST_WORKSPACE_DIR")
     if data_root:
-        runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
+        runtime_slug = os.environ.get("MAGI_NAME")
         if runtime_slug:
             return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
         return magis_home(Path(data_root)) / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
-        "MAGI_DATA_ROOT (Local Profile). Neither is set."
+        "HOST_WORKSPACE_DIR (Local Profile). Neither is set."
     )
 
 
@@ -91,17 +91,17 @@ def state_dir() -> Path:
     One resolver, three branches — one per process role:
 
     1. **Local Profile, runtime process** —
-       ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_SLUG`` set.
+       ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` set.
        State lives at ``<data_root>/MAGIC/<slug>/workspace/memories/``.
     2. **Local Profile, launcher** —
-       ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_SLUG``.
+       ``HOST_WORKSPACE_DIR`` set, no ``MAGI_NAME``.
        Scratch SQLite at ``<data_root>/MAGIS/genesis-01/launcher-state``.
-    3. **K8s Profile** — no ``MAGI_DATA_ROOT``.
+    3. **K8s Profile** — no ``HOST_WORKSPACE_DIR``.
        State at ``<workspace_dir>/memories``.
     """
-    data_root = os.environ.get("MAGI_DATA_ROOT")
+    data_root = os.environ.get("HOST_WORKSPACE_DIR")
     if data_root:
-        runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
+        runtime_slug = os.environ.get("MAGI_NAME")
         if runtime_slug:
             return (
                 Path(data_root).expanduser().resolve()
@@ -226,10 +226,10 @@ def default_data_root() -> Path:
     ``~/.magi`` to mirror the same single-folder experience; XDG
     ``$XDG_DATA_HOME/magi`` is honored as an explicit override.
 
-    ``$MAGI_DATA_ROOT`` always wins so tests / power users can route the
+    ``$HOST_WORKSPACE_DIR`` always wins so tests / power users can route the
     data root anywhere.
     """
-    override = os.environ.get("MAGI_DATA_ROOT")
+    override = os.environ.get("HOST_WORKSPACE_DIR")
     if override:
         return Path(override)
     if _PLATFORM == "darwin":

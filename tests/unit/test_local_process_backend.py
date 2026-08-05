@@ -84,7 +84,7 @@ def test_provision_magis_is_noop_for_local(tmp_path: Path, monkeypatch) -> None:
     SQLite at the composition-root stage.  The backend just returns the
     platform-neutral DTO so the BUS layer can record the intent.
     """
-    monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
     backend = LocalProcessRuntimeBackend()
     result = backend.provision_magis(magis_id=1, magis_name="genesis")
     assert result.backend_kind == "local"

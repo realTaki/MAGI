@@ -17,7 +17,7 @@
 | macOS | `~/Documents/.magi/` | 放在 Documents 下 |
 | Windows | `%USERPROFILE%\Documents\.magi\` | 放在 Documents 下 |
 
-`$MAGI_DATA_ROOT` 始终优先于上述默认路径。
+`$HOST_WORKSPACE_DIR` 始终优先于上述默认路径。
 
 ## 快速开始
 
@@ -94,7 +94,7 @@ magi local uninstall-service  # 移除所有 magi-*.service 单元（Linux only�
 ```
 
 所有命令都接受 `--data-dir <path>` 覆盖默认数据根，等价于
-`MAGI_DATA_ROOT=<path>`。
+`HOST_WORKSPACE_DIR=<path>`。
 
 ## 服务注册（Linux）
 
@@ -132,7 +132,7 @@ systemctl --user list-units 'magi-*'
   本路径保持相同约定 `~/.magi/MAGIC/<slug>/workspace/memories/magi.db`。
   `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
 - **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
-  本地进程设置 `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`。
+  本地进程设置 `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`。
   不存在硬编码的 `/workspace` 路径。
 - **不依赖 Docker / podman / k8s**：唯一外部依赖是 Python 3.12+。
 - **`magi local start` 首次运行是幂等的**：第一次跑会初始化 SQLite

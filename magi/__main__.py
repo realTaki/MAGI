@@ -2,7 +2,7 @@
 
 A MAGI process is a node. Private runtime settings and state live in the
 SQLite database under ``<workspace>/memories/magi.db`` (resolved from
-``MAGI_WORKSPACE_DIR`` or ``MAGI_DATA_ROOT``, never a hardcoded path).
+``MAGI_WORKSPACE_DIR`` or ``HOST_WORKSPACE_DIR``, never a hardcoded path).
 Organisation identity, instructions and provider configuration live in the
 direct MAGIS database. All path resolution lives in :mod:`magi.launcher.paths`.
 

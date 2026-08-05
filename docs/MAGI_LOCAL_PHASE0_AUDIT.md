@@ -54,7 +54,7 @@ uv run python -m magi --check                                                   
 The hardcoded `/workspace` constant in `magi/constants.py` has been removed.
 K8s Pods now set `MAGI_WORKSPACE_DIR=/workspace` explicitly in the deployment
 manifest (`deploy/k8s/base/deployment.yaml`). Local Profile processes derive
-their workspace from `MAGI_DATA_ROOT`. The `workspace_dir()` function in
+their workspace from `HOST_WORKSPACE_DIR`. The `workspace_dir()` function in
 `magi/launcher/paths.py` raises `RuntimeError` if neither env var is set —
 there is no silent fallback to `/workspace`.
 
