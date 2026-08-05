@@ -7,8 +7,8 @@ defined.  Two path families live here:
    volume (container bind-mount, Local Profile data root, test
    ``tmp_path``).
 
-   - :func:`workspace_dir` reads ``$MAGI_WORKSPACE_DIR`` (or falls
-     back to ``/workspace`` for the K8s-mount default).
+   - :func:`workspace_dir` reads ``$MAGI_WORKSPACE_DIR`` (K8s Pod)
+     or derives from ``$MAGI_DATA_ROOT`` (Local Profile).
    - :func:`state_dir` derives the SQLite + sessions directory as
      ``<workspace_dir>/memories``.
 
@@ -58,24 +58,22 @@ _STATE_SUBDIR = "memories"
 def workspace_dir() -> Path:
     """Return the deployer's persistent workspace directory.
 
-    Resolution — three real branches, no host-root fallback:
+    Resolution — three branches, no host-root fallback:
 
-    1. ``$MAGI_WORKSPACE_DIR`` when set (K8s / explicitly configured).
-       The K8s Profile's manifest mounts the PVC there; tests or other
-       explicit configurations can also point at any other path.
+    1. ``$MAGI_WORKSPACE_DIR`` when set (K8s Pod / explicitly configured).
+       The K8s manifest sets this to the PVC mount point; tests set it to
+       a ``tmp_path``.
     2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_ID`` + ``$MAGI_RUNTIME_SLUG``
        when set (Local Profile runtime subprocess) →
-       ``<data_root>/MAGIC/<id>-<slug>/workspace``.  Each MAGI gets
-       its own per-MAGI workspace so a host with multiple MAGIs never
-       sees two processes writing to the same directory.
+       ``<data_root>/MAGIC/<id>-<slug>/workspace``.
     3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
-       launcher / supervisor process) → the launcher's working area
-       lives at ``<data_root>/control/launcher-workspace`` so it stays
-       out of every per-MAGI slot.
-    4. ``/workspace`` — K8s Profile default (the PVC is mounted there).
-       This is the container-only fallback; the Local Profile always
-       sets ``MAGI_DATA_ROOT`` so this branch is never reached on bare
-       metal.
+       launcher process) → ``<data_root>/control/launcher-workspace``.
+
+    If none of the above match, the process is running in an
+    unconfigured environment and the function raises.  There is no
+    hardcoded ``/workspace`` fallback — that path only exists inside a
+    container, and the container's entrypoint always sets
+    ``MAGI_WORKSPACE_DIR``.
     """
     raw = os.environ.get("MAGI_WORKSPACE_DIR")
     if raw:
@@ -87,7 +85,10 @@ def workspace_dir() -> Path:
         if runtime_id and runtime_slug:
             return Path(data_root) / "MAGIC" / f"{runtime_id}-{runtime_slug}" / "workspace"
         return Path(data_root) / "control" / "launcher-workspace"
-    return Path("/workspace")
+    raise RuntimeError(
+        "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
+        "MAGI_DATA_ROOT (Local Profile). Neither is set."
+    )
 
 
 def state_dir() -> Path:

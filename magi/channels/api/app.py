@@ -112,9 +112,9 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         _log.getLogger(__name__).info("create_app: starting TG bot")
         from magi.channels.telegram.bot import start_bot
 
-        # Importing the ASGI module in a CLI/test process must not require the
-        # container-only ``/workspace`` mount to exist. Node.run() initialises
-        # the workspace before serving in production.
+        # Importing the ASGI module in a CLI/test process must not require
+        # the workspace to exist. Node.run() initialises the workspace
+        # before serving in production.
         try:
             t = start_bot()
         except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import

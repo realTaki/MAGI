@@ -16,6 +16,8 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/entrypoint.sh"]
           env:
+            - name: MAGI_WORKSPACE_DIR
+              value: /workspace
             - name: MAGI_ORCHESTRATOR_URL
               value: http://magi-orchestrator:42100
             - name: MAGIS_DATABASE_URL

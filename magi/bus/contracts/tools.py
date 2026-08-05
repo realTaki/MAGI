@@ -63,8 +63,8 @@ class ToolContext:
     owned by the BUS and **not** exposed here — tools that need
     to read or write persistent state call the public
     ``bus.<service>`` methods rather than handling the path
-    themselves. Only the user-facing ``workspace`` (the operator's
-    ``/workspace`` mount) is part of the tool context, because it
+    themselves. Only the user-facing ``workspace`` (resolved from
+    ``MAGI_WORKSPACE_DIR``) is part of the tool context, because it
     is the boundary tools operate against (``safe_resolve`` etc.).
     """
 

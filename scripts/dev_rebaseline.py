@@ -46,8 +46,7 @@ from sqlalchemy.orm import Session
 # -- paths ---------------------------------------------------------------
 
 DEFAULT_DBS = [
-    Path("/root/GitHub/MAGI/workspace/ADAM/memories/magi.db"),
-    Path("/root/GitHub/MAGI/workspace/ADAM/telegram/magi.db"),
+    Path("~/.magi/MAGIC/1-adam/workspace/memories/magi.db").expanduser(),
 ]
 # The "primary" DB — the dump targets this file (the others
 # are smaller per-channel mirrors that share an overlapping

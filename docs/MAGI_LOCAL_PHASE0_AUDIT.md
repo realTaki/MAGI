@@ -1,5 +1,14 @@
 # Phase 0 — Local Standalone Deployment Baseline Audit
 
+> **状态**：此审计于 Phase 0 时完成，其中记录的多个问题已在后续 Phase 中修复。
+> 截至 2026-08-04：
+> - `/workspace` 硬编码已移除（K8s 通过 `MAGI_WORKSPACE_DIR` env var 注入）
+> - `LocalProcessRuntimeBackend` 已删除（每 MAGI 独立 OS 进程）
+> - `magi/constants.py` 已废弃
+> - 路径解析统一由 `magi/launcher/paths.py` 负责
+>
+> 权威文档请参阅 `docs/ARCHITECTURE.md` 和 `deploy/local/README.md`。
+
 Audit companion to [`MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md`](MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md) §12 ("Phase 0：基线审计").  Walked the tree as of the launch-pad consolidation commit (where `magi.runtime`, `magi.workspace`, `magi.deploy`, `magi.local` were folded into `magi.launcher`).
 
 Sections mirror the Phase 0 checklist:
@@ -38,14 +47,14 @@ uv run python -m magi --check                                                   
 
 ## 2. Hardcoded paths / ports / K8s assumptions
 
-### 2.1 `/workspace` (one canonical, two references)
+### 2.1 `/workspace` — **RESOLVED**
 
-```
-magi/constants.py:22            WORKSPACE_DIR: str = "/workspace"
-magi/orchestrator/kubernetes.py:270   "mountPath": "/workspace"   (K8s PV manifest string)
-```
-
-The `constants.WORKSPACE_DIR` is the K8s default.  Local Profile no longer references it: [`magi/launcher.py:LocalPathLayout`](../magi/launcher.py) builds `<data_root>/workspace` instead, with the K8s profile surviving the rewrite via the `[magi/bus/db/engine.py:require_state_dir()]` helper that honours ``MAGI_WORKSPACE_DIR`` for tests and the legacy `/workspace/memories` path for K8s containers.
+The hardcoded `/workspace` constant in `magi/constants.py` has been removed.
+K8s Pods now set `MAGI_WORKSPACE_DIR=/workspace` explicitly in the deployment
+manifest (`deploy/k8s/base/deployment.yaml`). Local Profile processes derive
+their workspace from `MAGI_DATA_ROOT`. The `workspace_dir()` function in
+`magi/launcher/paths.py` raises `RuntimeError` if neither env var is set —
+there is no silent fallback to `/workspace`.
 
 ### 2.2 `/magis` (one K8s manifest reference only)
 

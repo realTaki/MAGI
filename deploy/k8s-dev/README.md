@@ -24,12 +24,14 @@ orchestrator 边界是否如设计一样工作；同时给后端 + WebUI 提供�
 脚本会：
 
 1. 下载并固定 `kind` 与 `kubectl` 到 `deploy/.tools/`，不依赖系统级安装；
-2. 创建单节点 kind 集群，把宿主 `MAGI` 仓库挂到节点内 `/mnt/magi`；
+2. 创建单节点 kind 集群，挂载：
+   - 宿主 `MAGI` 仓库 → `/mnt/magi`（源码热更新）
+   - 宿主 `~/.magi/` → `/mnt/magi-data`（持久化 workspace）
 3. 构建两套镜像（`magi:0.1.0` 生产、`magi:dev` dev）并加载到 kind；
 4. 调用 `deploy/k8s/bootstrap-k8s.sh` 部署：
    - `magi-orchestrator`（生产 control overlay）
    - `magi-webui`（dev `control-dev` overlay：Vite HMR + 源码 `/mnt/magi/magi` 挂载）
-   - `magi-node`（dev `overlays/dev-eva00`：源码 `/mnt/magi/magi` 挂载、源码热更新）
+   - `magi-node`（dev `overlays/dev-eva00`：源码 `/mnt/magi/magi` 挂载、源码热更新，持久化数据 `/mnt/magi-data/MAGIC/1-eva-00/workspace`）
 
 启动后访问：
 
@@ -90,7 +92,9 @@ rm -f .kind-kubeconfig
 ## 不要做的事
 
 - **不要**把 `overlays/dev-eva00` / `control-dev` / `kind.yaml` 套
-  到远程或生产集群——它们依赖宿主机 `/mnt/magi` 目录，且
-  Dockerfile.dev 的 `runAsNonRoot: false` 是 dev-only 妥协。
+  到远程或生产集群——它们依赖宿主机 `/mnt/magi`（源码）和 `/mnt/magi-data`
+  （持久化数据）目录，且 Dockerfile.dev 的 `runAsNonRoot: false` 是 dev-only 妥协。
 - **不要**在 dev 模式下复用生产 `magi-magis-1-genesis-db` Secret
   ——dev 模式自动生成弱密码，仅供本地。
+- dev 模式的持久化数据在 `~/.magi/MAGIC/1-eva-00/workspace/`，
+  与本地非容器部署共享同一 `~/.magi/` 布局。

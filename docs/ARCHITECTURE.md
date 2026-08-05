@@ -69,7 +69,7 @@ architectural choice is an independent configuration axis:
 |---|---|---|
 | Position | `MAGI_NODE_ROLE` | `adam` = leader, `eva` = member |
 | Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
-| Private state | `/workspace/memories/magi.db` | SQLite, one per MAGI |
+| Private state | `<workspace>/memories/magi.db` | SQLite, one per MAGI; resolved from `MAGI_WORKSPACE_DIR` (K8s) or `MAGI_DATA_ROOT` (Local) |
 | MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL (K8s) or separate SQLite (Local) |
 | LLM provider | MAGIS database (via BUS) | per-MAGI configuration; not injected as an env var |
 
@@ -82,25 +82,29 @@ directly.
 
 ## Deployment Profiles
 
-MAGI supports two formal deployment profiles, sharing the same binary and
-module boundaries:
+MAGI supports three deployment modes, sharing the same binary and module
+boundaries:
 
-| | Kubernetes Profile | Local Profile |
-|---|---|---|
-| One MAGI = | Pod + PVC + ClusterIP Service | host process + workspace directory + localhost port |
-| MAGIS storage | PostgreSQL Deployment | separate SQLite database |
-| MAGIS workspace | shared PVC | shared directory |
-| WebUI entry | `magi webui` Service | `127.0.0.1:42069` |
-| Orchestrator | K8s ServiceAccount | `LocalProcessRuntimeBackend` |
+| | Kubernetes (production) | k8s-dev (kind) | Local (non-container) |
+|---|---|---|---|
+| One MAGI = | Pod + PVC + ClusterIP Service | Pod + hostPath workspace | independent OS process + workspace directory + localhost port |
+| MAGIS storage | PostgreSQL Deployment | PostgreSQL (kind) | separate SQLite database |
+| MAGIS workspace | shared PVC | shared hostPath | shared directory |
+| WebUI entry | `magi webui` Service | kind NodePort 30069→42069 | `127.0.0.1:42069` |
+| Orchestrator | K8s ServiceAccount | K8s ServiceAccount (kind) | none (each MAGI is its own process) |
+
+**Local Profile process model** (each MAGI is an independent process):
 
 ```
-Local Launcher / Supervisor
-├── channels.api + SPA     127.0.0.1:42069
-├── Local Orchestrator     127.0.0.1:42100
-├── Adam Runtime           127.0.0.1:42101
-├── EVA Runtime            127.0.0.1:<allocated>
-└── EVA Runtime            127.0.0.1:<allocated>
+magi-adam.service        127.0.0.1:42069    (systemd unit, port 42069)
+magi-eva-00.service      127.0.0.1:42070    (independent systemd unit)
+magi-eva-01.service      127.0.0.1:42071    (independent systemd unit)
 ```
+
+`magi local start` uses `execve` to replace the current process with
+`magi runtime` — no launcher, no supervisor, no subprocess tree.
+`magi local install-service` registers one systemd user unit per MAGI
+so each MAGI starts, crashes, and restarts independently.
 
 Each runtime is an independent OS process with its own workspace, SQLite,
 port, logs, and provider configuration. Local Profile is a trusted single-user
@@ -195,21 +199,25 @@ Two storage domains, both reached only through BUS:
 ### Local Profile storage
 
 ```
-MAGI_HOME/
-├── control/               # local registry, control secret, logs
-├── MAGIS/<id>-<slug>/
-│   ├── magis.db           # separate SQLite per MAGIS
-│   └── workspace/         # shared team files
-└── MAGIC/<id>-<slug>/
-    └── workspace/
-        ├── memories/magi.db
+MAGI_HOME/                         (~/.magi on Linux)
+├── control/                       # local registry, control secret
+│   └── launcher-state/            # launcher BUS scratch SQLite
+├── MAGIS/<magis_id>-<slug>/       # one SQLite per MAGIS
+│   └── magis.db                   # organisation facts
+└── MAGIC/<magic_id>-<slug>/
+    └── workspace/                 # per-MAGI workspace (= K8s /workspace)
+        ├── memories/magi.db       # private SQLite
         ├── skills/
         ├── SOUL.md
-        └── logs/
+        ├── logs/
+        └── tmp/
 ```
 
 MAGIS data is never written into a MAGI's private `magi.db`; each MAGIS has
-its own SQLite file with WAL, busy timeout, and foreign keys.
+its own SQLite file with WAL, busy timeout, and foreign keys. The
+`workspace/memories/magi.db` convention is identical across all three
+deployment modes — K8s Pods resolve `<workspace>` from `MAGI_WORKSPACE_DIR`,
+Local processes resolve it from `MAGI_DATA_ROOT`.
 
 ### Private SQLite tables
 
@@ -549,7 +557,9 @@ class RuntimeBackend(Protocol):
     def reconcile(self) -> ReconcileResult: ...
 ```
 
-Implementations: `KubernetesRuntimeBackend`, `LocalProcessRuntimeBackend`.
+Implementations: `KubernetesRuntimeBackend` (production / k8s-dev).
+The Local Profile has no orchestrator backend — each MAGI is an independent
+OS process, managed directly by systemd or run in the foreground.
 
 The Orchestrator Worker consumes lifecycle commands from BUS, calls the
 backend, and writes results back through BUS. BUS never imports the backend;
@@ -812,9 +822,13 @@ Private SQLite is the execution authority because it can atomically commit a
 transition and its local jobs/outbox. WAL, foreign keys, busy timeout, bounded
 `SQLITE_BUSY` retry, short transactions, and queue indexes.
 
-One SQLite file = one writable runtime. No concurrent Pods, no network
-filesystem sharing. Local MAGIS SQLite must use the same WAL/busy/FK
+One SQLite file = one writable runtime. No concurrent Pods or processes, no
+network filesystem sharing. Local MAGIS SQLite uses the same WAL/busy/FK
 configuration.
+
+Path resolution: K8s Pods set `MAGI_WORKSPACE_DIR` to the PVC mount point;
+Local processes set `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`.
+There is no hardcoded `/workspace` path anywhere in the codebase.
 
 BUS commits durable work before signaling an in-memory wake-up. Bounded polling
 and startup recovery are the fallback.
@@ -823,13 +837,12 @@ and startup recovery are the fallback.
 
 Local Profile is a trusted single-user mode:
 
-- WebUI, Orchestrator, and Runtime bind `127.0.0.1` by default.
+- WebUI and Runtime bind `127.0.0.1` by default.
 - Control secret uses cryptographically secure random generation.
 - Provider API keys never enter CLI argv, logs, or launch JSON.
 - Runtime proxy validates HMAC, target runtime ID, and freshness.
 - Workspace paths use canonicalisation and boundary checks.
-- Subprocesses never use `shell=True`.
-- Process identity is verified before termination.
+- Each MAGI is an independent OS process — no subprocess management, no `shell=True`.
 - Delete defaults to archive, not permanent workspace removal.
 - Documentation clearly states Local Profile is not a security sandbox.
 

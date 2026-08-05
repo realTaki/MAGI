@@ -26,7 +26,7 @@ magi-webui
 magi Runtime Service
   │ checks MAGI_RUNTIME_ID and HMAC freshness
   ▼
-private SQLite, /workspace, /magis and direct MAGIS PostgreSQL
+private SQLite, workspace, MAGIS database
 ```
 
 WebUI 代理路径为：
@@ -72,6 +72,7 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
   `magi webui`，只使用运行时注册元数据和内部服务，不挂载 PVC 或 workspace。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
+  `MAGI_WORKSPACE_DIR=/workspace` 指向 PVC 挂载点。
 - orchestrator 在启动新的 MAGI 时，同时创建同名的内部 ClusterIP Service；停止时保留，
   删除 MAGI 时一并删除。
 - `deploy/k8s-dev/control-dev/`：kind 开发 overlay。仍使用 `magi:dev` 这个同一镜像标签，
@@ -79,8 +80,8 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 
 生产启动使用 `deploy/k8s/bootstrap-k8s.sh`；脚本会部署 orchestrator、初始 runtime 和
 `magi-webui`，并提示将本地端口转发到 `svc/magi-webui`。dev 模式请改用
-`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/local/`（与 k8s
-无关）。
+`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/local/`，每个 MAGI
+是独立 OS 进程（`magi local start` 或 systemd 管理）。
 
 ## 仍需后续增强的部分
 

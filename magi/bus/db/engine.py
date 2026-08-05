@@ -41,8 +41,8 @@ logger = logging.getLogger("magi.bus.db.engine")
 def require_state_dir() -> str:
     """Return the state directory path.
 
-    Derived from ``MAGI_WORKSPACE_DIR`` (default ``/workspace``)
-    with a ``memories/`` subdirectory for SQLite data.
+    Delegates to :func:`magi.launcher.paths.state_dir`.  The K8s Pod
+    sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``MAGI_DATA_ROOT``.
     """
     from magi.launcher.paths import state_dir as _state_dir
     return str(_state_dir())

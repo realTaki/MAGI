@@ -1,12 +1,13 @@
-# MAGI 单机本地部署（非容器，openclaw 风格）
+# MAGI 单机本地部署（非容器）
 
 这是 MAGI 提供的**单机、非容器**部署方式。意图是：
 
-- 一个 `magi` 命令就能拉起 ADAM 与 Genesis MAGIS；
+- 一个 `magi local start` 命令就能启动一个 MAGI；
+- 每个 MAGI 是独立 OS 进程，一个崩溃不影响其他；
 - 持久化数据放在一个明显的目录里，方便备份、复制、迁移；
 - 仅依赖系统已有的 Python / systemd，不引入 Docker / k8s；
-- 可以选择以 `magi local install-service` 把 MAGI 注册为登录自启
-  的用户服务，不需要 root 权限。
+- 可以通过 `magi local install-service` 为每个 MAGI 注册独立的
+  systemd 用户单元，不需要 root 权限。
 
 这条路径适合：单机开发者、本地评审、单机 PoC、小团队自托管。
 
@@ -24,13 +25,16 @@
 # 1. 安装
 ./deploy/local/install.sh
 
-# 2. 启动（默认前台 + 打开浏览器）
+# 2. 启动 Adam（第一个 MAGI，前台 + 自动打开浏览器）
 ./deploy/local/magi local start
 
-# 3. （可选）注册 systemd user unit，让 MAGI 登录后自动启动
+# 3. 启动其他 MAGI（如 eva-00）
+./deploy/local/magi local start --name eva-00 --port 42070
+
+# 4. （可选）为所有 MAGI 注册 systemd user unit
 ./deploy/local/magi local install-service
 
-# 4. 卸载服务
+# 5. 卸载服务
 ./deploy/local/magi local uninstall-service
 ```
 
@@ -44,45 +48,48 @@
 
 ## 目录布局
 
-启动后数据根会长成这样（与生产 PVC 完全一致）：
+启动后数据根会长成这样（与 K8s PVC 完全一致）：
 
 ```text
 ~/.magi/                                       # Linux
 ~/Documents/.magi/                             # macOS / Windows
 ├── control/                                   # launchpad-only state
-│   ├── local-registry.db                      # SQLite: 启动的 runtime / 端口 / PID
+│   ├── local-registry.db                      # SQLite: runtime 注册 / 端口 / 状态
 │   ├── control-secret                         # 0600，随机生成的 HMAC 密钥
 │   ├── launcher.json
 │   └── launcher-state/                        # launcher 自己的 BUS scratch 库
 ├── MAGIC/                                     # 私有 MAGI 工作区
-│   └── 1-adam/workspace/
-│       ├── SOUL.md
-│       ├── memories/
-│       │   ├── magi.db                        # 私有 SQLite（contacts/sessions/...）
-│       │   └── sessions/
-│       ├── skills/
-│       ├── logs/
-│       └── tmp/
+│   ├── 1-adam/workspace/
+│   │   ├── SOUL.md
+│   │   ├── memories/
+│   │   │   ├── magi.db                        # 私有 SQLite（contacts/sessions/...）
+│   │   │   └── sessions/
+│   │   ├── skills/
+│   │   ├── logs/
+│   │   └── tmp/
+│   └── 2-eva-00/workspace/                    # 第二个 MAGI
+│       └── ...                                # （结构同上）
 └── MAGIS/                                     # 每个 MAGIS 一个目录
     └── 1-genesis/
         └── magis.db                           # 公共组织架构 SQLite
 ```
 
-每个 EVA 由 `magi local start` 引导 ADAM 之后，按 MAGIS 树创建。它们的
-工作区就落在 `~/.magi/MAGIC/<id>-<slug>/workspace/`，与生产里
-的 PVC 命名规则一致。MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
+每个 MAGI 的 workspace 落在 `~/.magi/MAGIC/<id>-<slug>/workspace/`，
+与 K8s 里 PVC 的 `<workspace>/memories/magi.db` 命名规则完全一致。
+MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
 
 ## CLI 命令
 
 ```bash
-magi local start              # 启动 ADAM（前台 + 浏览器）
+magi local start              # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
+magi local start --name eva-00  # 启动指定 MAGI
+magi local start --port 42070   # 指定端口
 magi local start --no-open    # 不打开浏览器
-magi local start --print-secret  # 打印控制面 secret
-magi local status             # 列出已注册的 runtime
-magi local stop               # 停止所有 runtime（不释放端口）
-magi local doctor             # 诊断打印
-magi local install-service    # 注册 systemd user unit（Linux only）
-magi local uninstall-service  # 移除 systemd user unit（Linux only）
+magi local status             # 列出所有 MAGIC slots 及其状态
+magi local stop               # 向所有 MAGI runtime 发送 SIGTERM
+magi local doctor             # 诊断打印（路径、DB 状态）
+magi local install-service    # 为每个 MAGI 注册独立 systemd 单元（Linux only）
+magi local uninstall-service  # 移除所有 magi-*.service 单元（Linux only）
 ```
 
 所有命令都接受 `--data-dir <path>` 覆盖默认数据根，等价于
@@ -90,40 +97,45 @@ magi local uninstall-service  # 移除 systemd user unit（Linux only）
 
 ## 服务注册（Linux）
 
-`magi local install-service` 把 `deploy/local/service/magi.service`
-复制到 `~/.config/systemd/user/magi.service`，并把 `__MAGI_BIN__`
-替换成本机 `magi` 真实路径，然后执行：
+`magi local install-service` 扫描 `MAGIC/` 下的所有 slot，为每个 MAGI
+生成独立的 systemd 用户单元：
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now magi.service
+# 生成并启用：
+systemctl --user enable --now magi-adam.service     # port 42069
+systemctl --user enable --now magi-eva-00.service   # port 42070
+# ...
 ```
 
-注册后：
+每个单元独立管理——一个 MAGI 崩溃，`Restart=on-failure` 只重启它自己，
+不影响其他 MAGI。
+
+管理命令：
 
 ```bash
-systemctl --user status magi.service
-systemctl --user stop magi.service
-journalctl --user -u magi.service -f
+systemctl --user status magi-adam.service
+systemctl --user stop magi-eva-00.service
+journalctl --user -u magi-adam.service -f
+systemctl --user list-units 'magi-*'
 ```
 
-删除：`magi local uninstall-service`。
+删除：`magi local uninstall-service` 会停止并移除所有单元。
 
 ## 设计要点
 
-- **与 k8s 一致的 `workspace/memories/magi.db`**：k8s Pod 的 SQLite
-  在 `<workspace>/memories/magi.db`；本路径保持相同约定
-  `~/.magi/MAGIC/<id>-<slug>/workspace/memories/magi.db`。
+- **每个 MAGI 是独立进程**：`magi local start` 用 `execve` 替换自身为
+  `magi runtime`，当前终端直接拥有 MAGI 进程。systemd 模式下每个 MAGI
+  是独立 unit，独立崩溃、独立重启。
+- **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
+  在 `<workspace>/memories/magi.db`（`MAGI_WORKSPACE_DIR` 指向的 PVC）；
+  本路径保持相同约定 `~/.magi/MAGIC/<id>-<slug>/workspace/memories/magi.db`。
   `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
-- **`MAGI_DATA_ROOT` 驱动路径解析**：`paths.state_dir()` 根据
-  `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG` 三个
-  环境变量自动切换到 per-MAGI 的 `MAGIC/<id>-<slug>/workspace/memories/`。
-  容器化 k8s 下无 `MAGI_DATA_ROOT` 则回退到 `/workspace/memories`。
+- **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
+  本地进程设置 `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`。
+  不存在硬编码的 `/workspace` 路径。
 - **不依赖 Docker / podman / k8s**：唯一外部依赖是 Python 3.12+。
-  这与 openclaw 的"单个可执行"思想一致。
-- **0-arg `magi local start` 是幂等的**：第一次跑会初始化 SQLite
-  schema 并生成控制 secret；之后再跑只是检测到 ADAM 已注册后
-  保活。
+- **`magi local start` 首次运行是幂等的**：第一次跑会初始化 SQLite
+  schema 并生成 control secret；之后再跑直接启动 runtime。
 
 ## 升级
 
@@ -133,9 +145,9 @@ journalctl --user -u magi.service -f
 ## 卸载
 
 ```bash
-magi local uninstall-service                                  # 移除 systemd 单元（Linux）
-rm -rf ~/.magi                                                # 数据根
-uv tool uninstall magi                                        # 移除包
+magi local uninstall-service                  # 移除 systemd 单元（Linux）
+rm -rf ~/.magi                                # 数据根
+uv tool uninstall magi                        # 移除包
 ```
 
 macOS / Windows 也可同样使用，但需手动删除 `~/Documents/.magi`。

@@ -18,9 +18,9 @@ Two roots are scanned, in this order:
     source. Acts as the default catalog the deployer
     can customise away.
   - ``<workspace>/skills/`` — the **operator** directory.
-    Workspace path derived from ``MAGI_WORKSPACE_DIR``.
-    ``<workspace>`` — always ``/workspace`` inside the
-    container). Operator-edited SKILL.md files here override bundle entries with the same name
+    Workspace path derived from ``MAGI_WORKSPACE_DIR``
+    (set by the K8s manifest or the Local Profile runtime env).
+    Operator-edited SKILL.md files here override bundle entries with the same name
     without warning — that is the normal "I want to
     customise this skill" flow.
 
@@ -125,9 +125,8 @@ class SkillMeta:
 def _workspace_root() -> Path:
     """Return the workspace root path.
 
-    Inside the container this always resolves to ``/workspace``.
-    There is no env-var override (the host-side mount path is
-    a k8s PVC concern, not a runtime concern).
+    Resolved from ``MAGI_WORKSPACE_DIR`` (K8s Pod) or
+    ``MAGI_DATA_ROOT`` (Local Profile) — never a hardcoded path.
     """
     return workspace_dir()
 
@@ -596,10 +595,8 @@ _skill_loader_lock = __import__("threading").RLock()
 def get_skill_loader() -> SkillLoader:
     """Build (or return) the module singleton.
 
-    The root path is always the workspace root (i.e.
-    ``/workspace`` inside the container).  There is no
-    override — the host-side mount path is a k8s PVC
-    concern.
+    The root path is the workspace root resolved from
+    ``MAGI_WORKSPACE_DIR`` — never a hardcoded path.
     """
     global _skill_loader
     with _skill_loader_lock:

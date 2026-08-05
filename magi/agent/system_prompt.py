@@ -64,7 +64,9 @@ def _format_daily_note_block(note) -> str:
 def read_soul() -> str:
     """Load the persona text from the workspace's ``SOUL.md``.
 
-    The workspace is always ``/workspace`` inside the container.
+    The workspace path is resolved from ``MAGI_WORKSPACE_DIR``
+    (K8s Pod) or ``MAGI_DATA_ROOT`` (Local Profile) — never a
+    hardcoded path.
 
     This is a **read** function — it does not bootstrap or write
     to disk. The workspace bootstrap runs once at boot from

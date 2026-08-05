@@ -281,18 +281,22 @@ EVA Bob    → eva-bob-magi-workspace PVC → /workspace
 
 ## 5. 持久化布局
 
-Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供；而非生产
+Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供（`MAGI_WORKSPACE_DIR=/workspace`）；非生产
 部署（`deploy/local/` 单机本地、`deploy/k8s-dev/` kind dev）虽然
 底层是宿主目录，但应用看到的目录树与生产 PVC 完全一致：
 
 ```text
-# 生产
-PVC /workspace                                       per-MAGI 私有
+# 生产 (K8s)
+PVC /workspace                                       per-MAGI 私有 (MAGI_WORKSPACE_DIR=/workspace)
 PVC /magis                                            直属 MAGIS 公共
 
-# 非容器单机（deploy/local/）
+# 非容器单机 (deploy/local/)
 ~/.magi/MAGIC/<id>-<slug>/workspace/        per-MAGI 私有
-~/Documents/.magi/MAGIS/<id>-<slug>/       直属 MAGIS 公共
+~/.magi/MAGIS/<id>-<slug>/                 直属 MAGIS 公共
+
+# k8s-dev (deploy/k8s-dev/)
+~/.magi/MAGIC/<id>-<slug>/workspace/        per-MAGI 私有 (hostPath)
+~/.magi/MAGIS/<id>-<slug>/                 直属 MAGIS 公共 (hostPath)
 ```
 
 容器内布局保持一致：
@@ -305,7 +309,8 @@ PVC /magis                                            直属 MAGIS 公共
 /magis/                         # 直属 MAGIS 的团队共享文件
 ```
 
-这样可以让应用代码不感知底层是 bind mount 还是 PVC。
+这样可以让应用代码不感知底层是 bind mount 还是 PVC。路径解析由环境变量驱动，
+不存在硬编码的 `/workspace` fallback。
 
 ## 6. 访问控制和安全边界
 

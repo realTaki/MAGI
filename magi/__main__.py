@@ -1,9 +1,10 @@
 """The single executable entry point for MAGI services.
 
 A MAGI process is a node. Private runtime settings and state live in the
-SQLite database under ``/workspace/memories/magi.db``.  Organisation identity,
-instructions and provider configuration live in the direct MAGIS PostgreSQL
-database. Hardcoded paths live in :mod:`magi.launcher.paths`.
+SQLite database under ``<workspace>/memories/magi.db`` (resolved from
+``MAGI_WORKSPACE_DIR`` or ``MAGI_DATA_ROOT``, never a hardcoded path).
+Organisation identity, instructions and provider configuration live in the
+direct MAGIS database. All path resolution lives in :mod:`magi.launcher.paths`.
 
 ``MAGI_RUNTIME_ID`` binds a running container to its deployment identity;
 ``MAGIS_DATABASE_URL`` identifies the one direct MAGIS database an isolated

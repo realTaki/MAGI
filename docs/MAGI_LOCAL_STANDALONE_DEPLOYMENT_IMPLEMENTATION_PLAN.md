@@ -1,6 +1,24 @@
 # MAGI Local Standalone Deployment Implementation Plan
 
-> 本文是交给 Codex 执行的工程计划。目标是在保留现有 Kubernetes 部署能力和“一 MAGI 一 Runtime”模型的前提下，为 macOS、Windows 与 Linux 增加无需 Docker、Kubernetes、PostgreSQL、Node.js 或系统 Python 的本地安装与运行方式。
+> **状态：已完成核心实现，本文为历史参考。**
+>
+> 本文最初于 2026-08-02 编写，描述本地部署的工程计划。截至 2026-08-04，
+> 核心目标已实现，但具体实现与本文的若干细节有差异。以下为关键偏离点：
+>
+> - **进程模型**：本文设计 launcher/supervisor 子进程模型（§7），实际实现改为
+>   每个 MAGI 是独立 OS 进程（`execve` 替换当前进程），无 supervisor。
+> - **systemd**：本文设计单个 launcher service（§8），实际实现为每 MAGI
+>   独立 unit（`magi-adam.service`, `magi-eva-00.service`, ...）。
+> - **数据根路径**：本文建议 `~/.local/share/magi`（XDG），实际使用 `~/.magi`
+>   （openclaw 风格），见 `deploy/local/README.md`。
+> - **LocalProcessRuntimeBackend**：本文设计的 backend 已移除，不再需要。
+> - **硬编码 `/workspace`**：已消除，K8s 通过 `MAGI_WORKSPACE_DIR` env var 显式注入，
+>   Local 通过 `MAGI_DATA_ROOT` 推导。
+>
+> 权威文档请参阅：
+> - `deploy/local/README.md` — 本地部署完整指南
+> - `deploy/README.md` — 三种部署方式对比
+> - `docs/ARCHITECTURE.md` — 架构文档
 >
 > 本文最初基于 2026-08-02 的 `realTaki/MAGI` `main` 分支结构编写，并于 2026-08-03 按最新模块边界修订。执行时必须先检查最新代码与 `docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md`，报告差异后再实施，不能机械地假设本文列出的路径和类型仍然完全相同。
 
@@ -44,7 +62,7 @@ magi local start
 - 支持完全本地的 WebUI、记忆、Skills、MCP 和 Agent 实验；
 - 为安全研究、benchmark、红蓝对抗和可复现实验提供更轻量的环境；
 - 保留同一代码、同一 Runtime 和同一 WebUI，减少桌面版与集群版行为漂移；
-- 保留“一 MAGI 一 Runtime”模型，不退化为多个 Agent 共享进程和工作目录；
+- 保留"一 MAGI 一 Runtime"模型，不退化为多个 Agent 共享进程和工作目录；
 - 为未来的原生桌面壳、托盘程序、自动更新和一键诊断建立基础。
 
 ### 2.2 非目标
@@ -240,17 +258,28 @@ channels.tasks Worker
 
 ## 5. Cross-platform data layout
 
+> **注意**：本节为设计计划，实际实现采用 openclaw 风格路径。
+> 权威布局见 `deploy/local/README.md`。以下为设计记录。
+
 ### 5.1 默认数据根目录
 
-使用 `platformdirs` 或等价的集中实现，不要在多个模块重复判断操作系统：
+**实际实现**（非本节计划值）：
 
-| 系统 | 默认目录 |
+| 系统 | 实际默认目录 |
+| --- | --- |
+| Linux | `~/.magi/` |
+| macOS | `~/Documents/.magi/` |
+| Windows | `%USERPROFILE%\Documents\.magi\` |
+
+以下为原计划（未采用）：
+
+| 系统 | 原计划目录 |
 | --- | --- |
 | macOS | `~/Library/Application Support/MAGI` |
 | Windows | `%LOCALAPPDATA%\\MAGI` |
 | Linux | `$XDG_DATA_HOME/magi`，缺失时 `~/.local/share/magi` |
 
-允许用户通过 `--data-dir` 选择其他位置。启动后应 canonicalize 路径并持久化，不应让不同子进程分别猜测 data root。
+允许用户通过 `--data-dir` 覆盖。启动后 canonicalize 路径，不应让不同进程分别猜测 data root。
 
 ### 5.2 建议目录
 
@@ -417,6 +446,10 @@ Registry 不能只保存 PID。至少保存：
 
 ## 8. CLI 与启动流程
 
+> **注意**：实际 CLI 实现与本节计划有差异。当前命令见 `deploy/local/README.md`。
+> `magi local start` 使用 `execve` 替换进程而非 spawn 子进程；
+> `magi local install-service` 为每 MAGI 注册独立 systemd 单元。
+
 保留现有兼容行为：
 
 ```bash
@@ -539,7 +572,7 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 - subprocess 禁止 `shell=True`；
 - 终止进程前验证进程身份；
 - 安装文档明确 Tool、Skill 和 MCP 具有当前操作系统用户权限；
-- 不将“独立目录”描述成安全 sandbox。
+- 不将"独立目录"描述成安全 sandbox。
 
 ## 12. 分阶段实施
 

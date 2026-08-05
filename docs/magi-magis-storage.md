@@ -2,19 +2,27 @@
 
 ## 两个持久化层
 
-每个 MAGI 有一个私有工作区和 SQLite：
+每个 MAGI 有一个私有工作区和 SQLite，所有部署模式路径一致：
 
 ```text
-workspace/MAGIC/<magi-name>/
+# K8s: MAGI_WORKSPACE_DIR=/workspace（PVC）
+# Local: ~/.magi/MAGIC/<id>-<slug>/workspace/
+<workspace>/
 ├── memories/magi.db       # 私人记忆、会话、联系人、任务与本地设置
 ├── skills/
-└── SOUL.md
+├── SOUL.md
+├── logs/
+└── tmp/
 ```
 
-每个 MAGIS 有两个公共资源：独立 PostgreSQL 和公共工作区 PVC。
+每个 MAGIS 有两个公共资源：独立数据库（K8s: PostgreSQL，Local: SQLite）和公共工作区。
 
 ```text
-workspace/MAGIS/<magis-name>/  # 团队共享文件；生产环境对应独立 PVC
+# K8s: /magis（PVC）
+# Local: ~/.magi/MAGIS/<id>-<slug>/
+<magis>/
+├── magis.db               # 组织事实（K8s 为 PostgreSQL）
+└── workspace/             # 团队共享文件
 ```
 
 PostgreSQL 保存组织事实：MAGIS 树、MAGI 注册表、直接 Membership、角色、团队/角色 instructions、MAGIS Admin、provider 配置和运行时状态。个人 instruction、assigned user、Bot Token、验证码和私有记忆属于 MAGI 本地 SQLite。私有 SQLite 不会成为另一份 MAGIS 数据库。

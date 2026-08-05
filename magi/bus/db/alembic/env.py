@@ -30,13 +30,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# State directory is <WORKSPACE>/memories (container /workspace/memories,
-# local dev from MAGI_WORKSPACE_DIR env).  The programmatic runner sets
-# the URL directly; this is only a convenience for CLI workflows, so we
-# only fall back to the global ``state_dir()`` resolution when no URL
-# has been provided by the caller — otherwise the caller's resolved path
-# (e.g. the Local Profile's ``<data_root>/state``) would be silently
-# shadowed by the container default.
+# State directory is <workspace>/memories — resolved from
+# MAGI_WORKSPACE_DIR (K8s) or MAGI_DATA_ROOT (Local Profile).
+# The programmatic runner sets the URL directly; this is only a
+# convenience for CLI workflows, so we only fall back to the global
+# ``state_dir()`` resolution when no URL has been provided by the
+# caller.
 from magi.launcher.paths import state_dir as _state_dir
 
 if not config.get_main_option("sqlalchemy.url"):
