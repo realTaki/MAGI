@@ -134,62 +134,19 @@ class ToolWorker:
             logger.exception("tool job %s failed", claim.job_id)
             content = f"tool {claim.tool_name!r} crashed: {exc}"[:8000]
             is_error = True
-        # Complete the job. The bus.store.complete_tool_job fires the
-        # TOOL_RESULT_RECEIVED OBSERVE hook when the worker attached
-        # a hook_context (constructed from the claim's context data).
-        # The hook subsystem is the only place that knows about
-        # observability; the worker just persists the result.
-        hook_context = _build_observation_context(
-            claim=claim,
-            context_data=context_data,
-            worker_id=self.worker_id,
-        )
+        # Complete the job.  The bus.store.complete_tool_job fires
+        # the TOOL_RESULT_RECEIVED signoff row automatically -- the
+        # worker does not construct any hook context.
         self.bus.tool_jobs.complete(
             claim,
             content=content,
             is_error=is_error,
-            hook_context=hook_context,
         )
         if is_error:
             self.bus.tool_jobs.retry(claim.job_id)
 
 
 _worker: ToolWorker | None = None
-
-
-def _build_observation_context(
-    *,
-    claim: ToolClaim,
-    context_data: dict,
-    worker_id: str,
-):
-    """Build a :class:`HookContext` for the TOOL_RESULT_RECEIVED OBSERVE.
-
-    The BUS materializer pulls the durable :class:`ToolJob` row to
-    materialise the payload, so the helper only needs to forward
-    the caller-supplied identity metadata (principal + role +
-    source).  Returns ``None`` to skip the hook fire when the BUS
-    hook contracts are not yet installed.
-    """
-    try:
-        from magi.bus.hooks.contracts import (
-            HookContext,
-            HookDataClassification,
-            PrincipalType,
-        )
-    except Exception:
-        return None
-    return HookContext(
-        requested_by=worker_id,
-        principal_type=PrincipalType.SYSTEM,
-        principal_id=worker_id,
-        role=context_data.get("caller_role"),
-        source_type="tool",
-        source_id=claim.tool_name,
-        run_id=claim.run_id,
-        event_id=f"tool-result:{claim.tool_call_id}",
-        data_classification=HookDataClassification.INTERNAL,
-    )
 
 
 async def start_tool_worker() -> ToolWorker:

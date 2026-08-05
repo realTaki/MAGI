@@ -42,6 +42,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
+
 logger = logging.getLogger("magi.bus.runtime_settings")
 
 
@@ -174,7 +176,50 @@ def save_runtime_settings(
         "runtime_settings: wrote provider=%r model=%r to %s",
         settings.provider, settings.model, target,
     )
+    # Notify the provider worker so it can rebuild its cached
+    # ``LLMProvider`` on the next poll tick. The ``control_jobs``
+    # queue is the BUS-to-worker signal: ``save_runtime_settings``
+    # inserts one row, ``ProvidersWorker._run`` drains them. We
+    # swallow every failure here -- the file write has already
+    # succeeded and must not be undone because the publisher is
+    # unavailable (this function is also called during bootstrap
+    # and from tests that don't have a bus store yet).
+    _publish_provider_config_changed(settings)
     return target
+
+
+def _publish_provider_config_changed(settings: RuntimeSettings) -> None:
+    """Best-effort insert of one ``provider.config_changed`` row.
+
+    Split out so the main save path stays focused on the atomic
+    write. The ``magi.bus.bootstrap`` import is deferred to avoid
+    the SQLAlchemy ``Mapped`` double-registration when the bus
+    store has not been built yet.
+    """
+    try:
+        from magi.bus.bootstrap import get_bus_store
+        store = get_bus_store()
+    except Exception:
+        # No bus store (test, bootstrap, missing state dir).
+        # The file is already on disk; the provider worker's
+        # lazy fallback in ``_get_provider_for_attempt`` will
+        # rebuild on the next claim even without this signal.
+        logger.debug(
+            "runtime_settings: no bus store; provider worker will lazy-rebuild",
+        )
+        return
+    try:
+        store.enqueue_control_job(
+            kind=PROVIDER_CONFIG_CHANGED,
+            payload={
+                "provider": settings.provider,
+                "model": settings.model,
+            },
+        )
+    except Exception:
+        logger.exception(
+            "runtime_settings: could not publish provider.config_changed",
+        )
 
 
 def _str_or_none(value: Any) -> str | None:

@@ -12,19 +12,16 @@ logger = logging.getLogger("magi.db.alembic_runner")
 
 _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 
-#: The single revision every current MAGI database should be at. The rebase
-#: guard below is only for historical development snapshots whose revision
-#: files have since been folded or renamed; normal upgrades run every
-#: committed revision through this head.
-#:
-#: The single revision every current MAGI database should be at. The
-#: 2026.08 dev-mode collapse folded the 15-revision chain (0001-0015)
-#: into one baseline ``0001_initial_schema``. Existing dev DBs whose
-#: ``alembic_version.version_num`` points at a now-deleted revision
-#: are re-stamped to this head by ``_rebase_to_canonical_head``;
-#: new dev DBs run this single migration from scratch.  Hook
-#: subsystem migrations (0003, 0004) extend the chain from 0001.
-CANONICAL_HEAD = "0005_magic_name_unique"
+#: The terminal revision every current MAGI database should be at.
+#: ``0001_initial_schema`` is the **only** alembic revision —
+#: every schema feature is folded into this single baseline. The
+#: rebase guard below is for historical dev snapshots whose
+#: revision files have since been folded or renamed; normal
+#: upgrades run this single migration through it. The static
+#: ``test_canonical_head_equals_real_head`` guard fails CI the
+#: moment a second revision is added without un-squashing the
+#: chain.
+CANONICAL_HEAD = "0001_initial_schema"
 
 
 def _find_alembic_ini() -> Path:

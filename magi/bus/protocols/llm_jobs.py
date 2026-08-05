@@ -78,15 +78,6 @@ class LLMJob:
     # auto_title puts ``{"uid": int, "session_id": str}`` here.
     extra: dict[str, Any] = field(default_factory=dict)
 
-    # --- hook context (drives the LLM_REQUEST_PREPARED GATE in
-    #     bus.store).  ``None`` skips the hook fire and lets the
-    #     queue persist the row with no GATE check.  The caller
-    #     (agent turn / auto_title / compaction) is responsible for
-    #     constructing a :class:`magi.bus.hooks.contracts.HookContext`
-    #     with the principal / role / metadata that identifies the
-    #     operation.  The worker does not look at this field.
-    hook_context: Any | None = None
-
 
 @dataclass(frozen=True, slots=True)
 class LLMJobResult:

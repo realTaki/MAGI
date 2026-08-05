@@ -246,6 +246,15 @@ class BusStoreProtocol(Protocol):
         attempt_result: dict[str, Any] | None = None,
     ) -> None: ...
     def fail_agent_message(self, event_id: str, *, error_code: str, error_detail: str) -> None: ...
+    # Transient control-job queue (2026-08 provider-config cache refactor).
+    # ``enqueue_control_job`` is fired by ``save_runtime_settings``;
+    # ``drain_control_jobs`` is called by ``ProvidersWorker._run`` on every
+    # poll tick. Rows are deleted by the drain, so the queue never
+    # accumulates history.
+    def enqueue_control_job(
+        self, *, kind: str, payload: dict[str, Any] | None = None,
+    ) -> str: ...
+    def drain_control_jobs(self, *, worker_id: str, kind: str) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)

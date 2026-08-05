@@ -169,23 +169,84 @@ def _magic_id_for_slug(data_root: Path, slug: str) -> int:
 # ──────────────────────────────────────────────────────────────────────────── #
 
 
+def _start_webui_subprocess(data_root: Path, port: int) -> str:
+    """Spawn ``magi webui`` as a detached subprocess; return its URL.
+
+    Mirrors the runtime subprocess lifecycle — ``start_new_session=True``
+    detaches the webui into its own session so the launcher can exit
+    without orphaning it. Logs go to ``/tmp/magi-webui.log`` (append) so
+    a failed webui (npm / build / port collision) leaves a trail the
+    operator can inspect. The launcher does NOT wait on the subprocess;
+    a caller who wants liveness should probe ``http://127.0.0.1:{port}/health``.
+
+    Returns the URL string so the caller can print it and (if asked)
+    open it in the browser.
+    """
+    env = os.environ.copy()
+    env["HOST_WORKSPACE_DIR"] = str(data_root)
+    env["MAGI_PORT"] = str(port)
+    from magi.launcher.paths import magis_db_path
+
+    env["MAGIS_DATABASE_URL"] = f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"
+    # No uvicorn autoreload for the auto-spawned webui — it's a smoke
+    # test, not a dev-loop tool. Operators who want HMR run
+    # ``magi cli webui`` directly.
+    env["MAGI_RELOAD"] = "0"
+    log_path = Path("/tmp/magi-webui.log")
+    log_fh = open(log_path, "ab")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "magi", "webui"],
+        env=env,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+    )
+    # Record the PID so ``magi cli stop`` can SIGTERM the webui without
+    # ``pkill``-guessing at which process is "ours".  Lives under the
+    # data root so it follows the operator's data, not the venv.
+    pid_path = data_root / _WEBUI_PID_FILENAME
+    pid_path.write_text(str(proc.pid), encoding="utf-8")
+    return f"http://127.0.0.1:{port}"
+
+
 def cmd_start(args: argparse.Namespace) -> int:
-    """``magi cli start`` — bootstrap once, then dispatch start via the CLI backend.
+    """``magi cli start`` — bootstrap once, then start the runtime AND the WebUI.
 
     First boot seeds Genesis + Adam into the per-MAGIS SQLite.
     Subsequent calls skip the seed and dispatch straight to
-    ``bus.runtime.start``.
+    ``bus.runtime.start`` + the WebUI spawn.
 
-    The backend spawns a detached subprocess running ``magi runtime``;
-    the launcher exits after ``record_spawn`` succeeds, so the
-    subprocess is reparented to ``init`` and continues independently.
-    One MAGI crashing does not affect any other.
+    By default BOTH processes come up:
+
+    - the runtime subprocess (``magi runtime``) on its allocated port;
+    - the WebUI subprocess (``magi webui``) on :42069 — overridable
+      via ``--webui-port``.
+
+    Both spawn detached via ``start_new_session=True``; the launcher
+    exits after ``record_spawn`` succeeds and the subprocesses are
+    reparented to ``init`` and continue independently. One MAGI
+    crashing does not affect any other.
+
+    Skip the WebUI with ``--no-webui`` for CI / scripted flows where
+    the operator already has another control-plane view. Skip the
+    browser auto-open with ``--no-open`` (the WebUI URL is printed
+    either way).
 
     systemd units installed by :func:`cmd_install_service` take a
     separate path (they ``ExecStart=magi runtime`` directly) and bypass
     the backend — Phase 5 unifies both routes.
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+
+    # Propagate the resolved data root into the env so downstream
+    # ``magi.launcher.paths`` resolvers (and ``init_orm`` →
+    # ``get_engine()``) see the same root the launcher is using.
+    # The Composition Root owns this for the lifetime of cmd_start;
+    # child runtimes re-derive it from the systemd ``Environment=``
+    # block, so no cross-process pollution.
+    os.environ["HOST_WORKSPACE_DIR"] = str(data_root)
 
     # ── control-plane bootstrap (first run only) ──
     home = magis_home(data_root)
@@ -232,9 +293,24 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 1
 
     base_url = result.endpoint.base_url if result.endpoint else "(no endpoint)"
+
+    # ── spawn the WebUI alongside the runtime (default on) ──
+    webui_url: str | None = None
+    if not getattr(args, "no_webui", False):
+        webui_port = getattr(args, "webui_port", 42069) or 42069
+        try:
+            webui_url = _start_webui_subprocess(data_root, port=webui_port)
+        except Exception as exc:  # never let a failed webui abort cmd_start
+            logger.warning("webui subprocess failed to spawn: %s", exc)
+
     if not getattr(args, "no_open", False):
-        open_browser(base_url)
+        # Prefer the WebUI URL for the browser — that's where the
+        # operator actually clicks things; the runtime URL is the
+        # underlying API target the WebUI proxies to.
+        open_browser(webui_url or base_url)
     print(f"MAGI {magic_id} started — {base_url}")
+    if webui_url:
+        print(f"WebUI started   — {webui_url}")
     logger.info(
         "MAGI subprocess spawned",
         extra={
@@ -242,6 +318,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             "slug": slug,
             "backend_ref": result.backend_ref,
             "endpoint": base_url,
+            "webui_url": webui_url,
         },
     )
     return 0
@@ -278,14 +355,15 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """``magi cli stop`` — stop every MAGI via the CLI backend.
+    """``magi cli stop`` — stop every MAGI runtime AND the auto-spawned WebUI.
 
-    Reads runtime state from the control registry and dispatches
-    ``bus.runtime.stop`` for each.  The backend sends ``SIGTERM`` and
-    falls back to ``SIGKILL`` after a 10 s grace period.
+    Runtimes go through the control registry (``bus.runtime.stop``) so the
+    backend's SIGTERM→SIGKILL escalation applies uniformly.  The WebUI is
+    killed by reading the PID file written by ``_start_webui_subprocess``
+    so we never ``pkill``-guess at which process is "ours".
 
     systemd-managed units should use ``systemctl --user stop
-    magi-<slug>.service`` instead.
+    magi-<slug>.service`` and ``magi-webui.service`` instead.
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
@@ -298,22 +376,44 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
     bus = get_bus()
     runtimes = bus.control_registry.list_runtimes()
-    if not runtimes:
+    if runtimes:
+        for r in runtimes:
+            spec = RuntimeSpec(magic_id=r.runtime_id)
+            try:
+                result = bus.runtime.stop(spec)
+                print(
+                    f"stopped runtime {r.runtime_id}: {result.observed_state} ({result.message})"
+                )
+            except Exception as exc:
+                print(
+                    f"failed to stop runtime {r.runtime_id}: {exc}",
+                    file=sys.stderr,
+                )
+    else:
         print("(no runtimes registered)")
-        return 0
 
-    for r in runtimes:
-        spec = RuntimeSpec(magic_id=r.runtime_id)
+    # ── stop the auto-spawned WebUI (if any) ──
+    webui_pid_path = data_root / _WEBUI_PID_FILENAME
+    if webui_pid_path.exists():
         try:
-            result = bus.runtime.stop(spec)
-            print(
-                f"stopped runtime {r.runtime_id}: {result.observed_state} ({result.message})"
-            )
-        except Exception as exc:
-            print(
-                f"failed to stop runtime {r.runtime_id}: {exc}",
-                file=sys.stderr,
-            )
+            pid = int(webui_pid_path.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError) as exc:
+            print(f"could not parse webui pid file: {exc}", file=sys.stderr)
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"sent SIGTERM to webui (pid {pid})")
+            except ProcessLookupError:
+                # PID file is stale — webui is already dead, nothing to do.
+                pass
+            except PermissionError as exc:
+                print(
+                    f"could not signal webui pid {pid}: {exc}",
+                    file=sys.stderr,
+                )
+        # Always unlink — the file is single-shot, never re-used.
+        webui_pid_path.unlink(missing_ok=True)
+
     return 0
 
 
@@ -351,6 +451,13 @@ _SERVICE_TEMPLATE = (
     / "deploy" / "cli" / "service" / "magi@.service"
 )
 
+# PID file written by ``_start_webui_subprocess`` so ``cmd_stop`` can
+# SIGTERM the auto-spawned WebUI without ``pkill`` guessing at PIDs.
+# Lives under the data root (not state_dir) because the launcher is the
+# owner, not the BUS.
+_WEBUI_PID_FILENAME = ".magi-webui.pid"
+_WEBUI_SERVICE_NAME = "magi-webui.service"
+
 
 _SERVICE_TEMPLATE_CONTENT = """\
 [Unit]
@@ -367,6 +474,36 @@ Environment=MAGI_NAME={slug}
 Environment=MAGI_PORT={port}
 Environment=MAGIS_DATABASE_URL=sqlite:///{magis_db}
 ExecStart={magi_bin} runtime --host 127.0.0.1 --port {port}
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={data_root}
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+"""
+
+
+# WebUI unit — ONE per data root (mirrors the K8s ``magi-webui`` pod
+# in deploy/k8s/overlays, which is also a singleton).  The runtimes
+# proxy through it; it does not need to know how many MAGI slots exist.
+_WEBUI_SERVICE_TEMPLATE_CONTENT = """\
+[Unit]
+Description=MAGI WebUI — control plane (data_root={data_root})
+Documentation=https://github.com/realTaki/MAGI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOST_WORKSPACE_DIR={data_root}
+Environment=MAGI_PORT={port}
+Environment=MAGIS_DATABASE_URL=sqlite:///{magis_db}
+Environment=MAGI_RELOAD=0
+ExecStart={magi_bin} webui
 Restart=on-failure
 RestartSec=5
 ProtectSystem=strict
@@ -588,6 +725,20 @@ def cmd_install_service(args: argparse.Namespace) -> int:
         registered.append({"unit": unit_name, "magic_id": magic_id, "slug": slug, "port": port})
         print(f"wrote {target}")
 
+    # ── WebUI unit: ONE per data root (mirrors the K8s ``magi-webui`` pod) ──
+    webui_port = getattr(args, "webui_port", None) or 42069
+    webui_target = target_dir / _WEBUI_SERVICE_NAME
+    webui_body = _WEBUI_SERVICE_TEMPLATE_CONTENT.format(
+        data_root=data_root,
+        port=webui_port,
+        magis_db=magis_db,
+        magi_bin=magi_bin,
+    )
+    webui_target.write_text(webui_body, encoding="utf-8")
+    webui_target.chmod(0o644)
+    registered.append({"unit": _WEBUI_SERVICE_NAME, "port": webui_port})
+    print(f"wrote {webui_target}")
+
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
     for r in registered:
         subprocess.run(
@@ -604,7 +755,7 @@ def cmd_install_service(args: argparse.Namespace) -> int:
 
 
 def cmd_uninstall_service(args: argparse.Namespace) -> int:
-    """``magi cli uninstall-service`` — remove all magi-*.service units."""
+    """``magi cli uninstall-service`` — remove all magi-*.service AND the webui unit."""
     if current_platform() != "linux":
         print(
             f"error: uninstall-service is Linux-only (current platform: {current_platform()}).",
@@ -629,6 +780,17 @@ def cmd_uninstall_service(args: argparse.Namespace) -> int:
             target.unlink()
             removed.append(unit_name)
 
+    # Also tear down the WebUI unit (one per data root).
+    webui_target = target_dir / _WEBUI_SERVICE_NAME
+    if shutil.which("systemctl") and webui_target.exists():
+        subprocess.run(
+            ["systemctl", "--user", "disable", "--now", _WEBUI_SERVICE_NAME],
+            check=False,
+        )
+    if webui_target.exists():
+        webui_target.unlink()
+        removed.append(_WEBUI_SERVICE_NAME)
+
     if shutil.which("systemctl"):
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     print(json.dumps({"ok": True, "removed": removed}, indent=2))
@@ -650,11 +812,22 @@ def build_parser() -> argparse.ArgumentParser:
     # start
     p = sub.add_parser(
         "start",
-        help="bootstrap once, then dispatch start via the Local backend",
+        help="bootstrap once, then start the runtime AND the WebUI",
     )
     p.add_argument("--data-dir", default=None, help="override the data root")
     p.add_argument("--name", "-n", default=None, help="MAGI slug or <id>-<slug> to run")
     p.add_argument("--no-open", action="store_true", help="don't open the browser")
+    p.add_argument(
+        "--no-webui",
+        action="store_true",
+        help="don't start the WebUI alongside the runtime (default: start it on :42069)",
+    )
+    p.add_argument(
+        "--webui-port",
+        type=int,
+        default=42069,
+        help="WebUI listen port when started by `start` (default 42069)",
+    )
     p.set_defaults(handler=cmd_start)
 
     # status
@@ -691,8 +864,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_webui)
 
     # install-service
-    p = sub.add_parser("install-service", help="register one systemd unit per MAGI")
+    p = sub.add_parser("install-service", help="register one systemd unit per MAGI + the WebUI")
     p.add_argument("--data-dir", default=None, help="override the data root")
+    p.add_argument(
+        "--webui-port",
+        type=int,
+        default=42069,
+        help="WebUI listen port for the magi-webui.service unit (default 42069)",
+    )
     p.set_defaults(handler=cmd_install_service)
 
     # uninstall-service

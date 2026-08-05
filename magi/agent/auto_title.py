@@ -66,25 +66,9 @@ async def request_session_title(uid: int, session_id: str) -> str | None:
         return None
 
     from magi.bus import get_bus_store
-    from magi.bus.hooks.contracts import (
-        HookContext,
-        HookDataClassification,
-        PrincipalType,
-    )
     from magi.prompts import load_chat_title_prompt
 
     run_id = f"auto-title-{uuid.uuid4().hex}"
-    hook_context = HookContext(
-        requested_by="agent.auto_title",
-        principal_type=PrincipalType.USER,
-        principal_id=str(uid),
-        role=None,
-        source_type="session",
-        source_id=session_id,
-        session_id=session_id,
-        run_id=run_id,
-        data_classification=HookDataClassification.INTERNAL,
-    )
     job = LLMJob(
         attempt_id="",
         run_id=run_id,
@@ -96,7 +80,6 @@ async def request_session_title(uid: int, session_id: str) -> str | None:
         tools=None,
         streaming=False,
         extra={"uid": uid, "session_id": session_id},
-        hook_context=hook_context,
     )
     attempt_id = await enqueue_llm_job(job)
 

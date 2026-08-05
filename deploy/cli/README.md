@@ -30,8 +30,10 @@
 # 1. 安装
 ./deploy/cli/install.sh
 
-# 2. 启动 Adam（第一个 MAGI，前台 + 自动打开浏览器）
+# 2. 启动 Adam（runtime + WebUI 同时拉起，默认 42069 控制台）
 ./deploy/cli/magi cli start
+#   ↳ 浏览器自动打开 http://127.0.0.1:42069
+#   ↳ Runtime API 在 http://127.0.0.1:42101（WebUI 反向代理到这）
 
 # 3. 启动其他 MAGI（如 eva-00）
 ./deploy/cli/magi cli start --name eva-00 --port 42070
@@ -41,6 +43,18 @@
 
 # 5. 卸载服务
 ./deploy/cli/magi cli uninstall-service
+```
+
+`magi cli start` 默认同时拉起 runtime 和 WebUI（42069）。跳过 WebUI：
+
+```bash
+./deploy/cli/magi cli start --no-webui   # CI / 脚本场景
+```
+
+自定义 WebUI 端口：
+
+```bash
+./deploy/cli/magi cli start --webui-port 8080
 ```
 
 > Bash 包装 `deploy/cli/magi` 存在的目的：固化 `HOST_WORKSPACE_DIR`
@@ -92,10 +106,11 @@ MAGIS 格式为 `MAGI_Societies/<magis_id>-<slug>/magis.db`。
 ## CLI 命令
 
 ```bash
-magi cli start                # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
-magi cli start --name eva-001  # 启动指定 MAGI
-magi cli start --port 42070   # 指定端口
-magi cli start --no-open      # 不打开浏览器
+magi cli start                # 同时拉起 runtime + WebUI（默认 42069），自动开浏览器
+magi cli start --name eva-001 # 启动指定 MAGI（其它 slot 不会被启动）
+magi cli start --no-webui     # 只拉 runtime，不拉 WebUI（CI / 脚本用）
+magi cli start --webui-port 8080  # 自定义 WebUI 端口
+magi cli start --no-open      # 不打开浏览器（URL 仍会打印到 stdout）
 magi cli status               # 列出所有 MAGIC slots 及其状态
 magi cli stop                 # 向所有 MAGI runtime 发送 SIGTERM
 magi cli doctor               # 诊断打印（路径、DB 状态）

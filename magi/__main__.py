@@ -242,46 +242,15 @@ def run() -> None:
     # (see magi/tools/worker._seed_tools).  The worker loads both
     # built-in and MCP tools before publishing the durable catalog.
 
-    # Install hook plugins + wire connector events into the
-    # hook subsystem. The composition root reads the persistent
-    # hook config table; plugins do NOT auto-register at import
-    # time any more. The connector bridge stays for parity with
-    # the prior design; it publishes into the OBSERVE hook
-    # pipeline (not the legacy fire-and-forget bus).
-    try:
-        from magi.launcher import (
-            start_connector_bridge,
-            stop_connector_bridge,
-        )
-        from magi.launcher.hook_config import load_hook_config_into_bus
-        from magi.bus.hooks.hooks_service_init import (
-            install_hooks_into_bus,
-            HookConfigSource,
-        )
-        # The persistent config lives under state_dir; tests
-        # and the Local Profile pass an explicit path.  When
-        # neither is set, the loader logs and proceeds with
-        # an empty registry (handlers can still be added at
-        # runtime via ``bus.hooks.register_handler``).
-        try:
-            from magi.launcher.paths import state_dir as _state_dir
-            config_source = load_hook_config_into_bus(str(_state_dir()))
-        except Exception:
-            config_source = HookConfigSource()
-        install_hooks_into_bus(
-            service=get_bus().hooks,
-            config_source=config_source,
-            state_dir=str(_state_dir()) if "_state_dir" in dir() else None,
-        )
-        start_connector_bridge(get_bus().hooks)
-        try:
-            import atexit
-            atexit.register(stop_connector_bridge)
-        except Exception:  # noqa: BLE001
-            pass
-        logger.info("hook subsystem ready: %d handlers", len(get_bus().hooks.list_handlers()))
-    except Exception as e:  # noqa: BLE001 — never block boot
-        logger.warning("hook bootstrap skipped: %s", e)
+    # Plugin subsystem is now a set of external workers that
+    # consume the durable ``hook_signoffs`` queue.  Each plugin's
+    # worker calls ``bus.store.claim_pending_signoffs(plugin_id)``
+    # to pull its queue and ``bus.store.ack_signoff(id)`` to mark
+    # the row processed.  No composition-root wiring is required;
+    # the plugin reads the persistent ``hook_plugin_configs``
+    # table directly to discover what hook points it should
+    # subscribe to.
+    pass
 
     # Load connector instances from ``connector_configs``.
     # Reads the private SQLite; absent table → no-op.

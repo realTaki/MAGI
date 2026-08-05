@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+import logging
+
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
@@ -28,6 +30,7 @@ from magi.bus.models.queue import (
     AgentInbox,
     AgentRun,
     A2AInvocation,
+    ControlJob,
     DeliveryOutbox,
     LLMAttempt,
     RunInput,
@@ -37,6 +40,131 @@ from magi.bus.models.queue import (
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import open_session
 from magi.bus.models.local.tool import ToolDefinitionRecord
+from magi.bus.models.local.hook_signoff import HookSignoff
+
+logger = logging.getLogger("magi.bus.store")
+
+
+# Subject-type ↔ hook-point mapping.  Every bus.store boundary
+# method declares its (subject_type, hook_point) pair so the
+# dispatch helper can stamp the row without each call site
+# spelling out the literal.  Hook points keep the original
+# ``HookPoint`` enum string values so the public ``hook_plugin_configs``
+# table can route plugins without code changes.
+SUBJECT_TYPE_FOR_HOOK_POINT: dict[str, str] = {
+    "llm.request.prepared": "llm_attempt",
+    "llm.response.received": "llm_attempt",
+    "tool.call.pending": "tool_job",
+    "tool.result.received": "tool_job",
+    "delivery.pending": "delivery_outbox",
+    "delivery.dispatched": "delivery_outbox",
+}
+
+
+def _dispatch_hook_signoffs(
+    *,
+    state_dir: str | None,
+    subject_type: str,
+    subject_id: str,
+    hook_point: str,
+) -> int:
+    """Insert one ``hook_signoffs`` row per enabled plugin subscribed to ``hook_point``.
+
+    Reads the persistent ``hook_plugin_configs`` table and creates
+    one pending signoff for each ``enabled`` row whose JSON
+    ``hook_points`` list contains the given hook point.  The
+    unique constraint on ``(subject_type, subject_id, hook_point,
+    plugin_id)`` makes the dispatch idempotent: re-enqueueing the
+    same subject (e.g. via a retry path) does not duplicate the
+    signoff.
+
+    Returns the number of signoffs inserted.  ``0`` is the
+    expected default when no plugin subscribes to the hook point
+    — downstream workers don't filter on empty result, the
+    WHERE clause just becomes a no-op.
+
+    Implementation note: we read the plugin config via raw SQL
+    rather than the :class:`HookPluginConfigRow` ORM model, so the
+    dispatcher does not require the model to be registered with
+    SQLAlchemy ``Base.metadata`` at module import.  This keeps the
+    helper robust against lazy model registration (e.g. tests
+    that import the module without ever touching the plugin
+    config ORM).
+    """
+    from sqlalchemy import text as _text
+
+    now = utcnow_naive()
+    inserted = 0
+    with open_session(state_dir) as session:
+        plugin_rows = session.execute(
+            _text(
+                "SELECT hook_id, hook_points FROM hook_plugin_configs "
+                "WHERE enabled = 1"
+            )
+        ).all()
+        for hook_id, hook_points_json in plugin_rows:
+            hook_points = _parse_hook_points_json(hook_points_json)
+            if hook_point not in hook_points:
+                continue
+            session.execute(
+                _text(
+                    "INSERT OR IGNORE INTO hook_signoffs "
+                    "(subject_type, subject_id, hook_point, plugin_id, "
+                    " pending, created_at, acked_at) "
+                    "VALUES (:st, :sid, :hp, :pid, 1, :now, NULL)"
+                ),
+                {
+                    "st": subject_type,
+                    "sid": subject_id,
+                    "hp": hook_point,
+                    "pid": hook_id,
+                    "now": now,
+                },
+            )
+            inserted += 1
+        session.commit()
+    return inserted
+
+
+def _parse_hook_points_json(raw: Any) -> tuple[str, ...]:
+    """Parse the ``hook_points`` JSON column into a tuple of strings."""
+    import json
+
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        try:
+            return tuple(json.loads(raw))
+        except (ValueError, TypeError):
+            return ()
+    if isinstance(raw, list):
+        return tuple(str(item) for item in raw)
+    return ()
+
+
+def _has_pending_signoff(
+    *,
+    state_dir: str | None,
+    subject_type: str,
+    subject_id: str,
+) -> bool:
+    """Return ``True`` if at least one plugin still owes a signoff for this subject.
+
+    Used by ``claim_next_*`` methods to keep a job invisible to
+    downstream workers until every subscribed plugin has acked.
+    """
+    from sqlalchemy import text as _text
+
+    with open_session(state_dir) as session:
+        row = session.execute(
+            _text(
+                "SELECT 1 FROM hook_signoffs "
+                "WHERE subject_type = :st AND subject_id = :sid "
+                "AND pending = 1 LIMIT 1"
+            ),
+            {"st": subject_type, "sid": subject_id},
+        ).first()
+    return row is not None
 
 
 def _new_id(prefix: str) -> str:
@@ -444,7 +572,15 @@ class BusStore:
     def claim_next_delivery(
         self, worker_id: str, *, lease_seconds: int = 60
     ) -> DeliveryClaim | None:
-        """Lease one committed channel delivery for external I/O."""
+        """Lease one committed channel delivery for external I/O.
+
+        Rows are invisible until every subscribed plugin has acked
+        their ``hook_signoffs`` row (see
+        :func:`_dispatch_hook_signoffs`).  The worker that claimed
+        the row is allowed to send the IM message; the row's status
+        becomes ``processing`` and stays leased until
+        :meth:`complete_delivery` settles it.
+        """
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
             row = session.scalar(
@@ -457,6 +593,16 @@ class BusStore:
                 .limit(1)
             )
             if row is None:
+                return None
+            # Filter on pending signoffs.  If any plugin still owes
+            # a signoff for this row, refuse the claim -- the
+            # worker is not allowed to send until every plugin
+            # has had its chance to observe the row.
+            if _has_pending_signoff(
+                state_dir=self._state_dir,
+                subject_type="delivery_outbox",
+                subject_id=row.delivery_id,
+            ):
                 return None
             row.status = "processing"
             row.leased_by = worker_id
@@ -491,9 +637,16 @@ class BusStore:
         docstring). When supplied and an existing row already carries
         the same value, the existing ``delivery_id`` is returned
         unchanged rather than creating a duplicate outbox row.
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to the ``DELIVERY_PENDING`` hook
+        point -- so plugin workers have a chance to observe the
+        row before :meth:`claim_next_delivery` releases it to a
+        delivery worker.
         """
         delivery_id = delivery_id or _new_id("delivery")
         now = utcnow_naive()
+        persisted_new = False
         with open_session(self._state_dir) as session:
             if event_id is not None:
                 existing = session.scalar(
@@ -529,6 +682,14 @@ class BusStore:
                     )
                 )
                 session.commit()
+                persisted_new = True
+        if persisted_new:
+            _dispatch_hook_signoffs(
+                state_dir=self._state_dir,
+                subject_type="delivery_outbox",
+                subject_id=delivery_id,
+                hook_point="delivery.pending",
+            )
         return delivery_id
 
     def complete_delivery(self, delivery_id: str) -> None:
@@ -544,6 +705,17 @@ class BusStore:
             row.leased_until = None
             row.updated_at = now
             session.commit()
+        # Dispatch ``DELIVERY_DISPATCHED`` signoffs so plugins
+        # subscribed to the post-send hook point can run before
+        # the run row is fully retired.  The claim filter does not
+        # need to look at this row any more (its status is
+        # ``delivered``), so this dispatch is purely advisory.
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="delivery_outbox",
+            subject_id=delivery_id,
+            hook_point="delivery.dispatched",
+        )
 
     def retry_delivery(self, delivery_id: str, *, delay_seconds: int | None = None) -> None:
         now = utcnow_naive()
@@ -822,7 +994,16 @@ class BusStore:
     def enqueue_llm_job(
         self, *, run_id: str, inbox_event_id: str | None, kind: str,
     ) -> str:
-        """Insert a queued LLMAttempt row. Returns the new attempt_id."""
+        """Insert a queued LLMAttempt row.
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to the ``LLM_REQUEST_PREPARED``
+        hook point.  Plugin workers consume the signoff before
+        :meth:`claim_next_llm_job` releases the row to a
+        provider worker -- so the LLM call cannot run until every
+        subscribed plugin has had its chance to observe the
+        request payload.
+        """
         attempt_id = _new_id("llm")
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
@@ -837,6 +1018,12 @@ class BusStore:
                 )
             )
             session.commit()
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="llm_attempt",
+            subject_id=attempt_id,
+            hook_point="llm.request.prepared",
+        )
         return attempt_id
 
     def claim_next_llm_job(
@@ -845,7 +1032,10 @@ class BusStore:
         """Lease the oldest queued LLM attempt.
 
         Returns ``(attempt_id, run_id, inbox_event_id)`` or ``None``
-        if the queue is empty. Crashed workers' leases expire on
+        if the queue is empty.  Rows whose LLM_REQUEST_PREPARED
+        signoff is still pending are filtered out -- the provider
+        worker does not see them until every subscribed plugin
+        has acked.  Crashed workers' leases expire on
         :meth:`recover_expired_llm_job_leases` and the row becomes
         claimable again.
         """
@@ -859,6 +1049,12 @@ class BusStore:
                 .limit(1)
             )
             if row is None:
+                return None
+            if _has_pending_signoff(
+                state_dir=self._state_dir,
+                subject_type="llm_attempt",
+                subject_id=row.attempt_id,
+            ):
                 return None
             row.status = "claimed"
             row.leased_by = worker_id
@@ -879,6 +1075,11 @@ class BusStore:
         ``response`` for successes, ``error`` for failures. Setting
         neither leaves the row in its current status (useful for
         "discarded" without an explicit terminal state).
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to ``LLM_RESPONSE_RECEIVED`` so
+        post-call observers (audit log, metrics) get a chance to
+        see the result.
         """
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
@@ -899,6 +1100,71 @@ class BusStore:
                 attempt.error = error
                 attempt.response = None
             session.commit()
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="llm_attempt",
+            subject_id=attempt_id,
+            hook_point="llm.response.received",
+        )
+
+    # ----- transient control-job queue ----------------------------------
+    #
+    # ``save_runtime_settings`` inserts one ``provider.config_changed``
+    # row on every successful write. The provider worker drains it on
+    # every poll tick (see ``ProvidersWorker._run``) and rebuilds its
+    # cached ``LLMProvider`` when at least one row is consumed. Rows
+    # are deleted by the drain, so this table is a transient signal
+    # queue -- not an audit log. ``llm_attempts`` and
+    # ``hook_evaluations`` continue to own the durable trace.
+
+    def enqueue_control_job(
+        self, *, kind: str, payload: dict[str, Any] | None = None,
+    ) -> str:
+        """Append a control-job row. Returns the new ``job_id``.
+
+        No hooks fire on this queue -- the consumer is hook-agnostic
+        and the row is deleted by the drain, so an audit trail is
+        not required.
+        """
+        job_id = _new_id("ctl")
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            session.add(
+                ControlJob(
+                    job_id=job_id,
+                    kind=kind,
+                    payload=payload,
+                    created_at=now,
+                ),
+            )
+            session.commit()
+        return job_id
+
+    def drain_control_jobs(self, *, worker_id: str, kind: str) -> int:
+        """Delete every row matching ``kind`` and return the count.
+
+        ``worker_id`` is accepted for log symmetry with
+        :meth:`claim_next_llm_job`; the drain is bulk and the table
+        is so small (one row per PATCH/DELETE) that coalescing many
+        rows into one rebuild is the whole point -- callers compare
+        the return value against zero rather than draining row by
+        row.
+        """
+        with open_session(self._state_dir) as session:
+            count = session.execute(
+                select(func.count(ControlJob.id)).where(ControlJob.kind == kind),
+            ).scalar_one()
+            if count:
+                session.execute(
+                    ControlJob.__table__.delete().where(ControlJob.kind == kind),
+                )
+                session.commit()
+        if count:
+            logger.info(
+                "control_jobs: worker=%s drained %d row(s) for kind=%s",
+                worker_id, count, kind,
+            )
+        return int(count)
 
     def recover_expired_llm_job_leases(self) -> int:
         """Return abandoned provider jobs to the queue.
@@ -1492,10 +1758,16 @@ class BusStore:
         preferred by design §11.2 because tool implementations may
         declare a more specific retry boundary than the LLM-stable
         ``tool_call_id`` (e.g. "send this email once" handles).
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to the ``TOOL_CALL_PENDING``
+        hook point so plugin workers observe the call before
+        :meth:`claim_next_tool_job` releases the row.
         """
         now = utcnow_naive()
         job_id = _new_id("tool")
         payload = {"arguments": arguments, "context": context}
+        persisted_new = False
         with open_session(self._state_dir) as session:
             if idempotency_key is not None:
                 existing = session.scalar(
@@ -1547,10 +1819,23 @@ class BusStore:
                 )
             )
             session.commit()
+            persisted_new = True
+        if persisted_new:
+            _dispatch_hook_signoffs(
+                state_dir=self._state_dir,
+                subject_type="tool_job",
+                subject_id=job_id,
+                hook_point="tool.call.pending",
+            )
         return job_id
 
     def claim_next_tool_job(self, worker_id: str, *, lease_seconds: int = 60) -> ToolClaim | None:
-        """Lease one pending tool job; execution itself remains transaction-free."""
+        """Lease one pending tool job; execution itself remains transaction-free.
+
+        Rows whose TOOL_CALL_PENDING signoff is still pending
+        are filtered out -- the tool worker cannot see the job
+        until every subscribed plugin has acked.
+        """
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
             row = session.scalar(
@@ -1560,6 +1845,12 @@ class BusStore:
                 .limit(1)
             )
             if row is None:
+                return None
+            if _has_pending_signoff(
+                state_dir=self._state_dir,
+                subject_type="tool_job",
+                subject_id=row.job_id,
+            ):
                 return None
             row.status = "processing"
             row.leased_by = worker_id
@@ -1592,6 +1883,11 @@ class BusStore:
         caller's responsibility — :meth:`retry_tool_job` is the
         follow-up path; ToolWorker calls it when ``is_error`` and
         the attempt budget has not been exhausted.
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to ``TOOL_RESULT_RECEIVED`` so
+        post-call observers (audit log, metrics) can see the
+        result.
         """
         now = utcnow_naive()
         event_id = f"tool-result:{claim.tool_call_id}"
@@ -1655,4 +1951,83 @@ class BusStore:
                         created_at=now,
                     )
                 )
+            session.commit()
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="tool_job",
+            subject_id=claim.job_id,
+            hook_point="tool.result.received",
+        )
+
+    # ------------------------------------------------------------------ #
+    # Plugin-facing API: claim + ack signoffs
+    # ------------------------------------------------------------------ #
+    #
+    # Plugin workers use these two methods instead of subscribing to
+    # in-process hooks.  ``claim_pending_signoffs(plugin_id, ...)``
+    # pulls the next pending signoff for ``plugin_id`` and returns
+    # the row's subject so the plugin worker can load the related
+    # job (LLMAttempt / ToolJob / DeliveryOutbox) and process it.
+    # ``ack_signoff(...)`` flips the ``pending`` flag and stamps
+    # ``acked_at`` so the next downstream ``claim_next_*`` can see
+    # the row once all plugins have acked.
+
+    def claim_pending_signoffs(
+        self,
+        plugin_id: str,
+        *,
+        limit: int = 10,
+        lease_seconds: int = 60,
+    ) -> list[HookSignoff]:
+        """Atomically lease up to ``limit`` pending signoffs for ``plugin_id``.
+
+        Returns the leased :class:`HookSignoff` rows.  The rows are
+        marked as ``pending=False`` after a lease, but the row stays
+        visible so concurrent claims do not double-deliver.  The
+        plugin worker must call :meth:`ack_signoff` after processing
+        the related subject so the next downstream claim can see
+        the row.
+
+        The lease is a SQL row update (status set to ``acked_at =
+        NOW()``) so a crashed plugin does not lose the row -- the
+        row's ``acked_at`` is treated as a soft marker, not a
+        terminal state.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            rows = list(
+                session.scalars(
+                    select(HookSignoff)
+                    .where(
+                        HookSignoff.plugin_id == plugin_id,
+                        HookSignoff.pending.is_(True),
+                    )
+                    .order_by(HookSignoff.created_at)
+                    .limit(limit)
+                )
+            )
+            for row in rows:
+                row.pending = False
+                row.acked_at = now
+            session.commit()
+            return rows
+
+    def ack_signoff(
+        self,
+        signoff_id: int,
+    ) -> None:
+        """Mark a leased signoff as fully processed.
+
+        Idempotent: a second call on an already-acked row is a no-op.
+        Plugins call this after the related subject has been
+        processed (audit log written, metrics emitted, etc.) so the
+        next downstream claim sees the subject.
+        """
+        now = utcnow_naive()
+        with open_session(self._state_dir) as session:
+            row = session.get(HookSignoff, signoff_id)
+            if row is None:
+                return
+            row.pending = False
+            row.acked_at = now
             session.commit()

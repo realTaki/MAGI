@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from magi.bus.protocols.tools import ToolClaim
 from magi.bus.store import BusStore
 
@@ -23,17 +21,18 @@ class ToolJobsService:
         *,
         content: str,
         is_error: bool = False,
-        hook_context: Any | None = None,
     ) -> None:
-        """Complete the claimed job.  ``hook_context`` triggers the
-        TOOL_RESULT_RECEIVED OBSERVE hook in bus.store.complete_tool_job."""
+        """Complete the claimed job.
+
+        ``bus.store.complete_tool_job`` fires the
+        ``TOOL_RESULT_RECEIVED`` signoff automatically -- callers
+        do not pass any hook context.
+        """
         self._store.complete_tool_job(
             claim,
             content=content,
             is_error=is_error,
-            hook_context=hook_context,
         )
 
     def retry(self, job_id: str) -> None:
         self._store.retry_tool_job(job_id)
-

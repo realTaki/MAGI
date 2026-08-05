@@ -25,42 +25,53 @@ can compare against this baseline.
 Tables owned (alphabetical)
 --------------------------
 
-  - ``a2a_invocations``      — peer-MAGI call lifecycle.
-  - ``action_items``         — dashboard to-do inbox.
-  - ``agent_inbox``          — durable inbox of turn requests.
-  - ``agent_runs``           — one row per agent turn.
-  - ``auth_credentials``     — per-UID login secrets.
-  - ``chat_messages``        — chat transcript rows.
-  - ``chat_messages_fts``    — FTS5 virtual table over chat_messages.
-  - ``chat_sessions``        — chat session header.
-  - ``contact_notes``        — long-arc facts about people.
-  - ``contacts``             — unified people directory.
-  - ``control_operators``    — singleton WebUI control-plane admins.
-  - ``control_settings``     — singleton WebUI control-plane KV.
-  - ``deliveries``           — durable committed channel delivery
-                               outbox (BusStore.DeliveryOutbox).
-  - ``eva_runtimes``         — desired/observed state for EVA
-                               Kubernetes Deployments.
-  - ``magic``                — individual MAGI agent rows.
-  - ``magis``                — MAGI Society tree.
-  - ``magis_admins``         — direct MAGIS administrators.
-  - ``magis_memberships``    — MAGIC's direct MAGIS home.
-  - ``magis_roles``          — role rows per MAGIS (ADAM/EVA + custom).
-  - ``mcp_servers``          — operator-configured MCP server rows.
-  - ``memory_entries``       — MAGI's long-term self memory.
-  - ``meta``                 — legacy raw-SQL KV bootstrap.
-  - ``run_inputs``           — ordered input events within a run.
-  - ``settings``             — runtime KV (timezone, tool-iter, ...).
-  - ``task_presets``         — proactive task templates.
-  - ``task_runs``            — per-fire execution audit.
-  - ``tasks``                — operator-defined scheduled tasks.
-  - ``token_usage``          — per-outbound-LLM-call billing rows.
-  - ``tool_catalog_state``   — singleton monotonic catalog
-                               revision + snapshot hash.
-  - ``tool_calls``           — within-run tool call record + ordinal.
-  - ``tool_definitions``     — durable Tool Catalog rows.
-  - ``tool_jobs``            — durable tool execution jobs.
-  - ``llm_attempts``         — per-inference lifecycle.
+  - ``a2a_invocations``        — peer-MAGI call lifecycle.
+  - ``action_items``           — dashboard to-do inbox.
+  - ``agent_inbox``            — durable inbox of turn requests.
+  - ``agent_runs``             — one row per agent turn.
+  - ``auth_credentials``       — per-UID login secrets.
+  - ``chat_messages``          — chat transcript rows.
+  - ``chat_messages_fts``      — FTS5 virtual table over chat_messages.
+  - ``chat_sessions``          — chat session header.
+  - ``contact_notes``          — long-arc facts about people.
+  - ``contacts``               — unified people directory.
+  - ``control_jobs``           — transient BUS-to-worker refresh signal.
+  - ``control_operators``      — singleton WebUI control-plane admins.
+  - ``control_settings``       — singleton WebUI control-plane KV.
+  - ``deliveries``             — durable committed channel delivery
+                                 outbox (BusStore.DeliveryOutbox).
+  - ``eva_runtimes``           — desired/observed state for EVA
+                                 Kubernetes Deployments.
+  - ``hook_evaluations``       — per-handler hook audit (legacy inline
+                                 hook subsystem; retained for downgrade
+                                 safety, no new code reads it).
+  - ``hook_plugin_configs``    — persistent plugin enablement + the
+                                 hook points each plugin subscribes to.
+  - ``hook_signoffs``          — pending async plugin acknowledgements
+                                 for the tag-based design that replaced
+                                 the inline hook subsystem.
+  - ``magic``                  — individual MAGI agent rows.
+  - ``magis``                  — MAGI Society tree.
+  - ``magis_admins``           — direct MAGIS administrators.
+  - ``magis_memberships``      — MAGIC's direct MAGIS home.
+  - ``magis_roles``            — role rows per MAGIS (ADAM/EVA + custom).
+  - ``mcp_servers``            — operator-configured MCP server rows.
+  - ``memory_entries``         — MAGI's long-term self memory.
+  - ``meta``                   — legacy raw-SQL KV bootstrap.
+  - ``run_inputs``             — ordered input events within a run.
+  - ``settings``               — runtime KV (timezone, tool-iter, ...).
+  - ``task_presets``           — proactive task templates.
+  - ``task_runs``              — per-fire execution audit.
+  - ``tasks``                  — operator-defined scheduled tasks.
+  - ``token_usage``            — per-outbound-LLM-call billing rows.
+  - ``tool_catalog_state``     — singleton monotonic catalog
+                                 revision + snapshot hash.
+  - ``tool_calls``             — within-run tool call record + ordinal.
+  - ``tool_definitions``       — durable Tool Catalog rows.
+  - ``tool_jobs``              — durable tool execution jobs.
+  - ``llm_attempts``           — per-inference lifecycle (includes the
+                                 ``leased_by`` / ``leased_until`` lease
+                                 columns for the provider worker).
 
 The legacy ``alembic_version`` bookkeeping row is created by
 Alembic itself (``command.stamp`` after this migration runs).
@@ -564,11 +575,134 @@ def upgrade() -> None:
         sa.Column("request", sa.JSON()),
         sa.Column("response", sa.JSON()),
         sa.Column("error", sa.JSON()),
+        # Lease columns for the provider worker (mirrors agent_inbox / tool_jobs):
+        # both nullable so existing audit rows (created without a lease) stay
+        # valid. The provider worker stamps ``leased_by`` on claim and clears
+        # both columns on complete.
+        sa.Column("leased_by", sa.String(length=128)),
+        sa.Column("leased_until", sa.DateTime()),
         sa.Column("started_at", sa.DateTime(), nullable=False),
         sa.Column("completed_at", sa.DateTime()),
     )
     op.create_index(
         "ix_llm_attempts_run_started", "llm_attempts", ["run_id", "started_at"]
+    )
+
+    # Hook subsystem. The OLD inline hook design (HookService /
+    # HookEnvelope + GATE/OBSERVE synchronous handlers) is replaced by
+    # the tag-based design below, but ``hook_evaluations`` is kept
+    # for downgrade safety — no new code reads it. ``hook_signoffs``
+    # + ``hook_plugin_configs`` together drive the async plugin
+    # acknowledgement flow.
+    op.create_table(
+        "hook_evaluations",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("hook_event_id", sa.String(length=64), nullable=False),
+        sa.Column("hook_id", sa.String(length=128), nullable=False),
+        sa.Column("hook_version", sa.String(length=32), nullable=False),
+        sa.Column("hook_point", sa.String(length=64), nullable=False),
+        sa.Column("subject_type", sa.String(length=64), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("mode", sa.String(length=16), nullable=False),
+        sa.Column("failure_mode", sa.String(length=16), nullable=False),
+        sa.Column("input_digest", sa.String(length=64), nullable=False),
+        sa.Column("requested_scopes", sa.JSON(), nullable=False),
+        sa.Column("decision", sa.String(length=16), nullable=True),
+        sa.Column("reason_code", sa.String(length=96), nullable=True),
+        sa.Column("labels", sa.JSON(), nullable=True),
+        sa.Column("risk_score", sa.Float(), nullable=True),
+        sa.Column("status", sa.String(length=16), nullable=False, server_default="pending"),
+        sa.Column("started_at", sa.DateTime(), nullable=False),
+        sa.Column("completed_at", sa.DateTime(), nullable=True),
+        sa.Column("duration_ms", sa.Integer(), nullable=True),
+        sa.Column("error_type", sa.String(length=64), nullable=True),
+        sa.Column("sanitized_error", sa.String(length=512), nullable=True),
+        sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("metadata", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint(
+            "hook_event_id", "hook_id", "hook_version",
+            name="uq_hook_evaluations_event_hook_version",
+        ),
+    )
+    op.create_index(
+        "ix_hook_evaluations_subject",
+        "hook_evaluations",
+        ["subject_type", "subject_id"],
+    )
+    op.create_index(
+        "ix_hook_evaluations_point_status",
+        "hook_evaluations",
+        ["hook_point", "status"],
+    )
+    op.create_index(
+        "ix_hook_evaluations_created",
+        "hook_evaluations",
+        ["created_at"],
+    )
+
+    op.create_table(
+        "hook_plugin_configs",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("hook_id", sa.String(length=128), nullable=False),
+        sa.Column("hook_version", sa.String(length=32), nullable=False),
+        sa.Column("module_path", sa.String(length=256), nullable=False),
+        sa.Column("class_name", sa.String(length=128), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("mode", sa.String(length=16), nullable=False),
+        sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
+        sa.Column("required_scopes", sa.JSON(), nullable=False),
+        sa.Column("timeout_ms", sa.Integer(), nullable=False, server_default="500"),
+        sa.Column("failure_mode", sa.String(length=16), nullable=False),
+        sa.Column("hook_points", sa.JSON(), nullable=False),
+        sa.Column("init_kwargs_json", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint("hook_id", name="uq_hook_plugin_configs_hook_id"),
+    )
+
+    op.create_table(
+        "hook_signoffs",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("subject_type", sa.String(length=32), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("hook_point", sa.String(length=64), nullable=False),
+        sa.Column("plugin_id", sa.String(length=128), nullable=False),
+        sa.Column("pending", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("acked_at", sa.DateTime(), nullable=True),
+        sa.UniqueConstraint(
+            "subject_type", "subject_id", "hook_point", "plugin_id",
+            name="uq_hook_signoffs_subject_plugin",
+        ),
+    )
+    op.create_index(
+        "ix_hook_signoffs_pending",
+        "hook_signoffs",
+        ["plugin_id", "pending", "created_at"],
+    )
+    op.create_index(
+        "ix_hook_signoffs_subject",
+        "hook_signoffs",
+        ["subject_type", "subject_id"],
+    )
+
+    # Transient BUS-to-worker refresh signal. Rows are deleted by
+    # the consumer as part of the drain; this table is a queue, not
+    # an audit log (see ``ControlJob`` docstring).
+    op.create_table(
+        "control_jobs",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("job_id", sa.String(length=64), nullable=False),
+        sa.Column("kind", sa.String(length=64), nullable=False),
+        sa.Column("payload", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.UniqueConstraint("job_id", name="uq_control_jobs_job_id"),
+    )
+    op.create_index(
+        "ix_control_jobs_drain",
+        "control_jobs",
+        ["kind", "id"],
     )
 
     op.create_table(
@@ -609,7 +743,12 @@ def upgrade() -> None:
     op.create_table(
         "magic",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("name", sa.String(length=100)),
+        # ``name`` is unique per the product requirement "名字和 ID 一样
+        # 都不能重复". ``nullable=True`` because EVA-000 (the seed row)
+        # carries ``name = NULL`` — SQLite standard unique semantics
+        # allow multiple NULLs in a unique column, so the seed does
+        # not collide with itself or with future un-named rows.
+        sa.Column("name", sa.String(length=100), unique=True),
         sa.Column("provider", sa.String(length=64)),
         sa.Column("api_key", sa.String(length=256)),
         sa.Column("instruction", sa.String(), nullable=False, server_default=""),
@@ -752,6 +891,10 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS magic")
     op.execute("DROP TABLE IF EXISTS tool_catalog_state")
     op.execute("DROP TABLE IF EXISTS tool_definitions")
+    op.execute("DROP TABLE IF EXISTS control_jobs")
+    op.execute("DROP TABLE IF EXISTS hook_signoffs")
+    op.execute("DROP TABLE IF EXISTS hook_plugin_configs")
+    op.execute("DROP TABLE IF EXISTS hook_evaluations")
     op.execute("DROP TABLE IF EXISTS llm_attempts")
     op.execute("DROP TABLE IF EXISTS a2a_invocations")
     op.execute("DROP TABLE IF EXISTS delivery_outbox")
