@@ -1,14 +1,14 @@
-"""``magi local start | status | stop | doctor | install-service | uninstall-service``.
+"""``magi cli start | status | stop | doctor | install-service | uninstall-service``.
 
-Each MAGI is an independent OS process.  ``magi local start`` bootstraps the
+Each MAGI is an independent OS process.  ``magi cli start`` bootstraps the
 workspace (first run only), then dispatches
-``BackendDispatcherService.start`` → :class:`LocalProcessRuntimeBackend`,
+``BackendDispatcherService.start`` → :class:`CLIProcessRuntimeBackend`,
 which spawns one detached ``magi runtime`` subprocess via ``subprocess.Popen``
 with ``start_new_session=True``.  The launcher exits after spawn; the child
 is reparented to ``init`` and continues independently.  One MAGI crashing
 does not affect any other.
 
-``magi local install-service`` registers one systemd user unit per MAGI.
+``magi cli install-service`` registers one systemd user unit per MAGI.
 The units ``ExecStart=magi runtime`` directly and bypass the backend today —
 Phase 5 unifies that path with the launcher flow.
 """
@@ -73,7 +73,7 @@ def _bootstrap_once(data_root: Path) -> int:
         return magics[0].id
     raise RuntimeError(
         "no MAGIC row found after seed — "
-        "run `magi local start` once first to bootstrap."
+        "run `magi cli start` once first to bootstrap."
     )
 
 
@@ -124,7 +124,7 @@ def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
             return 1, "eva-000"
         raise SystemExit(
             f"--name={name!r} requested but no MAGIC slots exist yet. "
-            "Run `magi local start` once first (defaults to first MAGI)."
+            "Run `magi cli start` once first (defaults to first MAGI)."
         )
 
     slots = sorted(
@@ -147,7 +147,7 @@ def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
 
     raise SystemExit(
         f"Multiple MAGIC slots exist ({', '.join(slots)}).  "
-        "Pick one with `magi local start --name <slug>`."
+        "Pick one with `magi cli start --name <slug>`."
     )
 
 
@@ -169,7 +169,7 @@ def _magic_id_for_slug(data_root: Path, slug: str) -> int:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """``magi local start`` — bootstrap once, then dispatch start via the Local backend.
+    """``magi cli start`` — bootstrap once, then dispatch start via the CLI backend.
 
     First boot seeds Genesis + Adam into the per-MAGIS SQLite.
     Subsequent calls skip the seed and dispatch straight to
@@ -207,8 +207,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     # the BUS with control_registry populated.
     _bootstrap_once(data_root)
 
-    # Inject MAGI_BACKEND=local so the factory picks LocalProcessRuntimeBackend.
-    os.environ["MAGI_BACKEND"] = "local"
+    # Inject MAGI_BACKEND=cli so the factory picks CLIProcessRuntimeBackend.
+    os.environ["MAGI_BACKEND"] = "cli"
 
     # ── resolve which MAGI to run ──
     magic_id, slug = _resolve_runtime(data_root, getattr(args, "name", None))
@@ -247,11 +247,11 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """``magi local status`` — list MAGIC slots and their process state."""
+    """``magi cli status`` — list MAGIC slots and their process state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
     magic_dir = data_root / "MAGIC"
     if not magic_dir.exists():
-        print("(no MAGIC slots — run `magi local start` first)")
+        print("(no MAGIC slots — run `magi cli start` first)")
         return 0
 
     slots = sorted(
@@ -277,7 +277,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """``magi local stop`` — stop every MAGI via the Local backend.
+    """``magi cli stop`` — stop every MAGI via the CLI backend.
 
     Reads runtime state from the control registry and dispatches
     ``bus.runtime.stop`` for each.  The backend sends ``SIGTERM`` and
@@ -290,7 +290,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
     from magi.launcher import bootstrap_local
     bootstrap_local(data_root)
-    os.environ["MAGI_BACKEND"] = "local"
+    os.environ["MAGI_BACKEND"] = "cli"
 
     from magi.bus import get_bus
     from magi.bus.protocols.lifecycle import RuntimeSpec
@@ -317,7 +317,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """``magi local doctor`` — surface workspace + control-plane state."""
+    """``magi cli doctor`` — surface workspace + control-plane state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
     home = magis_home(data_root)
     magic_dir = data_root / "MAGIC"
@@ -347,7 +347,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 _SYSTEMD_USER_DIR = Path.home() / ".config" / "systemd" / "user"
 _SERVICE_TEMPLATE = (
     Path(__file__).resolve().parent.parent.parent
-    / "deploy" / "local" / "service" / "magi@.service"
+    / "deploy" / "cli" / "service" / "magi@.service"
 )
 
 
@@ -406,7 +406,7 @@ def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
 
 
 def cmd_webui(args: argparse.Namespace) -> int:
-    """``magi local webui`` — Vite dev server (HMR) + FastAPI control plane.
+    """``magi cli webui`` — Vite dev server (HMR) + FastAPI control plane.
 
     Two ways to run the WebUI on a host:
 
@@ -419,12 +419,12 @@ def cmd_webui(args: argparse.Namespace) -> int:
       ``control-dev`` overlay does inside a Pod.
     - **Production mode** (``--no-dev``) — exec directly into
       ``magi webui`` on :42069 with the built SPA mounted (no HMR).
-      Use this when you just want to ship the local profile without a
+      Use this when you just want to ship the CLI profile without a
       dev loop.
 
     Each MAGI is still an independent process — this command only
     owns the WebUI / vite process tree; the Adam runtime started via
-    ``magi local start`` runs separately on its own port.
+    ``magi cli start`` runs separately on its own port.
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
@@ -530,7 +530,7 @@ def cmd_webui(args: argparse.Namespace) -> int:
 
 
 def cmd_install_service(args: argparse.Namespace) -> int:
-    """``magi local install-service`` — register one systemd unit per MAGI."""
+    """``magi cli install-service`` — register one systemd unit per MAGI."""
     if current_platform() != "linux":
         print(
             f"error: install-service is Linux-only (current platform: {current_platform()}). "
@@ -557,7 +557,7 @@ def cmd_install_service(args: argparse.Namespace) -> int:
     if not shutil.which("systemctl"):
         print(
             "error: systemctl not found on PATH. "
-            "Install systemd or run `magi local start` manually.",
+            "Install systemd or run `magi cli start` manually.",
             file=sys.stderr,
         )
         return 2
@@ -603,7 +603,7 @@ def cmd_install_service(args: argparse.Namespace) -> int:
 
 
 def cmd_uninstall_service(args: argparse.Namespace) -> int:
-    """``magi local uninstall-service`` — remove all magi-*.service units."""
+    """``magi cli uninstall-service`` — remove all magi-*.service units."""
     if current_platform() != "linux":
         print(
             f"error: uninstall-service is Linux-only (current platform: {current_platform()}).",
@@ -641,8 +641,8 @@ def cmd_uninstall_service(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="magi local",
-        description="MAGI Local Profile — each MAGI is an independent process.",
+        prog="magi cli",
+        description="MAGI CLI Profile — each MAGI is an independent process.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -10,8 +10,8 @@ connector-to-plugin bridge.  Business modules (``magi.bus``,
 
 Layout:
 
-- ``CLIProfileLayout`` (here)            — path layout dataclass
-- ``bootstrap_cli`` (here)               — CLI Profile Composition Root
+- ``LocalPathLayout`` (here)            — path layout dataclass
+- ``bootstrap_local`` (here)            — Local Profile Composition Root
 - ``start_channel`` / ``stop_channel`` /
   ``is_channel_running`` / ``start_connector_bridge`` /
   ``stop_connector_bridge`` /

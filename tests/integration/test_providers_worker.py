@@ -119,7 +119,7 @@ def _install_fake(fake: "FakeProvider"):
     import magi.providers.factory as _factory
     import magi.providers.worker as _worker
 
-    def _fake_get(_model=None):
+    def _fake_get(*_args, **_kwargs):
         return fake
 
     _factory.get_provider = _fake_get

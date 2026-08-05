@@ -21,8 +21,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-BackendKind = Literal["kubernetes", "local"]
-"""Supported backend identifiers.  ``local`` is the per-MAGI standalone process."""
+BackendKind = Literal["kubernetes", "cli"]
+"""Supported backend identifiers.  ``cli`` is the per-MAGI standalone process."""
 
 
 class RuntimeEndpoint(BaseModel):
