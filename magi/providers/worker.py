@@ -30,15 +30,19 @@ import uuid
 from contextlib import suppress
 from typing import Any
 
-from magi.bus import (
-    AgentMessage,
-    InboxKind,
-    StreamEvent,
-    get_bus_store,
-    get_stream_hub,
-)
+# NOTE: imports go direct to submodules, not through ``magi.bus``.
+# ``magi.bus`` lazily exposes the bootstrap facade; importing it
+# transitively registers the ORM (including
+# ``HookEvaluation.metadata`` which collides with the SQLAlchemy
+# reserved name ``Base.metadata``). Calling bootstrap is fine —
+# eagerly importing it isn't. The worker never needs the
+# facade; it only needs ``AgentMessage`` + ``StreamEvent`` +
+# the ``get_bus_store`` / ``get_stream_hub`` accessors.
 from magi.bus.contracts.agent import BusStoreProtocol
+from magi.bus.protocols.agent import AgentMessage, InboxKind
 from magi.bus.protocols.provider_jobs import ProviderJob
+from magi.bus.stream import StreamEvent, get_stream_hub
+from magi.bus.bootstrap import get_bus_store
 from magi.providers import get_provider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.provider import ChatMessage, ChatResult, LLMProvider

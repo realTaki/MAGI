@@ -78,7 +78,11 @@ def test_protocol_satisfaction() -> None:
 # ── provision ──────────────────────────────────────────────────────── #
 
 
-def test_provision_magis_creates_sqlite(tmp_path: Path, monkeypatch) -> None:
+def test_provision_magis_is_noop_for_local(tmp_path: Path, monkeypatch) -> None:
+    """Local ``provision_magis`` is a no-op — bootstrap_local creates the
+    SQLite at the composition-root stage.  The backend just returns the
+    platform-neutral DTO so the BUS layer can record the intent.
+    """
     monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
     backend = LocalProcessRuntimeBackend()
     result = backend.provision_magis(magis_id=1, magis_name="genesis")
@@ -86,9 +90,8 @@ def test_provision_magis_creates_sqlite(tmp_path: Path, monkeypatch) -> None:
     assert result.magis_id == 1
     assert result.database_service_name is None
     assert result.workspace_claim_name is None
-    assert "SQLite" in (result.message or "")
-    # SQLite file should exist on disk.
-    assert (tmp_path / "MAGIS" / "genesis-01" / "magis.db").exists()
+    # Backend must NOT touch storage itself.
+    assert not (tmp_path / "MAGIS" / "genesis-01" / "magis.db").exists()
 
 
 # ── start ──────────────────────────────────────────────────────────── #
