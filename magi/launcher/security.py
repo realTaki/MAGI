@@ -36,7 +36,7 @@ from pathlib import Path
 def ensure_control_secret(path: Path) -> str:
     """Return the persisted secret; generate a new one if missing.
 
-    ``path`` is the on-disk file (``<control_dir>/control-secret``).
+    ``path`` is the on-disk file (``<magis_home>/control-secret``).
     The file is forced to ``0600`` on POSIX systems.
     """
     path = Path(path)

@@ -1,32 +1,18 @@
-"""Phase 9 — Local control-plane registry validation tests.
+"""Control-plane runtime registry tests — backed by MAGIS local engine.
 
-Three layers:
-
-1. **In-process**: a single :class:`ControlRepository` exercises
-   ``upsert → record_spawn → allocate_port → reconcile``.
-2. **Concurrent**: two threads concurrently allocate ports to
-   distinct runtimes to confirm ``BEGIN IMMEDIATE`` serialises
-   writes correctly.
-3. **Secret round-trip**: ``put_secret`` / ``verify_secret`` survive
-   the salted hash boundary.
-
-Per plan §15.1 ("Unit") these guard the contract before Phase 6's CLI
-and Phase 7's multi-MAGI surface assume it.  Phase 9 acceptance
-("Architecture") is verified by ``tests/architecture/test_import_boundaries.py``.
+The control tables (control_runtime_state, control_port_allocations, …)
+now live in the same MAGIS SQLite as organisation facts — no separate
+``control/local-registry.db``.
 """
 
 from __future__ import annotations
 
-import os
 import threading
 import uuid
 from pathlib import Path
-from typing import Iterable
 
 import pytest
 
-from magi.bus.db.control.engine import build_control_engine
-from magi.bus.db.control.models import RuntimeDesiredState, RuntimeObservedState
 from magi.bus.db.control.repository import (
     ControlRepository,
     PortAllocationDTO,
@@ -34,11 +20,16 @@ from magi.bus.db.control.repository import (
     RuntimeStateDTO,
     UnknownRuntime,
 )
+from magi.bus.db.magis.local_engine import build as build_local_engine
+from magi.bus.models.local.control_runtime import (
+    RuntimeDesiredState,
+    RuntimeObservedState,
+)
 
 
 @pytest.fixture()
 def repo(tmp_path: Path) -> ControlRepository:
-    engine = build_control_engine(tmp_path / "control")
+    engine = build_local_engine(tmp_path / "magis-test")
     return ControlRepository(engine)
 
 
@@ -65,12 +56,9 @@ def test_upsert_then_record_spawn_then_get(repo: ControlRepository) -> None:
 def test_port_allocator_sticky_across_stop(repo: ControlRepository) -> None:
     alloc1 = repo.allocate_port(7)
     assert 42101 <= alloc1.port <= 42999
-    # Re-allocating the same runtime returns the SAME port.
     alloc2 = repo.allocate_port(7)
     assert alloc1.port == alloc2.port
     repo.release_port(7)
-    # After release a fresh runtime picks the next-lowest free port
-    # (still in range).
     alloc3 = repo.allocate_port(8)
     assert alloc3.port >= 42101
 
@@ -95,7 +83,7 @@ def test_record_stop_clears_pid(repo: ControlRepository) -> None:
 
 
 def test_unknown_runtime_raises() -> None:
-    engine = build_control_engine(Path("/tmp") / uuid.uuid4().hex)
+    engine = build_local_engine(Path("/tmp") / uuid.uuid4().hex)
     repo = ControlRepository(engine)
     with pytest.raises(UnknownRuntime):
         repo.get_runtime(99999)
@@ -109,14 +97,7 @@ def test_secrets_round_trip(repo: ControlRepository) -> None:
 
 
 def test_concurrent_port_allocations(tmp_path: Path) -> None:
-    """Two threads concurrently allocate ports to distinct runtimes.
-
-    The Local Profile is single-user per plan §6.3; this test runs on
-    a developer workstation so contention is real (not synthetic).  The
-    SQLAlchemy engine + WAL + ``BEGIN IMMEDIATE`` must serialise the
-    writes — no duplicate ports, no missing rows.
-    """
-    engine = build_control_engine(tmp_path / "control-concurrent")
+    engine = build_local_engine(tmp_path / "magis-concurrent")
     repo = ControlRepository(engine)
 
     errors: list[Exception] = []

@@ -67,7 +67,7 @@ def workspace_dir() -> Path:
        when set (Local Profile runtime subprocess) →
        ``<data_root>/MAGIC/<slug>/workspace``.
     3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
-       launcher process) → ``<data_root>/control/launcher-workspace``.
+       launcher process) → ``<data_root>/MAGIS/1-genesis/launcher-workspace``.
 
     If none of the above match, the process is running in an
     unconfigured environment and the function raises.  There is no
@@ -84,7 +84,7 @@ def workspace_dir() -> Path:
         runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
         if runtime_id and runtime_slug:
             return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
-        return Path(data_root) / "control" / "launcher-workspace"
+        return Path(data_root) / "MAGIS" / "1-genesis" / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
         "MAGI_DATA_ROOT (Local Profile). Neither is set."
@@ -105,8 +105,8 @@ def state_dir() -> Path:
     2. **Local Profile, launcher / supervisor process** —
        ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_ID``.  The launcher
        is not a runtime; it keeps its own scratch SQLite at
-       ``<data_root>/control/launcher-state`` so it never collides
-       with the Adam's per-MAGI ``magi.db``.
+       ``<data_root>/MAGIS/1-genesis/launcher-state`` so it never
+       collides with the Adam's per-MAGI ``magi.db``.
     3. **K8s Profile** — no ``MAGI_DATA_ROOT``.  State lives at
        ``<workspace_dir>/memories``; each Pod has its own PVC, so
        per-Pod isolation is automatic.
@@ -127,7 +127,7 @@ def state_dir() -> Path:
                 / "workspace"
                 / _STATE_SUBDIR  # "memories"
             )
-        return Path(data_root).expanduser().resolve() / "control" / "launcher-state"
+        return Path(data_root).expanduser().resolve() / "MAGIS" / "1-genesis" / "launcher-state"
     return workspace_dir() / _STATE_SUBDIR
 
 

@@ -53,9 +53,10 @@ class LocalPathLayout:
         └── state/                 (SQLite — per-MAGI isolation)
 
     **Launcher mode** (no ``runtime_id``):
-        ``<data_root>/control/launcher-state/`` — scratch space for the
-        launcher's BUS services.  The launcher never runs agent work;
-        the real runtime state lives in the subprocess's per-MAGI slot.
+        ``<data_root>/MAGIS/1-genesis/launcher-state/`` — scratch space
+        for the launcher's BUS services, co-located with the MAGIS
+        database.  The launcher never runs agent work; the real runtime
+        state lives in the subprocess's per-MAGI slot.
 
     Layout under ``data_root`` (runtime mode)::
 
@@ -103,9 +104,9 @@ class LocalPathLayout:
             object.__setattr__(self, "temp_dir", ws / "tmp")
             object.__setattr__(self, "audit_log_path", ws / "logs" / "audit.log")
         else:
-            # Launcher mode: scratch space in control/ so it never
+            # Launcher mode: scratch space in MAGIS home so it never
             # collides with the Adam's per-MAGI magi.db.
-            launcher_state = data_root / "control" / "launcher-state"
+            launcher_state = data_root / "MAGIS" / "1-genesis" / "launcher-state"
             object.__setattr__(self, "state_dir", launcher_state)
             object.__setattr__(self, "workspace", data_root)  # unused
             object.__setattr__(self, "local_db", launcher_state / "magi.db")
