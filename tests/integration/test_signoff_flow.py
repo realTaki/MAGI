@@ -51,13 +51,10 @@ def _install_plugin(state_dir: str, *, plugin_id: str, hook_points: list[str]) -
                 " created_at, updated_at) "
                 "VALUES (:id, '1', 'magi.plugins.samples.audit_log', "
                 " 'AuditLogPlugin', 1, 'observe', 100, '[]', 500, "
-                " 'fail_open', :hps, '{}', :now, :now)"
+                " 'fail_open', :hps, '{}', '2026-01-01 00:00:00', "
+                " '2026-01-01 00:00:00')"
             ),
-            {
-                "id": plugin_id,
-                "hps": str(hook_points).replace("'", '"'),
-                "now": "2026-01-01 00:00:00",
-            },
+            {"id": plugin_id, "hps": str(hook_points).replace("'", '"')},
         )
         session.commit()
 
@@ -65,7 +62,7 @@ def _install_plugin(state_dir: str, *, plugin_id: str, hook_points: list[str]) -
 def test_enqueue_dispatches_signoff_for_subscribed_plugin(fresh_bus):
     """bus.store.enqueue_llm_job stamps one signoff per subscribed plugin."""
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     _install_plugin(
         state_dir,
         plugin_id="audit_log",
@@ -98,7 +95,7 @@ def test_disabled_plugin_does_not_generate_signoff(fresh_bus):
     from magi.bus.db.engine import open_session
 
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     with open_session(state_dir) as session:
         session.execute(
             text(
@@ -126,7 +123,7 @@ def test_disabled_plugin_does_not_generate_signoff(fresh_bus):
 def test_complete_dispatches_observation_signoff(fresh_bus):
     """bus.store.complete_llm_attempt fires LLM_RESPONSE_RECEIVED."""
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     _install_plugin(
         state_dir,
         plugin_id="audit_log",
@@ -148,7 +145,7 @@ def test_complete_dispatches_observation_signoff(fresh_bus):
 def test_enqueue_dispatch_is_idempotent(fresh_bus):
     """Two enqueues for the same attempt_id dispatch one signoff, not two."""
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     _install_plugin(
         state_dir,
         plugin_id="audit_log",
@@ -173,7 +170,7 @@ def test_enqueue_dispatch_is_idempotent(fresh_bus):
 def test_tool_lifecycle_full_signoff_round_trip(fresh_bus):
     """TOOL_CALL_PENDING then ack, then TOOL_RESULT_RECEIVED, then ack."""
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     _install_plugin(
         state_dir,
         plugin_id="audit_log",
@@ -214,7 +211,7 @@ def test_tool_lifecycle_full_signoff_round_trip(fresh_bus):
 def test_delivery_lifecycle_full_signoff_round_trip(fresh_bus):
     """DELIVERY_PENDING then ack, then DELIVERY_DISPATCHED, then ack."""
     state_dir = fresh_bus
-    store = get_bus().store
+    store = get_bus_store()
     _install_plugin(
         state_dir,
         plugin_id="audit_log",
