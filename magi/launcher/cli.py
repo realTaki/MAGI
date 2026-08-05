@@ -1,25 +1,10 @@
 """``magi local start | status | stop | doctor | install-service | uninstall-service``.
 
-The Local Profile launcher is intentionally tiny:
-
-- ``start``  — provision the control-plane registry, persist the
-              launcher-issued control secret, idempotently start the
-              Adam runtime, and open the browser tab.
-- ``status`` — list every runtime the control registry knows about,
-              flag stale rows, summarize port allocation.
-- ``stop``   — stop every runtime, do **not** release ports (per
-              plan §7.4 — only ``delete`` releases).
-- ``doctor`` — surface the control-registry state for an operator
-              investigating "why isn't my local MAGI talking to me?".
-- ``install-service``   — write a systemd user unit that runs
-              ``magi local start`` on boot (Linux only).
-- ``uninstall-service`` — remove the systemd user unit.
-
-The CLI is a thin wrapper over the BUS services built during Phases
-3-5 — never a parallel set of bootstrappers.  When ``magi local``
-isn't the right verb (e.g. for inspecting a single runtime's
-``/health``), the operator uses ``bus.control_registry.list_runtimes()``
-directly via the Python REPL.
+Each MAGI is an independent OS process — the Local Profile never spawns child
+processes.  ``magi local start`` bootstraps the workspace (first run only) and
+then *becomes* the MAGI runtime in the current process.  ``magi local
+install-service`` registers one systemd user unit per MAGI so every MAGI
+starts, crashes, and restarts independently.
 """
 
 from __future__ import annotations
@@ -34,9 +19,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from magi.bus.contracts.lifecycle import RuntimeSpec
-from magi.bus.db.control.models import RuntimeDesiredState, RuntimeObservedState
-from magi.launcher import bootstrap_local
 from magi.launcher.paths import (
     control_dir as _control_dir,
     control_secret_path,
@@ -47,6 +29,10 @@ from magi.launcher.platform import current_platform, open_browser
 from magi.launcher.security import ensure_control_secret, reveal_control_secret
 
 logger = logging.getLogger("magi.launcher.cli")
+
+# ──────────────────────────────────────────────────────────────────────────── #
+# helpers
+# ──────────────────────────────────────────────────────────────────────────── #
 
 
 def _print_table(headers: list[str], rows: list[list[str]]) -> None:
@@ -61,15 +47,123 @@ def _print_table(headers: list[str], rows: list[list[str]]) -> None:
         print(fmt.format(*row))
 
 
-def cmd_start(args: argparse.Namespace) -> int:
-    """``magi local start``: provision + idempotent start + open browser."""
-    data_root = Path(args.data_dir) if args.data_dir else default_data_root()
-    if not args.no_open:
-        logger.info("local launcher start", extra={"data_root": str(data_root)})
+def _bootstrap_once(data_root: Path) -> int:
+    """Ensure workspace + MAGIS schema exist.  Returns the adam magic_id.
 
+    Safe to call on every boot — the seed is idempotent.  If no MAGIC
+    row exists yet (brand-new workspace), the seed creates the Genesis
+    MAGIS + Adam MAGIC and returns its id.
+    """
+    from magi.launcher import bootstrap_local
+
+    bus = bootstrap_local(data_root, initialise=True, initialise_control=True)
+
+    from magi.bus.db.magis import init_magis_public_db
+    init_magis_public_db(seed_root=True)
+
+    magics = bus.magic.list_all_magic()
+    if magics:
+        return magics[0].id
+    raise RuntimeError(
+        "no MAGIC row found after seed — "
+        "run `magi local start` once first to bootstrap."
+    )
+
+
+def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
+    """Return ``(magic_id, slug)`` for the named MAGIC, or the first one.
+
+    Scans the MAGIC directory for ``<id>-<slug>`` slots, then picks:
+    - exact match on ``name`` (matches slug or ``<id>-<slug>``)
+    - the single slot if only one exists
+    - raises if multiple exist and name is ambiguous
+    """
+    magic_dir = data_root / "MAGIC"
+    slots = sorted(
+        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+    )
+    if not slots:
+        raise SystemExit(
+            "No MAGIC slots found under "
+            f"{magic_dir}.  Run `magi local start` once first."
+        )
+
+    if name:
+        name_lower = name.strip().lower()
+        for slot in slots:
+            if name_lower in (slot.lower(), slot.lower().split("-", 1)[1]):
+                magic_id, slug = slot.split("-", 1)
+                return int(magic_id), slug
+        raise SystemExit(
+            f"No MAGIC slot matches {name!r}.  Known slots: {', '.join(slots)}"
+        )
+
+    if len(slots) == 1:
+        magic_id, slug = slots[0].split("-", 1)
+        return int(magic_id), slug
+
+    raise SystemExit(
+        f"Multiple MAGIC slots exist ({', '.join(slots)}).  "
+        "Pick one with `magi local start --name <slug>`."
+    )
+
+
+def _exec_runtime(
+    data_root: Path,
+    magic_id: int,
+    slug: str,
+    port: int,
+) -> None:
+    """Replace the current process with ``magi runtime`` for one MAGI.
+
+    Sets env vars so :mod:`magi.launcher.paths` resolves state_dir /
+    workspace_dir to the correct per-MAGI slot.  Never returns.
+    """
+    ws_root = data_root / "MAGIC" / f"{magic_id}-{slug}" / "workspace"
+    magis_db = data_root / "MAGIS" / "1-genesis" / "magis.db"
+
+    env = os.environ.copy()
+    env.update({
+        "MAGI_DATA_ROOT": str(data_root),
+        "MAGI_WORKSPACE_DIR": str(ws_root),
+        "MAGI_RUNTIME_ID": str(magic_id),
+        "MAGI_RUNTIME_SLUG": slug,
+        "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
+        "MAGI_PORT": str(port),
+    })
+
+    # execv replaces the current process image — no fork, no child.
+    argv = [sys.executable, "-m", "magi", "runtime", "--host", "127.0.0.1", "--port", str(port)]
+    logger.info(
+        "replacing process with magi runtime: %s",
+        " ".join(argv),
+        extra={"magic_id": magic_id, "slug": slug, "port": port},
+    )
+    os.execve(sys.executable, argv, env)
+
+
+# ──────────────────────────────────────────────────────────────────────────── #
+# commands
+# ──────────────────────────────────────────────────────────────────────────── #
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    """``magi local start`` — bootstrap once, then *become* the MAGI runtime.
+
+    First boot seeds Genesis + Adam into the per-MAGIS SQLite.
+    Subsequent calls skip the seed and go straight to runtime mode.
+
+    The process replaces itself with ``magi runtime`` via ``execve``,
+    so the current shell / terminal owns the MAGI's stdout/stderr and
+    Ctrl-C stops it cleanly.  When run via systemd, the unit is the
+    MAGI itself — no launcher process, no subprocess tree.
+    """
+    data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+
+    # ── control-plane bootstrap (first run only) ──
     control = _control_dir(data_root)
     secret_path = control_secret_path(control)
-    secret = ensure_control_secret(secret_path)
+    ensure_control_secret(secret_path)
     state_path = launcher_state_path(control)
     state_path.write_text(
         json.dumps(
@@ -83,225 +177,248 @@ def cmd_start(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
 
-    bus = bootstrap_local(data_root, initialise=True, initialise_control=True)
-    if bus.control_registry is None:
-        print("error: control registry was not initialised", file=sys.stderr)
-        return 2
+    # Idempotent seed — creates Genesis + Adam on first run.
+    magic_id = _bootstrap_once(data_root)
 
-    # Local Profile seeds the public MAGIS schema (Adam + Genesis MAGIS)
-    # directly into the Local SQLite engine — the same ``seed_root=True``
-    # path ``magi runtime`` uses in the container. Without this, the
-    # private SQLite has the runtime tables but the MAGIS engine has
-    # nothing and ``list_all_magic`` raises ``no such table: magic``.
-    from magi.bus.db.magis import init_magis_public_db
+    # ── resolve which MAGI to run ──
+    magic_id, slug = _resolve_runtime(data_root, getattr(args, "name", None))
 
-    init_magis_public_db(seed_root=True)
+    # ── port ──
+    port = int(getattr(args, "port", 0) or os.environ.get("MAGI_PORT", "42069"))
 
-    # Phase 6 baseline: ensure the Adam runtime exists.
-    magic_id = _ensure_adam(bus)
-    bus.control_registry.upsert_desired_state(
-        magic_id, "local_process", RuntimeDesiredState.STARTED
-    )
+    if not getattr(args, "no_open", False):
+        base_url = f"http://127.0.0.1:{port}"
+        open_browser(base_url)
 
-    # Boot the runtime via the orchestrator backend.
-    backend_kind = bus.runtime.backend.kind
-    if backend_kind != "local_process":
-        print(
-            f"warning: backend is {backend_kind!r}; Local launcher requires "
-            f"MAGI_BACKEND=local_process. The Adam will not start.",
-            file=sys.stderr,
-        )
-        return 1
-
-    result = bus.runtime.start(
-        RuntimeSpec(magic_id=magic_id, name="eva-00")
-    )
-    print(json.dumps(
-        {
-            "ok": True,
-            "data_root": str(data_root),
-            "magic_id": magic_id,
-            "backend_kind": result.backend_kind,
-            "endpoint": result.endpoint.base_url if result.endpoint else None,
-            "secret": reveal_control_secret(secret_path) if args.print_secret else None,
-        },
-        indent=2,
-        default=str,
-    ))
-    if not args.no_open and result.endpoint:
-        open_browser(result.endpoint.base_url)
-    return 0
+    _exec_runtime(data_root, magic_id, slug, port)
+    return 0  # unreachable — execve replaces the process
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """``magi local status``: list control-registry rows."""
+    """``magi local status`` — list MAGIC slots and their process state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
-    bus = bootstrap_local(data_root, initialise_control=True)
-    if bus.control_registry is None:
-        print("error: control registry unavailable", file=sys.stderr)
-        return 2
-    runtimes = bus.control_registry.list_runtimes()
-    stale = {r.runtime_id for r in bus.control_registry.list_stale()}
+    magic_dir = data_root / "MAGIC"
+    if not magic_dir.exists():
+        print("(no MAGIC slots — run `magi local start` first)")
+        return 0
+
+    slots = sorted(
+        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+    )
+    if not slots:
+        print("(no MAGIC slots)")
+        return 0
+
     rows: list[list[str]] = []
-    for r in runtimes:
+    for slot in slots:
+        parts = slot.split("-", 1)
+        mid = parts[0]
+        slug = parts[1] if len(parts) > 1 else "-"
+        ws = magic_dir / slot / "workspace"
+        db = ws / "memories" / "magi.db"
         rows.append([
-            str(r.runtime_id),
-            r.backend_kind,
-            r.desired_state.value,
-            r.observed_state.value,
-            str(r.port or "-"),
-            str(r.pid or "-"),
-            str(r.base_url or "-"),
-            "stale" if r.runtime_id in stale else "ok",
+            mid,
+            slug,
+            "exists" if db.exists() else "no db",
+            str(ws) if ws.exists() else "(missing)",
         ])
-    if rows:
-        _print_table(
-            ["id", "backend", "desired", "observed", "port", "pid", "base_url", "health"],
-            rows,
-        )
-    else:
-        print("(no runtimes registered)")
+    _print_table(["id", "slug", "state", "workspace"], rows)
     return 0
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """``magi local stop``: stop every runtime; do not release ports."""
+    """``magi local stop`` — send SIGTERM to every MAGI runtime.
+
+    Reads PIDs from the control registry and signals them.  This is a
+    convenience for the operator; systemd-managed units should use
+    ``systemctl --user stop magi-<slug>.service`` instead.
+    """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+    from magi.launcher import bootstrap_local
     bus = bootstrap_local(data_root, initialise_control=True)
     if bus.control_registry is None:
         print("error: control registry unavailable", file=sys.stderr)
         return 2
+    import signal
     runtimes = bus.control_registry.list_runtimes()
     for r in runtimes:
-        try:
-            bus.runtime.stop(RuntimeSpec(magic_id=r.runtime_id, name=r.backend_ref))
-            print(f"stopped runtime {r.runtime_id}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"failed to stop runtime {r.runtime_id}: {exc}", file=sys.stderr)
+        if r.pid is not None:
+            try:
+                os.kill(r.pid, signal.SIGTERM)
+                print(f"sent SIGTERM to runtime {r.runtime_id} (pid {r.pid})")
+            except ProcessLookupError:
+                print(f"runtime {r.runtime_id} (pid {r.pid}) already gone")
+            except Exception as exc:
+                print(f"failed to stop runtime {r.runtime_id}: {exc}", file=sys.stderr)
+        bus.control_registry.record_stop(r.runtime_id)
     return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """``magi local doctor``: surface health + diagnostics for the operator."""
+    """``magi local doctor`` — surface workspace + control-plane state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+    control = _control_dir(data_root)
+    magic_dir = data_root / "MAGIC"
+    slots = sorted(
+        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+    ) if magic_dir.exists() else []
+
     print(json.dumps({
         "data_root": str(data_root),
         "platform": current_platform(),
         "paths": {
-            "control": str(_control_dir(data_root)),
+            "control": str(control),
             "magis": str(data_root / "MAGIS" / "1-genesis"),
+            "magic_slots": slots,
         },
-        "control_db_exists": (_control_dir(data_root) / "local-registry.db").exists(),
-        "secret_exists": control_secret_path(_control_dir(data_root)).exists(),
-        "launcher_state_exists": launcher_state_path(_control_dir(data_root)).exists(),
+        "control_db_exists": (control / "local-registry.db").exists(),
+        "secret_exists": control_secret_path(control).exists(),
+        "launcher_state_exists": launcher_state_path(control).exists(),
     }, indent=2))
     return 0
 
 
-# ---------------------------------------------------------------------------
-# Service registration (Linux systemd user unit)
-# ---------------------------------------------------------------------------
-#
-# The Local Profile in production runs as a normal user process started
-# by the operator — but on Linux we expose two extra verbs so the same
-# deployment can be promoted to a "starts on login, restarts on crash"
-# service without taking on the container / k8s machinery.
-#
-# Only Linux is supported. macOS uses launchd (we document the plist
-# in deploy/local/service/magi.plist.example but do not auto-install it
-# from Python). Windows uses Task Scheduler XML — see
-# deploy/local/README.md.
-#
-# The wallpaper is shipped at deploy/local/service/magi.service.  The
-# CLI copies it into ``~/.config/systemd/user/magi.service`` and runs
-# ``systemctl --user daemon-reload`` plus ``enable --now``.
+# ──────────────────────────────────────────────────────────────────────────── #
+# systemd service registration (Linux only)
+# ──────────────────────────────────────────────────────────────────────────── #
 
 _SYSTEMD_USER_DIR = Path.home() / ".config" / "systemd" / "user"
-_SYSTEMD_SERVICE_NAME = "magi.service"
-_SERVICE_TEMPLATE_CANDIDATES = (
-    # Source checkout (development)
-    Path(__file__).resolve().parent.parent.parent / "deploy" / "local" / "service" / "magi.service",
-    # Installed wheel (pip-installed magi)
-    Path(__file__).resolve().parent.parent / "share" / "magi" / "local" / "magi.service",
+_SERVICE_TEMPLATE = (
+    Path(__file__).resolve().parent.parent.parent
+    / "deploy" / "local" / "service" / "magi@.service"
 )
 
 
-def _resolve_service_template() -> Optional[Path]:
-    for candidate in _SERVICE_TEMPLATE_CANDIDATES:
-        if candidate.is_file():
-            return candidate
-    return None
+_SERVICE_TEMPLATE_CONTENT = """\
+[Unit]
+Description=MAGI runtime — {slug} (magic_id={magic_id})
+Documentation=https://github.com/realTaki/MAGI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MAGI_DATA_ROOT={data_root}
+Environment=MAGI_RUNTIME_ID={magic_id}
+Environment=MAGI_RUNTIME_SLUG={slug}
+Environment=MAGI_PORT={port}
+Environment=MAGIS_DATABASE_URL=sqlite:///{magis_db}
+ExecStart={magi_bin} runtime --host 127.0.0.1 --port {port}
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={data_root}
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+"""
 
 
 def _magi_executable() -> str:
-    """Best-effort path to the ``magi`` binary used by the unit."""
     found = shutil.which("magi")
     if found:
         return found
-    # Fallback: ``python -m magi`` — works for editable installs.
     return f"{sys.executable} -m magi"
 
 
-def cmd_install_service(_args: argparse.Namespace) -> int:
-    """``magi local install-service``: register systemd user unit (Linux only)."""
+def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
+    """Return ``[(magic_id, slug), ...]`` from the MAGIC directory."""
+    magic_dir = data_root / "MAGIC"
+    if not magic_dir.exists():
+        return []
+    slots: list[tuple[int, str]] = []
+    for entry in sorted(magic_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if "-" not in entry.name:
+            continue
+        parts = entry.name.split("-", 1)
+        try:
+            mid = int(parts[0])
+        except ValueError:
+            continue
+        slug = parts[1]
+        slots.append((mid, slug))
+    return slots
+
+
+def cmd_install_service(args: argparse.Namespace) -> int:
+    """``magi local install-service`` — register one systemd unit per MAGI."""
     if current_platform() != "linux":
         print(
             f"error: install-service is Linux-only (current platform: {current_platform()}). "
-            "On macOS, copy deploy/local/service/magi.plist.example to "
-            "~/Library/LaunchAgents/com.magi.local.plist and run "
-            "`launchctl load -w <plist>`.  On Windows, import the XML in "
-            "deploy/local/service/magi-task.xml via Task Scheduler.",
+            "On macOS, see deploy/local/service/magi.plist.example.  "
+            "On Windows, see deploy/local/service/magi-task.xml.",
             file=sys.stderr,
         )
         return 2
 
-    template = _resolve_service_template()
-    if template is None:
+    data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+    magi_bin = _magi_executable()
+    magis_db = data_root / "MAGIS" / "1-genesis" / "magis.db"
+
+    slots = _list_magic_slots(data_root)
+    if not slots:
+        # First-run: bootstrap so there is at least the Adam slot.
+        _bootstrap_once(data_root)
+        slots = _list_magic_slots(data_root)
+    if not slots:
+        print("error: no MAGIC slots found after bootstrap", file=sys.stderr)
+        return 2
+
+    if not shutil.which("systemctl"):
         print(
-            "error: cannot locate deploy/local/service/magi.service template. "
-            "Reinstall magi from the source checkout.",
+            "error: systemctl not found on PATH. "
+            "Install systemd or run `magi local start` manually.",
             file=sys.stderr,
         )
         return 2
 
     target_dir = _SYSTEMD_USER_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / _SYSTEMD_SERVICE_NAME
 
-    body = template.read_text(encoding="utf-8")
-    # Substitute the actual magi binary path so the unit does not depend
-    # on PATH being set correctly when systemd starts the user session.
-    magi_path = _magi_executable()
-    body = body.replace("__MAGI_BIN__", magi_path)
-    target.write_text(body, encoding="utf-8")
-    target.chmod(0o644)
+    # Assign ports: Adam gets 42069, subsequent EVAs get 42070+
+    base_port = 42069
+    registered: list[dict] = []
 
-    if not shutil.which("systemctl"):
-        print(
-            "error: systemctl not found on PATH. Install systemd or run "
-            "`magi local start` manually as a foreground process.",
-            file=sys.stderr,
+    for idx, (magic_id, slug) in enumerate(slots):
+        port = base_port + idx
+        unit_name = f"magi-{slug}.service"
+        target = target_dir / unit_name
+
+        body = _SERVICE_TEMPLATE_CONTENT.format(
+            slug=slug,
+            magic_id=magic_id,
+            data_root=data_root,
+            port=port,
+            magis_db=magis_db,
+            magi_bin=magi_bin,
         )
-        return 2
+        target.write_text(body, encoding="utf-8")
+        target.chmod(0o644)
+        registered.append({"unit": unit_name, "magic_id": magic_id, "slug": slug, "port": port})
+        print(f"wrote {target}")
 
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-    subprocess.run(["systemctl", "--user", "enable", "--now", _SYSTEMD_SERVICE_NAME], check=True)
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "unit": str(target),
-                "exec": magi_path,
-                "hint": "systemctl --user status magi.service",
-            },
-            indent=2,
+    for r in registered:
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", r["unit"]],
+            check=True,
         )
-    )
+        print(f"enabled + started {r['unit']}")
+
+    print(json.dumps(
+        {"ok": True, "units": registered, "hint": "systemctl --user list-units 'magi-*'"},
+        indent=2,
+    ))
     return 0
 
 
-def cmd_uninstall_service(_args: argparse.Namespace) -> int:
-    """``magi local uninstall-service``: remove systemd user unit (Linux only)."""
+def cmd_uninstall_service(args: argparse.Namespace) -> int:
+    """``magi local uninstall-service`` — remove all magi-*.service units."""
     if current_platform() != "linux":
         print(
             f"error: uninstall-service is Linux-only (current platform: {current_platform()}).",
@@ -309,67 +426,74 @@ def cmd_uninstall_service(_args: argparse.Namespace) -> int:
         )
         return 2
 
-    target = _SYSTEMD_USER_DIR / _SYSTEMD_SERVICE_NAME
-    if shutil.which("systemctl") and target.exists():
-        subprocess.run(
-            ["systemctl", "--user", "disable", "--now", _SYSTEMD_SERVICE_NAME],
-            check=False,
-        )
-    if target.exists():
-        target.unlink()
+    data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+    slots = _list_magic_slots(data_root)
+
+    target_dir = _SYSTEMD_USER_DIR
+    removed = []
+    for magic_id, slug in slots:
+        unit_name = f"magi-{slug}.service"
+        target = target_dir / unit_name
+        if shutil.which("systemctl") and target.exists():
+            subprocess.run(
+                ["systemctl", "--user", "disable", "--now", unit_name],
+                check=False,
+            )
+        if target.exists():
+            target.unlink()
+            removed.append(unit_name)
+
     if shutil.which("systemctl"):
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    print(json.dumps({"ok": True, "removed": str(target)}, indent=2))
+    print(json.dumps({"ok": True, "removed": removed}, indent=2))
     return 0
 
 
-def _ensure_adam(bus) -> int:
-    """Ensure exactly one Adam MAGIC exists; return its id.
-
-    Falls through to :func:`magi.bus.services.magic.MagicService.list`
-    which already keeps a single-root invariant for the seeded
-    Genesis tree (Phase 0 baseline).
-    """
-    from magi.bus.services.magic import MagicService
-
-    svc: MagicService = bus.magic
-    magics = svc.list_all_magic()
-    if magics:
-        return magics[0].id
-    raise RuntimeError(
-        "no Adam MAGIC found — run `python -m magi runtime` once first to seed."
-    )
+# ──────────────────────────────────────────────────────────────────────────── #
+# parser
+# ──────────────────────────────────────────────────────────────────────────── #
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the ``magi local`` subcommand parser."""
     parser = argparse.ArgumentParser(
         prog="magi local",
-        description="MAGI Local Profile launcher (plan §12 Phase 6).",
+        description="MAGI Local Profile — each MAGI is an independent process.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    for name, fn, help_text in (
-        ("start", cmd_start, "provision + start the local Adam runtime"),
-        ("status", cmd_status, "list registered runtimes from the control registry"),
-        ("stop", cmd_stop, "stop every registered runtime"),
-        ("doctor", cmd_doctor, "print diagnostic state for operator investigation"),
-        ("install-service", cmd_install_service, "register systemd user unit (Linux only)"),
-        ("uninstall-service", cmd_uninstall_service, "remove systemd user unit (Linux only)"),
-    ):
-        p = sub.add_parser(name, help=help_text)
-        p.add_argument(
-            "--data-dir",
-            default=None,
-            help="override the OS-specific data root",
-        )
-        if name == "start":
-            p.add_argument(
-                "--no-open", action="store_true", help="don't open the browser"
-            )
-            p.add_argument(
-                "--print-secret", action="store_true", help="echo the control secret"
-            )
-        p.set_defaults(handler=fn)
+
+    # start
+    p = sub.add_parser("start", help="bootstrap once, then become the MAGI runtime")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.add_argument("--name", "-n", default=None, help="MAGI slug or <id>-<slug> to run")
+    p.add_argument("--port", "-p", type=int, default=None, help="HTTP port (default: 42069)")
+    p.add_argument("--no-open", action="store_true", help="don't open the browser")
+    p.set_defaults(handler=cmd_start)
+
+    # status
+    p = sub.add_parser("status", help="list MAGIC slots")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.set_defaults(handler=cmd_status)
+
+    # stop
+    p = sub.add_parser("stop", help="SIGTERM every MAGI runtime")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.set_defaults(handler=cmd_stop)
+
+    # doctor
+    p = sub.add_parser("doctor", help="print diagnostic state")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.set_defaults(handler=cmd_doctor)
+
+    # install-service
+    p = sub.add_parser("install-service", help="register one systemd unit per MAGI")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.set_defaults(handler=cmd_install_service)
+
+    # uninstall-service
+    p = sub.add_parser("uninstall-service", help="remove all magi-*.service units")
+    p.add_argument("--data-dir", default=None, help="override the data root")
+    p.set_defaults(handler=cmd_uninstall_service)
+
     return parser
 
 

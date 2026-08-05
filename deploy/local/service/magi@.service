@@ -1,0 +1,31 @@
+# Template for ``magi local install-service``.  The CLI replaces placeholders
+# at install time — this file is *not* used as-is by systemd.  It lives here
+# so operators who prefer hand-written units can see the expected shape.
+#
+# Each MAGI gets its own unit (magi-adam.service, magi-eva-00.service, …).
+# ``systemctl --user status magi-*.service`` lists them all.
+[Unit]
+Description=MAGI runtime — __SLUG__ (magic_id=__MAGIC_ID__)
+Documentation=https://github.com/realTaki/MAGI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=MAGI_DATA_ROOT=__DATA_ROOT__
+Environment=MAGI_RUNTIME_ID=__MAGIC_ID__
+Environment=MAGI_RUNTIME_SLUG=__SLUG__
+Environment=MAGI_PORT=__PORT__
+Environment=MAGIS_DATABASE_URL=sqlite:///__MAGIS_DB__
+ExecStart=__MAGI_BIN__ runtime --host 127.0.0.1 --port __PORT__
+Restart=on-failure
+RestartSec=5
+# Allow writing only into the MAGI data root.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__DATA_ROOT__
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

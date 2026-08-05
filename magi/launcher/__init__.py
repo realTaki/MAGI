@@ -19,9 +19,7 @@ Layout:
 - ``paths``                              — OS-specific data-root resolution
 - ``platform``                           — OS detection + browser open
 - ``security``                           — launcher control-secret helpers
-- ``ports`` (Phase 4)                    — bitmap port allocator
-- ``supervisor`` (Phase 4)               — LocalProcessRuntimeBackend host
-- ``cli`` (Phase 6)                      — ``magi local start|status|stop|doctor``
+- ``cli``                                — ``magi local start|status|stop|doctor|install-service|uninstall-service``
 
 The architecture test (``tests/architecture/test_import_boundaries.py``)
 treats this package as a Composition-Root prefix, exempt from the
