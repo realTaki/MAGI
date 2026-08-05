@@ -41,7 +41,7 @@
 `install.sh` 仅做三件事：
 
 1. 确认 `magi` 在 PATH 上（缺失时会用 `uv tool install` 装一份）；
-2. 建好数据根目录（带 `control/`, `MAGIC/`, `MAGIS/` 三个子目录）；
+2. 建好数据根目录（带 `MAGIC/`, `MAGIS/` 两个子目录）；
 3. 打印一段 cheat sheet。
 
 它**不会**主动启动 MAGI、**不会**注册服务。
@@ -53,11 +53,6 @@
 ```text
 ~/.magi/                                       # Linux
 ~/Documents/.magi/                             # macOS / Windows
-├── control/                                   # launchpad-only state
-│   ├── local-registry.db                      # SQLite: runtime 注册 / 端口 / 状态
-│   ├── control-secret                         # 0600，随机生成的 HMAC 密钥
-│   ├── launcher.json
-│   └── launcher-state/                        # launcher 自己的 BUS scratch 库
 ├── MAGIC/                                     # 私有 MAGI 工作区
 │   ├── eva-000/workspace/
 │   │   ├── SOUL.md
@@ -71,8 +66,14 @@
 │       └── ...                                # （结构同上）
 └── MAGIS/                                     # 每个 MAGIS 一个目录
     └── 1-genesis/
-        └── magis.db                           # 公共组织架构 SQLite
+        ├── magis.db                           # 组织架构 + 控制面 SQLite
+        ├── control-secret                     # 0600，内部 API HMAC 密钥
+        └── launcher.json                      # launcher 状态快照
 ```
+
+控制面状态（runtime 注册、端口分配、workspace 归档、HMAC 密钥）全部在
+MAGIS SQLite 中，与 K8s 的 `eva_runtimes` + `control_settings` 一致。
+不再有独立的 `control/local-registry.db`。
 
 每个 MAGI 的 workspace 落在 `~/.magi/MAGIC/<slug>/workspace/`，
 与 K8s 里 PVC 的 `<workspace>/memories/magi.db` 命名规则完全一致。

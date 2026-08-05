@@ -20,8 +20,13 @@ from magi.bus.db.control.repository import (
     RuntimeStateDTO,
     UnknownRuntime,
 )
+from magi.bus.db.base import Base
 from magi.bus.db.magis.local_engine import build as build_local_engine
 from magi.bus.models.local.control_runtime import (
+    ControlPortAllocation,
+    ControlRuntimeState,
+    ControlSecret,
+    ControlWorkspaceArchive,
     RuntimeDesiredState,
     RuntimeObservedState,
 )
@@ -30,6 +35,16 @@ from magi.bus.models.local.control_runtime import (
 @pytest.fixture()
 def repo(tmp_path: Path) -> ControlRepository:
     engine = build_local_engine(tmp_path / "magis-test")
+    # Ensure control-runtime tables exist in the MAGIS database.
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ControlRuntimeState.__table__,
+            ControlPortAllocation.__table__,
+            ControlWorkspaceArchive.__table__,
+            ControlSecret.__table__,
+        ],
+    )
     return ControlRepository(engine)
 
 
@@ -84,6 +99,10 @@ def test_record_stop_clears_pid(repo: ControlRepository) -> None:
 
 def test_unknown_runtime_raises() -> None:
     engine = build_local_engine(Path("/tmp") / uuid.uuid4().hex)
+    Base.metadata.create_all(
+        engine,
+        tables=[ControlRuntimeState.__table__],
+    )
     repo = ControlRepository(engine)
     with pytest.raises(UnknownRuntime):
         repo.get_runtime(99999)
@@ -98,6 +117,13 @@ def test_secrets_round_trip(repo: ControlRepository) -> None:
 
 def test_concurrent_port_allocations(tmp_path: Path) -> None:
     engine = build_local_engine(tmp_path / "magis-concurrent")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ControlRuntimeState.__table__,
+            ControlPortAllocation.__table__,
+        ],
+    )
     repo = ControlRepository(engine)
 
     errors: list[Exception] = []

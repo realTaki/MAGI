@@ -200,10 +200,10 @@ Two storage domains, both reached only through BUS:
 
 ```
 MAGI_HOME/                         (~/.magi on Linux)
-├── control/                       # local registry, control secret
-│   └── launcher-state/            # launcher BUS scratch SQLite
 ├── MAGIS/<magis_id>-<slug>/       # one SQLite per MAGIS
-│   └── magis.db                   # organisation facts
+│   ├── magis.db                   # organisation + control-plane state
+│   ├── control-secret             # launcher HMAC key
+│   └── launcher-state/            # launcher BUS scratch
 └── MAGIC/<slug>/                 # slug derived from MAGIC name (e.g. eva-000)
     └── workspace/                 # per-MAGI workspace (= K8s /workspace)
         ├── memories/magi.db       # private SQLite
