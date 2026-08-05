@@ -6,7 +6,7 @@ assembly, system-prompt assembly, ``ChatMessage`` construction,
 ``maybe_compact`` execution, or any other agent-loop concern.
 The agent side has its own dedicated helpers under
 :meth:`magi.agent._step_helpers` that the agent loop invokes
-*before* publishing a :class:`ProviderJob` onto the queue.
+*before* publishing a :class:`LLMJob` onto the queue.
 
 A regression here would re-couple the provider worker to the
 agent package — the very thing Phase D just uncoupled.

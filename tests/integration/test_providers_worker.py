@@ -180,12 +180,12 @@ async def test_provider_not_configured_envelopes_failure(magi_state):
     await start_provider_worker()
     try:
         store = get_bus_store()
-        attempt_id = store.enqueue_provider_job(
+        attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
             kind="agent.step",
         )
-        store.persist_provider_job_request(
+        store.persist_llm_job_request(
             attempt_id,
             request={
                 "system": "",
@@ -199,7 +199,7 @@ async def test_provider_not_configured_envelopes_failure(magi_state):
             },
         )
         result = await asyncio.to_thread(
-            store.load_provider_job_result, attempt_id,
+            store.load_llm_job_result, attempt_id,
             wait_seconds=5, poll_seconds=0.05,
         )
         assert result["status"] == "failed"
@@ -217,12 +217,12 @@ async def test_provider_crashed_envelopes_generic_failure(magi_state):
     await start_provider_worker()
     try:
         store = get_bus_store()
-        attempt_id = store.enqueue_provider_job(
+        attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
             kind="agent.step",
         )
-        store.persist_provider_job_request(
+        store.persist_llm_job_request(
             attempt_id,
             request={
                 "system": "",
@@ -236,7 +236,7 @@ async def test_provider_crashed_envelopes_generic_failure(magi_state):
             },
         )
         result = await asyncio.to_thread(
-            store.load_provider_job_result, attempt_id,
+            store.load_llm_job_result, attempt_id,
             wait_seconds=5, poll_seconds=0.05,
         )
         assert result["status"] == "failed"
@@ -260,12 +260,12 @@ async def test_concurrency_limit_serialises_two_jobs(magi_state):
         store = get_bus_store()
         ids = []
         for i in range(2):
-            aid = store.enqueue_provider_job(
+            aid = store.enqueue_llm_job(
                 run_id=f"run-{i}",
                 inbox_event_id=f"ev-{i}",
                 kind="agent.step",
             )
-            store.persist_provider_job_request(
+            store.persist_llm_job_request(
                 aid,
                 request={
                     "system": "",
@@ -281,7 +281,7 @@ async def test_concurrency_limit_serialises_two_jobs(magi_state):
             ids.append(aid)
         for aid in ids:
             result = await asyncio.to_thread(
-                store.load_provider_job_result, aid,
+                store.load_llm_job_result, aid,
                 wait_seconds=10, poll_seconds=0.05,
             )
             assert result["status"] == "completed", (
@@ -293,18 +293,18 @@ async def test_concurrency_limit_serialises_two_jobs(magi_state):
 
 
 @pytest.mark.asyncio
-async def test_load_provider_job_result_returns_none_on_timeout(magi_state):
+async def test_load_llm_job_result_returns_none_on_timeout(magi_state):
     """A row that's never settled returns ``None`` after the deadline."""
     fake = FakeProvider(reply="ignored")
     _install_fake(fake)
     # Don't start the worker — the queued row won't move.
     store = get_bus_store()
-    aid = store.enqueue_provider_job(
+    aid = store.enqueue_llm_job(
         run_id="never", inbox_event_id="never", kind="agent.step",
     )
     started = datetime.now()
     result = await asyncio.to_thread(
-        store.load_provider_job_result, aid,
+        store.load_llm_job_result, aid,
         wait_seconds=0.5, poll_seconds=0.05,
     )
     assert result is None
