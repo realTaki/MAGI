@@ -124,7 +124,10 @@ class MagisService:
             root = session.scalar(
                 select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id)
             )
-            return int(root.adam_id) if root and root.adam_id else None
+            # ``adam_id`` can be 0 (bootstrap seed reserves id=0 for
+            # the seeded Adam); check ``is not None`` rather than
+            # truthiness so id=0 resolves correctly.
+            return int(root.adam_id) if root is not None and root.adam_id is not None else None
 
     def derive_runtime_role(self, magic_id: int) -> str:
         """Return ``"adam"`` if ``magic_id`` is the ADAM of its MAGIS, else ``"eva"``.

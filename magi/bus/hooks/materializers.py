@@ -617,6 +617,70 @@ def _materialize_delivery_pending(
     )
 
 
+def _materialize_delivery_dispatched(
+    materializer: HookEnvelopeMaterializer,
+    *,
+    hook_event_id: str,
+    subject: HookSubject,
+    requested_scopes: frozenset[HookDataScope],
+    runtime: RuntimeHookContext,
+    principal: PrincipalHookContext,
+    causality: CausalityHookContext,
+    security: SecurityHookContext,
+    metadata: Mapping[str, JsonValue],
+) -> HookEnvelope:
+    """Build the :class:`HookEnvelope` for ``DELIVERY_DISPATCHED``.
+
+    OBSERVE-only: the payload has already been sent to the channel
+    adapter when this fires (status is ``"delivered"`` or ``"dead"``).
+    The envelope exposes the terminal state of the
+    :class:`DeliveryOutbox` row (``status``, ``attempts``,
+    ``updated_at``, ``channel``, ``destination``) plus the linked
+    :class:`AgentRun` state when ``run_id`` is set.  It does NOT
+    re-expose the rendered payload — once delivered, the bytes
+    are out the door and re-echoing them would only widen the
+    blast radius of any leak.
+    """
+    payload: dict[str, Any] = {}
+    context: dict[str, JsonValue] = {}
+    truncation = TruncationContext()
+
+    with materializer._session() as session:  # noqa: SLF001
+        delivery = session.get(DeliveryOutbox, subject.subject_id)
+        if delivery is None:
+            payload = {"subject_missing": True}
+        else:
+            payload = {
+                "delivery_id": delivery.delivery_id,
+                "channel": delivery.channel,
+                "destination": delivery.destination,
+                "status": delivery.status,
+                "attempts": delivery.attempts,
+                "updated_at": delivery.updated_at.isoformat()
+                if delivery.updated_at is not None
+                else None,
+                "leased_by": delivery.leased_by,
+            }
+            if HookDataScope.RUN_STATE in requested_scopes and delivery.run_id:
+                run = session.get(AgentRun, delivery.run_id)
+                context["run_state"] = _project_run_state(run)
+
+    return _build_envelope(
+        hook_event_id=hook_event_id,
+        hook_point=HookPoint.DELIVERY_DISPATCHED,
+        subject=subject,
+        requested_scopes=requested_scopes,
+        runtime=runtime,
+        principal=principal,
+        causality=causality,
+        security=security,
+        payload=payload,
+        context=context,
+        metadata=metadata,
+        truncation=truncation,
+    )
+
+
 def _materialize_run_transition_committed(
     materializer: HookEnvelopeMaterializer,
     *,
@@ -729,6 +793,7 @@ _BUILDERS = {
     HookPoint.A2A_INVOCATION_PENDING: _materialize_a2a_invocation_pending,
     HookPoint.A2A_RESULT_RECEIVED: _materialize_a2a_result_received,
     HookPoint.DELIVERY_PENDING: _materialize_delivery_pending,
+    HookPoint.DELIVERY_DISPATCHED: _materialize_delivery_dispatched,
     HookPoint.RUN_TRANSITION_COMMITTED: _materialize_run_transition_committed,
     HookPoint.OPERATION_FAILED: _materialize_operation_failed_or_dead_lettered(
         HookPoint.OPERATION_FAILED

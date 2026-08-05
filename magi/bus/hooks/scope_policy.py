@@ -99,6 +99,15 @@ HOOK_POINT_ALLOWED_SCOPES: dict[HookPoint, frozenset[HookDataScope]] = {
         HookDataScope.DELIVERY_PAYLOAD,
         HookDataScope.RUN_STATE,
     }),
+    # Delivery completion — fires after the delivery has been sent
+    # (status="delivered" / "dead").  The payload is already in the
+    # wild so this is OBSERVE-only and does not expose
+    # DELIVERY_PAYLOAD; handlers get status + attempts + run_state.
+    HookPoint.DELIVERY_DISPATCHED: frozenset({
+        HookDataScope.RUNTIME_IDENTITY,
+        HookDataScope.CAUSALITY,
+        HookDataScope.RUN_STATE,
+    }),
     # Run-state observation hook
     HookPoint.RUN_TRANSITION_COMMITTED: frozenset({
         HookDataScope.RUNTIME_IDENTITY,

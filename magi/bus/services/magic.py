@@ -162,7 +162,13 @@ class MagicService:
         if runtime_id and runtime_id.isdigit():
             return session.get(MAGIC, int(runtime_id))
         root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
-        return session.get(MAGIC, root.adam_id) if root and root.adam_id else None
+        # ``adam_id`` can be 0 (the bootstrap seed reserves id=0 for
+        # the seeded Adam). ``if root.adam_id`` treats 0 as falsy and
+        # would silently skip the lookup — check ``is not None``
+        # explicitly so id=0 resolves correctly.
+        if root is not None and root.adam_id is not None:
+            return session.get(MAGIC, root.adam_id)
+        return None
 
     def provider_configuration(self) -> ProviderConfiguration | None:
         """Return the runtime MAGIC's LLM provider credentials.
@@ -742,7 +748,10 @@ class MagicService:
             root = session.scalar(
                 select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id)
             )
-            return int(root.adam_id) if root and root.adam_id else None
+            # ``adam_id`` can be 0 (bootstrap seed reserves id=0 for
+            # the seeded Adam); check ``is not None`` rather than
+            # truthiness so id=0 resolves correctly.
+            return int(root.adam_id) if root is not None and root.adam_id is not None else None
 
     def ensure_runtime(self, magic_id: int) -> EvaRuntimeView:
         """Return the EvaRuntimeView for ``magic_id``, creating one if missing."""

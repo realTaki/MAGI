@@ -211,32 +211,27 @@ def test_runtime_settings_corrupt_file_returns_empty(tmp_path, caplog):
     assert loaded == RuntimeSettings()
 
 
-def test_provider_configuration_reads_runtime_settings_file(magi_state, tmp_path):
+def test_provider_configuration_reads_runtime_settings_file(magi_state, tmp_path, monkeypatch):
     """MagicService.provider_configuration returns the file-backed config."""
-    # Bootstrap seeds id=0; that's the runtime MAGIC for this test.
-    settings_path = tmp_path / RUNTIME_SETTINGS_FILENAME
+    # The runtime_settings loader resolves to ``workspace_dir()`` which
+    # honours ``MAGI_WORKSPACE_DIR``.  Pin it to our tmp_path BEFORE
+    # writing the file so save and load see the same path.
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+
     save_runtime_settings(
         RuntimeSettings(provider="claude", api_key="sk-from-file", model="claude-opus-4-7"),
-        path=settings_path,
     )
 
-    # The runtime_settings loader resolves to ``workspace_dir()`` which
-    # honours ``MAGI_WORKSPACE_DIR``.  Set it to our tmp_path so the
-    # file we just wrote is the one the service reads.
-    os.environ["MAGI_WORKSPACE_DIR"] = str(tmp_path)
-    try:
-        service = MagicService()
-        config = service.provider_configuration()
-        # The service resolves the runtime MAGIC via MAGI_RUNTIME_ID
-        # or, failing that, the root MAGIS's ADAM (id=0).  We didn't
-        # set MAGI_RUNTIME_ID, so it picks the bootstrap ADAM and the
-        # local settings file we just wrote.
-        assert config is not None
-        assert config.provider == "claude"
-        assert config.api_key == "sk-from-file"
-        assert config.model == "claude-opus-4-7"
-    finally:
-        del os.environ["MAGI_WORKSPACE_DIR"]
+    service = MagicService()
+    config = service.provider_configuration()
+    # The service resolves the runtime MAGIC via MAGI_RUNTIME_ID or,
+    # failing that, the root MAGIS's ADAM (id=0).  We didn't set
+    # MAGI_RUNTIME_ID, so it picks the bootstrap ADAM and the local
+    # settings file we just wrote.
+    assert config is not None
+    assert config.provider == "claude"
+    assert config.api_key == "sk-from-file"
+    assert config.model == "claude-opus-4-7"
 
 
 def test_create_magic_does_not_set_provider_columns(magi_state):

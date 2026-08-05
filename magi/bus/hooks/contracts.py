@@ -53,6 +53,7 @@ class HookPoint(str, enum.Enum):
     A2A_RESULT_RECEIVED = "a2a.result.received"
     # Delivery lifecycle
     DELIVERY_PENDING = "delivery.pending"
+    DELIVERY_DISPATCHED = "delivery.dispatched"
     # Run-state lifecycle
     RUN_TRANSITION_COMMITTED = "run.transition.committed"
     # Operational hooks (OBSERVE-only)
@@ -260,6 +261,72 @@ class HookSubject:
     subject_id: str
 
 
+# ───────────────────────────────────────────────────────────────────── #
+# Caller-supplied hook context (boundary methods consume this)
+# ───────────────────────────────────────────────────────────────────── #
+
+
+@dataclass(frozen=True, slots=True)
+class HookContext:
+    """Caller-supplied hook context carried into bus.store boundary methods.
+
+    The business module (agent / tools / channels / dispatcher) builds
+    a :class:`HookContext` from the operation it is about to commit
+    and passes it to the bus.store ``enqueue_*`` / ``complete_*``
+    method.  The bus.store then materializes the evaluation request
+    (subject_type, subject_id, runtime, principal, causality,
+    security, metadata) and calls :class:`HookService` itself.
+
+    Why this exists
+    ---------------
+
+    Hooks must fire only from inside :mod:`magi.bus` — the
+    business modules never import :class:`HookService` or the
+    handler protocol.  The business module's only touch with the
+    hook subsystem is this dataclass: a small, audited, frozen
+    payload that travels with the data write.
+
+    Returned values
+    ---------------
+
+    The boundary method IGNORES the hook context's contents
+    beyond the audit fields (requested_by, principal, role,
+    data_classification, metadata).  Subject identity and
+    runtime identity are derived from the row + the bus itself.
+    """
+
+    requested_by: str
+    principal_type: PrincipalType = PrincipalType.SYSTEM
+    principal_id: str | None = None
+    role: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
+    session_id: str | None = None
+    correlation_id: str | None = None
+    causation_id: str | None = None
+    run_id: str | None = None
+    event_id: str | None = None
+    data_classification: HookDataClassification = HookDataClassification.INTERNAL
+    metadata: Mapping[str, JsonValue] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class EnqueueResult:
+    """Outcome of a :class:`HookService`-firing enqueue call.
+
+    Returned by every bus.store boundary method that fires a GATE
+    hook.  ``row_id`` is the just-created record's id (or the
+    existing id when an idempotency key matched).  ``decision``
+    is the aggregated verdict (``ALLOW`` for the no-op path
+    when ``hook_context`` was ``None``); ``hook_event_id`` is the
+    trace id for the audit row (or ``None`` when no hook fired).
+    """
+
+    row_id: str
+    decision: HookAction
+    hook_event_id: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class TruncationMarker:
     """Sentinel attached to truncated payloads.
@@ -439,7 +506,9 @@ class HookHandlerProtocol(Protocol):
 
 __all__ = [
     "CausalityHookContext",
+    "EnqueueResult",
     "HookAction",
+    "HookContext",
     "HookDataClassification",
     "HookDataScope",
     "HookDecision",
