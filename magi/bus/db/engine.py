@@ -206,7 +206,7 @@ _DEFAULT_ROOT_MAGIS_NAME = "Genesis"
 # deployer who renamed the seeded row keeps their rename —
 # same "rename survives re-seed" semantics as the root
 # MAGIS above.
-_DEFAULT_MAGI_NAME = "EVA-00 PROTO TYPE"
+_DEFAULT_MAGI_NAME = "EVA-000"
 
 
 def _seed_default_root(engine: Engine) -> None:
@@ -219,7 +219,7 @@ def _seed_default_root(engine: Engine) -> None:
     the next boot seeds a fresh Genesis only when no root row remains —
     so a renamed root stays renamed and we never accumulate duplicate
     roots. The root receives reserved ADAM/EVA roles. On a fresh workspace,
-    the seed MAGIC (default name ``EVA-00 PROTO TYPE``) is created
+    the seed MAGIC (default name ``EVA-000``) is created
     independently, assigned the ADAM role on Genesis via
     :class:`MAGISMembership`, and recorded as Genesis's ADAM.
     """

@@ -430,7 +430,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     UID is the row's identity; the dropdown's primary key is
     the UID, not the IM chat id. We still include
     ``telegram_id`` in the response so the frontend can show
-    a contact as e.g. "EVA-00 PROTO TYPE (Telegram: 9999001)"
+    a contact as e.g. "EVA-000 (Telegram: 9999001)"
     — useful when two contacts share a display name — but
     the wire-protocol ask for the verification code takes the
     UID, not a chat id.

@@ -65,7 +65,7 @@ def workspace_dir() -> Path:
        a ``tmp_path``.
     2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_ID`` + ``$MAGI_RUNTIME_SLUG``
        when set (Local Profile runtime subprocess) →
-       ``<data_root>/MAGIC/<id>-<slug>/workspace``.
+       ``<data_root>/MAGIC/<slug>/workspace``.
     3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
        launcher process) → ``<data_root>/control/launcher-workspace``.
 
@@ -83,7 +83,7 @@ def workspace_dir() -> Path:
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
         if runtime_id and runtime_slug:
-            return Path(data_root) / "MAGIC" / f"{runtime_id}-{runtime_slug}" / "workspace"
+            return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
         return Path(data_root) / "control" / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
@@ -99,7 +99,7 @@ def state_dir() -> Path:
     1. **Local Profile, runtime subprocess** —
        ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_ID`` + ``MAGI_RUNTIME_SLUG``
        all set.  State lives at
-       ``<data_root>/MAGIC/<id>-<slug>/workspace/memories/`` —
+       ``<data_root>/MAGIC/<slug>/workspace/memories/`` —
        mirrors the K8s ``<workspace_dir>/memories`` convention so
        every profile resolves to ``workspace/memories/magi.db``.
     2. **Local Profile, launcher / supervisor process** —
@@ -123,7 +123,7 @@ def state_dir() -> Path:
             return (
                 Path(data_root).expanduser().resolve()
                 / "MAGIC"
-                / f"{runtime_id}-{runtime_slug}"
+                / runtime_slug
                 / "workspace"
                 / _STATE_SUBDIR  # "memories"
             )
@@ -279,21 +279,24 @@ def launcher_state_path(control_dir: Path) -> Path:
 def runtime_workspace_root(data_root: Path, runtime_id: int, slug: str) -> Path:
     """Resolve the per-runtime workspace root.
 
-    Format: ``<data_root>/MAGIC/<runtime_id>-<slug>/workspace/``.
+    Format: ``<data_root>/MAGIC/<slug>/workspace/``.  The *slug* is the
+    MAGIC's directory-safe name (e.g. ``eva-000``, ``eva-001``);
+    ``runtime_id`` is accepted for call-site compatibility but not
+    embedded in the path — the slug alone is the unique key.
     """
-    return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "workspace"
+    return Path(data_root) / "MAGIC" / slug / "workspace"
 
 
 def runtime_state_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
     """Resolve the per-runtime SQLite directory.
 
-    Format: ``<data_root>/MAGIC/<runtime_id>-<slug>/workspace/memories/``.
+    Format: ``<data_root>/MAGIC/<slug>/workspace/memories/``.
     Mirrors the K8s ``<workspace_dir>/memories`` convention so every
     profile resolves to ``workspace/memories/magi.db``.  Used by
     :class:`magi.launcher.LocalPathLayout` and by the Local subprocess's
     path resolution via :func:`state_dir`.
     """
-    return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "workspace" / "memories"
+    return Path(data_root) / "MAGIC" / slug / "workspace" / "memories"
 
 
 def runtime_log_dir(data_root: Path, runtime_id: int, slug: str) -> Path:

@@ -1,25 +1,15 @@
-"""ORM models for the Local control-plane registry.
+"""Control-plane runtime registry models — stored in the MAGIS database.
 
-Phase 3 close-out — the SQLite-backed ``<data_root>/control/local-registry.db``.
-K8s Profile continues to read/write its K8s-runtime rows in the central
-PostgreSQL MAGIS instead.
+These tables track runtime lifecycle state (desired/observed), port
+allocations, workspace archives, and the launcher-issued control secret.
+They live in the MAGIS database (``MAGIS/<id>-<slug>/magis.db`` locally,
+PostgreSQL in K8s) alongside organisation facts like ``magic``, ``magis``,
+``magis_memberships``, ``eva_runtimes``, ``control_settings``, and
+``control_operators``.
 
-Tables:
-
-- ``control_runtime_state``   — per-runtime desired vs observed state,
-                              ``base_url``, ``backend_ref``, ``pid``,
-                              ``workspace_dir``, log paths, timestamps.
-- ``control_port_allocations`` — sticky port assignments in the
-                              42101-42999 range (per plan §7.2).
-- ``control_workspace_archive`` — soft-deleted runtime workspaces kept
-                              for restore (per plan §7.4).
-- ``control_secrets``         — the launcher-issued control secret
-                              (per plan §11); stored as a salted hash.
-
-Per plan §6.1 / §6.2 business modules never instantiate the ORM
-classes; they use :class:`magi.bus.db.control.repository.ControlRepository`
-through the :class:`magi.bus.services.control_registry.ControlRegistryService`
-facade.
+Previously these lived in a separate ``control/local-registry.db`` SQLite
+file; they were merged into MAGIS so every deployment profile uses the
+same database for all control-plane state.
 """
 
 from __future__ import annotations
@@ -37,15 +27,9 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-class Base(DeclarativeBase):
-    """Control-registry SQLAlchemy declarative base.
-
-    Distinct from :class:`magi.bus.db.base.Base` so the OrmRegistry
-    alembic migrations don't try to apply K8s-MAGIS revisions here.
-    """
+from magi.bus.db.base import Base
 
 
 class RuntimeDesiredState(str, PyEnum):
@@ -68,7 +52,7 @@ class RuntimeObservedState(str, PyEnum):
 
 
 class ControlRuntimeState(Base):
-    """One row per runtime the Local supervisor manages."""
+    """One row per Local runtime managed by the launcher."""
 
     __tablename__ = "control_runtime_state"
 
@@ -86,10 +70,6 @@ class ControlRuntimeState(Base):
     workspace_dir: Mapped[str] = mapped_column(String(500), nullable=False)
     log_dir: Mapped[str] = mapped_column(String(500), nullable=False)
     audit_log_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    # Denormalised ``port`` for fast lookup without joining the alloc
-    # table — kept in sync by ``ControlRepository.record_spawn`` /
-    # ``release_port``.  The :attr:`port_alloc` relationship remains
-    # authoritative for FK correctness.
     port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     spawned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -103,12 +83,7 @@ class ControlRuntimeState(Base):
 
 
 class ControlPortAllocation(Base):
-    """A single sticky port assignment for one runtime.
-
-    Per plan §7.2 the Local Profile assigns ports from the fixed
-    range ``42101-42999`` and persists the assignment here; port is
-    released only when the runtime is deleted (per plan §7.4).
-    """
+    """A single sticky port assignment for one runtime."""
 
     __tablename__ = "control_port_allocations"
 
@@ -127,12 +102,7 @@ class ControlPortAllocation(Base):
 
 
 class ControlWorkspaceArchive(Base):
-    """Soft-deleted runtime workspace, kept for restore.
-
-    Per plan §7.4 ``delete`` moves the workspace to an ``archive/``
-    sibling directory and records the path here; ``stop`` keeps the
-    row in ``control_runtime_state`` and never touches this table.
-    """
+    """Soft-deleted runtime workspace, kept for restore."""
 
     __tablename__ = "control_workspace_archive"
 
@@ -143,12 +113,7 @@ class ControlWorkspaceArchive(Base):
 
 
 class ControlSecret(Base):
-    """The launcher-issued control secret (per plan §11).
-
-    Stored as a salted hash; raw secret never lands in the registry.
-    API clients authenticate via ``X-MAGI-Control-Secret`` header on
-    the loopback-only control-plane API.
-    """
+    """The launcher-issued control secret, stored as a salted hash."""
 
     __tablename__ = "control_secrets"
 
@@ -159,7 +124,6 @@ class ControlSecret(Base):
 
 
 __all__ = [
-    "Base",
     "RuntimeDesiredState",
     "RuntimeObservedState",
     "ControlRuntimeState",

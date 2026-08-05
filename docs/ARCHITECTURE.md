@@ -204,7 +204,7 @@ MAGI_HOME/                         (~/.magi on Linux)
 │   └── launcher-state/            # launcher BUS scratch SQLite
 ├── MAGIS/<magis_id>-<slug>/       # one SQLite per MAGIS
 │   └── magis.db                   # organisation facts
-└── MAGIC/<magic_id>-<slug>/
+└── MAGIC/<slug>/                 # slug derived from MAGIC name (e.g. eva-000)
     └── workspace/                 # per-MAGI workspace (= K8s /workspace)
         ├── memories/magi.db       # private SQLite
         ├── skills/

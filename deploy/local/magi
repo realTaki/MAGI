@@ -14,8 +14,8 @@
 # ``magi local install-service`` registers one systemd unit per MAGI.
 #
 # Usage:
-#   deploy/local/magi local start        # run Adam (first MAGI)
-#   deploy/local/magi local start --name eva-00  # run a specific MAGI
+#   deploy/local/magi local start        # run first MAGI (eva-000)
+#   deploy/local/magi local start --name eva-001  # run a specific MAGI
 #   deploy/local/magi local install-service       # systemd units for all
 #   deploy/local/magi --help
 set -euo pipefail

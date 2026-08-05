@@ -96,5 +96,5 @@ rm -f .kind-kubeconfig
   （持久化数据）目录，且 Dockerfile.dev 的 `runAsNonRoot: false` 是 dev-only 妥协。
 - **不要**在 dev 模式下复用生产 `magi-magis-1-genesis-db` Secret
   ——dev 模式自动生成弱密码，仅供本地。
-- dev 模式的持久化数据在 `~/.magi/MAGIC/1-eva-00/workspace/`，
+- dev 模式的持久化数据在 `~/.magi/MAGIC/eva-000/workspace/`，
   与本地非容器部署共享同一 `~/.magi/` 布局。

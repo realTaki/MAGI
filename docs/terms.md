@@ -104,14 +104,14 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                            | 含义 |
 |---------------------------------|------|
-| **MAGI 私有 SQLite**              | `/workspace/memories/magi.db`。每个 MAGIC 一份。存私人记忆、会话、联系人、本地设置、token usage、action items、runtime 状态、MCP server 配置。|
-| **MAGIS 公共 PostgreSQL**         | `MAGIS_DATABASE_URL` 指向。存 MAGIS 树、MAGIC 注册表、`magis_memberships`、`magis_roles`、ADAM/EVA roles、team/role instruction、provider 配置。由运行时 `Base.metadata.create_all` 初始化 (未纳入 Alembic)。|
+| **MAGI 私有 SQLite**              | `<workspace>/memories/magi.db`。每个 MAGIC 一份。存私人记忆、会话、联系人、本地设置、token usage、action items、runtime 状态、MCP server 配置。路径由 `MAGI_WORKSPACE_DIR`（K8s）或 `MAGI_DATA_ROOT`（本地）解析。|
+| **MAGIS 公共数据库**              | `MAGIS_DATABASE_URL` 指向。K8s 为 PostgreSQL，本地为独立 SQLite。存 MAGIS 树、MAGIC 注册表、`magis_memberships`、`magis_roles`、ADAM/EVA roles、team/role instruction、provider 配置。|
 | **Genesis**                      | 启动时播种的 root MAGIS,是组织树的根节点;**不依赖**名字字面量,而是 `parent_id IS NULL` 判定。|
 
 | Term                          | Meaning |
 |-------------------------------|---------|
-| **MAGI private SQLite**       | `/workspace/memories/magi.db` — one per MAGIC. Holds private memory, sessions, contacts, local settings, token usage, action items, runtime state, MCP server config. |
-| **MAGIS public PostgreSQL**   | Reached via `MAGIS_DATABASE_URL`. Holds the MAGIS tree, MAGIC registry, `magis_memberships`, `magis_roles` (incl. ADAM/EVA), team + role instructions, provider config. Initialised at runtime by `Base.metadata.create_all` (not yet Alembic-managed). |
+| **MAGI private SQLite**       | `<workspace>/memories/magi.db` — one per MAGIC. Holds private memory, sessions, contacts, local settings, token usage, action items, runtime state, MCP server config. Path resolved from `MAGI_WORKSPACE_DIR` (K8s) or `MAGI_DATA_ROOT` (Local). |
+| **MAGIS public database**     | Reached via `MAGIS_DATABASE_URL`. PostgreSQL in K8s, separate SQLite in Local mode. Holds the MAGIS tree, MAGIC registry, `magis_memberships`, `magis_roles` (incl. ADAM/EVA), team + role instructions, provider config. |
 | **Genesis**                   | The root MAGIS seeded on first boot. Identified by `parent_id IS NULL`, **not** by literal name. |
 
 ### 关键不变量

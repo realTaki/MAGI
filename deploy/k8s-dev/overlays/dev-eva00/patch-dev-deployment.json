@@ -6,7 +6,7 @@
       {
         "name": "workspace",
         "hostPath": {
-          "path": "/mnt/magi-data/MAGIC/1-eva-00/workspace",
+          "path": "/mnt/magi-data/MAGIC/eva-000/workspace",
           "type": "DirectoryOrCreate"
         }
       },

@@ -201,7 +201,7 @@ def run_webui() -> None:
         port=port,
         log_level=DEFAULT_LOG_LEVEL,
         reload=reload,
-        reload_dirs=["/app/magi"] if reload else None,
+        reload_dirs=_reload_dirs() if reload else None,
     )
 
 
@@ -322,9 +322,35 @@ def _init_state(state_dir: str) -> None:
 # ----------------------------------------------------------------------
 # channel launchers
 # ----------------------------------------------------------------------
+def _reload_dirs() -> list[str]:
+    """Return the package root that uvicorn should watch when ``MAGI_RELOAD=1``.
+
+    Resolved from the installed ``magi`` package (``import magi;
+    Path(magi.__file__).parent``) so the same code path works for every
+    deployment shape:
+
+    - container build (``/app/magi``)
+    - k8s-dev hostPath bind (``/mnt/magi/magi``)
+    - Local Profile editable install (``<uv-tools>/magi/lib/.../magi``)
+    - Local Profile checkout (``$MAGI_REPO_ROOT/magi``)
+
+    The previous hardcoded ``["/app/magi"]`` only worked for the
+    container image, so a developer running ``magi local start`` saw
+    no file-watch and any source edit silently went stale.  This
+    helper makes hot reload work in every profile — the operator just
+    sets ``MAGI_RELOAD=1`` and saves a file.
+    """
+    from pathlib import Path
+
+    import magi  # noqa: WPS433 — dynamic import keeps startup cost at the
+    # very end of the function so ``magi --version`` still starts fast.
+
+    return [str(Path(magi.__file__).resolve().parent)]
+
+
 def _launch_runtime_api(cfg: NodeConfig) -> None:
     """Serve private Runtime APIs; React is hosted by ``magi webui``."""
-    reload_dirs = ["/app/magi"] if cfg.reload else None
+    reload_dirs = _reload_dirs() if cfg.reload else None
 
     uvicorn.run(
         "magi.channels.api.app:create_runtime_app",

@@ -43,7 +43,7 @@ class LocalPathLayout:
     provided:
 
     **Runtime mode** (``runtime_id`` + ``slug`` supplied):
-        ``<data_root>/MAGIC/<runtime_id>-<slug>/``
+        ``<data_root>/MAGIC/<slug>/``
         ├── workspace/
         │   ├── memories/magi.db   (SQLite — via :func:`~magi.launcher.paths.state_dir`)
         │   ├── skills/
@@ -65,7 +65,7 @@ class LocalPathLayout:
         │   ├── control-secret
         │   ├── launcher.json
         │   └── launcher-state/magi.db       (launcher-only scratch)
-        ├── MAGIC/<runtime-id>-<slug>/workspace/
+        ├── MAGIC/<slug>/workspace/
         │   ├── SOUL.md
         │   ├── skills/
         │   ├── memories/magi.db              (SQLite — per-MAGI private)
@@ -95,9 +95,9 @@ class LocalPathLayout:
         object.__setattr__(self, "data_root", data_root)
 
         if self.runtime_id is not None and self.slug:
-            # Runtime mode: per-MAGI slot under MAGIC/<id>-<slug>/workspace/
+            # Runtime mode: per-MAGI slot under MAGIC/<slug>/workspace/
             # state_dir = workspace/memories — matches K8s convention.
-            ws = data_root / "MAGIC" / f"{self.runtime_id}-{self.slug}" / "workspace"
+            ws = data_root / "MAGIC" / self.slug / "workspace"
             st = ws / "memories"
             object.__setattr__(self, "state_dir", st)
             object.__setattr__(self, "workspace", ws)
@@ -135,15 +135,13 @@ def bootstrap_local(
     *,
     initialise: bool = False,
     magis_dir_override: Path | str | None = None,
-    initialise_control: bool = True,
 ) -> Bus:
     """Build the Local Profile BUS facade rooted at ``data_root``.
 
     NOTE: this calls :func:`magi.bus.bootstrap` (not
     :func:`magi.bus.get_bus`) — the Local Profile needs a
-    composition that owns the chosen ``state_dir``, ``magis_engine``,
-    and ``control_engine``, which the process-wide singleton does
-    not.
+    composition that owns the chosen ``state_dir`` and ``magis_engine``,
+    which the process-wide singleton does not.
 
     ``data_root`` becomes the root of the :class:`LocalPathLayout`.
 
@@ -152,9 +150,9 @@ def bootstrap_local(
     itself.
 
     When ``initialise=True`` the function bootstraps the on-disk SQLite
-    schema (idempotent — safe to call on every launch).  Phase 6's
-    ``magi local start`` launcher is the canonical caller; tests may pass
-    ``initialise=True`` to set up a fresh ``tmp_path`` fixture.
+    schema (idempotent — safe to call on every launch).  ``magi local
+    start`` is the canonical caller; tests may pass ``initialise=True``
+    to set up a fresh ``tmp_path`` fixture.
 
     ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
     ``None`` the function picks ``<data_root>/MAGIS/1-genesis/`` (the
@@ -162,9 +160,8 @@ def bootstrap_local(
     This matches the K8s pattern ``MAGIS/<magis_id>-<slug>/magis.db`` so
     the host layout is identical across both profiles.
 
-    ``initialise_control=True`` (Phase 3 close-out) also builds the
-    Local control-plane registry engine and threads it through the
-    :class:`Bus.control_registry` facade.
+    The control-plane runtime registry (``bus.control_registry``) is
+    built on the same MAGIS engine — no separate ``control/`` database.
     """
     layout = LocalPathLayout(Path(data_root))
     if magis_dir_override is None:
@@ -179,18 +176,10 @@ def bootstrap_local(
 
     magis_engine = build_local_engine(magis_dir)
 
-    control_engine = None
-    if initialise_control:
-        from magi.bus.db.control.engine import build_control_engine
-        from magi.launcher.paths import control_dir
-
-        control_engine = build_control_engine(control_dir(layout.data_root))
-
     return _bus_bootstrap(
         str(layout.state_dir),
         initialise_local=initialise,
         magis_engine=magis_engine,
-        control_engine=control_engine,
     )
 
 

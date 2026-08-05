@@ -1,39 +1,29 @@
-"""Bus-facing command/query surface over the control registry ORM.
+"""Bus-facing command/query surface over the runtime registry.
 
-Per plan §6.2 the only call site of the control ORM is here.  All
-business modules — Phase 4's ``LocalProcessRuntimeBackend``, Phase 6's
-CLI, Phase 7's multi-Runtime orchestration — talk to this repository
-through :class:`magi.bus.services.control_registry.ControlRegistryService`.
+The repository operates on the MAGIS database engine — the same engine
+that holds organisation facts (``magic``, ``magis``, ``magis_memberships``,
+``eva_runtimes``).  Previously this was a separate ``control/local-registry.db``
+SQLite; it was merged into MAGIS so every deployment profile uses one
+database for all control-plane state.
 
-The repository hides:
-
-- the choice of backend (SQLite today, swap-able to Postgres for
-  multi-host control planes later);
-- the SQLAlchemy session lifecycle;
-- the relationship between ``control_runtime_state`` and
-  ``control_port_allocations``;
-- the hashing of control secrets.
-
-Returning Python DTOs (not ORM rows) keeps the surface stable across
-schema revisions.
+All business modules talk to this repository through
+:class:`magi.bus.services.control_registry.ControlRegistryService`.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.bus.db.control.models import (
-    Base,
+from magi.bus.models.local.control_runtime import (
     ControlPortAllocation,
     ControlRuntimeState,
     ControlSecret,
@@ -41,9 +31,6 @@ from magi.bus.db.control.models import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
-# ``RuntimeDesiredState`` is re-exported via ``services.control_registry``
-# for the orchestrator package; the import here keeps the local FK
-# auto-create logic in :meth:`ControlRepository.allocate_port` working.
 
 
 # -- DTOs --------------------------------------------------------------------
@@ -101,18 +88,18 @@ class PortAlreadyAllocated(RuntimeError):
 
 
 class ControlRepository:
-    """Single facade over the control-registry SQLite database.
+    """Single facade over the runtime-registry tables in the MAGIS database.
 
     Thread-safe — the SQLAlchemy :class:`Engine` is process-shared and
-    serialises writes via ``BEGIN IMMEDIATE``.  One :class:`ControlRepository`
-    per process; the BUS facade caches it.
+    serialises writes via ``BEGIN IMMEDIATE``.
     """
 
+    PORT_RANGE_START = 42101
+    PORT_RANGE_END = 42999
+
+    _PEPPER = b"magi-launcher-v1"
+
     def __init__(self, engine: Engine) -> None:
-        # Force the models to register against this engine's metadata.  The
-        # ``Base.metadata.create_all`` call in :func:`build_control_engine`
-        # already ran, so this is a no-op for tables that exist.
-        Base.metadata.create_all(engine)
         self._engine = engine
         self._Session: sessionmaker[Session] = sessionmaker(
             bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
@@ -121,7 +108,6 @@ class ControlRepository:
     # -- runtime lifecycle ------------------------------------------------
 
     def upsert_desired_state(self, runtime_id: int, backend_kind: str, desired: RuntimeDesiredState) -> None:
-        """Set the operator-requested state, creating the row if absent."""
         with self._Session() as session:
             row = session.get(ControlRuntimeState, runtime_id)
             if row is None:
@@ -150,7 +136,6 @@ class ControlRepository:
         audit_log_path: Path,
         backend_ref: str,
     ) -> None:
-        """Persist the file paths the supervisor carved out for the runtime."""
         with self._Session() as session:
             row = session.get(ControlRuntimeState, runtime_id)
             if row is None:
@@ -163,13 +148,6 @@ class ControlRepository:
             session.commit()
 
     def record_spawn(self, runtime_id: int, pid: int, base_url: str, port: int) -> None:
-        """Mark a Runtime as having successfully spawned.
-
-        Mirrors ``port`` onto the ``control_runtime_state.port``
-        denormalised column so single-row reads don't need to join
-        the alloc table.  The :attr:`ControlRuntimeState.port_alloc`
-        relationship remains authoritative for FK correctness.
-        """
         now = datetime.now(timezone.utc)
         with self._Session() as session:
             row = session.get(ControlRuntimeState, runtime_id)
@@ -266,25 +244,8 @@ class ControlRepository:
 
     # -- port allocator ----------------------------------------------------
 
-    PORT_RANGE_START = 42101
-    PORT_RANGE_END = 42999
-
     def allocate_port(self, runtime_id: int) -> PortAllocationDTO:
-        """Allocate the lowest free port in the Local Profile range.
-
-        Per plan §7.2 the range is sticky (a runtime keeps its port
-        across stop / start).  Reallocation only happens on :meth:`forget`.
-
-        Auto-creates a placeholder :class:`ControlRuntimeState` row if
-        the caller hasn't populated one yet — keeps the FK satisfied
-        so :func:`LocalProcessRuntimeBackend.start` can call this
-        before :meth:`attach_paths` when the supervisor boots a
-        partially-recovered workspace.
-        """
         with self._Session() as session:
-            # Look up by ``runtime_id`` column, NOT by PK (= port) —
-            # ``session.get`` with the runtime_id argument silently
-            # fetches by primary key, which is wrong here.
             existing = (
                 session.query(ControlPortAllocation)
                 .filter(ControlPortAllocation.runtime_id == runtime_id)
@@ -297,9 +258,6 @@ class ControlRepository:
                     in_use_since=existing.in_use_since,
                     released_at=existing.released_at,
                 )
-            # Ensure the parent runtime_state row exists so the FK is
-            # satisfiable.  ``attach_paths`` / ``upsert_desired_state``
-            # will overwrite these placeholder fields later.
             parent = session.get(ControlRuntimeState, runtime_id)
             if parent is None:
                 parent = ControlRuntimeState(
@@ -344,13 +302,6 @@ class ControlRepository:
             )
 
     def release_port(self, runtime_id: int) -> None:
-        """Drop the live port-allocation row for ``runtime_id``.
-
-        Per plan §7.4 only ``delete`` should call this — after release
-        the port slot is back in the allocator pool.  We ``DELETE`` the
-        row outright (instead of soft-deleting via ``released_at``)
-        so a fresh ``allocate_port`` for the same port has a clean PK.
-        """
         with self._Session() as session:
             alloc = (
                 session.query(ControlPortAllocation)
@@ -366,8 +317,6 @@ class ControlRepository:
             session.commit()
 
     # -- secrets -----------------------------------------------------------
-
-    _PEPPER = b"magi-launcher-v1"  # plan §11 — combine with random salt; no raw secret in DB
 
     def put_secret(self, name: str, raw: str) -> None:
         salt = secrets.token_bytes(32)

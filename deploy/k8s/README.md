@@ -291,12 +291,12 @@ PVC /workspace                                       per-MAGI 私有 (MAGI_WORKS
 PVC /magis                                            直属 MAGIS 公共
 
 # 非容器单机 (deploy/local/)
-~/.magi/MAGIC/<id>-<slug>/workspace/        per-MAGI 私有
-~/.magi/MAGIS/<id>-<slug>/                 直属 MAGIS 公共
+~/.magi/MAGIC/<slug>/workspace/             per-MAGI 私有
+~/.magi/MAGIS/<magis_id>-<slug>/           直属 MAGIS 公共
 
 # k8s-dev (deploy/k8s-dev/)
-~/.magi/MAGIC/<id>-<slug>/workspace/        per-MAGI 私有 (hostPath)
-~/.magi/MAGIS/<id>-<slug>/                 直属 MAGIS 公共 (hostPath)
+~/.magi/MAGIC/<slug>/workspace/             per-MAGI 私有 (hostPath)
+~/.magi/MAGIS/<magis_id>-<slug>/           直属 MAGIS 公共 (hostPath)
 ```
 
 容器内布局保持一致：

@@ -6,7 +6,7 @@
 
 ```text
 # K8s: MAGI_WORKSPACE_DIR=/workspace（PVC）
-# Local: ~/.magi/MAGIC/<id>-<slug>/workspace/
+# Local: ~/.magi/MAGIC/<slug>/workspace/
 <workspace>/
 ├── memories/magi.db       # 私人记忆、会话、联系人、任务与本地设置
 ├── skills/

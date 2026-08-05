@@ -56,7 +56,7 @@ def _bootstrap_once(data_root: Path) -> int:
     """
     from magi.launcher import bootstrap_local
 
-    bus = bootstrap_local(data_root, initialise=True, initialise_control=True)
+    bus = bootstrap_local(data_root, initialise=True)
 
     from magi.bus.db.magis import init_magis_public_db
     init_magis_public_db(seed_root=True)
@@ -70,51 +70,73 @@ def _bootstrap_once(data_root: Path) -> int:
     )
 
 
+def _slug_from_name(name: str, magic_id: int) -> str:
+    """Derive a directory-safe slug from a MAGIC display name.
+
+    The first MAGI (id=1, seeded as ``"EVA-000"``) becomes
+    ``eva-000``.  Subsequent MAGIs append their id to ``eva-`` padded
+    to three digits (``eva-001``, ``eva-002``, …).
+
+    Returns a lowercase, hyphen-separated slug with no spaces.
+    """
+    import re
+    # First MAGI is always eva-000 regardless of display name.
+    if magic_id == 1:
+        return "eva-000"
+    # Derive from name: lowercase, strip non-alphanumeric, replace
+    # whitespace/underscore runs with a single hyphen.
+    base = name.strip().lower()
+    base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")
+    if not base:
+        base = "eva"
+    return f"{base}-{magic_id:03d}"
+
+
+def _magic_name_by_id(data_root: Path, magic_id: int) -> str:
+    """Look up the MAGIC display name from the MAGIS database."""
+    from magi.launcher import bootstrap_local
+    bus = bootstrap_local(data_root)
+    magic = bus.magic.get_magic(magic_id)
+    return magic.name if magic and magic.name else "eva"
+
+
 def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
     """Return ``(magic_id, slug)`` for the named MAGIC, or the first one.
 
-    Scans the MAGIC directory for ``<id>-<slug>`` slots, then picks:
-    - exact match on ``name`` (matches slug or ``<id>-<slug>``)
-    - the single slot if only one exists
-    - on first run (no slots yet) the seed has already created the
-      Adam row, so we return ``(1, "eva-00")`` — the Adam gets its
-      slot created below by ``_exec_runtime``'s ``bootstrap_workspace``.
-    - raises if multiple exist and name is ambiguous
+    Slots are directory-safe slugs (e.g. ``eva-000``, ``eva-001``).
+    ``name`` matches against the slug or the MAGIC display name.
     """
     magic_dir = data_root / "MAGIC"
-    if not magic_dir.exists():
-        # First run — seed created Adam as id=1 / "eva-00".  Return
-        # that so ``_exec_runtime`` can carve the per-MAGI slot.
-        if name and name.strip().lower() not in ("adam", "eva-00", "1", "1-eva-00"):
-            raise SystemExit(
-                f"--name={name!r} requested but no MAGIC slots exist yet. "
-                "Run `magi local start` once first (defaults to Adam)."
-            )
-        return 1, "eva-00"
+
+    # First run: no slots yet.  The seed created Adam as id=1.
+    if not magic_dir.exists() or not any(
+        p.is_dir() for p in magic_dir.iterdir()
+    ):
+        # Default: first MAGI → eva-000
+        if not name or name.strip().lower() in ("adam", "eva-00", "eva-000", "1"):
+            return 1, "eva-000"
+        raise SystemExit(
+            f"--name={name!r} requested but no MAGIC slots exist yet. "
+            "Run `magi local start` once first (defaults to first MAGI)."
+        )
+
     slots = sorted(
-        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+        p.name for p in magic_dir.iterdir() if p.is_dir()
     )
-    if not slots:
-        if name and name.strip().lower() not in ("adam", "eva-00", "1", "1-eva-00"):
-            raise SystemExit(
-                f"--name={name!r} requested but no MAGIC slots exist yet. "
-                "Run `magi local start` once first (defaults to Adam)."
-            )
-        return 1, "eva-00"
 
     if name:
         name_lower = name.strip().lower()
+        # Direct slug match
         for slot in slots:
-            if name_lower in (slot.lower(), slot.lower().split("-", 1)[1]):
-                magic_id, slug = slot.split("-", 1)
-                return int(magic_id), slug
+            if slot.lower() == name_lower:
+                # We need magic_id — read from MAGIS DB or infer from slug
+                return _magic_id_for_slug(data_root, slot), slot
         raise SystemExit(
             f"No MAGIC slot matches {name!r}.  Known slots: {', '.join(slots)}"
         )
 
     if len(slots) == 1:
-        magic_id, slug = slots[0].split("-", 1)
-        return int(magic_id), slug
+        return _magic_id_for_slug(data_root, slots[0]), slots[0]
 
     raise SystemExit(
         f"Multiple MAGIC slots exist ({', '.join(slots)}).  "
@@ -122,18 +144,37 @@ def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
     )
 
 
+def _magic_id_for_slug(data_root: Path, slug: str) -> int:
+    """Reverse-map a slug back to the MAGIC id from the MAGIS database."""
+    from magi.launcher import bootstrap_local
+    bus = bootstrap_local(data_root)
+    magics = bus.magic.list_all_magic()
+    for m in magics:
+        if _slug_from_name(m.name or "eva", m.id) == slug:
+            return m.id
+    # Fallback: if the first slug is eva-000, it's id=1
+    return 1
+
+
 def _exec_runtime(
     data_root: Path,
     magic_id: int,
     slug: str,
     port: int,
+    *,
+    reload: bool = True,
 ) -> None:
     """Replace the current process with ``magi runtime`` for one MAGI.
 
     Sets env vars so :mod:`magi.launcher.paths` resolves state_dir /
     workspace_dir to the correct per-MAGI slot.  Never returns.
+
+    ``reload`` defaults to True so the Local Profile matches the
+    k8s-dev experience — every source edit a developer saves is
+    picked up by the running MAGI in seconds, no restart.  Pass
+    ``reload=False`` for production runs (``magi local start --no-reload``).
     """
-    ws_root = data_root / "MAGIC" / f"{magic_id}-{slug}" / "workspace"
+    ws_root = data_root / "MAGIC" / slug / "workspace"
     magis_db = data_root / "MAGIS" / "1-genesis" / "magis.db"
 
     env = os.environ.copy()
@@ -144,6 +185,7 @@ def _exec_runtime(
         "MAGI_RUNTIME_SLUG": slug,
         "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
         "MAGI_PORT": str(port),
+        "MAGI_RELOAD": "1" if reload else "0",
     })
 
     # execv replaces the current process image — no fork, no child.
@@ -151,7 +193,7 @@ def _exec_runtime(
     logger.info(
         "replacing process with magi runtime: %s",
         " ".join(argv),
-        extra={"magic_id": magic_id, "slug": slug, "port": port},
+        extra={"magic_id": magic_id, "slug": slug, "port": port, "reload": reload},
     )
     os.execve(sys.executable, argv, env)
 
@@ -197,6 +239,12 @@ def cmd_start(args: argparse.Namespace) -> int:
     # ── resolve which MAGI to run ──
     magic_id, slug = _resolve_runtime(data_root, getattr(args, "name", None))
 
+    # ── ensure the per-MAGI workspace slot exists ──
+    ws_root = data_root / "MAGIC" / slug / "workspace"
+    ws_root.mkdir(parents=True, exist_ok=True)
+    from magi.launcher.paths import bootstrap_workspace
+    bootstrap_workspace(ws_root)
+
     # ── port ──
     port = int(getattr(args, "port", 0) or os.environ.get("MAGI_PORT", "42069"))
 
@@ -217,18 +265,16 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 0
 
     slots = sorted(
-        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+        p.name for p in magic_dir.iterdir() if p.is_dir()
     )
     if not slots:
         print("(no MAGIC slots)")
         return 0
 
     rows: list[list[str]] = []
-    for slot in slots:
-        parts = slot.split("-", 1)
-        mid = parts[0]
-        slug = parts[1] if len(parts) > 1 else "-"
-        ws = magic_dir / slot / "workspace"
+    for slug in slots:
+        mid = str(_magic_id_for_slug(data_root, slug))
+        ws = magic_dir / slug / "workspace"
         db = ws / "memories" / "magi.db"
         rows.append([
             mid,
@@ -249,7 +295,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
     from magi.launcher import bootstrap_local
-    bus = bootstrap_local(data_root, initialise_control=True)
+    bus = bootstrap_local(data_root)
     if bus.control_registry is None:
         print("error: control registry unavailable", file=sys.stderr)
         return 2
@@ -274,7 +320,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     control = _control_dir(data_root)
     magic_dir = data_root / "MAGIC"
     slots = sorted(
-        p.name for p in magic_dir.iterdir() if p.is_dir() and "-" in p.name
+        p.name for p in magic_dir.iterdir() if p.is_dir()
     ) if magic_dir.exists() else []
 
     print(json.dumps({
@@ -339,7 +385,11 @@ def _magi_executable() -> str:
 
 
 def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
-    """Return ``[(magic_id, slug), ...]`` from the MAGIC directory."""
+    """Return ``[(magic_id, slug), ...]`` from the MAGIC directory.
+
+    Slugs are directory-safe names like ``eva-000``, ``eva-001``.
+    The ``magic_id`` is reverse-mapped from the MAGIS database.
+    """
     magic_dir = data_root / "MAGIC"
     if not magic_dir.exists():
         return []
@@ -347,14 +397,8 @@ def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
     for entry in sorted(magic_dir.iterdir()):
         if not entry.is_dir():
             continue
-        if "-" not in entry.name:
-            continue
-        parts = entry.name.split("-", 1)
-        try:
-            mid = int(parts[0])
-        except ValueError:
-            continue
-        slug = parts[1]
+        slug = entry.name
+        mid = _magic_id_for_slug(data_root, slug)
         slots.append((mid, slug))
     return slots
 

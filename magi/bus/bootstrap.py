@@ -57,7 +57,7 @@ class Bus:
     runtime: BackendDispatcherService
     registry: RuntimeRegistryService
     # Phase 3 close-out — Local control-plane registry (no-op on K8s
-    # where the Compose-Root passes ``control_engine=None``).
+    # For Local Profile the MAGIS engine backs it).
     control_registry: Optional[ControlRegistryService] = None
 
 
@@ -66,7 +66,6 @@ def bootstrap(
     initialise_local: bool = False,
     runtime_backend: object | None = None,
     magis_engine: object | None = None,
-    control_engine: object | None = None,
 ) -> Bus:
     """Create the public BUS facade for the container / K8s profile.
 
@@ -81,13 +80,9 @@ def bootstrap(
     :class:`~magi.orchestrator.backends.base.RuntimeBackend`.
 
     ``magis_engine`` (Phase 3) lets the Composition Root inject a
-    dedicated MAGIS engine (Local Profile SQLite, K8s PostgreSQL, …)
-    so the public schema lives outside the Adam's private database.
-
-    ``control_engine`` (Phase 3 close-out) lets the Composition Root
-    inject the Local control-plane registry engine.  K8s Profile
-    passes ``None``; the resulting Bus still exposes a
-    ``control_registry`` slot — it just resolves to ``None``.
+    dedicated MAGIS engine (Local Profile SQLite, K8s PostgreSQL, …).
+    The control-plane runtime registry (``control_registry`` on Bus)
+    is bootstrapped from this same engine, not a separate database.
     """
     from magi.launcher.paths import state_dir as _state_dir
 
@@ -96,7 +91,6 @@ def bootstrap(
         initialise_local=initialise_local,
         runtime_backend=runtime_backend,
         magis_engine=magis_engine,
-        control_engine=control_engine,
     )
 
 
@@ -106,7 +100,6 @@ def _bootstrap(
     initialise_local: bool = False,
     runtime_backend: object | None = None,
     magis_engine: object | None = None,
-    control_engine: object | None = None,
 ) -> Bus:
     """Private — current implementation of :func:`bootstrap`.
 
@@ -133,11 +126,11 @@ def _bootstrap(
     runtime_service = BackendDispatcherService(backend=runtime_backend)
 
     control_registry_service: Optional[ControlRegistryService] = None
-    if control_engine is not None:
+    if magis_engine is not None:
         from magi.bus.db.control.repository import ControlRepository
 
         control_registry_service = ControlRegistryService(
-            ControlRepository(control_engine)
+            ControlRepository(magis_engine)
         )
 
     bus = Bus(

@@ -59,7 +59,7 @@
 │   ├── launcher.json
 │   └── launcher-state/                        # launcher 自己的 BUS scratch 库
 ├── MAGIC/                                     # 私有 MAGI 工作区
-│   ├── 1-adam/workspace/
+│   ├── eva-000/workspace/
 │   │   ├── SOUL.md
 │   │   ├── memories/
 │   │   │   ├── magi.db                        # 私有 SQLite（contacts/sessions/...）
@@ -67,14 +67,14 @@
 │   │   ├── skills/
 │   │   ├── logs/
 │   │   └── tmp/
-│   └── 2-eva-00/workspace/                    # 第二个 MAGI
+│   └── eva-001/workspace/                     # 第二个 MAGI
 │       └── ...                                # （结构同上）
 └── MAGIS/                                     # 每个 MAGIS 一个目录
     └── 1-genesis/
         └── magis.db                           # 公共组织架构 SQLite
 ```
 
-每个 MAGI 的 workspace 落在 `~/.magi/MAGIC/<id>-<slug>/workspace/`，
+每个 MAGI 的 workspace 落在 `~/.magi/MAGIC/<slug>/workspace/`，
 与 K8s 里 PVC 的 `<workspace>/memories/magi.db` 命名规则完全一致。
 MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
 
@@ -82,7 +82,7 @@ MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
 
 ```bash
 magi local start              # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
-magi local start --name eva-00  # 启动指定 MAGI
+magi local start --name eva-001  # 启动指定 MAGI
 magi local start --port 42070   # 指定端口
 magi local start --no-open    # 不打开浏览器
 magi local status             # 列出所有 MAGIC slots 及其状态
@@ -128,7 +128,7 @@ systemctl --user list-units 'magi-*'
   是独立 unit，独立崩溃、独立重启。
 - **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
   在 `<workspace>/memories/magi.db`（`MAGI_WORKSPACE_DIR` 指向的 PVC）；
-  本路径保持相同约定 `~/.magi/MAGIC/<id>-<slug>/workspace/memories/magi.db`。
+  本路径保持相同约定 `~/.magi/MAGIC/<slug>/workspace/memories/magi.db`。
   `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
 - **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
   本地进程设置 `MAGI_DATA_ROOT` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`。
