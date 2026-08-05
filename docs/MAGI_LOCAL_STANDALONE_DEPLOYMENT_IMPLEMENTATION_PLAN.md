@@ -622,15 +622,16 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 6. 禁止正式 Local Profile 使用初始 Adam 私有 DB 作为 MAGIS DB；
 7. 增加多进程读写、BUS repository contract 与 migration tests。
 
-### Phase 4：LocalProcessRuntimeBackend
+### Phase 4：LocalProcessRuntimeBackend (subprocess spawn)
 
-1. 实现 port allocator、process identity 与 backend-specific state；
-2. 实现 start/inspect/stop/delete/reconcile；
-3. Runtime desired/observed state 与 endpoint 由 Orchestrator Worker 经 BUS 记录；backend 不直接写 registry DB；
-4. 输出独立 Runtime logs；
-5. 实现 health checks 和 stale PID recovery；
-6. 实现可恢复的 Workspace archive；
-7. 增加幂等与崩溃恢复测试。
+1. 实现 `LocalProcessRuntimeBackend` —— 通过 `subprocess.Popen` + `start_new_session=True` 启动独立 MAGI 子进程；
+2. 子进程通过 `MAGI_BACKEND=local` 在 `BackendDispatcherService` 上路由，与 K8s backend 共享同一 Protocol；
+3. `magi local start <name>` 调用 `bus.runtime.start(spec)`，backend spawn 完成后 launcher 退出，子进程被 reparent 到 init；
+4. `magi local stop` 通过 `bus.runtime.stop(spec)` 触发 `SIGTERM` + 10s 宽限 + `SIGKILL` fallback；
+5. Runtime state 通过 `ControlRegistryService` 记录（PID、port、base_url、observed_state）；
+6. Tolerate `control_registry=None` —— runtime 进程的 BUS 不带本地 SQLite engine，backend 在该上下文下仍返回合法 DTO。
+
+**不在 Phase 4 范围**(Phase 5+): restart policy / health-check loop / stale-PID recovery / multi-MAGI supervisor / orchestrator-daemon mode / systemd unit 改走 launcher。systemd unit 当前仍直接 `ExecStart=magi runtime`,与 CLI 路径并存。
 
 ### Phase 5：Runtime Worker 装配与通用 Tasks
 

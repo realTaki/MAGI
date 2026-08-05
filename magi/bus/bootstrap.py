@@ -157,13 +157,14 @@ def _bootstrap(
         control_registry=control_registry_service,
     )
     # ``_bootstrap`` is the only place a Bus is constructed. Registering it
-    # as the process-wide singleton here lets lazy resolvers (e.g.
-    # ``RuntimeService.backend`` falling back to ``get_bus().control_registry``
-    # in ``LocalProcessRuntimeBackend.__init__``) see the same
-    # control_registry the Composition Root injected — without this, the
-    # Local Profile's ``bootstrap_local`` builds a wired Bus but the first
-    # ``get_bus()`` call from the backend would construct a fresh one with
-    # ``control_registry=None`` and crash on the ``None`` deref.
+    # as the process-wide singleton here lets lazy resolvers see the same
+    # ``control_registry`` the Composition Root injected.  The Local
+    # backend (``LocalProcessRuntimeBackend``) tolerates
+    # ``control_registry=None`` (runtime-process case, where
+    # ``magis_engine`` is not injected), so the Bus singleton is no
+    # longer strictly required for backend correctness — kept for
+    # diagnostic clarity and for future callers that want to share the
+    # wired Bus.
     global _bus
     _bus = bus
     return bus
