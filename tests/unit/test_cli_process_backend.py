@@ -1,4 +1,4 @@
-"""``LocalProcessRuntimeBackend`` unit tests.
+"""``CLIProcessRuntimeBackend`` unit tests.
 
 Mirrors the fixture pattern from ``tests/unit/test_control_registry.py``
 (tmp_path + build_local_engine + Base.metadata.create_all) and uses
@@ -23,7 +23,7 @@ from magi.bus.models.local.control_runtime import (
 from magi.bus.protocols.lifecycle import RuntimeSpec
 from magi.bus.services.control_registry import ControlRegistryService
 from magi.orchestrator.backends.base import RuntimeBackend
-from magi.orchestrator.backends.local_process import LocalProcessRuntimeBackend
+from magi.orchestrator.backends.cli_process import CLIProcessRuntimeBackend
 
 
 # ── fixtures ────────────────────────────────────────────────────────── #
@@ -48,14 +48,14 @@ def control(repo: ControlRepository) -> ControlRegistryService:
 
 
 @pytest.fixture()
-def backend(control: ControlRegistryService) -> LocalProcessRuntimeBackend:
-    return LocalProcessRuntimeBackend(control_registry=control)
+def backend(control: ControlRegistryService) -> CLIProcessRuntimeBackend:
+    return CLIProcessRuntimeBackend(control_registry=control)
 
 
 @pytest.fixture()
-def bare_backend() -> LocalProcessRuntimeBackend:
+def bare_backend() -> CLIProcessRuntimeBackend:
     """Backend with no control_registry wired — runtime-process case."""
-    return LocalProcessRuntimeBackend(control_registry=None)
+    return CLIProcessRuntimeBackend(control_registry=None)
 
 
 def _fake_proc(pid: int = 99999) -> MagicMock:
@@ -68,26 +68,26 @@ def _fake_proc(pid: int = 99999) -> MagicMock:
 
 
 def test_kind_property() -> None:
-    assert LocalProcessRuntimeBackend.kind == "local"
+    assert CLIProcessRuntimeBackend.kind == "cli"
 
 
 def test_protocol_satisfaction() -> None:
     """The class satisfies the @runtime_checkable ``RuntimeBackend`` Protocol."""
-    assert isinstance(LocalProcessRuntimeBackend(), RuntimeBackend)
+    assert isinstance(CLIProcessRuntimeBackend(), RuntimeBackend)
 
 
 # ── provision ──────────────────────────────────────────────────────── #
 
 
-def test_provision_magis_is_noop_for_local(tmp_path: Path, monkeypatch) -> None:
-    """Local ``provision_magis`` is a no-op — bootstrap_local creates the
+def test_provision_magis_is_noop_for_cli(tmp_path: Path, monkeypatch) -> None:
+    """CLI ``provision_magis`` is a no-op — bootstrap_local creates the
     SQLite at the composition-root stage.  The backend just returns the
     platform-neutral DTO so the BUS layer can record the intent.
     """
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
-    backend = LocalProcessRuntimeBackend()
+    backend = CLIProcessRuntimeBackend()
     result = backend.provision_magis(magis_id=1, magis_name="genesis")
-    assert result.backend_kind == "local"
+    assert result.backend_kind == "cli"
     assert result.magis_id == 1
     assert result.database_service_name is None
     assert result.workspace_claim_name is None
@@ -99,10 +99,10 @@ def test_provision_magis_is_noop_for_local(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_start_spawns_subprocess_and_records_spawn(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
 ) -> None:
     with patch(
-        "magi.orchestrator.backends.local_process.subprocess.Popen",
+        "magi.orchestrator.backends.cli_process.subprocess.Popen",
         return_value=_fake_proc(pid=4242),
     ) as popen_mock, patch.object(
         backend, "_wait_healthy", return_value=True
@@ -111,8 +111,8 @@ def test_start_spawns_subprocess_and_records_spawn(
 
     popen_mock.assert_called_once()
     assert result.observed_state == "running"
-    assert result.backend_kind == "local"
-    assert result.backend_ref == "local://4242"
+    assert result.backend_kind == "cli"
+    assert result.backend_ref == "cli://4242"
     assert result.endpoint is not None
     assert result.endpoint.runtime_id == 1
     assert result.endpoint.observed_state == "running"
@@ -121,13 +121,13 @@ def test_start_spawns_subprocess_and_records_spawn(
 
 
 def test_start_returns_failed_on_health_timeout(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
 ) -> None:
     with patch(
-        "magi.orchestrator.backends.local_process.subprocess.Popen",
+        "magi.orchestrator.backends.cli_process.subprocess.Popen",
         return_value=_fake_proc(pid=4242),
     ), patch.object(backend, "_wait_healthy", return_value=False), patch(
-        "magi.orchestrator.backends.local_process.os.kill"
+        "magi.orchestrator.backends.cli_process.os.kill"
     ) as kill_mock:
         result = backend.start(RuntimeSpec(magic_id=1, name="eva-000"))
 
@@ -137,39 +137,39 @@ def test_start_returns_failed_on_health_timeout(
 
 
 def test_start_tolerates_no_control_registry(
-    bare_backend: LocalProcessRuntimeBackend,
+    bare_backend: CLIProcessRuntimeBackend,
 ) -> None:
     with patch(
-        "magi.orchestrator.backends.local_process.subprocess.Popen",
+        "magi.orchestrator.backends.cli_process.subprocess.Popen",
         return_value=_fake_proc(pid=7777),
     ) as popen_mock, patch.object(bare_backend, "_wait_healthy", return_value=True):
         result = bare_backend.start(RuntimeSpec(magic_id=1, name="eva-000"))
 
     popen_mock.assert_called_once()
     assert result.observed_state == "running"  # subprocess is alive
-    assert result.backend_ref == "local://7777"
+    assert result.backend_ref == "cli://7777"
 
 
 # ── stop ───────────────────────────────────────────────────────────── #
 
 
 def test_stop_signals_sigterm_then_sigkill(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
     control: ControlRegistryService,
 ) -> None:
     # Pre-register the runtime so the backend can find its PID.
-    control.upsert_desired_state(1, "local", _dummy_desired())
+    control.upsert_desired_state(1, "cli", _dummy_desired())
     control.attach_paths(
         1,
         workspace_dir=Path("/tmp/ws"),
         log_dir=Path("/tmp/log"),
         audit_log_path=Path("/tmp/audit"),
-        backend_ref="local-stub",
+        backend_ref="cli-stub",
     )
     control.record_spawn(1, pid=4242, base_url="http://127.0.0.1:42101", port=42101)
 
-    with patch("magi.orchestrator.backends.local_process.os.kill") as kill_mock, patch(
-        "magi.orchestrator.backends.local_process.time.sleep"
+    with patch("magi.orchestrator.backends.cli_process.os.kill") as kill_mock, patch(
+        "magi.orchestrator.backends.cli_process.time.sleep"
     ):
         result = backend.stop(RuntimeSpec(magic_id=1, name="eva-000"))
 
@@ -181,21 +181,21 @@ def test_stop_signals_sigterm_then_sigkill(
 
 
 def test_stop_handles_already_dead_pid(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
     control: ControlRegistryService,
 ) -> None:
-    control.upsert_desired_state(1, "local", _dummy_desired())
+    control.upsert_desired_state(1, "cli", _dummy_desired())
     control.attach_paths(
         1,
         workspace_dir=Path("/tmp/ws"),
         log_dir=Path("/tmp/log"),
         audit_log_path=Path("/tmp/audit"),
-        backend_ref="local-stub",
+        backend_ref="cli-stub",
     )
     control.record_spawn(1, pid=11111, base_url="http://127.0.0.1:42102", port=42102)
 
     with patch(
-        "magi.orchestrator.backends.local_process.os.kill",
+        "magi.orchestrator.backends.cli_process.os.kill",
         side_effect=ProcessLookupError,
     ):
         # Should not raise — graceful degradation.
@@ -208,22 +208,22 @@ def test_stop_handles_already_dead_pid(
 
 
 def test_delete_releases_port_and_kills(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
     repo: ControlRepository,
 ) -> None:
     alloc = repo.allocate_port(1)
-    repo.upsert_desired_state(1, "local", _dummy_desired())
+    repo.upsert_desired_state(1, "cli", _dummy_desired())
     repo.attach_paths(
         1,
         workspace_dir=Path("/tmp/ws"),
         log_dir=Path("/tmp/log"),
         audit_log_path=Path("/tmp/audit"),
-        backend_ref="local-stub",
+        backend_ref="cli-stub",
     )
     repo.record_spawn(1, pid=22222, base_url="http://127.0.0.1:42103", port=alloc.port)
 
     with patch(
-        "magi.orchestrator.backends.local_process.os.kill"
+        "magi.orchestrator.backends.cli_process.os.kill"
     ) as kill_mock:
         result = backend.delete(RuntimeSpec(magic_id=1, name="eva-000"))
 
@@ -242,9 +242,9 @@ def test_delete_releases_port_and_kills(
 
 
 def test_delete_with_no_registry_is_noop(
-    bare_backend: LocalProcessRuntimeBackend,
+    bare_backend: CLIProcessRuntimeBackend,
 ) -> None:
-    with patch("magi.orchestrator.backends.local_process.os.kill") as kill_mock:
+    with patch("magi.orchestrator.backends.cli_process.os.kill") as kill_mock:
         result = bare_backend.delete(RuntimeSpec(magic_id=1, name="eva-000"))
 
     kill_mock.assert_not_called()  # no PID to signal
@@ -255,16 +255,16 @@ def test_delete_with_no_registry_is_noop(
 
 
 def test_endpoint_for_from_registry(
-    backend: LocalProcessRuntimeBackend,
+    backend: CLIProcessRuntimeBackend,
     control: ControlRegistryService,
 ) -> None:
-    control.upsert_desired_state(1, "local", _dummy_desired())
+    control.upsert_desired_state(1, "cli", _dummy_desired())
     control.attach_paths(
         1,
         workspace_dir=Path("/tmp/ws"),
         log_dir=Path("/tmp/log"),
         audit_log_path=Path("/tmp/audit"),
-        backend_ref="local-stub",
+        backend_ref="cli-stub",
     )
     control.record_spawn(1, pid=5555, base_url="http://127.0.0.1:42104", port=42104)
 
@@ -275,7 +275,7 @@ def test_endpoint_for_from_registry(
 
 
 def test_endpoint_for_fallback_to_env_port(
-    bare_backend: LocalProcessRuntimeBackend,
+    bare_backend: CLIProcessRuntimeBackend,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("MAGI_PORT", "42199")
@@ -290,16 +290,16 @@ def test_endpoint_for_fallback_to_env_port(
 
 def test_is_alive_returns_false_for_stale_pid() -> None:
     # Use a PID that almost certainly doesn't exist.
-    assert LocalProcessRuntimeBackend._is_alive(2_000_000_000) is False
+    assert CLIProcessRuntimeBackend._is_alive(2_000_000_000) is False
 
 
-def test_factory_resolves_local(monkeypatch) -> None:
-    monkeypatch.setenv("MAGI_BACKEND", "local")
+def test_factory_resolves_cli(monkeypatch) -> None:
+    monkeypatch.setenv("MAGI_BACKEND", "cli")
     from magi.orchestrator.backends.factory import create
 
     backend = create()
-    assert isinstance(backend, LocalProcessRuntimeBackend)
-    assert backend.kind == "local"
+    assert isinstance(backend, CLIProcessRuntimeBackend)
+    assert backend.kind == "cli"
 
 
 def test_factory_defaults_to_kubernetes(monkeypatch) -> None:

@@ -119,7 +119,7 @@ class LocalPathLayout:
         object.__setattr__(self, "magis_workspace", data_root / "MAGIS")
 
 
-# §2. Local Composition Root ----------------------------------------------------
+# §2. CLI Profile Composition Root --------------------------------------------
 
 
 from magi.bus import Bus  # noqa: E402  (Composition Root — only path that uses _bootstrap)
@@ -132,10 +132,10 @@ def bootstrap_local(
     initialise: bool = False,
     magis_dir_override: Path | str | None = None,
 ) -> Bus:
-    """Build the Local Profile BUS facade rooted at ``data_root``.
+    """Build the CLI Profile BUS facade rooted at ``data_root``.
 
     NOTE: this calls :func:`magi.bus.bootstrap` (not
-    :func:`magi.bus.get_bus`) — the Local Profile needs a
+    :func:`magi.bus.get_bus`) — the CLI Profile needs a
     composition that owns the chosen ``state_dir`` and ``magis_engine``,
     which the process-wide singleton does not.
 
@@ -146,13 +146,13 @@ def bootstrap_local(
     itself.
 
     When ``initialise=True`` the function bootstraps the on-disk SQLite
-    schema (idempotent — safe to call on every launch).  ``magi local
+    schema (idempotent — safe to call on every launch).  ``magi cli
     start`` is the canonical caller; tests may pass ``initialise=True``
     to set up a fresh ``tmp_path`` fixture.
 
     ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
     ``None`` the function picks ``<data_root>/MAGIS/genesis-01/`` (the
-    first MAGIS seeded by the Local Profile is always Genesis with id=1).
+    first MAGIS seeded by the CLI Profile is always Genesis with id=1).
     This matches the K8s pattern ``MAGIS/<magis_id>-<slug>/magis.db`` so
     the host layout is identical across both profiles.
 

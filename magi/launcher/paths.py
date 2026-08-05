@@ -4,11 +4,11 @@ This module is the **single** place MAGI's filesystem layout is
 defined.  Two path families live here:
 
 1. **Deployer-supplied workspace** — the operator's persistent
-   volume (container bind-mount, Local Profile data root, test
+   volume (container bind-mount, CLI Profile data root, test
    ``tmp_path``).
 
    - :func:`workspace_dir` reads ``$MAGI_WORKSPACE_DIR`` (K8s Pod)
-     or derives from ``$HOST_WORKSPACE_DIR`` (Local Profile).
+     or derives from ``$HOST_WORKSPACE_DIR`` (CLI Profile).
    - :func:`state_dir` derives the SQLite + sessions directory as
      ``<workspace_dir>/memories``.
 
@@ -16,13 +16,13 @@ defined.  Two path families live here:
    constants — the deployer's only filesystem knob is
    ``MAGI_WORKSPACE_DIR``.
 
-2. **Local Profile launcher** — the Local Profile's per-runtime /
+2. **CLI Profile launcher** — the CLI Profile's per-runtime /
    control / launcher-state layout.  Per plan §5.1 the OS-specific
    default lives at ``default_data_root``; control
    registry / launcher state live under ``<data_root>/control/``;
    per-runtime workspaces / logs derive from the runtime_id + slug.
 
-3. **K8s-vs-Local state workspace root** — :func:`workspace_root`
+3. **K8s-vs-CLI state workspace root** — :func:`workspace_root`
    derives the operator-facing files (SOUL.md, skills/, memories/)
    from a state directory.
 
@@ -50,7 +50,7 @@ logger = logging.getLogger("magi.launcher.paths")
 
 # Fixed canonical subdirectory under the workspace that holds the SQLite
 # database, alembic migrations, and session history.  Not configurable —
-# this is the schema the runtime assumes.  Shared by K8s and Local Profile
+# this is the schema the runtime assumes.  Shared by K8s and CLI Profile
 # alike so ``workspace/memories/magi.db`` is the single truth.
 _STATE_SUBDIR = "memories"
 
@@ -61,9 +61,9 @@ def workspace_dir() -> Path:
     Resolution — three branches, no host-root fallback:
 
     1. ``$MAGI_WORKSPACE_DIR`` when set (K8s Pod / explicitly configured).
-    2. ``$HOST_WORKSPACE_DIR`` + ``$MAGI_NAME`` when set (Local
+    2. ``$HOST_WORKSPACE_DIR`` + ``$MAGI_NAME`` when set (CLI
        Profile runtime process) → ``<data_root>/MAGIC/<slug>/workspace``.
-    3. ``$HOST_WORKSPACE_DIR`` set, no ``$MAGI_NAME`` (Local Profile
+    3. ``$HOST_WORKSPACE_DIR`` set, no ``$MAGI_NAME`` (CLI Profile
        launcher) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
 
     The slug alone is sufficient — ``EVA-000`` is both the MAGIC display
@@ -81,7 +81,7 @@ def workspace_dir() -> Path:
         return magis_home(Path(data_root)) / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
-        "HOST_WORKSPACE_DIR (Local Profile). Neither is set."
+        "HOST_WORKSPACE_DIR (CLI Profile). Neither is set."
     )
 
 
@@ -90,10 +90,10 @@ def state_dir() -> Path:
 
     One resolver, three branches — one per process role:
 
-    1. **Local Profile, runtime process** —
+    1. **CLI Profile, runtime process** —
        ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` set.
        State lives at ``<data_root>/MAGIC/<slug>/workspace/memories/``.
-    2. **Local Profile, launcher** —
+    2. **CLI Profile, launcher** —
        ``HOST_WORKSPACE_DIR`` set, no ``MAGI_NAME``.
        Scratch SQLite at ``<data_root>/MAGIS/genesis-01/launcher-state``.
     3. **K8s Profile** — no ``HOST_WORKSPACE_DIR``.
@@ -210,9 +210,9 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
 
 
 def default_data_root() -> Path:
-    """Return the OS-specific default data root for the Local Profile.
+    """Return the OS-specific default data root for the CLI Profile.
 
-    The Local Profile follows the openclaw-style layout:
+    The CLI Profile follows the openclaw-style layout:
 
     - Linux: ``~/.magi``
     - macOS: ``~/Documents/.magi``
@@ -288,7 +288,7 @@ def runtime_state_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
     Format: ``<data_root>/MAGIC/<slug>/workspace/memories/``.
     Mirrors the K8s ``<workspace_dir>/memories`` convention so every
     profile resolves to ``workspace/memories/magi.db``.  Used by
-    :class:`magi.launcher.LocalPathLayout` and by the Local subprocess's
+    :class:`magi.launcher.LocalPathLayout` and by the CLI subprocess's
     path resolution via :func:`state_dir`.
     """
     return Path(data_root) / "MAGIC" / slug / "workspace" / "memories"
@@ -307,7 +307,7 @@ def magis_dir(data_root: Path, magis_id: int, slug: str) -> Path:
 
     Format: ``<data_root>/MAGIS/<slug>-<magis_id:02d>/``.  Name first,
     id last — same style as MAGIC's ``eva-000``.  The first MAGIS
-    seeded by the Local Profile is Genesis with magis_id=1 and
+    seeded by the CLI Profile is Genesis with magis_id=1 and
     slug="genesis", so its directory is
     ``<data_root>/MAGIS/genesis-01/magis.db``.
     """
@@ -325,7 +325,7 @@ __all__ = [
     "state_dir",
     "workspace_root",
     "bootstrap_workspace",
-    # Group 2 — Local Profile data root
+    # Group 2 — CLI Profile data root
     "default_data_root",
     # Group 3 — per-runtime and control-plane
     "magis_home",

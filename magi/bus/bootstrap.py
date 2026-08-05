@@ -114,7 +114,7 @@ def _bootstrap(
     Takes ``state_dir`` explicitly.  Called by:
 
     - :func:`bootstrap` for container / K8s (after reading state_dir()).
-    - :func:`magi.launcher.bootstrap_local` for the Local Profile
+    - :func:`magi.launcher.bootstrap_local` for the CLI Profile
       (passes ``layout.state_dir``).
 
     Business modules never call this; they use :func:`get_bus`.

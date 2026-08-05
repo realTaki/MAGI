@@ -203,7 +203,7 @@ async def test_provider_not_configured_envelopes_failure(magi_state):
             wait_seconds=5, poll_seconds=0.05,
         )
         assert result["status"] == "failed"
-        assert result["error"]["code"] == "LLMNotConfiguredError"
+        assert result["error"]["code"] == "magi.llm_credentials_required"
         assert "no api key" in result["error"]["detail"]
     finally:
         await stop_provider_worker()
@@ -287,7 +287,7 @@ async def test_concurrency_limit_serialises_two_jobs(magi_state):
             assert result["status"] == "completed", (
                 f"row {aid} did not complete: {result}"
             )
-            assert "echo:" in result["response"]["text"]
+            assert result["response"]["text"] == "ok"
     finally:
         await stop_provider_worker()
 

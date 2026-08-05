@@ -1,6 +1,6 @@
 """OS detection helpers for the Local launcher.
 
-Tiny, dependency-free.  Phase 6's ``magi local start`` uses these to
+Tiny, dependency-free.  Phase 6's ``magi cli start`` uses these to
 decide whether the launcher can ``open`` a browser tab, where to
 write the PID file, and how to interpret the supervisor's exit codes.
 """

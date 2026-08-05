@@ -32,7 +32,7 @@ class RuntimeEndpoint(BaseModel):
     done at :mod:`magi.channels.api.runtime_proxy`.  ``base_url`` is the
     single source of truth for any HTTP client that needs to reach this
     runtime; ``backend_ref`` is the backend-specific handle (K8s Service
-    name, local PID, etc.) surfaced for diagnostics only.
+    name, CLI PID, etc.) surfaced for diagnostics only.
     """
 
     runtime_id: int = Field(ge=1)

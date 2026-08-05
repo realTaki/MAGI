@@ -196,7 +196,7 @@ class RuntimeRegistryService:
             return None
         return RuntimeEndpoint(
             runtime_id=magic_id,
-            backend_kind="local",
+            backend_kind="cli",
             base_url=row.base_url,
             backend_ref=row.backend_ref,
             observed_state=row.observed_state.value,

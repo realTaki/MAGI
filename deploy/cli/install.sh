@@ -11,8 +11,8 @@
 #       - Windows: ~/Documents/.magi  (resolved via $USERPROFILE)
 #  3. Print a one-page cheat sheet of the post-install commands.
 #
-# It does NOT start the runtime; that is `magi local start`. It does
-# NOT register a service; that is `magi local install-service`. The
+# It does NOT start the runtime; that is `magi cli start`. It does
+# NOT register a service; that is `magi cli install-service`. The
 # intent is to leave the operator in control of when the daemon
 # actually comes up.
 set -euo pipefail
@@ -60,9 +60,9 @@ cat <<EOF
 
 [$(basename "$0")] Done. Three things you can do next:
 
-    magi local start              # foreground-friendly one-shot; opens browser
-    magi local install-service    # register systemd user unit (Linux only)
-    magi local status             # show registered runtimes + port allocation
+    magi cli start                # foreground-friendly one-shot; opens browser
+    magi cli install-service      # register systemd user unit (Linux only)
+    magi cli status               # show registered runtimes + port allocation
 
 Optional environment overrides:
 

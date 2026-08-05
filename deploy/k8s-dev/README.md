@@ -10,7 +10,7 @@ orchestrator 边界是否如设计一样工作；同时给后端 + WebUI 提供�
 
 | 部署 | 路径 | 用途 |
 | --- | --- | --- |
-| [本地单机（非容器）](../local/) | `deploy/cli/` | openclaw 风格一键启动 |
+| [CLI 单机（非容器）](../cli/) | `deploy/cli/` | openclaw 风格一键启动 |
 | **k8s 单机（dev）** ← 当前 | `deploy/k8s-dev/` | 调试 k8s 模块化方案 |
 | [k8s 生产](../k8s/README.md) | `deploy/k8s/` | 现有集群当生产环境 |
 
@@ -97,4 +97,4 @@ rm -f .kind-kubeconfig
 - **不要**在 dev 模式下复用生产 `magi-magis-genesis-01-db` Secret
   ——dev 模式自动生成弱密码，仅供本地。
 - dev 模式的持久化数据在 `~/.magi/MAGIC/eva-000/workspace/`，
-  与本地非容器部署共享同一 `~/.magi/` 布局。
+  与 CLI 部署共享同一 `~/.magi/` 布局。

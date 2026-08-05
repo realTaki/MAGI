@@ -57,7 +57,7 @@ def test_upsert_then_record_spawn_then_get(repo: ControlRepository) -> None:
         workspace_dir=Path("/tmp/adam-ws"),
         log_dir=Path("/tmp/adam-logs"),
         audit_log_path=Path("/tmp/adam-audit.log"),
-        backend_ref="local-adam",
+        backend_ref="cli-adam",
     )
     repo.record_spawn(1, pid=12345, base_url="http://127.0.0.1:42101", port=42101)
     snap = repo.get_runtime(1)

@@ -262,7 +262,7 @@ class ControlRepository:
             if parent is None:
                 parent = ControlRuntimeState(
                     runtime_id=runtime_id,
-                    backend_kind="local",
+                    backend_kind="cli",
                     desired_state=RuntimeDesiredState.STARTED,
                     observed_state=RuntimeObservedState.UNKNOWN,
                     backend_ref="",

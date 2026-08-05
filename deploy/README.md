@@ -4,9 +4,14 @@
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 单机本地（非容器） | [deploy/cli/](local/) | `./deploy/cli/install.sh` + `magi local start` |
+| 单机本地（非容器 / CLI） | [deploy/cli/](cli/) | `./deploy/cli/install.sh` + `magi cli start` |
 | k8s 单机（dev 模式） | [deploy/k8s-dev/](k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | k8s 生产（已有集群） | [deploy/k8s/](k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
+
+> 命名说明：原本这条路径叫 "local"——但 `k8s-dev`（kind 单机模拟）
+> 也是一种 "local" 运行方式，名字会与 `deploy/k8s-dev/` 冲突。
+> 改为 **cli**（非容器、命令行驱动），与 `k8s`（容器编排）和
+> `k8s-dev`（kind 单机模拟）形成清晰对比。
 
 下面这张决策树帮你选路径：
 
@@ -20,10 +25,10 @@
 
 ## 三种方式的差异
 
-|  | 本地（非容器） | k8s-dev（kind） | k8s 生产 |
+|  | CLI（非容器） | k8s-dev（kind） | k8s 生产 |
 | --- | --- | --- | --- |
 | 容器 | 否 | 是（kind） | 是 |
-| 运行时 | `magi local start`（exec 替换为 `magi runtime`） | Pod（`magi:dev` + 源码挂载） | Pod（`magi:0.1.0`） |
+| 运行时 | `magi cli start`（exec 替换为 `magi runtime`） | Pod（`magi:dev` + 源码挂载） | Pod（`magi:0.1.0`） |
 | 进程模型 | 每个 MAGI 独立 OS 进程 | 每个 MAGI 独立 Pod | 每个 MAGI 独立 Pod |
 | 后端热重载 | 否 | 是（Uvicorn + Vite HMR） | 否 |
 | 源码映射 | 否 | 是（`/mnt/magi/magi`） | 否 |
@@ -43,19 +48,19 @@ deploy/
 ```
 
 `Dockerfile` 是 k8s 与 k8s-dev 共用的生产镜像；`Dockerfile.dev` 只
-在 k8s-dev 模式下用——本地非容器路径**不**使用任何 Docker。
+在 k8s-dev 模式下用——CLI 路径**不**使用任何 Docker。
 
 ## 共享意图
 
 三种方式提供同一个**应用抽象**：
 
 - 每个 MAGI 的私有 SQLite（`workspace/memories/magi.db`）+ 工作区；
-- 每个 MAGIS 的独立数据库（K8s: PostgreSQL，本地: SQLite）+ 公共工作区；
+- 每个 MAGIS 的独立数据库（K8s: PostgreSQL，CLI / k8s-dev: SQLite）+ 公共工作区；
 - 一个 `magi-webui` 入口作为唯一浏览器界面。
 
 路径解析由环境变量驱动：
 - K8s 容器内：`MAGI_WORKSPACE_DIR` 指向 PVC 挂载点
-- 本地进程：`HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`
+- CLI 进程：`HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`
 
 不存在硬编码的 `/workspace` 路径。`magi/launcher/paths.py` 是唯一暴露
 路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。

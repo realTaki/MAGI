@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "service",
         nargs="*",
-        help="service role: runtime (default), webui control plane, or `local` (Local Profile launcher — start/status/stop/doctor after the verb)",
+        help="service role: runtime (default), webui control plane, or `cli` (CLI Profile launcher — start/status/stop/doctor after the verb)",
     )
     parser.add_argument(
         "--check",
@@ -145,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Print resolved config as JSON and exit. Used by container readiness probes.",
     )
     args, extras = parser.parse_known_args(argv)
-    # Materialise argv so downstream dispatchers (e.g. ``_run_local``)
+    # Materialise argv so downstream dispatchers (e.g. ``_run_cli``)
     # don't depend on whether ``main()`` was called from the console
     # script wrapper (where ``argv`` arrives as ``None``).
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -153,32 +153,32 @@ def main(argv: list[str] | None = None) -> int:
     if not args.service:
         args.service = ["runtime"]
     # Validate the chosen service role; trailing positionals are reserved
-    # for the per-service CLI (e.g. ``magi local start``).
-    if args.service[0] not in ("runtime", "webui", "local"):
+    # for the per-service CLI (e.g. ``magi cli start``).
+    if args.service[0] not in ("runtime", "webui", "cli"):
         parser.error(
             f"unknown service {args.service[0]!r} "
-            "(expected runtime | webui | local)"
+            "(expected runtime | webui | cli)"
         )
     if args.check:
         return check()
     if args.service[0] == "webui":
         run_webui()
-    elif args.service[0] == "local":
-        return _run_local(argv)
+    elif args.service[0] == "cli":
+        return _run_cli(argv)
     else:
         run()
     return 0
 
 
-def _run_local(argv: list[str] | None) -> int:
-    """Dispatch ``magi local <verb>`` to the launcher CLI."""
-    from magi.launcher.cli import main as local_main
+def _run_cli(argv: list[str] | None) -> int:
+    """Dispatch ``magi cli <verb>`` to the launcher CLI."""
+    from magi.launcher.cli import main as cli_main
 
-    # Pop the leading "local" so the local CLI sees just its verbs.
+    # Pop the leading "cli" so the launcher CLI sees just its verbs.
     rest = list(argv or [])
-    if rest and rest[0] == "local":
+    if rest and rest[0] == "cli":
         rest = rest[1:]
-    return int(local_main(rest))
+    return int(cli_main(rest))
 
 
 def run_webui() -> None:
@@ -344,11 +344,11 @@ def _reload_dirs() -> list[str]:
 
     - container build (``/app/magi``)
     - k8s-dev hostPath bind (``/mnt/magi/magi``)
-    - Local Profile editable install (``<uv-tools>/magi/lib/.../magi``)
-    - Local Profile checkout (``$MAGI_REPO_ROOT/magi``)
+    - CLI Profile editable install (``<uv-tools>/magi/lib/.../magi``)
+    - CLI Profile checkout (``$MAGI_REPO_ROOT/magi``)
 
     The previous hardcoded ``["/app/magi"]`` only worked for the
-    container image, so a developer running ``magi local start`` saw
+    container image, so a developer running ``magi cli start`` saw
     no file-watch and any source edit silently went stale.  This
     helper makes hot reload work in every profile — the operator just
     sets ``MAGI_RELOAD=1`` and saves a file.

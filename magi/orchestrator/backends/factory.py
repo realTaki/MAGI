@@ -7,10 +7,10 @@ deployment profile is a one-env-var change.
 Two backends ship today:
 
 - :class:`KubernetesEvaBackendAdapter` — K8s Profile (production path).
-- :class:`LocalProcessRuntimeBackend` — Local Profile; spawns one
+- :class:`CLIProcessRuntimeBackend` — CLI Profile; spawns one
   MAGI subprocess per ``bus.runtime.start`` call.
 
-``magi local start <name>`` injects ``MAGI_BACKEND=local`` automatically
+``magi cli start <name>`` injects ``MAGI_BACKEND=cli`` automatically
 before invoking :func:`BackendDispatcherService.start`.  The K8s default
 applies everywhere else.
 """
@@ -25,9 +25,9 @@ from magi.orchestrator.backends.base import RuntimeBackend
 def create() -> RuntimeBackend:
     """Resolve the backend selected by the ``MAGI_BACKEND`` env var.
 
-    Defaults to ``"kubernetes"``.  The ``"local"`` branch activates
-    :class:`LocalProcessRuntimeBackend` for the Local Profile;
-    ``magi local`` injects ``MAGI_BACKEND=local`` automatically.
+    Defaults to ``"kubernetes"``.  The ``"cli"`` branch activates
+    :class:`CLIProcessRuntimeBackend` for the CLI Profile;
+    ``magi cli`` injects ``MAGI_BACKEND=cli`` automatically.
     """
     kind = os.environ.get("MAGI_BACKEND", "kubernetes").strip().lower()
     if kind in {"kubernetes", ""}:
@@ -36,14 +36,14 @@ def create() -> RuntimeBackend:
         )
 
         return KubernetesEvaBackendAdapter()
-    if kind == "local":
-        from magi.orchestrator.backends.local_process import (
-            LocalProcessRuntimeBackend,
+    if kind == "cli":
+        from magi.orchestrator.backends.cli_process import (
+            CLIProcessRuntimeBackend,
         )
 
-        return LocalProcessRuntimeBackend()
+        return CLIProcessRuntimeBackend()
     raise ValueError(
-        f"unsupported MAGI_BACKEND={kind!r}; expected 'kubernetes' or 'local'"
+        f"unsupported MAGI_BACKEND={kind!r}; expected 'kubernetes' or 'cli'"
     )
 
 

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Openclaw-style MAGI CLI wrapper for the single-machine local deployment.
+# Openclaw-style MAGI CLI wrapper for the single-machine CLI deployment.
 #
 # This is a thin shell front-end over the `magi` Python console script
 # that ships with the package. It only does two things:
 #
 #   1. Resolve the data root into the OS-specific openclaw path so
-#      `magi local start` always finds the right on-disk layout.
+#      `magi cli start` always finds the right on-disk layout.
 #   2. Forward all arguments to the underlying `magi` binary so the
 #      Python implementation remains the single source of truth.
 #
-# Each MAGI is an independent OS process. ``magi local start`` bootstraps
+# Each MAGI is an independent OS process. ``magi cli start`` bootstraps
 # once (first run) then becomes the MAGI runtime in the current process.
-# ``magi local install-service`` registers one systemd unit per MAGI.
+# ``magi cli install-service`` registers one systemd unit per MAGI.
 #
 # Usage:
-#   deploy/cli/magi local start        # run first MAGI (eva-000)
-#   deploy/cli/magi local start --name eva-001  # run a specific MAGI
-#   deploy/cli/magi local install-service       # systemd units for all
+#   deploy/cli/magi cli start          # run first MAGI (eva-000)
+#   deploy/cli/magi cli start --name eva-001  # run a specific MAGI
+#   deploy/cli/magi cli install-service       # systemd units for all
 #   deploy/cli/magi --help
 set -euo pipefail
 
@@ -44,7 +44,7 @@ else
 fi
 
 export HOST_WORKSPACE_DIR="$(resolve_data_root)"
-# The Local Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
+# The CLI Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
 # matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``.
 export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$HOST_WORKSPACE_DIR/MAGIS/genesis-01/magis.db}"
 exec "$MAGI_BIN" "$@"

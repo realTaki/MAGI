@@ -1,7 +1,7 @@
 """Launcher-issued control secret.
 
-The Local Profile creates a 256-bit URL-safe random secret the first
-time ``magi local start`` runs, writes it to ``<magis_home>/control-secret``
+The CLI Profile creates a 256-bit URL-safe random secret the first
+time ``magi cli start`` runs, writes it to ``<magis_home>/control-secret``
 with file-mode ``0600``, and the Bus-store mirrors a salted SHA-256
 digest in the MAGIS database.  The raw secret is required by the
 loopback-only control-plane HTTP API (``X-MAGI-Control-Secret`` header).

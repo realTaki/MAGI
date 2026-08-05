@@ -1,15 +1,20 @@
-# MAGI 单机本地部署（非容器）
+# MAGI 单机本地部署（非容器 / CLI）
 
 这是 MAGI 提供的**单机、非容器**部署方式。意图是：
 
-- 一个 `magi local start` 命令就能启动一个 MAGI；
+- 一个 `magi cli start` 命令就能启动一个 MAGI；
 - 每个 MAGI 是独立 OS 进程，一个崩溃不影响其他；
 - 持久化数据放在一个明显的目录里，方便备份、复制、迁移；
 - 仅依赖系统已有的 Python / systemd，不引入 Docker / k8s；
-- 可以通过 `magi local install-service` 为每个 MAGI 注册独立的
+- 可以通过 `magi cli install-service` 为每个 MAGI 注册独立的
   systemd 用户单元，不需要 root 权限。
 
 这条路径适合：单机开发者、本地评审、单机 PoC、小团队自托管。
+
+> 译注：原本这条路径叫 "local"——但 `k8s-dev`（kind 单机模拟）也是
+> 一种 "local" 运行方式，名字会与 `deploy/k8s-dev/` 混淆。因此改名
+> 为 **cli**（非容器、命令行驱动）；它和 `k8s`（生产 K8s 集群）与
+> `k8s-dev`（kind 单机 + HMR）一起构成三条部署路径。
 
 | 平台 | 数据根 | 类型 |
 | --- | --- | --- |
@@ -26,17 +31,22 @@
 ./deploy/cli/install.sh
 
 # 2. 启动 Adam（第一个 MAGI，前台 + 自动打开浏览器）
-./deploy/cli/magi local start
+./deploy/cli/magi cli start
 
 # 3. 启动其他 MAGI（如 eva-00）
-./deploy/cli/magi local start --name eva-00 --port 42070
+./deploy/cli/magi cli start --name eva-00 --port 42070
 
 # 4. （可选）为所有 MAGI 注册 systemd user unit
-./deploy/cli/magi local install-service
+./deploy/cli/magi cli install-service
 
 # 5. 卸载服务
-./deploy/cli/magi local uninstall-service
+./deploy/cli/magi cli uninstall-service
 ```
+
+> Bash 包装 `deploy/cli/magi` 存在的目的：固化 `HOST_WORKSPACE_DIR`
+> 和 `MAGIS_DATABASE_URL` 默认值，让 `magi cli` 调用无需记
+> 手动设环境变量。如果你已经 `uv tool install magi`，也可以直接用
+> `magi cli ...`，把 `HOST_WORKSPACE_DIR` 通过 `--data-dir` 传入。
 
 `install.sh` 仅做三件事：
 
@@ -82,15 +92,15 @@ MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
 ## CLI 命令
 
 ```bash
-magi local start              # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
-magi local start --name eva-001  # 启动指定 MAGI
-magi local start --port 42070   # 指定端口
-magi local start --no-open    # 不打开浏览器
-magi local status             # 列出所有 MAGIC slots 及其状态
-magi local stop               # 向所有 MAGI runtime 发送 SIGTERM
-magi local doctor             # 诊断打印（路径、DB 状态）
-magi local install-service    # 为每个 MAGI 注册独立 systemd 单元（Linux only）
-magi local uninstall-service  # 移除所有 magi-*.service 单元（Linux only）
+magi cli start                # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
+magi cli start --name eva-001  # 启动指定 MAGI
+magi cli start --port 42070   # 指定端口
+magi cli start --no-open      # 不打开浏览器
+magi cli status               # 列出所有 MAGIC slots 及其状态
+magi cli stop                 # 向所有 MAGI runtime 发送 SIGTERM
+magi cli doctor               # 诊断打印（路径、DB 状态）
+magi cli install-service      # 为每个 MAGI 注册独立 systemd 单元（Linux only）
+magi cli uninstall-service    # 移除所有 magi-*.service 单元（Linux only）
 ```
 
 所有命令都接受 `--data-dir <path>` 覆盖默认数据根，等价于
@@ -98,7 +108,7 @@ magi local uninstall-service  # 移除所有 magi-*.service 单元（Linux only�
 
 ## 服务注册（Linux）
 
-`magi local install-service` 扫描 `MAGIC/` 下的所有 slot，为每个 MAGI
+`magi cli install-service` 扫描 `MAGIC/` 下的所有 slot，为每个 MAGI
 生成独立的 systemd 用户单元：
 
 ```bash
@@ -120,11 +130,11 @@ journalctl --user -u magi-adam.service -f
 systemctl --user list-units 'magi-*'
 ```
 
-删除：`magi local uninstall-service` 会停止并移除所有单元。
+删除：`magi cli uninstall-service` 会停止并移除所有单元。
 
 ## 设计要点
 
-- **每个 MAGI 是独立进程**：`magi local start` 用 `execve` 替换自身为
+- **每个 MAGI 是独立进程**：`magi cli start` 用 `execve` 替换自身为
   `magi runtime`，当前终端直接拥有 MAGI 进程。systemd 模式下每个 MAGI
   是独立 unit，独立崩溃、独立重启。
 - **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
@@ -135,7 +145,7 @@ systemctl --user list-units 'magi-*'
   本地进程设置 `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`。
   不存在硬编码的 `/workspace` 路径。
 - **不依赖 Docker / podman / k8s**：唯一外部依赖是 Python 3.12+。
-- **`magi local start` 首次运行是幂等的**：第一次跑会初始化 SQLite
+- **`magi cli start` 首次运行是幂等的**：第一次跑会初始化 SQLite
   schema 并生成 control secret；之后再跑直接启动 runtime。
 
 ## 升级
@@ -146,7 +156,7 @@ systemctl --user list-units 'magi-*'
 ## 卸载
 
 ```bash
-magi local uninstall-service                  # 移除 systemd 单元（Linux）
+magi cli uninstall-service                    # 移除 systemd 单元（Linux）
 rm -rf ~/.magi                                # 数据根
 uv tool uninstall magi                        # 移除包
 ```

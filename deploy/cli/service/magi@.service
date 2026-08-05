@@ -1,4 +1,4 @@
-# Template for ``magi local install-service``.  The CLI replaces placeholders
+# Template for ``magi cli install-service``.  The CLI replaces placeholders
 # at install time — this file is *not* used as-is by systemd.  It lives here
 # so operators who prefer hand-written units can see the expected shape.
 #

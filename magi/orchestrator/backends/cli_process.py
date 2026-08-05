@@ -71,16 +71,16 @@ class CLIProcessRuntimeBackend:
         magis_id: int,
         magis_name: str,
     ) -> MagisProvisionResult:
-        """Return the platform-neutral provision result for Local Profile.
+        """Return the platform-neutral provision result for CLI Profile.
 
-        The Local Profile provisions its MAGIS SQLite through
+        The CLI Profile provisions its MAGIS SQLite through
         :func:`magi.launcher.bootstrap_local` (composition-root stage)
         before any backend method is invoked.  This backend therefore
         treats ``provision_magis`` as a no-op — it returns the
         platform-neutral DTO so the BUS / API layer can observe the
         intent, but does not create or migrate storage on its own.
         The K8s backend, by contrast, creates a fresh PostgreSQL on
-        every call; the asymmetry is by design (Local is single-host,
+        every call; the asymmetry is by design (CLI is single-host,
         K8s is multi-tenant).
         """
         from magi.launcher.paths import magis_db_path
