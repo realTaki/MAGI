@@ -54,6 +54,16 @@ logger = logging.getLogger("magi.launcher.paths")
 # alike so ``workspace/memories/magi.db`` is the single truth.
 _STATE_SUBDIR = "memories"
 
+# Canonical folder names under ``<data_root>`` for the CLI Profile.
+# Renamed from ``"MAGIC"`` / ``"MAGIS"`` on 2026-08-05 — the 5-letter
+# forms differed by one letter and were easy to mix up.  The two
+# folders are conceptually distinct (per-MAGI private workspace vs.
+# per-MAGIS public SQLite + launcher state), so the on-disk names
+# spell it out.  Internal Python identifiers (``MAGIC`` / ``MAGIS``
+# in class names, helper functions, env vars) keep their short forms.
+MAGIC_DIR_NAME = "MAGI_Citizens"   # per-MAGI runtime workspaces
+MAGIS_DIR_NAME = "MAGI_Societies"  # per-MAGIS public SQLite + launcher state
+
 
 def workspace_dir() -> Path:
     """Return the deployer's persistent workspace directory.
@@ -62,9 +72,9 @@ def workspace_dir() -> Path:
 
     1. ``$MAGI_WORKSPACE_DIR`` when set (K8s Pod / explicitly configured).
     2. ``$HOST_WORKSPACE_DIR`` + ``$MAGI_NAME`` when set (CLI
-       Profile runtime process) → ``<data_root>/MAGIC/<slug>/workspace``.
+       Profile runtime process) → ``<data_root>/MAGI_Citizens/<slug>/workspace``.
     3. ``$HOST_WORKSPACE_DIR`` set, no ``$MAGI_NAME`` (CLI Profile
-       launcher) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
+       launcher) → ``<data_root>/MAGI_Societies/genesis-01/launcher-workspace``.
 
     The slug alone is sufficient — ``EVA-000`` is both the MAGIC display
     name and the directory key, so ``MAGI_RUNTIME_ID`` is unnecessary
@@ -77,7 +87,7 @@ def workspace_dir() -> Path:
     if data_root:
         runtime_slug = os.environ.get("MAGI_NAME")
         if runtime_slug:
-            return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
+            return Path(data_root) / MAGIC_DIR_NAME / runtime_slug / "workspace"
         return magis_home(Path(data_root)) / "launcher-workspace"
     raise RuntimeError(
         "workspace_dir() needs MAGI_WORKSPACE_DIR (K8s Pod) or "
@@ -92,10 +102,10 @@ def state_dir() -> Path:
 
     1. **CLI Profile, runtime process** —
        ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` set.
-       State lives at ``<data_root>/MAGIC/<slug>/workspace/memories/``.
+       State lives at ``<data_root>/MAGI_Citizens/<slug>/workspace/memories/``.
     2. **CLI Profile, launcher** —
        ``HOST_WORKSPACE_DIR`` set, no ``MAGI_NAME``.
-       Scratch SQLite at ``<data_root>/MAGIS/genesis-01/launcher-state``.
+       Scratch SQLite at ``<data_root>/MAGI_Societies/genesis-01/launcher-state``.
     3. **K8s Profile** — no ``HOST_WORKSPACE_DIR``.
        State at ``<workspace_dir>/memories``.
     """
@@ -105,7 +115,7 @@ def state_dir() -> Path:
         if runtime_slug:
             return (
                 Path(data_root).expanduser().resolve()
-                / "MAGIC"
+                / MAGIC_DIR_NAME
                 / runtime_slug
                 / "workspace"
                 / _STATE_SUBDIR
@@ -243,7 +253,7 @@ def default_data_root() -> Path:
 
 
 def magis_home(data_root: Path) -> Path:
-    """Return the first MAGIS directory (``<data_root>/MAGIS/genesis-01/``).
+    """Return the first MAGIS directory (``<data_root>/MAGI_Societies/genesis-01/``).
 
     Delegates to :func:`magis_dir` with the default Genesis id/slug.
     This is where the launcher secret and state live, co-located with
@@ -274,24 +284,24 @@ def launcher_state_path(magis_home: Path) -> Path:
 def runtime_workspace_root(data_root: Path, runtime_id: int, slug: str) -> Path:
     """Resolve the per-runtime workspace root.
 
-    Format: ``<data_root>/MAGIC/<slug>/workspace/``.  The *slug* is the
+    Format: ``<data_root>/MAGI_Citizens/<slug>/workspace/``.  The *slug* is the
     MAGIC's directory-safe name (e.g. ``eva-000``, ``eva-001``);
     ``runtime_id`` is accepted for call-site compatibility but not
     embedded in the path — the slug alone is the unique key.
     """
-    return Path(data_root) / "MAGIC" / slug / "workspace"
+    return Path(data_root) / MAGIC_DIR_NAME / slug / "workspace"
 
 
 def runtime_state_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
     """Resolve the per-runtime SQLite directory.
 
-    Format: ``<data_root>/MAGIC/<slug>/workspace/memories/``.
+    Format: ``<data_root>/MAGI_Citizens/<slug>/workspace/memories/``.
     Mirrors the K8s ``<workspace_dir>/memories`` convention so every
     profile resolves to ``workspace/memories/magi.db``.  Used by
     :class:`magi.launcher.LocalPathLayout` and by the CLI subprocess's
     path resolution via :func:`state_dir`.
     """
-    return Path(data_root) / "MAGIC" / slug / "workspace" / "memories"
+    return Path(data_root) / MAGIC_DIR_NAME / slug / "workspace" / "memories"
 
 
 def runtime_log_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
@@ -305,13 +315,13 @@ def runtime_audit_log_path(data_root: Path, runtime_id: int, slug: str) -> Path:
 def magis_dir(data_root: Path, magis_id: int, slug: str) -> Path:
     """Resolve the per-MAGIS public SQLite directory.
 
-    Format: ``<data_root>/MAGIS/<slug>-<magis_id:02d>/``.  Name first,
-    id last — same style as MAGIC's ``eva-000``.  The first MAGIS
+    Format: ``<data_root>/MAGI_Societies/<slug>-<magis_id:02d>/``.  Name first,
+    id last — same style as a MAGIC's ``eva-000``.  The first MAGIS
     seeded by the CLI Profile is Genesis with magis_id=1 and
     slug="genesis", so its directory is
-    ``<data_root>/MAGIS/genesis-01/magis.db``.
+    ``<data_root>/MAGI_Societies/genesis-01/magis.db``.
     """
-    return Path(data_root) / "MAGIS" / f"{slug}-{magis_id:02d}"
+    return Path(data_root) / MAGIS_DIR_NAME / f"{slug}-{magis_id:02d}"
 
 
 def magis_db_path(data_root: Path, magis_id: int, slug: str) -> Path:
@@ -320,6 +330,9 @@ def magis_db_path(data_root: Path, magis_id: int, slug: str) -> Path:
 
 
 __all__ = [
+    # Constants — canonical on-disk folder names
+    "MAGIC_DIR_NAME",
+    "MAGIS_DIR_NAME",
     # Group 1 — deployer workspace (container / K8s profile)
     "workspace_dir",
     "state_dir",

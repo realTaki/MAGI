@@ -110,8 +110,8 @@ orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围�
 
 ```text
 宿主仓库             → /app/magi        源码热加载
-workspace/MAGIC/eva-00 → /workspace     开发 MAGI 的私有工作区
-workspace/MAGIS/Genesis → /magis         Genesis 的公共工作区
+workspace/MAGI_Citizens/eva-00 → /workspace     开发 MAGI 的私有工作区
+workspace/MAGI_Societies/Genesis → /magis         Genesis 的公共工作区
 ```
 
 已有 Kubernetes 集群或生产式部署可使用：

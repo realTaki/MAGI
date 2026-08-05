@@ -31,7 +31,7 @@ orchestrator 边界是否如设计一样工作；同时给后端 + WebUI 提供�
 4. 调用 `deploy/k8s/bootstrap-k8s.sh` 部署：
    - `magi-orchestrator`（生产 control overlay）
    - `magi-webui`（dev `control-dev` overlay：Vite HMR + 源码 `/mnt/magi/magi` 挂载）
-   - `magi-node`（dev `overlays/dev-eva00`：源码 `/mnt/magi/magi` 挂载、源码热更新，持久化数据 `/mnt/magi-data/MAGIC/1-eva-00/workspace`）
+   - `magi-node`（dev `overlays/dev-eva00`：源码 `/mnt/magi/magi` 挂载、源码热更新，持久化数据 `/mnt/magi-data/MAGI_Citizens/eva-000/workspace`）
 
 启动后访问：
 
@@ -96,5 +96,5 @@ rm -f .kind-kubeconfig
   （持久化数据）目录，且 Dockerfile.dev 的 `runAsNonRoot: false` 是 dev-only 妥协。
 - **不要**在 dev 模式下复用生产 `magi-magis-genesis-01-db` Secret
   ——dev 模式自动生成弱密码，仅供本地。
-- dev 模式的持久化数据在 `~/.magi/MAGIC/eva-000/workspace/`，
+- dev 模式的持久化数据在 `~/.magi/MAGI_Citizens/eva-000/workspace/`，
   与 CLI 部署共享同一 `~/.magi/` 布局。

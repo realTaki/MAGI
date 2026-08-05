@@ -71,7 +71,7 @@ there is no silent fallback to `/workspace`.
 magi/orchestrator/kubernetes.py:270   "mountPath": "/magis"      (K8s PV manifest string)
 ```
 
-No code path uses `/magis` as a Python literal; the K8s adapter reads the PostgreSQL DSN from `MAGIS_DATABASE_URL`.  CLI Profile's per-MAGIS SQLite lives under `<data_root>/MAGIS/<magis-id>/magis.db` via [`magi/launcher.py:LocalPathLayout.magis_workspace`](../magi/launcher.py).
+No code path uses `/magis` as a Python literal; the K8s adapter reads the PostgreSQL DSN from `MAGIS_DATABASE_URL`.  CLI Profile's per-MAGIS SQLite lives under `<data_root>/MAGI_Societies/<magis-id>/magis.db` via [`magi/launcher.py:LocalPathLayout.magis_workspace`](../magi/launcher.py).
 
 ### 2.3 `:42069`
 

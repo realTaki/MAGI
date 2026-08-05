@@ -296,11 +296,11 @@ MAGI_HOME/
 │   ├── control-secret
 │   ├── launcher.json
 │   └── logs/
-├── MAGIS/
+├── MAGI_Societies/
 │   └── <magis-id>-<slug>/
 │       ├── magis.db
 │       └── workspace/
-└── MAGIC/
+└── MAGI_Citizens/
     └── <runtime-id>-<slug>/
         └── workspace/
             ├── memories/magi.db
@@ -350,8 +350,8 @@ class LocalPathLayout:
 Local Profile 使用：
 
 ```text
-MAGIC/<id>/workspace/memories/magi.db  # 单个 MAGI 私有状态
-MAGIS/<id>/magis.db                    # 单个 MAGIS 组织事实
+MAGI_Citizens/<id>/workspace/memories/magi.db  # 单个 MAGI 私有状态
+MAGI_Societies/<id>/magis.db                    # 单个 MAGIS 组织事实
 ```
 
 不得将 MAGIS 表继续写入初始 Adam 的私有 `magi.db`。现有无 `MAGIS_DATABASE_URL` 的 legacy/test fallback 不能直接作为最终实现。

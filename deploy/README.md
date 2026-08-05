@@ -33,7 +33,7 @@
 | 后端热重载 | 否 | 是（Uvicorn + Vite HMR） | 否 |
 | 源码映射 | 否 | 是（`/mnt/magi/magi`） | 否 |
 | WebUI 端口 | 42069（Adam）/ 42070+（EVA） | 42069（kind NodePort 30069） | 42069（需 port-forward） |
-| 持久化 | `~/.magi/MAGIC/<slug>/workspace/` | `~/.magi/MAGIC/eva-000/workspace/`（hostPath） | PVC `/workspace` |
+| 持久化 | `~/.magi/MAGI_Citizens/<slug>/workspace/` | `~/.magi/MAGI_Citizens/eva-000/workspace/`（hostPath） | PVC `/workspace` |
 | 注册成服务 | 是（每 MAGI 独立 systemd unit） | 否 | 否 |
 | 唯一前置 | Python 3.12+ | Docker + kind | 现有 k8s 集群 |
 

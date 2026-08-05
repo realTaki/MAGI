@@ -253,7 +253,7 @@ class AgentWorker:
             attempt_id="",  # assigned by enqueue_llm_job
             run_id=claim.run_id,
             inbox_event_id=claim.event_id,
-            kind="agent.step",
+            kind="chat",
             system=system,
             messages=tuple(messages),
             max_tokens=max_tokens,

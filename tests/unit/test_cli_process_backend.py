@@ -92,7 +92,7 @@ def test_provision_magis_is_noop_for_cli(tmp_path: Path, monkeypatch) -> None:
     assert result.database_service_name is None
     assert result.workspace_claim_name is None
     # Backend must NOT touch storage itself.
-    assert not (tmp_path / "MAGIS" / "genesis-01" / "magis.db").exists()
+    assert not (tmp_path / "MAGI_Societies" / "genesis-01" / "magis.db").exists()
 
 
 # ── start ──────────────────────────────────────────────────────────── #

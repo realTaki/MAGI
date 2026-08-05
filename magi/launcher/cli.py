@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Optional
 
 from magi.launcher.paths import (
+    MAGIC_DIR_NAME,
     control_secret_path,
     default_data_root,
     launcher_state_path,
@@ -113,7 +114,7 @@ def _resolve_runtime(data_root: Path, name: str | None) -> tuple[int, str]:
     Slots are directory-safe slugs (e.g. ``eva-000``, ``eva-001``).
     ``name`` matches against the slug or the MAGIC display name.
     """
-    magic_dir = data_root / "MAGIC"
+    magic_dir = data_root / MAGIC_DIR_NAME
 
     # First run: no slots yet.  The seed created Adam as id=1.
     if not magic_dir.exists() or not any(
@@ -214,7 +215,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     magic_id, slug = _resolve_runtime(data_root, getattr(args, "name", None))
 
     # ── ensure the per-MAGI workspace slot exists ──
-    ws_root = data_root / "MAGIC" / slug / "workspace"
+    ws_root = data_root / MAGIC_DIR_NAME / slug / "workspace"
     ws_root.mkdir(parents=True, exist_ok=True)
     from magi.launcher.paths import bootstrap_workspace
     bootstrap_workspace(ws_root)
@@ -249,7 +250,7 @@ def cmd_start(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """``magi cli status`` — list MAGIC slots and their process state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
-    magic_dir = data_root / "MAGIC"
+    magic_dir = data_root / MAGIC_DIR_NAME
     if not magic_dir.exists():
         print("(no MAGIC slots — run `magi cli start` first)")
         return 0
@@ -320,7 +321,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     """``magi cli doctor`` — surface workspace + control-plane state."""
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
     home = magis_home(data_root)
-    magic_dir = data_root / "MAGIC"
+    magic_dir = data_root / MAGIC_DIR_NAME
     slots = sorted(
         p.name for p in magic_dir.iterdir() if p.is_dir()
     ) if magic_dir.exists() else []
@@ -392,7 +393,7 @@ def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
     Slugs are directory-safe names like ``eva-000``, ``eva-001``.
     The ``magic_id`` is reverse-mapped from the MAGIS database.
     """
-    magic_dir = data_root / "MAGIC"
+    magic_dir = data_root / MAGIC_DIR_NAME
     if not magic_dir.exists():
         return []
     slots: list[tuple[int, str]] = []
@@ -429,7 +430,7 @@ def cmd_webui(args: argparse.Namespace) -> int:
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
     # Make sure the MAGIS schema + control plane are in place — the
-    # webui reads from ``MAGIS/<id>-<slug>/magis.db`` and authenticates
+    # webui reads from ``MAGI_Societies/<id>-<slug>/magis.db`` and authenticates
     # against ``control/control-secret``.
     home = magis_home(data_root)
     ensure_control_secret(control_secret_path(home))

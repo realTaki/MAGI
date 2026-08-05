@@ -32,6 +32,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from magi.launcher.paths import MAGIC_DIR_NAME, MAGIS_DIR_NAME
+
 # §1. Path layout config --------------------------------------------------------
 
 
@@ -43,7 +45,7 @@ class LocalPathLayout:
     provided:
 
     **Runtime mode** (``runtime_id`` + ``slug`` supplied):
-        ``<data_root>/MAGIC/<slug>/``
+        ``<data_root>/MAGI_Citizens/<slug>/``
         ├── workspace/
         │   ├── memories/magi.db   (SQLite — via :func:`~magi.launcher.paths.state_dir`)
         │   ├── skills/
@@ -53,7 +55,7 @@ class LocalPathLayout:
         └── state/                 (SQLite — per-MAGI isolation)
 
     **Launcher mode** (no ``runtime_id``):
-        ``<data_root>/MAGIS/genesis-01/launcher-state/`` — scratch space
+        ``<data_root>/MAGI_Societies/genesis-01/launcher-state/`` — scratch space
         for the launcher's BUS services, co-located with the MAGIS
         database.  The launcher never runs agent work; the real runtime
         state lives in the subprocess's per-MAGI slot.
@@ -61,13 +63,13 @@ class LocalPathLayout:
     Layout under ``data_root`` (runtime mode)::
 
         <data_root>/
-        ├── MAGIC/<slug>/workspace/
+        ├── MAGI_Citizens/<slug>/workspace/
         │   ├── SOUL.md
         │   ├── skills/
         │   ├── memories/magi.db              (SQLite — per-MAGI private)
         │   ├── logs/
         │   └── tmp/
-        └── MAGIS/<magis-id>-<slug>/magis.db  (SQLite — per-MAGIS public)
+        └── MAGI_Societies/<magis-id>-<slug>/magis.db  (SQLite — per-MAGIS public)
     """
 
     data_root: Path
@@ -91,9 +93,9 @@ class LocalPathLayout:
         object.__setattr__(self, "data_root", data_root)
 
         if self.runtime_id is not None and self.slug:
-            # Runtime mode: per-MAGI slot under MAGIC/<slug>/workspace/
+            # Runtime mode: per-MAGI slot under MAGI_Citizens/<slug>/workspace/
             # state_dir = workspace/memories — matches K8s convention.
-            ws = data_root / "MAGIC" / self.slug / "workspace"
+            ws = data_root / MAGIC_DIR_NAME / self.slug / "workspace"
             st = ws / "memories"
             object.__setattr__(self, "state_dir", st)
             object.__setattr__(self, "workspace", ws)
@@ -106,7 +108,7 @@ class LocalPathLayout:
         else:
             # Launcher mode: scratch space in MAGIS home so it never
             # collides with the Adam's per-MAGI magi.db.
-            launcher_state = data_root / "MAGIS" / "genesis-01" / "launcher-state"
+            launcher_state = data_root / MAGIS_DIR_NAME / "genesis-01" / "launcher-state"
             object.__setattr__(self, "state_dir", launcher_state)
             object.__setattr__(self, "workspace", data_root)  # unused
             object.__setattr__(self, "local_db", launcher_state / "magi.db")
@@ -116,7 +118,7 @@ class LocalPathLayout:
             object.__setattr__(self, "temp_dir", data_root / "tmp")  # unused
             object.__setattr__(self, "audit_log_path", data_root / "logs" / "audit.log")
 
-        object.__setattr__(self, "magis_workspace", data_root / "MAGIS")
+        object.__setattr__(self, "magis_workspace", data_root / MAGIS_DIR_NAME)
 
 
 # §2. CLI Profile Composition Root --------------------------------------------
@@ -151,9 +153,9 @@ def bootstrap_local(
     to set up a fresh ``tmp_path`` fixture.
 
     ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
-    ``None`` the function picks ``<data_root>/MAGIS/genesis-01/`` (the
+    ``None`` the function picks ``<data_root>/MAGI_Societies/genesis-01/`` (the
     first MAGIS seeded by the CLI Profile is always Genesis with id=1).
-    This matches the K8s pattern ``MAGIS/<magis_id>-<slug>/magis.db`` so
+    This matches the K8s pattern ``MAGI_Societies/<magis_id>-<slug>/magis.db`` so
     the host layout is identical across both profiles.
 
     The control-plane runtime registry (``bus.control_registry``) is

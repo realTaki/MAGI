@@ -47,7 +47,7 @@ from magi.bus.protocols.tools import (
 )
 from magi.bus.protocols.auth import CallerIdentity
 from magi.bus.protocols.action_item import ActionItemView
-from magi.bus.protocols.llm_jobs import LLMJob, LLMJobResult
+from magi.bus.protocols.llm_jobs import LLMJob, LLMJobKind, LLMJobResult
 
 
 __all__ = [
@@ -74,5 +74,6 @@ __all__ = [
     "ActionItemView",
     # provider jobs (PR 2 — Phase B)
     "LLMJob",
+    "LLMJobKind",
     "LLMJobResult",
 ]  # closes __all__

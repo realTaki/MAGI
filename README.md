@@ -133,8 +133,8 @@ mounts:
 
 ```text
 host repository      → /app/magi        source hot reload
-workspace/MAGIC/eva-00 → /workspace     dev MAGI's private workspace
-workspace/MAGIS/Genesis → /magis         Genesis public workspace
+workspace/MAGI_Citizens/eva-00 → /workspace     dev MAGI's private workspace
+workspace/MAGI_Societies/Genesis → /magis         Genesis public workspace
 ```
 
 For an existing cluster or a production-style deployment, use the

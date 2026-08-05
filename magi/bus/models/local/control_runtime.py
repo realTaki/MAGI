@@ -2,7 +2,7 @@
 
 These tables track runtime lifecycle state (desired/observed), port
 allocations, workspace archives, and the launcher-issued control secret.
-They live in the MAGIS database (``MAGIS/<id>-<slug>/magis.db`` locally,
+They live in the MAGIS database (``MAGI_Societies/<id>-<slug>/magis.db`` locally,
 PostgreSQL in K8s) alongside organisation facts like ``magic``, ``magis``,
 ``magis_memberships``, ``eva_runtimes``, ``control_settings``, and
 ``control_operators``.

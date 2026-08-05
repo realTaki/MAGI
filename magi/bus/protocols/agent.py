@@ -123,7 +123,7 @@ class BusStoreProtocol(Protocol):
     def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str: ...
     def fail_llm_attempt(self, attempt_id: str, error: str) -> None: ...
     # Providers worker (PR 2 — Phase B): durable queue around the LLM attempt.
-    # ``phase`` on the row encodes the kind ("agent.step" / "compaction.summary"
+    # ``phase`` on the row encodes the kind ("chat" / "auto_compact"
     # / "auto_title"); ``status`` carries the lifecycle ("queued" / "claimed"
     # / "completed" / "failed" / the existing "started" / "streaming" etc.).
     def enqueue_llm_job(

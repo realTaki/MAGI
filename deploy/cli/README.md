@@ -51,7 +51,7 @@
 `install.sh` 仅做三件事：
 
 1. 确认 `magi` 在 PATH 上（缺失时会用 `uv tool install` 装一份）；
-2. 建好数据根目录（带 `MAGIC/`, `MAGIS/` 两个子目录）；
+2. 建好数据根目录（带 `MAGI_Citizens/`, `MAGI_Societies/` 两个子目录）；
 3. 打印一段 cheat sheet。
 
 它**不会**主动启动 MAGI、**不会**注册服务。
@@ -63,7 +63,7 @@
 ```text
 ~/.magi/                                       # Linux
 ~/Documents/.magi/                             # macOS / Windows
-├── MAGIC/                                     # 私有 MAGI 工作区
+├── MAGI_Citizens/                             # 私有 MAGI 工作区
 │   ├── eva-000/workspace/
 │   │   ├── SOUL.md
 │   │   ├── memories/
@@ -74,7 +74,7 @@
 │   │   └── tmp/
 │   └── eva-001/workspace/                     # 第二个 MAGI
 │       └── ...                                # （结构同上）
-└── MAGIS/                                     # 每个 MAGIS 一个目录
+└── MAGI_Societies/                            # 每个 MAGIS 一个目录
     └── genesis-01/
         ├── magis.db                           # 组织架构 + 控制面 SQLite
         ├── control-secret                     # 0600，内部 API HMAC 密钥
@@ -85,9 +85,9 @@
 MAGIS SQLite 中，与 K8s 的 `eva_runtimes` + `control_settings` 一致。
 不再有独立的 `control/local-registry.db`。
 
-每个 MAGI 的 workspace 落在 `~/.magi/MAGIC/<slug>/workspace/`，
+每个 MAGI 的 workspace 落在 `~/.magi/MAGI_Citizens/<slug>/workspace/`，
 与 K8s 里 PVC 的 `<workspace>/memories/magi.db` 命名规则完全一致。
-MAGIS 格式为 `MAGIS/<magis_id>-<slug>/magis.db`。
+MAGIS 格式为 `MAGI_Societies/<magis_id>-<slug>/magis.db`。
 
 ## CLI 命令
 
@@ -108,7 +108,7 @@ magi cli uninstall-service    # 移除所有 magi-*.service 单元（Linux only�
 
 ## 服务注册（Linux）
 
-`magi cli install-service` 扫描 `MAGIC/` 下的所有 slot，为每个 MAGI
+`magi cli install-service` 扫描 `MAGI_Citizens/` 下的所有 slot，为每个 MAGI
 生成独立的 systemd 用户单元：
 
 ```bash
@@ -139,7 +139,7 @@ systemctl --user list-units 'magi-*'
   是独立 unit，独立崩溃、独立重启。
 - **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
   在 `<workspace>/memories/magi.db`（`MAGI_WORKSPACE_DIR` 指向的 PVC）；
-  本路径保持相同约定 `~/.magi/MAGIC/<slug>/workspace/memories/magi.db`。
+  本路径保持相同约定 `~/.magi/MAGI_Citizens/<slug>/workspace/memories/magi.db`。
   `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
 - **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
   本地进程设置 `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`。

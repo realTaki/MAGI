@@ -6,7 +6,7 @@
 
 ```text
 # K8s: MAGI_WORKSPACE_DIR=/workspace（PVC）
-# Local: ~/.magi/MAGIC/<slug>/workspace/
+# Local: ~/.magi/MAGI_Citizens/<slug>/workspace/
 <workspace>/
 ├── memories/magi.db       # 私人记忆、会话、联系人、任务与本地设置
 ├── skills/
@@ -19,7 +19,7 @@
 
 ```text
 # K8s: /magis（PVC）
-# Local: ~/.magi/MAGIS/<id>-<slug>/
+# Local: ~/.magi/MAGI_Societies/<id>-<slug>/
 <magis>/
 ├── magis.db               # 组织事实（K8s 为 PostgreSQL）
 └── workspace/             # 团队共享文件

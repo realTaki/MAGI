@@ -1001,7 +1001,7 @@ class BusStore:
     def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
         """Deprecated. Use :meth:`enqueue_llm_job` instead."""
         return self.enqueue_llm_job(
-            run_id=run_id, inbox_event_id=inbox_event_id, kind="agent.step",
+            run_id=run_id, inbox_event_id=inbox_event_id, kind="chat",
         )
 
     def fail_llm_attempt(self, attempt_id: str, error: str) -> None:

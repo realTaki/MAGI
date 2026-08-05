@@ -138,7 +138,7 @@ async def test_publish_then_complete_round_trip(magi_state):
         attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
-            kind="agent.step",
+            kind="chat",
         )
         store.persist_llm_job_request(
             attempt_id,
@@ -183,7 +183,7 @@ async def test_provider_not_configured_envelopes_failure(magi_state):
         attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
-            kind="agent.step",
+            kind="chat",
         )
         store.persist_llm_job_request(
             attempt_id,
@@ -220,7 +220,7 @@ async def test_provider_crashed_envelopes_generic_failure(magi_state):
         attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
-            kind="agent.step",
+            kind="chat",
         )
         store.persist_llm_job_request(
             attempt_id,
@@ -263,7 +263,7 @@ async def test_concurrency_limit_serialises_two_jobs(magi_state):
             aid = store.enqueue_llm_job(
                 run_id=f"run-{i}",
                 inbox_event_id=f"ev-{i}",
-                kind="agent.step",
+                kind="chat",
             )
             store.persist_llm_job_request(
                 aid,
@@ -300,7 +300,7 @@ async def test_load_llm_job_result_returns_none_on_timeout(magi_state):
     # Don't start the worker — the queued row won't move.
     store = get_bus_store()
     aid = store.enqueue_llm_job(
-        run_id="never", inbox_event_id="never", kind="agent.step",
+        run_id="never", inbox_event_id="never", kind="chat",
     )
     started = datetime.now()
     result = await asyncio.to_thread(

@@ -27,7 +27,20 @@ polls the result row.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+
+# Closed set of caller labels for :attr:`LLMJob.kind` / the
+# ``LLMAttempt.phase`` column. The worker does not branch on
+# ``kind`` — these are an audit/observability label only — but a
+# caller MUST pick one of these three. Adding a fourth requires
+# updating both this Literal and the audit-log / dashboards that
+# key on it; that's deliberate friction.
+LLMJobKind = Literal[
+    "chat",          # one agent turn in response to a user message
+    "auto_compact",  # chat-history compression
+    "auto_title",    # session-title generation
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +59,11 @@ class LLMJob:
     inbox_event_id: str | None
 
     # --- audit-only label (not a protocol-level discriminator) ---
-    # Free-form string so adding a new caller (e.g. "summary.replay",
-    # "prompt.eval") doesn't require a protocol change. Today the
-    # agent turn uses "agent.step"; the worker treats this as
-    # metadata only.
-    kind: str
+    # Closed set; see :data:`LLMJobKind`. Today the agent turn uses
+    # "chat", chat-history compression uses "auto_compact", and
+    # session-title generation uses "auto_title". The worker treats
+    # ``kind`` as metadata only.
+    kind: LLMJobKind
 
     # --- request payload the worker hands to the provider ---
     system: str | None
@@ -75,7 +88,7 @@ class LLMJobResult:
 
     The shape is the same regardless of ``LLMJob.kind``. The
     caller decides what fields it reads (the agent turn consumes
-    ``tool_uses`` and ``assistant_blocks``; ``compaction.summary``
+    ``tool_uses`` and ``assistant_blocks``; ``auto_compact``
     and ``auto_title`` only read ``text``).
     """
 
@@ -100,5 +113,6 @@ class LLMJobResult:
 
 __all__ = [
     "LLMJob",
+    "LLMJobKind",
     "LLMJobResult",
 ]

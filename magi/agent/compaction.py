@@ -132,7 +132,7 @@ async def call_llm_for_summary(
         attempt_id="",  # assigned by enqueue_llm_job
         run_id=run_id,
         inbox_event_id=None,
-        kind="compaction.summary",
+        kind="auto_compact",
         system=system,
         messages=({"role": "user", "content": user_content},),
         max_tokens=1024,
