@@ -23,7 +23,7 @@ from magi.bus.db import init_orm
 from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.models.queue import LLMAttempt
 from magi.bus.db.engine import open_session
-from magi.bus.protocols.provider_jobs import ProviderJob
+from magi.bus.protocols.llm_jobs import LLMJob
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
 from magi.providers.worker import (
@@ -135,12 +135,12 @@ async def test_publish_then_complete_round_trip(magi_state):
     await start_provider_worker()
     try:
         store = get_bus_store()
-        attempt_id = store.enqueue_provider_job(
+        attempt_id = store.enqueue_llm_job(
             run_id=f"run-{uuid.uuid4().hex[:6]}",
             inbox_event_id="ev-1",
             kind="agent.step",
         )
-        store.persist_provider_job_request(
+        store.persist_llm_job_request(
             attempt_id,
             request={
                 "system": "you are a test",
@@ -154,7 +154,7 @@ async def test_publish_then_complete_round_trip(magi_state):
             },
         )
         result = await asyncio.to_thread(
-            store.load_provider_job_result, attempt_id,
+            store.load_llm_job_result, attempt_id,
             wait_seconds=5, poll_seconds=0.05,
         )
         assert result is not None, "worker did not settle the row in time"

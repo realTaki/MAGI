@@ -106,7 +106,7 @@ async def call_llm_for_summary(
     """One LLM call to compress ``to_compress`` into a summary.
 
     Phase D — the call is published onto the providers queue and we
-    wait for the result back via :meth:`BusStore.load_provider_job_result`.
+    wait for the result back via :meth:`BusStore.load_llm_job_result`.
     Returns the summary text, or ``None`` on any failure / timeout so
     the caller falls through without rewriting the session.
     """
@@ -124,12 +124,12 @@ async def call_llm_for_summary(
     import asyncio
     import uuid as _uuid
     from magi.bus import get_bus_store
-    from magi.bus.protocols.provider_jobs import ProviderJob
-    from magi.providers.worker import enqueue_provider_job
+    from magi.bus.protocols.llm_jobs import LLMJob
+    from magi.providers.worker import enqueue_llm_job
 
     run_id = f"compact-{_uuid.uuid4().hex}"
-    job = ProviderJob(
-        attempt_id="",  # assigned by enqueue_provider_job
+    job = LLMJob(
+        attempt_id="",  # assigned by enqueue_llm_job
         run_id=run_id,
         inbox_event_id=None,
         kind="compaction.summary",
@@ -140,10 +140,10 @@ async def call_llm_for_summary(
         streaming=False,
         extra={},
     )
-    attempt_id = await enqueue_provider_job(job)
+    attempt_id = await enqueue_llm_job(job)
     store = get_bus_store()
     result = await asyncio.to_thread(
-        store.load_provider_job_result,
+        store.load_llm_job_result,
         attempt_id,
         wait_seconds=wait_seconds,
         poll_seconds=0.1,

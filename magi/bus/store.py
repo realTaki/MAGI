@@ -812,14 +812,14 @@ class BusStore:
 
     # --- LLM attempt lifecycle (Phase B: provider-worker queue) -----------
     #
-    # A ``ProviderJob`` is one row in ``llm_attempts`` with
+    # A ``LLMJob`` is one row in ``llm_attempts`` with
     # ``status="queued"`` carrying the serialized request JSON. The
     # worker claims the row, runs the provider, and writes the result
     # back via :meth:`complete_llm_attempt`. ``phase`` carries the
     # caller-supplied ``kind`` string (audit-only label; the worker
     # does not branch on it).
 
-    def enqueue_provider_job(
+    def enqueue_llm_job(
         self, *, run_id: str, inbox_event_id: str | None, kind: str,
     ) -> str:
         """Insert a queued LLMAttempt row. Returns the new attempt_id."""
@@ -839,14 +839,14 @@ class BusStore:
             session.commit()
         return attempt_id
 
-    def claim_next_provider_job(
+    def claim_next_llm_job(
         self, worker_id: str, *, lease_seconds: int = 60,
     ) -> tuple[str, str, str | None] | None:
         """Lease the oldest queued LLM attempt.
 
         Returns ``(attempt_id, run_id, inbox_event_id)`` or ``None``
         if the queue is empty. Crashed workers' leases expire on
-        :meth:`recover_expired_provider_leases` and the row becomes
+        :meth:`recover_expired_llm_job_leases` and the row becomes
         claimable again.
         """
         now = utcnow_naive()
@@ -900,7 +900,7 @@ class BusStore:
                 attempt.response = None
             session.commit()
 
-    def recover_expired_provider_leases(self) -> int:
+    def recover_expired_llm_job_leases(self) -> int:
         """Return abandoned provider jobs to the queue.
 
         Called once at worker start. Rows with ``status="claimed"``
@@ -926,7 +926,7 @@ class BusStore:
                 session.commit()
             return len(rows)
 
-    def persist_provider_job_request(
+    def persist_llm_job_request(
         self, attempt_id: str, *, request: dict[str, Any],
     ) -> None:
         """Write the serialized request onto a queued attempt row."""
@@ -939,7 +939,7 @@ class BusStore:
             attempt.request = request
             session.commit()
 
-    def load_provider_job_request(self, attempt_id: str) -> dict[str, Any] | None:
+    def load_llm_job_request(self, attempt_id: str) -> dict[str, Any] | None:
         """Read back the serialized request the worker should run."""
         with open_session(self._state_dir) as session:
             attempt = session.scalar(
@@ -949,7 +949,7 @@ class BusStore:
                 return None
             return dict(attempt.request) if attempt.request else None
 
-    def load_provider_job_result(
+    def load_llm_job_result(
         self,
         attempt_id: str,
         *,
@@ -999,8 +999,8 @@ class BusStore:
     # every existing caller; will be removed in Phase D) ----------------
 
     def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str:
-        """Deprecated. Use :meth:`enqueue_provider_job` instead."""
-        return self.enqueue_provider_job(
+        """Deprecated. Use :meth:`enqueue_llm_job` instead."""
+        return self.enqueue_llm_job(
             run_id=run_id, inbox_event_id=inbox_event_id, kind="agent.step",
         )
 

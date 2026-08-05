@@ -121,11 +121,10 @@ def install_hooks_into_bus(
         return service
 
     registered = 0
-    skipped_disabled = 0
+    # ``config_source.list_enabled()`` already filters by
+    # ``entry.enabled``; this loop only handles the
+    # "instantiation failed" + "registration rejected" paths.
     for entry in config_source.list_enabled():
-        if not entry.enabled:
-            skipped_disabled += 1
-            continue
         try:
             handler = _instantiate_handler(entry)
         except Exception:
@@ -156,9 +155,31 @@ def install_hooks_into_bus(
                 entry.hook_id,
             )
     logger.info(
-        "hook service installed: %d handlers registered, %d skipped (disabled)",
-        registered, skipped_disabled,
+        "hook service installed: %d handlers registered",
+        registered,
     )
+    # Restart recovery: surface any hook rows that were left in
+    # pending/running status by the previous process.  We log the
+    # count rather than auto-re-running because the original
+    # inputs may have shifted; operators inspect via the WebUI.
+    try:
+        import asyncio as _asyncio
+        try:
+            loop = _asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None and loop.is_running():
+            # The composition root is being called from inside a
+            # running event loop; schedule the recovery as a task
+            # so we don't block boot.
+            loop.create_task(service.recover_pending_evaluations())
+        else:
+            recovered = _asyncio.run(service.recover_pending_evaluations())
+            logger.info(
+                "hook restart recovery: %d rows surfaced", recovered,
+            )
+    except Exception:
+        logger.exception("hook restart recovery failed; continuing boot")
     return service
 
 

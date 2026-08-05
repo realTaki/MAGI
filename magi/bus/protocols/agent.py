@@ -126,10 +126,10 @@ class BusStoreProtocol(Protocol):
     # ``phase`` on the row encodes the kind ("agent.step" / "compaction.summary"
     # / "auto_title"); ``status`` carries the lifecycle ("queued" / "claimed"
     # / "completed" / "failed" / the existing "started" / "streaming" etc.).
-    def enqueue_provider_job(
+    def enqueue_llm_job(
         self, *, run_id: str, inbox_event_id: str | None, kind: str,
     ) -> str: ...
-    def claim_next_provider_job(
+    def claim_next_llm_job(
         self, worker_id: str, *, lease_seconds: int = 60,
     ) -> tuple[str, str, str | None] | None: ...
     def complete_llm_attempt(
@@ -139,12 +139,12 @@ class BusStoreProtocol(Protocol):
         response: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
     ) -> None: ...
-    def recover_expired_provider_leases(self) -> int: ...
-    def persist_provider_job_request(
+    def recover_expired_llm_job_leases(self) -> int: ...
+    def persist_llm_job_request(
         self, attempt_id: str, *, request: dict[str, Any],
     ) -> None: ...
-    def load_provider_job_request(self, attempt_id: str) -> dict[str, Any] | None: ...
-    def load_provider_job_result(
+    def load_llm_job_request(self, attempt_id: str) -> dict[str, Any] | None: ...
+    def load_llm_job_result(
         self,
         attempt_id: str,
         *,

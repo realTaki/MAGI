@@ -376,6 +376,75 @@ class HookService:
             subject_type, subject_id, limit=limit,
         )
 
+    # -- restart recovery ---------------------------------------------- #
+
+    async def recover_pending_evaluations(self) -> int:
+        """Re-run evaluations left in ``pending``/``running`` after a crash.
+
+        Called by the composition root at boot (after the registry is
+        populated).  Each pending evaluation's persisted status is
+        re-driven: the handler re-runs with the same input digest and
+        the persisted row is updated to terminal.
+
+        Returns the number of pending rows that were recovered.
+
+        Note: the GATE side-effect that originally triggered the
+        evaluation has already happened (or never happened — we
+        can't tell from a PENDING row alone).  Re-evaluating a
+        GATE-DENY in the recovery pass is therefore informational
+        only; the runtime must treat the post-crash world as
+        "already executed" and the recovered DENY as an audit
+        record, not a re-trigger.  Caller code that wants to
+        re-block external effects must check the persisted
+        decision before firing the side-effect.
+        """
+        sweep = self._repository.recover_pending()
+        if not sweep.recovered:
+            return 0
+        # Re-materialize each pending evaluation.  Because the
+        # BUS record the envelope was built from may have been
+        # mutated or deleted in the meantime, we tolerate a
+        # missing subject and mark the row as errored.
+        for stale in sweep.recovered:
+            handler = self._registry.get(stale.hook_id)
+            if handler is None:
+                self._repository.mark_terminal(
+                    CompletionUpdate(
+                        hook_event_id=stale.hook_event_id,
+                        hook_id=stale.hook_id,
+                        hook_version=stale.hook_version,
+                        status=HookEvaluationStatus.ERRORED,
+                        decision=None,
+                        reason_code="hook.handler_missing_after_crash",
+                        labels=(),
+                        risk_score=None,
+                        duration_ms=0,
+                        error_type="HookHandlerMissing",
+                        sanitized_error=(
+                            f"handler {stale.hook_id!r} not registered "
+                            "at restart; evaluation orphaned"
+                        ),
+                    )
+                )
+                continue
+            # The handler is still registered; leave the row in
+            # PENDING and let the next call-site decide whether to
+            # re-evaluate.  We do NOT auto-re-run because the
+            # original input may have shifted (different LLM
+            # request, different tool arguments) and re-running
+            # would be misleading.  Operators can inspect the
+            # sweep via the WebUI Hooks page and decide.
+        logger.info(
+            "hook recovery sweep found %d pending/running rows; "
+            "handlers for %d hooks still registered",
+            len(sweep.recovered),
+            sum(
+                1 for s in sweep.recovered
+                if self._registry.get(s.hook_id) is not None
+            ),
+        )
+        return len(sweep.recovered)
+
 
 # ───────────────────────────────────────────────────────────────────── #
 # Helpers

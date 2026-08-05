@@ -1,9 +1,9 @@
 """Wire format between callers and :class:`magi.providers.worker.ProvidersWorker`.
 
-A :class:`ProviderJob` is published onto the durable queue (one
+A :class:`LLMJob` is published onto the durable queue (one
 :class:`magi.bus.models.queue.llm_attempt.LLMAttempt` row with
 ``status="queued"``); the worker claims it, runs the real provider,
-and writes back a :class:`ProviderJobResult` on the same row's
+and writes back a :class:`LLMJobResult` on the same row's
 ``response`` (success) or ``error`` (failure) JSON column. The
 result also surfaces to the caller via the ``provider.completed``
 ``AgentInbox`` event — see :data:`magi.bus.protocols.agent.InboxKind`.
@@ -31,10 +31,10 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderJob:
+class LLMJob:
     """A single LLM invocation request, durable across restarts.
 
-    One job produces exactly one :class:`ProviderJobResult` and one
+    One job produces exactly one :class:`LLMJobResult` and one
     ``LLMAttempt`` row in the terminal phase. ``attempt_id`` is the
     durable correlation key: callers and the worker both reference it
     in audit / hook emissions / result lookups.
@@ -67,13 +67,13 @@ class ProviderJob:
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderJobResult:
+class LLMJobResult:
     """What :class:`ProvidersWorker` writes back when the job settles.
 
     Stored as JSON on the ``LLMAttempt.response`` column for
     successes and ``LLMAttempt.error`` column for failures.
 
-    The shape is the same regardless of ``ProviderJob.kind``. The
+    The shape is the same regardless of ``LLMJob.kind``. The
     caller decides what fields it reads (the agent turn consumes
     ``tool_uses`` and ``assistant_blocks``; ``compaction.summary``
     and ``auto_title`` only read ``text``).
@@ -99,6 +99,6 @@ class ProviderJobResult:
 
 
 __all__ = [
-    "ProviderJob",
-    "ProviderJobResult",
+    "LLMJob",
+    "LLMJobResult",
 ]

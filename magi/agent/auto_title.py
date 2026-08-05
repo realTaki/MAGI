@@ -24,8 +24,8 @@ import uuid
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.protocols.provider_jobs import ProviderJob
-from magi.providers.worker import enqueue_provider_job
+from magi.bus.protocols.llm_jobs import LLMJob
+from magi.providers.worker import enqueue_llm_job
 
 logger = logging.getLogger("magi.agent.auto_title")
 
@@ -68,7 +68,7 @@ async def request_session_title(uid: int, session_id: str) -> str | None:
     from magi.bus import get_bus_store
     from magi.prompts import load_chat_title_prompt
 
-    job = ProviderJob(
+    job = LLMJob(
         attempt_id="",
         run_id=f"auto-title-{uuid.uuid4().hex}",
         inbox_event_id=None,
@@ -80,11 +80,11 @@ async def request_session_title(uid: int, session_id: str) -> str | None:
         streaming=False,
         extra={"uid": uid, "session_id": session_id},
     )
-    attempt_id = await enqueue_provider_job(job)
+    attempt_id = await enqueue_llm_job(job)
 
     bus_store = get_bus_store()
     result = await asyncio.to_thread(
-        bus_store.load_provider_job_result,
+        bus_store.load_llm_job_result,
         attempt_id,
         wait_seconds=30.0,
         poll_seconds=0.1,

@@ -4,7 +4,7 @@ The :class:`ProvidersWorker` is the **single** place every LLM
 API call in MAGI goes through. It owns:
 
 - the durable queue (``llm_attempts`` rows with ``status="queued"``
-  the agent loop writes via :func:`enqueue_provider_job`);
+  the agent loop writes via :func:`enqueue_llm_job`);
 - the streaming deltas (``StreamHub`` publishes keyed by ``run_id``
   so existing WebSocket / SSE consumers don't need to know about
   the worker);
@@ -35,10 +35,10 @@ The legacy contract (:class:`magi.plugins.Hook.BEFORE_LLM_CALL` /
 legacy symbols aren't installed (because the upstream rewrite
 switched to ``HookPoint`` / ``HookEnvelope``), the worker silently
 no-ops rather than crashing the LLM call. The migration of the
-``audit_log`` plugin to ``HookPoint.LLM_RESPONSE_RECEIVED`` lives in
-:meth:`magi.plugins.hooks.audit_log.__init_subclass__`; the
-provider worker will gain a parallel fire site for the new API
-once the upstream hook-rewrite PR merges.
+``audit_log`` plugin to ``HookPoint.LLM_RESPONSE_RECEIVED`` is the
+provider worker's parallel fire site; the current emit lives in
+``magi/agent/step.py::_observe_llm_response`` and will move to
+this module once the upstream hook-rewrite PR merges.
 
 Plugins that want to intercept, redact, or audit every LLM call
 subscribe to **one of** (whichever is present in the running build):
@@ -71,7 +71,7 @@ from typing import Any
 # and lets the runtime's first ``bootstrap()`` call register each
 # model exactly once.
 from magi.bus.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
-from magi.bus.protocols.provider_jobs import ProviderJob
+from magi.bus.protocols.llm_jobs import LLMJob
 from magi.bus.stream import StreamEvent
 from magi.providers import get_provider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
@@ -129,7 +129,7 @@ class ProvidersWorker:
     async def start(self) -> None:
         if self._task is not None:
             return
-        recovered = self.store.recover_expired_provider_leases()
+        recovered = self.store.recover_expired_llm_job_leases()
         if recovered:
             logger.warning(
                 "providers worker: recovered %d expired leases at boot",
@@ -159,7 +159,7 @@ class ProvidersWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
-            claim = self.store.claim_next_provider_job(self.worker_id)
+            claim = self.store.claim_next_llm_job(self.worker_id)
             if claim is None:
                 self._wake.clear()
                 try:
@@ -241,7 +241,7 @@ class ProvidersWorker:
             return
 
         # 2. Load the serialized request the caller enqueued.
-        request = self.store.load_provider_job_request(attempt_id)
+        request = self.store.load_llm_job_request(attempt_id)
         if request is None:
             self.store.complete_llm_attempt(
                 attempt_id,
@@ -370,7 +370,7 @@ class ProvidersWorker:
         # the columns BusStore already reads for ``complete_agent_message``
         # / ``wait_for_tools`` backwards-compat (today those methods
         # read off the row); Phase D will move those reads onto
-        # ``ProviderJobResult`` semantics.
+        # ``LLMJobResult`` semantics.
         self.store.complete_llm_attempt(
             attempt_id,
             response=self._response_payload(result),
@@ -530,17 +530,17 @@ async def stop_provider_worker() -> None:
         _worker = None
 
 
-async def enqueue_provider_job(job: ProviderJob) -> str:
+async def enqueue_llm_job(job: LLMJob) -> str:
     """Publish-side helper used by Phase D callers.
 
     Inserts the queued row and writes the serialized request JSON so
     the worker can read it back via
-    :meth:`magi.bus.store.BusStore.load_provider_job_request`.
+    :meth:`magi.bus.store.BusStore.load_llm_job_request`.
     Wakes the local worker (no-op across processes; that's fine —
     the poller will pick the row up on its next tick).
     """
     store = _lazy_get_bus_store()
-    attempt_id = store.enqueue_provider_job(
+    attempt_id = store.enqueue_llm_job(
         run_id=job.run_id,
         inbox_event_id=job.inbox_event_id,
         kind=job.kind,
@@ -556,7 +556,7 @@ async def enqueue_provider_job(job: ProviderJob) -> str:
         # an extra DB lookup.
         "extra": dict(job.extra),
     }
-    store.persist_provider_job_request(attempt_id, request=request)
+    store.persist_llm_job_request(attempt_id, request=request)
     if _worker is not None:
         _worker.notify()
     return attempt_id
@@ -566,5 +566,5 @@ __all__ = [
     "ProvidersWorker",
     "start_provider_worker",
     "stop_provider_worker",
-    "enqueue_provider_job",
+    "enqueue_llm_job",
 ]

@@ -169,20 +169,27 @@ class FileAuditStore:
 # ───────────────────────────────────────────────────────────────────── #
 
 
-def _default_path() -> Path:
+def _default_path(workspace_dir: str | Path | None = None) -> Path:
     """Resolve the default audit-log path.
 
     Reads ``MAGI_AUDIT_LOG_PATH`` at call time so an operator
     setting the env var after the plugin module is imported
     still gets the right path.  When unset, falls back to
-    ``<workspace>/logs/audit.log``.
+    ``<workspace>/logs/audit.log``.  The composition root is
+    expected to pass ``workspace_dir`` via ``init_kwargs`` so
+    the plugin does NOT need to import :mod:`magi.launcher.paths`
+    — keeping the plugin-side import surface strict per the
+    architecture tests.
     """
     override = os.environ.get("MAGI_AUDIT_LOG_PATH")
     if override:
         return Path(override)
-    from magi.launcher.paths import workspace_dir as _workspace_dir
-
-    return _workspace_dir() / "logs" / "audit.log"
+    if workspace_dir is not None:
+        return Path(workspace_dir) / "logs" / "audit.log"
+    # Final fallback: a relative path under cwd.  The composition
+    # root always supplies workspace_dir in practice; this branch
+    # only runs in tests that instantiate the handler directly.
+    return Path("logs") / "audit.log"
 
 
 class AuditLogHookHandler:
@@ -210,12 +217,16 @@ class AuditLogHookHandler:
         file_path: Path | str | None = None,
         max_bytes: int = 8 * 1024 * 1024,
         memory_store: MemoryAuditStore | None = None,
+        workspace_dir: str | Path | None = None,
     ) -> None:
         self._file: FileAuditStore | None
         if file_path == "":
             self._file = None
         elif file_path is None:
-            self._file = FileAuditStore(_default_path(), max_bytes=max_bytes)
+            self._file = FileAuditStore(
+                _default_path(workspace_dir),
+                max_bytes=max_bytes,
+            )
         else:
             self._file = FileAuditStore(Path(file_path), max_bytes=max_bytes)
         self._memory = memory_store or MemoryAuditStore()

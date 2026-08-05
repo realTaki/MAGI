@@ -29,7 +29,7 @@ which submodule a class lives in::
     )
 """
 
-from magi.bus.protocols.provider_jobs import ProviderJob, ProviderJobResult
+from magi.bus.protocols.llm_jobs import LLMJob, LLMJobResult
 from magi.providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
@@ -61,8 +61,8 @@ __all__ = [
     "get_provider",
     "is_known_provider",
     "known_providers",
-    "ProviderJob",
-    "ProviderJobResult",
+    "LLMJob",
+    "LLMJobResult",
     "estimate_messages_tokens",
     "estimate_string_tokens",
 ]

@@ -27,7 +27,7 @@ class LLMAttempt(Base):
     completed_at: Mapped[object | None] = mapped_column(DateTime, nullable=True)
     # Lease tracking — Phase B (provider-worker queue). NULL when the
     # row is in its free state; populated while a :class:`ProvidersWorker`
-    # is in flight. ``recover_expired_provider_leases`` reclaims rows
+    # is in flight. ``recover_expired_llm_job_leases`` reclaims rows
     # whose lease has passed without a terminal write.
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[object | None] = mapped_column(DateTime, nullable=True)

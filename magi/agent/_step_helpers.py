@@ -1,6 +1,6 @@
 """Agent-side request assembly, extracted from the agent worker.
 
-Phase D — the agent turn publishes a :class:`ProviderJob` onto the
+Phase D — the agent turn publishes a :class:`LLMJob` onto the
 BUS queue; this module assembles the request payload that the
 :class:`magi.providers.worker.ProvidersWorker` consumes. The provider
 worker **does not** call into this module — it just deserializes

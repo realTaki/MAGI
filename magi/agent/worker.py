@@ -170,7 +170,7 @@ class AgentWorker:
         Side-effects:
         - Opens an ``LLMAttempt`` row via ``start_llm_attempt``
           (the durable lifecycle row the worker reads).
-        - Publishes a queued :class:`ProviderJob` so the provider
+        - Publishes a queued :class:`LLMJob` so the provider
           worker can claim it.
         - ``complete_agent_input`` advances the inbox row so a
           subsequent ``provider.completed`` event is the one that
@@ -179,8 +179,8 @@ class AgentWorker:
         from magi.agent._step_helpers import (
             assemble_agent_request, fallback_agent_result,
         )
-        from magi.bus.protocols.provider_jobs import ProviderJob
-        from magi.providers.worker import enqueue_provider_job
+        from magi.bus.protocols.llm_jobs import LLMJob
+        from magi.providers.worker import enqueue_llm_job
 
         attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)
 
@@ -249,8 +249,8 @@ class AgentWorker:
             "caller_role": payload.get("caller_role"),
             "text": str(payload.get("text") or ""),
         }
-        job = ProviderJob(
-            attempt_id="",  # assigned by enqueue_provider_job
+        job = LLMJob(
+            attempt_id="",  # assigned by enqueue_llm_job
             run_id=claim.run_id,
             inbox_event_id=claim.event_id,
             kind="agent.step",
@@ -261,7 +261,7 @@ class AgentWorker:
             streaming=False,
             extra=extra,
         )
-        await enqueue_provider_job(job)
+        await enqueue_llm_job(job)
         self.store.complete_agent_input(claim.event_id)
 
     async def _apply_provider_result(self, claim: BusClaim) -> None:
@@ -291,14 +291,14 @@ class AgentWorker:
             )
             return
         # status == "completed" — load the persisted result row.
-        result = self.store.load_provider_job_result(
+        result = self.store.load_llm_job_result(
             attempt_id, wait_seconds=5, poll_seconds=0.05,
         )
         if result is None or result["status"] != "completed":
             # Defensive: provider.completed fired but the row's not
             # there. Try again with a longer wait once.
             if result is None:
-                result = self.store.load_provider_job_result(
+                result = self.store.load_llm_job_result(
                     attempt_id, wait_seconds=10, poll_seconds=0.1,
                 )
             if result is None or result["status"] != "completed":
@@ -324,7 +324,7 @@ class AgentWorker:
         # ``provider.events`` typed us the deltas — the persisted
         # ``raw_blocks`` is the assistant turn verbatim.
         step_messages = []
-        attempt_request = self.store.load_provider_job_request(attempt_id)
+        attempt_request = self.store.load_llm_job_request(attempt_id)
         original_payload = {}
         if attempt_request is not None:
             for m in attempt_request.get("messages") or []:

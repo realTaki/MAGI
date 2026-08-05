@@ -331,7 +331,7 @@ async def worker_lifespan():
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
     # Provider worker goes first so it can drain any orphans
-    # picked up by ``recover_expired_provider_leases`` on boot
+    # picked up by ``recover_expired_llm_job_leases`` on boot
     # before the agent loop starts claiming new input.
     await start_provider_worker()
     await start_agent_worker()

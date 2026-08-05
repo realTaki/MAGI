@@ -23,8 +23,6 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import open_session
 from magi.bus.hooks.contracts import (
@@ -248,7 +246,6 @@ def _materialize_llm_request_prepared(
                 )
             if HookDataScope.SESSION_WINDOW in requested_scopes:
                 context["session_window"] = _project_session_window(
-                    session,
                     ((attempt.request or {}).get("messages") or []),
                     truncation=truncation,
                 )
@@ -952,7 +949,6 @@ def _project_tool_schemas(
 
 
 def _project_session_window(
-    session: Any,
     messages: Any,
     *,
     truncation: TruncationContext,
