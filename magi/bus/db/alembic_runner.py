@@ -24,7 +24,7 @@ _ALEMBIC_SCRIPT_LOCATION = Path(__file__).resolve().parent / "alembic"
 #: are re-stamped to this head by ``_rebase_to_canonical_head``;
 #: new dev DBs run this single migration from scratch.  Hook
 #: subsystem migrations (0003, 0004) extend the chain from 0001.
-CANONICAL_HEAD = "0004_hook_plugin_configs"
+CANONICAL_HEAD = "0005_magic_name_unique"
 
 
 def _find_alembic_ini() -> Path:

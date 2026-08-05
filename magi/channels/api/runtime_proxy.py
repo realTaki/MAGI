@@ -46,6 +46,13 @@ async def proxy_runtime(
     This route intentionally has no user-controlled upstream URL.  The target
     Service is derived from the MAGI registry and every forwarded request is
     HMAC-bound to both the selected MAGI and the signed-in operator.
+
+    Cross-MAGI access: a non-admin session may only target its own
+    selected MAGI; an admin session may target any MAGI.  The admin
+    path is what powers the ``PATCH /api/runtime/{magic_id}/magic/self/provider``
+    edit flow — WebUI operators configure provider / API key on a
+    MAGI other than the one they're signed in to, without first
+    switching sessions.
     """
     if not path or path.startswith("/") or ".." in path.split("/"):
         raise MagiHTTPException(status_code=400, code="runtime.path_invalid", detail="Invalid runtime path")
@@ -54,7 +61,9 @@ async def proxy_runtime(
     browser_session = selected_session(request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    if int(browser_session["magic_id"]) != magic_id:
+    session_magic_id = int(browser_session["magic_id"])
+    session_is_admin = bool(browser_session.get("admin"))
+    if session_magic_id != magic_id and not session_is_admin:
         raise MagiHTTPException(status_code=403, code="auth.target_mismatch", detail="The session is bound to another MAGI")
     runtime_path = f"/api/{path}"
     if request.url.query:

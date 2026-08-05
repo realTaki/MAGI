@@ -165,17 +165,45 @@ class MagicService:
         return session.get(MAGIC, root.adam_id) if root and root.adam_id else None
 
     def provider_configuration(self) -> ProviderConfiguration | None:
+        """Return the runtime MAGIC's LLM provider credentials.
+
+        The 2026-08 refactor moved the credentials out of the shared
+        ``magic`` row and into the per-MAGI ``runtime_settings.toml``
+        file managed by :mod:`magi.bus.runtime_settings`.  The factory
+        in :mod:`magi.providers.factory` is the sole consumer — it
+        calls us on every LLM request, so the read must stay cheap and
+        non-blocking.
+
+        Falls back to the legacy ``magic.provider`` / ``magic.api_key``
+        columns for rows created before the refactor, so older
+        deployments keep working until their operators edit the
+        per-MAGI file (or until a follow-up migration clears the
+        columns).
+        """
         from magi.bus.db.magis import open_magis_session
+        from magi.bus.runtime_settings import load_runtime_settings
 
         with open_magis_session() as session:
             magic = self._runtime_magic(session)
-            if magic is None or not magic.provider or not magic.api_key:
+            if magic is None:
                 return None
+        # Outside the PG session — the local file read is independent.
+        rs = load_runtime_settings()
+        if rs.has_credentials:
+            return ProviderConfiguration(
+                provider=str(rs.provider),
+                api_key=str(rs.api_key),
+                model=rs.model,
+            )
+        # Legacy fallback: pre-refactor rows still carry the values
+        # inline on the magic row.
+        if magic.provider and magic.api_key:
             return ProviderConfiguration(
                 provider=str(magic.provider),
                 api_key=str(magic.api_key),
                 model=getattr(magic, "model", None),
             )
+        return None
 
     def instruction_context(self) -> tuple[str, list[dict[str, str]]]:
         """Return only serialisable instruction facts for the active MAGIC."""
@@ -378,15 +406,96 @@ class MagicService:
     def create_magic(
         self,
         name: str | None,
-        provider: str | None,
-        api_key: str | None,
+        magis_id: int,
+        role_id: int | None = None,
     ) -> MagicView:
+        """Create a new MAGI row and bind it to ``magis_id`` in one transaction.
+
+        The bootstrap seed reserves ``id = 0`` for ``EVA-000`` and the
+        root ``Genesis`` MAGIS.  New MAGIs take ``id = max(id) + 1`` via
+        the application-layer allocator in
+        :func:`magi.bus.db.engine._next_id`, so SQLite's ROWID and
+        Postgres' SERIAL sequence never collide with the seed row.
+
+        A direct MAGIS membership is created in the same transaction
+        (operator picks the MAGIS + role in the WebUI create form).
+        When ``role_id`` is ``None`` we resolve the target MAGIS's
+        reserved ``EVA`` role — the natural default for a worker
+        archetype.  Raises ``ValueError`` on name collision, missing
+        MAGIS, missing role, ADAM already taken, or duplicate direct
+        membership.
+
+        Provider / API key are no longer stored on this row at creation
+        time — the new MAGI has no local settings yet because it
+        hasn't started.  The WebUI exposes a runtime-only edit
+        endpoint at ``PATCH /api/magic/self/provider`` once the
+        runtime is up.  ``provider`` and ``api_key`` columns stay
+        ``None`` on the new row; the legacy read path in
+        :meth:`provider_configuration` falls back to them only for
+        rows created before this refactor.
+        """
+        from magi.bus.db.engine import _next_id
         from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.models.magis.magis_membership import (
+            MAGISMembership,
+            MAGISRole,
+            ensure_default_roles,
+        )
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
-            magic = MAGIC(name=name, provider=provider, api_key=api_key)
+            magis = session.get(MAGIS, magis_id)
+            if magis is None:
+                raise ValueError(f"MAGIS {magis_id} not found")
+
+            # Name uniqueness — case-insensitive comparison would be a
+            # follow-up; right now we trust the unique index.
+            if name is not None:
+                existing = session.scalar(
+                    __import__("sqlalchemy").select(MAGIC.id).where(MAGIC.name == name)
+                )
+                if existing is not None:
+                    raise ValueError(f"MAGI name {name!r} already exists")
+
+            new_id = _next_id(session, MAGIC)
+            magic = MAGIC(id=new_id, name=name)
             session.add(magic)
+            session.flush()  # populate magic.id
+
+            # Resolve the role.  ``role_id`` is optional; when omitted
+            # we default to the target MAGIS's reserved EVA role so
+            # operator-typed "EVA-001 under Genesis" Just Works.
+            roles = ensure_default_roles(session, magis.id)
+            if role_id is None:
+                role = roles.get("EVA")
+                if role is None:
+                    raise ValueError(
+                        f"MAGIS {magis_id} has no reserved EVA role"
+                    )
+            else:
+                role = session.get(MAGISRole, role_id)
+                if role is None or role.magis_id != magis.id:
+                    raise ValueError(
+                        f"role {role_id} is not in MAGIS {magis_id}"
+                    )
+
+            # ADAM role uniqueness: the target MAGIS may already have
+            # an ADAM assigned; refuse to assign a second one.
+            if role.name == "ADAM":
+                if magis.adam_id is not None and int(magis.adam_id) != int(magic.id):
+                    raise ValueError("this MAGIS already has an ADAM")
+                magis.adam_id = magic.id
+            elif magis.adam_id == magic.id:
+                # Demoting the existing ADAM to a non-ADAM role — clear
+                # the parent MAGIS pointer so it stays consistent.
+                magis.adam_id = None
+
+            session.add(MAGISMembership(
+                magis_id=magis.id,
+                magic_id=magic.id,
+                role_id=role.id,
+            ))
             session.commit()
             session.refresh(magic)
             return _magic_view(session, magic)
@@ -396,12 +505,18 @@ class MagicService:
         magic_id: int,
         *,
         name: str | None | Any = _FIELD_UNSET,
-        provider: str | None | Any = _FIELD_UNSET,
-        api_key: str | None | Any = _FIELD_UNSET,
     ) -> MagicView:
         """Partial update.  Each kwarg defaults to ``_FIELD_UNSET``; pass
         ``None`` explicitly to clear a column.  Raises ``LookupError`` if
         the MAGIC is missing.
+
+        Provider / API key / model editing no longer flows through this
+        entry — the operator edits those on the target MAGI's runtime
+        via ``PATCH /api/magic/self/provider``.  The ``magic.provider``
+        / ``magic.api_key`` columns stay ``None`` for rows created
+        after the creation-flow refactor; the legacy read path in
+        :meth:`provider_configuration` falls back to them only for
+        pre-refactor rows.
         """
         from sqlalchemy import select
 
@@ -415,10 +530,6 @@ class MagicService:
                 raise LookupError(f"magic {magic_id} not found")
             if name is not _FIELD_UNSET:
                 magic.name = name
-            if provider is not _FIELD_UNSET:
-                magic.provider = provider
-            if api_key is not _FIELD_UNSET:
-                magic.api_key = api_key or None
             session.commit()
             runtime = session.scalar(
                 select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
@@ -548,7 +659,20 @@ class MagicService:
                         raise ValueError(
                             "assign this MAGI to a MAGIS before starting it"
                         )
-                    if not magic.provider or not magic.api_key:
+                    # 2026-08 refactor: provider / API key live in
+                    # the per-MAGI runtime settings file, not on the
+                    # shared magic row.  ``provider_configuration``
+                    # already handles the legacy fallback for
+                    # pre-refactor rows, so we delegate the check
+                    # there for consistency with the factory read
+                    # path.  Open the local file outside the PG
+                    # session so we don't hold a write lock while
+                    # doing it.
+                    from magi.bus.runtime_settings import load_runtime_settings
+
+                    rs = load_runtime_settings()
+                    has_legacy = bool(magic.provider and magic.api_key)
+                    if not rs.has_credentials and not has_legacy:
                         raise ValueError(
                             "configure provider and API key before starting this MAGI"
                         )

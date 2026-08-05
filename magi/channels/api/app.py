@@ -166,6 +166,12 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         app.include_router(onboarding.router, prefix="/api/onboarding")
     from magi.channels.api import runtime_control
     app.include_router(runtime_control.router, prefix="/api")
+    # Per-MAGI runtime-settings edit surface (provider / API key /
+    # model).  Lives next to ``runtime_control`` because both are
+    # platform-internal endpoints; ``runtime_proxy`` is what lets
+    # the WebUI admin reach this on a non-session MAGI's runtime.
+    from magi.channels.api import runtime_provider
+    app.include_router(runtime_provider.router, prefix="/api")
     if not include_private_routes:
         from magi.channels.api import runtime_proxy
         app.include_router(runtime_proxy.router, prefix="/api")

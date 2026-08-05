@@ -222,6 +222,14 @@ def _seed_default_root(engine: Engine) -> None:
     the seed MAGIC (default name ``EVA-000``) is created
     independently, assigned the ADAM role on Genesis via
     :class:`MAGISMembership`, and recorded as Genesis's ADAM.
+
+    First-boot contract: both the seeded ``MAGIS`` row and the seeded
+    ``MAGIC`` row carry ``id = 0``. Application-layer ID allocation
+    (``_next_id`` below) is the single source of truth for new rows on
+    both SQLite and Postgres, so this seed never collides with whatever
+    the autoincrement sequence thinks it should hand out. After seed,
+    the Postgres sequence is reset to advance from 1; SQLite auto-rowid
+    picks up the same behaviour naturally.
     """
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
@@ -242,6 +250,7 @@ def _seed_default_root(engine: Engine) -> None:
         )
         if existing_root is None:
             root = MAGIS(
+                id=0,
                 name=_DEFAULT_ROOT_MAGIS_NAME,
                 parent_id=None,
                 adam_id=None,
@@ -257,6 +266,7 @@ def _seed_default_root(engine: Engine) -> None:
         roles = ensure_default_roles(session, existing_root.id)
         if existing_root.adam_id is None:
             adam = MAGIC(
+                id=0,
                 name=_DEFAULT_MAGI_NAME,
                 provider=None,
                 api_key=None,
@@ -275,6 +285,50 @@ def _seed_default_root(engine: Engine) -> None:
             )
 
         session.commit()
+        _sync_postgres_sequences(engine, [MAGIS, MAGIC])
+
+
+def _next_id(session: Session, model_cls: type) -> int:
+    """Return the next application-layer id for ``model_cls``.
+
+    ``SELECT COALESCE(MAX(id), -1) + 1`` keeps the seed row's ``id=0``
+    collision-free on the very next create, and stays correct as rows
+    are inserted and deleted. Works identically on SQLite and Postgres
+    because the query is plain SQL.
+    """
+    from sqlalchemy import func
+    max_id = session.scalar(select(func.coalesce(func.max(model_cls.id), -1)))
+    return int(max_id) + 1
+
+
+def _sync_postgres_sequences(engine: Engine, model_classes: list[type]) -> None:
+    """Reset Postgres SERIAL sequences to ``MAX(id)`` after explicit inserts.
+
+    When the application layer writes an explicit id (the seed writes
+    id=0; service-layer creates write ``max(id)+1``), the underlying
+    SERIAL sequence can still hand out a colliding id on the next
+    default insert. This helper syncs each sequence to ``max(id)``
+    so the next default ``INSERT`` produces ``max(id) + 1``.
+
+    No-op on SQLite (no sequences) and on engines whose dialect isn't
+    PostgreSQL. Safe to call from the seed path on every boot.
+    """
+    from sqlalchemy import text
+
+    if engine.dialect.name != "postgresql":
+        return
+
+    with engine.connect() as conn:
+        for cls in model_classes:
+            table_name = cls.__tablename__
+            seq_name = f"{table_name}_id_seq"
+            conn.execute(
+                text(
+                    f"SELECT setval(:seq, COALESCE((SELECT MAX(id) FROM {table_name}), 0))"
+                ),
+                {"seq": seq_name},
+            )
+        conn.commit()
 
 
 def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:

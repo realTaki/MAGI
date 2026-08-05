@@ -71,15 +71,27 @@ class MAGICOut(BaseModel):
 
 
 class MAGICCreate(BaseModel):
+    """Body for ``POST /magic``.
+
+    The WebUI create form only collects a name, a MAGIS, and an
+    optional role; provider / API key / model live in the new MAGI's
+    local settings after the runtime starts, never in this payload.
+    """
+
     name: str | None = Field(default=None, max_length=100)
-    provider: str | None = Field(default=None, max_length=64)
-    api_key: str | None = Field(default=None, max_length=256)
+    magis_id: int = Field(ge=1)
+    role_id: int | None = Field(default=None, ge=1)
 
 
 class MAGICUpdate(BaseModel):
+    """Body for ``PATCH /magic/{id}``.
+
+    Provider / API key editing is gone from this surface — see
+    ``PATCH /api/magic/self/provider`` on the target MAGI's runtime.
+    Only the display name is mutable from the WebUI's MAGI list.
+    """
+
     name: str | None = Field(default=None, max_length=100)
-    provider: str | None = Field(default=None, max_length=64)
-    api_key: str | None = Field(default=None, max_length=256)
 
 
 class InstructionPayload(BaseModel):
@@ -168,6 +180,8 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
         text = str(exc).lower()
         if "magis" in text and ("membership" in text or "assign" in text):
             code = "validation.magic_membership_required"
+        elif "name" in text and ("already exists" in text or "duplicate" in text):
+            code = "validation.magic_name_duplicate"
         elif "provider" in text or "credential" in text or "api key" in text:
             code = "validation.eva_provider_credentials_required"
         elif "desired_state" in text:
@@ -255,11 +269,14 @@ def list_magic(_admin: AdminGate) -> list[MAGICOut]:
 
 @router.post("/magic", response_model=MAGICOut, status_code=201)
 def create_magic(payload: MAGICCreate, _admin: AdminGate) -> MAGICOut:
-    view = _bus().magic.create_magic(
-        name=payload.name,
-        provider=payload.provider,
-        api_key=payload.api_key,
-    )
+    try:
+        view = _bus().magic.create_magic(
+            name=payload.name,
+            magis_id=payload.magis_id,
+            role_id=payload.role_id,
+        )
+    except (LookupError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
     return _magic_out(view)
 
 
@@ -272,13 +289,12 @@ def get_magic(magic_id: int, _admin: AdminGate) -> MAGICOut:
 @router.patch("/magic/{magic_id}", response_model=MAGICOut)
 def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate) -> MAGICOut:
     _require_visible_magic(magic_id, allow_unassigned=True)
-    # Forward only the fields the caller explicitly included; the bus
-    # treats anything else as ``_FIELD_UNSET`` and leaves the column
-    # untouched.  ``api_key=None`` is forwarded verbatim so the user
-    # can clear a stored credential via PATCH.
+    # Only ``name`` is mutable from this surface post-creation.
+    # Provider / API key / model editing lives on the target MAGI's
+    # runtime at ``PATCH /api/magic/self/provider``.
     update_kwargs: dict[str, object] = {}
     fields_set = payload.model_fields_set
-    for field in ("name", "provider", "api_key"):
+    for field in ("name",):
         if field in fields_set:
             update_kwargs[field] = getattr(payload, field)
     try:
