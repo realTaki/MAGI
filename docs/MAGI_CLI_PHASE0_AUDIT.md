@@ -1,9 +1,9 @@
-# Phase 0 — Local Standalone Deployment Baseline Audit
+# Phase 0 — CLI Standalone Deployment Baseline Audit
 
 > **状态**：此审计于 Phase 0 时完成，其中记录的多个问题已在后续 Phase 中修复。
 > 截至 2026-08-04：
 > - `/workspace` 硬编码已移除（K8s 通过 `MAGI_WORKSPACE_DIR` env var 注入）
-> - `LocalProcessRuntimeBackend` 现以 subprocess spawn 形态回归 (Phase 4 commit)：
+> - `CLIProcessRuntimeBackend` 现以 subprocess spawn 形态回归 (Phase 4 commit)：
 >   每个 MAGI 一个独立 OS 进程，launcher 退出后被 reparent 到 init，与 K8s Pod
 >   对称。Supervisor / restart policy / orchestrator daemon 仍在 Phase 5。
 > - `magi/constants.py` 已废弃
@@ -11,7 +11,14 @@
 >
 > 权威文档请参阅 `docs/ARCHITECTURE.md` 和 `deploy/cli/README.md`。
 
-Audit companion to [`MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md`](MAGI_LOCAL_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md) §12 ("Phase 0：基线审计").  Walked the tree as of the launch-pad consolidation commit (where `magi.runtime`, `magi.workspace`, `magi.deploy`, `magi.local` were folded into `magi.launcher`).
+Audit companion to [`MAGI_CLI_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md`](MAGI_CLI_STANDALONE_DEPLOYMENT_IMPLEMENTATION_PLAN.md) §12 ("Phase 0：基线审计").  Walked the tree as of the launch-pad consolidation commit (where `magi.runtime`, `magi.workspace`, `magi.deploy`, `magi.local` were folded into `magi.launcher`).
+
+> **Naming note (2026-08):** 本路径在 Phase 0 时叫 "local"，但 `k8s-dev`
+> 也是单节点本地运行，命名歧义；统一改名为 **cli**（"command-line,
+> no container"）。代码内 `LocalPathLayout` / `bootstrap_local` 等内部
+> 标识符保留（这些是 implementation-internal 命名），但用户可见
+> surface（CLI 子命令、backend kind `MAGI_BACKEND=cli`、deploy 目录
+> `deploy/cli/`、文档标题）一律改为 cli。
 
 Sections mirror the Phase 0 checklist:
 
@@ -53,7 +60,7 @@ uv run python -m magi --check                                                   
 
 The hardcoded `/workspace` constant in `magi/constants.py` has been removed.
 K8s Pods now set `MAGI_WORKSPACE_DIR=/workspace` explicitly in the deployment
-manifest (`deploy/k8s/base/deployment.yaml`). Local Profile processes derive
+manifest (`deploy/k8s/base/deployment.yaml`). CLI Profile processes derive
 their workspace from `HOST_WORKSPACE_DIR`. The `workspace_dir()` function in
 `magi/launcher/paths.py` raises `RuntimeError` if neither env var is set —
 there is no silent fallback to `/workspace`.
@@ -64,7 +71,7 @@ there is no silent fallback to `/workspace`.
 magi/orchestrator/kubernetes.py:270   "mountPath": "/magis"      (K8s PV manifest string)
 ```
 
-No code path uses `/magis` as a Python literal; the K8s adapter reads the PostgreSQL DSN from `MAGIS_DATABASE_URL`.  Local Profile's per-MAGIS SQLite lives under `<data_root>/MAGIS/<magis-id>/magis.db` via [`magi/launcher.py:LocalPathLayout.magis_workspace`](../magi/launcher.py).
+No code path uses `/magis` as a Python literal; the K8s adapter reads the PostgreSQL DSN from `MAGIS_DATABASE_URL`.  CLI Profile's per-MAGIS SQLite lives under `<data_root>/MAGIS/<magis-id>/magis.db` via [`magi/launcher.py:LocalPathLayout.magis_workspace`](../magi/launcher.py).
 
 ### 2.3 `:42069`
 
@@ -191,7 +198,7 @@ Contracts (BUS DTOs):
 |---|---|---|
 | `magi/bus/protocols/runtime.py` | 2 | `RuntimeEndpoint` — replaces `deployment_name + :42069` URL forging |
 | `magi/bus/protocols/lifecycle.py` | 2 | Runtime lifecycle command/query DTOs (`Start`/`Stop`/`Inspect`/`Delete`/`Reconcile`) |
-| `magi/bus/db/magis/local_engine.py` | 3 | Per-MAGIS SQLite engine for Local Profile |
+| `magi/bus/db/magis/local_engine.py` | 3 | Per-MAGIS SQLite engine for CLI Profile |
 
 Services wired into [`magi/bus/bootstrap.py`](../magi/bus/bootstrap.py):
 
@@ -208,7 +215,7 @@ Orchestrator surface:
 | `magi/orchestrator/backends/base.py` | 2 | `RuntimeBackend` Protocol |
 | `magi/orchestrator/backends/factory.py` | 2 | `create()` returns Protocol-conforming instance |
 | `magi/orchestrator/backends/kubernetes_compat.py` | 2 | Wraps `KubernetesEvaBackend` to satisfy Protocol |
-| `magi/orchestrator/backends/local_process.py` | **4** | NOT YET BUILT — slot reserved by `factory.create()` |
+| `magi/orchestrator/backends/cli_process.py` | **4** | NOT YET BUILT — slot reserved by `factory.create()` |
 | `magi/orchestrator/worker.py` | 5+ | NOT YET BUILT — Phase 4's reconcile loop will live here |
 
 Composition Root (the consolidated launch-pad):
@@ -217,7 +224,7 @@ Composition Root (the consolidated launch-pad):
 |---|---|---|
 | `magi/launcher.py` | 1 | `LocalPathLayout`, `bootstrap_local`, channel/bridge/lifespan helpers |
 | `magi/db/control/` | **3 close-out** | NOT YET BUILT — Local control-plane registry (Runtime state, port allocation, process identity, workspace archive) |
-| `magi/launcher/cli.py` | **6** | NOT YET BUILT — `magi local start/status/stop/doctor` |
+| `magi/launcher/cli.py` | **6** | NOT YET BUILT — `magi cli start/status/stop/doctor` |
 | `magi/launcher/supervisor.py` | **4** | NOT YET BUILT — when `bootstrap_local` calls backend.start, this is the harness |
 | `magi/launcher/security.py` | **3** | NOT YET BUILT — control secret + file-mode 0700 |
 | `magi/launcher/paths.py` | **3** | NOT YET BUILT — OS-specific data-root defaults |
@@ -245,4 +252,4 @@ These are not Phase 0 problems; they are forward-looking notes for whichever Pha
 
 ## Audit verdict
 
-The K8s production path is green.  Phases 1–3 are code-completed and the tree satisfies every import-boundary rule with an empty allowlist.  The Phase 4 / Phase 5 / Phase 6 surface is reserved in tree-shape: `magi/orchestrator/backends/local_process.py`, `magi/orchestrator/worker.py`, `magi/db/control/`, `magi/launcher/{cli,supervisor,security,paths,ports,platform}.py` — those are the next concrete commits.  No K8s path is regressed.
+The K8s production path is green.  Phases 1–3 are code-completed and the tree satisfies every import-boundary rule with an empty allowlist.  The Phase 4 / Phase 5 / Phase 6 surface is reserved in tree-shape: `magi/orchestrator/backends/cli_process.py`, `magi/orchestrator/worker.py`, `magi/db/control/`, `magi/launcher/{cli,supervisor,security,paths,ports,platform}.py` — those are the next concrete commits.  No K8s path is regressed.

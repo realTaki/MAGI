@@ -118,12 +118,6 @@ def install_hooks_into_bus(
             "hook service installed with no plugin config; "
             "call bus.hooks.register_handler() to add handlers",
         )
-        import os as _os
-        if _os.environ.get("MAGI_HOOK_DEBUG"):
-            print(
-                f"DEBUG install_hooks_into_bus: fresh service id={id(service)}, "
-                f"registry id={id(service._registry)}"
-            )
         return service
 
     registered = 0

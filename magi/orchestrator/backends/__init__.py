@@ -7,7 +7,7 @@ encapsulates one deployment-profile's view of "start a MAGI".
   MAGIS PostgreSQL on K8s and starts/stops EVA Pods (one MAGI per
   container).
 
-- :class:`LocalProcessRuntimeBackend` — Local Profile.  Spawns one
+- :class:`CLIProcessRuntimeBackend` — CLI Profile.  Spawns one
   MAGI per subprocess via :class:`subprocess.Popen` with
   ``start_new_session=True``; the child is reparented to ``init``
   when the launcher exits, so each MAGI is independent — one crashing

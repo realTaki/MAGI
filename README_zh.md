@@ -92,7 +92,7 @@ orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围�
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 我只想在单机上跑一个 MAGI | [deploy/local/](deploy/local/) | `./deploy/local/install.sh`，然后 `magi local start` |
+| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`，然后 `magi cli start` |
 | 我在迭代 k8s 模块化方案 | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 

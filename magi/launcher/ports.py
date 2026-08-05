@@ -1,6 +1,6 @@
 """Port helpers retired in Phase 4.
 
-``LocalProcessRuntimeBackend`` calls
+``CLIProcessRuntimeBackend`` calls
 :meth:`ControlRegistryService.allocate_port` /
 :meth:`ControlRegistryService.release_port` directly.  The thin
 wrappers that used to live here had no callers as of the Phase 4

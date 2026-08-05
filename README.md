@@ -111,7 +111,7 @@ supported and live under `deploy/`:
 
 | Situation | Path | Entry point |
 | --- | --- | --- |
-| I want a single-machine MAGI on my laptop/desktop | [deploy/local/](deploy/local/) | `./deploy/local/install.sh` then `magi local start` |
+| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` then `magi cli start` |
 | I'm iterating on the k8s modular approach | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 

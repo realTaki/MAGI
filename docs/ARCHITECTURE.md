@@ -93,7 +93,7 @@ boundaries:
 | WebUI entry | `magi webui` Service | kind NodePort 30069→42069 | `127.0.0.1:42069` |
 | Orchestrator | K8s ServiceAccount | K8s ServiceAccount (kind) | none (each MAGI is its own process) |
 
-**Local Profile process model** (each MAGI is an independent process):
+**CLI Profile process model** (each MAGI is an independent process):
 
 ```
 magi-adam.service        127.0.0.1:42069    (systemd unit, port 42069)
@@ -101,13 +101,13 @@ magi-eva-00.service      127.0.0.1:42070    (independent systemd unit)
 magi-eva-01.service      127.0.0.1:42071    (independent systemd unit)
 ```
 
-`magi local start` uses `execve` to replace the current process with
+`magi cli start` uses `execve` to replace the current process with
 `magi runtime` — no launcher, no supervisor, no subprocess tree.
-`magi local install-service` registers one systemd user unit per MAGI
+`magi cli install-service` registers one systemd user unit per MAGI
 so each MAGI starts, crashes, and restarts independently.
 
 Each runtime is an independent OS process with its own workspace, SQLite,
-port, logs, and provider configuration. Local Profile is a trusted single-user
+port, logs, and provider configuration. CLI Profile is a trusted single-user
 mode; it provides no container-level isolation.
 
 ---
@@ -196,7 +196,7 @@ Two storage domains, both reached only through BUS:
 | Private SQLite + `/workspace` | sessions, memory, contacts, tasks, settings, SOUL, skills | one MAGI |
 | MAGIS database + `/magis` | `magis`, `magic`, roles, memberships, instructions, providers, `eva_runtimes` | one MAGIS |
 
-### Local Profile storage
+### CLI Profile storage
 
 ```
 MAGI_HOME/                         (~/.magi on Linux)
@@ -217,7 +217,7 @@ MAGIS data is never written into a MAGI's private `magi.db`; each MAGIS has
 its own SQLite file with WAL, busy timeout, and foreign keys. The
 `workspace/memories/magi.db` convention is identical across all three
 deployment modes — K8s Pods resolve `<workspace>` from `MAGI_WORKSPACE_DIR`,
-Local processes resolve it from `HOST_WORKSPACE_DIR`.
+CLI processes resolve it from `HOST_WORKSPACE_DIR`.
 
 ### Private SQLite tables
 
@@ -558,7 +558,7 @@ class RuntimeBackend(Protocol):
 ```
 
 Implementations: `KubernetesRuntimeBackend` (production / k8s-dev).
-The Local Profile has no orchestrator backend — each MAGI is an independent
+The CLI Profile has no orchestrator backend — each MAGI is an independent
 OS process, managed directly by systemd or run in the foreground.
 
 The Orchestrator Worker consumes lifecycle commands from BUS, calls the
@@ -833,9 +833,9 @@ There is no hardcoded `/workspace` path anywhere in the codebase.
 BUS commits durable work before signaling an in-memory wake-up. Bounded polling
 and startup recovery are the fallback.
 
-## Local Deployment Security
+## CLI Deployment Security
 
-Local Profile is a trusted single-user mode:
+CLI Profile is a trusted single-user mode:
 
 - WebUI and Runtime bind `127.0.0.1` by default.
 - Control secret uses cryptographically secure random generation.
@@ -844,7 +844,7 @@ Local Profile is a trusted single-user mode:
 - Workspace paths use canonicalisation and boundary checks.
 - Each MAGI is an independent OS process — no subprocess management, no `shell=True`.
 - Delete defaults to archive, not permanent workspace removal.
-- Documentation clearly states Local Profile is not a security sandbox.
+- Documentation clearly states CLI Profile is not a security sandbox.
 
 ## Completion Criteria
 

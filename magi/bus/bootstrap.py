@@ -174,8 +174,8 @@ def _bootstrap(
     )
     # ``_bootstrap`` is the only place a Bus is constructed. Registering it
     # as the process-wide singleton here lets lazy resolvers see the same
-    # ``control_registry`` the Composition Root injected.  The Local
-    # backend (``LocalProcessRuntimeBackend``) tolerates
+    # ``control_registry`` the Composition Root injected.  The CLI
+    # backend (``CLIProcessRuntimeBackend``) tolerates
     # ``control_registry=None`` (runtime-process case, where
     # ``magis_engine`` is not injected), so the Bus singleton is no
     # longer strictly required for backend correctness — kept for

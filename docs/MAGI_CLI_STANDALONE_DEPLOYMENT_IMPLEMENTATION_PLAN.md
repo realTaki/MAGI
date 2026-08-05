@@ -1,4 +1,4 @@
-# MAGI Local Standalone Deployment Implementation Plan
+# MAGI CLI Standalone Deployment Implementation Plan
 
 > **状态：已完成核心实现，本文为历史参考。**
 >
@@ -11,9 +11,9 @@
 >   独立 unit（`magi-adam.service`, `magi-eva-00.service`, ...）。
 > - **数据根路径**：本文建议 `~/.local/share/magi`（XDG），实际使用 `~/.magi`
 >   （openclaw 风格），见 `deploy/cli/README.md`。
-> - **LocalProcessRuntimeBackend**：本文设计的 backend 已移除，不再需要。
+> - **CLIProcessRuntimeBackend**：本文设计的 backend 已移除，不再需要。
 > - **硬编码 `/workspace`**：已消除，K8s 通过 `MAGI_WORKSPACE_DIR` env var 显式注入，
->   Local 通过 `HOST_WORKSPACE_DIR` 推导。
+>   CLI 通过 `HOST_WORKSPACE_DIR` 推导。
 >
 > 权威文档请参阅：
 > - `deploy/cli/README.md` — 本地部署完整指南
@@ -21,6 +21,12 @@
 > - `docs/ARCHITECTURE.md` — 架构文档
 >
 > 本文最初基于 2026-08-02 的 `realTaki/MAGI` `main` 分支结构编写，并于 2026-08-03 按最新模块边界修订。执行时必须先检查最新代码与 `docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md`，报告差异后再实施，不能机械地假设本文列出的路径和类型仍然完全相同。
+>
+> **命名说明 (2026-08)：** 本路径在本文写作时叫 "local"；2026-08 重命名为
+> **cli**（`k8s-dev` 也是单节点本地运行，命名歧义）。代码内 `LocalPathLayout` /
+> `bootstrap_local` / `local_db` 等内部标识符保留（impl-internal），用户可见
+> surface 全部改为 cli：`magi cli start`、`MAGI_BACKEND=cli`、`deploy/cli/`、
+> `docs/MAGI_CLI_*.md`、class `CLIProcessRuntimeBackend` (`magi/orchestrator/backends/cli_process.py`)。
 
 ## 1. 目标
 
@@ -41,7 +47,7 @@ Local Profile
 最终用户体验应接近：
 
 ```bash
-magi local start
+magi cli start
 ```
 
 或者双击安装后的 MAGI 应用，然后自动：
@@ -144,7 +150,7 @@ class RuntimeBackend(Protocol):
 
 ```text
 KubernetesRuntimeBackend
-LocalProcessRuntimeBackend
+CLIProcessRuntimeBackend
 ```
 
 旧 `KubernetesEvaBackend` 可以先作为 compatibility implementation，不要求第一阶段移动文件或重命名所有类型。优先消除公共 contracts 中的 K8s 假设，再进行目录清理。
@@ -158,7 +164,7 @@ LocalProcessRuntimeBackend
 ```python
 class RuntimeEndpoint(BaseModel):
     runtime_id: int
-    backend_kind: Literal["kubernetes", "local_process"]
+    backend_kind: Literal["kubernetes", "cli"]
     base_url: str
     backend_ref: str
     observed_state: str
@@ -366,7 +372,7 @@ LocalStorageProfile
 
 Storage Profile 由 Composition Root 选择并注入 BUS；BUS 再使用 `magi.db` 内的平台无关 engine/repository factory。`magi.db.magis` 可以实现 SQLite/PostgreSQL 差异，但只能由 BUS 调用。Agent、Tools、Channels、Tasks、Plugins、Proactive、Orchestrator 和 WebUI 后端均不得直接选择 Engine、创建 Session 或调用 Repository。
 
-Local control registry 同样应通过控制面 BUS 的 DB 实现访问。`LocalProcessRuntimeBackend` 只负责 OS 进程与文件系统动作；如果它需要变更 desired/observed state，应通过 Orchestrator Worker 写回 BUS，不得自行操作 registry ORM。
+Local control registry 同样应通过控制面 BUS 的 DB 实现访问。`CLIProcessRuntimeBackend` 只负责 OS 进程与文件系统动作；如果它需要变更 desired/observed state，应通过 Orchestrator Worker 写回 BUS，不得自行操作 registry ORM。
 
 Local MAGIS SQLite 必须配置：
 
@@ -388,7 +394,7 @@ Local MAGIS SQLite 面向可信单用户、小规模 Runtime 数量。出现持�
 
 ### 7.1 职责
 
-`LocalProcessRuntimeBackend` 和 launcher/supervisor 负责：
+`CLIProcessRuntimeBackend` 和 launcher/supervisor 负责：
 
 - 生成 Runtime Workspace；
 - 分配 localhost 端口；
@@ -447,8 +453,8 @@ Registry 不能只保存 PID。至少保存：
 ## 8. CLI 与启动流程
 
 > **注意**：实际 CLI 实现与本节计划有差异。当前命令见 `deploy/cli/README.md`。
-> `magi local start` 使用 `execve` 替换进程而非 spawn 子进程；
-> `magi local install-service` 为每 MAGI 注册独立 systemd 单元。
+> `magi cli start` 使用 `execve` 替换进程而非 spawn 子进程；
+> `magi cli install-service` 为每 MAGI 注册独立 systemd 单元。
 
 保留现有兼容行为：
 
@@ -461,15 +467,15 @@ magi webui           # 仍可启动 control WebUI
 
 ```bash
 magi runtime --runtime-config <file>
-magi orchestrator --backend kubernetes|local_process
+magi orchestrator --backend kubernetes|cli
 
-magi local start [--data-dir PATH] [--no-open] [--foreground]
-magi local status [--data-dir PATH]
-magi local stop [--data-dir PATH]
-magi local doctor [--data-dir PATH]
+magi cli start [--data-dir PATH] [--no-open] [--foreground]
+magi cli status [--data-dir PATH]
+magi cli stop [--data-dir PATH]
+magi cli doctor [--data-dir PATH]
 ```
 
-第一版可以让 `magi local start` 以前台 supervisor 运行。原生应用封装和后台/托盘生命周期放到打包阶段，不应在 Runtime MVP 中先实现三套 OS daemon。
+第一版可以让 `magi cli start` 以前台 supervisor 运行。原生应用封装和后台/托盘生命周期放到打包阶段，不应在 Runtime MVP 中先实现三套 OS daemon。
 
 启动顺序：
 
@@ -622,12 +628,12 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 6. 禁止正式 Local Profile 使用初始 Adam 私有 DB 作为 MAGIS DB；
 7. 增加多进程读写、BUS repository contract 与 migration tests。
 
-### Phase 4：LocalProcessRuntimeBackend (subprocess spawn)
+### Phase 4：CLIProcessRuntimeBackend (subprocess spawn)
 
-1. 实现 `LocalProcessRuntimeBackend` —— 通过 `subprocess.Popen` + `start_new_session=True` 启动独立 MAGI 子进程；
-2. 子进程通过 `MAGI_BACKEND=local` 在 `BackendDispatcherService` 上路由，与 K8s backend 共享同一 Protocol；
-3. `magi local start <name>` 调用 `bus.runtime.start(spec)`，backend spawn 完成后 launcher 退出，子进程被 reparent 到 init；
-4. `magi local stop` 通过 `bus.runtime.stop(spec)` 触发 `SIGTERM` + 10s 宽限 + `SIGKILL` fallback；
+1. 实现 `CLIProcessRuntimeBackend` —— 通过 `subprocess.Popen` + `start_new_session=True` 启动独立 MAGI 子进程；
+2. 子进程通过 `MAGI_BACKEND=cli` 在 `BackendDispatcherService` 上路由，与 K8s backend 共享同一 Protocol；
+3. `magi cli start <name>` 调用 `bus.runtime.start(spec)`，backend spawn 完成后 launcher 退出，子进程被 reparent 到 init；
+4. `magi cli stop` 通过 `bus.runtime.stop(spec)` 触发 `SIGTERM` + 10s 宽限 + `SIGKILL` fallback；
 5. Runtime state 通过 `ControlRegistryService` 记录（PID、port、base_url、observed_state）；
 6. Tolerate `control_registry=None` —— runtime 进程的 BUS 不带本地 SQLite engine，backend 在该上下文下仍返回合法 DTO。
 
@@ -645,7 +651,7 @@ Local Profile 必须明确是可信单用户模式，不提供容器级隔离。
 
 ### Phase 6：单 MAGI Local Preview
 
-1. 实现 `magi local start/status/stop/doctor`；
+1. 实现 `magi cli start/status/stop/doctor`；
 2. 初始化 Genesis 和初始 Adam；
 3. 启动 Runtime、`channels.api`、SPA 和 Local Orchestrator Worker；
 4. 自动打开浏览器；
@@ -716,7 +722,7 @@ magi/bus/services/runtime_registry.py
 magi/db/control/*
 
 magi/orchestrator/backends/base.py
-magi/orchestrator/backends/local_process.py
+magi/orchestrator/backends/cli_process.py
 magi/orchestrator/worker.py
 
 magi/local/cli.py
@@ -731,7 +737,7 @@ tests/bus/tasks/
 tests/channels/tasks/
 tests/runtime/
 tests/local/
-tests/integration/local_profile/
+tests/integration/cli_profile/
 ```
 
 以上路径仅表达归属，不要求机械创建同名文件。如果 BUS 重构已经建立对应 contracts/services 或 `magi.db` repository，应复用现有目录，不得平行创建第二套 storage/runtime facade。尤其不得新增供多个业务模块共同导入的 `magi.runtime` 公共层；平台路径、endpoint 和 registry 能力分别归属 Composition Root、BUS 与 DB。
@@ -939,7 +945,7 @@ Codex 执行时不得：
 | Runtime 端口变化导致 WebUI 缓存失效 | endpoint revision + resolver | 恢复固定 endpoint 仅限单 Runtime Preview |
 | Windows 进程终止语义不同 | 平台 adapter + 真实 Windows CI | 首版 Windows 限制为前台 supervisor |
 | 打包遗漏动态 import/assets | clean-machine smoke test | 先发布 pipx/uv tool Preview |
-| launcher 崩溃留下进程 | registry reconcile + process identity | `magi local doctor` 修复 stale state |
+| launcher 崩溃留下进程 | registry reconcile + process identity | `magi cli doctor` 修复 stale state |
 | Tasks 重启后重复或漏触发 | BUS 持久化、租约、幂等键、misfire policy 与恢复测试 | Preview 暂时限制 schedule 类型并保留审计事件 |
 | Local 实现重新引入跨模块调用 | architecture import tests + BUS contract tests | 阻止合并，保留旧 Profile 直到边界修复 |
 | API 目录迁移破坏前端 | 临时兼容入口 + 同一 API contract tests | 在 Phase 9 前保留旧入口，但禁止双写业务逻辑 |

@@ -10,6 +10,7 @@ Verifies spec §6.4 / §17:
 from __future__ import annotations
 
 import asyncio
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -89,11 +90,16 @@ def fresh_bus(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
     # Reset both the Bus singleton and the SQLAlchemy engine cache
     # so the next get_bus() call rebuilds against this test's tmp dir.
-    import magi.bus.bootstrap as _b
+    # Note: ``import magi.bus.bootstrap`` aliases to the ``bootstrap``
+    # *function* (re-exported via ``magi.bus.__init__``); we must use
+    # ``importlib`` to get the actual module so we can reset its
+    # module-level ``_bus`` singleton.
+    _bm = importlib.import_module("magi.bus.bootstrap")
     import magi.bus.db.engine as _engine_mod
-    _b._bus = None
+    _bm._bus = None
     _engine_mod._engine = None
     _engine_mod._SessionLocal = None
+    _engine_mod._aux_sessionmakers.clear()
     yield
 
 
