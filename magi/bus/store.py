@@ -82,22 +82,30 @@ def _dispatch_hook_signoffs(
     expected default when no plugin subscribes to the hook point
     — downstream workers don't filter on empty result, the
     WHERE clause just becomes a no-op.
+
+    Implementation note: we read the plugin config via raw SQL
+    rather than the :class:`HookPluginConfigRow` ORM model, so the
+    dispatcher does not require the model to be registered with
+    SQLAlchemy ``Base.metadata`` at module import.  This keeps the
+    helper robust against lazy model registration (e.g. tests
+    that import the module without ever touching the plugin
+    config ORM).
     """
-    from magi.launcher.hook_config import HookPluginConfigRow
+    from sqlalchemy import text as _text
 
     now = utcnow_naive()
     inserted = 0
     with open_session(state_dir) as session:
-        plugin_rows = session.query(HookPluginConfigRow).filter_by(enabled=True).all()
-        for row in plugin_rows:
-            hook_points = row.hook_points or []
+        plugin_rows = session.execute(
+            _text(
+                "SELECT hook_id, hook_points FROM hook_plugin_configs "
+                "WHERE enabled = 1"
+            )
+        ).all()
+        for hook_id, hook_points_json in plugin_rows:
+            hook_points = _parse_hook_points_json(hook_points_json)
             if hook_point not in hook_points:
                 continue
-            # Use raw SQL to leverage the ON CONFLICT clause so a
-            # concurrent dispatcher (e.g. retry path) does not
-            # raise UniqueConstraint; the existing pending row is
-            # left in place.
-            from sqlalchemy import text as _text
             session.execute(
                 _text(
                     "INSERT OR IGNORE INTO hook_signoffs "
@@ -109,13 +117,29 @@ def _dispatch_hook_signoffs(
                     "st": subject_type,
                     "sid": subject_id,
                     "hp": hook_point,
-                    "pid": row.hook_id,
+                    "pid": hook_id,
                     "now": now,
                 },
             )
             inserted += 1
         session.commit()
     return inserted
+
+
+def _parse_hook_points_json(raw: Any) -> tuple[str, ...]:
+    """Parse the ``hook_points`` JSON column into a tuple of strings."""
+    import json
+
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        try:
+            return tuple(json.loads(raw))
+        except (ValueError, TypeError):
+            return ()
+    if isinstance(raw, list):
+        return tuple(str(item) for item in raw)
+    return ()
 
 
 def _has_pending_signoff(

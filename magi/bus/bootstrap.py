@@ -65,6 +65,11 @@ class Bus:
     # (one row per enabled plugin per persisted subject).  See
     # :class:`magi.bus.models.local.hook_signoff.HookSignoff`.
     hooks: object = None
+    # Low-level durable queue operations.  Exposed on the Bus
+    # facade so plugin workers and integration tests can reach
+    # the boundary methods without going through the service
+    # layer.
+    store: BusStore = None  # type: ignore[assignment]
 
 
 def bootstrap(
@@ -165,6 +170,7 @@ def _bootstrap(
         # so legacy ``bus.hooks`` call sites keep type-checking
         # without importing the removed module.
         hooks=None,
+        store=BusStore(state_dir),
     )
     # ``_bootstrap`` is the only place a Bus is constructed. Registering it
     # as the process-wide singleton here lets lazy resolvers see the same

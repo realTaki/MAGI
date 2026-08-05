@@ -169,17 +169,65 @@ def _magic_id_for_slug(data_root: Path, slug: str) -> int:
 # ──────────────────────────────────────────────────────────────────────────── #
 
 
+def _start_webui_subprocess(data_root: Path, port: int) -> str:
+    """Spawn ``magi webui`` as a detached subprocess; return its URL.
+
+    Mirrors the runtime subprocess lifecycle — ``start_new_session=True``
+    detaches the webui into its own session so the launcher can exit
+    without orphaning it. Logs go to ``/tmp/magi-webui.log`` (append) so
+    a failed webui (npm / build / port collision) leaves a trail the
+    operator can inspect. The launcher does NOT wait on the subprocess;
+    a caller who wants liveness should probe ``http://127.0.0.1:{port}/health``.
+
+    Returns the URL string so the caller can print it and (if asked)
+    open it in the browser.
+    """
+    env = os.environ.copy()
+    env["HOST_WORKSPACE_DIR"] = str(data_root)
+    env["MAGI_PORT"] = str(port)
+    from magi.launcher.paths import magis_db_path
+
+    env["MAGIS_DATABASE_URL"] = f"sqlite:///{magis_db_path(data_root, 1, 'genesis')}"
+    # No uvicorn autoreload for the auto-spawned webui — it's a smoke
+    # test, not a dev-loop tool. Operators who want HMR run
+    # ``magi cli webui`` directly.
+    env["MAGI_RELOAD"] = "0"
+    log_path = Path("/tmp/magi-webui.log")
+    log_fh = open(log_path, "ab")
+    subprocess.Popen(
+        [sys.executable, "-m", "magi", "webui"],
+        env=env,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+    )
+    return f"http://127.0.0.1:{port}"
+
+
 def cmd_start(args: argparse.Namespace) -> int:
-    """``magi cli start`` — bootstrap once, then dispatch start via the CLI backend.
+    """``magi cli start`` — bootstrap once, then start the runtime AND the WebUI.
 
     First boot seeds Genesis + Adam into the per-MAGIS SQLite.
     Subsequent calls skip the seed and dispatch straight to
-    ``bus.runtime.start``.
+    ``bus.runtime.start`` + the WebUI spawn.
 
-    The backend spawns a detached subprocess running ``magi runtime``;
-    the launcher exits after ``record_spawn`` succeeds, so the
-    subprocess is reparented to ``init`` and continues independently.
-    One MAGI crashing does not affect any other.
+    By default BOTH processes come up:
+
+    - the runtime subprocess (``magi runtime``) on its allocated port;
+    - the WebUI subprocess (``magi webui``) on :42069 — overridable
+      via ``--webui-port``.
+
+    Both spawn detached via ``start_new_session=True``; the launcher
+    exits after ``record_spawn`` succeeds and the subprocesses are
+    reparented to ``init`` and continue independently. One MAGI
+    crashing does not affect any other.
+
+    Skip the WebUI with ``--no-webui`` for CI / scripted flows where
+    the operator already has another control-plane view. Skip the
+    browser auto-open with ``--no-open`` (the WebUI URL is printed
+    either way).
 
     systemd units installed by :func:`cmd_install_service` take a
     separate path (they ``ExecStart=magi runtime`` directly) and bypass
@@ -240,9 +288,24 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 1
 
     base_url = result.endpoint.base_url if result.endpoint else "(no endpoint)"
+
+    # ── spawn the WebUI alongside the runtime (default on) ──
+    webui_url: str | None = None
+    if not getattr(args, "no_webui", False):
+        webui_port = getattr(args, "webui_port", 42069) or 42069
+        try:
+            webui_url = _start_webui_subprocess(data_root, port=webui_port)
+        except Exception as exc:  # never let a failed webui abort cmd_start
+            logger.warning("webui subprocess failed to spawn: %s", exc)
+
     if not getattr(args, "no_open", False):
-        open_browser(base_url)
+        # Prefer the WebUI URL for the browser — that's where the
+        # operator actually clicks things; the runtime URL is the
+        # underlying API target the WebUI proxies to.
+        open_browser(webui_url or base_url)
     print(f"MAGI {magic_id} started — {base_url}")
+    if webui_url:
+        print(f"WebUI started   — {webui_url}")
     logger.info(
         "MAGI subprocess spawned",
         extra={
@@ -250,6 +313,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             "slug": slug,
             "backend_ref": result.backend_ref,
             "endpoint": base_url,
+            "webui_url": webui_url,
         },
     )
     return 0
@@ -658,11 +722,22 @@ def build_parser() -> argparse.ArgumentParser:
     # start
     p = sub.add_parser(
         "start",
-        help="bootstrap once, then dispatch start via the Local backend",
+        help="bootstrap once, then start the runtime AND the WebUI",
     )
     p.add_argument("--data-dir", default=None, help="override the data root")
     p.add_argument("--name", "-n", default=None, help="MAGI slug or <id>-<slug> to run")
     p.add_argument("--no-open", action="store_true", help="don't open the browser")
+    p.add_argument(
+        "--no-webui",
+        action="store_true",
+        help="don't start the WebUI alongside the runtime (default: start it on :42069)",
+    )
+    p.add_argument(
+        "--webui-port",
+        type=int,
+        default=42069,
+        help="WebUI listen port when started by `start` (default 42069)",
+    )
     p.set_defaults(handler=cmd_start)
 
     # status
