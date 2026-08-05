@@ -965,7 +965,16 @@ class BusStore:
     def enqueue_llm_job(
         self, *, run_id: str, inbox_event_id: str | None, kind: str,
     ) -> str:
-        """Insert a queued LLMAttempt row. Returns the new attempt_id."""
+        """Insert a queued LLMAttempt row.
+
+        After commit, dispatches one ``hook_signoffs`` row per
+        enabled plugin subscribed to the ``LLM_REQUEST_PREPARED``
+        hook point.  Plugin workers consume the signoff before
+        :meth:`claim_next_llm_job` releases the row to a
+        provider worker -- so the LLM call cannot run until every
+        subscribed plugin has had its chance to observe the
+        request payload.
+        """
         attempt_id = _new_id("llm")
         now = utcnow_naive()
         with open_session(self._state_dir) as session:
@@ -980,6 +989,12 @@ class BusStore:
                 )
             )
             session.commit()
+        _dispatch_hook_signoffs(
+            state_dir=self._state_dir,
+            subject_type="llm_attempt",
+            subject_id=attempt_id,
+            hook_point="llm.request.prepared",
+        )
         return attempt_id
 
     def claim_next_llm_job(
@@ -988,7 +1003,10 @@ class BusStore:
         """Lease the oldest queued LLM attempt.
 
         Returns ``(attempt_id, run_id, inbox_event_id)`` or ``None``
-        if the queue is empty. Crashed workers' leases expire on
+        if the queue is empty.  Rows whose LLM_REQUEST_PREPARED
+        signoff is still pending are filtered out -- the provider
+        worker does not see them until every subscribed plugin
+        has acked.  Crashed workers' leases expire on
         :meth:`recover_expired_llm_job_leases` and the row becomes
         claimable again.
         """
@@ -1002,6 +1020,12 @@ class BusStore:
                 .limit(1)
             )
             if row is None:
+                return None
+            if _has_pending_signoff(
+                state_dir=self._state_dir,
+                subject_type="llm_attempt",
+                subject_id=row.attempt_id,
+            ):
                 return None
             row.status = "claimed"
             row.leased_by = worker_id
