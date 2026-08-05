@@ -139,7 +139,7 @@ discipline C0 deliberately punted on).
 | `init_orm` replaces the raw-SQL hand-rolled writes | **Done** | engine `init_orm` eager-imports every model |
 | Alembic versioned schema migrations | **Done** | `alembic.ini` + `magi/db/alembic/versions`; `init_orm` runs `upgrade head` |
 | Legacy inline `ALTER TABLE` adoption pass | **Done** | `magi/db/migrations.py`, runs only for databases without `alembic_version` |
-| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | folded into Alembic `0001_baseline` (no separate `0002_fts5`); trigram tokenizer for CJK-friendly substring search |
+| FTS5 virtual table + sync triggers on `chat_messages.text` | **Done** | folded into Alembic `0001_initial_schema` (no separate `0002_fts5`); trigram tokenizer for CJK-friendly substring search |
 | Default-root seed ("MAGI") | **Done** | `engine._seed_default_root` |
 | Departments tree (parent_id self-FK + manager_id) | **Done** | Cycles prevented at API layer (out-of-scope for C1.1 per `departments.py` comment) |
 | `api_key` plain-text in User table (C0 → C8 hardening plan to encrypt) | **Done** | C8 encrypts at rest with `MAGI_SECRET` |

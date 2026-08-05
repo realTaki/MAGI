@@ -25,24 +25,18 @@ from magi.bus.db import init_orm
 
 @pytest.fixture
 def fresh_bus(monkeypatch, tmp_path: Path):
-    """Stand up a clean BUS singleton + SQLite per test.
-
-    The fixture sets the launcher state path so both
-    ``init_orm`` and ``get_bus_store`` resolve to the same DB
-    file.  No explicit state_dir arg is passed to ``init_orm``
-    so it follows ``launcher.paths.state_dir()`` -- the same
-    path the BusStore uses.
-    """
-    from magi.launcher.paths import state_dir as launcher_state_dir
-
+    """Stand up a clean BUS singleton + SQLite per test."""
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
-    monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'magis.db'}")
+    monkeypatch.setenv(
+        "MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'magis.db'}",
+    )
     _bm = importlib.import_module("magi.bus.bootstrap")
     import magi.bus.db.engine as _engine_mod
     _bm._bus = None
     _engine_mod._engine = None
+    from magi.launcher.paths import state_dir as launcher_state_dir
     init_orm(seed_root=False)
     yield str(launcher_state_dir())
 

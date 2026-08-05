@@ -5,18 +5,19 @@ match the real terminal revision, and a DB whose ``alembic_version``
 row sits at a revision Alembic no longer ships must have its bookkeeping
 re-stamped by ``upgrade_head`` rather than crashing the boot.
 
-The 2026.08 rebase collapsed the 15-revision chain (0001-0015) into a
-single ``0001_initial_schema`` baseline. In a dev environment that
-means existing local databases whose ``alembic_version.version_num``
-points at a now-deleted revision (e.g. ``0005_agent_bus``) still boot
-cleanly: ``_rebase_to_canonical_head`` notices the unknown revision,
-blanks the row, and re-stamps to the canonical head. A fresh DB just
-runs the single baseline migration from scratch.
+The runtime ships a **single** alembic revision
+(``0001_initial_schema``); every schema feature lives in that one
+baseline. In a dev environment that means existing local databases
+whose ``alembic_version.version_num`` points at a now-deleted
+revision (e.g. ``0005_agent_bus``) still boot cleanly:
+``_rebase_to_canonical_head`` notices the unknown revision, blanks
+the row, and re-stamps to the canonical head. A fresh DB just runs
+the single baseline migration from scratch.
 
-Without these tests a future refactor that folds the lone migration
-into a different revision (or removes the rebase guard) would silently
-break the runtime: every ORM operation that touches a column defined
-elsewhere would crash.
+Without these tests a future refactor that splits the lone migration
+into a chain (or removes the rebase guard) would silently break the
+runtime: every ORM operation that touches a column defined elsewhere
+would crash.
 """
 
 from __future__ import annotations
@@ -90,10 +91,11 @@ def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
+    from magi.launcher.paths import state_dir as launcher_state_dir
 
-    init_orm(str(tmp_path / "memories"), seed_root=False)
+    init_orm(seed_root=False)
 
-    db_path = tmp_path / "magi.db"
+    db_path = Path(launcher_state_dir()) / "magi.db"
     assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
         f"fresh DB did not land at CANONICAL_HEAD={CANONICAL_HEAD!r}"
     )
@@ -123,15 +125,19 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
+    from magi.launcher.paths import state_dir as launcher_state_dir
+
+    state_path = Path(launcher_state_dir())
+    db_path = state_path / "magi.db"
 
     # Seed a fake ``alembic_version`` row pointing at a revision the
     # script directory no longer ships. The schema is a fresh DB so the
     # shape already matches the post-rebaseline state — we just want to
     # prove the rebase retargets the row instead of crashing.
     import sqlalchemy as sa
-    fake_db = tmp_path / "magi.db"
-    fake_db.touch()
-    seed_engine = sa.create_engine(f"sqlite:///{fake_db}")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.touch()
+    seed_engine = sa.create_engine(f"sqlite:///{db_path}")
     with seed_engine.begin() as conn:
         conn.execute(sa.text(
             "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
@@ -142,9 +148,8 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
     seed_engine.dispose()
 
     # Boot must succeed and leave alembic_version at the canonical head.
-    init_orm(str(tmp_path / "memories"), seed_root=False)
+    init_orm(seed_root=False)
 
-    db_path = tmp_path / "magi.db"
     assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
         f"unknown revision was not re-stamped; expected {CANONICAL_HEAD!r}"
     )
@@ -193,9 +198,11 @@ def test_baseline_includes_all_actor_runtime_columns(
     engine_mod._engine = engine_mod._SessionLocal = None
 
     from magi.bus.db import init_orm
+    from magi.launcher.paths import state_dir as launcher_state_dir
 
-    init_orm(str(tmp_path / "memories"), seed_root=False)
+    init_orm(seed_root=False)
 
-    actual = _columns(tmp_path / "magi.db", table)
+    db_path = Path(launcher_state_dir()) / "magi.db"
+    actual = _columns(db_path, table)
     missing = expected_columns - actual
     assert not missing, f"{table!r} is missing columns: {sorted(missing)}"

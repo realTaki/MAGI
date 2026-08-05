@@ -25,12 +25,8 @@ def bus_store(tmp_path, monkeypatch):
 
     Mirrors ``tests/integration/test_providers_worker.py::magi_state``
     (sets ``MAGI_DATA_ROOT`` + ``HOST_WORKSPACE_DIR`` so the runtime
-    bootstrap path resolves to a per-test directory) so the same
-    in-memory engine works regardless of which env vars the
-    production runtime set. Returns ``get_bus_store()`` so writes go
-    through the registered, fixture-bound singleton — a fresh
-    ``BusStore(state_dir=...)`` would bypass the registry and the
-    two engines would talk to different paths.
+    bootstrap path resolves to a per-test directory) and returns
+    ``get_bus_store()`` so writes go through the registered singleton.
     """
     from magi.bus import get_bus_store as _get_bus_store
 
