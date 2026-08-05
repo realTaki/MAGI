@@ -949,6 +949,52 @@ class BusStore:
                 return None
             return dict(attempt.request) if attempt.request else None
 
+    def load_provider_job_result(
+        self,
+        attempt_id: str,
+        *,
+        wait_seconds: float = 30.0,
+        poll_seconds: float = 0.1,
+    ) -> dict[str, Any] | None:
+        """Block until the given attempt reaches a terminal status.
+
+        Returns a dict shaped ``{status, response?, error?}``:
+
+        - ``status == "completed"`` with ``response`` set to the
+          worker's terminal write.
+        - ``status == "failed"`` with ``error`` set to the worker's
+          failure envelope (``{detail, code}``).
+        - ``None`` when the deadline passes without the worker
+          settling the row (caller falls through to its fallback path,
+          mirroring today's "skip compaction on timeout" behaviour).
+
+        Sync SQLite polling — wrap with :func:`asyncio.to_thread` when
+        called from an async context. Each tick opens its own
+        SQLite session so the worker thread isn't blocked by a held
+        reader lock while we sleep.
+        """
+        import time as _time
+        deadline = _time.monotonic() + max(0.0, wait_seconds)
+        while _time.monotonic() <= deadline:
+            with open_session(self._state_dir) as session:
+                attempt = session.scalar(
+                    select(LLMAttempt).where(LLMAttempt.attempt_id == attempt_id)
+                )
+                if attempt is None:
+                    return None
+                if attempt.status == "completed":
+                    return {
+                        "status": "completed",
+                        "response": dict(attempt.response or {}),
+                    }
+                if attempt.status == "failed":
+                    return {
+                        "status": "failed",
+                        "error": dict(attempt.error or {}),
+                    }
+            _time.sleep(poll_seconds)
+        return None
+
     # ---- deprecated thin aliases (kept so PR 2 doesn't have to touch
     # every existing caller; will be removed in Phase D) ----------------
 

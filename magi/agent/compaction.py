@@ -101,9 +101,14 @@ async def maybe_compact(
 async def call_llm_for_summary(
     *,
     to_compress: list["ChatMessage"],
+    wait_seconds: float = 30.0,
 ) -> str | None:
     """One LLM call to compress ``to_compress`` into a summary.
-    Returns the summary text, or ``None`` on any failure.
+
+    Phase D — the call is published onto the providers queue and we
+    wait for the result back via :meth:`BusStore.load_provider_job_result`.
+    Returns the summary text, or ``None`` on any failure / timeout so
+    the caller falls through without rewriting the session.
     """
     from magi.prompts import load_compaction_prompt
 
@@ -115,18 +120,45 @@ async def call_llm_for_summary(
     user_content = "\n\n".join(user_lines)
     if len(user_content) > 6000:
         return None
-    try:
-        provider = get_provider()
-        result = await provider.chat(
-            system=system,
-            messages=[ChatMessage(role="user", content=user_content)],
-            max_tokens=1024,
-        )
-        text = (result.text or "").strip()
-        return text or None
-    except Exception:
-        logger.exception("compact: LLM call failed; skipping")
+
+    import asyncio
+    import uuid as _uuid
+    from magi.bus import get_bus_store
+    from magi.bus.protocols.provider_jobs import ProviderJob
+    from magi.providers.worker import enqueue_provider_job
+
+    run_id = f"compact-{_uuid.uuid4().hex}"
+    job = ProviderJob(
+        attempt_id="",  # assigned by enqueue_provider_job
+        run_id=run_id,
+        inbox_event_id=None,
+        kind="compaction.summary",
+        system=system,
+        messages=({"role": "user", "content": user_content},),
+        max_tokens=1024,
+        tools=None,
+        streaming=False,
+        extra={},
+    )
+    attempt_id = await enqueue_provider_job(job)
+    store = get_bus_store()
+    result = await asyncio.to_thread(
+        store.load_provider_job_result,
+        attempt_id,
+        wait_seconds=wait_seconds,
+        poll_seconds=0.1,
+    )
+    if result is None:
+        logger.warning("compact: provider job %s timed out", attempt_id)
         return None
+    if result["status"] != "completed":
+        logger.warning(
+            "compact: provider job %s failed: %s",
+            attempt_id, result.get("error", {}).get("detail"),
+        )
+        return None
+    text = (result["response"].get("text") or "").strip()
+    return text or None
 
 
 def chat_to_session_message(m: "ChatMessage") -> SessionMessage:

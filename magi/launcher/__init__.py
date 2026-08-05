@@ -210,13 +210,15 @@ def is_channel_running(name: str) -> bool:
 _BRIDGE_HANDLERS: list[tuple] = []
 
 
-def start_connector_bridge(plugin_bus: object) -> None:
-    """Wire connector events into the plugin bus.
+def start_connector_bridge(hook_service: object) -> None:
+    """Wire connector events into the BUS hook subsystem.
 
     Connectors emit *external* events (Gmail push, Calendar reminder);
     plugins observe *internal* events (tool calls, channel sends).  This
-    bridge lets the audit_log plugin record connector events alongside
-    tool calls without re-implementing the subscription.
+    bridge maps every connector event to a
+    :class:`~magi.bus.hooks.contracts.HookPoint.RUN_TRANSITION_COMMITTED`
+    observation so the audit_log plugin records connector events
+    alongside tool calls without re-implementing the subscription.
 
     Lives here — not in ``magi.connectors`` — because it depends on both
     subsystems: it is composition wiring, not connector domain logic.
@@ -225,23 +227,69 @@ def start_connector_bridge(plugin_bus: object) -> None:
 
     from magi.connectors.base import ConnectorEventKind
     from magi.connectors.bus import get_bus as get_connector_bus
-    from magi.plugins.base import Hook, PluginContext
+    from magi.bus.hooks.contracts import (
+        EvaluationRequest,
+        HookPoint,
+        PrincipalHookContext,
+        PrincipalType,
+        RuntimeHookContext,
+        SecurityHookContext,
+    )
+    from magi.bus.db.base import utcnow_naive
 
     connector_bus = get_connector_bus()
 
     async def _forward(event: object) -> None:
         try:
-            context = PluginContext(
-                hook=Hook.ON_CONNECTOR_EVANT,
-                connector=getattr(event, "connector", None),
-                connector_event=event,
+            now = utcnow_naive()
+            request = EvaluationRequest(
+                hook_point=HookPoint.RUN_TRANSITION_COMMITTED,
+                subject_type="connector_event",
+                subject_id=str(getattr(event, "id", "")) or "unknown",
+                requested_by="connector_bridge",
+                runtime=RuntimeHookContext(
+                    magi_id=None,
+                    magis_id=None,
+                    runtime_id="connector-bridge",
+                    runtime_instance_id="connector-bridge",
+                    environment="runtime",
+                    workspace_id="default",
+                ),
+                principal=PrincipalHookContext(
+                    principal_type=PrincipalType.SYSTEM,
+                    principal_id="connector-bridge",
+                    role=None,
+                    permissions=(),
+                    membership_id=None,
+                    source_type=getattr(event, "connector", None),
+                    source_id=None,
+                ),
+                security=SecurityHookContext(
+                    attempt=0,
+                    deadline=None,
+                    created_at=now,
+                    available_at=now,
+                    policy_labels=(),
+                    security_labels=(),
+                    data_classification=__import__(
+                        "magi.bus.hooks.contracts",
+                        fromlist=["HookDataClassification"],
+                    ).HookDataClassification.INTERNAL,
+                ),
+                metadata={
+                    "connector_event": getattr(event, "connector", None),
+                    "event_kind": str(
+                        getattr(getattr(event, "kind", None), "value", "unknown")
+                    ),
+                    "event_id": getattr(event, "id", None),
+                },
             )
-            plugin_bus.emit(Hook.ON_CONNECTOR_EVANT, context)  # type: ignore[union-attr]
+            await hook_service.publish_observation(request)  # type: ignore[union-attr]
         except Exception:
             import logging
 
             logging.getLogger("magi.launcher").exception(
-                "connector→plugin bridge forward failed"
+                "connector→hook bridge forward failed"
             )
 
     for kind in ConnectorEventKind:
@@ -251,7 +299,7 @@ def start_connector_bridge(plugin_bus: object) -> None:
     import logging
 
     logging.getLogger("magi.launcher").info(
-        "connector→plugin bridge started: kinds=%d", len(_BRIDGE_HANDLERS),
+        "connector→hook bridge started: kinds=%d", len(_BRIDGE_HANDLERS),
     )
 
 

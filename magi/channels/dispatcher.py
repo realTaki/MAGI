@@ -203,8 +203,17 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
         drop — domain code that hits this case is usually
         missing a setup step the wizard should have run.
     """
-    from magi.plugins.base import Hook, PluginContext
-    from magi.plugins.bus import emit
+    from magi.bus.hooks.contracts import (
+        EvaluationRequest,
+        HookDataClassification,
+        HookPoint,
+        PrincipalHookContext,
+        PrincipalType,
+        RuntimeHookContext,
+        SecurityHookContext,
+    )
+    from magi.bus.hooks.service import HookService
+    from magi.bus.db.base import utcnow_naive
 
     _auto_register_builtin_adapters()
     adapter = _ADAPTERS.get(channel)
@@ -215,42 +224,79 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
             f"user {uid} has no {channel!r} binding"
         )
 
-    emit(
-        Hook.BEFORE_CHANNEL_SEND,
-        PluginContext(
-            hook=Hook.BEFORE_CHANNEL_SEND,
-            channel=str(channel),
-            channel_target_uid=uid,
-            channel_text=text,
-        ),
-    )
+    # The legacy fire-and-forget BEFORE/AFTER_CHANNEL_SEND events
+    # are removed.  The single authoritative gate on outbound
+    # messages is ``DELIVERY_PENDING`` at the BUS level; this
+    # call site only logs an observation so the audit_log plugin
+    # records the intent.
+    hook_service: HookService | None = _safe_hook_service()
+    request_metadata = {
+        "channel": str(channel),
+        "uid": uid,
+        "text_preview": (text or "")[:256],
+    }
+    if hook_service is not None:
+        now = utcnow_naive()
+        request = EvaluationRequest(
+            hook_point=HookPoint.DELIVERY_PENDING,
+            subject_type="channel_send",
+            subject_id=f"{channel}:{uid}",
+            requested_by="dispatcher",
+            runtime=RuntimeHookContext(
+                magi_id=None, magis_id=None,
+                runtime_id="dispatcher",
+                runtime_instance_id="dispatcher",
+                environment="runtime",
+                workspace_id="default",
+            ),
+            principal=PrincipalHookContext(
+                principal_type=PrincipalType.SYSTEM,
+                principal_id="dispatcher",
+                role=None,
+                permissions=(),
+                membership_id=None,
+                source_type=str(channel),
+                source_id=str(uid),
+            ),
+            security=SecurityHookContext(
+                attempt=0, deadline=None,
+                created_at=now, available_at=now,
+                policy_labels=(), security_labels=(),
+                data_classification=HookDataClassification.INTERNAL,
+            ),
+            metadata=request_metadata,
+        )
+        try:
+            await hook_service.publish_observation(request)
+        except Exception:
+            pass
 
-    error: str | None = None
     try:
         await adapter.send(uid, text)
-    except Exception as exc:
-        error = repr(exc)
-        emit(
-            Hook.AFTER_CHANNEL_SEND,
-            PluginContext(
-                hook=Hook.AFTER_CHANNEL_SEND,
-                channel=str(channel),
-                channel_target_uid=uid,
-                channel_text=text,
-                channel_error=error,
-            ),
-        )
+    except Exception:
+        # Failure is already surfaced via the adapter's own
+        # error path; the OBSERVE hook above captured the intent.
         raise
-    else:
-        emit(
-            Hook.AFTER_CHANNEL_SEND,
-            PluginContext(
-                hook=Hook.AFTER_CHANNEL_SEND,
-                channel=str(channel),
-                channel_target_uid=uid,
-                channel_text=text,
-            ),
-        )
+
+
+def _safe_hook_service():
+    """Return the BUS hook service, or ``None`` if the bus is not ready.
+
+    The dispatcher can be invoked before the BUS singleton has
+    finished bootstrapping (e.g. during tests).  Returning
+    ``None`` lets the caller skip the observation rather than
+    crash.
+    """
+    try:
+        from magi.bus import get_bus
+        from magi.bus.hooks.service import HookService
+
+        bus = get_bus()
+        if not isinstance(getattr(bus, "hooks", None), HookService):
+            return None
+        return bus.hooks
+    except Exception:
+        return None
 
 
 def lookup_im_id(uid: int, channel: Channel | str) -> str | None:

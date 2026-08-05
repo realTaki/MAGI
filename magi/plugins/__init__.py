@@ -9,10 +9,8 @@ MAGI already has three extension points:
 
   - **Tools** (``magi/tools/``) — synchronous functions the LLM
     actively calls during a turn.
-
   - **Channels** (``magi/channels/``) — bidirectional IM /
     peer-message surfaces.
-
   - **Skills** (``magi/skills/*/SKILL.md``) — soft prompt
     fragments injected into the system prompt.
 
@@ -22,100 +20,93 @@ every LLM call — and react. Plugins don't add new abilities
 the LLM can call; they add *behavior* that lives alongside
 the LLM without the LLM's knowledge.
 
-Examples:
+Hook subsystem
+--------------
 
-  - **audit log** — every ``after_tool_call`` and
-    ``after_channel_send`` is written to the operator-facing
-    audit log table.
-  - **cost counter** — every ``after_llm_call`` records
-    token spend per operator.
-  - **webhook fan-out** — every ``after_tool_call`` with a
-    matching ``tool.name`` POSTs the result to an external URL.
-  - **rate-limiter / rate-counter** — counts events per
-    ``uid`` and refuses new ones over a threshold.
+The hook subsystem lives in two places:
 
-Plugins are *cross-cutting*: one plugin can subscribe to
-multiple hooks. The audit_log plugin in
-:mod:`magi.plugins.samples.audit_log` shows the pattern.
+  - **BUS side** — :mod:`magi.bus.hooks` owns the contracts,
+    materializers, registry, executor, repository, and the
+    ``bus.hooks`` façade. The BUS is the only place that
+    observes the durable BUS records.
+
+  - **Plugin side** — :mod:`magi.plugins.hooks` is the surface
+    plugin authors implement against. A plugin handler
+    implements :class:`magi.plugins.hooks.HookHandlerProtocol`,
+    which only takes a :class:`magi.plugins.hooks.HookEnvelope`
+    and returns a :class:`magi.plugins.hooks.HookDecision`.
+
+The split is intentional and security-critical: the BUS side
+never exposes a ``Bus`` reference or any queryable handle to
+the plugin side. A handler that asks for the LLM request sees
+the LLM request and nothing else; a handler that asks for the
+tool call sees the tool call and nothing else. Without this,
+the BUS surface itself becomes a backdoor.
+
+Plugin enablement
+-----------------
+
+Plugins cannot self-register or self-enable at code level.
+The composition root (``magi.launcher``) reads a persistent
+hook config table and instantiates only the enabled handlers.
+The WebUI Hooks knowledge page and ``magi hook enable/disable``
+CLI write to the same table.
 
 Hook catalog
 ------------
-The :data:`Hook` enum is the single source of truth for
-which hooks exist. Adding a new hook is a 3-step ritual:
 
-  1. Add the value to :class:`Hook`.
-  2. Call ``bus.hook.emit(Hook.NEW, context)`` at the
-     appropriate call site in the runtime.
-  3. Document the context payload in this docstring.
-
-Existing hooks:
-
-  - ``before_tool_call``    — before :meth:`Tool.run`
-  - ``after_tool_call``     — after :meth:`Tool.run`
-    completes (success OR error)
-  - ``before_llm_call``     — before each LLM chat call
-  - ``after_llm_call``      — after each LLM chat call
-    (success OR error)
-  - ``before_channel_send`` — before :func:`dispatcher.send_to_uid`
-  - ``after_channel_send``  — after :func:`dispatcher.send_to_uid`
-  - ``before_connector_fetch``  — before :meth:`Connector.fetch`
-  - ``after_connector_fetch``   — after :meth:`Connector.fetch`
-  - ``on_connector_event``  — fires for every :class:`ConnectorEvent`
-    on the connector bus (forwarded via the plugin bus)
-  - ``on_session_open``     — chat session opened
-  - ``on_session_close``    — chat session closed
-
-Plugin contract
----------------
-A plugin is a small object:
-
-  - :attr:`name` — stable id
-  - :attr:`version` — semver-ish string, surfaces in logs
-  - :meth:`register(bus)` — called once at boot; plugin
-    subscribes to its hooks via ``bus.hook.subscribe(...)``
-  - :meth:`shutdown()` — called at runtime shutdown
-
-Plugins MUST NOT block. Heavy work goes through
-``asyncio.create_task`` so the runtime's hot paths (tool
-calls, LLM calls) stay fast.
-
-Plugin vs connector
--------------------
-Connectors emit *external* events (Gmail push, Calendar
-reminder). Plugins observe *internal* events (tool call,
-channel send, LLM call). Same bus primitive; orthogonal
-producers + consumers. A plugin can subscribe to connector
-events via the ``on_connector_event`` hook and act on
-them — e.g. the audit log plugin logs connector events
-alongside tool calls.
+The :class:`magi.bus.hooks.contracts.HookPoint` enum is the
+single source of truth for which hooks exist. First version
+ships eleven points; second version adds the memory /
+session / tool-catalog / task / settings hooks.
 """
 
 from __future__ import annotations
 
-from magi.plugins.base import (
-    Hook,
-    Plugin,
-    PluginContext,
-)
-from magi.plugins.bus import (
-    HookBus,
-    emit,
-    get_bus,
-    register_plugin,
-    reset_bus,
-    shutdown_all,
+from magi.plugins.base import Plugin
+from magi.plugins.hooks import (
+    HookAction,
+    HookDataScope,
+    HookDecision,
+    HookEnvelope,
+    HookEvaluation,
+    HookHandler,
+    HookHandlerProtocol,
+    HookMode,
+    HookPoint,
+    HookRegistration,
+    PrincipalType,
+    RuntimeHookContext,
+    SecurityHookContext,
+    PrincipalHookContext,
+    CausalityHookContext,
+    HookPluginDescriptor,
+    HookPluginLoader,
+    HookFailureMode,
+    hook_handler,
 )
 
 __all__ = [
-    # Protocol types
-    "Hook",
+    # Back-compat shims
     "Plugin",
-    "PluginContext",
-    # Bus + lifecycle
-    "HookBus",
-    "get_bus",
-    "emit",
-    "register_plugin",
-    "reset_bus",
-    "shutdown_all",
+    # Hook contracts (re-exported from magi.plugins.hooks)
+    "CausalityHookContext",
+    "HookAction",
+    "HookDataScope",
+    "HookDecision",
+    "HookEnvelope",
+    "HookEvaluation",
+    "HookFailureMode",
+    "HookHandler",
+    "HookHandlerProtocol",
+    "HookMode",
+    "HookPoint",
+    "HookRegistration",
+    "HookPluginDescriptor",
+    "HookPluginLoader",
+    "PrincipalHookContext",
+    "PrincipalType",
+    "RuntimeHookContext",
+    "SecurityHookContext",
+    "hook_handler",
 ]

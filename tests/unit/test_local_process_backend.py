@@ -7,6 +7,7 @@ Mirrors the fixture pattern from ``tests/unit/test_control_registry.py``
 
 from __future__ import annotations
 
+import signal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -226,10 +227,10 @@ def test_delete_releases_port_and_kills(
     ) as kill_mock:
         result = backend.delete(RuntimeSpec(magic_id=1, name="eva-000"))
 
-    kill_mock.assert_called_once()  # SIGKILL
+    # Two ``os.kill`` calls: signal-0 liveness probe, then SIGKILL.
+    assert kill_mock.call_count == 2
+    assert kill_mock.call_args_list[-1].args == (22222, signal.SIGKILL)
     # Port row removed.
-    import sqlalchemy
-
     with repo._Session() as session:
         remaining = (
             session.query(ControlPortAllocation)

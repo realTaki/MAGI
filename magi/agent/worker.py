@@ -7,7 +7,6 @@ durable inputs and never wait for the inference or a tool result.
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import uuid
 from contextlib import suppress
@@ -65,8 +64,9 @@ class AgentWorker:
         if recovered:
             logger.warning("recovered %s expired agent inbox leases", recovered)
         self._stopping = False
-        from magi.agent.auto_title import start_title_worker
-        await start_title_worker()
+        # Phase D — ``start_title_worker`` no longer exists; title
+        # jobs route through the providers queue and are consumed
+        # by :class:`ProvidersWorker`.
         self._task = asyncio.create_task(self._run(), name="magi-agent-worker")
 
     async def stop(self) -> None:
@@ -77,8 +77,6 @@ class AgentWorker:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
-        from magi.agent.auto_title import stop_title_worker
-        await stop_title_worker()
 
     def notify(self) -> None:
         """Wake the local poller after an in-process producer publishes."""
@@ -117,7 +115,14 @@ class AgentWorker:
                 )
                 return
             if claim.kind == "run.steer":
+                # Phase D: a steering input that's also a real turn
+                # builder still goes through the queue. We reuse the
+                # same ``_enqueue_llm`` helper and pass the payload as
+                # the input — which (today) is the channel.message payload.
                 self.store.complete_agent_input(claim.event_id)
+                return
+            if claim.kind == "provider.completed":
+                await self._apply_provider_result(claim)
                 return
             if claim.kind in {"tool.result", "a2a.result"}:
                 resumed = self.store.load_tool_continuation(claim.run_id)
@@ -127,7 +132,7 @@ class AgentWorker:
                 continuation, tool_results = resumed
                 payload = dict(continuation["input"])
                 steering_inputs = self.store.pending_steering_inputs(claim.run_id)
-                await self._advance(
+                await self._enqueue_llm(
                     claim,
                     payload,
                     continuation_messages=list(continuation["messages"]),
@@ -135,7 +140,7 @@ class AgentWorker:
                     steering_inputs=steering_inputs or None,
                 )
                 return
-            await self._advance(claim, claim.payload)
+            await self._enqueue_llm(claim, claim.payload)
         except Exception as exc:
             error_code = _error_code(exc)
             logger.exception("agent run %s failed", claim.run_id)
@@ -144,7 +149,7 @@ class AgentWorker:
             )
             return
 
-    async def _advance(
+    async def _enqueue_llm(
         self,
         claim: BusClaim,
         payload: dict,
@@ -153,82 +158,226 @@ class AgentWorker:
         tool_results: list[dict] | None = None,
         steering_inputs: list[dict] | None = None,
     ) -> None:
-        from magi.agent.agent_context import DEFAULT_MAX_TOKENS
-        from magi.agent.step import run_agent_step
+        """Build the request, publish onto the providers queue, return.
+
+        Phase D — the actual LLM call now runs in
+        :class:`ProvidersWorker` (sibling task). The provider worker
+        publishes a ``provider.completed`` ``AgentInbox`` row with
+        ``metadata.attempt_id`` once the attempt settles; the agent
+        worker picks that up via :meth:`_process` →
+        :meth:`_apply_provider_result`.
+
+        Side-effects:
+        - Opens an ``LLMAttempt`` row via ``start_llm_attempt``
+          (the durable lifecycle row the worker reads).
+        - Publishes a queued :class:`ProviderJob` so the provider
+          worker can claim it.
+        - ``complete_agent_input`` advances the inbox row so a
+          subsequent ``provider.completed`` event is the one that
+          re-wakes the agent loop.
+        """
+        from magi.agent._step_helpers import (
+            assemble_agent_request, fallback_agent_result,
+        )
+        from magi.bus.protocols.provider_jobs import ProviderJob
+        from magi.providers.worker import enqueue_provider_job
 
         attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)
-        hub = get_stream_hub()
-        sequence = 1
-        streamed_text = False
-        hub.publish(StreamEvent(claim.run_id, attempt_id, sequence, "llm.started", {}))
 
-        async def _forward_stream_event(event) -> None:
-            nonlocal sequence, streamed_text
-            sequence += 1
-            if event.kind == "text.delta":
-                streamed_text = True
-            hub.publish(
-                StreamEvent(
-                    claim.run_id,
-                    attempt_id,
-                    sequence,
-                    f"llm.{event.kind}",
-                    dict(event.payload),
-                )
+        built = await assemble_agent_request(
+            text=str(payload.get("text") or ""),
+            channel=str(payload.get("channel") or ""),
+            uid=payload.get("uid"),
+            session_id=payload.get("session_id"),
+            caller_role=payload.get("caller_role"),
+            continuation_messages=continuation_messages,
+            tool_results=tool_results,
+            steering_inputs=steering_inputs,
+        )
+
+        if built is None:
+            # Pre-bake a canned "fallback" row so the apply path can
+            # run on the standard terminal-result flow without a
+            # provider call. This matches today's behaviour for the
+            # no-credentials / no-context cases.
+            fallback = fallback_agent_result(
+                "agent_no_credentials" if not payload.get("uid") else "agent_fallback"
             )
+            self.store.complete_llm_attempt(
+                attempt_id,
+                response={
+                    "text": fallback["text"],
+                    "thinking": None,
+                    "tool_uses": [],
+                    "raw_blocks": [],
+                    "model": None,
+                    "usage": {},
+                    "stop_reason": "fallback",
+                },
+            )
+            self.store.complete_agent_input(claim.event_id)
+            # Synthesize a provider.completed event so the agent loop
+            # finishes the run through the same path as a real call.
+            synth = AgentMessage(
+                event_id=f"provider-fallback:{attempt_id}",
+                text="",
+                channel="agent.internal",
+                session_id=None,
+                uid=None,
+                kind="provider.completed",
+                target_run_id=claim.run_id,
+                metadata={
+                    "attempt_id": attempt_id,
+                    "status": "completed",
+                    "error_code": None,
+                    "error_detail": None,
+                },
+            )
+            self.store.publish_agent_message(synth)
+            return
 
-        kwargs = {
-            "text": str(payload.get("text") or ""),
-            "channel": str(payload.get("channel") or ""),
-            "session_id": payload.get("session_id"),
+        system, messages, tools, max_tokens = built
+        # The agent worker needs the original input back when the
+        # ``provider.completed`` event arrives. We stash the slim
+        # subset it actually uses (uid, session_id, channel,
+        # caller_role, text) on the job's ``extra`` payload so the
+        # worker doesn't have to re-derive them from the run row.
+        extra = {
             "uid": payload.get("uid"),
+            "session_id": payload.get("session_id"),
+            "channel": payload.get("channel"),
             "caller_role": payload.get("caller_role"),
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "continuation_messages": continuation_messages,
-            "tool_results": tool_results,
+            "text": str(payload.get("text") or ""),
         }
-        if steering_inputs:
-            kwargs["steering_inputs"] = steering_inputs
-        if "on_stream_event" in inspect.signature(run_agent_step).parameters:
-            kwargs["on_stream_event"] = _forward_stream_event
-        try:
-            step = await run_agent_step(**kwargs)
-        except Exception as exc:
-            self.store.fail_llm_attempt(attempt_id, str(exc))
-            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "llm.failed", {"error": str(exc)}))
-            raise
-        if step.text and not streamed_text:
-            sequence += 1
-            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence, "llm.text.delta", {"text": step.text}))
+        job = ProviderJob(
+            attempt_id="",  # assigned by enqueue_provider_job
+            run_id=claim.run_id,
+            inbox_event_id=claim.event_id,
+            kind="agent.step",
+            system=system,
+            messages=tuple(messages),
+            max_tokens=max_tokens,
+            tools=tuple(tools) if tools else None,
+            streaming=False,
+            extra=extra,
+        )
+        await enqueue_provider_job(job)
+        self.store.complete_agent_input(claim.event_id)
+
+    async def _apply_provider_result(self, claim: BusClaim) -> None:
+        """Apply a ``provider.completed`` inbox event — finish the turn.
+
+        Loads the durable ``LLMAttempt.response`` row, then runs the
+        same post-step branches the old synchronous ``_advance``
+        ran after ``step = await run_agent_step(...)`` returned.
+        """
+        metadata = (claim.payload or {}).get("metadata") or {}
+        attempt_id = metadata.get("attempt_id")
+        status = metadata.get("status")
+        error_code = metadata.get("error_code")
+        error_detail = metadata.get("error_detail")
+        if not attempt_id:
+            # Defensive: malformed event, drop it.
+            self.store.complete_agent_input(claim.event_id)
+            return
+        if status == "failed":
+            self.store.fail_llm_attempt(
+                attempt_id, error_detail or "provider call failed",
+            )
+            self.store.fail_agent_message(
+                claim.event_id,
+                error_code=error_code or "chat.provider_crashed",
+                error_detail=error_detail or "",
+            )
+            return
+        # status == "completed" — load the persisted result row.
+        result = self.store.load_provider_job_result(
+            attempt_id, wait_seconds=5, poll_seconds=0.05,
+        )
+        if result is None or result["status"] != "completed":
+            # Defensive: provider.completed fired but the row's not
+            # there. Try again with a longer wait once.
+            if result is None:
+                result = self.store.load_provider_job_result(
+                    attempt_id, wait_seconds=10, poll_seconds=0.1,
+                )
+            if result is None or result["status"] != "completed":
+                self.store.fail_agent_message(
+                    claim.event_id,
+                    error_code="chat.provider_crashed",
+                    error_detail=(
+                        f"provider.completed for {attempt_id} had no terminal row"
+                    ),
+                )
+                return
+
+        response = result["response"]
+        step_text = response.get("text") or ""
+        step_tool_uses = response.get("tool_uses") or []
+        step_assistant_blocks = response.get("raw_blocks") or []
+        step_provider_name = response.get("provider") or ""
+        step_model = response.get("model")
+        step_usage = dict(response.get("usage") or {})
+
+        # Reconstruct ``messages`` (the assistant transcript). We
+        # don't have the in-memory message list at this point, but
+        # ``provider.events`` typed us the deltas — the persisted
+        # ``raw_blocks`` is the assistant turn verbatim.
+        step_messages = []
+        attempt_request = self.store.load_provider_job_request(attempt_id)
+        original_payload = {}
+        if attempt_request is not None:
+            for m in attempt_request.get("messages") or []:
+                step_messages.append({
+                    "role": m.get("role"),
+                    "content": m.get("content"),
+                    "content_blocks": m.get("content_blocks"),
+                })
+            original_payload = dict(attempt_request.get("extra") or {})
+        step_messages.append({
+            "role": "assistant",
+            "content": step_text,
+            "content_blocks": step_assistant_blocks or None,
+        })
+
         attempt_result = {
-            "text": step.text,
-            "assistant_blocks": list(step.assistant_blocks),
-            "provider": step.provider,
-            "model": step.model,
-            "usage": step.usage,
+            "text": step_text,
+            "assistant_blocks": list(step_assistant_blocks),
+            "provider": step_provider_name,
+            "model": step_model,
+            "usage": step_usage,
         }
-        if not step.tool_uses:
+        if not step_tool_uses:
             self.store.commit_agent_transition(
                 claim.event_id,
-                reply=step.text,
-                delivery_destination=_delivery_destination(payload),
-                continuation={"messages": list(step.messages), "assistant_blocks": list(step.assistant_blocks)},
+                reply=step_text,
+                delivery_destination=_delivery_destination(original_payload),
+                continuation={
+                    "messages": step_messages,
+                    "assistant_blocks": list(step_assistant_blocks),
+                },
                 attempt_id=attempt_id,
                 attempt_result=attempt_result,
             )
-            self._enqueue_title_if_needed(payload)
-            hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"text": step.text}))
+            self._enqueue_title_if_needed(original_payload)
+            hub = get_stream_hub()
+            hub.publish(
+                StreamEvent(
+                    claim.run_id, attempt_id, 0,
+                    "message.committed", {"text": step_text},
+                )
+            )
             return
         context = {
             "workspace": str(workspace_dir()),
-            "uid": payload.get("uid"),
-            "channel": payload.get("channel"),
-            "session_id": payload.get("session_id"),
-            "caller_role": payload.get("caller_role"),
+            "uid": original_payload.get("uid"),
+            "channel": original_payload.get("channel"),
+            "session_id": original_payload.get("session_id"),
+            "caller_role": original_payload.get("caller_role"),
         }
         a2a_requests: list[A2AInvocationRequest] = []
         regular_tool_uses = []
-        for tool_use in step.tool_uses:
+        for tool_use in step_tool_uses:
             if tool_use.get("name") != "message_magi":
                 regular_tool_uses.append(tool_use)
                 continue
@@ -253,12 +402,12 @@ class AgentWorker:
                     expect_reply=bool(arguments.get("expect_reply", False)),
                 )
             )
-        tool_call_ids = [str(tool_use["id"]) for tool_use in step.tool_uses]
+        tool_call_ids = [str(tool_use["id"]) for tool_use in step_tool_uses]
         continuation = {
-            "input": payload,
-            "messages": list(step.messages),
+            "input": original_payload,
+            "messages": step_messages,
             "tool_call_ids": tool_call_ids,
-            "assistant_blocks": list(step.assistant_blocks),
+            "assistant_blocks": list(step_assistant_blocks),
         }
         jobs = [
             {
@@ -277,7 +426,13 @@ class AgentWorker:
             attempt_id=attempt_id,
             attempt_result=attempt_result,
         )
-        hub.publish(StreamEvent(claim.run_id, attempt_id, sequence + 1, "message.committed", {"tool_calls": tool_call_ids}))
+        hub = get_stream_hub()
+        hub.publish(
+            StreamEvent(
+                claim.run_id, attempt_id, 0,
+                "message.committed", {"tool_calls": tool_call_ids},
+            )
+        )
 
     def _enqueue_title_if_needed(self, payload: dict) -> None:
         """Schedule title generation from the agent side after a committed turn."""

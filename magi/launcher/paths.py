@@ -61,28 +61,22 @@ def workspace_dir() -> Path:
     Resolution — three branches, no host-root fallback:
 
     1. ``$MAGI_WORKSPACE_DIR`` when set (K8s Pod / explicitly configured).
-       The K8s manifest sets this to the PVC mount point; tests set it to
-       a ``tmp_path``.
-    2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_ID`` + ``$MAGI_RUNTIME_SLUG``
-       when set (Local Profile runtime subprocess) →
-       ``<data_root>/MAGIC/<slug>/workspace``.
-    3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_ID`` (Local Profile
-       launcher process) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
+    2. ``$MAGI_DATA_ROOT`` + ``$MAGI_RUNTIME_SLUG`` when set (Local
+       Profile runtime process) → ``<data_root>/MAGIC/<slug>/workspace``.
+    3. ``$MAGI_DATA_ROOT`` set, no ``$MAGI_RUNTIME_SLUG`` (Local Profile
+       launcher) → ``<data_root>/MAGIS/genesis-01/launcher-workspace``.
 
-    If none of the above match, the process is running in an
-    unconfigured environment and the function raises.  There is no
-    hardcoded ``/workspace`` fallback — that path only exists inside a
-    container, and the container's entrypoint always sets
-    ``MAGI_WORKSPACE_DIR``.
+    The slug alone is sufficient — ``EVA-000`` is both the MAGIC display
+    name and the directory key, so ``MAGI_RUNTIME_ID`` is unnecessary
+    for path resolution.
     """
     raw = os.environ.get("MAGI_WORKSPACE_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
     data_root = os.environ.get("MAGI_DATA_ROOT")
     if data_root:
-        runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
-        if runtime_id and runtime_slug:
+        if runtime_slug:
             return Path(data_root) / "MAGIC" / runtime_slug / "workspace"
         return magis_home(Path(data_root)) / "launcher-workspace"
     raise RuntimeError(
@@ -96,36 +90,25 @@ def state_dir() -> Path:
 
     One resolver, three branches — one per process role:
 
-    1. **Local Profile, runtime subprocess** —
-       ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_ID`` + ``MAGI_RUNTIME_SLUG``
-       all set.  State lives at
-       ``<data_root>/MAGIC/<slug>/workspace/memories/`` —
-       mirrors the K8s ``<workspace_dir>/memories`` convention so
-       every profile resolves to ``workspace/memories/magi.db``.
-    2. **Local Profile, launcher / supervisor process** —
-       ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_ID``.  The launcher
-       is not a runtime; it keeps its own scratch SQLite at
-       ``<data_root>/MAGIS/genesis-01/launcher-state`` so it never
-       collides with the Adam's per-MAGI ``magi.db``.
-    3. **K8s Profile** — no ``MAGI_DATA_ROOT``.  State lives at
-       ``<workspace_dir>/memories``; each Pod has its own PVC, so
-       per-Pod isolation is automatic.
-
-    The three branches guarantee one ``magi.db`` per MAGI; no two
-    processes ever share a SQLite file.
+    1. **Local Profile, runtime process** —
+       ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_SLUG`` set.
+       State lives at ``<data_root>/MAGIC/<slug>/workspace/memories/``.
+    2. **Local Profile, launcher** —
+       ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_SLUG``.
+       Scratch SQLite at ``<data_root>/MAGIS/genesis-01/launcher-state``.
+    3. **K8s Profile** — no ``MAGI_DATA_ROOT``.
+       State at ``<workspace_dir>/memories``.
     """
     data_root = os.environ.get("MAGI_DATA_ROOT")
     if data_root:
-        runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
-        if runtime_id and runtime_slug:
-            # Same ``workspace/memories`` convention as K8s.
+        if runtime_slug:
             return (
                 Path(data_root).expanduser().resolve()
                 / "MAGIC"
                 / runtime_slug
                 / "workspace"
-                / _STATE_SUBDIR  # "memories"
+                / _STATE_SUBDIR
             )
         return magis_home(Path(data_root)) / "launcher-state"
     return workspace_dir() / _STATE_SUBDIR

@@ -14,6 +14,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from magi.bus import ToolClaim, ToolContext, ToolDefinition, get_bus
+from magi.bus.hooks.contracts import HookAction
 from magi.tools.registry import get_tool
 
 logger = logging.getLogger("magi.tools.worker")
@@ -114,6 +115,19 @@ class ToolWorker:
             )
             self.bus.tool_jobs.retry(claim.job_id)
             return
+
+        # GATE — call ``bus.hooks.evaluate(TOOL_CALL_PENDING)``
+        # before invoking ``tool.run``.  A DENY blocks the call
+        # without ever reaching the executor; the worker writes a
+        # synthetic failed result so the actor loop can resume.
+        decision = await self._evaluate_tool_call_gate(claim, context_data)
+        if decision is HookAction.DENY:
+            self.bus.tool_jobs.complete(
+                claim,
+                content=f"tool {claim.tool_name!r} denied by hook policy",
+                is_error=True,
+            )
+            return  # No retry — a DENY is final.
         try:
             result = await tool.run(
                 ToolContext(
@@ -133,6 +147,117 @@ class ToolWorker:
         self.bus.tool_jobs.complete(claim, content=content, is_error=is_error)
         if is_error:
             self.bus.tool_jobs.retry(claim.job_id)
+        # OBSERVE — the tool result is durable by the time we get
+        # here; we emit ``TOOL_RESULT_RECEIVED`` for the audit log
+        # (and any future OBSERVE handlers) without blocking.
+        try:
+            from magi.bus.hooks.contracts import (
+                EvaluationRequest,
+                HookDataClassification,
+                HookPoint,
+                PrincipalHookContext,
+                PrincipalType,
+                RuntimeHookContext,
+                SecurityHookContext,
+            )
+            from magi.bus.db.base import utcnow_naive
+
+            now = utcnow_naive()
+            await self.bus.hooks.publish_observation(
+                EvaluationRequest(
+                    hook_point=HookPoint.TOOL_RESULT_RECEIVED,
+                    subject_type="tool_job",
+                    subject_id=claim.job_id,
+                    requested_by=self.worker_id,
+                    runtime=RuntimeHookContext(
+                        magi_id=None, magis_id=None,
+                        runtime_id="tool-worker",
+                        runtime_instance_id=self.worker_id,
+                        environment="runtime",
+                        workspace_id="default",
+                    ),
+                    principal=PrincipalHookContext(
+                        principal_type=PrincipalType.SYSTEM,
+                        principal_id=self.worker_id,
+                        role=context_data.get("caller_role"),
+                        permissions=(),
+                        membership_id=None,
+                        source_type="tool",
+                        source_id=claim.tool_name,
+                    ),
+                    security=SecurityHookContext(
+                        attempt=claim.attempts, deadline=None,
+                        created_at=now, available_at=now,
+                        policy_labels=(), security_labels=(),
+                        data_classification=HookDataClassification.INTERNAL,
+                    ),
+                    metadata={
+                        "tool_name": claim.tool_name,
+                        "is_error": is_error,
+                        "content_size": len(content or ""),
+                    },
+                )
+            )
+        except Exception:
+            # Observation must never block tool completion.
+            logger.exception("tool_result_received observation failed")
+
+    async def _evaluate_tool_call_gate(
+        self, claim: ToolClaim, context_data: dict,
+    ) -> "HookAction":
+        """Run the ``TOOL_CALL_PENDING`` GATE handlers."""
+        try:
+            from magi.bus.hooks.contracts import (
+                EvaluationRequest,
+                HookAction,
+                HookDataClassification,
+                HookPoint,
+                PrincipalHookContext,
+                PrincipalType,
+                RuntimeHookContext,
+                SecurityHookContext,
+            )
+            from magi.bus.db.base import utcnow_naive
+
+            now = utcnow_naive()
+            result = await self.bus.hooks.evaluate(
+                EvaluationRequest(
+                    hook_point=HookPoint.TOOL_CALL_PENDING,
+                    subject_type="tool_job",
+                    subject_id=claim.job_id,
+                    requested_by=self.worker_id,
+                    runtime=RuntimeHookContext(
+                        magi_id=None, magis_id=None,
+                        runtime_id="tool-worker",
+                        runtime_instance_id=self.worker_id,
+                        environment="runtime",
+                        workspace_id="default",
+                    ),
+                    principal=PrincipalHookContext(
+                        principal_type=PrincipalType.SYSTEM,
+                        principal_id=self.worker_id,
+                        role=context_data.get("caller_role"),
+                        permissions=(),
+                        membership_id=None,
+                        source_type="tool",
+                        source_id=claim.tool_name,
+                    ),
+                    security=SecurityHookContext(
+                        attempt=claim.attempts, deadline=None,
+                        created_at=now, available_at=now,
+                        policy_labels=(), security_labels=(),
+                        data_classification=HookDataClassification.INTERNAL,
+                    ),
+                    metadata={"tool_name": claim.tool_name},
+                )
+            )
+            return result.decision
+        except Exception:
+            logger.exception(
+                "TOOL_CALL_PENDING evaluation failed for %s; fail-open",
+                claim.job_id,
+            )
+            return HookAction.ALLOW
 
 
 _worker: ToolWorker | None = None

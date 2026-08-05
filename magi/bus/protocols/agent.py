@@ -144,6 +144,13 @@ class BusStoreProtocol(Protocol):
         self, attempt_id: str, *, request: dict[str, Any],
     ) -> None: ...
     def load_provider_job_request(self, attempt_id: str) -> dict[str, Any] | None: ...
+    def load_provider_job_result(
+        self,
+        attempt_id: str,
+        *,
+        wait_seconds: float = 30.0,
+        poll_seconds: float = 0.1,
+    ) -> dict[str, Any] | None: ...
     def complete_agent_message(
         self,
         event_id: str,
