@@ -24,6 +24,7 @@ InboxKind = Literal[
     "run.cancel",
     "a2a.request",
     "a2a.result",
+    "provider.completed",
 ]
 RunStatus = Literal[
     "queued", "running", "waiting_tool", "waiting_a2a", "completed", "failed", "cancelled"
@@ -121,6 +122,28 @@ class BusStoreProtocol(Protocol):
     def load_tool_continuation(self, run_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]] | None: ...
     def start_llm_attempt(self, run_id: str, inbox_event_id: str) -> str: ...
     def fail_llm_attempt(self, attempt_id: str, error: str) -> None: ...
+    # Providers worker (PR 2 — Phase B): durable queue around the LLM attempt.
+    # ``phase`` on the row encodes the kind ("agent.step" / "compaction.summary"
+    # / "auto_title"); ``status`` carries the lifecycle ("queued" / "claimed"
+    # / "completed" / "failed" / the existing "started" / "streaming" etc.).
+    def enqueue_provider_job(
+        self, *, run_id: str, inbox_event_id: str | None, kind: str,
+    ) -> str: ...
+    def claim_next_provider_job(
+        self, worker_id: str, *, lease_seconds: int = 60,
+    ) -> tuple[str, str, str | None] | None: ...
+    def complete_llm_attempt(
+        self,
+        attempt_id: str,
+        *,
+        response: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> None: ...
+    def recover_expired_provider_leases(self) -> int: ...
+    def persist_provider_job_request(
+        self, attempt_id: str, *, request: dict[str, Any],
+    ) -> None: ...
+    def load_provider_job_request(self, attempt_id: str) -> dict[str, Any] | None: ...
     def complete_agent_message(
         self,
         event_id: str,

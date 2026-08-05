@@ -36,6 +36,7 @@ from magi.providers.errors import (
     LLMContextLengthError,
     LLMNotConfiguredError,
 )
+from magi.providers.contracts import ProviderJob, ProviderJobKind, ProviderJobResult
 from magi.providers.factory import get_provider, is_known_provider, known_providers
 from magi.providers.provider import (
     LLMProvider,
