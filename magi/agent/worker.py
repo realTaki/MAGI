@@ -306,7 +306,7 @@ def _delivery_destination(payload: dict) -> str | None:
 
 
 def _error_code(exc: Exception) -> str:
-    from magi.agent.llm import LLMNotConfiguredError
+    from magi.providers import LLMNotConfiguredError
 
     if isinstance(exc, LLMNotConfiguredError):
         return "magi.llm_credentials_required"

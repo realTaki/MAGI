@@ -100,7 +100,7 @@ stubbed or absent.
 | `MAGI_NODE_ROLE=adam` / `eva` archetype presets | **Done** | Pure shorthand for the three axis overrides; see `main.py` docstring |
 | Inline pre-Alembic `ALTER TABLE` migrations | **Done** | `magi/db/migrations.py` — replaced by the first Alembic baseline at end of C1.3 |
 | `get_skill_loader` + 3 bundled SKILL.md examples | **Done** | `magi/skills/{codebase_search,reminder_template,web_lookup}/SKILL.md` |
-| LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/agent/llm/{anthropic,claude,minimax}.py` |
+| LLM providers (Anthropic + Minimax via Anthropic-API-compat) | **Done** | `magi/providers/{anthropic,claude,minimax}.py` |
 | Memory subsystem (magi / contacts / session) | **Partial** | Tables + tools exist; agent loop doesn't render them yet |
 | Bash tool (run / output / kill) | **Done** | `magi/tools/bash.py` |
 | File tools (read / write / list) | **Done** | `magi/tools/{read_file,write_file,list_files}.py` |

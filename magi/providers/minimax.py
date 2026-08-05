@@ -10,7 +10,7 @@ Both use the same official ``anthropic`` SDK with
 ``base_url`` swapped to the chosen region; the wire
 format is unchanged so we don't roll our own HTTP
 client. This is a thin subclass of
-:class:`magi.agent.llm.anthropic.AnthropicProvider`
+:class:`magi.providers.anthropic.AnthropicProvider`
 that fixes the per-region config.
 
 A bare ``"minimax"`` in ``Contact.provider`` is
@@ -29,7 +29,7 @@ The SDK appends ``/v1/messages`` itself.
 
 from __future__ import annotations
 
-from magi.agent.llm.anthropic import AnthropicProvider
+from magi.providers.anthropic import AnthropicProvider
 
 
 # Base URLs as published by Minimax. Both routes are
@@ -82,7 +82,7 @@ class MinimaxProvider(AnthropicProvider):
         land in this method later.
         """
         if region not in _BASE_URLS:
-            from magi.agent.llm.errors import LLMError
+            from magi.providers.errors import LLMError
             raise LLMError(
                 f"Unknown minimax region: {region!r}. "
                 f"Known: {list(_BASE_URLS.keys())}"

@@ -45,11 +45,11 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from magi.agent.llm.errors import LLMError
+from magi.providers.errors import LLMError
 from magi.bus import get_bus
 from magi.bus.contracts.session import utcnow_iso
-from magi.agent.llm.factory import get_provider
-from magi.agent.llm.provider import ChatMessage
+from magi.providers.factory import get_provider
+from magi.providers.provider import ChatMessage
 from magi.prompts import load_chat_title_prompt
 
 logger = logging.getLogger("magi.agent.auto_title")

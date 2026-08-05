@@ -113,7 +113,7 @@ async def execute_task(
 
     # ── 1. Read task + operator + load home session ──
     # LLM credentials are resolved inside
-    # :func:`magi.agent.llm.factory.get_provider` — the
+    # :func:`magi.providers.factory.get_provider` — the
     # runner never reads them and never passes them as
     # kwargs. The actor records ``LLMNotConfiguredError``
     # when the MAGI runtime isn't configured, which the

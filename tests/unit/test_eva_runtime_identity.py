@@ -43,8 +43,8 @@ def test_eva_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_pa
     from magi.bus.db.magis.engine import init_magis_public_db
     init_orm(seed_root=False)
     init_magis_public_db(seed_root=True)
-    from magi.agent.llm.factory import get_provider
-    from magi.agent.llm.errors import LLMNotConfiguredError
+    from magi.providers.factory import get_provider
+    from magi.providers.errors import LLMNotConfiguredError
 
     monkeypatch.setenv("MAGI_LLM_PROVIDER", "claude")
     monkeypatch.setenv("MAGI_LLM_API_KEY", "legacy-secret")

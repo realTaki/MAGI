@@ -6,7 +6,7 @@ from a package it must not depend on, per the BUS-centric architecture
 (``docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md``).
 
 The rule is encoded as ``(source_package_prefix, forbidden_target_prefixes)``.
-Internal subpackage references (e.g. ``magi.agent.llm`` from ``magi.agent.*``)
+Internal subpackage references (e.g. ``magi.bus.db.engine`` from ``magi.bus.*``)
 are allowed by filtering the forbidden prefix list against the source's own
 package chain.
 
@@ -120,7 +120,7 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.channels.delivery",
             "magi.agent.worker",
             "magi.agent.step",
-            "magi.agent.llm",
+            "magi.providers",
         ],
     ),
     # Phase 2 — BUS services that own the runtime lifecycle seam must
@@ -164,7 +164,7 @@ ALLOWLIST: set[tuple[str, str]] = set()
 
 
 def _package_chain_prefixes(module_name: str) -> list[str]:
-    """['magi.agent.llm.providers'] -> ['magi.agent.llm.providers', 'magi.agent.llm', 'magi.agent', 'magi']"""
+    """['magi.bus.db.engine'] -> ['magi.bus.db.engine', 'magi.bus.db', 'magi.bus', 'magi']"""
     parts = module_name.split(".")
     return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
 

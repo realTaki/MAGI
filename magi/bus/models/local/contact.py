@@ -54,7 +54,7 @@ active, a timestamp means the contact was marked as
 separated (formerly "已离职").
 
 LLM credentials live on the ``magis`` table
-(:func:`magi.agent.llm.factory.get_provider` resolves them
+(:func:`magi.providers.factory.get_provider` resolves them
 at runtime), not on ``contacts``. Token usage is still
 recorded per-Contact via ``token_usage.uid``.
 """

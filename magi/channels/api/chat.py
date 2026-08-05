@@ -9,7 +9,7 @@ consumption rather than the HTTP handler calling a loop.
 LLM credentials
 ===============
 
-Credentials are resolved inside :func:`magi.agent.llm.factory
+Credentials are resolved inside :func:`magi.providers.factory
 .get_provider` — the chat handler doesn't take them as
 parameters. The seeded adam ``Magi`` row owns the
 provider + API key; the chat handler only reads the
@@ -66,7 +66,7 @@ def _resolve_caller_credentials(uid: int) -> tuple[int, str]:
     owns the provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
     the agent worker reads them
-    internally through :func:`magi.agent.llm.factory
+    internally through :func:`magi.providers.factory
     .get_provider`. Token-usage recording is still per-
     Contact (``token_usage.uid``).
 

@@ -404,6 +404,128 @@ def _list_magic_slots(data_root: Path) -> list[tuple[int, str]]:
     return slots
 
 
+def cmd_webui(args: argparse.Namespace) -> int:
+    """``magi local webui`` — Vite dev server (HMR) + FastAPI control plane.
+
+    Two ways to run the WebUI on a host:
+
+    - **Dev mode** (``--dev``, default) — spawn the React/Vite dev server
+      with HMR on :42069 and replace this process with ``magi webui``
+      (FastAPI control plane) on :8000.  Vite proxies ``/api`` → :8000
+      so the browser always reaches the UI at ``http://127.0.0.1:42069``.
+      Saves the operator from running ``npm run dev`` separately and
+      gives them HMR on React edits, just like k8s-dev's
+      ``control-dev`` overlay does inside a Pod.
+    - **Production mode** (``--no-dev``) — exec directly into
+      ``magi webui`` on :42069 with the built SPA mounted (no HMR).
+      Use this when you just want to ship the local profile without a
+      dev loop.
+
+    Each MAGI is still an independent process — this command only
+    owns the WebUI / vite process tree; the Adam runtime started via
+    ``magi local start`` runs separately on its own port.
+    """
+    data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+
+    # Make sure the MAGIS schema + control plane are in place — the
+    # webui reads from ``MAGIS/<id>-<slug>/magis.db`` and authenticates
+    # against ``control/control-secret``.
+    home = magis_home(data_root)
+    ensure_control_secret(control_secret_path(home))
+
+    # Reuse the same idempotent seed as ``start`` so a brand-new
+    # workspace works without the operator running ``start`` first.
+    _bootstrap_once(data_root)
+
+    if getattr(args, "no_dev", False):
+        # Production path — same as ``magi webui`` directly on 42069.
+        env = os.environ.copy()
+        env["MAGI_DATA_ROOT"] = str(data_root)
+        env["MAGIS_DATABASE_URL"] = (
+            f"sqlite:///{data_root}/MAGIS/1-genesis/magis.db"
+        )
+        logger.info("launching magi webui on :42069 (no vite, built SPA)")
+        os.execvpe(
+            sys.executable,
+            [sys.executable, "-m", "magi", "webui"],
+            env,
+        )
+        return 0  # unreachable
+
+    # ── Dev path: vite on 42069 + FastAPI control plane on 8000 ──
+    webui_dir = Path(__file__).resolve().parents[2] / "WebUI"
+    if not webui_dir.is_dir():
+        print(
+            f"error: WebUI sources not found at {webui_dir}",
+            file=sys.stderr,
+        )
+        return 2
+    if not (webui_dir / "node_modules").is_dir():
+        print(
+            f"[magi] node_modules missing — running `npm ci` in {webui_dir}...",
+            file=sys.stderr,
+        )
+        try:
+            subprocess.run(
+                ["npm", "ci", "--no-audit", "--no-fund", "--prefer-offline"],
+                cwd=str(webui_dir),
+                check=True,
+            )
+        except FileNotFoundError:
+            print(
+                "error: `npm` not on PATH. Install Node.js ≥ 18 to use "
+                "the dev-mode WebUI (`--no-dev` does not require npm).",
+                file=sys.stderr,
+            )
+            return 127
+
+    vite_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "VITE_BACKEND_URL": "http://127.0.0.1:8000",
+        "MAGI_PORT": "8000",  # vite falls back to MAGI_PORT when VITE_BACKEND_URL is unset
+    }
+    logger.info("spawning vite dev server on :42069 (HMR enabled)")
+    vite = subprocess.Popen(
+        ["npm", "run", "dev", "--", "--port", "42069", "--strictPort"],
+        cwd=str(webui_dir),
+        env=vite_env,
+        stdin=subprocess.DEVNULL,
+    )
+
+    # Forward SIGTERM/SIGINT to vite so Ctrl-C in this terminal stops
+    # both vite and the eventual FastAPI control plane cleanly.  Once
+    # execve replaces this process, signal handlers stop mattering —
+    # the FastAPI parent (this very process image) will already be
+    # shutting down because vite died.
+    def _shutdown(signum, _frame):
+        try:
+            vite.terminate()
+            vite.wait(timeout=5)
+        finally:
+            sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    # Replace this process with ``magi webui`` on :8000 — vite proxies
+    # /api → :8000 from the browser's perspective.
+    env = os.environ.copy()
+    env["MAGI_DATA_ROOT"] = str(data_root)
+    env["MAGI_PORT"] = "8000"
+    env["MAGIS_DATABASE_URL"] = f"sqlite:///{data_root}/MAGIS/1-genesis/magis.db"
+    env["MAGI_RELOAD"] = "1" if not getattr(args, "no_reload", False) else "0"
+    logger.info(
+        "replacing process with magi webui on :8000 (vite owns :42069)",
+        extra={"data_root": str(data_root), "reload": env["MAGI_RELOAD"]},
+    )
+    os.execvpe(
+        sys.executable,
+        [sys.executable, "-m", "magi", "webui"],
+        env,
+    )
+    return 0  # unreachable
+
+
 def cmd_install_service(args: argparse.Namespace) -> int:
     """``magi local install-service`` — register one systemd unit per MAGI."""
     if current_platform() != "linux":

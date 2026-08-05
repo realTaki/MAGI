@@ -1,8 +1,8 @@
 """Shared base for Anthropic-API-compatible chat completions.
 
-Both :class:`magi.agent.llm.claude.ClaudeProvider`
+Both :class:`magi.providers.claude.ClaudeProvider`
 (Anthropic's first-party API) and
-:class:`magi.agent.llm.minimax.MinimaxProvider`
+:class:`magi.providers.minimax.MinimaxProvider`
 (Minimax's Anthropic-compatible endpoints) subclass
 this. The two vendors speak the same wire format
 (Anthropic Messages API) — the only differences are
@@ -31,14 +31,14 @@ from typing import Any
 
 import anthropic
 
-from magi.agent.llm.errors import (
+from magi.providers.errors import (
     LLMContextLengthError,
     LLMError,
     LLMAuthError,
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.agent.llm.provider import (
+from magi.providers.provider import (
     ChatMessage,
     ChatResult,
     LLMStreamEvent,

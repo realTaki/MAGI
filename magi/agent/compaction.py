@@ -22,8 +22,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.agent.llm import ChatMessage, get_provider
-from magi.agent.llm.tokens import estimate_messages_tokens
+from magi.providers import ChatMessage, get_provider
+from magi.providers import estimate_messages_tokens
 from magi.bus.contracts.session import SessionMessage, new_session_id, utcnow_iso
 
 if TYPE_CHECKING:

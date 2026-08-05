@@ -130,7 +130,7 @@ Cross-checks:
 | `magi.orchestrator` ↛ `magi.bus.db`, `magi.bus.models` | Clean |
 | `magi.skills` ↛ `magi.bus.db`, `magi.bus.models` | Clean |
 | `magi.channels.api` ↛ `magi.channels.tasks`, `magi.agent`, `magi.tools`, `magi.mcp`, `magi.plugins`, `magi.connectors`, `magi.bus.db`, `magi.bus.models`, `magi.orchestrator`, `magi.orchestrator.backends`, `magi.orchestrator.client`, `magi.orchestrator.service`, `magi.orchestrator.contracts` | Clean |
-| `magi.bus` ↛ `magi.tools`, `magi.channels.telegram`, `magi.channels.api`, `magi.channels.a2a`, `magi.channels.base`, `magi.channels.dispatcher`, `magi.channels.delivery`, `magi.agent.worker`, `magi.agent.step`, `magi.agent.llm` | Clean |
+| `magi.bus` ↛ `magi.tools`, `magi.channels.telegram`, `magi.channels.api`, `magi.channels.a2a`, `magi.channels.base`, `magi.channels.dispatcher`, `magi.channels.delivery`, `magi.agent.worker`, `magi.agent.step`, `magi.providers` | Clean |
 | `magi.bus.services` ↛ `magi.orchestrator.kubernetes`, `magi.orchestrator.client`, `magi.orchestrator.service`, `magi.orchestrator.contracts` | Clean |
 | `magi.bus.services.runtime` ↛ `magi.orchestrator.kubernetes` | Clean (reaches `magi.orchestrator.backends.factory` only, which is the documented exception in [magi/bus/services/runtime.py:64](../magi/bus/services/runtime.py)) |
 

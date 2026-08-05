@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from magi.agent.llm.provider import ChatMessage
+from magi.providers.provider import ChatMessage
 
 CHARS_PER_TOKEN = 4
 TOKENS_PER_MESSAGE_OVERHEAD = 4

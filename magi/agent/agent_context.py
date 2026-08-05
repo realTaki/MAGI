@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 
 from magi.agent.compaction import maybe_compact
-from magi.agent.llm import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
+from magi.providers import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.bus import ToolContext, get_bus
 from magi.launcher.paths import workspace_dir
