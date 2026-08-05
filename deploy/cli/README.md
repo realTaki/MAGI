@@ -106,10 +106,11 @@ MAGIS 格式为 `MAGI_Societies/<magis_id>-<slug>/magis.db`。
 ## CLI 命令
 
 ```bash
-magi cli start                # 启动 Adam（前台 + 浏览器），使用 exec 替换当前进程
-magi cli start --name eva-001  # 启动指定 MAGI
-magi cli start --port 42070   # 指定端口
-magi cli start --no-open      # 不打开浏览器
+magi cli start                # 同时拉起 runtime + WebUI（默认 42069），自动开浏览器
+magi cli start --name eva-001 # 启动指定 MAGI（其它 slot 不会被启动）
+magi cli start --no-webui     # 只拉 runtime，不拉 WebUI（CI / 脚本用）
+magi cli start --webui-port 8080  # 自定义 WebUI 端口
+magi cli start --no-open      # 不打开浏览器（URL 仍会打印到 stdout）
 magi cli status               # 列出所有 MAGIC slots 及其状态
 magi cli stop                 # 向所有 MAGI runtime 发送 SIGTERM
 magi cli doctor               # 诊断打印（路径、DB 状态）
