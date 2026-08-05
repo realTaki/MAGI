@@ -27,21 +27,24 @@ from magi.bus.db import init_orm
 def fresh_bus(monkeypatch, tmp_path: Path):
     """Stand up a clean BUS singleton + SQLite per test.
 
-    Set both env vars ``HOST_WORKSPACE_DIR`` + ``MAGI_DATA_ROOT``
-    so ``magi.launcher.paths.state_dir()`` returns
-    ``<tmp_path>/memories`` — and ``init_orm()`` (no state_dir arg)
-    follows the same path so the engine and the BusStore agree on
-    the DB file.
+    The fixture sets the launcher state path so both
+    ``init_orm`` and ``get_bus_store`` resolve to the same DB
+    file.  No explicit state_dir arg is passed to ``init_orm``
+    so it follows ``launcher.paths.state_dir()`` -- the same
+    path the BusStore uses.
     """
+    from magi.launcher.paths import state_dir as launcher_state_dir
+
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'magis.db'}")
     _bm = importlib.import_module("magi.bus.bootstrap")
     import magi.bus.db.engine as _engine_mod
     _bm._bus = None
     _engine_mod._engine = None
     init_orm(seed_root=False)
-    yield str(tmp_path / "memories")
+    yield str(launcher_state_dir())
 
 
 def _install_plugin(state_dir: str, *, plugin_id: str, hook_points: list[str]) -> None:
