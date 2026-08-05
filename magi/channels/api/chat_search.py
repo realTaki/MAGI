@@ -42,7 +42,7 @@ class SearchResponse(BaseModel):
 def search_chat(
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    _service: SessionServiceDep,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -55,7 +55,7 @@ def search_chat(
     ``WHERE s.uid = :uid`` picks up every session this contact
     owns — webui, TG, or any future channel.
     """
-    uid = _admin_uid(request, service)
+    uid = _admin_uid(request)
 
     try:
         items, total = get_bus().session.search(uid, q, limit=limit, offset=offset)

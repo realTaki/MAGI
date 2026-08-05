@@ -54,7 +54,7 @@ def build_control_engine(control_dir: Path) -> Engine:
     def _begin_immediate(dbapi_conn):
         dbapi_conn.exec_driver_sql("BEGIN IMMEDIATE")
 
-    _run_alembic_upgrade(engine, control_dir)
+    _run_alembic_upgrade(engine)
 
     logger.info(
         "local control engine built",
@@ -63,7 +63,7 @@ def build_control_engine(control_dir: Path) -> Engine:
     return engine
 
 
-def _run_alembic_upgrade(engine: Engine, control_dir: Path) -> None:
+def _run_alembic_upgrade(engine: Engine) -> None:
     """Run the control-registry Alembic migrations.
 
     The control alembic env is intentionally separate from the

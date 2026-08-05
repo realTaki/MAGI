@@ -79,7 +79,7 @@ class LocalProcessRuntimeBackend:
                 out.append("-")
         return "".join(out)[:80] or f"runtime-{spec.magic_id}"
 
-    def _build_argv(self, spec: RuntimeSpec, port: int) -> list[str]:
+    def _build_argv(self, port: int) -> list[str]:
         """Compose the runtime subprocess argv (plan §7.1 — argv array, no shell)."""
         # ``-m magi`` keeps the launcher Python-version-aligned and
         # keeps argv opaque enough that supervisor can inspect PIDs.
@@ -119,7 +119,7 @@ class LocalProcessRuntimeBackend:
 
     # -- RuntimeBackend Protocol ------------------------------------------
 
-    def provision_magis(self, magis_id: int, magis_name: str) -> MagisProvisionResult:
+    def provision_magis(self, magis_id: int, _magis_name: str) -> MagisProvisionResult:
         """Local Profile already has the per-MAGIS SQLite from Phase 3.
 
         No backend-side resources to provision — the Composition Root
@@ -163,13 +163,15 @@ class LocalProcessRuntimeBackend:
         # and a ``sqlite:///`` URL pointing at the same per-MAGIS file
         # the launcher just built. Both processes then walk the same
         # ``state_dir()`` / ``get_magis_engine()`` resolution chain.
+        from magi.launcher.paths import default_data_root
+
         data_root = Path(default_data_root())
         magis_db = data_root / "MAGIS" / "local" / "magis.db"
         handle = self._supervisor.spawn(
             ProcessSpec(
                 runtime_id=spec.magic_id,
                 slug=slug,
-                argv=self._build_argv(spec, alloc.port),
+                argv=self._build_argv(alloc.port),
                 env={
                     "MAGI_DATA_ROOT": str(data_root),
                     "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",

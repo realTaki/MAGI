@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels import Channel
@@ -105,7 +105,6 @@ class ChannelsUpdateRequest(BaseModel):
 @router.get("/channels", response_model=ChannelsResponse)
 def list_channels(
     _admin: AdminGate,
-    request: Request,
 ) -> ChannelsResponse:
     enabled = _read_enabled()
     available: list[ChannelInfo] = []
@@ -126,7 +125,6 @@ def list_channels(
 def update_channels(
     payload: ChannelsUpdateRequest,
     _admin: AdminGate,
-    request: Request,
 ) -> ChannelsResponse:
 
     # Validate all names are known Channel values

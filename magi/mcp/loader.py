@@ -194,7 +194,7 @@ class MCPTool:
             "input_schema": self.input_schema,
         }
 
-    def is_allowed_for_role(self, role: str | None) -> bool:
+    def is_allowed_for_role(self, _role: str | None) -> bool:
         """MCP tools are intentionally unrestricted by role.
 
         The MCP server is configured by the operator and they
@@ -206,7 +206,7 @@ class MCPTool:
         frontmatter on the server config side)."""
         return True
 
-    async def run(self, ctx: Any, **kwargs: Any) -> Any:
+    async def run(self, _ctx: Any, **kwargs: Any) -> Any:
         """Forward the call to the MCP server.
 
         ``ctx`` is the project-local :class:`ToolContext`. The

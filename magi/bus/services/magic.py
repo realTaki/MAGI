@@ -321,16 +321,14 @@ class MagicService:
 
     def list_magic(
         self,
-        served: int | None,
         direct_ids: set[int] | None,
         assigned_ids: set[int],
     ) -> list[MagicView]:
         """Return visible MAGIs with their membership + runtime state.
 
-        ``served`` is the current WebUI's direct MAGIS id (or ``None`` if
-        no MAGIS is served).  ``direct_ids`` are MAGIs bound to that
-        served MAGIS.  ``assigned_ids`` are MAGIs bound to *any* MAGIS;
-        a MAGIC not in ``assigned_ids`` is treated as unassigned and
+        ``direct_ids`` are MAGIs bound to the current WebUI's direct
+        MAGIS.  ``assigned_ids`` are MAGIs bound to *any* MAGIS; a
+        MAGIC not in ``assigned_ids`` is treated as unassigned and
         visible regardless of scope.
         """
         from sqlalchemy import select

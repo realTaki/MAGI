@@ -222,7 +222,7 @@ class ListMcpServersTool(Tool):
     )
     input_schema = {"type": "object", "properties": {}}
 
-    async def run(self, context: ToolContext, **kwargs: Any) -> ToolResult:
+    async def run(self, context: ToolContext, **_kwargs: Any) -> ToolResult:
         denied = _gate(context)
         if denied:
             return _err(denied)

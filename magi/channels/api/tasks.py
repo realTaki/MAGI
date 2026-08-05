@@ -315,7 +315,6 @@ def _now_iso() -> str:
 
 @router.get("/tasks", response_model=List[TaskOut])
 def list_tasks(
-    request: Request,
     _admin: AdminGate,
     enabled: Optional[bool] = None,
     uid: Optional[int] = None,
@@ -342,7 +341,6 @@ def list_tasks(
 
 @router.get("/tasks/{task_id}", response_model=TaskOut)
 def get_task(
-    request: Request,
     task_id: str,
     _admin: AdminGate,
 ) -> TaskOut:
@@ -524,7 +522,6 @@ def create_task(
 
 @router.patch("/tasks/{task_id}", response_model=TaskOut)
 def update_task(
-    request: Request,
     task_id: str,
     payload: TaskPatch,
     _admin: AdminGate,
@@ -612,7 +609,6 @@ class _PatchProxy:
 
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(
-    request: Request,
     task_id: str,
     _admin: AdminGate,
 ) -> None:
@@ -631,7 +627,6 @@ def delete_task(
 
 @router.post("/tasks/{task_id}/run", response_model=RunResponse)
 def run_task_now(
-    request: Request,
     task_id: str,
     _admin: AdminGate,
 ) -> RunResponse:
@@ -681,7 +676,6 @@ def run_task_now(
 
 @router.get("/tasks/{task_id}/runs", response_model=List[TaskRunOut])
 def list_task_runs(
-    request: Request,
     task_id: str,
     _admin: AdminGate,
     limit: int = Query(20, ge=1, le=100),
@@ -913,7 +907,6 @@ def _resolve_delivery_to(
 
 def _render_cron_from_payload(
     payload,
-    preset_only: bool = False,
 ) -> tuple[str, str | None, dict]:
     """Render preset payload → (cron, run_at, fields_used).
 

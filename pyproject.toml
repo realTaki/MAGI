@@ -86,8 +86,14 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W", "B", "UP"]
+select = ["E", "F", "I", "W", "B", "UP", "ARG"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Pytest fixtures are requested for their side effects (DB setup, test
+# isolation, monkeypatching). Removing them silently drops the setup
+# rather than erroring, so we exempt the whole tests/ tree from ARG001.
+"tests/**" = ["ARG001"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

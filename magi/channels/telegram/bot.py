@@ -262,7 +262,7 @@ def _replies() -> dict[str, str]:
     return _BOT_REPLIES
 
 
-async def _on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _on_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle any inbound message from any chat.
 
     Role resolution (in order):

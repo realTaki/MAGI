@@ -406,7 +406,7 @@ class BashRunTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
+        _ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         command = (kwargs.get("command") or "").strip()
@@ -620,7 +620,7 @@ class BashOutputTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
+        _ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         bash_id = (kwargs.get("bash_id") or "").strip()
@@ -712,7 +712,7 @@ class BashKillTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
+        _ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         bash_id = (kwargs.get("bash_id") or "").strip()

@@ -155,7 +155,7 @@ class SkillLoaderTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
+        _ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         name = (kwargs.get("name") or "").strip()

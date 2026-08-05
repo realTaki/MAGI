@@ -195,7 +195,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _delivery_address_for_uid(uid: int, channel: Channel | str = Channel.TG) -> str:
+def _delivery_address_for_uid(uid: int) -> str:
     """Resolve the operator's bound per-channel delivery
     address (the TG chat id today; opaque to domain code).
 
@@ -241,7 +241,7 @@ def _resolve_uid(request: Request) -> int:
     return uid
 
 
-def _admin_uid(request: Request, service: SessionServiceDep | None = None) -> int:
+def _admin_uid(request: Request) -> int:
     """Resolve the cookie to its admin contact id and
     gate by role.
 
@@ -283,7 +283,7 @@ def create_session(
     C7-era tools that want to instantiate a session
     before the first message).
     """
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request)
     # D.23 / D.28: ``delivery_address`` is the
     # per-channel delivery address stamped on the row's
     # column (renamed from the legacy per-channel chat-id
@@ -326,7 +326,7 @@ def list_sessions(
     if offset < 0:
         offset = 0
 
-    uid = _admin_uid(request, store)
+    uid = _admin_uid(request)
     # D.23: list scope is the operator's uid, not
     # a per-channel delivery address.
     # ``store.list_summaries`` returns every row whose
@@ -359,7 +359,7 @@ def get_session(
     service: SessionServiceDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    uid = _admin_uid(request, service)
+    uid = _admin_uid(request)
     try:
         sess = service.get(uid, session_id)
     except SessionPathError as e:
@@ -404,7 +404,7 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    uid = _admin_uid(request, service)
+    uid = _admin_uid(request)
     try:
         removed = service.delete(uid, session_id)
     except SessionPathError as e:
@@ -451,7 +451,7 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    uid = _admin_uid(request, service)
+    uid = _admin_uid(request)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
@@ -571,7 +571,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    uid = _admin_uid(request, service)
+    uid = _admin_uid(request)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic

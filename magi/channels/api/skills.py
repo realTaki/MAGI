@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from magi.bus import get_bus
@@ -84,7 +84,6 @@ class SkillToggleIn(BaseModel):
 
 @router.get("/skills", response_model=list[SkillOut])
 def list_skills(
-    request: Request,
     _admin: AdminGate,
 ) -> list[SkillOut]:
     """Enumerate every registered skill."""
@@ -104,7 +103,6 @@ def list_skills(
 
 @router.patch("/skills/{name}", response_model=SkillOut)
 def toggle_skill(
-    request: Request,
     name: str,
     body: SkillToggleIn,
     _admin: AdminGate,
@@ -133,7 +131,6 @@ def toggle_skill(
 
 @router.get("/skills/{name}/raw", response_model=SkillBodyOut)
 def get_skill_body(
-    request: Request,
     name: str,
     _admin: AdminGate,
 ) -> SkillBodyOut:

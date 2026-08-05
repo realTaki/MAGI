@@ -235,7 +235,7 @@ def run() -> None:
     # Bootstrap the workspace (skills/, memories/, SOUL.md) before
     # any channel launches. Idempotent.
     from magi.launcher.paths import bootstrap_workspace, workspace_root as wr
-    bootstrap_workspace(wr(state_dir))
+    bootstrap_workspace(wr())
 
     # MCP tool discovery moved to the ToolWorker's startup seed
     # (see magi/tools/worker._seed_tools).  The worker loads both
@@ -336,7 +336,7 @@ def _launch_runtime_api(cfg: NodeConfig) -> None:
     )
 
 
-def _launch_telegram(cfg: NodeConfig) -> None:
+def _launch_telegram(_cfg: NodeConfig) -> None:
     """Mount the Telegram channel: start the bot polling daemon."""
     from magi.channels.telegram.bot import start_bot
 

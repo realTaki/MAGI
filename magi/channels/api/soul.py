@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminOrAssignedGate
@@ -174,7 +174,6 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
 @router.put("/soul", response_model=SoulUpdateResponse)
 def update_soul(
     payload: SoulUpdateRequest,
-    request: Request,
     _admin: AdminOrAssignedGate,
 ) -> SoulUpdateResponse:
     """Persist the new persona text to ``SOUL.md``.
@@ -206,7 +205,6 @@ def update_soul(
 
 @router.post("/soul/reset", response_model=SoulUpdateResponse)
 def reset_soul(
-    request: Request,
     _admin: AdminOrAssignedGate,
 ) -> SoulUpdateResponse:
     """Reset the workspace ``SOUL.md`` to the bundled default.

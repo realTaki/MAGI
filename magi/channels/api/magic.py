@@ -247,7 +247,6 @@ def list_magic(_admin: AdminGate) -> list[MAGICOut]:
         }
     assigned_ids = bus.magis.assigned_magic_ids()
     views = bus.magic.list_magic(
-        served=served,
         direct_ids=direct_ids,
         assigned_ids=assigned_ids,
     )

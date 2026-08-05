@@ -242,7 +242,7 @@ def _magi_executable() -> str:
     return f"{sys.executable} -m magi"
 
 
-def cmd_install_service(args: argparse.Namespace) -> int:
+def cmd_install_service(_args: argparse.Namespace) -> int:
     """``magi local install-service``: register systemd user unit (Linux only)."""
     if current_platform() != "linux":
         print(
@@ -300,7 +300,7 @@ def cmd_install_service(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_uninstall_service(args: argparse.Namespace) -> int:
+def cmd_uninstall_service(_args: argparse.Namespace) -> int:
     """``magi local uninstall-service``: remove systemd user unit (Linux only)."""
     if current_platform() != "linux":
         print(

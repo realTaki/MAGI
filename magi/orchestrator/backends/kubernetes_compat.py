@@ -67,7 +67,7 @@ class KubernetesEvaBackendAdapter:
         self,
         legacy,
         spec: RuntimeSpec,
-        deployment_name: str,
+        _deployment_name: str,
     ) -> RuntimeOperationResult:
         endpoint = None
         if legacy.observed_state not in {"stopped", "deleted"} and legacy.deployment_name:
