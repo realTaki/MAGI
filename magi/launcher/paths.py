@@ -52,6 +52,11 @@ logger = logging.getLogger("magi.launcher.paths")
 # database, alembic migrations, and session history.  Not configurable —
 # this is the schema the runtime assumes.
 _STATE_SUBDIR = "memories"
+# Local Profile keeps the SQLite one level shallower so the openclaw
+# tree reads as ``<data_root>/{state, control, MAGIC, MAGIS}`` without
+# the historical ``memories/`` indirection.  Same convention as
+# :class:`magi.launcher.LocalPathLayout.state_dir`.
+_LOCAL_STATE_SUBDIR = "state"
 
 
 def workspace_dir() -> Path:
@@ -73,10 +78,37 @@ def workspace_dir() -> Path:
 def state_dir() -> Path:
     """Return the SQLite + migrations + session-history directory.
 
-    Always ``<workspace_dir>/<STATE_SUBDIR>``; never set independently.
-    Local Profile that uses a different layout reads the layout's
-    ``state_dir`` directly and never consults this helper.
+    Single resolution chain shared by the K8s Profile and the Local
+    Profile — there is only one state directory per MAGI process, and
+    the only difference between the two profiles is which environment
+    variable names the deployer.  Both K8s manifests and the Local
+    wrapper (``deploy/local/magi``) express their intent via env vars,
+    so a subprocess spawned from either side resolves to the same
+    directory as its parent:
+
+    1. ``$MAGI_DATA_ROOT`` when set — Local Profile.  The data root is
+       the openclaw-style layout; state lives at ``<data_root>/state``.
+       This wins whenever the deployer chooses per-host layout (any
+       non-container deployment, and any test fixture that sets
+       ``MAGI_DATA_ROOT`` for isolation).
+    2. ``$MAGI_WORKSPACE_DIR`` when set — K8s Profile with an
+       explicit workspace root.
+    3. ``/workspace`` — K8s Profile default (the orchestrator mounts
+       the PVC at ``/workspace``).
+
+    The two paths deliberately differ: Local Profile keeps the SQLite
+    under ``<data_root>/state`` so the openclaw tree is
+    ``<data_root>/{state, control, MAGIC, MAGIS}``; K8s keeps it under
+    ``<workspace_dir>/memories`` because the workspace is the
+    PersistentVolume and ``memories/`` is the convention the runtime
+    image expects.  The helper is the single source of truth so a
+    subprocess spawned by ``LocalProcessRuntimeBackend`` (Local) and
+    a Pod started by ``magi-orchestrator`` (K8s) both look up their
+    state the same way.
     """
+    override = os.environ.get("MAGI_DATA_ROOT")
+    if override:
+        return Path(override).expanduser().resolve() / _LOCAL_STATE_SUBDIR
     return workspace_dir() / _STATE_SUBDIR
 
 

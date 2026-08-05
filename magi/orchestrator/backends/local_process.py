@@ -156,13 +156,24 @@ class LocalProcessRuntimeBackend:
 
         alloc = reserve_port(self._control, spec.magic_id)
         self._persist_paths(spec, slug)
+        # Subprocess env is what reconciles the Local Profile with the
+        # generic ``magi runtime`` entry point. The runtime subprocess
+        # resolves its state + magis engines the same way ``magi runtime``
+        # does in a Pod — via env vars — so we pass the Local data root
+        # and a ``sqlite:///`` URL pointing at the same per-MAGIS file
+        # the launcher just built. Both processes then walk the same
+        # ``state_dir()`` / ``get_magis_engine()`` resolution chain.
+        data_root = Path(default_data_root())
+        magis_db = data_root / "MAGIS" / "local" / "magis.db"
         handle = self._supervisor.spawn(
             ProcessSpec(
                 runtime_id=spec.magic_id,
                 slug=slug,
                 argv=self._build_argv(spec, alloc.port),
                 env={
-                    "MAGI_WORKSPACE_DIR": str(Path("/tmp").resolve()),  # runtime derives state
+                    "MAGI_DATA_ROOT": str(data_root),
+                    "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
+                    "MAGI_PORT": str(alloc.port),
                     "MAGI_RUNTIME_PORT": str(alloc.port),
                     "MAGI_RUNTIME_SLUG": slug,
                 },
