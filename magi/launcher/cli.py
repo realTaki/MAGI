@@ -1,10 +1,16 @@
 """``magi local start | status | stop | doctor | install-service | uninstall-service``.
 
-Each MAGI is an independent OS process — the Local Profile never spawns child
-processes.  ``magi local start`` bootstraps the workspace (first run only) and
-then *becomes* the MAGI runtime in the current process.  ``magi local
-install-service`` registers one systemd user unit per MAGI so every MAGI
-starts, crashes, and restarts independently.
+Each MAGI is an independent OS process.  ``magi local start`` bootstraps the
+workspace (first run only), then dispatches
+``BackendDispatcherService.start`` → :class:`LocalProcessRuntimeBackend`,
+which spawns one detached ``magi runtime`` subprocess via ``subprocess.Popen``
+with ``start_new_session=True``.  The launcher exits after spawn; the child
+is reparented to ``init`` and continues independently.  One MAGI crashing
+does not affect any other.
+
+``magi local install-service`` registers one systemd user unit per MAGI.
+The units ``ExecStart=magi runtime`` directly and bypass the backend today —
+Phase 5 unifies that path with the launcher flow.
 """
 
 from __future__ import annotations
@@ -157,64 +163,26 @@ def _magic_id_for_slug(data_root: Path, slug: str) -> int:
     return 1
 
 
-def _exec_runtime(
-    data_root: Path,
-    magic_id: int,
-    slug: str,
-    port: int,
-    *,
-    reload: bool = True,
-) -> None:
-    """Replace the current process with ``magi runtime`` for one MAGI.
-
-    Sets env vars so :mod:`magi.launcher.paths` resolves state_dir /
-    workspace_dir to the correct per-MAGI slot.  Never returns.
-
-    ``reload`` defaults to True so the Local Profile matches the
-    k8s-dev experience — every source edit a developer saves is
-    picked up by the running MAGI in seconds, no restart.  Pass
-    ``reload=False`` for production runs (``magi local start --no-reload``).
-    """
-    ws_root = data_root / "MAGIC" / slug / "workspace"
-    from magi.launcher.paths import magis_db_path
-    magis_db = magis_db_path(data_root, 1, "genesis")
-
-    env = os.environ.copy()
-    env.update({
-        "MAGI_DATA_ROOT": str(data_root),
-        "MAGI_WORKSPACE_DIR": str(ws_root),
-        "MAGI_RUNTIME_ID": str(magic_id),
-        "MAGI_RUNTIME_SLUG": slug,
-        "MAGIS_DATABASE_URL": f"sqlite:///{magis_db}",
-        "MAGI_PORT": str(port),
-        "MAGI_RELOAD": "1" if reload else "0",
-    })
-
-    # execv replaces the current process image — no fork, no child.
-    argv = [sys.executable, "-m", "magi", "runtime", "--host", "127.0.0.1", "--port", str(port)]
-    logger.info(
-        "replacing process with magi runtime: %s",
-        " ".join(argv),
-        extra={"magic_id": magic_id, "slug": slug, "port": port, "reload": reload},
-    )
-    os.execve(sys.executable, argv, env)
-
-
 # ──────────────────────────────────────────────────────────────────────────── #
 # commands
 # ──────────────────────────────────────────────────────────────────────────── #
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """``magi local start`` — bootstrap once, then *become* the MAGI runtime.
+    """``magi local start`` — bootstrap once, then dispatch start via the Local backend.
 
     First boot seeds Genesis + Adam into the per-MAGIS SQLite.
-    Subsequent calls skip the seed and go straight to runtime mode.
+    Subsequent calls skip the seed and dispatch straight to
+    ``bus.runtime.start``.
 
-    The process replaces itself with ``magi runtime`` via ``execve``,
-    so the current shell / terminal owns the MAGI's stdout/stderr and
-    Ctrl-C stops it cleanly.  When run via systemd, the unit is the
-    MAGI itself — no launcher process, no subprocess tree.
+    The backend spawns a detached subprocess running ``magi runtime``;
+    the launcher exits after ``record_spawn`` succeeds, so the
+    subprocess is reparented to ``init`` and continues independently.
+    One MAGI crashing does not affect any other.
+
+    systemd units installed by :func:`cmd_install_service` take a
+    separate path (they ``ExecStart=magi runtime`` directly) and bypass
+    the backend — Phase 5 unifies both routes.
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
 
@@ -235,8 +203,12 @@ def cmd_start(args: argparse.Namespace) -> int:
         encoding="utf-8",
     )
 
-    # Idempotent seed — creates Genesis + Adam on first run.
-    magic_id = _bootstrap_once(data_root)
+    # Idempotent seed — creates Genesis + Adam on first run and wires
+    # the BUS with control_registry populated.
+    _bootstrap_once(data_root)
+
+    # Inject MAGI_BACKEND=local so the factory picks LocalProcessRuntimeBackend.
+    os.environ["MAGI_BACKEND"] = "local"
 
     # ── resolve which MAGI to run ──
     magic_id, slug = _resolve_runtime(data_root, getattr(args, "name", None))
@@ -247,15 +219,31 @@ def cmd_start(args: argparse.Namespace) -> int:
     from magi.launcher.paths import bootstrap_workspace
     bootstrap_workspace(ws_root)
 
-    # ── port ──
-    port = int(getattr(args, "port", 0) or os.environ.get("MAGI_PORT", "42069"))
+    # ── dispatch start via the backend ──
+    from magi.bus import get_bus
+    from magi.bus.protocols.lifecycle import RuntimeSpec
 
+    bus = get_bus()
+    spec = RuntimeSpec(magic_id=magic_id, name=slug)
+    result = bus.runtime.start(spec)
+    if result.observed_state != "running":
+        print(f"failed to start: {result.message}", file=sys.stderr)
+        return 1
+
+    base_url = result.endpoint.base_url if result.endpoint else "(no endpoint)"
     if not getattr(args, "no_open", False):
-        base_url = f"http://127.0.0.1:{port}"
         open_browser(base_url)
-
-    _exec_runtime(data_root, magic_id, slug, port)
-    return 0  # unreachable — execve replaces the process
+    print(f"MAGI {magic_id} started — {base_url}")
+    logger.info(
+        "MAGI subprocess spawned",
+        extra={
+            "magic_id": magic_id,
+            "slug": slug,
+            "backend_ref": result.backend_ref,
+            "endpoint": base_url,
+        },
+    )
+    return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -289,30 +277,42 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    """``magi local stop`` — send SIGTERM to every MAGI runtime.
+    """``magi local stop`` — stop every MAGI via the Local backend.
 
-    Reads PIDs from the control registry and signals them.  This is a
-    convenience for the operator; systemd-managed units should use
-    ``systemctl --user stop magi-<slug>.service`` instead.
+    Reads runtime state from the control registry and dispatches
+    ``bus.runtime.stop`` for each.  The backend sends ``SIGTERM`` and
+    falls back to ``SIGKILL`` after a 10 s grace period.
+
+    systemd-managed units should use ``systemctl --user stop
+    magi-<slug>.service`` instead.
     """
     data_root = Path(args.data_dir) if args.data_dir else default_data_root()
+
     from magi.launcher import bootstrap_local
-    bus = bootstrap_local(data_root)
-    if bus.control_registry is None:
-        print("error: control registry unavailable", file=sys.stderr)
-        return 2
-    import signal
+    bootstrap_local(data_root)
+    os.environ["MAGI_BACKEND"] = "local"
+
+    from magi.bus import get_bus
+    from magi.bus.protocols.lifecycle import RuntimeSpec
+
+    bus = get_bus()
     runtimes = bus.control_registry.list_runtimes()
+    if not runtimes:
+        print("(no runtimes registered)")
+        return 0
+
     for r in runtimes:
-        if r.pid is not None:
-            try:
-                os.kill(r.pid, signal.SIGTERM)
-                print(f"sent SIGTERM to runtime {r.runtime_id} (pid {r.pid})")
-            except ProcessLookupError:
-                print(f"runtime {r.runtime_id} (pid {r.pid}) already gone")
-            except Exception as exc:
-                print(f"failed to stop runtime {r.runtime_id}: {exc}", file=sys.stderr)
-        bus.control_registry.record_stop(r.runtime_id)
+        spec = RuntimeSpec(magic_id=r.runtime_id)
+        try:
+            result = bus.runtime.stop(spec)
+            print(
+                f"stopped runtime {r.runtime_id}: {result.observed_state} ({result.message})"
+            )
+        except Exception as exc:
+            print(
+                f"failed to stop runtime {r.runtime_id}: {exc}",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -647,10 +647,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # start
-    p = sub.add_parser("start", help="bootstrap once, then become the MAGI runtime")
+    p = sub.add_parser(
+        "start",
+        help="bootstrap once, then dispatch start via the Local backend",
+    )
     p.add_argument("--data-dir", default=None, help="override the data root")
     p.add_argument("--name", "-n", default=None, help="MAGI slug or <id>-<slug> to run")
-    p.add_argument("--port", "-p", type=int, default=None, help="HTTP port (default: 42069)")
     p.add_argument("--no-open", action="store_true", help="don't open the browser")
     p.set_defaults(handler=cmd_start)
 
