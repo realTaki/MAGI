@@ -189,7 +189,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "platform": current_platform(),
         "paths": {
             "control": str(_control_dir(data_root)),
-            "magis": str(data_root / "MAGIS" / "local"),
+            "magis": str(data_root / "MAGIS" / "1-genesis"),
         },
         "control_db_exists": (_control_dir(data_root) / "local-registry.db").exists(),
         "secret_exists": control_secret_path(_control_dir(data_root)).exists(),

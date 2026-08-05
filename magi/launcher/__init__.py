@@ -39,11 +39,25 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class LocalPathLayout:
-    """Filesystem layout for one MAGI runtime.
+    """Filesystem layout for one MAGI runtime or the launcher process.
 
-    Single required argument: ``data_root``.  All other paths are derived
-    inside :meth:`__post_init__`.  No env-var reads happen here — the
-    Composition Root is the only place that decides which layout to build.
+    Two modes, distinguished by whether ``runtime_id`` + ``slug`` are
+    provided:
+
+    **Runtime mode** (``runtime_id`` + ``slug`` supplied):
+        ``<data_root>/MAGIC/<runtime_id>-<slug>/``
+        ├── workspace/
+        │   ├── memories/magi.db   (SQLite — via :func:`~magi.launcher.paths.state_dir`)
+        │   ├── skills/
+        │   ├── SOUL.md
+        │   ├── logs/
+        │   └── tmp/
+        └── state/                 (SQLite — per-MAGI isolation)
+
+    **Launcher mode** (no ``runtime_id``):
+        ``<data_root>/control/launcher-state/`` — scratch space for the
+        launcher's BUS services.  The launcher never runs agent work;
+        the real runtime state lives in the subprocess's per-MAGI slot.
 
     Layout under ``data_root``::
 
@@ -52,17 +66,21 @@ class LocalPathLayout:
         │   ├── local-registry.db
         │   ├── control-secret
         │   ├── launcher.json
-        │   └── logs/
-        ├── MAGIC/<runtime-id>-<slug>/workspace/
-        │   ├── memories/magi.db
-        │   ├── skills/
-        │   ├── SOUL.md
-        │   ├── logs/
-        │   └── tmp/
+        │   └── launcher-state/magi.db
+        ├── MAGIC/<runtime-id>-<slug>/
+        │   ├── workspace/
+        │   │   ├── SOUL.md
+        │   │   ├── skills/
+        │   │   ├── memories/magi.db
+        │   │   ├── logs/
+        │   │   └── tmp/
+        │   └── state/magi.db
         └── MAGIS/<magis-id>-<slug>/magis.db
     """
 
     data_root: Path
+    runtime_id: int | None = None
+    slug: str | None = None
 
     # Derived (post_init)
     state_dir: Path = None  # type: ignore[assignment]
@@ -79,15 +97,34 @@ class LocalPathLayout:
         # Use object.__setattr__ because the dataclass is frozen.
         data_root = Path(self.data_root).expanduser().resolve()
         object.__setattr__(self, "data_root", data_root)
-        object.__setattr__(self, "state_dir", data_root / "state")
-        object.__setattr__(self, "workspace", data_root / "workspace")
-        object.__setattr__(self, "local_db", self.state_dir / "magi.db")
-        object.__setattr__(self, "skills_dir", self.workspace / "skills")
-        object.__setattr__(self, "soul_path", self.workspace / "SOUL.md")
-        object.__setattr__(self, "logs_dir", self.workspace / "logs")
-        object.__setattr__(self, "temp_dir", self.workspace / "tmp")
+
+        if self.runtime_id is not None and self.slug:
+            # Runtime mode: per-MAGI slot under MAGIC/<id>-<slug>/
+            slot = data_root / "MAGIC" / f"{self.runtime_id}-{self.slug}"
+            ws = slot / "workspace"
+            st = slot / "state"
+            object.__setattr__(self, "state_dir", st)
+            object.__setattr__(self, "workspace", ws)
+            object.__setattr__(self, "local_db", st / "magi.db")
+            object.__setattr__(self, "skills_dir", ws / "skills")
+            object.__setattr__(self, "soul_path", ws / "SOUL.md")
+            object.__setattr__(self, "logs_dir", ws / "logs")
+            object.__setattr__(self, "temp_dir", ws / "tmp")
+            object.__setattr__(self, "audit_log_path", ws / "logs" / "audit.log")
+        else:
+            # Launcher mode: scratch space in control/ so it never
+            # collides with the Adam's per-MAGI magi.db.
+            launcher_state = data_root / "control" / "launcher-state"
+            object.__setattr__(self, "state_dir", launcher_state)
+            object.__setattr__(self, "workspace", data_root)  # unused
+            object.__setattr__(self, "local_db", launcher_state / "magi.db")
+            object.__setattr__(self, "skills_dir", data_root / "skills")  # unused
+            object.__setattr__(self, "soul_path", data_root / "SOUL.md")  # unused
+            object.__setattr__(self, "logs_dir", data_root / "logs")  # unused
+            object.__setattr__(self, "temp_dir", data_root / "tmp")  # unused
+            object.__setattr__(self, "audit_log_path", data_root / "logs" / "audit.log")
+
         object.__setattr__(self, "magis_workspace", data_root / "MAGIS")
-        object.__setattr__(self, "audit_log_path", data_root / "logs" / "audit.log")
 
 
 # §2. Local Composition Root ----------------------------------------------------
@@ -101,7 +138,7 @@ def bootstrap_local(
     data_root: Path | str,
     *,
     initialise: bool = False,
-    magis_dir: Path | str | None = None,
+    magis_dir_override: Path | str | None = None,
     initialise_control: bool = True,
 ) -> Bus:
     """Build the Local Profile BUS facade rooted at ``data_root``.
@@ -114,8 +151,7 @@ def bootstrap_local(
 
     ``data_root`` becomes the root of the :class:`LocalPathLayout`.
 
-    ``data_root`` becomes the root of the :class:`LocalPathLayout`.  All
-    downstream workers receive their ``state_dir`` from this layout via
+    All downstream workers receive their ``state_dir`` from this layout via
     the BUS facade — no business module reaches back to the layout
     itself.
 
@@ -124,19 +160,23 @@ def bootstrap_local(
     ``magi local start`` launcher is the canonical caller; tests may pass
     ``initialise=True`` to set up a fresh ``tmp_path`` fixture.
 
-    ``magis_dir`` (Phase 3) overrides the per-MAGIS SQLite location; when
-    ``None`` the function picks ``<data_root>/MAGIS/local/magis.db``.  The
-    resulting engine is injected into the BUS so the public schema lives
-    outside the Adam's private database.
+    ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
+    ``None`` the function picks ``<data_root>/MAGIS/1-genesis/`` (the
+    first MAGIS seeded by the Local Profile is always Genesis with id=1).
+    This matches the K8s pattern ``MAGIS/<magis_id>-<slug>/magis.db`` so
+    the host layout is identical across both profiles.
 
     ``initialise_control=True`` (Phase 3 close-out) also builds the
     Local control-plane registry engine and threads it through the
     :class:`Bus.control_registry` facade.
     """
     layout = LocalPathLayout(Path(data_root))
-    if magis_dir is None:
-        magis_dir = Path(data_root).expanduser().resolve() / "MAGIS" / "local"
-    magis_dir = Path(magis_dir)
+    if magis_dir_override is None:
+        from magi.launcher.paths import magis_dir as _magis_dir
+
+        magis_dir = _magis_dir(Path(data_root), 1, "genesis")
+    else:
+        magis_dir = Path(magis_dir_override)
     magis_dir.mkdir(parents=True, exist_ok=True)
 
     from magi.bus.db.magis.local_engine import build as build_local_engine

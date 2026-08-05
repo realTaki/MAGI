@@ -78,37 +78,40 @@ def workspace_dir() -> Path:
 def state_dir() -> Path:
     """Return the SQLite + migrations + session-history directory.
 
-    Single resolution chain shared by the K8s Profile and the Local
-    Profile — there is only one state directory per MAGI process, and
-    the only difference between the two profiles is which environment
-    variable names the deployer.  Both K8s manifests and the Local
-    wrapper (``deploy/local/magi``) express their intent via env vars,
-    so a subprocess spawned from either side resolves to the same
-    directory as its parent:
+    One resolver, three branches — one per process role:
 
-    1. ``$MAGI_DATA_ROOT`` when set — Local Profile.  The data root is
-       the openclaw-style layout; state lives at ``<data_root>/state``.
-       This wins whenever the deployer chooses per-host layout (any
-       non-container deployment, and any test fixture that sets
-       ``MAGI_DATA_ROOT`` for isolation).
-    2. ``$MAGI_WORKSPACE_DIR`` when set — K8s Profile with an
-       explicit workspace root.
-    3. ``/workspace`` — K8s Profile default (the orchestrator mounts
-       the PVC at ``/workspace``).
+    1. **Local Profile, runtime subprocess** —
+       ``MAGI_DATA_ROOT`` + ``MAGI_RUNTIME_ID`` + ``MAGI_RUNTIME_SLUG``
+       all set.  State lives at
+       ``<data_root>/MAGIC/<id>-<slug>/workspace/memories/`` —
+       mirrors the K8s ``<workspace_dir>/memories`` convention so
+       every profile resolves to ``workspace/memories/magi.db``.
+    2. **Local Profile, launcher / supervisor process** —
+       ``MAGI_DATA_ROOT`` set, no ``MAGI_RUNTIME_ID``.  The launcher
+       is not a runtime; it keeps its own scratch SQLite at
+       ``<data_root>/control/launcher-state`` so it never collides
+       with the Adam's per-MAGI ``magi.db``.
+    3. **K8s Profile** — no ``MAGI_DATA_ROOT``.  State lives at
+       ``<workspace_dir>/memories``; each Pod has its own PVC, so
+       per-Pod isolation is automatic.
 
-    The two paths deliberately differ: Local Profile keeps the SQLite
-    under ``<data_root>/state`` so the openclaw tree is
-    ``<data_root>/{state, control, MAGIC, MAGIS}``; K8s keeps it under
-    ``<workspace_dir>/memories`` because the workspace is the
-    PersistentVolume and ``memories/`` is the convention the runtime
-    image expects.  The helper is the single source of truth so a
-    subprocess spawned by ``LocalProcessRuntimeBackend`` (Local) and
-    a Pod started by ``magi-orchestrator`` (K8s) both look up their
-    state the same way.
+    The three branches guarantee one ``magi.db`` per MAGI; no two
+    processes ever share a SQLite file.
     """
-    override = os.environ.get("MAGI_DATA_ROOT")
-    if override:
-        return Path(override).expanduser().resolve() / _LOCAL_STATE_SUBDIR
+    data_root = os.environ.get("MAGI_DATA_ROOT")
+    if data_root:
+        runtime_id = os.environ.get("MAGI_RUNTIME_ID")
+        runtime_slug = os.environ.get("MAGI_RUNTIME_SLUG")
+        if runtime_id and runtime_slug:
+            # Same ``workspace/memories`` convention as K8s.
+            return (
+                Path(data_root).expanduser().resolve()
+                / "MAGIC"
+                / f"{runtime_id}-{runtime_slug}"
+                / "workspace"
+                / _STATE_SUBDIR  # "memories"
+            )
+        return Path(data_root).expanduser().resolve() / "control" / "launcher-state"
     return workspace_dir() / _STATE_SUBDIR
 
 
@@ -265,12 +268,41 @@ def runtime_workspace_root(data_root: Path, runtime_id: int, slug: str) -> Path:
     return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "workspace"
 
 
+def runtime_state_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
+    """Resolve the per-runtime SQLite directory.
+
+    Format: ``<data_root>/MAGIC/<runtime_id>-<slug>/state/``.  Mirrors
+    :func:`runtime_workspace_root` so each MAGI has one slot for its
+    private ``magi.db`` and a sibling slot for its workspace.  Used by
+    :class:`magi.launcher.LocalPathLayout` and by the Local
+    subprocess's path resolution via :func:`state_dir`.
+    """
+    return Path(data_root) / "MAGIC" / f"{runtime_id}-{slug}" / "state"
+
+
 def runtime_log_dir(data_root: Path, runtime_id: int, slug: str) -> Path:
     return runtime_workspace_root(data_root, runtime_id, slug) / "logs"
 
 
 def runtime_audit_log_path(data_root: Path, runtime_id: int, slug: str) -> Path:
     return runtime_workspace_root(data_root, runtime_id, slug) / "audit.log"
+
+
+def magis_dir(data_root: Path, magis_id: int, slug: str) -> Path:
+    """Resolve the per-MAGIS public SQLite directory.
+
+    Format: ``<data_root>/MAGIS/<magis_id>-<slug>/``.  Each MAGIS owns
+    one public SQLite that every MAGI in its tree reads and writes
+    (``MAGIS.adam_id`` + membership tree).  The first MAGIS seeded by
+    the Local Profile is Genesis with magis_id=1 and slug="genesis",
+    so its directory is ``<data_root>/MAGIS/1-genesis/magis.db``.
+    """
+    return Path(data_root) / "MAGIS" / f"{magis_id}-{slug}"
+
+
+def magis_db_path(data_root: Path, magis_id: int, slug: str) -> Path:
+    """Convenience: per-MAGIS SQLite file path."""
+    return magis_dir(data_root, magis_id, slug) / "magis.db"
 
 
 __all__ = [
@@ -286,8 +318,11 @@ __all__ = [
     "control_secret_path",
     "launcher_state_path",
     "runtime_workspace_root",
+    "runtime_state_dir",
     "runtime_log_dir",
     "runtime_audit_log_path",
+    "magis_dir",
+    "magis_db_path",
     # Deprecated
     "workspace_root_from_state",
 ]
