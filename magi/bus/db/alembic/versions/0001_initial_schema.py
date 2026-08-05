@@ -35,7 +35,6 @@ Tables owned (alphabetical)
   - ``chat_sessions``          — chat session header.
   - ``contact_notes``          — long-arc facts about people.
   - ``contacts``               — unified people directory.
-  - ``control_jobs``           — transient BUS-to-worker refresh signal.
   - ``control_operators``      — singleton WebUI control-plane admins.
   - ``control_settings``       — singleton WebUI control-plane KV.
   - ``deliveries``             — durable committed channel delivery
@@ -687,24 +686,6 @@ def upgrade() -> None:
         ["subject_type", "subject_id"],
     )
 
-    # Transient BUS-to-worker refresh signal. Rows are deleted by
-    # the consumer as part of the drain; this table is a queue, not
-    # an audit log (see ``ControlJob`` docstring).
-    op.create_table(
-        "control_jobs",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("job_id", sa.String(length=64), nullable=False),
-        sa.Column("kind", sa.String(length=64), nullable=False),
-        sa.Column("payload", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.UniqueConstraint("job_id", name="uq_control_jobs_job_id"),
-    )
-    op.create_index(
-        "ix_control_jobs_drain",
-        "control_jobs",
-        ["kind", "id"],
-    )
-
     op.create_table(
         "tool_definitions",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -891,7 +872,6 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS magic")
     op.execute("DROP TABLE IF EXISTS tool_catalog_state")
     op.execute("DROP TABLE IF EXISTS tool_definitions")
-    op.execute("DROP TABLE IF EXISTS control_jobs")
     op.execute("DROP TABLE IF EXISTS hook_signoffs")
     op.execute("DROP TABLE IF EXISTS hook_plugin_configs")
     op.execute("DROP TABLE IF EXISTS hook_evaluations")

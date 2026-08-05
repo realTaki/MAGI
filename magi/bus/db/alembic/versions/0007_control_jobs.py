@@ -22,7 +22,7 @@ from alembic import op
 
 
 revision = "0007_control_jobs"
-down_revision = "0006_hook_signoffs"
+down_revision = "0001_initial_schema"
 branch_labels = None
 depends_on = None
 
