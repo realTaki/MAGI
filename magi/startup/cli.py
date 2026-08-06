@@ -23,7 +23,7 @@ import sys
 from typing import Optional, Sequence
 
 from magi.startup import local, webui
-from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.config import StartupConfig
 from magi.startup.context import StartupContext
 
 logger = __import__("logging").getLogger("magi.startup.cli")

@@ -29,12 +29,14 @@ from magi.bus.db.magis.engine import (
     set_injected_magis_engine,
 )
 from magi.startup.config import (
+    DEFAULT_MAGI_NAME,
     ConfigurationError,
     StartupConfig,
 )
 from magi.startup.context import StartupContext
 from magi.startup.paths import (
-    resolve_magis_database_url,
+    ensure_workspace,
+    resolve_magis_database_path,
     resolve_private_database_path,
     resolve_runtime_state_path,
 )

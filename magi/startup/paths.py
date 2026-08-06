@@ -1,204 +1,251 @@
-"""Path helpers for the unified startup package.
+"""Startup path resolution — every filesystem path needed by the launcher.
 
-Per plan §9:
+All functions are pure (no env reads, no side effects).  Callers pass
+the host workspace directory explicitly so tests can inject tmp paths.
 
-- :func:`resolve_host_workspace` — operator's host root (``~/.magi``)
-- :func:`resolve_magi_workspace` — per-MAGI slot under
-  ``<host>/MAGI_Citizens/<name>``
-- :func:`resolve_magis_database_path` — MAGIS public DB (``<host>/MAGI_Societies/...``)
-- :func:`resolve_private_database_path` — MAGI's private SQLite file
-- :func:`resolve_runtime_state_path` — runtime.json sidecar
-- :func:`resolve_runtime_pid_path` / :func:`resolve_runtime_log_paths` — local
-  process bookkeeping
-- :func:`resolve_webui_pid_path` / :func:`resolve_webui_log_paths` —
-  whole-MAGIS singleton WebUI
+Layout (per refactor plan §7, §9):
 
-These helpers are *pure* — they take the root / name explicitly and do
-not touch the process environment. Callers (the bootstrap / runtime /
-local modules) read ``HOST_WORKSPACE_DIR`` / ``MAGI_NAME`` from
-:class:`magi.startup.config.StartupConfig` and feed the values here.
+.. code-block:: text
 
-The legacy ``magi.launcher.paths`` module still exposes
-``MAGIC_DIR_NAME`` / ``MAGIS_DIR_NAME`` for tests; the canonical names
-match the new module 1:1.
+    <HOST_WORKSPACE_DIR>/
+    ├── MAGI_Citizens/
+    │   ├── eva-000/
+    │   │   ├── magi.db           # private SQLite
+    │   │   ├── runtime.json      # runtime state (identity record)
+    │   │   ├── skills/           # SKILL.md files
+    │   │   ├── memories/         # memory subsystem data
+    │   │   ├── logs/             # stdout / stderr
+    │   │   │   ├── stdout.log
+    │   │   │   └── stderr.log
+    │   │   └── run/
+    │   │       └── magi.pid
+    │   └── eva-001/
+    │       └── ...
+    ├── MAGI_Societies/
+    │   └── genesis/
+    │       └── magis.db          # MAGIS public SQLite
+    ├── run/
+    │   └── webui.pid
+    └── logs/
+        ├── webui.stdout.log
+        └── webui.stderr.log
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from magi.startup.config import (
-    MAGI_CITIZENS_DIR,
-    MAGI_SOCIETIES_DIR,
-    StartupConfig,
-)
 
-# Sub-paths under a MAGI workspace.
-_SKILLS_DIR = "skills"
-_MEMORIES_DIR = "memories"
-_LOGS_DIR = "logs"
-_RUN_DIR = "run"
+# ------------------------------------------------------------------
+# host workspace
+# ------------------------------------------------------------------
 
-# Sidecar filename — written by bootstrap, read by every subsequent
-# startup to enforce workspace identity consistency (plan §22).
-RUNTIME_STATE_FILENAME = "runtime.json"
-RUNTIME_PID_FILENAME = "magi.pid"
-RUNTIME_LOG_STDOUT = "stdout.log"
-RUNTIME_LOG_STDERR = "stderr.log"
+def resolve_host_workspace() -> Path:
+    """Return the default host workspace directory.
 
-# Singleton WebUI files — live under the host root, *not* under any
-# individual MAGI workspace, because WebUI serves the whole MAGIS.
-WEBUI_PID_FILENAME = "webui.pid"
-WEBUI_LOG_STDOUT = "webui.stdout.log"
-WEBUI_LOG_STDERR = "webui.stderr.log"
-
-
-# ----------------------------------------------------------------------
-# Host workspace
-# ----------------------------------------------------------------------
-
-
-def resolve_host_workspace(host_workspace_dir: Path) -> Path:
-    """Canonicalise the operator's host workspace root."""
-    return Path(host_workspace_dir).expanduser().resolve()
-
-
-def resolve_magi_workspace(
-    host_workspace_dir: Path,
-    magi_name: str,
-) -> Path:
-    """Per-MAGI workspace — plan §6.
-
-    ``<host>/MAGI_Citizens/<name>``
+    Respects ``HOST_WORKSPACE_DIR`` env var; falls back to ``~/.magi``.
+    This is the *only* function that reads the environment.
     """
-    return resolve_host_workspace(host_workspace_dir) / MAGI_CITIZENS_DIR / magi_name
+    import os
+    raw = os.environ.get("HOST_WORKSPACE_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg).expanduser().resolve() / "magi"
+    return Path.home() / ".magi"
 
 
-def from_config(cfg: StartupConfig) -> Path:
-    """Convenience: derive the per-MAGI workspace from a :class:`StartupConfig`."""
-    return cfg.workspace_dir
+# ------------------------------------------------------------------
+# MAGI workspace
+# ------------------------------------------------------------------
 
+def resolve_magi_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
+    """Derive the MAGI workspace from host root and name.
 
-# ----------------------------------------------------------------------
-# Database files
-# ----------------------------------------------------------------------
-
-
-def resolve_magis_database_path(
-    host_workspace_dir: Path,
-    magis_slug: str = "genesis",
-    magis_id: int = 1,
-) -> Path:
-    """Per-MAGIS public SQLite location.
-
-    Format: ``<host>/MAGI_Societies/<slug>-<id:02d>/magis.db``.
+    Always: ``<host>/MAGI_Citizens/<magi_name>/``
     """
-    host = resolve_host_workspace(host_workspace_dir)
-    return host / MAGI_SOCIETIES_DIR / f"{magis_slug}-{magis_id:02d}" / "magis.db"
+    return host_workspace_dir / "MAGI_Citizens" / magi_name
 
 
-def resolve_private_database_path(magi_workspace: Path) -> Path:
-    """Per-MAGI private SQLite location.
+# ------------------------------------------------------------------
+# databases
+# ------------------------------------------------------------------
 
-    Format: ``<workspace>/memories/magi.db``.
+def resolve_magis_database_path(host_workspace_dir: Path) -> Path:
+    """Return the default MAGIS SQLite path for the first MAGIS.
+
+    ``<host>/MAGI_Societies/genesis/magis.db``
     """
-    return magi_workspace / _MEMORIES_DIR / "magi.db"
+    return host_workspace_dir / "MAGI_Societies" / "genesis" / "magis.db"
 
 
-def magis_sqlite_url(magis_db_path: Path) -> str:
-    """Render a SQLite URL suitable for ``MAGIS_DATABASE_URL``."""
-    return f"sqlite:///{magis_db_path}"
+def resolve_private_database_path(workspace_dir: Path) -> Path:
+    """Return the private SQLite path for one MAGI.
+
+    ``<workspace>/magi.db``
+    """
+    return workspace_dir / "magi.db"
 
 
-# ----------------------------------------------------------------------
-# Runtime state sidecar
-# ----------------------------------------------------------------------
+def resolve_private_database_url(workspace_dir: Path) -> str:
+    """Return a ``sqlite:///...`` URL for the private database."""
+    db_path = resolve_private_database_path(workspace_dir)
+    return f"sqlite:///{db_path}"
 
 
-def resolve_runtime_state_path(magi_workspace: Path) -> Path:
-    """Path to ``runtime.json`` — bootstrap identity sidecar (plan §22)."""
-    return magi_workspace / RUNTIME_STATE_FILENAME
+def resolve_magis_database_url(host_workspace_dir: Path) -> str:
+    """Return a ``sqlite:///...`` URL for the default MAGIS database."""
+    db_path = resolve_magis_database_path(host_workspace_dir)
+    return f"sqlite:///{db_path}"
 
 
-# ----------------------------------------------------------------------
-# Local process bookkeeping
-# ----------------------------------------------------------------------
+# ------------------------------------------------------------------
+# runtime state
+# ------------------------------------------------------------------
+
+def resolve_runtime_state_path(workspace_dir: Path) -> Path:
+    """Path to ``runtime.json`` — persisted identity record.
+
+    Contains ``{"magi_id": ..., "magis_database_url": ...}``.
+    Used to detect workspace identity conflicts (§22.2).
+    """
+    return workspace_dir / "runtime.json"
 
 
-def resolve_runtime_pid_path(magi_workspace: Path) -> Path:
-    """Per-MAGI PID file — local process bookkeeping (plan §16)."""
-    return magi_workspace / _RUN_DIR / RUNTIME_PID_FILENAME
+def resolve_runtime_pid_path(workspace_dir: Path) -> Path:
+    """Path to the per-MAGI PID file.
+
+    ``<workspace>/run/magi.pid``
+    """
+    return workspace_dir / "run" / "magi.pid"
 
 
-def resolve_runtime_log_paths(magi_workspace: Path) -> tuple[Path, Path]:
-    """Per-MAGI stdout / stderr log paths (plan §16)."""
-    logs = magi_workspace / _LOGS_DIR
-    return logs / RUNTIME_LOG_STDOUT, logs / RUNTIME_LOG_STDERR
+def resolve_runtime_log_paths(workspace_dir: Path) -> tuple[Path, Path]:
+    """Return ``(stdout_path, stderr_path)`` for one MAGI.
+
+    ``<workspace>/logs/stdout.log``, ``<workspace>/logs/stderr.log``
+    """
+    log_dir = workspace_dir / "logs"
+    return (log_dir / "stdout.log", log_dir / "stderr.log")
 
 
-# ----------------------------------------------------------------------
-# Singleton WebUI
-# ----------------------------------------------------------------------
-
+# ------------------------------------------------------------------
+# WebUI (singleton — lives at host level, not per-MAGI)
+# ------------------------------------------------------------------
 
 def resolve_webui_pid_path(host_workspace_dir: Path) -> Path:
-    """WebUI PID file — lives at the *host* root (plan §15)."""
-    return resolve_host_workspace(host_workspace_dir) / _RUN_DIR / WEBUI_PID_FILENAME
+    """Path to the singleton WebUI PID file.
+
+    ``<host>/run/webui.pid`` — WebUI belongs to the whole MAGIS.
+    """
+    return host_workspace_dir / "run" / "webui.pid"
 
 
 def resolve_webui_log_paths(host_workspace_dir: Path) -> tuple[Path, Path]:
-    """WebUI stdout / stderr — lives at the *host* root (plan §15)."""
-    logs = resolve_host_workspace(host_workspace_dir) / _LOGS_DIR
-    return logs / WEBUI_LOG_STDOUT, logs / WEBUI_LOG_STDERR
+    """Return ``(stdout_path, stderr_path)`` for the singleton WebUI.
 
-
-# ----------------------------------------------------------------------
-# Workspace bootstrap helpers
-# ----------------------------------------------------------------------
-
-
-def ensure_workspace(magi_workspace: Path) -> Path:
-    """Create the canonical per-MAGI workspace layout (idempotent).
-
-    Always recreates: workspace/, workspace/skills/, workspace/memories/,
-    workspace/logs/, workspace/run/.
+    ``<host>/logs/webui.stdout.log``, ``<host>/logs/webui.stderr.log``
     """
-    magi_workspace.mkdir(parents=True, exist_ok=True)
-    for sub in (_SKILLS_DIR, _MEMORIES_DIR, _LOGS_DIR, _RUN_DIR):
-        (magi_workspace / sub).mkdir(parents=True, exist_ok=True)
-    return magi_workspace
+    log_dir = host_workspace_dir / "logs"
+    return (log_dir / "webui.stdout.log", log_dir / "webui.stderr.log")
 
+
+# ------------------------------------------------------------------
+# directory bootstrapping (idempotent)
+# ------------------------------------------------------------------
 
 def ensure_host_workspace(host_workspace_dir: Path) -> Path:
-    """Create the canonical host workspace layout (idempotent)."""
-    host = resolve_host_workspace(host_workspace_dir)
-    host.mkdir(parents=True, exist_ok=True)
-    (host / MAGI_CITIZENS_DIR).mkdir(parents=True, exist_ok=True)
-    (host / MAGI_SOCIETIES_DIR).mkdir(parents=True, exist_ok=True)
-    (host / _RUN_DIR).mkdir(parents=True, exist_ok=True)
-    (host / _LOGS_DIR).mkdir(parents=True, exist_ok=True)
-    return host
+    """Create the host workspace root directory if missing.
 
+    Returns the resolved, guaranteed-to-exist directory.
+    """
+    host_workspace_dir.mkdir(parents=True, exist_ok=True)
+    return host_workspace_dir
+
+
+def ensure_workspace(workspace_dir: Path) -> Path:
+    """Create the per-MAGI workspace and its canonical subdirectories.
+
+    Creates (if missing):
+    - ``<workspace>/`` (root)
+    - ``<workspace>/skills/``
+    - ``<workspace>/memories/``
+    - ``<workspace>/logs/``
+    - ``<workspace>/run/``
+    - ``<workspace>/SOUL.md`` (from bundled default if absent)
+
+    Returns the guaranteed-to-exist workspace directory.  Idempotent.
+    """
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    # Canonical subdirectories
+    for sub in ("skills", "memories", "logs", "run"):
+        (workspace_dir / sub).mkdir(parents=True, exist_ok=True)
+
+    # Seed SOUL.md from the bundled default if missing
+    _ensure_soul(workspace_dir)
+
+    return workspace_dir
+
+
+def _ensure_soul(workspace_dir: Path) -> None:
+    """Copy the bundled default SOUL.md into the workspace if absent."""
+    soul = workspace_dir / "SOUL.md"
+    if soul.exists():
+        return
+    import logging
+    _log = logging.getLogger("magi.startup.paths")
+    bundled = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
+    if bundled.is_file():
+        soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
+        _log.info("SOUL.md seeded from %s", bundled)
+    else:
+        _log.warning("bundled soul.md missing at %s; SOUL.md not created", bundled)
+
+
+# ------------------------------------------------------------------
+# skills / memories / SOUL (workspace subdirectories)
+# ------------------------------------------------------------------
+
+def resolve_skills_dir(workspace_dir: Path) -> Path:
+    return workspace_dir / "skills"
+
+
+def resolve_memories_dir(workspace_dir: Path) -> Path:
+    return workspace_dir / "memories"
+
+
+def resolve_soul_path(workspace_dir: Path) -> Path:
+    return workspace_dir / "SOUL.md"
+
+
+# ------------------------------------------------------------------
+# public API
+# ------------------------------------------------------------------
 
 __all__ = [
-    "RUNTIME_STATE_FILENAME",
-    "RUNTIME_PID_FILENAME",
-    "RUNTIME_LOG_STDOUT",
-    "RUNTIME_LOG_STDERR",
-    "WEBUI_PID_FILENAME",
-    "WEBUI_LOG_STDOUT",
-    "WEBUI_LOG_STDERR",
+    # host
     "resolve_host_workspace",
+    # directory bootstrapping
+    "ensure_host_workspace",
+    "ensure_workspace",
+    # MAGI workspace
     "resolve_magi_workspace",
-    "from_config",
+    # databases
     "resolve_magis_database_path",
     "resolve_private_database_path",
-    "magis_sqlite_url",
+    "resolve_private_database_url",
+    "resolve_magis_database_url",
+    # runtime state
     "resolve_runtime_state_path",
     "resolve_runtime_pid_path",
     "resolve_runtime_log_paths",
+    # WebUI
     "resolve_webui_pid_path",
     "resolve_webui_log_paths",
-    "ensure_workspace",
-    "ensure_host_workspace",
+    # subdirectories
+    "resolve_skills_dir",
+    "resolve_memories_dir",
+    "resolve_soul_path",
 ]
