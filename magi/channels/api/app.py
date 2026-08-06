@@ -131,7 +131,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         if not include_private_routes:
             yield
             return
-        from magi.launcher import worker_lifespan
+        from magi.startup.runtime import worker_lifespan
 
         async with worker_lifespan():
             logger.info("durable runtime workers started")

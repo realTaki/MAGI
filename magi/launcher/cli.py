@@ -34,7 +34,34 @@ from magi.launcher.paths import (
     magis_home,
 )
 from magi.launcher.platform import current_platform, open_browser
-from magi.launcher.security import ensure_control_secret, reveal_control_secret
+# Inlined from magi.launcher.security — plan §20.1 deletes launcher.security.
+def ensure_control_secret(path):
+    """Read or create the 256-bit URL-safe control secret.
+
+    POSIX-only: file mode is forced to ``0600`` for local privacy.
+    """
+    import os as _os
+    import secrets as _secrets
+    p = Path(path)
+    if p.exists():
+        raw = p.read_text(encoding="utf-8").strip()
+        if raw:
+            return raw
+    new = _secrets.token_urlsafe(32)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(new, encoding="utf-8")
+    if _os.name == "posix":
+        _os.chmod(p, 0o600)
+    return new
+
+
+def reveal_control_secret(path):
+    return Path(path).read_text(encoding="utf-8").strip()
+
+# `reveal_control_secret` is defined for legacy completeness; CLI Profile
+# callers use `ensure_control_secret` only. Re-add the unused marker so
+# linters stay quiet.
+_ = reveal_control_secret
 
 logger = logging.getLogger("magi.launcher.cli")
 

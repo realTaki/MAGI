@@ -10,8 +10,6 @@ New code should import directly from :mod:`magi.startup.*`.
 
 from __future__ import annotations
 
-# Local compatibility — paths / constants.
-from magi.launcher import constants as _constants  # noqa: F401
 
 # Re-export path helpers. New code should use ``magi.startup.paths``
 # directly.

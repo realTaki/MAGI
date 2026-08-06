@@ -22,7 +22,11 @@ from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.bus import get_bus
-from magi.launcher import is_channel_running, start_channel, stop_channel
+from magi.startup.runtime import (
+    is_channel_running,
+    start_channel,
+    stop_channel,
+)
 
 logger = logging.getLogger("magi.api.channels")
 

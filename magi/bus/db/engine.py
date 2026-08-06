@@ -384,7 +384,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # not under ``magi.bus.db.models.local`` because it's owned by the
     # composition root, not by a bus service.  Importing here so
     # the table is part of the shared ``Base.metadata``.
-    import magi.launcher.hook_config  # noqa: F401 — hook_plugin_configs
+    import magi.bus.db.models.local.hook_plugin_config  # noqa: F401 — hook_plugin_configs
     import magi.bus.db.models.magis.magic  # noqa: F401 — individual MAGI rows
     import magi.bus.db.models.magis.magis  # noqa: F401 — MAGIS tree
     import magi.bus.db.models.magis.magis_membership  # noqa: F401 — roles + memberships

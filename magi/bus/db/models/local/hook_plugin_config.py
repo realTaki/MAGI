@@ -1,4 +1,6 @@
-"""Persistent plugin enablement config (formerly hook config).
+"""Persistent plugin enablement config (relocated from launcher.hook_config).
+
+
 
 The OLD hook subsystem (HookService + HookEnvelope + GATE/OBSERVE
 inline handlers) is replaced by a tag-based design:
@@ -38,7 +40,7 @@ from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.db.engine import open_session
 
 
-logger = logging.getLogger("magi.launcher.hook_config")
+logger = logging.getLogger("magi.bus.db.models.local.hook_plugin_config")
 
 
 # ───────────────────────────────────────────────────────────────────── #

@@ -154,6 +154,75 @@ class WorkerHandles:
     """Marker — actual worker refs are bound by :func:`_runtime_lifespan`."""
 
 
+@asynccontextmanager
+async def worker_lifespan():
+    """Standalone durable worker pool — usable from the WebUI ASGI app.
+
+    Plan §20.1 — this replaces :func:`magi.launcher.worker_lifespan`.
+    The :func:`channels.api.app` FastAPI lifespan pulls in the same set
+    of workers without dragging the Runtime's uvicorn into the picture.
+    """
+    from magi.agent.worker import start_agent_worker, stop_agent_worker
+    from magi.channels.delivery import (
+        start_delivery_worker,
+        stop_delivery_worker,
+    )
+    from magi.providers.worker import (
+        start_provider_worker,
+        stop_provider_worker,
+    )
+    from magi.tools.worker import start_tool_worker, stop_tool_worker
+
+    await start_provider_worker()
+    await start_agent_worker()
+    await start_tool_worker()
+    await start_delivery_worker()
+    try:
+        yield
+    finally:
+        await stop_delivery_worker()
+        await stop_tool_worker()
+        await stop_agent_worker()
+        await stop_provider_worker()
+
+
+# ----------------------------------------------------------------------
+# Channel lifecycle (Telegram for now — extensible)
+# ----------------------------------------------------------------------
+
+
+def start_channel(name: str) -> None:
+    """Bring one channel up — plan §20.1.
+
+    Replaces :func:`magi.launcher.start_channel`.  Channel adapters stay
+    in :mod:`magi.channels.*`; this is the composition-root dispatcher.
+    """
+    if name == "telegram":
+        from magi.channels.telegram.bot import start_bot
+
+        start_bot()
+
+
+def stop_channel(name: str) -> None:
+    """Bring one channel down — plan §20.1."""
+    if name == "telegram":
+        from magi.channels.telegram.bot import stop_bot
+
+        stop_bot()
+
+
+def is_channel_running(name: str) -> bool:
+    """Return ``True`` if the channel process is currently live.
+
+    Plan §20.1 — replaces :func:`magi.launcher.is_channel_running`.
+    """
+    if name == "telegram":
+        from magi.channels.telegram.bot import is_running
+
+        return is_running()
+    return name == "webui"
+
+
 # ----------------------------------------------------------------------
 # Channels
 # ----------------------------------------------------------------------
@@ -243,4 +312,8 @@ def _reload_dirs() -> list[str]:
 __all__ = [
     "run_magi",
     "WorkerHandles",
+    "worker_lifespan",
+    "start_channel",
+    "stop_channel",
+    "is_channel_running",
 ]

@@ -202,8 +202,7 @@ def _run_cli(argv: list[str] | None) -> int:
     """Dispatch ``magi cli <verb>`` to the unified startup CLI.
 
     New verbs (``start|stop|restart|status|run|create|webui``) live in
-    :mod:`magi.startup.cli`. Legacy ``magi cli start`` (no verb) still
-    routes through the launcher for backward compatibility.
+    :mod:`magi.startup.cli`.
     """
     from magi.startup.cli import main as startup_main
 
@@ -211,15 +210,11 @@ def _run_cli(argv: list[str] | None) -> int:
     if rest and rest[0] == "cli":
         rest = rest[1:]
 
-    # If the user supplied a recognised verb, hand off to the unified
-    # startup CLI directly.  Otherwise fall back to the legacy launcher
-    # CLI so old forms (``magi cli start --data-dir ...``) keep working.
     if rest and rest[0] in {"run", "create", "start", "stop", "restart", "status", "webui"}:
         return int(startup_main(rest))
 
-    from magi.launcher.cli import main as legacy_cli_main
-
-    return int(legacy_cli_main(rest))
+    # Unknown verb — delegate to the unified CLI which will show usage.
+    return int(startup_main(rest))
 
 
 def _json_default(value: object) -> object:

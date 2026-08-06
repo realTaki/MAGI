@@ -33,7 +33,7 @@ from typing import Any
 
 from magi.bus import get_bus
 from magi.bus.db.models.queue import DeliveryOutbox, LLMAttempt, ToolJob
-from magi.launcher.hook_config import HookConfigRepository
+from magi.bus.db.models.local.hook_plugin_config import HookConfigRepository
 
 
 logger = logging.getLogger("magi.plugins.samples.audit_log")
