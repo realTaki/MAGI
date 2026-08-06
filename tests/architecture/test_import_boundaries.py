@@ -313,7 +313,7 @@ def test_allowlist_is_empty() -> None:
 
 # Files that legitimately need to read ``state_dir`` because they form the
 # composition root. These are the only sites where the BUS has not yet
-# been bootstrapped and SQLite must be located from the launcher.
+# been bootstrapped and SQLite must be located from the composition root.
 STATE_DIR_COMPOSITION_ROOT_ALLOWLIST: frozenset[str] = frozenset({
     "magi/__main__.py",
     "magi/channels/api/app.py",
@@ -387,7 +387,7 @@ def _state_dir_name_imports_or_calls(py_path: Path) -> list[tuple[int, str]]:
 
 
 def test_state_dir_does_not_leak_outside_bus() -> None:
-    """No non-BUS, non-launcher module may import or call ``state_dir``.
+    """No non-BUS module may import or call ``state_dir``.
 
     The composition-root allowlist covers the boot-time sites that
     legitimately need the path before the BUS exists. Anything else is

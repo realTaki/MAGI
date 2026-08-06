@@ -30,7 +30,7 @@ import pytest
 
 from magi.bus.bootstrap import bootstrap
 from magi.bus.db import init_orm
-from magi.bus.db.engine import open_session
+# open_session not used (helpers re-import per-test)
 from magi.bus.db.magis import open_magis_session
 from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.db.models.magis.magic import MAGIC

@@ -118,7 +118,6 @@ def seeded(fresh_db: Path) -> dict[str, Contact]:
     IM identifier. Setting ``telegram_id=9101`` on Alice's
     row is sufficient.
     """
-    from magi.channels import dispatcher as channel_dispatcher
     with open_session() as db:
         alice = Contact(
             name="alice",

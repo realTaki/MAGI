@@ -22,7 +22,6 @@ of either path doesn't silently lose the ``once`` shape.
 from __future__ import annotations
 
 import datetime as dt
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -32,7 +31,6 @@ from magi.bus.task_schedule import (
     validate_run_at,
     validate_run_at_future)
 from magi.channels.tasks.scheduler import (
-    TaskScheduler,
     _reset_for_tests,
     stop_scheduler)
 from magi.bus.db import (

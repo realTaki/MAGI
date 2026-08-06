@@ -15,9 +15,6 @@ import pytest
 
 from magi.bus.db.control.repository import (
     ControlRepository,
-    PortAllocationDTO,
-    PortAlreadyAllocated,
-    RuntimeStateDTO,
     UnknownRuntime,
 )
 from magi.bus.db.base import Base

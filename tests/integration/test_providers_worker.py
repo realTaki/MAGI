@@ -23,7 +23,6 @@ from magi.bus.db import init_orm
 from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.db.models.queue import LLMAttempt
 from magi.bus.db.engine import open_session
-from magi.bus.jobs.protocols.llm_jobs import LLMJob
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
 from magi.providers.worker import (

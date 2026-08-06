@@ -9,16 +9,13 @@ from pathlib import Path
 import pytest
 
 from magi.connectors import (
-    Connector,
     ConnectorConfig,
     ConnectorEvent,
     ConnectorEventKind,
     EventBus,
-    get_bus,
     get_connector,
     list_connectors,
     load_connectors,
-    publish,
     register_connector,
     register_connector_factory,
     reset_bus,

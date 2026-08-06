@@ -14,8 +14,6 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from magi.bus import AgentMessage, BusStore
 from magi.bus.db import init_orm
 

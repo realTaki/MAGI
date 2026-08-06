@@ -91,11 +91,11 @@ def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
-    from magi.startup.paths import resolve_state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir
 
     init_orm(seed_root=False)
 
-    db_path = Path(launcher_state_dir()) / "magi.db"
+    db_path = Path(resolve_state_dir()) / "magi.db"
     assert _raw_alembic_version(db_path) == CANONICAL_HEAD, (
         f"fresh DB did not land at CANONICAL_HEAD={CANONICAL_HEAD!r}"
     )
@@ -125,9 +125,9 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
-    from magi.startup.paths import resolve_state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir
 
-    state_path = Path(launcher_state_dir())
+    state_path = Path(resolve_state_dir())
     db_path = state_path / "magi.db"
 
     # Seed a fake ``alembic_version`` row pointing at a revision the
@@ -198,11 +198,11 @@ def test_baseline_includes_all_actor_runtime_columns(
     engine_mod._engine = engine_mod._SessionLocal = None
 
     from magi.bus.db import init_orm
-    from magi.startup.paths import resolve_state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir
 
     init_orm(seed_root=False)
 
-    db_path = Path(launcher_state_dir()) / "magi.db"
+    db_path = Path(resolve_state_dir()) / "magi.db"
     actual = _columns(db_path, table)
     missing = expected_columns - actual
     assert not missing, f"{table!r} is missing columns: {sorted(missing)}"

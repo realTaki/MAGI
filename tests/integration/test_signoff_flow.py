@@ -202,7 +202,6 @@ def test_tool_lifecycle_full_signoff_round_trip(fresh_bus):
     assert claim is not None
     assert claim.job_id == job_id
     # Complete the tool -> TOOL_RESULT_RECEIVED signoff.
-    from magi.bus.jobs.protocols.tools import ToolClaim
     store.complete_tool_job(
         claim,
         content="echo:hi",
