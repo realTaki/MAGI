@@ -64,7 +64,6 @@ RULES: list[tuple[str, list[str]]] = [
     ("magi.mcp", ["magi.bus.db"]),
     ("magi.connectors", ["magi.bus.db"]),
     ("magi.proactive", ["magi.bus.db"]),
-    ("magi.orchestrator", ["magi.bus.db"]),
     ("magi.skills", ["magi.bus.db"]),
     # ``magi.channels.api`` is the WebUI backend. Per
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §6
@@ -88,11 +87,6 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.plugins",
             "magi.connectors",
             "magi.bus.db",
-            "magi.orchestrator",
-            "magi.orchestrator.backends",
-            "magi.orchestrator.client",
-            "magi.orchestrator.service",
-            "magi.orchestrator.contracts",
         ],
     ),
     # bus is the application core — must not import channel/agent
@@ -121,18 +115,9 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.providers",
         ],
     ),
-    # Phase 2 — BUS services that own the runtime lifecycle seam must
-    # never reach back into the orchestrator package *implementations*
-    # (the legacy ``KubernetesEvaBackend`` class, the orchestrator
-    # client, the FastAPI service).  The dispatcher legitimately
-    # imports the backend factory and the K8s *adapter* (which
-    # implements the Protocol) — those are exempted by the
-    # ``magi.orchestrator.backends`` sub-rule below.
-    ("magi.bus.jobs.services", ["magi.orchestrator.kubernetes", "magi.orchestrator.client", "magi.orchestrator.service", "magi.orchestrator.contracts"]),
-    # Phase 2 — the dispatcher must not import the legacy K8s class
-    # directly; it consumes the K8s *adapter* (which wraps the legacy
-    # class) via the factory's Protocol surface.
-    ("magi.bus.jobs.services.runtime", ["magi.orchestrator.kubernetes"]),
+    # With the unified startup refactor, magi.orchestrator has been
+    # deleted.  K8s resource management lives in magi.startup.kubernetes;
+    # local process management in magi.startup.local.
 ]
 
 # ``magi.startup`` is the Composition-Root namespace — it is the sole
@@ -231,9 +216,8 @@ def _rule_violations() -> list[tuple[Path, int, str, str, str]]:
         source_module = _module_name_from_path(py_path)
         if source_module is None:
             continue
-        # Composition-Root exemption: ``magi.launcher`` is the sole
-        # package allowed to import everything (including storage + the
-        # orchestrator package).
+        # Composition-Root exemption: ``magi.startup`` is the sole
+        # package allowed to import everything.
         if any(
             _is_internal(exempt, source_module) for exempt in COMPOSITION_ROOT_PREFIXES
         ):
@@ -312,19 +296,17 @@ def test_allowlist_is_empty() -> None:
 # ``state_dir`` leak prevention
 #
 # ``state_dir`` is the physical filesystem location of the private SQLite
-# database. It is resolved by ``magi.launcher.paths.state_dir()`` and is
+# database. It is resolved by ``magi.startup.paths.resolve_state_dir()`` and is
 # consumed only by module code inside ``magi/bus/``. The composition root
 # (``magi/__main__.py``, the WebUI factory, the runtime API factory) is the
 # only non-BUS site that computes the path — it does so to bootstrap SQLite
 # before the BUS exists. Every other module must reach the BUS through
 # ``get_bus().<service>.<method>(...)`` and never see the path.
 #
-# This test walks every non-BUS, non-launcher Python file and fails on
+# This test walks every non-BUS, non-startup Python file and fails on
 # any of:
-#   - ``from magi.startup.paths import resolve_state_dir as state_dir`` (or its dynamic
+#   - ``from magi.startup.paths import resolve_state_dir`` (or its dynamic
 #     equivalent via ``__import__`` / ``importlib.import_module``).
-#   - An ``import`` line resolving to ``magi.launcher.paths`` when the
-#     imported name is ``state_dir``.
 #   - ``require_state_dir`` attribute access on a SettingsService
 #     instance (the public method that leaked the path was removed).
 # ──────────────────────────────────────────────────────────────────────── #
@@ -353,25 +335,22 @@ def _state_dir_name_imports_or_calls(py_path: Path) -> list[tuple[int, str]]:
 
     findings: list[tuple[int, str]] = []
     for node in ast.walk(tree):
-        # ``from magi.startup.paths import resolve_state_dir as state_dir, ...``
+        # ``from magi.startup.paths import resolve_state_dir`` — state_dir leak check.
         if isinstance(node, ast.ImportFrom):
-            if node.module in {"magi.launcher.paths"}:
+            if node.module in {"magi.startup.paths"}:
                 for alias in node.names:
-                    if alias.name == "state_dir":
+                    if alias.name in {"resolve_state_dir", "state_dir"}:
                         findings.append(
-                            (node.lineno, f"from {node.module} import state_dir")
+                            (node.lineno, f"from {node.module} import {alias.name}")
                         )
-        # ``import magi.launcher.paths`` followed by ``... .state_dir``
-        # — caught by Attribute access below.
+        # ``import magi.startup.paths`` — wholesale import.
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "magi.launcher.paths":
+                if alias.name == "magi.startup.paths":
                     findings.append(
-                        (node.lineno, "import magi.launcher.paths")
+                        (node.lineno, "import magi.startup.paths")
                     )
-        # ``magi.launcher.paths.state_dir(...)`` — the launcher.paths
-        # module is the only public path to ``state_dir``; importing it
-        # wholesale is the leading indicator of a leak.
+        # state_dir attribute access on any object
         if isinstance(node, ast.Attribute):
             value = node.value
             if (
@@ -422,8 +401,8 @@ def test_state_dir_does_not_leak_outside_bus() -> None:
         # Skip BUS — it owns state_dir and require_state_dir.
         if _is_internal("magi.bus", source_module):
             continue
-        # Skip launcher — defines state_dir as its primary export.
-        if _is_internal("magi.launcher", source_module):
+        # Skip startup — defines state_dir as its primary export.
+        if _is_internal("magi.startup", source_module):
             continue
         rel = str(py_path.relative_to(REPO_ROOT))
         if rel in STATE_DIR_COMPOSITION_ROOT_ALLOWLIST:

@@ -1,4 +1,9 @@
-"""ADAM-side client for the restricted orchestrator API."""
+"""ADAM-side client for the restricted orchestrator API.
+
+Consolidated from the legacy ``magi.orchestrator.client`` module
+per plan §20.4. Talks to the FastAPI service in
+:mod:`magi.startup.orchestrator_service` over HMAC-signed HTTP.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,12 @@ import time
 
 import httpx
 
-from magi.orchestrator.contracts import EvaOperationResult, EvaSpec, MagisBinding, MagisProvisionResult
+from magi.startup.orchestrator_contracts import (
+    EvaOperationResult,
+    EvaSpec,
+    MagisBinding,
+    MagisProvisionResult,
+)
 
 
 class OrchestratorUnavailable(RuntimeError):
@@ -71,3 +81,10 @@ def provision_magis(binding: MagisBinding) -> MagisProvisionResult:
             f"orchestrator rejected MAGIS provision: {response.status_code} {response.text[:500]}"
         )
     return MagisProvisionResult.model_validate(response.json())
+
+
+__all__ = [
+    "OrchestratorUnavailable",
+    "request_lifecycle",
+    "provision_magis",
+]

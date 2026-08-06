@@ -1,7 +1,14 @@
 """Authenticated FastAPI service that owns EVA Kubernetes operations.
 
-Per plan §6 — there is no Backend abstraction. The orchestrator uses
-the Kubernetes path directly via :class:`magi.orchestrator.kubernetes.KubernetesEvaBackend`.
+Consolidated from the legacy ``magi.orchestrator.service`` module
+per plan §20.4. Per plan §6 — there is no Backend abstraction layer;
+the service uses the Kubernetes path directly via the in-cluster
+:class:`magi.startup.kubernetes.KubernetesClient` and the
+``KubernetesEvaBackend`` semantics that wrap it.
+
+Run via:
+
+    uvicorn magi.startup.orchestrator_service:create_app --factory --host 0.0.0.0 --port 42100
 """
 
 from __future__ import annotations
@@ -18,8 +25,9 @@ from magi.bus.jobs.protocols.lifecycle import (
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.orchestrator.contracts import EvaSpec, MagisBinding
-from magi.orchestrator.kubernetes import KubernetesEvaBackend
+from magi.bus.jobs.protocols.runtime import RuntimeEndpoint
+from magi.startup.orchestrator_contracts import EvaSpec, MagisBinding
+from magi.startup.kubernetes import KubernetesEvaBackend
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:
@@ -37,6 +45,41 @@ def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -
     ).hexdigest()
     if not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=401, detail="invalid control signature")
+
+
+def _k8s_backend() -> KubernetesEvaBackend:
+    """Materialise the K8s client — single dependency per plan §6."""
+    return KubernetesEvaBackend()
+
+
+def _to_runtime_result(legacy, spec: RuntimeSpec) -> RuntimeOperationResult:
+    endpoint = None
+    if legacy.observed_state not in {"stopped", "deleted"} and legacy.deployment_name:
+        endpoint = RuntimeEndpoint(
+            runtime_id=spec.magic_id,
+            backend_kind="kubernetes",
+            base_url=f"http://{legacy.deployment_name}:42069",
+            backend_ref=legacy.deployment_name,
+            observed_state=legacy.observed_state,
+        )
+    return RuntimeOperationResult(
+        runtime_id=spec.magic_id,
+        backend_kind="kubernetes",
+        backend_ref=legacy.deployment_name,
+        observed_state=legacy.observed_state,
+        endpoint=endpoint,
+        kubernetes_detail=None,
+        message=legacy.message,
+    )
+
+
+def _to_runtime_spec(legacy: EvaSpec) -> RuntimeSpec:
+    return RuntimeSpec(
+        magic_id=legacy.magic_id,
+        name=legacy.name,
+        magis_id=(legacy.magis.id if legacy.magis is not None else None),
+        magis_name=(legacy.magis.name if legacy.magis is not None else None),
+    )
 
 
 def create_app() -> FastAPI:
@@ -58,7 +101,6 @@ def create_app() -> FastAPI:
         binding = MagisBinding.model_validate_json(body)
         if binding.id != magis_id:
             raise HTTPException(status_code=400, detail="path/body MAGIS id mismatch")
-        # Plan §6 — direct K8s path, no Backend factory.
         k8s = _k8s_backend()
         result = k8s.provision_magis(binding)
         return MagisProvisionResult(
@@ -75,39 +117,6 @@ def create_app() -> FastAPI:
         body = await request.body()
         _verify_request(body, x_magi_timestamp, x_magi_signature)
         return EvaSpec.model_validate_json(body)
-
-    def _to_runtime_result(
-        legacy,
-        spec: RuntimeSpec,
-    ) -> RuntimeOperationResult:
-        from magi.bus.jobs.protocols.runtime import RuntimeEndpoint
-
-        endpoint = None
-        if legacy.observed_state not in {"stopped", "deleted"} and legacy.deployment_name:
-            endpoint = RuntimeEndpoint(
-                runtime_id=spec.magic_id,
-                backend_kind="kubernetes",
-                base_url=f"http://{legacy.deployment_name}:42069",
-                backend_ref=legacy.deployment_name,
-                observed_state=legacy.observed_state,
-            )
-        return RuntimeOperationResult(
-            runtime_id=spec.magic_id,
-            backend_kind="kubernetes",
-            backend_ref=legacy.deployment_name,
-            observed_state=legacy.observed_state,
-            endpoint=endpoint,
-            kubernetes_detail=None,
-            message=legacy.message,
-        )
-
-    def _to_runtime_spec(legacy: EvaSpec) -> RuntimeSpec:
-        return RuntimeSpec(
-            magic_id=legacy.magic_id,
-            name=legacy.name,
-            magis_id=(legacy.magis.id if legacy.magis is not None else None),
-            magis_name=(legacy.magis.name if legacy.magis is not None else None),
-        )
 
     @app.post("/v1/evas/{magic_id}/start", response_model=RuntimeOperationResult)
     async def start_eva(
@@ -151,6 +160,4 @@ def create_app() -> FastAPI:
     return app
 
 
-def _k8s_backend() -> KubernetesEvaBackend:
-    """Materialise the K8s client — single dependency per plan §6."""
-    return KubernetesEvaBackend()
+__all__ = ["create_app", "_verify_request"]
