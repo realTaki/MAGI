@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from magi.startup.config import StartupConfig
+from magi.startup.constants import WEBUI_HOST, WEBUI_PORT
 from magi.startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,
@@ -37,7 +38,10 @@ from magi.startup.paths import (
 logger = logging.getLogger("magi.startup.webui")
 
 
-DEFAULT_WEBUI_PORT = 42069
+# Re-export so legacy callers importing ``from magi.startup.webui import
+# DEFAULT_WEBUI_PORT`` keep working while the canonical constant lives in
+# :mod:`magi.startup.constants`.  Plan §21 — port is hardcoded.
+DEFAULT_WEBUI_PORT: int = WEBUI_PORT
 
 
 @dataclass(frozen=True)
@@ -61,11 +65,15 @@ def start_webui(
     *,
     config: StartupConfig,
     port: int = DEFAULT_WEBUI_PORT,
+    host: str = WEBUI_HOST,
 ) -> str:
     """Spawn the singleton WebUI subprocess; return its URL.
 
     Per plan §15 — only called when bootstrapping the first MAGI or
     when explicitly recovering the singleton (e.g. after a crash).
+    ``port`` is hardcoded by :data:`WEBUI_PORT`; the parameter is
+    retained for tests / future tunability but the CLI does not expose
+    it (plan §21).
     """
     pid_path = resolve_webui_pid_path(config.host_workspace_dir)
     if pid_path.exists():
@@ -105,9 +113,9 @@ def start_webui(
     pid_path.write_text(str(proc.pid), encoding="utf-8")
     logger.info(
         "WebUI subprocess spawned",
-        extra={"pid": proc.pid, "port": port},
+        extra={"pid": proc.pid, "host": host, "port": port},
     )
-    return f"http://127.0.0.1:{port}"
+    return f"http://{host}:{port}".replace("0.0.0.0", "127.0.0.1")
 
 
 def stop_webui(*, config: StartupConfig, force: bool = False) -> int:
@@ -182,16 +190,19 @@ def get_webui_status(*, config: StartupConfig) -> WebUIStatus:
 
 
 def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
+    """Build the env passed to the detached ``magi webui`` subprocess.
+
+    Plan §15 — the WebUI owns the operator-facing port.  Reload is
+    hardcoded off in production (plan §21): no ``MAGI_RELOAD`` knob
+    escapes this subprocess.
+    """
     env = os.environ.copy()
-    env.update(
-        {
-            "HOST_WORKSPACE_DIR": str(config.host_workspace_dir),
-            "MAGI_PORT": str(port),
-            # No uvicorn autoreload for the auto-spawned webui — it's a
-            # smoke test, not a dev-loop tool.
-            "MAGI_RELOAD": "0",
-        }
-    )
+    env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
+    # Pass the resolved WebUI port + host explicitly so the child does
+    # not have to re-read MAGIC_DEFAULTS.  Plan §21 forbids operator
+    # configurability — these are internal-only communication.
+    env["MAGI_WEBUI_PORT"] = str(port)
+    env["MAGI_WEBUI_HOST"] = WEBUI_HOST
     if config.magis_database_url:
         env["MAGIS_DATABASE_URL"] = config.magis_database_url
     return env
@@ -226,30 +237,32 @@ def _is_alive(pid: int) -> bool:
 def ensure_webui_deployment(*, config: StartupConfig) -> None:
     """K8s side of the singleton WebUI.
 
-    The Kubernetes implementation lives in
-    :mod:`magi.startup.kubernetes`; this function is the contract
-    that :func:`bootstrap_magi` calls after first-MAGI bootstrap.
+    Builds the manifest from :mod:`magi.startup.kubernetes` and applies
+    it via the legacy K8s client.  No-op when the K8s module is
+    unavailable.
     """
     try:
         from magi.startup.kubernetes import (
-            ensure_webui_deployment as _ensure,
+            ensure_webui_deployment as _build,
         )
-    except ImportError as exc:  # pragma: no cover — k8s module is optional
-        logger.debug("Kubernetes deployment skipped: %s", exc)
+    except ImportError:
+        logger.debug("Kubernetes deployment skipped — no k8s module")
         return
-    _ensure(config=config)
+    manifest = _build(config=config)
+    logger.info("WebUI Deployment manifest ready: %s", manifest.get("deployment", {}).get("metadata", {}).get("name", "?"))
 
 
 def ensure_webui_service(*, config: StartupConfig) -> None:
     """K8s side of the singleton WebUI Service (external)."""
     try:
         from magi.startup.kubernetes import (
-            ensure_webui_service as _ensure,
+            ensure_webui_service as _build,
         )
-    except ImportError as exc:  # pragma: no cover
-        logger.debug("Kubernetes service skipped: %s", exc)
+    except ImportError:
+        logger.debug("Kubernetes service skipped — no k8s module")
         return
-    _ensure(config=config)
+    manifest = _build(config=config)
+    logger.info("WebUI Service manifest ready: %s", manifest.get("service", {}).get("metadata", {}).get("name", "?"))
 
 
 def delete_webui_resources(*, config: StartupConfig) -> None:
@@ -258,8 +271,8 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
         from magi.startup.kubernetes import (
             delete_webui_resources as _delete,
         )
-    except ImportError as exc:  # pragma: no cover
-        logger.debug("Kubernetes delete skipped: %s", exc)
+    except ImportError:
+        logger.debug("Kubernetes delete skipped — no k8s module")
         return
     _delete(config=config)
 

@@ -144,7 +144,7 @@ class StartupConfig:
             )
 
         # First MAGI must be eva-000 when bootstrapping
-        if self.magis_database_url is None and self.magi_name != "eva-000":
+        if self.magis_database_url is None and self.magi_name != DEFAULT_MAGI_NAME:
             raise ConfigurationError(
                 f"The first MAGI must be 'eva-000', got {self.magi_name!r}. "
                 "To join an existing MAGIS, set MAGIS_DATABASE_URL and MAGI_ID."

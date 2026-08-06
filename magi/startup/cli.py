@@ -46,20 +46,32 @@ def _print_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
         print(fmt.format(*row))
 
 
-def _is_first_magi_or_none(config: StartupConfig) -> bool:
-    """True when the local slot matches ``eva-000`` — that's the WebUI's slot."""
-    return config.magi_name == "eva-000"
-
-
 # ----------------------------------------------------------------------
 # Command handlers
 # ----------------------------------------------------------------------
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """``magi run`` — bootstrap and serve this MAGI's runtime."""
+    """``magi run`` — bootstrap and serve this MAGI's Runtime.
+
+    Per plan §3.1 + §16, when ``magi run`` *is the first MAGI*
+    (bootstrap, no ``MAGIS_DATABASE_URL``) the singleton WebUI is
+    brought up alongside the Runtime.  Subsequent MAGI invocations
+    (``MAGIS_DATABASE_URL`` already set) only serve their Runtime —
+    they never start a second WebUI.
+    """
     config = _config_from_args(args)
-    # Run the async runtime composition in the main loop.
+    config.validate()
+
+    # First-MAGI bootstrap: the singleton WebUI lives at the host level
+    # (independent of this Runtime's PID).  Spawn it before blocking on
+    # uvicorn so the operator-facing URL is reachable when the Runtime
+    # comes up.
+    if config.is_first_magi:
+        webui_url = webui.ensure_webui_running(config=config)
+        if webui_url:
+            logger.info("singleton WebUI ready at %s", webui_url)
+
     from magi.startup.runtime import run_magi
 
     asyncio.run(run_magi(config))
@@ -79,17 +91,16 @@ def cmd_create(args: argparse.Namespace) -> int:
     return local.create_magi(
         config=config,
         start=not args.no_start,
-        port=args.port,
     )
 
 
 def cmd_start(args: argparse.Namespace) -> int:
     """``magi start`` — spawn a detached subprocess for one MAGI."""
     config = _config_from_args(args)
-    rc = local.start_magi(config=config, port=args.port)
-    if rc == 0 and _is_first_magi_or_none(config):
-        # First MAGI only — start the singleton WebUI.
-        webui.ensure_webui_running(config=config, port=args.webui_port)
+    rc = local.start_magi(config=config)
+    if rc == 0 and config.is_first_magi:
+        # First MAGI only — start (or recover) the singleton WebUI.
+        webui.ensure_webui_running(config=config)
     return rc
 
 
@@ -97,7 +108,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
     """``magi stop`` — SIGTERM one MAGI's subprocess + (if first) WebUI."""
     config = _config_from_args(args)
     rc = local.stop_magi(config=config, force=args.force)
-    if _is_first_magi_or_none(config):
+    if config.is_first_magi:
         webui.stop_webui(config=config, force=args.force)
     return rc
 
@@ -105,7 +116,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
 def cmd_restart(args: argparse.Namespace) -> int:
     """``magi restart`` — stop + start."""
     config = _config_from_args(args)
-    return local.restart_magi(config=config, port=args.port)
+    return local.restart_magi(config=config)
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -201,14 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_args(p)
     p.add_argument("--start", action="store_true", help="spawn subprocess after create")
     p.add_argument("--no-start", action="store_true", help="skip subprocess spawn")
-    p.add_argument("--port", type=int, default=local.DEFAULT_PORT)
     p.set_defaults(handler=cmd_create)
 
-    # start
+    # start — port is hardcoded (plan §21); no operator knob.
     p = sub.add_parser("start", help="spawn a detached MAGI subprocess")
     _add_common_args(p)
-    p.add_argument("--port", type=int, default=local.DEFAULT_PORT)
-    p.add_argument("--webui-port", type=int, default=webui.DEFAULT_WEBUI_PORT)
     p.set_defaults(handler=cmd_start)
 
     # stop
@@ -220,7 +228,6 @@ def build_parser() -> argparse.ArgumentParser:
     # restart
     p = sub.add_parser("restart", help="stop + start one MAGI subprocess")
     _add_common_args(p)
-    p.add_argument("--port", type=int, default=local.DEFAULT_PORT)
     p.set_defaults(handler=cmd_restart)
 
     # status

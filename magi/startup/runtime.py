@@ -42,12 +42,16 @@ from magi.startup.context import StartupContext
 
 logger = logging.getLogger("magi.startup.runtime")
 
-# Plan §5 / §21 — internal host + port are hardcoded.  Different
-# containers have independent network namespaces so collisions are
-# not a concern.  Only the WebUI is externally routable.
-_RUNTIME_HOST: str = "0.0.0.0"
-_RUNTIME_PORT: int = 42069
-_DEFAULT_LOG_LEVEL: str = "info"
+# Plan §5 / §21 — Runtime host + port are hardcoded *internal* values.
+# The Runtime is never exposed externally (only the singleton WebUI on
+# :const:`WEBUI_PORT` is operator-routable, see :mod:`magi.startup.webui`).
+# Binding to loopback on a non-WebUI port keeps a single-process MAGI
+# isolated from any network listener on the host.
+from magi.startup.constants import RUNTIME_HOST, RUNTIME_PORT, DEFAULT_LOG_LEVEL
+
+_RUNTIME_HOST: str = RUNTIME_HOST
+_RUNTIME_PORT: int = RUNTIME_PORT
+_DEFAULT_LOG_LEVEL: str = DEFAULT_LOG_LEVEL
 
 
 # ----------------------------------------------------------------------

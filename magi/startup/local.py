@@ -16,7 +16,6 @@ implementation — only its lifecycle (see :mod:`magi.startup.webui`).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
@@ -28,7 +27,6 @@ from pathlib import Path
 
 from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
-    resolve_magi_workspace,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
@@ -36,8 +34,10 @@ from magi.startup.paths import (
 logger = logging.getLogger("magi.startup.local")
 
 
-# Defaults — matches the legacy launcher's behaviour.
-DEFAULT_PORT = 42069
+# Plan §21 — the Runtime's internal port is hardcoded; this helper
+# supervises one Runtime subprocess and probes its health on the same
+# loopback port the Runtime binds to.  No operator knob.
+HEALTH_PROBE_PORT = 42069
 HEALTH_POLL_TIMEOUT_S = 30.0
 HEALTH_POLL_INTERVAL_S = 0.5
 STOP_GRACE_S = 10.0
@@ -70,15 +70,14 @@ def create_magi(
     *,
     config: StartupConfig,
     start: bool = True,
-    port: int = DEFAULT_PORT,
 ) -> int:
     """Create a new MAGI under an existing MAGIS.
 
     Per plan §16 — refuses if ``MAGIS_DATABASE_URL`` is unset (the
     caller is expected to bootstrap MAGIS first via :command:`magi run`
     which produces the Genesis ``eva-000``). Persists identity in the
-    MAGIS database, ensures the per-MAGI workspace directory, then
-    optionally spawns the subprocess.
+    MAGIS database, creates Membership, ensures the per-MAGI workspace
+    directory, then optionally spawns the subprocess.
     """
     if config.magis_database_url is None:
         raise ConfigurationError(
@@ -96,6 +95,8 @@ def create_magi(
     from magi.bus.db.magis.engine import get_magis_engine
     from magi.bus.db.magis.local_engine import build as build_local_engine
     from magi.bus.db.models.magis.magic import MAGIC
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership
 
     # Resolve magis engine (SQLite or PG) and check/create the MAGIC row.
     engine = get_magis_engine()
@@ -110,18 +111,47 @@ def create_magi(
         existing = session.scalar(
             select(MAGIC).where(MAGIC.name == config.magi_name).limit(1)
         )
+        magic_id: int
         if existing is None:
             logger.info(
                 "create_magi: registering %s in MAGIS",
                 config.magi_name,
             )
-            session.add(MAGIC(name=config.magi_name))
-            session.commit()
+            row = MAGIC(name=config.magi_name)
+            session.add(row)
+            session.flush()
+            magic_id = int(row.id)
+        else:
+            magic_id = int(existing.id)
+
+        # Plan §16 step 4 — create Membership to the Genesis MAGIS.
+        genesis = session.scalar(select(MAGIS).order_by(MAGIS.id).limit(1))
+        if genesis is None:
+            raise ConfigurationError(
+                "No MAGIS found — bootstrap the first MAGI first"
+            )
+        membership = session.scalar(
+            select(MAGISMembership).where(
+                MAGISMembership.magis_id == genesis.id,
+                MAGISMembership.magic_id == magic_id,
+            ).limit(1)
+        )
+        if membership is None:
+            logger.info(
+                "create_magi: adding %s to MAGIS %s",
+                config.magi_name,
+                genesis.name,
+            )
+            session.add(
+                MAGISMembership(magis_id=int(genesis.id), magic_id=magic_id)
+            )
+
+        session.commit()
 
     if not start:
         return 0
 
-    return start_magi(config=config, port=port)
+    return start_magi(config=config)
 
 
 # ----------------------------------------------------------------------
@@ -132,12 +162,12 @@ def create_magi(
 def start_magi(
     *,
     config: StartupConfig,
-    port: int = DEFAULT_PORT,
 ) -> int:
     """Spawn one MAGI subprocess; return its PID.
 
     Refuses to spawn if a live PID file already exists for the same
-    workspace.
+    workspace.  Per plan §21 the Runtime's port is hardcoded; the
+    parent probes the child on the same loopback port.
     """
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
     if pid_path.exists():
@@ -150,8 +180,8 @@ def start_magi(
             return 1
 
     config.workspace_dir.mkdir(parents=True, exist_ok=True)
-    env = _build_subprocess_env(config, port)
-    argv = _build_subprocess_argv(port)
+    env = _build_subprocess_env(config)
+    argv = _build_subprocess_argv(config)
 
     log_stdout, log_stderr = resolve_runtime_log_paths(config.workspace_dir)
     log_stdout.parent.mkdir(parents=True, exist_ok=True)
@@ -180,7 +210,6 @@ def start_magi(
             "argv": argv,
             "host_workspace_dir": str(config.host_workspace_dir),
             "workspace_dir": str(config.workspace_dir),
-            "port": port,
             "magi_name": config.magi_name,
         },
     )
@@ -188,13 +217,13 @@ def start_magi(
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(proc.pid), encoding="utf-8")
 
-    if not _wait_healthy(port):
+    if not _wait_healthy():
         try:
             os.kill(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         print(
-            f"MAGI {config.magi_name!r} failed health check on port {port}",
+            f"MAGI {config.magi_name!r} failed health check on port {HEALTH_PROBE_PORT}",
             file=sys.stderr,
         )
         return 1
@@ -246,10 +275,10 @@ def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
 # ----------------------------------------------------------------------
 
 
-def restart_magi(*, config: StartupConfig, port: int = DEFAULT_PORT) -> int:
+def restart_magi(*, config: StartupConfig) -> int:
     """Stop (force) then start. Used by ``magi restart``."""
     stop_magi(config=config, force=True)
-    return start_magi(config=config, port=port)
+    return start_magi(config=config)
 
 
 # ----------------------------------------------------------------------
@@ -289,30 +318,34 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 # ----------------------------------------------------------------------
 
 
-def _build_subprocess_env(config: StartupConfig, port: int) -> dict[str, str]:
+def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
+    """Build the env passed to the detached ``magi run`` subprocess.
+
+    Plan §21 — only the four startup-contract inputs are propagated;
+    no ``MAGI_PORT`` / ``MAGI_RELOAD`` knobs leak into the child.
+    """
     env = os.environ.copy()
-    env.update(
-        {
-            "HOST_WORKSPACE_DIR": str(config.host_workspace_dir),
-            "MAGI_NAME": config.magi_name,
-            "MAGIS_DATABASE_URL": config.magis_database_url
-            or env.get("MAGIS_DATABASE_URL", ""),
-            "MAGI_PORT": str(port),
-        }
-    )
+    env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
+    env["MAGI_NAME"] = config.magi_name
+    if config.magis_database_url is not None:
+        env["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id:
         env["MAGI_ID"] = str(config.magi_id)
     return env
 
 
-def _build_subprocess_argv(port: int) -> list[str]:
+def _build_subprocess_argv(config: StartupConfig) -> list[str]:
     """Build the ``magi run`` argv for one detached MAGI subprocess.
 
-    Plan §16 — the child is always ``magi run`` (the unified runtime
-    entry point in :mod:`magi.startup.cli`). Host / port are not
-    operator-tweakable per plan §5.
+    Plan §16 — the child is always ``magi run`` with explicit identity
+    args so it works even when env inheritance is disrupted.
     """
-    return [sys.executable, "-m", "magi", "run"]
+    argv = [sys.executable, "-m", "magi", "run", "--name", config.magi_name]
+    if config.magis_database_url:
+        argv.extend(["--magis", config.magis_database_url])
+    if config.magi_id:
+        argv.extend(["--magi-id", str(config.magi_id)])
+    return argv
 
 
 def _read_pid(pid_path: Path) -> int | None:
@@ -336,11 +369,16 @@ def _is_alive(pid: int) -> bool:
         return False
 
 
-def _wait_healthy(port: int) -> bool:
+def _wait_healthy() -> bool:
+    """Poll the child Runtime's ``/health`` endpoint on the loopback port.
+
+    Plan \u00a721 \u2014 the Runtime's port is fixed, so the parent probes the
+    same hardcoded :data:`HEALTH_PROBE_PORT`.  No operator override.
+    """
     import httpx
 
     deadline = time.monotonic() + HEALTH_POLL_TIMEOUT_S
-    url = f"http://127.0.0.1:{port}/health"
+    url = f"http://127.0.0.1:{HEALTH_PROBE_PORT}/health"
     while time.monotonic() < deadline:
         try:
             resp = httpx.get(url, timeout=1.0)
@@ -353,7 +391,7 @@ def _wait_healthy(port: int) -> bool:
 
 
 __all__ = [
-    "DEFAULT_PORT",
+    "HEALTH_PROBE_PORT",
     "LocalSlotStatus",
     "create_magi",
     "start_magi",

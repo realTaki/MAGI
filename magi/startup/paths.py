@@ -216,6 +216,32 @@ def resolve_memories_dir(workspace_dir: Path) -> Path:
     return workspace_dir / "memories"
 
 
+def resolve_state_dir(
+    host_workspace_dir: Path | None = None,
+    magi_name: str | None = None,
+) -> Path:
+    """Return the canonical state directory for BUS SQLite + migrations.
+
+    Per plan §9, ``magi.db`` lives directly under the MAGI workspace:
+    ``<host>/MAGI_Citizens/<name>/magi.db``.
+
+    The launcher / K8s branches remain for backward compatibility
+    during the migration window.
+    """
+    import os
+
+    if host_workspace_dir is not None:
+        if magi_name:
+            return host_workspace_dir / "MAGI_Citizens" / magi_name / "memories"
+        return host_workspace_dir / "MAGI_Societies" / "genesis" / "launcher-state"
+
+    # K8s profile — no HOST_WORKSPACE_DIR set
+    raw_ws = os.environ.get("MAGI_WORKSPACE_DIR")
+    if raw_ws:
+        return Path(raw_ws) / "memories"
+    return Path.home() / ".magi" / "MAGI_Citizens" / (os.environ.get("MAGI_NAME", "eva-000")) / "memories"
+
+
 def resolve_soul_path(workspace_dir: Path) -> Path:
     return workspace_dir / "SOUL.md"
 
@@ -247,5 +273,6 @@ __all__ = [
     # subdirectories
     "resolve_skills_dir",
     "resolve_memories_dir",
+    "resolve_state_dir",
     "resolve_soul_path",
 ]

@@ -179,9 +179,14 @@ def _bootstrap() -> NewBus:
     Internal — callers use :func:`get_bus`.  Tests that need a
     different state directory can call :func:`_bootstrap_with_dirs`.
     """
-    from magi.launcher.paths import state_dir as _state_dir
+    # Prefer the new startup module; fall back to legacy launcher.
+    try:
+        from magi.startup.paths import resolve_state_dir
+        state = str(resolve_state_dir())
+    except Exception:
+        from magi.launcher.paths import state_dir as _state_dir
+        state = str(_state_dir())
 
-    state = str(_state_dir())
     return _bootstrap_with_dirs(state_dir=state)
 
 

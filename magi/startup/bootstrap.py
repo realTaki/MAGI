@@ -123,9 +123,12 @@ def bootstrap_first_magi(
         )
 
     magis_url = resolve_magis_database_url(config.host_workspace_dir)
-    from pathlib import Path as _P
+    # The canonical MAGIS SQLite path is the single source of truth —
+    # we reuse :func:`resolve_magis_database_path` rather than parsing
+    # the URL string with ad-hoc slicing.
+    from magi.startup.paths import resolve_magis_database_path
 
-    magis_db_path = _P(magis_url[len("sqlite:///"):])
+    magis_db_path = resolve_magis_database_path(config.host_workspace_dir)
     magis_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Build a per-MAGIS SQLite engine and inject it into the bus so all
@@ -136,6 +139,13 @@ def bootstrap_first_magi(
     engine = build_local_engine(magis_db_path.parent)
     set_injected_magis_engine(engine)
     init_magis_public_db(seed_root=True)
+
+    # Plan §22.2 — validate workspace identity before seeding.
+    _validate_workspace_identity(
+        workspace_dir=workspace_dir,
+        magis_database_url=magis_url,
+        magi_id=str(1),  # First MAGI is always id=1 (Adam).
+    )
 
     # Seed Genesis + the first MAGI (eva-000) + ADAM membership if absent.
     magic_id = _ensure_first_magi_identity(engine, name=config.magi_name)

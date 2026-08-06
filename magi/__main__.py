@@ -28,9 +28,16 @@ from dataclasses import asdict, dataclass
 import uvicorn
 
 from magi import __version__
-from magi.launcher.constants import DEFAULT_LOG_LEVEL, WEBUI_HOST, WEBUI_PORT
 
 logger = logging.getLogger("magi")
+
+# Internal runtime constants — plan §5 / §15 / §21.
+_RUNTIME_HOST: str = "0.0.0.0"
+_RUNTIME_PORT: int = 42069
+# WebUI (singleton, externally routable) — see plan §15.
+_WEBUI_HOST: str = "0.0.0.0"
+_WEBUI_PORT: int = 42069
+_DEFAULT_LOG_LEVEL: str = "info"
 
 
 # ----------------------------------------------------------------------
@@ -41,10 +48,10 @@ class NodeConfig:
     """Minimal config for a MAGI node (legacy ``--check`` payload)."""
 
     state_dir: str | None = None
-    host: str = WEBUI_HOST
-    port: int = WEBUI_PORT
+    host: str = _RUNTIME_HOST
+    port: int = _RUNTIME_PORT
     reload: bool = False
-    log_level: str = DEFAULT_LOG_LEVEL
+    log_level: str = _DEFAULT_LOG_LEVEL
     runtime_id: str | None = None
     is_genesis: bool = False
 
@@ -56,6 +63,8 @@ class NodeConfig:
 
         runtime_id_raw = os.environ.get("MAGI_RUNTIME_ID", "").strip()
         if runtime_id_raw:
+            if not runtime_id_raw.isdigit():
+                raise ValueError("MAGI_RUNTIME_ID must be an integer magic_id")
             runtime_id = runtime_id_raw
             is_genesis = False
         else:
@@ -63,12 +72,12 @@ class NodeConfig:
             is_genesis = True
 
         # Log level honours DB setting if reachable.
-        log_level = DEFAULT_LOG_LEVEL
+        log_level = _DEFAULT_LOG_LEVEL
         try:
-            from magi.launcher.paths import state_dir
+            from magi.launcher.paths import state_dir as _state_dir
             from magi.bus.db.settings import state_get
 
-            db_level = state_get(str(state_dir()), "system.log_level")
+            db_level = state_get(str(_state_dir()), "system.log_level")
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
         except Exception:
@@ -76,8 +85,8 @@ class NodeConfig:
 
         return cls(
             state_dir=None,
-            host=WEBUI_HOST,
-            port=WEBUI_PORT,
+            host=_RUNTIME_HOST,
+            port=_RUNTIME_PORT,
             reload=os.environ.get("MAGI_DEV_RELOAD") == "1",
             log_level=log_level,
             runtime_id=runtime_id,
@@ -101,50 +110,41 @@ def check() -> int:
 def run() -> None:
     """Legacy entry — ``magi runtime`` and the default command.
 
-    Delegates to :func:`magi.startup.cli.cmd_run` so all runtime
+    Resolves a fresh :class:`StartupConfig` from the process environment
+    and delegates to :func:`magi.startup.runtime.run_magi` so all runtime
     composition lives in :mod:`magi.startup.runtime`.
     """
     import asyncio
 
-    from magi.startup.cli import _config_from_args, cmd_run
-
-    cfg = _config_from_args(argparse.Namespace())
-    # cmd_run's signature expects an argparse Namespace; reuse it via a
-    # one-shot Namespace built from a default StartupConfig.from_env().
     from magi.startup.config import StartupConfig
-
-    ns = argparse.Namespace()
-    ns.host_workspace_dir = None
-    ns.name = None
-    ns.magis_database_url = None
-    ns.magi_id = None
-    resolved = _config_from_args(ns)
-    asyncio.run(_run_magi_async(resolved))
-
-
-async def _run_magi_async(config) -> None:
     from magi.startup.runtime import run_magi
 
-    await run_magi(config)
+    config = StartupConfig.from_env()
+    asyncio.run(run_magi(config))
 
 
 def run_webui() -> None:
-    """Legacy entry — ``magi webui`` boots the singleton WebUI in-process."""
+    """Legacy entry — ``magi webui`` boots the singleton WebUI in-process.
+
+    WebUI host / port are fixed by plan §15 / §21 — operators cannot
+    override them through the legacy ``magi webui`` form.
+    """
+    import os
+
     logging.basicConfig(
-        level=DEFAULT_LOG_LEVEL.upper(),
+        level=_DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     from magi.bus.db.magis import init_magis_public_db
 
     init_magis_public_db(seed_root=True)
-    reload = False  # production: hardcoded off (plan §21)
     uvicorn.run(
         "magi.channels.api.app:create_control_app",
         factory=True,
-        host=WEBUI_HOST,
-        port=int(__import__("os").environ.get("MAGI_PORT") or WEBUI_PORT),
-        log_level=DEFAULT_LOG_LEVEL,
-        reload=reload,
+        host=str(os.environ.get("MAGI_WEBUI_HOST") or _WEBUI_HOST),
+        port=int(os.environ.get("MAGI_WEBUI_PORT") or _WEBUI_PORT),
+        log_level=_DEFAULT_LOG_LEVEL,
+        reload=False,
         reload_dirs=None,
     )
 
