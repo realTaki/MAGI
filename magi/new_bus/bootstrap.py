@@ -51,15 +51,15 @@ class NewBus:
     # -- local: settings ----------------------------------------------------
 
     settings: object  # SettingBook
-    set_config: object  # setConfigJobBoard
-    set_setting: object  # setSettingJobBoard
+    set_config: object  # setConfigNotifyBoard
+    set_setting: object  # setSettingNotifyBoard
 
     # -- local: tasks -------------------------------------------------------
 
     tasks: object  # TaskBook
     task_presets: object  # TaskPresetBook
     task_runs: object  # TaskRunBook
-    schedule_task: object  # scheduleTaskJobBoard
+    schedule_task: object  # scheduleTaskNotifyBoard
 
     # -- local: tools & MCP -------------------------------------------------
 
@@ -88,8 +88,8 @@ class NewBus:
 
     # -- local: contacts & memory (write path, fire-and-forget) --------------
 
-    save_contact: object  # contactJobBoard
-    save_memory: object  # rememberJobBoard
+    save_contact: object  # contactNotifyBoard
+    save_memory: object  # rememberNotifyBoard
 
     # -- local: misc ---------------------------------------------------------
 
@@ -231,16 +231,16 @@ def _bootstrap_with_dirs(
     from magi.new_bus.guild import (
         callLLMJobBoard,
         chatJobBoard,
-        contactJobBoard,
+        contactNotifyBoard,
         controlJobBoard,
         deliveryJobBoard,
-        rememberJobBoard,
+        rememberNotifyBoard,
         runAgentJobBoard,
         runToolJobBoard,
-        scheduleTaskJobBoard,
+        scheduleTaskNotifyBoard,
         sendA2AJobBoard,
-        setConfigJobBoard,
-        setSettingJobBoard,
+        setConfigNotifyBoard,
+        setSettingNotifyBoard,
     )
 
     # ---- wire factories ----------------------------------------------------
@@ -274,11 +274,11 @@ def _bootstrap_with_dirs(
     a2a = sendA2AJobBoard(local_factory)
     chat = chatJobBoard(local_factory)
     control = controlJobBoard(local_factory)
-    set_config = setConfigJobBoard(local_factory)
-    set_setting = setSettingJobBoard(local_factory)
-    schedule_task = scheduleTaskJobBoard(local_factory)
-    save_contact = contactJobBoard(local_factory)
-    save_memory = rememberJobBoard(local_factory)
+    set_config = setConfigNotifyBoard(local_factory)
+    set_setting = setSettingNotifyBoard(local_factory)
+    schedule_task = scheduleTaskNotifyBoard(local_factory)
+    save_contact = contactNotifyBoard(local_factory)
+    save_memory = rememberNotifyBoard(local_factory)
 
     # ---- magis books -------------------------------------------------------
     if magis_factory is not None:

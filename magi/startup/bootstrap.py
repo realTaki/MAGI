@@ -360,16 +360,6 @@ def persist_runtime_state(
     sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-__all__ = [
-    "BootstrapIdentity",
-    "bootstrap_magi",
-    "bootstrap_first_magi",
-    "bootstrap_existing_magi",
-    "ensure_private_database",
-    "persist_runtime_state",
-]
-
-
 # ----------------------------------------------------------------------
 # Launcher-issued control secret (was :mod:`magi.startup.security`)
 # ----------------------------------------------------------------------

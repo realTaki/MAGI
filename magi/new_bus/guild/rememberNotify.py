@@ -1,4 +1,4 @@
-"""rememberJobBoard — 记忆变更作业（同步写）。"""
+"""rememberNotifyBoard — 记忆变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
-class RememberJob:
+class RememberNotify:
     owner_id: str
     kind: str
     content: str
     memory_id: str | None = None
 
 
-class _MemoryRow(Base):
+class _MemoryNotifyRow(Base):
     __tablename__ = "memory_entries"
     __table_args__ = {"extend_existing": True}
 
@@ -33,13 +33,13 @@ class _MemoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
 
-class rememberJobBoard(BaseNotifyBoard[RememberJob]):
+class rememberNotifyBoard(BaseNotifyBoard[RememberNotify]):
 
-    def publish(self, job: RememberJob) -> str:
+    def publish(self, job: RememberNotify) -> str:
         with self._session() as s:
             if job.memory_id:
                 row = s.scalar(
-                    select(_MemoryRow).where(_MemoryRow.memory_id == job.memory_id)
+                    select(_MemoryNotifyRow).where(_MemoryNotifyRow.memory_id == job.memory_id)
                 )
                 if row:
                     row.kind = job.kind
@@ -47,7 +47,7 @@ class rememberJobBoard(BaseNotifyBoard[RememberJob]):
                     s.commit()
                     return job.memory_id
             mid = job.memory_id or uuid.uuid4().hex
-            s.add(_MemoryRow(
+            s.add(_MemoryNotifyRow(
                 memory_id=mid,
                 owner_id=job.owner_id,
                 kind=job.kind,

@@ -1,4 +1,4 @@
-"""setSettingJobBoard — 设置变更作业（同步写）。"""
+"""setSettingNotifyBoard — 设置变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
-class SetSettingJob:
+class SetSettingNotify:
     key: str
     value: str
 
 
-class _SettingRow(Base):
+class _SettingNotifyRow(Base):
     __tablename__ = "settings"
     __table_args__ = {"extend_existing": True}
 
@@ -29,16 +29,16 @@ class _SettingRow(Base):
     )
 
 
-class setSettingJobBoard(BaseNotifyBoard[SetSettingJob]):
+class setSettingNotifyBoard(BaseNotifyBoard[SetSettingNotify]):
 
-    def publish(self, job: SetSettingJob) -> str:
+    def publish(self, job: SetSettingNotify) -> str:
         with self._session() as s:
             existing = s.scalar(
-                select(_SettingRow).where(_SettingRow.key == job.key)
+                select(_SettingNotifyRow).where(_SettingNotifyRow.key == job.key)
             )
             if existing:
                 existing.value = job.value
             else:
-                s.add(_SettingRow(key=job.key, value=job.value))
+                s.add(_SettingNotifyRow(key=job.key, value=job.value))
             s.commit()
             return job.key

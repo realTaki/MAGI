@@ -1,4 +1,4 @@
-"""setConfigJobBoard — 配置变更作业（同步写）。"""
+"""setConfigNotifyBoard — 配置变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
-class SetConfigJob:
+class SetConfigNotify:
     config_key: str
     config_value: dict | None = None
 
 
-class _ConfigRow(Base):
+class _ConfigNotifyRow(Base):
     __tablename__ = "config_entries"
     __table_args__ = {"extend_existing": True}
 
@@ -32,17 +32,17 @@ class _ConfigRow(Base):
     )
 
 
-class setConfigJobBoard(BaseNotifyBoard[SetConfigJob]):
+class setConfigNotifyBoard(BaseNotifyBoard[SetConfigNotify]):
 
-    def publish(self, job: SetConfigJob) -> str:
+    def publish(self, job: SetConfigNotify) -> str:
         with self._session() as s:
             existing = s.scalar(
-                select(_ConfigRow).where(_ConfigRow.config_key == job.config_key)
+                select(_ConfigNotifyRow).where(_ConfigNotifyRow.config_key == job.config_key)
             )
             if existing:
                 existing.config_value = job.config_value
             else:
-                existing = _ConfigRow(
+                existing = _ConfigNotifyRow(
                     config_key=job.config_key,
                     config_value=job.config_value,
                 )

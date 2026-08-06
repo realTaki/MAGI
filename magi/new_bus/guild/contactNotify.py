@@ -1,4 +1,4 @@
-"""contactJobBoard — 联系人变更作业（同步写）。"""
+"""contactNotifyBoard — 联系人变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
-class ContactJob:
+class ContactNotify:
     name: str
     person_id: str | None = None
     notes: str | None = None
     contact_id: str | None = None
 
 
-class _ContactRow(Base):
+class _ContactNotifyRow(Base):
     __tablename__ = "contact_entries"
     __table_args__ = {"extend_existing": True}
 
@@ -36,13 +36,13 @@ class _ContactRow(Base):
     )
 
 
-class contactJobBoard(BaseNotifyBoard[ContactJob]):
+class contactNotifyBoard(BaseNotifyBoard[ContactNotify]):
 
-    def publish(self, job: ContactJob) -> str:
+    def publish(self, job: ContactNotify) -> str:
         with self._session() as s:
             if job.contact_id:
                 row = s.scalar(
-                    select(_ContactRow).where(_ContactRow.contact_id == job.contact_id)
+                    select(_ContactNotifyRow).where(_ContactNotifyRow.contact_id == job.contact_id)
                 )
                 if row:
                     row.name = job.name
@@ -51,7 +51,7 @@ class contactJobBoard(BaseNotifyBoard[ContactJob]):
                     s.commit()
                     return job.contact_id
             cid = job.contact_id or uuid.uuid4().hex
-            s.add(_ContactRow(
+            s.add(_ContactNotifyRow(
                 contact_id=cid,
                 name=job.name,
                 person_id=job.person_id,

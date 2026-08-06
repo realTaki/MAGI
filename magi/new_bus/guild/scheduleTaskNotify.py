@@ -1,4 +1,4 @@
-"""scheduleTaskJobBoard — 任务变更作业（同步写）。"""
+"""scheduleTaskNotifyBoard — 任务变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
-class ScheduleTaskJob:
+class ScheduleTaskNotify:
     name: str
     schedule: str
     prompt: str | None = None
@@ -22,7 +22,7 @@ class ScheduleTaskJob:
     task_id: str | None = None  # None=新建, 有值=更新
 
 
-class _TaskRow(Base):
+class _TaskNotifyRow(Base):
     __tablename__ = "tasks"
     __table_args__ = {"extend_existing": True}
 
@@ -39,13 +39,13 @@ class _TaskRow(Base):
     )
 
 
-class scheduleTaskJobBoard(BaseNotifyBoard[ScheduleTaskJob]):
+class scheduleTaskNotifyBoard(BaseNotifyBoard[ScheduleTaskNotify]):
 
-    def publish(self, job: ScheduleTaskJob) -> str:
+    def publish(self, job: ScheduleTaskNotify) -> str:
         with self._session() as s:
             if job.task_id:
                 row = s.scalar(
-                    select(_TaskRow).where(_TaskRow.task_id == job.task_id)
+                    select(_TaskNotifyRow).where(_TaskNotifyRow.task_id == job.task_id)
                 )
                 if row:
                     row.name = job.name
@@ -54,7 +54,7 @@ class scheduleTaskJobBoard(BaseNotifyBoard[ScheduleTaskJob]):
                     row.enabled = job.enabled
                     s.commit()
                     return job.task_id
-            row = _TaskRow(
+            row = _TaskNotifyRow(
                 task_id=job.task_id or uuid.uuid4().hex,
                 name=job.name,
                 schedule=job.schedule,
