@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from datetime import datetime, timedelta
 from typing import Generic, TypeVar
 
@@ -19,6 +20,12 @@ from magi.new_bus.db.engine import EngineFactory
 
 DEFAULT_LEASE_SECONDS = 60
 MAX_ATTEMPTS = 3
+
+
+def new_job_id() -> str:
+    """生成新的 Job ID（hex 字符串）。"""
+    return uuid.uuid4().hex
+
 
 RowT = TypeVar("RowT", bound=Base)
 JobT = TypeVar("JobT")

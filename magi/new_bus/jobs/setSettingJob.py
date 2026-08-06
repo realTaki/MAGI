@@ -1,4 +1,4 @@
-"""SettingsJob — 设置变更作业（同步写）。"""
+"""setSettingJob — 设置变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from magi.new_bus.jobs.base import BaseJobQueue
 
 
 @dataclass(frozen=True, slots=True)
-class SettingsJob:
+class SetSettingJob:
     key: str
     value: str
 
@@ -31,9 +31,9 @@ class _SettingRow(Base):
     )
 
 
-class SettingsJobQueue(BaseJobQueue[None, SettingsJob, None]):
+class setSettingJob(BaseJobQueue[None, SetSettingJob, None]):
 
-    def publish(self, job: SettingsJob) -> str:
+    def publish(self, job: SetSettingJob) -> str:
         with self._session() as s:
             existing = s.scalar(
                 select(_SettingRow).where(_SettingRow.key == job.key)

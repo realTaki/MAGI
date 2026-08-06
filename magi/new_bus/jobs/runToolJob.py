@@ -1,6 +1,6 @@
-"""ControlJob — 控制信号作业。
+"""runToolJob — 工具执行作业。
 
-系统级事件：provider 变更、runtime 重启等。
+worker claim → 执行工具 → submit_result
 """
 
 from __future__ import annotations
@@ -17,28 +17,33 @@ from magi.new_bus.jobs.base import BaseJobQueue
 
 
 @dataclass(frozen=True, slots=True)
-class ControlJob:
-    kind: str
-    payload: dict | None = None
+class RunToolJob:
+    tool_name: str
+    payload: dict
+    run_id: str = ""
+    tool_call_id: str = ""
     job_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class ControlJobResult:
+class RunToolResult:
     job_id: str
     success: bool
+    result: dict | None = None
     error: str | None = None
 
 
-class _ControlJobRow(Base):
-    __tablename__ = "control_jobs"
+class _ToolJobRow(Base):
+    __tablename__ = "tool_jobs"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
-    kind: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    run_id: Mapped[str] = mapped_column(String(64), default="")
+    tool_call_id: Mapped[str] = mapped_column(String(128), default="")
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -52,18 +57,20 @@ class _ControlJobRow(Base):
     )
 
 
-class ControlJobQueue(BaseJobQueue[_ControlJobRow, ControlJob, ControlJobResult]):
-    job_model = _ControlJobRow
-    job_cls = ControlJob
-    result_cls = ControlJobResult
+class runToolJob(BaseJobQueue[_ToolJobRow, RunToolJob, RunToolResult]):
+    job_model = _ToolJobRow
+    job_cls = RunToolJob
+    result_cls = RunToolResult
 
-    def publish(self, job: ControlJob) -> str:
+    def publish(self, job: RunToolJob) -> str:
         with self._factory.session() as s:
-            row = _ControlJobRow(
+            row = _ToolJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",
-                kind=job.kind,
+                tool_name=job.tool_name,
                 payload=job.payload,
+                run_id=job.run_id,
+                tool_call_id=job.tool_call_id,
             )
             s.add(row)
             s.flush()

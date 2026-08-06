@@ -1,4 +1,4 @@
-"""TaskJob — 任务变更作业（同步写）。"""
+"""scheduleTaskJob — 任务变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from magi.new_bus.jobs.base import BaseJobQueue
 
 
 @dataclass(frozen=True, slots=True)
-class TaskJob:
+class ScheduleTaskJob:
     name: str
     schedule: str
     prompt: str | None = None
@@ -39,9 +39,9 @@ class _TaskRow(Base):
     )
 
 
-class TaskJobQueue(BaseJobQueue[None, TaskJob, None]):
+class scheduleTaskJob(BaseJobQueue[None, ScheduleTaskJob, None]):
 
-    def publish(self, job: TaskJob) -> str:
+    def publish(self, job: ScheduleTaskJob) -> str:
         with self._session() as s:
             if job.task_id:
                 row = s.scalar(

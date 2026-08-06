@@ -1,4 +1,4 @@
-"""ContactJob — 联系人变更作业（同步写）。"""
+"""contactJob — 联系人变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class _ContactRow(Base):
     )
 
 
-class ContactJobQueue(BaseJobQueue[None, ContactJob, None]):
+class contactJob(BaseJobQueue[None, ContactJob, None]):
 
     def publish(self, job: ContactJob) -> str:
         with self._session() as s:

@@ -1,4 +1,4 @@
-"""MemoryJob — 记忆变更作业（同步写）。"""
+"""rememberJob — 记忆变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from magi.new_bus.jobs.base import BaseJobQueue
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryJob:
+class RememberJob:
     owner_id: str
     kind: str
     content: str
@@ -33,9 +33,9 @@ class _MemoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
 
-class MemoryJobQueue(BaseJobQueue[None, MemoryJob, None]):
+class rememberJob(BaseJobQueue[None, RememberJob, None]):
 
-    def publish(self, job: MemoryJob) -> str:
+    def publish(self, job: RememberJob) -> str:
         with self._session() as s:
             if job.memory_id:
                 row = s.scalar(

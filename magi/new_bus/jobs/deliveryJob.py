@@ -1,4 +1,7 @@
-"""LLMJob — LLM 推理作业。"""
+"""deliveryJob — 出站投递作业。
+
+agent 产出回复 → 入队 → worker 投递到渠道
+"""
 
 from __future__ import annotations
 
@@ -13,44 +16,37 @@ from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.jobs.base import BaseJobQueue
 
 
-# -- public dataclasses ----------------------------------------------------
-
 @dataclass(frozen=True, slots=True)
-class LLMJob:
-    model: str
-    messages: list[dict]
-    parameters: dict | None = None
+class DeliveryJob:
+    channel: str
+    payload: dict
+    destination: str | None = None
+    run_id: str = ""
     job_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class LLMJobResult:
+class DeliveryResult:
     job_id: str
     success: bool
-    response: dict | None = None
-    finish_reason: str | None = None
-    token_usage: dict | None = None
     error: str | None = None
 
 
-# -- internal ORM ----------------------------------------------------------
-
-class _LLMJobRow(Base):
-    __tablename__ = "llm_jobs"
+class _DeliveryJobRow(Base):
+    __tablename__ = "delivery_outbox"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
-    model: Mapped[str] = mapped_column(String(128), nullable=False)
-    messages: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
-    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    run_id: Mapped[str] = mapped_column(String(64), default="")
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -60,21 +56,20 @@ class _LLMJobRow(Base):
     )
 
 
-# -- Queue -----------------------------------------------------------------
+class deliveryJob(BaseJobQueue[_DeliveryJobRow, DeliveryJob, DeliveryResult]):
+    job_model = _DeliveryJobRow
+    job_cls = DeliveryJob
+    result_cls = DeliveryResult
 
-class LLMJobQueue(BaseJobQueue[_LLMJobRow, LLMJob, LLMJobResult]):
-    job_model = _LLMJobRow
-    job_cls = LLMJob
-    result_cls = LLMJobResult
-
-    def publish(self, job: LLMJob) -> str:
+    def publish(self, job: DeliveryJob) -> str:
         with self._factory.session() as s:
-            row = _LLMJobRow(
+            row = _DeliveryJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",
-                model=job.model,
-                messages=job.messages,
-                parameters=job.parameters,
+                channel=job.channel,
+                payload=job.payload,
+                destination=job.destination,
+                run_id=job.run_id,
             )
             s.add(row)
             s.flush()

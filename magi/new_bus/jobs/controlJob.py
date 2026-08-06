@@ -1,6 +1,6 @@
-"""DeliveryJob — 出站投递作业。
+"""controlJob — 控制信号作业。
 
-agent 产出回复 → 入队 → worker 投递到渠道
+系统级事件：provider 变更、runtime 重启等。
 """
 
 from __future__ import annotations
@@ -17,32 +17,28 @@ from magi.new_bus.jobs.base import BaseJobQueue
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryJob:
-    channel: str
-    payload: dict
-    destination: str | None = None
-    run_id: str = ""
+class ControlJob:
+    kind: str
+    payload: dict | None = None
     job_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryJobResult:
+class ControlJobResult:
     job_id: str
     success: bool
     error: str | None = None
 
 
-class _DeliveryJobRow(Base):
-    __tablename__ = "delivery_outbox"
+class _ControlJobRow(Base):
+    __tablename__ = "control_jobs"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
-    channel: Mapped[str] = mapped_column(String(32), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    run_id: Mapped[str] = mapped_column(String(64), default="")
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -56,20 +52,18 @@ class _DeliveryJobRow(Base):
     )
 
 
-class DeliveryJobQueue(BaseJobQueue[_DeliveryJobRow, DeliveryJob, DeliveryJobResult]):
-    job_model = _DeliveryJobRow
-    job_cls = DeliveryJob
-    result_cls = DeliveryJobResult
+class controlJob(BaseJobQueue[_ControlJobRow, ControlJob, ControlJobResult]):
+    job_model = _ControlJobRow
+    job_cls = ControlJob
+    result_cls = ControlJobResult
 
-    def publish(self, job: DeliveryJob) -> str:
+    def publish(self, job: ControlJob) -> str:
         with self._factory.session() as s:
-            row = _DeliveryJobRow(
+            row = _ControlJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",
-                channel=job.channel,
+                kind=job.kind,
                 payload=job.payload,
-                destination=job.destination,
-                run_id=job.run_id,
             )
             s.add(row)
             s.flush()
