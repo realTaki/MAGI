@@ -29,14 +29,13 @@ from magi.bus.db.magis.engine import (
     set_injected_magis_engine,
 )
 from magi.startup.config import (
-    DEFAULT_MAGI_NAME,
     ConfigurationError,
     StartupConfig,
 )
 from magi.startup.context import StartupContext
 from magi.startup.paths import (
-    ensure_workspace,
     resolve_magis_database_path,
+    resolve_magis_database_url,
     resolve_private_database_path,
     resolve_runtime_state_path,
 )
@@ -70,7 +69,8 @@ def bootstrap_magi(config: StartupConfig) -> StartupContext:
     to the runtime layer.
     """
     config.validate()
-    workspace_dir = config.workspace_dir
+    # Plan §11 — ensure workspace dirs before bootstrapping identity.
+    workspace_dir = ensure_workspace(config.workspace_dir)
 
     is_first = config.magis_database_url is None
     if is_first:

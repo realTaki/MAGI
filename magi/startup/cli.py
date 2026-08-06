@@ -48,7 +48,7 @@ def _print_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
 
 def _is_first_magi_or_none(config: StartupConfig) -> bool:
     """True when the local slot matches ``eva-000`` — that's the WebUI's slot."""
-    return config.magi_name == DEFAULT_MAGI_NAME
+    return config.magi_name == "eva-000"
 
 
 # ----------------------------------------------------------------------
