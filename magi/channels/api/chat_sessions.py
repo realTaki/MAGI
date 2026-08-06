@@ -49,7 +49,7 @@ def get_session_store() -> SessionService:
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override
-    the path is resolved via ``magi.launcher.paths.workspace_dir()``
+    the path is resolved via ``magi.startup.paths.resolve_workspace_dir()``
     current value, not the value captured at import time.
     """
     return get_bus().session

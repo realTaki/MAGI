@@ -47,7 +47,7 @@ Plugin enablement
 -----------------
 
 Plugins cannot self-register or self-enable at code level.
-The composition root (``magi.launcher``) reads a persistent
+The composition root (``magi.startup``) reads a persistent
 hook config table and instantiates only the enabled handlers.
 The WebUI Hooks knowledge page and ``magi hook enable/disable``
 CLI write to the same table.

@@ -6,7 +6,7 @@ Kubernetes path lives directly here per plan §6 and §17.
 
 This module is intentionally thin and only assembles the resource
 manifests; the actual Kubernetes API client lives in the legacy
-``magi.orchestrator.kubernetes`` module (kept for diagnostic value).
+``magi.startup.kubernetes (self-contained K8s adapter).
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
 
     Returns a dict with the three manifest documents; the caller (the
     CLI verb) is responsible for applying them via the legacy
-    :mod:`magi.orchestrator.kubernetes` client.
+    :mod:`magi.startup.kubernetes.
     """
     if config.is_first_magi and config.magi_name != DEFAULT_MAGI_NAME:
         raise ValueError(f"first MAGI must be {DEFAULT_MAGI_NAME}")
@@ -246,7 +246,7 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
 
 
 # ----------------------------------------------------------------------
-# Minimal K8s API adapter (was ``magi.orchestrator.kubernetes``)
+# Minimal K8s API adapter (replaces the old magi.orchestrator.kubernetes)
 # ----------------------------------------------------------------------
 
 def _k8s_delete(path: str) -> None:

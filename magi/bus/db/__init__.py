@@ -4,7 +4,7 @@ This subpackage is **internal to the bus**.  The leading underscore is the
 Python convention; the *enforcement* is the AST import-boundary test
 (``tests/architecture/test_import_boundaries.py``) which forbids
 ``magi.agent``, ``magi.tools``, ``magi.channels``, ``magi.proactive``,
-``magi.connectors``, ``magi.orchestrator``, ``magi.mcp``, and ``magi.skills``
+``magi.connectors``, ``magi.startup``, ``magi.mcp``, and ``magi.skills``
 from importing anything under ``magi.bus.db``.
 
 External callers (agent, tools, channels, mcp, proactive, orchestrator,

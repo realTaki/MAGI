@@ -158,7 +158,7 @@ class WorkerHandles:
 async def worker_lifespan():
     """Standalone durable worker pool — usable from the WebUI ASGI app.
 
-    Plan §20.1 — this replaces :func:`magi.launcher.worker_lifespan`.
+    Plan §20.1 — this replaces :func:`magi.startup.runtime._runtime_lifespan`.
     The :func:`channels.api.app` FastAPI lifespan pulls in the same set
     of workers without dragging the Runtime's uvicorn into the picture.
     """
@@ -194,7 +194,7 @@ async def worker_lifespan():
 def start_channel(name: str) -> None:
     """Bring one channel up — plan §20.1.
 
-    Replaces :func:`magi.launcher.start_channel`.  Channel adapters stay
+    Replaces :func:`magi.startup.runtime._start_channel_bridge`.  Channel adapters stay
     in :mod:`magi.channels.*`; this is the composition-root dispatcher.
     """
     if name == "telegram":
@@ -214,7 +214,7 @@ def stop_channel(name: str) -> None:
 def is_channel_running(name: str) -> bool:
     """Return ``True`` if the channel process is currently live.
 
-    Plan §20.1 — replaces :func:`magi.launcher.is_channel_running`.
+    Plan §20.1 — replaces :func:`magi.startup.runtime._is_channel_running`.
     """
     if name == "telegram":
         from magi.channels.telegram.bot import is_running

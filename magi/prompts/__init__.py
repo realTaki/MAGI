@@ -11,7 +11,7 @@ Files:
   - ``soul.md``            : the per-deployer persona the agent
                              loop passes as the system prompt.
                              Read by
-                             :mod:`magi.launcher.paths` (via
+                             :mod:`magi.startup.paths` (via
                              ``workspace_root``) /
                              :mod:`magi.agent.agent_context`.
   - ``fallback_persona.md`` : last-resort persona used when

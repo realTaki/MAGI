@@ -10,7 +10,7 @@ nested DTO for backward compatibility with the K8s adapter.
 BUS services (``magi.bus.jobs.services.runtime.RuntimeRegistryService``,
 ``magi.bus.jobs.services.runtime.BackendDispatcherService``) return these
 types.  The orchestrator package wraps the legacy
-:class:`magi.orchestrator.kubernetes.KubernetesEvaBackend` and translates
+:class:`magi.startup.kubernetes._k8s_delete` and translates
 its results into these DTOs.
 """
 

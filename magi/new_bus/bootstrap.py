@@ -159,7 +159,7 @@ def get_bus() -> NewBus:
     """Return the process-wide ``NewBus`` singleton.
 
     Auto-discovers the local SQLite path (via
-    :func:`magi.launcher.paths.state_dir`) and the MAGIS database URL
+    :func:`magi.startup.paths.resolve_state_dir`) and the MAGIS database URL
     (via ``MAGIS_DATABASE_URL`` or :func:`set_magis_url`).
 
     This is the **only** entry point that modules outside

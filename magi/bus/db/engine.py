@@ -41,7 +41,7 @@ logger = logging.getLogger("magi.bus.db.engine")
 def require_state_dir() -> str:
     """Return the state directory path.
 
-    Delegates to :func:`magi.launcher.paths.state_dir`.  The K8s Pod
+    Delegates to :func:`magi.startup.paths.resolve_state_dir`.  The K8s Pod
     sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``HOST_WORKSPACE_DIR``.
     """
     from magi.startup.paths import resolve_state_dir as _state_dir

@@ -46,7 +46,7 @@ class BackendDispatcherService:
     """BUS facade for runtime lifecycle commands.
 
     In Phase 2 this is an in-process shim that calls the active
-    :class:`~magi.orchestrator.backends.base.RuntimeBackend` directly.
+    :class:`~magi.startup.local` directly.
     Phase 4-7 substitutes the body with a real BUS command queue so the
     Orchestrator Worker can consume commands asynchronously.  Tests can
     inject a stub backend via the constructor.

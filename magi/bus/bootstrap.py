@@ -84,14 +84,14 @@ def bootstrap(
     """Create the public BUS facade for the container / K8s profile.
 
     The container profile's state directory is derived from
-    :func:`magi.launcher.paths.state_dir` (which reads
+    :func:`magi.startup.paths.resolve_state_dir` (which reads
     ``MAGI_WORKSPACE_DIR``).  The Local Profile, which has its own
     layout, reaches :func:`_bootstrap` directly with the layout's
     ``state_dir``.
 
     ``runtime_backend`` (Phase 2) overrides the backend selected by the
     ``MAGI_BACKEND`` env var — used by tests to inject a stub
-    :class:`~magi.orchestrator.backends.base.RuntimeBackend`.
+    :class:`~magi.startup.local`.
 
     ``magis_engine`` (Phase 3) lets the Composition Root inject a
     dedicated MAGIS engine (Local Profile SQLite, K8s PostgreSQL, …).
@@ -120,7 +120,7 @@ def _bootstrap(
     Takes ``state_dir`` explicitly.  Called by:
 
     - :func:`bootstrap` for container / K8s (after reading state_dir()).
-    - :func:`magi.launcher.bootstrap_local` for the CLI Profile
+    - :func:`magi.startup.bootstrap.bootstrap_magi` for the CLI Profile
       (passes ``layout.state_dir``).
 
     Business modules never call this; they use :func:`get_bus`.

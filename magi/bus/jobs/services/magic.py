@@ -145,7 +145,7 @@ class MagicService:
         runtime_dispatcher: Any | None = None,
     ) -> None:
         self._state_dir = state_dir
-        # Phase 2 — replaced the direct ``magi.orchestrator.client``
+        # Phase 2 — replaced the direct ``magi.startup.kubernetes``
         # import with a BUS-injected dispatcher.  Default keeps the
         # legacy K8s behaviour bit-identical.
         self._runtime_dispatcher = runtime_dispatcher
@@ -570,7 +570,7 @@ class MagicService:
                 select(EvaRuntime).where(EvaRuntime.magic_id == magic.id)
             )
             if runtime is not None and runtime.deployment_name:
-                # Phase 2 — replaced direct ``magi.orchestrator.client``
+                # Phase 2 — replaced direct ``magi.startup.kubernetes``
                 # import with the BUS dispatcher.  The dispatcher
                 # internally still hits the legacy K8s client so the
                 # K8s Profile is bit-identical; Phase 4 substitutes the
@@ -679,7 +679,7 @@ class MagicService:
                     # Pod comes up.  Pre-refactor rows still carry
                     # the values inline; those are picked up by the
                     # runtime factory's legacy fallback.
-                # Phase 2 — replaced direct ``magi.orchestrator.client``
+                # Phase 2 — replaced direct ``magi.startup.kubernetes``
                 # import with the BUS dispatcher.  The dispatcher
                 # internally still hits the legacy K8s client so the
                 # K8s Profile is bit-identical; Phase 4 substitutes the

@@ -324,7 +324,7 @@ __all__ = [
 # File path resolution:
 #     * K8s profile: ``$MAGI_WORKSPACE_DIR/runtime_settings.toml``
 #     * CLI profile: ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<slug>/workspace/runtime_settings.toml``
-#     * The lookup is delegated to :func:`magi.launcher.paths.workspace_dir`
+#     * The lookup is delegated to :func:`magi.startup.paths.resolve_workspace_dir`
 #       so a single env var is enough for either profile.
 #
 # In-process concurrency:

@@ -1149,7 +1149,7 @@ def _project_runtime_configuration(spec: RuntimeConfigurationProjection, databas
 
     This is the control-plane equivalent of "create the row, seed the
     role, attach the membership".  Used by
-    :class:`magi.orchestrator.kubernetes.KubernetesOrchestrator` when
+    :class:`magi.startup.kubernetes` when
     provisioning a fresh MAGI Pod so the container starts against a
     pre-populated PostgreSQL instead of an empty schema.  Bounded
     retry handles the case where the database Deployment hasn't
