@@ -155,7 +155,7 @@ systemctl --user list-units 'magi-*'
 - **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
   在 `<workspace>/memories/magi.db`（`MAGI_WORKSPACE_DIR` 指向的 PVC）；
   本路径保持相同约定 `~/.magi/MAGI_Citizens/<slug>/workspace/memories/magi.db`。
-  `magi/launcher/paths.py` 是唯一暴露这个布局的位置。
+  `magi/startup/paths.py` 是唯一暴露这个布局的位置。
 - **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
   本地进程设置 `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`。
   不存在硬编码的 `/workspace` 路径。

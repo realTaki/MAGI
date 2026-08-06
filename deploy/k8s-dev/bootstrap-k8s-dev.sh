@@ -20,7 +20,7 @@ KIND_VERSION="${KIND_VERSION:-v0.24.0}"
 KUBECONFIG_PATH="${MAGI_KUBECONFIG:-$ROOT_DIR/.kind-kubeconfig}"
 
 # OS-specific data root — matches the openclaw-style layout used by
-# ``deploy/cli/magi`` and ``magi.launcher.paths.default_data_root``.
+# ``deploy/cli/magi`` and ``magi.startup.paths.resolve_host_workspace``.
 resolve_data_root() {
   if [ -n "${HOST_WORKSPACE_DIR:-}" ]; then
     printf '%s\n' "$HOST_WORKSPACE_DIR"

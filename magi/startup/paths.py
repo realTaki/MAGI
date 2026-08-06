@@ -1,7 +1,9 @@
-"""Startup path resolution — every filesystem path needed by the launcher.
+"""Startup path resolution — every filesystem path needed by MAGI startup.
 
-All functions are pure (no env reads, no side effects).  Callers pass
-the host workspace directory explicitly so tests can inject tmp paths.
+Per plan §6 / §9, the on-disk layout below is the single source of
+truth — there is no longer a launcher package.  Most helpers take
+the relevant inputs explicitly (no env reads, no side effects), so
+tests can inject tmp paths directly.
 
 Layout (per refactor plan §7, §9):
 
@@ -300,9 +302,9 @@ def resolve_workspace_dir() -> Path:
 def bootstrap_workspace(workspace: Path) -> dict[str, str]:
     """Idempotent workspace bootstrap (alias for :func:`ensure_workspace`).
 
-    Preserved as a top-level function so legacy callers that import it by
-    name (e.g. ``magi.launcher.cli``) keep working during migration.  Plan
-    §20.1 will retire the launcher along with this alias.
+    Plan §20.1 retired ``magi.launcher.cli``; this helper now lives here
+    for compatibility with any deployment script that still references
+    it by name.  New code should call :func:`ensure_workspace` directly.
     """
     workspace.mkdir(parents=True, exist_ok=True)
     created: dict[str, str] = {"workspace_root": "kept"}
