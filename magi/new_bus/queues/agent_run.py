@@ -94,8 +94,6 @@ class _AgentInboxRow(Base):
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
-    __table_args__ = (Index("ix_agent_inbox_run_id", "run_id"),)
-
 
 # -- Queue ----------------------------------------------------------------
 

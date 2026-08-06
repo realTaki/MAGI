@@ -45,8 +45,8 @@ from magi.new_bus.queues.config import (
 )
 from magi.new_bus.queues.delivery import (
     DeliveryJob,
-    DeliveryJobQueue,
     DeliveryJobResult,
+    DeliveryQueue,
 )
 from magi.new_bus.queues.llm import LLMJob, LLMJobQueue, LLMJobResult
 from magi.new_bus.queues.tool import ToolJob, ToolJobQueue, ToolJobResult
@@ -68,8 +68,8 @@ __all__ = [
     "ConfigJobResult",
     "DEFAULT_LEASE_SECONDS",
     "DeliveryJob",
-    "DeliveryJobQueue",
     "DeliveryJobResult",
+    "DeliveryQueue",
     "INLINE_PUBLISHER",
     "LLMJob",
     "LLMJobQueue",
