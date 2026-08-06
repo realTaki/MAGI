@@ -7,6 +7,6 @@ and control secrets are all co-located with organisation facts in
 ``MAGI_Societies/<id>-<slug>/magis.db`` (Local) or the MAGIS PostgreSQL (K8s).
 """
 
-from magi.bus.db.control.repository import ControlRepository
+from magi.bus.db.repositories.magis.control import ControlRepository
 
 __all__ = ["ControlRepository"]
