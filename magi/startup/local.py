@@ -26,10 +26,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from magi.startup.config import ConfigurationError, DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
-    ensure_host_workspace,
-    ensure_workspace,
+    resolve_magi_workspace,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
@@ -81,13 +80,12 @@ def create_magi(
     MAGIS database, ensures the per-MAGI workspace directory, then
     optionally spawns the subprocess.
     """
-    if config.is_first_magi:
+    if config.magis_database_url is None:
         raise ConfigurationError(
             "create_magi requires an existing MAGIS — "
             "set MAGIS_DATABASE_URL or run `magi run` first"
         )
-    ensure_host_workspace(config.host_workspace_dir)
-    ensure_workspace(config.workspace_dir)
+    config.workspace_dir.mkdir(parents=True, exist_ok=True)
 
     # The legacy launcher re-uses the seeded Genesis identity if
     # --name=eva-000 is supplied. For new names we delegate to the
@@ -140,7 +138,7 @@ def start_magi(
             )
             return 1
 
-    ensure_workspace(config.workspace_dir)
+    config.workspace_dir.mkdir(parents=True, exist_ok=True)
     env = _build_subprocess_env(config, port)
     argv = _build_subprocess_argv(port)
 

@@ -30,15 +30,11 @@ from magi.bus.db.magis.engine import (
 )
 from magi.startup.config import (
     ConfigurationError,
-    DEFAULT_MAGI_NAME,
     StartupConfig,
 )
 from magi.startup.context import StartupContext
 from magi.startup.paths import (
-    ensure_host_workspace,
-    ensure_workspace,
-    magis_sqlite_url,
-    resolve_magis_database_path,
+    resolve_magis_database_url,
     resolve_private_database_path,
     resolve_runtime_state_path,
 )
@@ -71,10 +67,11 @@ def bootstrap_magi(config: StartupConfig) -> StartupContext:
     Always idempotent. Returns a :class:`StartupContext` ready to hand
     to the runtime layer.
     """
-    ensure_host_workspace(config.host_workspace_dir)
-    workspace_dir = ensure_workspace(config.workspace_dir)
+    config.validate()
+    workspace_dir = config.workspace_dir
 
-    if config.is_first_magi:
+    is_first = config.magis_database_url is None
+    if is_first:
         identity = bootstrap_first_magi(config, workspace_dir)
     else:
         identity = bootstrap_existing_magi(config, workspace_dir)
@@ -115,15 +112,17 @@ def bootstrap_first_magi(
 
     Idempotent — repeated calls do not duplicate rows.
     """
-    if config.magi_name != DEFAULT_MAGI_NAME:
+    if config.magi_name != "eva-000":
         # Plan §12 — the first MAGI is always eva-000.
         raise ConfigurationError(
-            f"The first MAGI must be {DEFAULT_MAGI_NAME!r} "
+            f"The first MAGI must be 'eva-000' "
             f"(got {config.magi_name!r})"
         )
 
-    magis_db_path = resolve_magis_database_path(config.host_workspace_dir)
-    magis_url = magis_sqlite_url(magis_db_path)
+    magis_url = resolve_magis_database_url(config.host_workspace_dir)
+    from pathlib import Path as _P
+
+    magis_db_path = _P(magis_url[len("sqlite:///"):])
     magis_db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Build a per-MAGIS SQLite engine and inject it into the bus so all
@@ -222,7 +221,7 @@ def bootstrap_existing_magi(
             f"({config.magis_database_url})"
         )
 
-    actual_name = getattr(magic_row, "name", None) or DEFAULT_MAGI_NAME
+    actual_name = getattr(magic_row, "name", None) or "eva-000"
     if actual_name != config.magi_name:
         raise ConfigurationError(
             f"MAGI_NAME mismatch: env says {config.magi_name!r}, "
@@ -319,7 +318,9 @@ def ensure_private_database(workspace_dir: Path) -> str:
     from magi.bus.db import init_sqlite
 
     init_sqlite(str(db_path.parent))
-    return f"sqlite:///{db_path}"
+    from magi.startup.paths import resolve_private_database_url
+
+    return resolve_private_database_url(workspace_dir)
 
 
 # ----------------------------------------------------------------------
