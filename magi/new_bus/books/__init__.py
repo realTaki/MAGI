@@ -2,12 +2,15 @@
 
 from magi.new_bus.books.base import BaseBook
 from magi.new_bus.books.SessionBook import Session, SessionBook
+from magi.new_bus.books.MessageBook import Message, MessageBook
 from magi.new_bus.books.MemoryBook import Memory, MemoryBook
 
 __all__ = [
     "BaseBook",
     "Session",
     "SessionBook",
+    "Message",
+    "MessageBook",
     "Memory",
     "MemoryBook",
 ]

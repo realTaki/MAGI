@@ -12,24 +12,12 @@ from magi.new_bus.books.base import BaseBook
 from magi.new_bus.db.base import Base, utcnow_naive
 
 
-# -- public dataclasses ----------------------------------------------------
-
 @dataclass(frozen=True, slots=True)
 class Session:
     session_id: str
     conversation_id: str
     summary: str | None = None
 
-
-@dataclass(frozen=True, slots=True)
-class Message:
-    message_id: str
-    session_id: str
-    role: str
-    content: str
-
-
-# -- internal ORM ----------------------------------------------------------
 
 class _SessionRow(Base):
     __tablename__ = "chat_sessions"
@@ -40,19 +28,6 @@ class _SessionRow(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
-
-class _MessageRow(Base):
-    __tablename__ = "chat_messages"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    message_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    role: Mapped[str] = mapped_column(String(32), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-
-
-# -- Book ------------------------------------------------------------------
 
 class SessionBook(BaseBook[_SessionRow, Session]):
     model_cls = _SessionRow
@@ -73,17 +48,3 @@ class SessionBook(BaseBook[_SessionRow, Session]):
                 .order_by(_SessionRow.created_at.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def list_messages(self, *, session_id: str) -> list[Message]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_MessageRow)
-                .where(_MessageRow.session_id == session_id)
-                .order_by(_MessageRow.created_at)
-            ).all()
-            return [Message(
-                message_id=r.message_id,
-                session_id=r.session_id,
-                role=r.role,
-                content=r.content,
-            ) for r in rows]
