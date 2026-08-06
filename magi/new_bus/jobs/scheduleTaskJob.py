@@ -10,7 +10,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.jobs.base import BaseJobQueue
+from magi.new_bus.jobs.base import BaseNotifyQueue
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +39,7 @@ class _TaskRow(Base):
     )
 
 
-class scheduleTaskJob(BaseJobQueue[None, ScheduleTaskJob, None]):
+class scheduleTaskJob(BaseNotifyQueue[ScheduleTaskJob]):
 
     def publish(self, job: ScheduleTaskJob) -> str:
         with self._session() as s:

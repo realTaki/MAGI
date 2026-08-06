@@ -10,7 +10,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.jobs.base import BaseJobQueue
+from magi.new_bus.jobs.base import BaseNotifyQueue
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +32,7 @@ class _ConfigRow(Base):
     )
 
 
-class setConfigJob(BaseJobQueue[None, SetConfigJob, None]):
+class setConfigJob(BaseNotifyQueue[SetConfigJob]):
 
     def publish(self, job: SetConfigJob) -> str:
         with self._session() as s:

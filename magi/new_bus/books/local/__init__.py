@@ -1,10 +1,11 @@
 """new_bus.books.local — Books for the local SQLite runtime database.
 
 Each module maps to one (or a small group of) SQLite tables.
+File names match the Book classes: ``<domain>Book.py``.
 """
 
-from magi.new_bus.books.local.action_item import ActionItem, ActionItemBook
-from magi.new_bus.books.local.contact import (
+from magi.new_bus.books.local.actionItemBook import ActionItem, ActionItemBook
+from magi.new_bus.books.local.contactBook import (
     ALL_ROLES,
     Contact,
     ContactBook,
@@ -16,9 +17,9 @@ from magi.new_bus.books.local.contact import (
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
 )
-from magi.new_bus.books.local.hook_signoff import HookSignoff, HookSignoffBook
-from magi.new_bus.books.local.mcp import McpServer, McpServerBook
-from magi.new_bus.books.local.memory import (
+from magi.new_bus.books.local.hookSignoffBook import HookSignoff, HookSignoffBook
+from magi.new_bus.books.local.mcpServerBook import McpServer, McpServerBook
+from magi.new_bus.books.local.memoryBook import (
     ALL_KINDS,
     KIND_IMPORTANT,
     KIND_ONGOING,
@@ -28,14 +29,14 @@ from magi.new_bus.books.local.memory import (
     SOURCE_MANUAL,
     SOURCE_SYSTEM,
 )
-from magi.new_bus.books.local.session import (
+from magi.new_bus.books.local.sessionBook import (
     Message,
     MessageBook,
     Session,
     SessionBook,
 )
-from magi.new_bus.books.local.setting import Setting, SettingBook
-from magi.new_bus.books.local.task import (
+from magi.new_bus.books.local.settingBook import Setting, SettingBook
+from magi.new_bus.books.local.taskBook import (
     Task,
     TaskBook,
     TaskPreset,
@@ -43,7 +44,7 @@ from magi.new_bus.books.local.task import (
     TaskRun,
     TaskRunBook,
 )
-from magi.new_bus.books.local.token_usage import TokenUsage, TokenUsageBook
+from magi.new_bus.books.local.tokenUsageBook import TokenUsage, TokenUsageBook
 from magi.new_bus.books.local.tool import (
     ToolCatalogState,
     ToolCatalogStateBook,

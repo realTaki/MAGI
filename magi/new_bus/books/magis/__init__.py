@@ -11,7 +11,7 @@ Each module maps to one (or a small group of) PG tables in the
 - ``control_*``          — control-plane registry (state, ports, archive, secrets)
 """
 
-from magi.new_bus.books.magis.auth_credential import (
+from magi.new_bus.books.magis.authCredentialBook import (
     AuthCredential,
     AuthCredentialBook,
     PASSWORD,
@@ -29,15 +29,15 @@ from magi.new_bus.books.magis.control import (
     WorkspaceArchive,
     WorkspaceArchiveBook,
 )
-from magi.new_bus.books.magis.eva_runtime import EvaRuntime, EvaRuntimeBook
-from magi.new_bus.books.magis.magic import Magic, MagicBook
-from magi.new_bus.books.magis.magis import (
+from magi.new_bus.books.magis.evaRuntimeBook import EvaRuntime, EvaRuntimeBook
+from magi.new_bus.books.magis.magicBook import Magic, MagicBook
+from magi.new_bus.books.magis.magisBook import (
     Magis,
     MagisAdmin,
     MagisAdminBook,
     MagisBook,
 )
-from magi.new_bus.books.magis.membership import (
+from magi.new_bus.books.magis.membershipBook import (
     DEFAULT_ROLE_INSTRUCTIONS,
     MagisMembership,
     MagisMembershipBook,

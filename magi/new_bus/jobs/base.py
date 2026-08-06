@@ -1,8 +1,7 @@
-"""BaseJobQueue — Job 基类，同步和异步共用。
+"""Job 队列基类。
 
-同步 Job: 继承后只 override publish()，直接落库。
-异步 Job: 设置 job_model/job_cls/result_cls，启用 claim/submit_result/get_result。
-每张表通过 natural_key_attr 声明自己的业务键名（默认 "job_id"）。
+BaseNotifyQueue -- 单向通知队列（publish 直接落库，不追踪结果）。
+BaseJobQueue    -- 往返任务队列（publish → claim → submit_result → get_result）。
 """
 
 from __future__ import annotations
@@ -32,38 +31,47 @@ JobT = TypeVar("JobT")
 ResultT = TypeVar("ResultT")
 
 
-class BaseJobQueue(Generic[RowT, JobT, ResultT]):
+class BaseNotifyQueue(Generic[JobT]):
+    """单向通知队列：publish 直接落库，不追踪结果。
 
-    # 异步 Job 设置这四个
-    job_model: type[RowT] | None = None
-    job_cls: type[JobT] | None = None
-    result_cls: type[ResultT] | None = None
-    #: ORM 列名，作为业务键（默认 "job_id"），如 "attempt_id"、"delivery_id"
-    natural_key_attr: str = "job_id"
+    子类只需 override publish()。
+    """
 
-    def __init__(self, factory: EngineFactory,
-                 lease_seconds: int = DEFAULT_LEASE_SECONDS):
+    def __init__(self, factory: EngineFactory):
         self._factory = factory
-        self._lease_seconds = lease_seconds
 
     def _session(self):
         return self._factory.session()
 
-    # -- publish (子类 override) -------------------------------------------
-
     def publish(self, job: JobT) -> str:
         raise NotImplementedError
 
-    # -- 异步队列 (需设置 job_model/job_cls/result_cls) -------------------
+
+class BaseJobQueue(BaseNotifyQueue[JobT], Generic[RowT, JobT, ResultT]):
+    """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
+    get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
+    """
+
+    job_model: type[RowT] | None = None
+    job_cls: type[JobT] | None = None
+    result_cls: type[ResultT] | None = None
+    natural_key_attr: str = "job_id"
+
+    def __init__(self, factory: EngineFactory,
+                 lease_seconds: int = DEFAULT_LEASE_SECONDS):
+        super().__init__(factory)
+        self._lease_seconds = lease_seconds
+
+    # -- 异步队列 ----------------------------------------------------------
 
     def claim(self, *, worker_id: str) -> JobT | None:
         with self._session() as s:
             row = self._claim(s, worker_id=worker_id)
             s.commit()
-            return self._row_to_job(row) if row else None
+            return _row_to_job(row, self.job_cls) if row else None
 
     def submit_result(self, *, key: str, result: ResultT) -> None:
-        """提交结果，key 为 natural_key_attr 的值（如 job_id / attempt_id）。"""
+        """提交结果，key 为 natural_key_attr 的值（如 job_id / event_id）。"""
         with self._session() as s:
             self._submit(s, key=key, result=result)
             s.commit()
@@ -120,7 +128,7 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
         row.status = "completed" if result.success else "failed"
         if hasattr(row, "completed_at"):
             row.completed_at = now
-        self._write_result_to_job(row, result)
+        _write_result_to_job(row, result, self.result_cls)
 
     def _get_result(self, session: Session, *, key: str) -> ResultT | None:
         row = session.scalar(
@@ -130,7 +138,7 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
         )
         if row is None or row.status not in ("completed", "failed"):
             return None
-        return self._read_result_from_job(row)
+        return _read_result_from_job(row, self.result_cls, self.natural_key_attr)
 
     # -- 键提取 ------------------------------------------------------------
 
@@ -138,43 +146,70 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
         val = getattr(row, self.natural_key_attr, None)
         if val is not None:
             return str(val)
-        # fallback: 用 PK id
         if hasattr(row, "id"):
             return str(row.id)
         return ""
 
-    # -- 自动映射 (ORM 列名 ↔ dataclass 字段名) --------------------------
-
-    def _row_to_job(self, row: RowT) -> JobT:
-        return self._map_row(row, self.job_cls)
+    # -- 耗尽处理 ----------------------------------------------------------
 
     def _make_exhausted_result(self, row: RowT) -> ResultT:
-        return self.result_cls(
-            job_id=self._key_of(row),
-            success=False,
-            error=f"job exhausted after {row.attempts} attempt(s), last leased by {row.leased_by}",
+        return _make_exhausted_result(
+            row, self.result_cls, self.natural_key_attr
         )
 
-    def _write_result_to_job(self, row: RowT, result: ResultT) -> None:
-        for f in dataclasses.fields(self.result_cls):
-            if f.name in ("job_id", "success"):
-                continue
-            if hasattr(row, f.name):
-                setattr(row, f.name, getattr(result, f.name))
 
-    def _read_result_from_job(self, row: RowT) -> ResultT:
-        kwargs: dict = {"job_id": self._key_of(row), "success": row.status == "completed"}
-        for f in dataclasses.fields(self.result_cls):
-            if f.name in ("job_id", "success"):
-                continue
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return self.result_cls(**kwargs)
+# -- 模块级映射工具 ----------------------------------------------------------
 
-    @staticmethod
-    def _map_row(row, cls):
-        kwargs = {}
-        for f in dataclasses.fields(cls):
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return cls(**kwargs)
+
+def _map_row(row, cls):
+    """ORM 行 → dataclass 自动映射（按字段名匹配）。"""
+    kwargs = {}
+    for f in dataclasses.fields(cls):
+        if hasattr(row, f.name):
+            kwargs[f.name] = getattr(row, f.name)
+    return cls(**kwargs)
+
+
+def _row_to_job(row, job_cls):
+    return _map_row(row, job_cls)
+
+
+def _write_result_to_job(row, result, result_cls) -> None:
+    """将 result dataclass 的字段写回 ORM 行（跳过业务键和 success）。"""
+    for f in dataclasses.fields(result_cls):
+        if f.name in ("success",):
+            continue
+        if hasattr(row, f.name):
+            setattr(row, f.name, getattr(result, f.name))
+
+
+def _read_result_from_job(row, result_cls, natural_key_attr: str):
+    """从 ORM 行重建 result dataclass。"""
+    key_val = getattr(row, natural_key_attr, None)
+    key_val = str(key_val) if key_val is not None else ""
+    kwargs: dict = {
+        natural_key_attr: key_val,
+        "success": row.status == "completed",
+    }
+    for f in dataclasses.fields(result_cls):
+        if f.name in ("success", natural_key_attr):
+            continue
+        if hasattr(row, f.name):
+            kwargs[f.name] = getattr(row, f.name)
+    return result_cls(**kwargs)
+
+
+def _make_exhausted_result(row, result_cls, natural_key_attr: str):
+    """构造一个"重试耗尽"的失败 Result。"""
+    key_val = getattr(row, natural_key_attr, None)
+    key_val = str(key_val) if key_val is not None else ""
+    kwargs: dict = {
+        natural_key_attr: key_val,
+        "success": False,
+    }
+    if hasattr(row, "attempts") and hasattr(row, "leased_by"):
+        kwargs["error"] = (
+            f"job exhausted after {row.attempts} attempt(s), "
+            f"last leased by {row.leased_by}"
+        )
+    return result_cls(**kwargs)

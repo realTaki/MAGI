@@ -55,3 +55,167 @@ class Contact:
 
 
 @dataclass(frozen=True, slots=True)
+class ContactNote:
+    id: int
+    contact_id: int
+    note: str
+    source: str = SOURCE_EVA
+    kind: str = "permanent"
+    note_date: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# -- internal ORM --------------------------------------------------------
+
+
+class _ContactRow(Base):
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
+    admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+    )
+
+
+class _ContactNoteRow(Base):
+    __tablename__ = "contact_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
+    )
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=SOURCE_EVA
+    )
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="permanent"
+    )
+    note_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+    )
+
+
+# -- Books ---------------------------------------------------------------
+
+
+class ContactBook(BaseBook[_ContactRow, Contact]):
+    model_cls = _ContactRow
+    dto_cls = Contact
+
+    def get(self, *, contact_id: int) -> Contact | None:
+        with self._factory.session() as s:
+            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
+            return self._row_to_dto(row) if row else None
+
+    def get_by_telegram(self, *, telegram_id: int) -> Contact | None:
+        with self._factory.session() as s:
+            row = s.scalar(
+                select(_ContactRow).where(_ContactRow.telegram_id == telegram_id)
+            )
+            return self._row_to_dto(row) if row else None
+
+    def add(self, *, name: str, role: str = ROLE_GUEST,
+            display_name: str | None = None, admin: bool = False,
+            telegram_id: int | None = None) -> Contact:
+        with self._factory.session() as s:
+            row = _ContactRow(
+                name=name, role=role, display_name=display_name,
+                admin=admin, telegram_id=telegram_id,
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+        return self._row_to_dto(row)
+
+    def list_all(self) -> list[Contact]:
+        with self._factory.session() as s:
+            rows = s.scalars(
+                select(_ContactRow).order_by(_ContactRow.id)
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
+
+    def list_active(self) -> list[Contact]:
+        with self._factory.session() as s:
+            rows = s.scalars(
+                select(_ContactRow)
+                .where(_ContactRow.separated_at.is_(None))
+                .order_by(_ContactRow.id)
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
+
+    def set_admin(self, *, contact_id: int, admin: bool = True) -> None:
+        with self._factory.session() as s:
+            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
+            if row is None:
+                return
+            row.admin = admin
+            s.commit()
+
+    def separate(self, *, contact_id: int) -> None:
+        with self._factory.session() as s:
+            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
+            if row is None:
+                return
+            row.separated_at = utcnow_naive()
+            s.commit()
+
+
+class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
+    model_cls = _ContactNoteRow
+    dto_cls = ContactNote
+
+    def list_for_contact(self, *, contact_id: int) -> list[ContactNote]:
+        with self._factory.session() as s:
+            rows = s.scalars(
+                select(_ContactNoteRow)
+                .where(_ContactNoteRow.contact_id == contact_id)
+                .order_by(_ContactNoteRow.created_at.desc())
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
+
+    def add(self, *, contact_id: int, note: str, source: str = SOURCE_EVA,
+            kind: str = "permanent") -> ContactNote:
+        with self._factory.session() as s:
+            row = _ContactNoteRow(
+                contact_id=contact_id, note=note, source=source, kind=kind,
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+        return self._row_to_dto(row)
+
+
+__all__ = [
+    "Contact",
+    "ContactNote",
+    "ContactBook",
+    "ContactNoteBook",
+    "_ContactRow",
+    "_ContactNoteRow",
+    "ROLE_ASSIGNED",
+    "ROLE_GUEST",
+    "ALL_ROLES",
+    "SOURCE_MANUAL",
+    "SOURCE_EVA",
+    "SOURCE_SYSTEM",
+]
