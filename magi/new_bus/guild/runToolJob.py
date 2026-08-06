@@ -1,4 +1,4 @@
-"""runToolJob — 工具执行作业。
+"""runToolJobBoard — 工具执行作业。
 
 worker claim → 执行工具 → submit_result
 """
@@ -13,7 +13,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue
+from magi.new_bus.guild.base import BaseJobBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +57,7 @@ class _ToolJobRow(Base):
     )
 
 
-class runToolJob(BaseJobQueue[_ToolJobRow, RunToolJob, RunToolResult]):
+class runToolJobBoard(BaseJobBoard[_ToolJobRow, RunToolJob, RunToolResult]):
     job_model = _ToolJobRow
     job_cls = RunToolJob
     result_cls = RunToolResult

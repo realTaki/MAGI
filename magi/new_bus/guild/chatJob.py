@@ -1,4 +1,4 @@
-"""chatJob — 聊天消息作业。
+"""chatJobBoard — 聊天消息作业。
 
 public:  ChatJob (入参), ChatJobResult (出参) — 平级 dataclass
 internal: _ChatJobRow (ORM) — 数据库实现细节
@@ -14,7 +14,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue
+from magi.new_bus.guild.base import BaseJobBoard
 
 
 # -- public dataclasses ----------------------------------------------------
@@ -70,7 +70,7 @@ class _ChatJobRow(Base):
 
 # -- Queue -----------------------------------------------------------------
 
-class chatJob(BaseJobQueue[_ChatJobRow, ChatJob, ChatJobResult]):
+class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
     job_model = _ChatJobRow
     job_cls = ChatJob
     result_cls = ChatJobResult

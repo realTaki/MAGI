@@ -1,4 +1,4 @@
-"""controlJob — 控制信号作业。
+"""controlJobBoard — 控制信号作业。
 
 系统级事件：provider 变更、runtime 重启等。
 """
@@ -13,7 +13,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue
+from magi.new_bus.guild.base import BaseJobBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ class _ControlJobRow(Base):
     )
 
 
-class controlJob(BaseJobQueue[_ControlJobRow, ControlJob, ControlJobResult]):
+class controlJobBoard(BaseJobBoard[_ControlJobRow, ControlJob, ControlJobResult]):
     job_model = _ControlJobRow
     job_cls = ControlJob
     result_cls = ControlJobResult

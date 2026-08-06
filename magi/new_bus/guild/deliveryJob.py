@@ -1,4 +1,4 @@
-"""deliveryJob — 出站投递作业。
+"""deliveryJobBoard — 出站投递作业。
 
 agent 产出回复 → 入队 → worker 投递到渠道
 """
@@ -13,7 +13,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue
+from magi.new_bus.guild.base import BaseJobBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +56,7 @@ class _DeliveryJobRow(Base):
     )
 
 
-class deliveryJob(BaseJobQueue[_DeliveryJobRow, DeliveryJob, DeliveryResult]):
+class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult]):
     job_model = _DeliveryJobRow
     job_cls = DeliveryJob
     result_cls = DeliveryResult

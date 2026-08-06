@@ -51,45 +51,45 @@ class NewBus:
     # -- local: settings ----------------------------------------------------
 
     settings: object  # SettingBook
-    set_config: object  # setConfigJob
-    set_setting: object  # setSettingJob
+    set_config: object  # setConfigJobBoard
+    set_setting: object  # setSettingJobBoard
 
     # -- local: tasks -------------------------------------------------------
 
     tasks: object  # TaskBook
     task_presets: object  # TaskPresetBook
     task_runs: object  # TaskRunBook
-    schedule_task: object  # scheduleTaskJob
+    schedule_task: object  # scheduleTaskJobBoard
 
     # -- local: tools & MCP -------------------------------------------------
 
     tool_definitions: object  # ToolDefinitionBook
     tool_catalog: object  # ToolCatalogStateBook
     mcp_servers: object  # McpServerBook
-    tool_jobs: object  # runToolJob
+    tool_jobs: object  # runToolJobBoard
 
     # -- local: agent -------------------------------------------------------
 
-    agent_runs: object  # runAgentJob
-    chat: object  # chatJob
+    agent_runs: object  # runAgentJobBoard
+    chat: object  # chatJobBoard
 
     # -- local: LLM ---------------------------------------------------------
 
-    llm_jobs: object  # callLLMJob
+    llm_jobs: object  # callLLMJobBoard
 
     # -- local: delivery & A2A -----------------------------------------------
 
-    delivery: object  # deliveryJob
-    a2a: object  # sendA2AJob
+    delivery: object  # deliveryJobBoard
+    a2a: object  # sendA2AJobBoard
 
     # -- local: control signals ---------------------------------------------
 
-    control: object  # controlJob
+    control: object  # controlJobBoard
 
     # -- local: contacts & memory (write path, fire-and-forget) --------------
 
-    save_contact: object  # contactJob
-    save_memory: object  # rememberJob
+    save_contact: object  # contactJobBoard
+    save_memory: object  # rememberJobBoard
 
     # -- local: misc ---------------------------------------------------------
 
@@ -229,18 +229,18 @@ def _bootstrap_with_dirs(
         WorkspaceArchiveBook,
     )
     from magi.new_bus.guild import (
-        callLLMJob,
-        chatJob,
-        contactJob,
-        controlJob,
-        deliveryJob,
-        rememberJob,
-        runAgentJob,
-        runToolJob,
-        scheduleTaskJob,
-        sendA2AJob,
-        setConfigJob,
-        setSettingJob,
+        callLLMJobBoard,
+        chatJobBoard,
+        contactJobBoard,
+        controlJobBoard,
+        deliveryJobBoard,
+        rememberJobBoard,
+        runAgentJobBoard,
+        runToolJobBoard,
+        scheduleTaskJobBoard,
+        sendA2AJobBoard,
+        setConfigJobBoard,
+        setSettingJobBoard,
     )
 
     # ---- wire factories ----------------------------------------------------
@@ -267,18 +267,18 @@ def _bootstrap_with_dirs(
     hook_signoffs = HookSignoffBook(local_factory)
 
     # ---- local jobs --------------------------------------------------------
-    agent_runs = runAgentJob(local_factory)
-    tool_jobs = runToolJob(local_factory)
-    llm_jobs = callLLMJob(local_factory)
-    delivery = deliveryJob(local_factory)
-    a2a = sendA2AJob(local_factory)
-    chat = chatJob(local_factory)
-    control = controlJob(local_factory)
-    set_config = setConfigJob(local_factory)
-    set_setting = setSettingJob(local_factory)
-    schedule_task = scheduleTaskJob(local_factory)
-    save_contact = contactJob(local_factory)
-    save_memory = rememberJob(local_factory)
+    agent_runs = runAgentJobBoard(local_factory)
+    tool_jobs = runToolJobBoard(local_factory)
+    llm_jobs = callLLMJobBoard(local_factory)
+    delivery = deliveryJobBoard(local_factory)
+    a2a = sendA2AJobBoard(local_factory)
+    chat = chatJobBoard(local_factory)
+    control = controlJobBoard(local_factory)
+    set_config = setConfigJobBoard(local_factory)
+    set_setting = setSettingJobBoard(local_factory)
+    schedule_task = scheduleTaskJobBoard(local_factory)
+    save_contact = contactJobBoard(local_factory)
+    save_memory = rememberJobBoard(local_factory)
 
     # ---- magis books -------------------------------------------------------
     if magis_factory is not None:

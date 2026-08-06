@@ -1,4 +1,4 @@
-"""runAgentJob — durable agent turn queue.
+"""runAgentJobBoard — durable agent turn queue.
 
 Backed by the ``agent_inbox`` table.  A publish inserts a new
 row; a claim picks up the oldest pending row, updates its ``status``
@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue, new_job_id
+from magi.new_bus.guild.base import BaseJobBoard, new_job_id
 
 
 # -- public dataclasses --------------------------------------------------
@@ -95,7 +95,7 @@ class _AgentInboxRow(Base):
 # -- Queue ----------------------------------------------------------------
 
 
-class runAgentJob(BaseJobQueue[_AgentInboxRow, RunAgentJob, RunAgentResult]):
+class runAgentJobBoard(BaseJobBoard[_AgentInboxRow, RunAgentJob, RunAgentResult]):
     """Queue (write + claim + submit_result) for agent turns."""
 
     job_model = _AgentInboxRow
@@ -124,6 +124,6 @@ class runAgentJob(BaseJobQueue[_AgentInboxRow, RunAgentJob, RunAgentResult]):
 __all__ = [
     "RunAgentJob",
     "RunAgentResult",
-    "runAgentJob",
+    "runAgentJobBoard",
     "_AgentInboxRow",
 ]

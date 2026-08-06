@@ -1,7 +1,7 @@
 """Job 队列基类。
 
-BaseNotifyQueue -- 单向通知队列（publish 直接落库，不追踪结果）。
-BaseJobQueue    -- 往返任务队列（publish → claim → submit_result → get_result）。
+BaseNotifyBoard -- 单向通知队列（publish 直接落库，不追踪结果）。
+BaseJobBoard    -- 往返任务队列（publish → claim → submit_result → get_result）。
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ JobT = TypeVar("JobT")
 ResultT = TypeVar("ResultT")
 
 
-class BaseNotifyQueue(Generic[JobT]):
+class BaseNotifyBoard(Generic[JobT]):
     """单向通知队列：publish 直接落库，不追踪结果。
 
     子类只需 override publish()。
@@ -47,7 +47,7 @@ class BaseNotifyQueue(Generic[JobT]):
         raise NotImplementedError
 
 
-class BaseJobQueue(BaseNotifyQueue[JobT], Generic[RowT, JobT, ResultT]):
+class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
     """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
     get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
     """

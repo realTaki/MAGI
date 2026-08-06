@@ -1,4 +1,4 @@
-"""sendA2AJob — peer-MAGI call lifecycle.
+"""sendA2AJobBoard — peer-MAGI call lifecycle.
 
 Backed by the ``a2a_invocations`` table.  Natural key is
 ``invocation_id``.
@@ -14,7 +14,7 @@ from sqlalchemy import JSON, DateTime, Index, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue, new_job_id
+from magi.new_bus.guild.base import BaseJobBoard, new_job_id
 
 
 # -- public dataclasses --------------------------------------------------
@@ -86,8 +86,8 @@ class _A2AInvocationRow(Base):
 # -- Queue ----------------------------------------------------------------
 
 
-class sendA2AJob(
-    BaseJobQueue[_A2AInvocationRow, SendA2AJob, SendA2AResult]
+class sendA2AJobBoard(
+    BaseJobBoard[_A2AInvocationRow, SendA2AJob, SendA2AResult]
 ):
     """Queue (write + claim + submit_result) for peer-MAGI calls."""
 
@@ -119,6 +119,6 @@ class sendA2AJob(
 __all__ = [
     "SendA2AJob",
     "SendA2AResult",
-    "sendA2AJob",
+    "sendA2AJobBoard",
     "_A2AInvocationRow",
 ]

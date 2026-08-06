@@ -1,4 +1,4 @@
-"""scheduleTaskJob — 任务变更作业（同步写）。"""
+"""scheduleTaskJobBoard — 任务变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseNotifyQueue
+from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +39,7 @@ class _TaskRow(Base):
     )
 
 
-class scheduleTaskJob(BaseNotifyQueue[ScheduleTaskJob]):
+class scheduleTaskJobBoard(BaseNotifyBoard[ScheduleTaskJob]):
 
     def publish(self, job: ScheduleTaskJob) -> str:
         with self._session() as s:

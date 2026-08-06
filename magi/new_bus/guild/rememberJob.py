@@ -1,4 +1,4 @@
-"""rememberJob — 记忆变更作业（同步写）。"""
+"""rememberJobBoard — 记忆变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sqlalchemy import DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseNotifyQueue
+from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +33,7 @@ class _MemoryRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
 
 
-class rememberJob(BaseNotifyQueue[RememberJob]):
+class rememberJobBoard(BaseNotifyBoard[RememberJob]):
 
     def publish(self, job: RememberJob) -> str:
         with self._session() as s:

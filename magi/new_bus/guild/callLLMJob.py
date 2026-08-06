@@ -1,4 +1,4 @@
-"""callLLMJob — LLM 推理作业。"""
+"""callLLMJobBoard — LLM 推理作业。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobQueue
+from magi.new_bus.guild.base import BaseJobBoard
 
 
 # -- public dataclasses ----------------------------------------------------
@@ -62,7 +62,7 @@ class _LLMJobRow(Base):
 
 # -- Queue -----------------------------------------------------------------
 
-class callLLMJob(BaseJobQueue[_LLMJobRow, CallLLMJob, CallLLMResult]):
+class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
     job_model = _LLMJobRow
     job_cls = CallLLMJob
     result_cls = CallLLMResult

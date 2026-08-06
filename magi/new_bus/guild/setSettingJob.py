@@ -1,4 +1,4 @@
-"""setSettingJob — 设置变更作业（同步写）。"""
+"""setSettingJobBoard — 设置变更作业（同步写）。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from sqlalchemy import DateTime, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseNotifyQueue
+from magi.new_bus.guild.base import BaseNotifyBoard
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +29,7 @@ class _SettingRow(Base):
     )
 
 
-class setSettingJob(BaseNotifyQueue[SetSettingJob]):
+class setSettingJobBoard(BaseNotifyBoard[SetSettingJob]):
 
     def publish(self, job: SetSettingJob) -> str:
         with self._session() as s:
