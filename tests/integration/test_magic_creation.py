@@ -33,9 +33,9 @@ from magi.bus.db import init_orm
 from magi.bus.db.engine import open_session
 from magi.bus.db.magis import open_magis_session
 from magi.bus.db.magis.engine import init_magis_public_db
-from magi.bus.models.magis.magic import MAGIC
-from magi.bus.models.magis.magis import MAGIS
-from magi.bus.models.magis.magis_membership import (
+from magi.bus.db.models.magis.magic import MAGIC
+from magi.bus.db.models.magis.magis import MAGIS
+from magi.bus.db.models.magis.magis_membership import (
     MAGISMembership,
     MAGISRole,
 )

@@ -26,7 +26,7 @@ from magi.bus.protocols.agent import (
     RunResult,
 )
 from magi.bus.protocols.tools import ToolClaim
-from magi.bus.models.queue import (
+from magi.bus.db.models.queue import (
     AgentInbox,
     AgentRun,
     A2AInvocation,
@@ -39,8 +39,8 @@ from magi.bus.models.queue import (
 )
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import open_session
-from magi.bus.models.local.tool import ToolDefinitionRecord
-from magi.bus.models.local.hook_signoff import HookSignoff
+from magi.bus.db.models.local.tool import ToolDefinitionRecord
+from magi.bus.db.models.local.hook_signoff import HookSignoff
 
 logger = logging.getLogger("magi.bus.store")
 
@@ -470,7 +470,7 @@ class BusStore:
                     # The final provider response becomes user-visible in the
                     # same transition that marks the run complete.  Channels
                     # must not append a second, non-authoritative copy later.
-                    from magi.bus.models.local.session import ChatMessage, ChatSession
+                    from magi.bus.db.models.local.session import ChatMessage, ChatSession
 
                     message_id = run.run_id[-26:]
                     session_exists = session.get(ChatSession, str(session_id)) is not None
@@ -1441,7 +1441,7 @@ class BusStore:
         task_id = metadata.get("task_id")
         if not task_run_id or not task_id:
             return
-        from magi.bus.models.local.task import Task, TaskRun
+        from magi.bus.db.models.local.task import Task, TaskRun
 
         task_run = session.get(TaskRun, str(task_run_id))
         task = session.get(Task, str(task_id))

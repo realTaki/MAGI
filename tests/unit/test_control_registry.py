@@ -22,7 +22,7 @@ from magi.bus.db.control.repository import (
 )
 from magi.bus.db.base import Base
 from magi.bus.db.magis.local_engine import build as build_local_engine
-from magi.bus.models.local.control_runtime import (
+from magi.bus.db.models.local.control_runtime import (
     ControlPortAllocation,
     ControlRuntimeState,
     ControlSecret,

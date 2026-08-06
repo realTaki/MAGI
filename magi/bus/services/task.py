@@ -66,7 +66,7 @@ class TaskService:
 
     def get_schedule(self, task_id: str) -> TaskScheduleView | None:
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             row = session.get(Task, str(task_id))
             return _schedule_view(row) if row is not None else None
@@ -74,14 +74,14 @@ class TaskService:
     def get_schedule_for_name(self, name: str) -> TaskScheduleView | None:
         """Look up a task by its operator-facing ``name`` (for uniqueness pre-checks)."""
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             row = session.scalar(select(Task).where(Task.name == name).limit(1))
             return _schedule_view(row) if row is not None else None
 
     def list_enabled_schedules(self) -> list[TaskScheduleView]:
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             rows = session.scalars(
                 select(Task).where(Task.enabled.is_(True))
@@ -91,7 +91,7 @@ class TaskService:
     def get(self, task_id: str) -> TaskFullView | None:
         """Full task view (all columns) — operator-facing CRUD detail."""
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             row = session.get(Task, str(task_id))
             return _full_view(row) if row is not None else None
@@ -105,7 +105,7 @@ class TaskService:
     ) -> list[TaskFullView]:
         """List tasks with optional filters. ``kind`` drives the preset-vs-custom split."""
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             q = select(Task).order_by(Task.created_at.desc())
             if enabled is not None:
@@ -122,7 +122,7 @@ class TaskService:
     def list_runs(self, task_id: str, *, limit: int = 20) -> list[TaskRunView]:
         """Most-recent-first runs for one task."""
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import TaskRun
+        from magi.bus.db.models.local.task import TaskRun
         with open_session(self._state_dir) as session:
             rows = session.scalars(
                 select(TaskRun)
@@ -135,7 +135,7 @@ class TaskService:
     # -- preset templates ----------------------------------------------
 
     def list_presets(self) -> list[TaskPresetView]:
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -144,7 +144,7 @@ class TaskService:
             )]
 
     def get_preset(self, preset_id: str) -> TaskPresetView | None:
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -152,7 +152,7 @@ class TaskService:
             return _preset_view(row) if row is not None else None
 
     def create_preset(self, **values) -> TaskPresetView | None:
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.bus.protocols.session import new_session_id
         from magi.bus.db import open_session
 
@@ -174,7 +174,7 @@ class TaskService:
             return _preset_view(row)
 
     def update_preset(self, preset_id: str, **changes) -> TaskPresetView | None:
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -191,7 +191,7 @@ class TaskService:
             return _preset_view(row)
 
     def delete_preset(self, preset_id: str) -> bool:
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -226,7 +226,7 @@ class TaskService:
         / delivery_to / session_id / tz fields.
         """
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         new_id = _new_task_id()
         with open_session(self._state_dir) as session:
             existing = session.execute(
@@ -290,7 +290,7 @@ class TaskService:
         generated.
         """
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         new_id = task_id or _new_task_id()
         now = datetime.utcnow().isoformat()
         with open_session(self._state_dir) as session:
@@ -330,7 +330,7 @@ class TaskService:
         enforced here — the API route owns that pre-condition.
         """
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             row = session.get(Task, task_id)
             if row is None:
@@ -357,7 +357,7 @@ class TaskService:
 
     def delete_task(self, task_id: str) -> bool:
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import Task
+        from magi.bus.db.models.local.task import Task
         with open_session(self._state_dir) as session:
             row = session.get(Task, task_id)
             if row is None:
@@ -387,7 +387,7 @@ class TaskService:
         or promoted).  Keeping the policy as a pure function
         means:
 
-          * the policy never touches ``magi.bus.models.*`` /
+          * the policy never touches ``magi.bus.db.models.*`` /
             ``magi.bus.db.*`` directly — the boundary test
             allows it without exceptions,
           * the bus owns the transaction boundary and the
@@ -402,10 +402,10 @@ class TaskService:
 
         from magi.bus.protocols.session import new_session_id, utcnow_iso
         from magi.bus.db import open_session
-        from magi.bus.models.local.contact import Contact
-        from magi.bus.models.local.session import ChatSession
-        from magi.bus.models.local.task import Task
-        from magi.bus.models.local.task_preset import TaskPreset
+        from magi.bus.db.models.local.contact import Contact
+        from magi.bus.db.models.local.session import ChatSession
+        from magi.bus.db.models.local.task import Task
+        from magi.bus.db.models.local.task_preset import TaskPreset
         from magi.proactive.task_presets import (
             ContactSnapshot,
             TaskPresetSnapshot,
@@ -539,7 +539,7 @@ class TaskService:
         response carries a stable id for the operator's follow-up.
         """
         from magi.bus.db import open_session
-        from magi.bus.models.local.task import TaskRun
+        from magi.bus.db.models.local.task import TaskRun
         with open_session(self._state_dir) as session:
             session.add(TaskRun(
                 id=run_id, task_id=task_id, session_id=session_id,
@@ -556,10 +556,10 @@ class TaskService:
         The returned record is a DTO snapshot.  The caller publishes it to the
         actor only after this transaction commits; it never receives ORM rows.
         """
-        from magi.bus.models.local.action_item import ActionItem
-        from magi.bus.models.local.contact import Contact
-        from magi.bus.models.local.session import ChatSession
-        from magi.bus.models.local.task import Task, TaskRun
+        from magi.bus.db.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.contact import Contact
+        from magi.bus.db.models.local.session import ChatSession
+        from magi.bus.db.models.local.task import Task, TaskRun
         from magi.bus.protocols.session import new_session_id, utcnow_iso
         from magi.bus.db import open_session
 
@@ -612,7 +612,7 @@ class TaskService:
         """Persist a channel-resolved address after its external lookup."""
         if not delivery_address:
             return
-        from magi.bus.models.local.session import ChatSession
+        from magi.bus.db.models.local.session import ChatSession
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -625,8 +625,8 @@ class TaskService:
         self, *, task_id: str, run_id: str, started_at: str, error: str,
     ) -> None:
         """Durably record an execution failure and one-way auto-disable edge."""
-        from magi.bus.models.local.action_item import ActionItem
-        from magi.bus.models.local.task import Task, TaskRun
+        from magi.bus.db.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.task import Task, TaskRun
         from magi.bus.db import open_session
         from magi.bus.db.settings import state_get
 

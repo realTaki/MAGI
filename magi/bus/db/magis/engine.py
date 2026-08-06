@@ -78,18 +78,18 @@ def init_magis_public_db(*, seed_root: bool = False) -> Engine:
     The public schema has a deliberately narrow table set.  Private models
     are never created in PostgreSQL.
     """
-    from magi.bus.models.local.control_plane import ControlOperator, ControlSetting
-    from magi.bus.models.local.control_runtime import (
+    from magi.bus.db.models.local.control_plane import ControlOperator, ControlSetting
+    from magi.bus.db.models.local.control_runtime import (
         ControlPortAllocation,
         ControlRuntimeState,
         ControlSecret,
         ControlWorkspaceArchive,
     )
-    from magi.bus.models.magis.eva_runtime import EvaRuntime
-    from magi.bus.models.magis.magic import MAGIC
-    from magi.bus.models.magis.magis import MAGIS
-    from magi.bus.models.magis.magis_admin import MAGISAdmin
-    from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
+    from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+    from magi.bus.db.models.magis.magic import MAGIC
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_admin import MAGISAdmin
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership, MAGISRole
 
     engine = get_magis_engine()
     if _url() is not None or _injected_magis_engine is not None:

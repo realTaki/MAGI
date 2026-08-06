@@ -142,7 +142,7 @@ class RuntimeRegistryService:
     """BUS facade for resolving :class:`RuntimeEndpoint` for a magic_id.
 
     Phase 2 derives the endpoint from the legacy
-    :class:`~magi.bus.models.magis.eva_runtime.EvaRuntime` row when
+    :class:`~magi.bus.db.models.magis.eva_runtime.EvaRuntime` row when
     present, falling back to the dispatcher's ``endpoint_for`` query.
     Phase 4 will replace the implementation with a Local-registry
     table (``magi.db.control``); the public API stays stable.
@@ -154,7 +154,7 @@ class RuntimeRegistryService:
     def _legacy_endpoint(self, magic_id: int) -> RuntimeEndpoint | None:
         try:
             from magi.bus.db.magis import open_magis_session
-            from magi.bus.models.magis.eva_runtime import EvaRuntime
+            from magi.bus.db.models.magis.eva_runtime import EvaRuntime
 
             with open_magis_session() as session:
                 runtime = (

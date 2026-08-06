@@ -36,13 +36,13 @@ from pathlib import Path
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from magi.bus.models.local.contact import Contact
+from magi.bus.db.models.local.contact import Contact
 from magi.bus.db import (
     init_orm,
     init_sqlite,
     open_session,
 )
-from magi.bus.models.local.task import Task
+from magi.bus.db.models.local.task import Task
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.tasks import (
     TaskIn,
@@ -83,8 +83,8 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # open_session forces the FK-respecting order.
     try:
         from magi.bus.db import open_session as _os
-        from magi.bus.models.local.task import Task, TaskRun
-        from magi.bus.models.local.session import (
+        from magi.bus.db.models.local.task import Task, TaskRun
+        from magi.bus.db.models.local.session import (
             ChatSession as _CS,
             ChatMessage as _CM,
         )

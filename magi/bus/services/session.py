@@ -21,11 +21,11 @@ from magi.bus.protocols.session import (
     validate_session_id,
     validate_uid,
 )
-# Imports of ``magi.db`` are deferred to the methods: ``magi.bus.models.local.session``
+# Imports of ``magi.db`` are deferred to the methods: ``magi.bus.db.models.local.session``
 # is pulled in during ``magi.db.__init__`` (so the bus-owned ORM tables register
 # on the shared ``Base``), and importing ``magi.db`` from the bus service
 # package's top level would re-enter ``magi.db`` mid-load.
-from magi.bus.models.local.session import ChatMessage, ChatSession
+from magi.bus.db.models.local.session import ChatMessage, ChatSession
 
 _ALLOWED_ROLES = frozenset({"user", "assistant", "system"})
 _TITLE_MAX_LEN = 80

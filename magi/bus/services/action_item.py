@@ -37,7 +37,7 @@ class ActionItemService:
         self, *, uid: int, kind: str, title: str, description: str | None,
         target_url: str | None, priority: str, due_date: datetime | None,
     ) -> ActionItemView:
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -56,7 +56,7 @@ class ActionItemService:
         The open-item lookup and insert share one BUS-owned transaction.  The
         database partial unique index remains the final concurrency guard.
         """
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -83,7 +83,7 @@ class ActionItemService:
     def complete_for_owner(
         self, *, action_item_id: int, owner_uid: int, note: str | None,
     ) -> ActionItemView | None:
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -101,7 +101,7 @@ class ActionItemService:
 
     def get(self, action_item_id: int) -> ActionItemView | None:
         """Return one action item without exposing its ORM row."""
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -119,7 +119,7 @@ class ActionItemService:
         """List an owner's open items and optionally their recent completions."""
         from datetime import timedelta
 
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
 
         from magi.bus.db import open_session
 
@@ -148,7 +148,7 @@ class ActionItemService:
             return [_view(row) for row in rows]
 
     def list_llm_for_owner(self, *, owner_uid: int, include_completed: bool) -> list[ActionItemView]:
-        from magi.bus.models.local.action_item import ActionItem
+        from magi.bus.db.models.local.action_item import ActionItem
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:

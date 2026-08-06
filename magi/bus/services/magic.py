@@ -80,8 +80,8 @@ def _runtime_view(runtime: Any) -> EvaRuntimeView:
 def _memberships_for(session: Any, magic_id: int) -> list[MembershipBrief]:
     from sqlalchemy import select
 
-    from magi.bus.models.magis.magis import MAGIS
-    from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership, MAGISRole
 
     rows = session.execute(
         select(MAGISMembership, MAGISRole, MAGIS)
@@ -123,8 +123,8 @@ def _direct_magis_binding(session: Any, magic_id: int):
     """
     from sqlalchemy import select
 
-    from magi.bus.models.magis.magis import MAGIS
-    from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership, MAGISRole
 
     return session.execute(
         select(MAGISMembership, MAGISRole, MAGIS)
@@ -155,8 +155,8 @@ class MagicService:
         """Resolve the runtime MAGIC row inside the BUS-owned PG session."""
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magic import MAGIC
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         if runtime_id and runtime_id.isdigit():
@@ -216,8 +216,8 @@ class MagicService:
         from sqlalchemy import select
 
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership, MAGISRole
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership, MAGISRole
 
         with open_magis_session() as session:
             magic = self._runtime_magic(session)
@@ -241,7 +241,7 @@ class MagicService:
     def can_receive_a2a(self, sender_magic_id: int) -> bool:
         """Apply MAGIS routing policy for ingress to this runtime."""
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import can_route_a2a
+        from magi.bus.db.models.magis.magis_membership import can_route_a2a
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
         if not runtime_id or not runtime_id.isdigit():
@@ -259,7 +259,7 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -279,8 +279,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -300,7 +300,7 @@ class MagicService:
 
     def get_instruction(self, magic_id: int) -> str | None:
         """Return the MAGIC's personal instruction text, or ``None`` when missing."""
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             magic = session.get(MAGIC, magic_id)
@@ -322,9 +322,9 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -367,8 +367,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         direct = set(direct_ids) if direct_ids is not None else set()
@@ -396,8 +396,8 @@ class MagicService:
     def get_magic(self, magic_id: int) -> MagicView | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -441,9 +441,9 @@ class MagicService:
         rows created before this refactor.
         """
         from magi.bus.db.engine import _next_id
-        from magi.bus.models.magis.magic import MAGIC
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
             ensure_default_roles,
@@ -526,8 +526,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -553,8 +553,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -592,8 +592,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -634,8 +634,8 @@ class MagicService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         if desired_state not in {"running", "stopped", "draft", "deleted"}:
@@ -735,7 +735,7 @@ class MagicService:
         reaching into the MAGIS table on its own.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
 
         runtime_id = os.environ.get("MAGI_RUNTIME_ID")
@@ -754,8 +754,8 @@ class MagicService:
         """Return the EvaRuntimeView for ``magic_id``, creating one if missing."""
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:

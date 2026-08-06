@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.models.queue import DeliveryOutbox, LLMAttempt, ToolJob
+from magi.bus.db.models.queue import DeliveryOutbox, LLMAttempt, ToolJob
 from magi.launcher.hook_config import HookConfigRepository
 
 

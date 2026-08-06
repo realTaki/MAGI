@@ -4,7 +4,7 @@ Only repositories and BUS services import these classes.  Domain packages
 receive DTOs/contracts and never see SQLAlchemy rows.
 """
 
-from magi.bus.models.queue import (
+from magi.bus.db.models.queue import (
     A2AInvocation,
     AgentInbox,
     AgentRun,

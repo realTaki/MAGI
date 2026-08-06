@@ -21,7 +21,7 @@ class TokenUsageService:
         model: str | None,
         usage: dict,
     ) -> None:
-        from magi.bus.models.local.token_usage import TokenUsage
+        from magi.bus.db.models.local.token_usage import TokenUsage
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
         with open_session(self._state_dir) as session:
@@ -40,7 +40,7 @@ class TokenUsageService:
 
     def aggregate(self, *, uid: int, start: datetime, end: datetime) -> tuple[int, int, int]:
         """Return input tokens, output tokens, and call count for a UTC range."""
-        from magi.bus.models.local.token_usage import TokenUsage
+        from magi.bus.db.models.local.token_usage import TokenUsage
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:

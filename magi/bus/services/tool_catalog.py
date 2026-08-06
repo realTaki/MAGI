@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 
 from magi.bus.protocols.tools import ToolCatalogSnapshot, ToolDefinition
-from magi.bus.models.local.tool import ToolCatalogState, ToolDefinitionRecord
+from magi.bus.db.models.local.tool import ToolCatalogState, ToolDefinitionRecord
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import open_session
 

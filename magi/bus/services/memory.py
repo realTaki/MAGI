@@ -47,7 +47,7 @@ class MemoryService:
     def list_for_owner(
         self, uid: int, *, kind: str | None = None, include_completed: bool = False, limit: int = 50,
     ) -> list[MemoryView]:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             stmt = select(MemoryEntry).where(MemoryEntry.uid == uid)
@@ -64,7 +64,7 @@ class MemoryService:
         return self.list_for_owner(uid, include_completed=True, limit=limit)
 
     def get(self, memory_id: int) -> MemoryView | None:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
@@ -73,7 +73,7 @@ class MemoryService:
     def add(
         self, uid: int, *, kind: str, subject: str, body: str, importance: int = 3, source: str = "eva",
     ) -> MemoryView:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         if kind not in ALL_KINDS:
             raise ValueError(f"kind {kind!r} not in {sorted(ALL_KINDS)}")
@@ -95,7 +95,7 @@ class MemoryService:
         self, memory_id: int, *, subject: str | None = None, body: str | None = None,
         importance: int | None = None,
     ) -> MemoryView:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)
@@ -116,7 +116,7 @@ class MemoryService:
             return _view(row)
 
     def complete(self, memory_id: int) -> MemoryView:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
         with open_session(self._state_dir) as session:
@@ -129,7 +129,7 @@ class MemoryService:
             return _view(row)
 
     def delete(self, memory_id: int) -> bool:
-        from magi.bus.models.local.memory import MemoryEntry
+        from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(MemoryEntry, memory_id)

@@ -49,7 +49,7 @@ from typing import Any
 
 # ``magi.bus.bootstrap`` and ``magi.bus.store`` are *deferred*
 # to runtime (inside the methods that need them). Eager import
-# would transitively register ``magi.bus.models.local.hook_evaluation``
+# would transitively register ``magi.bus.db.models.local.hook_evaluation``
 # which carries a SQLAlchemy ``Mapped`` named ``metadata`` -- that
 # collides with the reserved ``Base.metadata`` on SQLAlchemy's
 # declarative API. The double-registration trips the error any

@@ -1,7 +1,7 @@
 """Wire format between callers and :class:`magi.providers.worker.ProvidersWorker`.
 
 A :class:`LLMJob` is published onto the durable queue (one
-:class:`magi.bus.models.queue.llm_attempt.LLMAttempt` row with
+:class:`magi.bus.db.models.queue.llm_attempt.LLMAttempt` row with
 ``status="queued"``); the worker claims it, runs the real provider,
 and writes back a :class:`LLMJobResult` on the same row's
 ``response`` (success) or ``error`` (failure) JSON column. The

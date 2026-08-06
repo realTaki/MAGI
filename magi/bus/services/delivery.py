@@ -81,7 +81,7 @@ class DeliveryService:
         from sqlalchemy import select
 
         from magi.bus.db.engine import open_session
-        from magi.bus.models.queue import DeliveryOutbox
+        from magi.bus.db.models.queue import DeliveryOutbox
 
         with open_session(self._store._state_dir) as session:  # noqa: SLF001
             row = session.scalar(

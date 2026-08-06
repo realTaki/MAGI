@@ -46,14 +46,14 @@ class ContactsService:
         return contact.role if contact is not None else None
 
     def get(self, uid: int) -> ContactView | None:
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(Contact, uid)
             return _contact_view(row) if row is not None else None
 
     def find_by_telegram_id(self, tgid: int) -> ContactView | None:
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.scalar(select(Contact).where(Contact.telegram_id == tgid))
@@ -85,10 +85,10 @@ class ContactsService:
 
         Returns the contact's row id (whatever the resolution path).
         """
-        from magi.bus.models.local.contact import SOURCE_SYSTEM
+        from magi.bus.db.models.local.contact import SOURCE_SYSTEM
 
         marker = f"magi.control_operator_id={operator_id}"
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             contact: Contact | None = None
@@ -120,7 +120,7 @@ class ContactsService:
 
     def list_admins(self) -> list[ContactView]:
         """Return active WebUI administrators as immutable contact DTOs."""
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -140,7 +140,7 @@ class ContactsService:
         applied pre-refactor; surfaced through the bus so the
         channel layer doesn't reach into ``magi.db``.
         """
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
 
         with open_session(self._state_dir) as session:
@@ -156,7 +156,7 @@ class ContactsService:
             return [_contact_view(row) for row in rows]
 
     def list_notes(self, uid: int) -> list[NoteView]:
-        from magi.bus.models.local.contact import ContactNote
+        from magi.bus.db.models.local.contact import ContactNote
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             rows = session.scalars(
@@ -167,7 +167,7 @@ class ContactsService:
             return [_note_view(row) for row in rows]
 
     def read_daily_note(self, uid: int) -> NoteView | None:
-        from magi.bus.models.local.contact import ContactNote
+        from magi.bus.db.models.local.contact import ContactNote
         from magi.bus.db import open_session
         now = datetime.utcnow()
         today = datetime(now.year, now.month, now.day)
@@ -185,7 +185,7 @@ class ContactsService:
         self, *, name: str, display_name: str | None = None, role: str = "guest",
         telegram_id: int | None = None, notes: str = "", source: str = "eva",
     ) -> ContactView:
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
 
@@ -206,7 +206,7 @@ class ContactsService:
             return _contact_view(row)
 
     def add_note(self, contact_id: int, note: str, *, source: str = "eva") -> NoteView:
-        from magi.bus.models.local.contact import Contact, ContactNote
+        from magi.bus.db.models.local.contact import Contact, ContactNote
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
 
@@ -225,7 +225,7 @@ class ContactsService:
             return _note_view(row)
 
     def update_note(self, note_id: int, note: str) -> NoteView:
-        from magi.bus.models.local.contact import ContactNote
+        from magi.bus.db.models.local.contact import ContactNote
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
 
@@ -243,7 +243,7 @@ class ContactsService:
             return _note_view(row)
 
     def delete_note(self, note_id: int) -> bool:
-        from magi.bus.models.local.contact import ContactNote
+        from magi.bus.db.models.local.contact import ContactNote
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(ContactNote, note_id)
@@ -256,7 +256,7 @@ class ContactsService:
     def upsert_daily_note(
         self, contact_id: int, body_delta: str, *, note_date: datetime | None = None,
     ) -> NoteView:
-        from magi.bus.models.local.contact import Contact, ContactNote
+        from magi.bus.db.models.local.contact import Contact, ContactNote
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
 
@@ -287,7 +287,7 @@ class ContactsService:
             return _note_view(row)
 
     def search(self, query: str, *, limit: int = 20) -> list[ContactView]:
-        from magi.bus.models.local.contact import Contact, ContactNote
+        from magi.bus.db.models.local.contact import Contact, ContactNote
         from magi.bus.db import open_session
 
         pattern = f"%{query}%"
@@ -305,7 +305,7 @@ class ContactsService:
             return [_contact_view(row) for row in rows[:limit]]
 
     def set_telegram_id(self, uid: int, telegram_id: int | None) -> bool:
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             row = session.get(Contact, uid)
@@ -317,7 +317,7 @@ class ContactsService:
 
     def bind_telegram(self, uid: int, telegram_id: int) -> ContactView | None:
         """Atomically move a Telegram binding to an active contact."""
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             contact = session.get(Contact, uid)
@@ -350,7 +350,7 @@ class ContactsService:
 
         Returns the contact id.
         """
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
 
@@ -391,7 +391,7 @@ class ContactsService:
         caller can bind each new admin's IM through the channel
         dispatcher.
         """
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
 
         result: list[int] = []

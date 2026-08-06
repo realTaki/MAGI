@@ -15,7 +15,7 @@ Why this lives in :mod:`magi.db` (not under ``magi.channels.api``):
   ``agent → channels.webui.api.*`` reverse-import cycle that design
   §18 explicitly forbids.
 
-The KV row ownership stays in :mod:`magi.bus.models.local.setting.Setting`;
+The KV row ownership stays in :mod:`magi.bus.db.models.local.setting.Setting`;
 the table is unchanged — only the helper module moves.
 
 Settings owned here:

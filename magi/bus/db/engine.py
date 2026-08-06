@@ -234,9 +234,9 @@ def _seed_default_root(engine: Engine) -> None:
     # Local imports — the model modules depend on ``Base`` being
     # already constructed (a forward import here would break the
     # package init order).
-    from magi.bus.models.magis.magic import MAGIC
-    from magi.bus.models.magis.magis import MAGIS
-    from magi.bus.models.magis.magis_membership import MAGISMembership, ensure_default_roles
+    from magi.bus.db.models.magis.magic import MAGIC
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership, ensure_default_roles
 
     with Session(engine) as session:
         # Identity of "the root" is being the tree root (parent_id IS
@@ -375,24 +375,24 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     # the eager-import surface tight — callers that never touch
     # a given module don't pay its import cost until something
     # asks for a row from that table.
-    import magi.bus.models.local.action_item  # noqa: F401
-    import magi.bus.models.magis.auth_credential  # noqa: F401 — password + future credentials
-    import magi.bus.models.local.contact  # noqa: F401 — unified contact directory
-    import magi.bus.models.magis.eva_runtime  # noqa: F401 — EVA lifecycle state
-    import magi.bus.models.local.hook_evaluation  # noqa: F401 — per-handler evaluation audit
+    import magi.bus.db.models.local.action_item  # noqa: F401
+    import magi.bus.db.models.magis.auth_credential  # noqa: F401 — password + future credentials
+    import magi.bus.db.models.local.contact  # noqa: F401 — unified contact directory
+    import magi.bus.db.models.magis.eva_runtime  # noqa: F401 — EVA lifecycle state
+    import magi.bus.db.models.local.hook_evaluation  # noqa: F401 — per-handler evaluation audit
     # Hook plugin config lives in ``magi.launcher.hook_config``,
-    # not under ``magi.bus.models.local`` because it's owned by the
+    # not under ``magi.bus.db.models.local`` because it's owned by the
     # composition root, not by a bus service.  Importing here so
     # the table is part of the shared ``Base.metadata``.
     import magi.launcher.hook_config  # noqa: F401 — hook_plugin_configs
-    import magi.bus.models.magis.magic  # noqa: F401 — individual MAGI rows
-    import magi.bus.models.magis.magis  # noqa: F401 — MAGIS tree
-    import magi.bus.models.magis.magis_membership  # noqa: F401 — roles + memberships
-    import magi.bus.models.local.mcp_server  # noqa: F401 — operator-configured MCP servers
-    import magi.bus.models.local.setting  # noqa: F401 — legacy settings KV model
-    import magi.bus.models.local.token_usage  # noqa: F401
-    import magi.bus.models.local.tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
-    import magi.bus.models.local.task_preset  # noqa: F401 — proactive task templates
+    import magi.bus.db.models.magis.magic  # noqa: F401 — individual MAGI rows
+    import magi.bus.db.models.magis.magis  # noqa: F401 — MAGIS tree
+    import magi.bus.db.models.magis.magis_membership  # noqa: F401 — roles + memberships
+    import magi.bus.db.models.local.mcp_server  # noqa: F401 — operator-configured MCP servers
+    import magi.bus.db.models.local.setting  # noqa: F401 — legacy settings KV model
+    import magi.bus.db.models.local.token_usage  # noqa: F401
+    import magi.bus.db.models.local.tool  # noqa: F401 — Tool Catalog + legacy WebUI projection
+    import magi.bus.db.models.local.task_preset  # noqa: F401 — proactive task templates
     application_tables = set(Base.metadata.tables)
     existing_tables = set(inspect(engine).get_table_names())
     is_legacy = "alembic_version" not in existing_tables

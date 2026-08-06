@@ -13,17 +13,17 @@ from sqlalchemy import engine_from_config, pool
 # Import every model so `alembic revision --autogenerate` sees the complete
 # metadata. The runtime's init_orm() uses the same import set before invoking
 # `alembic upgrade head`.
-import magi.bus.models.local.action_item  # noqa: F401,E402
-import magi.bus.models.local.contact  # noqa: F401,E402
-import magi.bus.models.magis.eva_runtime  # noqa: F401,E402
-import magi.bus.models.magis.magic  # noqa: F401,E402
-import magi.bus.models.local.memory  # noqa: F401,E402
-import magi.bus.models.magis.magis  # noqa: F401,E402
-import magi.bus.models.local.setting  # noqa: F401,E402
-import magi.bus.models.local.session  # noqa: F401,E402
-import magi.bus.models.local.token_usage  # noqa: F401,E402
-import magi.bus.models.local.tool  # noqa: F401,E402
-import magi.bus.models.local.task_preset  # noqa: F401,E402
+import magi.bus.db.models.local.action_item  # noqa: F401,E402
+import magi.bus.db.models.local.contact  # noqa: F401,E402
+import magi.bus.db.models.magis.eva_runtime  # noqa: F401,E402
+import magi.bus.db.models.magis.magic  # noqa: F401,E402
+import magi.bus.db.models.local.memory  # noqa: F401,E402
+import magi.bus.db.models.magis.magis  # noqa: F401,E402
+import magi.bus.db.models.local.setting  # noqa: F401,E402
+import magi.bus.db.models.local.session  # noqa: F401,E402
+import magi.bus.db.models.local.token_usage  # noqa: F401,E402
+import magi.bus.db.models.local.tool  # noqa: F401,E402
+import magi.bus.db.models.local.task_preset  # noqa: F401,E402
 from magi.bus.db.base import Base
 
 config = context.config

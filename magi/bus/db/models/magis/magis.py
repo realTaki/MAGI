@@ -44,7 +44,7 @@ from magi.bus.db.base import Base, utcnow_naive
 
 
 if TYPE_CHECKING:
-    from magi.bus.models.magis.magic import MAGIC
+    from magi.bus.db.models.magis.magic import MAGIC
 
 
 class MAGIS(Base):

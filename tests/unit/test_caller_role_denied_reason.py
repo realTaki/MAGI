@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.bus.models.local.contact import Contact
+from magi.bus.db.models.local.contact import Contact
 from magi.bus.db import (
     init_orm,
     open_session,

@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.bus.models.local.control_runtime import (
+from magi.bus.db.models.local.control_runtime import (
     ControlPortAllocation,
     ControlRuntimeState,
     ControlSecret,

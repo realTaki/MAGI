@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 
 from magi.bus import A2AInvocationRequest, AgentMessage, BusStore
-from magi.bus.models.queue import AgentInbox
+from magi.bus.db.models.queue import AgentInbox
 from magi.bus.db import (
     init_orm,
     open_session,
@@ -141,7 +141,7 @@ def test_a2a_reply_parks_then_resumes_only_matching_run(bus_store: BusStore) -> 
     assert bus_store.get_run_result(run_id).status == "waiting_a2a"  # type: ignore[union-attr]
     assert bus_store.complete_a2a_invocation(reply_to="unknown", content="ignored") is None
 
-    from magi.bus.models.queue import A2AInvocation
+    from magi.bus.db.models.queue import A2AInvocation
     with open_session() as session:
         invocation = session.query(A2AInvocation).filter_by(run_id=run_id).one()
         invocation_id = invocation.invocation_id

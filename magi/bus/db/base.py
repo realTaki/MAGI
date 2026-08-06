@@ -3,7 +3,7 @@
 
 Single ``Base.metadata`` is shared by every table module under
 :mod:`magi.db.models_*` and the session-package tables at
-:mod:`magi.bus.models.local.session`. Alembic uses this metadata for
+:mod:`magi.bus.db.models.local.session`. Alembic uses this metadata for
 autogeneration, while committed revisions own the actual schema changes.
 Adding a model therefore also requires a reviewed Alembic revision.
 

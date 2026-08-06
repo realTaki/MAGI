@@ -21,7 +21,7 @@ from magi.bus import get_bus_store
 from magi.bus.bootstrap import bootstrap
 from magi.bus.db import init_orm
 from magi.bus.db.magis.engine import init_magis_public_db
-from magi.bus.models.queue import LLMAttempt
+from magi.bus.db.models.queue import LLMAttempt
 from magi.bus.db.engine import open_session
 from magi.bus.protocols.llm_jobs import LLMJob
 from magi.providers.errors import LLMError, LLMNotConfiguredError
@@ -500,7 +500,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(magi_state):
             f"expected at least 2 get_provider calls (start + rebuild), got {calls['n']}"
         )
         # The control row must be gone after drain.
-        from magi.bus.models.queue import ControlJob
+        from magi.bus.db.models.queue import ControlJob
         with open_session(store._state_dir) as s:
             leftovers = s.query(ControlJob).count()
         assert leftovers == 0
@@ -556,7 +556,7 @@ async def test_drain_control_jobs_ignores_other_kinds(magi_state):
             payload={"x": 1},
         )
         from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
-        from magi.bus.models.queue import ControlJob
+        from magi.bus.db.models.queue import ControlJob
 
         drained = await asyncio.to_thread(
             store.drain_control_jobs,

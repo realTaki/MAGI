@@ -2,7 +2,7 @@
 
 Moved from ``magi/bus/models.py`` to its own module so the bus-owned
 ORM is partitioned by responsibility.  All other queue tables live
-alongside this one under :mod:`magi.bus.models.queue`.
+alongside this one under :mod:`magi.bus.db.models.queue`.
 """
 
 from __future__ import annotations

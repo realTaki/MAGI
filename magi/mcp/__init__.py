@@ -50,7 +50,7 @@ Configuration surface
 ---------------------
 
 The single source of truth is the ``mcp_servers`` table
-(:class:`magi.bus.models.local.mcp_server.McpServer`). The
+(:class:`magi.bus.db.models.local.mcp_server.McpServer`). The
 WebUI ``/api/mcp-servers`` endpoints
 (:mod:`magi.channels.api.mcp_servers`) and the LLM
 manage tools (:mod:`magi.mcp.manage`) both write to it.

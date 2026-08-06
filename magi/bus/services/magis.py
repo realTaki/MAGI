@@ -25,7 +25,7 @@ def _iso(dt) -> str | None:
 def _count_children(session: Any, parent_id: int) -> tuple[int, ...]:
     from sqlalchemy import select
 
-    from magi.bus.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis import MAGIS
 
     rows = session.scalars(
         select(MAGIS.id).where(MAGIS.parent_id == parent_id).order_by(MAGIS.id)
@@ -36,7 +36,7 @@ def _count_children(session: Any, parent_id: int) -> tuple[int, ...]:
 def _count_members(session: Any, magis_id: int) -> int:
     from sqlalchemy import func, select
 
-    from magi.bus.models.magis.magis_membership import MAGISMembership
+    from magi.bus.db.models.magis.magis_membership import MAGISMembership
 
     return int(
         session.scalar(
@@ -117,7 +117,7 @@ class MagisService:
         if runtime_id and runtime_id.isdigit():
             return int(runtime_id)
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
 
         with open_magis_session() as session:
@@ -138,8 +138,8 @@ class MagisService:
         flow never reads ``MAGI_NODE_ROLE``.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
         from sqlalchemy import select
 
         with open_magis_session() as session:
@@ -166,8 +166,8 @@ class MagisService:
         layer compares this id against the requested magis_id.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
         from sqlalchemy import select
 
         served_magic_id = self.current_runtime_magic_id()
@@ -212,14 +212,14 @@ class MagisService:
     # ------------------------------------------------------------------
 
     def is_control_admin(self, uid: int) -> bool:
-        from magi.bus.models.local.control_plane import ControlOperator
+        from magi.bus.db.models.local.control_plane import ControlOperator
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             operator = session.get(ControlOperator, uid)
             return operator is not None and bool(operator.admin)
 
     def list_control_operators(self, *, admin_only: bool = False) -> list[OperatorView]:
-        from magi.bus.models.local.control_plane import ControlOperator
+        from magi.bus.db.models.local.control_plane import ControlOperator
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
 
@@ -241,7 +241,7 @@ class MagisService:
             ]
 
     def get_control_operator(self, uid: int) -> OperatorView | None:
-        from magi.bus.models.local.control_plane import ControlOperator
+        from magi.bus.db.models.local.control_plane import ControlOperator
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             operator = session.get(ControlOperator, uid)
@@ -262,7 +262,7 @@ class MagisService:
 
     def get_root_magis_id(self) -> int | None:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
         with open_magis_session() as session:
             return session.scalar(
@@ -277,7 +277,7 @@ class MagisService:
         DTO so callers don't have to reach into the ORM.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
         with open_magis_session() as session:
             root = session.scalar(
@@ -297,9 +297,9 @@ class MagisService:
         the pre-login /api/access/* call; ``RuntimeError`` is mapped
         to a 503 by the caller.
         """
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magic import MAGIC
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
         import os
@@ -321,7 +321,7 @@ class MagisService:
         self, group_id: int, telegram_ids_with_names: list[tuple[int, str | None]],
     ) -> list[MagisAdminView]:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from sqlalchemy import select
         with open_magis_session() as session:
             existing = session.scalars(
@@ -355,7 +355,7 @@ class MagisService:
     def list_magis(self) -> list[MagisView]:
         """Return every MAGIS row with full counts populated."""
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
         with open_magis_session() as session:
             rows = session.scalars(select(MAGIS).order_by(MAGIS.id)).all()
@@ -363,7 +363,7 @@ class MagisService:
 
     def get_magis(self, group_id: int) -> MagisView | None:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         with open_magis_session() as session:
             row = session.get(MAGIS, group_id)
             if row is None:
@@ -372,7 +372,7 @@ class MagisService:
 
     def name_exists(self, name: str, exclude_id: int | None = None) -> bool:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from sqlalchemy import select
         with open_magis_session() as session:
             found = session.scalar(select(MAGIS.id).where(MAGIS.name == name))
@@ -394,8 +394,8 @@ class MagisService:
         added.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import ensure_default_roles
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import ensure_default_roles
         with open_magis_session() as session:
             if session.scalar(
                 __import__("sqlalchemy").select(MAGIS.id).where(MAGIS.name == name)
@@ -428,7 +428,7 @@ class MagisService:
         """
         from sqlalchemy import select, update as sa_update
 
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -478,7 +478,7 @@ class MagisService:
         """
         from sqlalchemy import update as sa_update
 
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -500,7 +500,7 @@ class MagisService:
 
     def list_admins(self, group_id: int) -> list[MagisAdminView]:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from sqlalchemy import select
         with open_magis_session() as session:
             rows = session.scalars(
@@ -520,8 +520,8 @@ class MagisService:
         MAGIS does not exist.
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from sqlalchemy import select
         with open_magis_session() as session:
             if session.get(MAGIS, group_id) is None:
@@ -552,7 +552,7 @@ class MagisService:
     def delete_admin_in_magis(self, group_id: int, admin_id: int) -> bool:
         """Delete a MAGIS admin by id, verifying it belongs to ``group_id``."""
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         with open_magis_session() as session:
             row = session.get(MAGISAdmin, admin_id)
             if row is None or row.magis_id != group_id:
@@ -563,7 +563,7 @@ class MagisService:
 
     def add_admin(self, group_id: int, magic_id: int, role_id: int) -> MagisAdminView:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from sqlalchemy import select
         with open_magis_session() as session:
             existing = session.scalar(
@@ -591,7 +591,7 @@ class MagisService:
 
     def remove_admin(self, group_id: int, magic_id: int) -> bool:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from sqlalchemy import select
         with open_magis_session() as session:
             row = session.scalar(
@@ -613,7 +613,7 @@ class MagisService:
     def list_roles(self) -> list[MagisRoleView]:
         """All roles across every MAGIS, ordered for the WebUI table."""
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         from sqlalchemy import select
         with open_magis_session() as session:
             rows = session.scalars(
@@ -624,10 +624,10 @@ class MagisService:
     def list_roles_in_magis(self, magis_id: int) -> list[MagisRoleView]:
         """Roles for one MAGIS, ordered reserved-first then by name."""
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis_membership import ensure_default_roles
+        from magi.bus.db.models.magis.magis_membership import ensure_default_roles
         with open_magis_session() as session:
             ensure_default_roles(session, magis_id)
             session.commit()
@@ -640,7 +640,7 @@ class MagisService:
 
     def get_role_in_magis(self, magis_id: int, role_id: int) -> MagisRoleView | None:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         with open_magis_session() as session:
             row = session.get(MAGISRole, role_id)
             if row is None or row.magis_id != magis_id:
@@ -653,11 +653,11 @@ class MagisService:
         name: str,
         instruction: str,
     ) -> MagisRoleView:
-        from magi.bus.models.magis.magis_membership import RESERVED_ROLE_NAMES
+        from magi.bus.db.models.magis.magis_membership import RESERVED_ROLE_NAMES
 
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         from sqlalchemy import select
 
         if name in RESERVED_ROLE_NAMES:
@@ -688,7 +688,7 @@ class MagisService:
         instruction: Any = _FIELD_UNSET,
     ) -> MagisRoleView:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         with open_magis_session() as session:
             row = session.get(MAGISRole, role_id)
             if row is None or row.magis_id != magis_id:
@@ -706,7 +706,7 @@ class MagisService:
     def delete_role_in_magis(self, magis_id: int, role_id: int) -> bool:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
         )
@@ -728,8 +728,8 @@ class MagisService:
 
     def create_role(self, name: str, instruction: str) -> MagisRoleView:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         from sqlalchemy import select
         with open_magis_session() as session:
             root = session.scalar(select(MAGIS).where(MAGIS.parent_id.is_(None)).order_by(MAGIS.id))
@@ -743,7 +743,7 @@ class MagisService:
 
     def update_role(self, role_id: int, name: str, instruction: str) -> MagisRoleView:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         with open_magis_session() as session:
             row = session.get(MAGISRole, role_id)
             if row is None:
@@ -757,7 +757,7 @@ class MagisService:
     def delete_role(self, role_id: int) -> bool:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
         )
@@ -782,12 +782,12 @@ class MagisService:
     def list_memberships(self, group_id: int) -> list[MagisMembershipView]:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
         )
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -806,11 +806,11 @@ class MagisService:
     def list_memberships_for_magic(self, magic_id: int) -> list[MagisMembershipView]:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
         )
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -827,7 +827,7 @@ class MagisService:
             ]
 
     def magic_exists(self, magic_id: int) -> bool:
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             return session.get(MAGIC, magic_id) is not None
@@ -837,11 +837,11 @@ class MagisService:
     ) -> MagisMembershipView | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis_membership import (
+        from magi.bus.db.models.magis.magis_membership import (
             MAGISMembership,
             MAGISRole,
         )
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             row = session.execute(
@@ -872,9 +872,9 @@ class MagisService:
         """
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -912,9 +912,9 @@ class MagisService:
         membership_id: int,
         new_role_id: int,
     ) -> MagisMembershipView:
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership
-        from magi.bus.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magic import MAGIC
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -943,8 +943,8 @@ class MagisService:
         magis_id: int,
         membership_id: int,
     ) -> bool:
-        from magi.bus.models.magis.magis import MAGIS
-        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             magis = session.get(MAGIS, magis_id)
@@ -961,9 +961,9 @@ class MagisService:
 
     def add_membership(self, magic_id: int, group_id: int, role_id: int) -> MagisMembershipView:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISMembership
-        from magi.bus.models.magis.magic import MAGIC
-        from magi.bus.models.magis.magis_membership import MAGISRole
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magic import MAGIC
+        from magi.bus.db.models.magis.magis_membership import MAGISRole
         from sqlalchemy import select
         with open_magis_session() as session:
             row = MAGISMembership(magis_id=group_id, magic_id=magic_id, role_id=role_id)
@@ -976,7 +976,7 @@ class MagisService:
 
     def remove_membership(self, membership_id: int) -> bool:
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
         with open_magis_session() as session:
             row = session.get(MAGISMembership, membership_id)
             if row is None:
@@ -990,7 +990,7 @@ class MagisService:
     # ------------------------------------------------------------------
 
     def direct_magis_for_magic(self, magic_id: int) -> tuple[int, int]:
-        from magi.bus.models.magis.magis_membership import MAGISMembership
+        from magi.bus.db.models.magis.magis_membership import MAGISMembership
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
         with open_magis_session() as session:
@@ -1003,7 +1003,7 @@ class MagisService:
 
     def list_magis_admins(self, magis_id: int) -> list[dict]:
         """Return ``[{telegram_id, display_name}]`` for MAGIS administrators."""
-        from magi.bus.models.magis.magis_admin import MAGISAdmin
+        from magi.bus.db.models.magis.magis_admin import MAGISAdmin
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
         with open_magis_session() as session:
@@ -1016,8 +1016,8 @@ class MagisService:
             ]
 
     def get_magis_adam_url(self, magis_id: int, current_magic_id: int) -> tuple[int, str] | None:
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
         with open_magis_session() as session:
@@ -1041,7 +1041,7 @@ class MagisService:
     def root_runtime_url(self, magic_id: int) -> str | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -1055,8 +1055,8 @@ class MagisService:
     def adam_url(self, magis_id: int, current_magic_id: int) -> tuple[int, str] | None:
         from sqlalchemy import select
 
-        from magi.bus.models.magis.eva_runtime import EvaRuntime
-        from magi.bus.models.magis.magis import MAGIS
+        from magi.bus.db.models.magis.eva_runtime import EvaRuntime
+        from magi.bus.db.models.magis.magis import MAGIS
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -1083,14 +1083,14 @@ class MagisService:
         return self.list_admins(magis_id)
 
     def control_setting_get(self, key: str) -> str | None:
-        from magi.bus.models.local.control_plane import ControlSetting
+        from magi.bus.db.models.local.control_plane import ControlSetting
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             row = session.get(ControlSetting, key)
             return row.value if row else None
 
     def control_setting_set(self, key: str, value: str) -> None:
-        from magi.bus.models.local.control_plane import ControlSetting
+        from magi.bus.db.models.local.control_plane import ControlSetting
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             row = session.get(ControlSetting, key)
@@ -1101,7 +1101,7 @@ class MagisService:
             session.commit()
 
     def control_setting_delete(self, key: str) -> None:
-        from magi.bus.models.local.control_plane import ControlSetting
+        from magi.bus.db.models.local.control_plane import ControlSetting
         from magi.bus.db.magis import open_magis_session
         with open_magis_session() as session:
             row = session.get(ControlSetting, key)
@@ -1110,7 +1110,7 @@ class MagisService:
                 session.commit()
 
     def control_setting_list_prefix(self, prefix: str) -> dict[str, str]:
-        from magi.bus.models.local.control_plane import ControlSetting
+        from magi.bus.db.models.local.control_plane import ControlSetting
         from magi.bus.db.magis import open_magis_session
         from sqlalchemy import select
 
@@ -1158,11 +1158,11 @@ def _project_runtime_configuration(spec: RuntimeConfigurationProjection, databas
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
-    from magi.bus.models.magis.eva_runtime import EvaRuntime  # noqa: F401  # ensure table is registered
-    from magi.bus.models.magis.magic import MAGIC
-    from magi.bus.models.magis.magis import MAGIS
-    from magi.bus.models.magis.magis_admin import MAGISAdmin  # noqa: F401
-    from magi.bus.models.magis.magis_membership import (
+    from magi.bus.db.models.magis.eva_runtime import EvaRuntime  # noqa: F401  # ensure table is registered
+    from magi.bus.db.models.magis.magic import MAGIC
+    from magi.bus.db.models.magis.magis import MAGIS
+    from magi.bus.db.models.magis.magis_admin import MAGISAdmin  # noqa: F401
+    from magi.bus.db.models.magis.magis_membership import (
         MAGISMembership,
         MAGISRole,
         ensure_default_roles,

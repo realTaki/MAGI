@@ -25,7 +25,7 @@ naturally surfaces the prompt again instead of
 erasing it.
 
 FKs reference :class:`Contact` in
-:mod:`magi.bus.models.local.contact`. Type-only import
+:mod:`magi.bus.db.models.local.contact`. Type-only import
 under TYPE_CHECKING — FK strings resolve at mapper
 config time.
 """
@@ -48,7 +48,7 @@ from magi.bus.db.base import Base
 
 
 if TYPE_CHECKING:
-    from magi.bus.models.local.contact import Contact
+    from magi.bus.db.models.local.contact import Contact
 
 
 class ActionItem(Base):

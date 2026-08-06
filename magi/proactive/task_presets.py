@@ -22,7 +22,7 @@ The planner is intentionally a pure function:
 That separation lets the policy evolve (operator-curated templates,
 new frequencies, conditional seeding) without dragging the storage
 layer into the change.  It also means the boundary test naturally
-allows this module — it never imports ``magi.bus.models`` or
+allows this module — it never imports ``magi.bus.db.models`` or
 ``magi.bus.db``; the bus calls in.
 
 Idempotency

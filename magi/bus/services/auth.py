@@ -14,7 +14,7 @@ class AuthService:
         self._state_dir = state_dir
 
     def caller_role(self, uid: int) -> Optional[str]:
-        from magi.bus.models.local.contact import Contact
+        from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             contact = session.get(Contact, uid)
@@ -38,7 +38,7 @@ class AuthService:
         """Whether any local operator has a password login credential."""
         if not uids:
             return False
-        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.bus.db.models.magis.auth_credential import AuthCredential
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -64,7 +64,7 @@ class AuthService:
         """
         from datetime import datetime, timezone
 
-        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.bus.db.models.magis.auth_credential import AuthCredential
         from magi.bus.db.magis import open_magis_session
 
         if not secret_hash:
@@ -95,7 +95,7 @@ class AuthService:
         to verify the operator's password before issuing a session
         cookie.
         """
-        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.bus.db.models.magis.auth_credential import AuthCredential
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:
@@ -115,7 +115,7 @@ class AuthService:
         ``DELETE /api/auth/credentials/password/{uid}`` revoke
         flow.
         """
-        from magi.bus.models.magis.auth_credential import AuthCredential
+        from magi.bus.db.models.magis.auth_credential import AuthCredential
         from magi.bus.db.magis import open_magis_session
 
         with open_magis_session() as session:

@@ -18,7 +18,7 @@ root (``magi.__main__``) and the Alembic migration runner — they own the
 engine + metadata at process startup, before any service exists.
 
 ORM models are NOT re-exported here.  Bus services import them from
-their canonical homes under :mod:`magi.bus.models.{local,magis,queue}`
+their canonical homes under :mod:`magi.bus.db.models.{local,magis,queue}`
 (those modules declare ``from magi.bus.db.base import Base``
 — no cycle).  Keeping ORM tables out of ``_persistence.__init__`` avoids
 the import-time cycle that would otherwise form
@@ -38,7 +38,7 @@ composition root and Alembic only):
 - ``get_magis_engine``, ``get_magis_session``, ``init_magis_public_db``,
   ``open_magis_session`` — MAGIS PostgreSQL access
 
-ORM tables are imported from ``magi.bus.models.{local,magis,queue}``
+ORM tables are imported from ``magi.bus.db.models.{local,magis,queue}``
 directly — the bus services already use these paths.
 """
 

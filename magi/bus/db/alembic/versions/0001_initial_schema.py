@@ -16,7 +16,7 @@ Every table here is owned by one of three Base subclasses:
     :mod:`magi.bus.db.magis` via ``Base.metadata.create_all``
     (the PG Alembic port is a known deferred item).
 
-Schema source of truth: the ORM models in :mod:`magi.bus.models`.
+Schema source of truth: the ORM models in :mod:`magi.bus.db.models`.
 This migration's CREATE TABLE statements are hand-mirrored from
 those models; any divergence is a bug. ``env.py`` imports every
 model so ``alembic revision --autogenerate`` (the dev workflow)

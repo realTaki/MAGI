@@ -40,7 +40,7 @@ from magi.bus.db import (
     init_sqlite,
     open_session,
 )
-from magi.bus.models.local.task import Task
+from magi.bus.db.models.local.task import Task
 
 
 # -- validate_run_at --------------------------------------------------------
@@ -107,8 +107,8 @@ def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) ->
     """Insert a row directly via ORM. Bypass the ``schedule_task``
     tool so the test pins what ``register`` sees, not what
     the tool writes."""
-    from magi.bus.models.local import task as _  # noqa: F401  (registers Task on Base)
-    from magi.bus.models.local.contact import Contact
+    from magi.bus.db.models.local import task as _  # noqa: F401  (registers Task on Base)
+    from magi.bus.db.models.local.contact import Contact
 
     task_id = "T" + "0" * 25
     row_kwargs = dict(overrides)
@@ -236,7 +236,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
 
     # Seed a target operator + bind the cookie identity
     # the ``_gate`` consults.
-    from magi.bus.models.local.contact import Contact
+    from magi.bus.db.models.local.contact import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",
@@ -279,7 +279,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
 
     start_scheduler()
 
-    from magi.bus.models.local.contact import Contact
+    from magi.bus.db.models.local.contact import Contact
     with open_session() as db:
         db.add(Contact(
             name="tester",

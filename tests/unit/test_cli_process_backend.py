@@ -16,7 +16,7 @@ import pytest
 from magi.bus.db.base import Base
 from magi.bus.db.control.repository import ControlRepository
 from magi.bus.db.magis.local_engine import build as build_local_engine
-from magi.bus.models.local.control_runtime import (
+from magi.bus.db.models.local.control_runtime import (
     ControlPortAllocation,
     ControlRuntimeState,
 )
@@ -333,6 +333,6 @@ def _dummy_desired():
 
     Importing it here keeps the test fixture surface small.
     """
-    from magi.bus.models.local.control_runtime import RuntimeDesiredState
+    from magi.bus.db.models.local.control_runtime import RuntimeDesiredState
 
     return RuntimeDesiredState.STARTED

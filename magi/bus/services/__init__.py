@@ -3,7 +3,7 @@
 The services are the only public bus surface for callers outside
 ``magi.bus``. Each service wraps either a :class:`magi.bus.store.BusStore`
 queue method (durable) or direct SQLAlchemy access (per-domain CRUD
-backed by ``magi.bus.models``).
+backed by ``magi.bus.db.models``).
 """
 
 from __future__ import annotations

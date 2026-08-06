@@ -63,7 +63,7 @@ class Bus:
     # attached to a BUS-owned pipeline; they are external BUS
     # workers that consume the durable ``hook_signoffs`` queue
     # (one row per enabled plugin per persisted subject).  See
-    # :class:`magi.bus.models.local.hook_signoff.HookSignoff`.
+    # :class:`magi.bus.db.models.local.hook_signoff.HookSignoff`.
     hooks: object = None
     # Low-level durable queue operations.  Exposed on the Bus
     # facade so plugin workers and integration tests can reach

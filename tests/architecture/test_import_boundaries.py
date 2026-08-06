@@ -52,7 +52,7 @@ RULES: list[tuple[str, list[str]]] = [
     # Domain packages — must not reach into storage or sibling domain
     # code.  They MAY import ``magi.bus`` (services + contracts + the
     # façade itself); they MUST NOT import ``magi.bus.db`` (storage) or
-    # ``magi.bus.models.*`` (raw ORM tables).
+    # ``magi.bus.db.models.*`` (raw ORM tables).
     ("magi.agent", ["magi.tools", "magi.channels", "magi.bus.db", "magi.bus.models"]),
     ("magi.tools", ["magi.agent", "magi.channels", "magi.bus.db", "magi.bus.models"]),
     ("magi.channels", ["magi.agent", "magi.tools", "magi.bus.db", "magi.bus.models"]),
@@ -143,14 +143,14 @@ RULES: list[tuple[str, list[str]]] = [
 COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.launcher"}
 
 # ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
-# ``magi.bus.models.*`` — that's the whole point of the consolidation.
+# ``magi.bus.db.models.*`` — that's the whole point of the consolidation.
 # The boundary rule's `_is_internal` check already lets a file under
 # ``magi.bus.*`` import any ``magi.bus.X`` submodule, so no additional
 # exception is needed here.
 ALLOWED_BUS_SUBDOMAINS_FOR_LOWER_LAYERS: dict[str, set[str]] = {}
 
 # ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
-# ``magi.bus.models.*`` — that's the whole point of the consolidation.
+# ``magi.bus.db.models.*`` — that's the whole point of the consolidation.
 # The boundary rule's `_is_internal` check already lets a file under
 # ``magi.bus.*`` import any ``magi.bus.X`` submodule, so no additional
 # exception is needed here.

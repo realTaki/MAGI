@@ -15,7 +15,7 @@ from magi.bus.bootstrap import bootstrap
 from magi.bus.db import init_orm
 from magi.bus.db.engine import open_session
 from magi.bus.db.magis.engine import init_magis_public_db
-from magi.bus.models.queue import ControlJob
+from magi.bus.db.models.queue import ControlJob
 from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
 
 
