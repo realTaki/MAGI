@@ -23,6 +23,7 @@ class MemoryJob:
 
 class _MemoryRow(Base):
     __tablename__ = "memory_entries"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     memory_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

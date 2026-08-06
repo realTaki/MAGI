@@ -49,6 +49,15 @@ def factory():
     return f
 
 
+@pytest.fixture
+def contact_id(factory):
+    """Create a contact row, return its id.  Tests that need a contact
+    FK can use this fixture to get a valid uid."""
+    from magi.new_bus.books.local.contact import ContactBook
+    c = ContactBook(factory).add(name="Fixture")
+    return c.id
+
+
 # -- SettingBook --------------------------------------------------------
 
 
@@ -75,22 +84,25 @@ def test_setting_book_list_and_delete(factory):
 # -- MemoryBook ---------------------------------------------------------
 
 
-def test_memory_book_add_and_get(factory):
+def test_memory_book_add_and_get(factory, contact_id):
     book = MemoryBook(factory)
-    m = book.add(uid=1, kind="important", subject="alice", body="likes cats")
+    m = book.add(uid=contact_id, kind="important", subject="alice", body="likes cats")
     assert isinstance(m, Memory)
-    assert m.uid == 1
+    assert m.uid == contact_id
     assert m.body == "likes cats"
     found = book.get(memory_id=m.id)
     assert found is not None and found.body == "likes cats"
 
 
-def test_memory_book_list_by_owner(factory):
+def test_memory_book_list_by_owner(factory, contact_id):
+    from magi.new_bus.books.local.contact import ContactBook
     book = MemoryBook(factory)
-    book.add(uid=1, kind="important", subject="a", body="x")
-    book.add(uid=2, kind="important", subject="b", body="y")
-    assert len(book.list_by_owner(uid=1)) == 1
-    assert len(book.list_by_owner(uid=2)) == 1
+    cbook = ContactBook(factory)
+    other_id = cbook.add(name="Other").id
+    book.add(uid=contact_id, kind="important", subject="a", body="x")
+    book.add(uid=other_id, kind="important", subject="b", body="y")
+    assert len(book.list_by_owner(uid=contact_id)) == 1
+    assert len(book.list_by_owner(uid=other_id)) == 1
 
 
 # -- ContactBook + ContactNoteBook --------------------------------------
@@ -166,9 +178,9 @@ def test_mcp_server_book(factory):
 # -- ActionItemBook -----------------------------------------------------
 
 
-def test_action_item_book(factory):
+def test_action_item_book(factory, contact_id):
     book = ActionItemBook(factory)
-    item = book.add(uid=1, kind="alert", title="x", body="y")
+    item = book.add(uid=contact_id, kind="alert", title="x", body="y")
     assert isinstance(item, ActionItem)
     assert item.status == "open"
     book.mark_done(item_id=item.id)
@@ -178,13 +190,15 @@ def test_action_item_book(factory):
 # -- TokenUsageBook ----------------------------------------------------
 
 
-def test_token_usage_book(factory):
+def test_token_usage_book(factory, contact_id):
     book = TokenUsageBook(factory)
-    book.add(uid=1, provider="openai", model="gpt-4", input_tokens=10, output_tokens=20)
-    book.add(uid=1, provider="openai", model="gpt-4", input_tokens=5, output_tokens=10)
+    book.add(uid=contact_id, provider="openai", model="gpt-4",
+             input_tokens=10, output_tokens=20)
+    book.add(uid=contact_id, provider="openai", model="gpt-4",
+             input_tokens=5, output_tokens=10)
     in_total, out_total = book.sum_for_run(run_id="r1")  # 0 rows for r1
     assert in_total == 0
-    book.add(uid=1, provider="openai", model="gpt-4", run_id="r1",
+    book.add(uid=contact_id, provider="openai", model="gpt-4", run_id="r1",
              input_tokens=100, output_tokens=200)
     in_total, out_total = book.sum_for_run(run_id="r1")
     assert in_total == 100
@@ -212,13 +226,13 @@ def test_tool_definition_upsert(factory):
     # upsert again
     t2 = book.upsert(name="echo", spec_json='{"x":2}', description="echoes v2")
     assert t2.id == t.id
-    assert '"x":2"' in t2.spec_json
+    assert t2.spec_json == '{"x":2}'
 
 
 # -- TaskBook + TaskRunBook + TaskPresetBook -------------------------
 
 
-def test_task_book_lifecycle(factory):
+def test_task_book_lifecycle(factory, contact_id):
     pbook = TaskPresetBook(factory)
     preset = pbook.add(
         id="p1", key="daily", name="Daily", prompt="hi",
@@ -229,7 +243,7 @@ def test_task_book_lifecycle(factory):
     tbook = TaskBook(factory)
     t = tbook.add(
         id="t1", name="MyTask", prompt="do", cron="0 9 * * *",
-        uid=1, target_channel="webui",
+        uid=contact_id, target_channel="webui",
         preset_id="p1", preset_key="daily",
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",

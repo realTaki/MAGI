@@ -42,6 +42,7 @@ class ChatJobResult:
 
 class _ChatJobRow(Base):
     __tablename__ = "chat_jobs"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -50,7 +51,7 @@ class _ChatJobRow(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     conversation_id: Mapped[str] = mapped_column(String(128), nullable=False)
     channel: Mapped[str] = mapped_column(String(32), default="")
-    metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     # 租约
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -83,7 +84,7 @@ class ChatJobQueue(BaseJobQueue[_ChatJobRow, ChatJob, ChatJobResult]):
                 text=job.text,
                 conversation_id=job.conversation_id,
                 channel=job.channel,
-                metadata=job.metadata,
+                metadata_json=job.metadata,
             )
             s.add(row)
             s.flush()

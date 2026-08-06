@@ -32,6 +32,7 @@ class ControlJobResult:
 
 class _ControlJobRow(Base):
     __tablename__ = "control_jobs"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

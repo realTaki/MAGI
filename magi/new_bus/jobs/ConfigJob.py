@@ -21,6 +21,7 @@ class ConfigJob:
 
 class _ConfigRow(Base):
     __tablename__ = "config_entries"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     config_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)

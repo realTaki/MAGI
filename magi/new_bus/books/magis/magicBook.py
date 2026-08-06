@@ -1,8 +1,9 @@
 """MagicBook — one row per individual MAGI agent (the ``magic`` table).
 
-Schema mirrors the old bus's ``magic`` table.  Note that ``provider``
-/ ``api_key`` columns are legacy/fallback; new MAGIs store credentials
-in a per-MAGI ``runtime_settings.toml`` file rather than here.
+Schema mirrors the old bus's ``magic`` table.  ``provider`` /
+``api_key`` / ``model`` columns are legacy/fallback; new MAGIs store
+credentials in the ``settings`` table (via :class:`SettingBook`)
+populated by bootstrap at startup.
 """
 
 from __future__ import annotations

@@ -19,17 +19,6 @@ from magi.new_bus.db.base import Base, utcnow_naive
 
 
 @dataclass(frozen=True, slots=True)
-class Magis:
-    id: int
-    name: str
-    parent_id: int | None = None
-    adam_id: int | None = None
-    instruction: str = ""
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class MagisAdmin:
     id: int
     uid: int

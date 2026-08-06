@@ -33,19 +33,6 @@ from magi.new_bus.db.base import Base
 
 
 @dataclass(frozen=True, slots=True)
-class Session:
-    session_id: str
-    delivery_address: str
-    uid: int
-    channel: str
-    title: str | None = None
-    active_tail_count: int = 20
-    last_compaction_at: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class Message:
     id: int
     session_id: str

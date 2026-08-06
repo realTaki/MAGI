@@ -24,6 +24,7 @@ class TaskJob:
 
 class _TaskRow(Base):
     __tablename__ = "tasks"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

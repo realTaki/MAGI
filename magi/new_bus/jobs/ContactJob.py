@@ -23,6 +23,7 @@ class ContactJob:
 
 class _ContactRow(Base):
     __tablename__ = "contact_entries"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     contact_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

@@ -1,279 +1,151 @@
-"""BaseJob — write primitive for the BUS.
+"""BaseJobQueue — Job 基类，同步和异步共用。
 
-Each Job has its own ORM class (per the new_bus convention: "每个
-Job 和 Book 都有其ORM").  Job ORM classes live in
-``JobBase`` — a **separate** ``DeclarativeBase`` from
-``magi.new_bus.db.base.Base`` so two ORM classes declaring the same
-``__tablename__`` (one in a Book, one in a Job) don't collide on
-SQLAlchemy's Table registry.
-
-The split between Books and Jobs implements CQRS:
-
-- :mod:`magi.new_bus.books` — **reads** (get / list / search).
-- :mod:`magi.new_bus.jobs`  — **writes** (create / update / delete /
-  mark_* / publish).  Each write can go either directly to the
-  table (synchronous path) or via a Queue (asynchronous path)
-  depending on whether the caller injected a Queue dependency.
-
-If no other module needs to coordinate on the write, the
-sync path is enough — just instantiate the Job with an
-``EngineFactory``.  If multiple modules need to react to the same
-write (e.g. one publishes, another consumes via
-``claim() / submit_result()``), the caller injects a
-:class:`magi.new_bus.queues.BaseJobQueue` and the Job publishes
-to it.
+同步 Job: 继承后只 override publish()，直接落库。
+异步 Job: 设置 job_model/job_cls/result_cls，启用 claim/submit_result/get_result。
+每张表通过 natural_key_attr 声明自己的业务键名（默认 "job_id"）。
 """
 
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
-from typing import Any, Generic, TypeVar
+from datetime import datetime, timedelta
+from typing import Generic, TypeVar
 
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import Session
 
+from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.db.engine import EngineFactory
-
-
-def job_utcnow_naive() -> datetime:
-    """Naive UTC helper for Job ORM defaults."""
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-class JobBase(DeclarativeBase):
-    """Separate declarative base for Job ORM classes.
-
-    Book ORM classes use :class:`magi.new_bus.db.base.Base`; Job
-    ORM classes use this one.  The two Bases have **independent**
-    MetaData instances, so ORM classes with the same
-    ``__tablename__`` (one in a Book, one in a Job) don't collide.
-
-    The actual SQLite file is shared, so SQL tables are still
-    physically identical; SQLAlchemy just doesn't see both
-    Tables in one MetaData.
-    """
-
-
-# -- Async-job infrastructure --------------------------------------------
-#
-# A Job that wants the async path sets three class attributes:
-#   job_model, job_cls, result_cls
-# and inherits claim / submit_result / get_result / recover_expired_leases
-# from BaseJob below.  Jobs that don't set them only have the
-# synchronous path (direct DB writes).
-
 
 DEFAULT_LEASE_SECONDS = 60
 MAX_ATTEMPTS = 3
-INLINE_PUBLISHER = "__inline__"
 
-RowT = TypeVar("RowT", bound=JobBase)
+RowT = TypeVar("RowT", bound=Base)
 JobT = TypeVar("JobT")
 ResultT = TypeVar("ResultT")
 
 
-class BaseJob(Generic[RowT, JobT, ResultT]):
-    """Base for all new_bus write jobs.
+class BaseJobQueue(Generic[RowT, JobT, ResultT]):
 
-    Subclasses set ``job_model`` / ``job_cls`` / ``result_cls`` and
-    implement ``publish``.  Optionally ``_run_inline`` if they
-    support ``inline=True`` publish.
-
-    Subclass contract
-    -----------------
-
-    - ``job_model`` — ORM class for the queue/wait-table
-    - ``job_cls``   — public ``Job`` dataclass (publisher input)
-    - ``result_cls`` — public ``Result`` dataclass (worker output,
-      must have ``job_id`` + ``success``)
-    - ``publish(job, *, inline=False, **kwargs) -> str`` — insert
-      a row, optionally run inline, return natural key
-    """
-
-    job_model: type[RowT]
-    job_cls: type[JobT]
-    result_cls: type[ResultT]
+    # 异步 Job 设置这四个
+    job_model: type[RowT] | None = None
+    job_cls: type[JobT] | None = None
+    result_cls: type[ResultT] | None = None
+    #: ORM 列名，作为业务键（默认 "job_id"），如 "attempt_id"、"delivery_id"
     natural_key_attr: str = "job_id"
 
-    def __init__(
-        self,
-        factory: EngineFactory,
-        lease_seconds: int = DEFAULT_LEASE_SECONDS,
-    ):
+    def __init__(self, factory: EngineFactory,
+                 lease_seconds: int = DEFAULT_LEASE_SECONDS):
         self._factory = factory
         self._lease_seconds = lease_seconds
 
     def _session(self):
         return self._factory.session()
 
-    # -- public: lifecycle ------------------------------------------------
+    # -- publish (子类 override) -------------------------------------------
 
-    def publish(self, job: JobT, *, inline: bool = False, **kwargs) -> str:
-        """Insert a job row; return its natural key.
+    def publish(self, job: JobT) -> str:
+        raise NotImplementedError
 
-        Subclass-implemented.  Default raises ``NotImplementedError``
-        so a Job that doesn't set ``job_model`` (purely-sync Job)
-        can override ``publish`` directly to do a table insert.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__}.publish must be implemented"
-        )
+    # -- 异步队列 (需设置 job_model/job_cls/result_cls) -------------------
 
     def claim(self, *, worker_id: str) -> JobT | None:
-        """Claim the next pending or expired-lease job for ``worker_id``."""
-        if not getattr(self, "job_model", None):
-            return None
-        with self._factory.session() as s:
+        with self._session() as s:
             row = self._claim(s, worker_id=worker_id)
             s.commit()
             return self._row_to_job(row) if row else None
 
-    def submit_result(self, *, job_id: str, result: ResultT) -> None:
-        if not getattr(self, "job_model", None):
-            return
-        with self._factory.session() as s:
-            self._submit(s, job_id=job_id, result=result)
+    def submit_result(self, *, key: str, result: ResultT) -> None:
+        """提交结果，key 为 natural_key_attr 的值（如 job_id / attempt_id）。"""
+        with self._session() as s:
+            self._submit(s, key=key, result=result)
             s.commit()
 
-    def get_result(self, *, job_id: str) -> ResultT | None:
-        if not getattr(self, "job_model", None):
-            return None
-        with self._factory.session() as s:
-            return self._get_result(s, job_id=job_id)
+    def get_result(self, *, key: str) -> ResultT | None:
+        """轮询结果，key 为 natural_key_attr 的值。"""
+        with self._session() as s:
+            return self._get_result(s, key=key)
 
-    def recover_expired_leases(self) -> int:
-        if not getattr(self, "job_model", None):
-            return 0
-        now = job_utcnow_naive()
-        count = 0
-        with self._factory.session() as s:
-            rows = s.scalars(
-                select(self.job_model)
-                .where(
-                    self.job_model.status == "processing",
-                    self.job_model.leased_until < now,
-                )
-                .with_for_update(skip_locked=True)
-            ).all()
-            for row in rows:
-                if hasattr(row, "status"):
-                    row.status = "pending"
-                if hasattr(row, "leased_by"):
-                    row.leased_by = None
-                if hasattr(row, "leased_until"):
-                    row.leased_until = None
-                count += 1
-            s.commit()
-        return count
-
-    # -- subclass hooks --------------------------------------------------
-
-    def _run_inline(self, session: Session, *, job_id: str, **kwargs) -> ResultT:
-        """Subclass OPTIONAL: synchronous work for ``inline=True`` publish."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support inline=True"
-        )
-
-    # -- private: standard claim/submit machinery -----------------------
+    # -- 内部 --------------------------------------------------------------
 
     def _claim(self, session: Session, *, worker_id: str) -> RowT | None:
-        now = job_utcnow_naive()
-        from datetime import timedelta
+        now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
         while True:
             candidate = self._pick_candidate(session, now)
             if candidate is None:
                 return None
-            if (
-                getattr(candidate, "status", None) == "processing"
-                and getattr(candidate, "attempts", 0) >= MAX_ATTEMPTS
-            ):
+            if candidate.status == "processing" and candidate.attempts >= MAX_ATTEMPTS:
                 exhausted = self._make_exhausted_result(candidate)
-                self._submit(
-                    session,
-                    job_id=self._key_of(candidate),
-                    result=exhausted,
-                )
+                self._submit(session, key=self._key_of(candidate), result=exhausted)
                 session.flush()
                 continue
-            is_reclaim = getattr(candidate, "status", None) == "processing"
-            if hasattr(candidate, "status"):
-                candidate.status = "processing"
-            if hasattr(candidate, "leased_by"):
-                candidate.leased_by = worker_id
-            if hasattr(candidate, "leased_until"):
-                candidate.leased_until = lease_until
-            if hasattr(candidate, "attempts"):
-                candidate.attempts += 1
+            is_reclaim = candidate.status == "processing"
+            candidate.status = "processing"
+            candidate.leased_by = worker_id
+            candidate.leased_until = lease_until
+            candidate.attempts += 1
             if not is_reclaim and hasattr(candidate, "started_at"):
                 candidate.started_at = now
             return candidate
 
     def _pick_candidate(self, session: Session, now: datetime) -> RowT | None:
-        if not hasattr(self.job_model, "status"):
-            return None
         return session.scalar(
             select(self.job_model)
             .where(or_(
                 self.job_model.status == "pending",
-                and_(
-                    self.job_model.status == "processing",
-                    self.job_model.leased_until < now,
-                ),
+                and_(self.job_model.status == "processing", self.job_model.leased_until < now),
             ))
-            .order_by(
-                getattr(self.job_model, "created_at", self.job_model.id),
-                self.job_model.id,
-            )
+            .order_by(self.job_model.created_at, self.job_model.id)
             .limit(1)
             .with_for_update(skip_locked=True)
         )
 
-    def _submit(self, session: Session, *, job_id: str, result: ResultT) -> None:
-        row = session.get(self.job_model, job_id)
+    def _submit(self, session: Session, *, key: str, result: ResultT) -> None:
+        row = session.scalar(
+            select(self.job_model).where(
+                getattr(self.job_model, self.natural_key_attr) == key
+            )
+        )
         if row is None:
             return
-        now = job_utcnow_naive()
-        if hasattr(row, "status"):
-            row.status = "completed" if result.success else "failed"
+        now = utcnow_naive()
+        row.status = "completed" if result.success else "failed"
         if hasattr(row, "completed_at"):
             row.completed_at = now
         self._write_result_to_job(row, result)
 
-    def _get_result(self, session: Session, *, job_id: str) -> ResultT | None:
-        row = session.get(self.job_model, job_id)
-        if row is None:
-            return None
-        if getattr(row, "status", None) not in ("completed", "failed"):
+    def _get_result(self, session: Session, *, key: str) -> ResultT | None:
+        row = session.scalar(
+            select(self.job_model).where(
+                getattr(self.job_model, self.natural_key_attr) == key
+            )
+        )
+        if row is None or row.status not in ("completed", "failed"):
             return None
         return self._read_result_from_job(row)
 
-    # -- private: reflection-based ORM <-> dataclass mapping -------------
+    # -- 键提取 ------------------------------------------------------------
 
     def _key_of(self, row: RowT) -> str:
-        for attr in (self.natural_key_attr, "id"):
-            if hasattr(row, attr):
-                val = getattr(row, attr)
-                if val is not None:
-                    return str(val)
+        val = getattr(row, self.natural_key_attr, None)
+        if val is not None:
+            return str(val)
+        # fallback: 用 PK id
+        if hasattr(row, "id"):
+            return str(row.id)
         return ""
 
+    # -- 自动映射 (ORM 列名 ↔ dataclass 字段名) --------------------------
+
     def _row_to_job(self, row: RowT) -> JobT:
-        kwargs: dict = {}
-        for f in dataclasses.fields(self.job_cls):
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return self.job_cls(**kwargs)
+        return self._map_row(row, self.job_cls)
 
     def _make_exhausted_result(self, row: RowT) -> ResultT:
         return self.result_cls(
             job_id=self._key_of(row),
             success=False,
-            error=(
-                f"job exhausted after {getattr(row, 'attempts', '?')} "
-                f"attempt(s), last leased by {getattr(row, 'leased_by', '?')}"
-            ),
+            error=f"job exhausted after {row.attempts} attempt(s), last leased by {row.leased_by}",
         )
 
     def _write_result_to_job(self, row: RowT, result: ResultT) -> None:
@@ -284,10 +156,7 @@ class BaseJob(Generic[RowT, JobT, ResultT]):
                 setattr(row, f.name, getattr(result, f.name))
 
     def _read_result_from_job(self, row: RowT) -> ResultT:
-        kwargs: dict = {
-            "job_id": self._key_of(row),
-            "success": getattr(row, "status", None) == "completed",
-        }
+        kwargs: dict = {"job_id": self._key_of(row), "success": row.status == "completed"}
         for f in dataclasses.fields(self.result_cls):
             if f.name in ("job_id", "success"):
                 continue
@@ -295,12 +164,10 @@ class BaseJob(Generic[RowT, JobT, ResultT]):
                 kwargs[f.name] = getattr(row, f.name)
         return self.result_cls(**kwargs)
 
-
-__all__ = [
-    "JobBase",
-    "BaseJob",
-    "DEFAULT_LEASE_SECONDS",
-    "MAX_ATTEMPTS",
-    "INLINE_PUBLISHER",
-    "job_utcnow_naive",
-]
+    @staticmethod
+    def _map_row(row, cls):
+        kwargs = {}
+        for f in dataclasses.fields(cls):
+            if hasattr(row, f.name):
+                kwargs[f.name] = getattr(row, f.name)
+        return cls(**kwargs)

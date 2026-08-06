@@ -37,6 +37,7 @@ class LLMJobResult:
 
 class _LLMJobRow(Base):
     __tablename__ = "llm_jobs"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

@@ -20,6 +20,7 @@ class SettingsJob:
 
 class _SettingRow(Base):
     __tablename__ = "settings"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     key: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)

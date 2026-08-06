@@ -1,13 +1,9 @@
-"""AgentRunQueue — durable agent turn queue.
+"""runAgentJob — durable agent turn queue.
 
-Backed by the ``agent_inbox`` + ``agent_runs`` + ``run_inputs`` tables
-(parallel to old bus's
-``magi.bus.db.models.queue.agent_inbox.AgentInbox`` etc.).
-
-A publish inserts a new ``AgentInbox`` row.  A claim picks up the
-oldest pending row, updates its ``status`` and lease fields, and
-returns the job snapshot.  Submitting the result moves the row's
-``status`` to ``completed``/``failed`` and writes the result JSON.
+Backed by the ``agent_inbox`` table.  A publish inserts a new
+row; a claim picks up the oldest pending row, updates its ``status``
+and lease fields, and returns the job snapshot.  Submitting the
+result moves the row's ``status`` to ``completed``/``failed``.
 """
 
 from __future__ import annotations
@@ -29,14 +25,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.queues.base import BaseJobQueue, new_job_id
+from magi.new_bus.jobs.base import BaseJobQueue, new_job_id
 
 
 # -- public dataclasses --------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
-class AgentRunJob:
+class RunAgentJob:
     """Snapshot of a turn request (publisher input)."""
 
     event_id: str = ""
@@ -51,7 +47,7 @@ class AgentRunJob:
 
 
 @dataclass(frozen=True, slots=True)
-class AgentRunResult:
+class RunAgentResult:
     """Final state of a turn."""
 
     event_id: str = ""
@@ -67,6 +63,7 @@ class AgentRunResult:
 
 class _AgentInboxRow(Base):
     __tablename__ = "agent_inbox"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -98,13 +95,15 @@ class _AgentInboxRow(Base):
 # -- Queue ----------------------------------------------------------------
 
 
-class AgentRunQueue(BaseJobQueue[_AgentInboxRow, AgentRunJob, AgentRunResult]):
+class runAgentJob(BaseJobQueue[_AgentInboxRow, RunAgentJob, RunAgentResult]):
+    """Queue (write + claim + submit_result) for agent turns."""
+
     job_model = _AgentInboxRow
-    job_cls = AgentRunJob
-    result_cls = AgentRunResult
+    job_cls = RunAgentJob
+    result_cls = RunAgentResult
     natural_key_attr = "event_id"
 
-    def _insert_pending(self, session, job: AgentRunJob, **kwargs) -> _AgentInboxRow:
+    def _insert_pending(self, session, job: RunAgentJob, **kwargs) -> _AgentInboxRow:
         event_id = job.event_id or new_job_id()
         row = _AgentInboxRow(
             event_id=event_id,
@@ -123,8 +122,8 @@ class AgentRunQueue(BaseJobQueue[_AgentInboxRow, AgentRunJob, AgentRunResult]):
 
 
 __all__ = [
-    "AgentRunJob",
-    "AgentRunResult",
-    "AgentRunQueue",
+    "RunAgentJob",
+    "RunAgentResult",
+    "runAgentJob",
     "_AgentInboxRow",
 ]

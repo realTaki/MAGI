@@ -37,17 +37,6 @@ DEFAULT_ROLE_INSTRUCTIONS = {
 
 
 @dataclass(frozen=True, slots=True)
-class MagisRole:
-    id: int
-    magis_id: int
-    name: str
-    instruction: str = ""
-    is_reserved: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class MagisMembership:
     id: int
     magis_id: int
