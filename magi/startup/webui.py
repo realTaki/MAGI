@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.config import StartupConfig
 from magi.startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,

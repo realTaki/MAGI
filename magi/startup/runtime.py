@@ -36,12 +36,18 @@ from pathlib import Path
 
 import uvicorn
 
-from magi.launcher.constants import DEFAULT_LOG_LEVEL, WEBUI_HOST, WEBUI_PORT
 from magi.startup.bootstrap import bootstrap_magi
 from magi.startup.config import StartupConfig
 from magi.startup.context import StartupContext
 
 logger = logging.getLogger("magi.startup.runtime")
+
+# Plan §5 / §21 — internal host + port are hardcoded.  Different
+# containers have independent network namespaces so collisions are
+# not a concern.  Only the WebUI is externally routable.
+_RUNTIME_HOST: str = "0.0.0.0"
+_RUNTIME_PORT: int = 42069
+_DEFAULT_LOG_LEVEL: str = "info"
 
 
 # ----------------------------------------------------------------------
@@ -183,8 +189,8 @@ def _serve_runtime_api(_startup: StartupContext) -> None:
     Per plan §21 — host + port are hardcoded; reload is decided by the
     deployment role, not by an operator-controlled env var.
     """
-    host = WEBUI_HOST  # internal host only; not externally exposed
-    port = _runtime_internal_port()
+    host = _RUNTIME_HOST  # internal host only; not externally exposed
+    port = _RUNTIME_PORT
     reload = _reload_enabled()
     log_level = _log_level()
     reload_dirs = _reload_dirs() if reload else None
@@ -198,16 +204,6 @@ def _serve_runtime_api(_startup: StartupContext) -> None:
         reload=reload,
         reload_dirs=reload_dirs,
     )
-
-
-def _runtime_internal_port() -> int:
-    """Internal runtime HTTP port — fixed per plan §5.
-
-    Production deployments may set ``MAGI_INTERNAL_PORT`` only via the
-    build configuration layer (the deployer); the runtime refuses to
-    accept operator overrides at startup.
-    """
-    return int(os.environ.get("MAGI_INTERNAL_PORT") or WEBUI_PORT)
 
 
 def _reload_enabled() -> bool:
@@ -230,7 +226,7 @@ def _log_level() -> str:
             return raw
     except Exception:  # noqa: BLE001
         pass
-    return DEFAULT_LOG_LEVEL
+    return _DEFAULT_LOG_LEVEL
 
 
 def _reload_dirs() -> list[str]:

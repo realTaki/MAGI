@@ -89,14 +89,24 @@ def create_magi(
 
     # The legacy launcher re-uses the seeded Genesis identity if
     # --name=eva-000 is supplied. For new names we delegate to the
-    # bus service to create the row + membership.
+    # magis engine directly to create the row + membership.
     from sqlalchemy import select
+    from sqlalchemy.orm import Session
 
-    from magi.bus import get_bus
+    from magi.bus.db.magis.engine import get_magis_engine
+    from magi.bus.db.magis.local_engine import build as build_local_engine
     from magi.bus.db.models.magis.magic import MAGIC
 
-    bus = get_bus()
-    with bus.magis.session_scope() as session:
+    # Resolve magis engine (SQLite or PG) and check/create the MAGIC row.
+    engine = get_magis_engine()
+    if engine is None and config.magis_database_url:
+        # Fallback: build a local SQLite engine for the MAGIS DB path.
+        db_path = Path(config.magis_database_url[len("sqlite:///"):])
+        engine = build_local_engine(db_path.parent)
+    if engine is None:
+        raise ConfigurationError("Cannot resolve MAGIS database engine")
+
+    with Session(engine) as session:
         existing = session.scalar(
             select(MAGIC).where(MAGIC.name == config.magi_name).limit(1)
         )
@@ -105,7 +115,8 @@ def create_magi(
                 "create_magi: registering %s in MAGIS",
                 config.magi_name,
             )
-            bus.magic.create_magic(name=config.magi_name)
+            session.add(MAGIC(name=config.magi_name))
+            session.commit()
 
     if not start:
         return 0

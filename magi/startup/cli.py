@@ -23,7 +23,7 @@ import sys
 from typing import Optional, Sequence
 
 from magi.startup import local, webui
-from magi.startup.config import StartupConfig
+from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
 from magi.startup.context import StartupContext
 
 logger = __import__("logging").getLogger("magi.startup.cli")
@@ -69,7 +69,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_create(args: argparse.Namespace) -> int:
     """``magi create`` — register a new MAGI under an existing MAGIS."""
     config = _config_from_args(args)
-    if config.is_first_magi:
+    if config.magis_database_url is None:
         print(
             "error: `magi create` requires an existing MAGIS — "
             "set MAGIS_DATABASE_URL or run `magi run` first",
@@ -176,16 +176,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _config_from_args(args: argparse.Namespace) -> StartupConfig:
-    defaults: dict[str, object] = {}
-    if getattr(args, "host_workspace_dir", None):
-        defaults["host_workspace_dir"] = args.host_workspace_dir
-    if getattr(args, "name", None):
-        defaults["magi_name"] = args.name
-    if getattr(args, "magis_database_url", None):
-        defaults["magis_database_url"] = args.magis_database_url
-    if getattr(args, "magi_id", None):
-        defaults["magi_id"] = args.magi_id
-    return StartupConfig.from_cli(None, defaults=defaults)
+    return StartupConfig.from_cli(
+        host_workspace_dir=getattr(args, "host_workspace_dir", None),
+        magi_name=getattr(args, "name", None),
+        magis_database_url=getattr(args, "magis_database_url", None),
+        magi_id=getattr(args, "magi_id", None),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

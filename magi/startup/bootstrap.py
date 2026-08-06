@@ -29,12 +29,13 @@ from magi.bus.db.magis.engine import (
     set_injected_magis_engine,
 )
 from magi.startup.config import (
+    DEFAULT_MAGI_NAME,
     ConfigurationError,
     StartupConfig,
 )
 from magi.startup.context import StartupContext
 from magi.startup.paths import (
-    resolve_magis_database_path,
+    ensure_workspace,
     resolve_magis_database_url,
     resolve_private_database_path,
     resolve_runtime_state_path,
@@ -114,10 +115,10 @@ def bootstrap_first_magi(
 
     Idempotent — repeated calls do not duplicate rows.
     """
-    if config.magi_name != "eva-000":
+    if config.magi_name != DEFAULT_MAGI_NAME:
         # Plan §12 — the first MAGI is always eva-000.
         raise ConfigurationError(
-            f"The first MAGI must be 'eva-000' "
+            f"The first MAGI must be {DEFAULT_MAGI_NAME!r} "
             f"(got {config.magi_name!r})"
         )
 
@@ -223,7 +224,7 @@ def bootstrap_existing_magi(
             f"({config.magis_database_url})"
         )
 
-    actual_name = getattr(magic_row, "name", None) or "eva-000"
+    actual_name = getattr(magic_row, "name", None) or DEFAULT_MAGI_NAME
     if actual_name != config.magi_name:
         raise ConfigurationError(
             f"MAGI_NAME mismatch: env says {config.magi_name!r}, "

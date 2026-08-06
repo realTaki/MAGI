@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from magi.startup.config import StartupConfig
+from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
 
 logger = logging.getLogger("magi.startup.kubernetes")
 
@@ -73,8 +73,8 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
     CLI verb) is responsible for applying them via the legacy
     :mod:`magi.orchestrator.kubernetes` client.
     """
-    if config.is_first_magi and config.magi_name != "eva-000":
-        raise ValueError("first MAGI must be eva-000")
+    if config.is_first_magi and config.magi_name != DEFAULT_MAGI_NAME:
+        raise ValueError(f"first MAGI must be {DEFAULT_MAGI_NAME}")
     name = _eva_resource_name(magic_id, config.magi_name)
     pvc_name = f"{name}-workspace"
     ns = _namespace()
