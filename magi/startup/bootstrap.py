@@ -32,8 +32,8 @@ from magi.startup.config import (
     DEFAULT_MAGI_NAME,
     ConfigurationError,
     StartupConfig,
+    StartupContext,
 )
-from magi.startup.context import StartupContext
 from magi.startup.paths import (
     ensure_workspace,
     resolve_magis_database_url,
@@ -367,4 +367,55 @@ __all__ = [
     "bootstrap_existing_magi",
     "ensure_private_database",
     "persist_runtime_state",
+]
+
+
+# ----------------------------------------------------------------------
+# Launcher-issued control secret (was :mod:`magi.startup.security`)
+# ----------------------------------------------------------------------
+
+
+def ensure_control_secret(path: Path) -> str:
+    """Return the persisted secret; generate a new one if missing.
+
+    ``path`` is the on-disk file (``<magis_home>/control-secret``).
+    The file is forced to ``0600`` on POSIX systems.
+
+    The CLI Profile creates a 256-bit URL-safe random secret the first
+    time ``magi cli start`` runs, writes it to ``<magis_home>/control-secret``
+    with file-mode ``0600``, and the Bus-store mirrors a salted SHA-256
+    digest in the MAGIS database.  The raw secret is required by the
+    loopback-only control-plane HTTP API (``X-MAGI-Control-Secret`` header).
+    """
+    import os
+    import secrets
+
+    path = Path(path)
+    if path.exists():
+        raw = path.read_text(encoding="utf-8").strip()
+        if raw:
+            return raw
+    new = secrets.token_urlsafe(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
+    if os.name == "posix":
+        os.chmod(path, 0o600)
+    return new
+
+
+def reveal_control_secret(path: Path) -> str:
+    """Read the persisted secret for callers that hold the file mode."""
+    return Path(path).read_text(encoding="utf-8").strip()
+
+
+__all__ = [
+    "BootstrapIdentity",
+    "bootstrap_magi",
+    "bootstrap_first_magi",
+    "bootstrap_existing_magi",
+    "ensure_private_database",
+    "persist_runtime_state",
+    # security (merged from :mod:`magi.startup.security`)
+    "ensure_control_secret",
+    "reveal_control_secret",
 ]

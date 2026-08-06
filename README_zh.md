@@ -88,20 +88,24 @@ orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围�
 
 ## 快速开始
 
-按你的场景选一条部署路径，三种都同等支持并放在 `deploy/` 下：
+按你的场景选一条部署路径，三种都同等支持并放在 `deploy/` 下。所有
+启动代码都收口在 `magi.startup`：
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`，然后 `magi cli start` |
+| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`，然后 `magi run` |
 | 我在迭代 k8s 模块化方案 | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 **单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker 也没
 有 k8s），状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`
-（macOS、Windows）。打开 [http://127.0.0.1:42069](http://127.0.0.1:42069)，
-先选择正在运行的 MAGI，再完成 onboarding。系统初始化时，会自动
-创建根 MAGI Society（**Genesis**），然后创建第一个 MAGI
-（**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 ADAM。
+（macOS、Windows）。`./deploy/cli/install.sh` 之后执行 `magi run`
+会自动 bootstrap 第一个 MAGI（`eva-000`）、创建根 MAGI Society
+**Genesis**（让 `eva-000` 担任 ADAM）、启动唯一 WebUI。打开
+[http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行
+的 MAGI，再完成 onboarding。需要新 MAGI 时，运行
+`magi create --name eva-001 --magis <DSN> --start` 即可，每个新
+MAGI 是独立 OS 进程。
 
 **k8s-dev** 会在本地启动一个 `kind` 集群并部署第一个开发 MAGI
 节点。宿主机只需要 Docker。脚本会按需下载固定版本的 `kind` 与
@@ -109,9 +113,9 @@ orchestrator 请求生命周期变更；控制面只会创建 MAGI 所需范围�
 开发节点。开发部署会挂载：
 
 ```text
-宿主仓库             → /app/magi        源码热加载
-workspace/MAGI_Citizens/eva-00 → /workspace     开发 MAGI 的私有工作区
-workspace/MAGI_Societies/Genesis → /magis         Genesis 的公共工作区
+宿主仓库                                  → /app/magi     源码热加载
+HOST_WORKSPACE_DIR=/workspace/MAGI_Citizens/eva-000 (PVC，MAGI 私有工作区)
+MAGIS 公共工作区 PVC                       → /magis
 ```
 
 已有 Kubernetes 集群或生产式部署可使用：
@@ -125,8 +129,8 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 
 ## 从第一个 MAGIS 到组织成长
 
-1. **初始化 Genesis**：系统先创建根 MAGI Society（Genesis），再创建第一个 MAGI
-   （**EVA-00 PROTO TYPE**），并让它担任 Genesis 的 ADAM。
+1. **初始化 Genesis**：第一次 `magi run` 自动 bootstrap 根 MAGI Society
+   （Genesis），再创建第一个 MAGI（**`eva-000`**），并让它担任 Genesis 的 ADAM。
 2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
 3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 ADAM MAGI。
 4. **增加能力**：配置 EVA 的 provider 与凭证，然后让 ADAM 通过 orchestrator 启动或停止它。
@@ -159,8 +163,11 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 
 Kubernetes 是当前部署目标：它为每个 MAGI 提供明确的运行边界，也让 orchestrator
 能管理隔离资源，而不必让 ADAM 成为集群管理员。每个 MAGI 保留私有、单副本的 SQLite
-工作区；每个 MAGIS 则有独立 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。
-精确边界见[存储设计](docs/magi-magis-storage.md)。
+工作区，落在 `HOST_WORKSPACE_DIR/MAGI_Citizens/<MAGI_NAME>/`；每个 MAGIS 则有独立
+PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。启动契约只有四个变量
+（`HOST_WORKSPACE_DIR`、`MAGI_NAME`、`MAGIS_DATABASE_URL`、`MAGI_ID`），
+workspace 路径由它们推导，调用方不传入。精确边界见[存储设计](docs/magi-magis-storage.md)
+与[统一启动 Part IV](docs/ARCHITECTURE.md#part-iv--unified-startup)。
 
 ### 一个 WebUI、一个镜像
 

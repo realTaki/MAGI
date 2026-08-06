@@ -198,7 +198,7 @@ def _bootstrap_with_dirs(
     with the old bus's table definitions via ``extend_existing``.
     """
     # ---- lazy imports (avoid eager ORM table registration) ----------------
-    from magi.new_bus.books.local import (
+    from magi.new_bus.library.local import (
         ActionItemBook,
         ContactBook,
         ContactNoteBook,
@@ -215,7 +215,7 @@ def _bootstrap_with_dirs(
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.new_bus.books.magis import (
+    from magi.new_bus.library.magis import (
         AuthCredentialBook,
         ControlRuntimeBook,
         ControlSecretBook,
@@ -228,7 +228,7 @@ def _bootstrap_with_dirs(
         PortAllocationBook,
         WorkspaceArchiveBook,
     )
-    from magi.new_bus.jobs import (
+    from magi.new_bus.guild import (
         callLLMJob,
         chatJob,
         contactJob,

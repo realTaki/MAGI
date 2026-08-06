@@ -1,4 +1,4 @@
-"""MAGI unified startup package.
+"""MAGI unified startup package (refactored).
 
 Per MAGI_UNIFIED_STARTUP_REFACTOR_PLAN_V2, all startup-related code lives
 here. There are exactly four runtime inputs:
@@ -13,14 +13,13 @@ The path is *derived*, never passed in.
 
 Sub-modules:
 
-- :mod:`magi.startup.config`    — :class:`StartupConfig` + parsing
+- :mod:`magi.startup.config`    — :class:`StartupConfig` + :class:`StartupContext` + parsing
 - :mod:`magi.startup.paths`     — host / workspace / DB path helpers
-- :mod:`magi.startup.context`   — :class:`StartupContext` post-bootstrap
-- :mod:`magi.startup.bootstrap` — first/existing-MAGI bootstrap
+- :mod:`magi.startup.bootstrap` — first/existing-MAGI bootstrap + control secret
 - :mod:`magi.startup.runtime`   — Runtime composition + serve
-- :mod:`magi.startup.local`     — local process management
+- :mod:`magi.startup.local`     — local process management + OS detection
 - :mod:`magi.startup.webui`     — singleton WebUI lifecycle
-- :mod:`magi.startup.kubernetes` — K8s resource creation
+- :mod:`magi.startup.kubernetes` — K8s resource creation + orchestrator service
 - :mod:`magi.startup.cli`       — :command:`magi run|create|start|stop|status|...`
 """
 
@@ -29,7 +28,6 @@ from __future__ import annotations
 __all__ = [
     "config",
     "paths",
-    "context",
     "bootstrap",
     "runtime",
     "local",

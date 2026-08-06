@@ -107,22 +107,24 @@ plus the PostgreSQL and public workspace resources for a MAGIS when needed.
 ## Quick start
 
 Pick the deployment that matches your situation. All three are equally
-supported and live under `deploy/`:
+supported and live under `deploy/`. All startup code paths converge on
+`magi.startup`:
 
 | Situation | Path | Entry point |
 | --- | --- | --- |
-| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` then `magi cli start` |
+| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` then `magi run` |
 | I'm iterating on the k8s modular approach | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 The **single-machine path** is the fastest way to take MAGI for a
 spin. It runs directly on the host (no Docker, no k8s) and stores
 state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
-Windows). Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
-select the running MAGI, and complete onboarding. During system
-initialization, MAGI automatically creates the root MAGI Society,
-**Genesis**, then creates **EVA-00 PROTO TYPE**, the first MAGI,
-as Genesis's ADAM.
+Windows). After `./deploy/cli/install.sh`, `magi run` bootstraps the
+first MAGI (`eva-000`), creates the root MAGI Society **Genesis**
+with `eva-000` as its ADAM, and starts the singleton WebUI. Open
+[http://127.0.0.1:42069](http://127.0.0.1:42069), select the running
+MAGI, and complete onboarding. Each new MAGI is a separate
+process: `magi create --name eva-001 --magis <DSN> --start`.
 
 The **k8s-dev path** starts a local `kind` cluster and the first
 development MAGI node. Docker is the only host prerequisite. The
@@ -132,9 +134,9 @@ the dev node with backend reload and Vite HMR. The dev deployment
 mounts:
 
 ```text
-host repository      → /app/magi        source hot reload
-workspace/MAGI_Citizens/eva-00 → /workspace     dev MAGI's private workspace
-workspace/MAGI_Societies/Genesis → /magis         Genesis public workspace
+host repository                                  → /app/magi   source hot reload
+HOST_WORKSPACE_DIR=/workspace/MAGI_Citizens/eva-000 (workspace PVC)
+MAGIS public workspace (PVC)                     → /magis
 ```
 
 For an existing cluster or a production-style deployment, use the
@@ -150,8 +152,9 @@ and environment-specific configuration.
 
 ## From the first MAGIS to a growing organization
 
-1. **Initialize Genesis.** MAGI creates the root MAGI Society, Genesis, then
-   creates **EVA-00 PROTO TYPE**—the first MAGI—as Genesis's ADAM.
+1. **Initialize Genesis.** The first `magi run` bootstraps the root MAGI
+   Society, **Genesis**, then creates the first MAGI, **`eva-000`**,
+   as Genesis's ADAM.
 2. **Onboard an operator.** Configure administrator access and the channels
    your Society should use.
 3. **Shape the organization.** In WebUI, create child MAGIS entries and
@@ -190,9 +193,14 @@ and environment-specific configuration.
 Kubernetes is the current deployment target. It gives each MAGI a concrete
 execution boundary and lets the orchestrator manage isolated runtime resources
 without making ADAM a cluster administrator. Each MAGI keeps a private,
-single-replica SQLite workspace; each MAGIS has its own PostgreSQL database and
-public workspace PVC for organization facts and shared files. See
-[the storage boundary](docs/magi-magis-storage.md) for the exact split.
+single-replica SQLite workspace under `HOST_WORKSPACE_DIR/MAGI_Citizens/<MAGI_NAME>/`;
+each MAGIS has its own PostgreSQL database and public workspace PVC for
+organization facts and shared files. The four startup inputs
+(`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_DATABASE_URL`, `MAGI_ID`) are
+the only contract Runtime sees; workspace paths are derived, never
+configured. See [the storage boundary](docs/magi-magis-storage.md) and
+[Unified Startup](docs/ARCHITECTURE.md#part-iv--unified-startup) for the
+exact split and contract.
 
 ### One WebUI, one image
 

@@ -14,8 +14,8 @@ Worker 入口::
 
 需要具体的 DTO / Book / Job 类型时，直接从子模块导入：:
 
-    from magi.new_bus.books.local import SessionBook
-    from magi.new_bus.jobs import RunToolJob, runToolJob
+    from magi.new_bus.library.local import SessionBook
+    from magi.new_bus.guild import RunToolJob, runToolJob
 """
 
 from magi.new_bus.bootstrap import NewBus, get_bus, set_magis_url

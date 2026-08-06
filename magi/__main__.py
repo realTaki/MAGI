@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 import uvicorn
 
 from magi import __version__
-from magi.startup.constants import (
+from magi.startup.config import (
     DEFAULT_LOG_LEVEL,
     RUNTIME_HOST,
     RUNTIME_PORT,
@@ -38,7 +38,7 @@ from magi.startup.constants import (
 
 logger = logging.getLogger("magi")
 
-# Internal host + port constants live in :mod:`magi.startup.constants`
+# Internal host + port constants live in :mod:`magi.startup.config`
 # (plan §5 / §15 / §21).  Aliases below keep the legacy module-local
 # name shape so the ``--check`` payload still reads naturally.
 _RUNTIME_HOST: str = RUNTIME_HOST

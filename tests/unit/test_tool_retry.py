@@ -55,10 +55,6 @@ def _seed_run_with_tool(store: BusStore, tool_call_id: str) -> str:
     return run_id
 
 
-def _claim(store: BusStore, run_id: str) -> ToolJob:
-    with open_session() as session:
-        return session.query(ToolJob).filter(ToolJob.run_id == run_id).one()
-
 
 def test_retry_tool_job_moves_to_retry_with_backoff(
     store: BusStore,

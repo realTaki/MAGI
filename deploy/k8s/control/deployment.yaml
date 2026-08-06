@@ -29,11 +29,11 @@ spec:
           image: magi:0.1.0
           imagePullPolicy: IfNotPresent
           # The startup refactor consolidated the orchestrator FastAPI app
-          # into magi.startup.orchestrator_service.create_app (plan §20.4).
+          # into magi.startup.kubernetes.service.create_app (plan §20.4).
           # ``--factory`` lets uvicorn call our factory instead of an ASGI
           # module-level ``app`` symbol.
           command: ["python", "-m", "uvicorn"]
-          args: ["magi.startup.orchestrator_service:create_app", "--factory", "--host", "0.0.0.0", "--port", "42100"]
+          args: ["magi.startup.kubernetes.service:create_app", "--factory", "--host", "0.0.0.0", "--port", "42100"]
           envFrom:
             - configMapRef:
                 name: magi-orchestrator-config

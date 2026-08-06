@@ -28,8 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from magi.startup.config import StartupConfig
-from magi.startup.constants import WEBUI_HOST, WEBUI_PORT
+from magi.startup.config import StartupConfig, WEBUI_HOST, WEBUI_PORT
 from magi.startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,
@@ -40,7 +39,7 @@ logger = logging.getLogger("magi.startup.webui")
 
 # Re-export so legacy callers importing ``from magi.startup.webui import
 # DEFAULT_WEBUI_PORT`` keep working while the canonical constant lives in
-# :mod:`magi.startup.constants`.  Plan §21 — port is hardcoded.
+# :mod:`magi.startup.config`.  Plan §21 — port is hardcoded.
 DEFAULT_WEBUI_PORT: int = WEBUI_PORT
 
 

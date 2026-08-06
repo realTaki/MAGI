@@ -33,6 +33,23 @@ MAGI_CITIZENS_DIR = "MAGI_Citizens"
 """Canonical on-disk folder name for per-MAGI workspaces (plan §9)."""
 
 
+# Internal Runtime host (loopback on every container/host).
+RUNTIME_HOST: str = "127.0.0.1"
+
+# Internal Runtime port (non-WebUI port so the singleton WebUI is the
+# only thing the operator can reach).
+RUNTIME_PORT: int = 42070
+
+# Singleton WebUI bind defaults — the only externally reachable
+# surface (plan §21).
+WEBUI_HOST: str = "0.0.0.0"
+WEBUI_PORT: int = 42069
+
+# Default log level used until the BUS setting ``system.log_level``
+# is read.
+DEFAULT_LOG_LEVEL: str = "info"
+
+
 # ------------------------------------------------------------------
 # StartupConfig
 # ------------------------------------------------------------------
@@ -174,12 +191,53 @@ def _resolve_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
 
 
 # ------------------------------------------------------------------
+# StartupContext — post-bootstrap identity handed to the runtime layer
+# ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StartupContext:
+    """Resolved post-bootstrap identity handed to the runtime layer.
+
+    Fields map 1:1 to plan §10:
+
+    - ``host_workspace_dir`` — operator's host root
+    - ``workspace_dir``      — per-MAGI workspace (derived)
+    - ``magi_name``          — display name
+    - ``magi_id``            — MAGIS identity (MAGIC.id)
+    - ``magis_database_url`` — DSN of the MAGIS public database
+    - ``private_database_url`` — DSN of this MAGI's private SQLite
+    - ``is_first_magi``      — True for the ``eva-000`` Genesis bootstrap
+    """
+
+    host_workspace_dir: Path
+    workspace_dir: Path
+    magi_name: str
+    magi_id: str
+    magis_database_url: str
+    private_database_url: str
+    is_first_magi: bool
+
+    @property
+    def magi_slug(self) -> str:
+        """Same as :attr:`magi_name` — names are slugs by plan §4.2."""
+        return self.magi_name
+
+
+# ------------------------------------------------------------------
 # public API
 # ------------------------------------------------------------------
 
 __all__ = [
     "StartupConfig",
+    "StartupContext",
     "ConfigurationError",
     "DEFAULT_MAGI_NAME",
     "MAGI_CITIZENS_DIR",
+    # constants
+    "RUNTIME_HOST",
+    "RUNTIME_PORT",
+    "WEBUI_HOST",
+    "WEBUI_PORT",
+    "DEFAULT_LOG_LEVEL",
 ]

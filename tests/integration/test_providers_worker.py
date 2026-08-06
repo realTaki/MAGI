@@ -97,10 +97,6 @@ def magi_state(tmp_path, monkeypatch):
     yield tmp_path
 
 
-def _patched_get_provider(reply: str = "", fail_message: str = ""):
-    """Returns a fresh ``FakeProvider`` for each call — keeps state per-job."""
-    return FakeProvider(reply=reply, fail_message=fail_message)
-
 
 def _install_fake(fake: "FakeProvider"):
     """Patch every public name ``get_provider`` resolves to.
@@ -125,42 +121,6 @@ def _install_fake(fake: "FakeProvider"):
     _worker.get_provider = _fake_get
     magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]  # back-compat sym
 
-
-def _enqueue_test_job(
-    store,
-    *,
-    run_id: str,
-    request: dict,
-    inbox_event_id: str | None = None,
-    kind: str = "chat",
-    hook_context=None,
-) -> str:
-    """Enqueue an LLM job either via the new or legacy contract.
-
-    The new contract takes ``request`` in ``enqueue_llm_job`` and
-    returns ``EnqueueResult(row_id=...)``.  The legacy contract
-    returns a bare ``str`` and requires a separate
-    ``persist_llm_job_request`` call.  We try the new contract
-    first, falling back to the legacy form on ``TypeError`` so the
-    tests stay green against either bus.store revision.
-    """
-    try:
-        result = store.enqueue_llm_job(
-            run_id=run_id,
-            request=request,
-            inbox_event_id=inbox_event_id,
-            kind=kind,
-            hook_context=hook_context,
-        )
-        return result.row_id if hasattr(result, "row_id") else result
-    except TypeError:
-        attempt_id = store.enqueue_llm_job(
-            run_id=run_id,
-            inbox_event_id=inbox_event_id,
-            kind=kind,
-        )
-        store.persist_llm_job_request(attempt_id, request=request)
-        return attempt_id
 
 
 @pytest.mark.asyncio

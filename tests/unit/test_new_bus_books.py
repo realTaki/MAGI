@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from magi.new_bus.db import EngineFactory
-from magi.new_bus.books.local import (
+from magi.new_bus.library.local import (
     ActionItem,
     ActionItemBook,
     Contact,
@@ -52,7 +52,7 @@ def factory():
 def contact_id(factory):
     """Create a contact row, return its id.  Tests that need a contact
     FK can use this fixture to get a valid uid."""
-    from magi.new_bus.books.local.contactBook import ContactBook
+    from magi.new_bus.library.local.contactBook import ContactBook
     c = ContactBook(factory).add(name="Fixture")
     return c.id
 
@@ -94,7 +94,7 @@ def test_memory_book_add_and_get(factory, contact_id):
 
 
 def test_memory_book_list_by_owner(factory, contact_id):
-    from magi.new_bus.books.local.contactBook import ContactBook
+    from magi.new_bus.library.local.contactBook import ContactBook
     book = MemoryBook(factory)
     cbook = ContactBook(factory)
     other_id = cbook.add(name="Other").id

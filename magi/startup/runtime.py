@@ -37,8 +37,13 @@ from pathlib import Path
 import uvicorn
 
 from magi.startup.bootstrap import bootstrap_magi
-from magi.startup.config import StartupConfig
-from magi.startup.context import StartupContext
+from magi.startup.config import (
+    DEFAULT_LOG_LEVEL,
+    RUNTIME_HOST,
+    RUNTIME_PORT,
+    StartupConfig,
+    StartupContext,
+)
 
 logger = logging.getLogger("magi.startup.runtime")
 
@@ -47,7 +52,6 @@ logger = logging.getLogger("magi.startup.runtime")
 # :const:`WEBUI_PORT` is operator-routable, see :mod:`magi.startup.webui`).
 # Binding to loopback on a non-WebUI port keeps a single-process MAGI
 # isolated from any network listener on the host.
-from magi.startup.constants import RUNTIME_HOST, RUNTIME_PORT, DEFAULT_LOG_LEVEL
 
 _RUNTIME_HOST: str = RUNTIME_HOST
 _RUNTIME_PORT: int = RUNTIME_PORT
