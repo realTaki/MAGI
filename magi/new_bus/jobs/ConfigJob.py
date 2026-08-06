@@ -1,29 +1,38 @@
-"""ConfigJob — 配置变更作业。
-
-一张表 ``config_jobs``，包含：
-- ConfigJob:       ORM 模型
-- ConfigJobResult:  执行结果
-- publish_config_job: 发布
-- claim_config_job:   认领
-"""
+"""ConfigJob — 配置变更作业。"""
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
+from magi.new_bus.jobs.base import BaseJobQueue
 
-DEFAULT_LEASE_SECONDS = 60
+
+# -- public dataclasses ----------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class ConfigJob:
+    config_key: str
+    config_value: dict | None = None
+    job_id: str = ""
 
 
-# -- ORM -------------------------------------------------------------------
+@dataclass(frozen=True, slots=True)
+class ConfigJobResult:
+    job_id: str
+    success: bool
+    error: str = ""
+    result: dict | None = None
 
-class ConfigJob(Base):
+
+# -- internal ORM ----------------------------------------------------------
+
+class _ConfigJobRow(Base):
     __tablename__ = "config_jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -42,61 +51,22 @@ class ConfigJob(Base):
     )
 
 
-# -- Result ----------------------------------------------------------------
+# -- Queue -----------------------------------------------------------------
 
-@dataclass
-class ConfigJobResult:
-    job_id: str
-    success: bool
-    message: str = ""
-    data: dict | None = None
+class ConfigJobQueue(BaseJobQueue[_ConfigJobRow, ConfigJob, ConfigJobResult]):
+    job_model = _ConfigJobRow
+    job_cls = ConfigJob
+    result_cls = ConfigJobResult
 
-
-# -- publish ---------------------------------------------------------------
-
-def publish_config_job(
-    session: Session,
-    *,
-    config_key: str,
-    config_value: dict | None = None,
-) -> ConfigJob:
-    """发布一个配置变更作业。"""
-    now = utcnow_naive()
-    job = ConfigJob(
-        job_id=uuid.uuid4().hex,
-        status="pending",
-        config_key=config_key,
-        config_value=config_value,
-    )
-    session.add(job)
-    session.flush()
-    return job
-
-
-# -- claim -----------------------------------------------------------------
-
-def claim_config_job(
-    session: Session,
-    *,
-    worker_id: str,
-    lease_seconds: int = DEFAULT_LEASE_SECONDS,
-) -> ConfigJob | None:
-    """认领一个待处理的 ConfigJob（带租约）。"""
-    now = utcnow_naive()
-    lease_until = now + timedelta(seconds=lease_seconds)
-
-    job = session.scalar(
-        select(ConfigJob)
-        .where(ConfigJob.status == "pending")
-        .order_by(ConfigJob.created_at, ConfigJob.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )
-    if job is None:
-        return None
-
-    job.status = "processing"
-    job.leased_by = worker_id
-    job.leased_until = lease_until
-    job.attempts += 1
-    return job
+    def publish(self, job: ConfigJob) -> str:
+        with self._factory.session() as s:
+            row = _ConfigJobRow(
+                job_id=uuid.uuid4().hex,
+                status="pending",
+                config_key=job.config_key,
+                config_value=job.config_value,
+            )
+            s.add(row)
+            s.flush()
+            s.commit()
+            return row.job_id

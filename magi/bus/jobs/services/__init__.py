@@ -20,6 +20,11 @@ from magi.bus.jobs.services.magic import MagicService
 from magi.bus.jobs.services.magis import MagisService
 from magi.bus.jobs.services.memory import MemoryService
 from magi.bus.jobs.services.mcp import McpService
+from magi.bus.jobs.services.runtime_provider import (
+    RUNTIME_SETTINGS_FILENAME,
+    RuntimeProviderService,
+    RuntimeSettings,
+)
 from magi.bus.jobs.services.session import SessionService
 from magi.bus.jobs.services.setting import SettingsService
 from magi.bus.jobs.services.task import TaskService
@@ -49,6 +54,9 @@ __all__ = [
     "MagisService",
     "MemoryService",
     "McpService",
+    "RUNTIME_SETTINGS_FILENAME",
+    "RuntimeProviderService",
+    "RuntimeSettings",
     "SessionService",
     "SettingsService",
     "TaskService",

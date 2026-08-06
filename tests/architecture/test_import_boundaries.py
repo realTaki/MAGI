@@ -53,19 +53,19 @@ RULES: list[tuple[str, list[str]]] = [
     # code.  They MAY import ``magi.bus`` (services + contracts + the
     # façade itself); they MUST NOT import ``magi.bus.db`` (storage) or
     # ``magi.bus.db.models.*`` (raw ORM tables).
-    ("magi.agent", ["magi.tools", "magi.channels", "magi.bus.db", "magi.bus.models"]),
-    ("magi.tools", ["magi.agent", "magi.channels", "magi.bus.db", "magi.bus.models"]),
-    ("magi.channels", ["magi.agent", "magi.tools", "magi.bus.db", "magi.bus.models"]),
+    ("magi.agent", ["magi.tools", "magi.channels", "magi.bus.db"]),
+    ("magi.tools", ["magi.agent", "magi.channels", "magi.bus.db"]),
+    ("magi.channels", ["magi.agent", "magi.tools", "magi.bus.db"]),
     # ``magi.mcp`` and ``magi.connectors`` are siblings — each is a
     # tools-adapter for an external product (MCP for products that
     # speak the MCP protocol, connectors for products that don't).
     # Both MAY depend on ``magi.tools``; both must not reach into
     # storage. This is the "external-adapter" symmetry.
-    ("magi.mcp", ["magi.bus.db", "magi.bus.models"]),
-    ("magi.connectors", ["magi.bus.db", "magi.bus.models"]),
-    ("magi.proactive", ["magi.bus.db", "magi.bus.models"]),
-    ("magi.orchestrator", ["magi.bus.db", "magi.bus.models"]),
-    ("magi.skills", ["magi.bus.db", "magi.bus.models"]),
+    ("magi.mcp", ["magi.bus.db"]),
+    ("magi.connectors", ["magi.bus.db"]),
+    ("magi.proactive", ["magi.bus.db"]),
+    ("magi.orchestrator", ["magi.bus.db"]),
+    ("magi.skills", ["magi.bus.db"]),
     # ``magi.channels.api`` is the WebUI backend. Per
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §6
     # (forbidden-deps table) + §5.6, the API MUST NOT depend on the
@@ -88,7 +88,6 @@ RULES: list[tuple[str, list[str]]] = [
             "magi.plugins",
             "magi.connectors",
             "magi.bus.db",
-            "magi.bus.models",
             "magi.orchestrator",
             "magi.orchestrator.backends",
             "magi.orchestrator.client",
@@ -129,7 +128,7 @@ RULES: list[tuple[str, list[str]]] = [
     # imports the backend factory and the K8s *adapter* (which
     # implements the Protocol) — those are exempted by the
     # ``magi.orchestrator.backends`` sub-rule below.
-    ("magi.bus.services", ["magi.orchestrator.kubernetes", "magi.orchestrator.client", "magi.orchestrator.service", "magi.orchestrator.contracts"]),
+    ("magi.bus.jobs.services", ["magi.orchestrator.kubernetes", "magi.orchestrator.client", "magi.orchestrator.service", "magi.orchestrator.contracts"]),
     # Phase 2 — the dispatcher must not import the legacy K8s class
     # directly; it consumes the K8s *adapter* (which wraps the legacy
     # class) via the factory's Protocol surface.

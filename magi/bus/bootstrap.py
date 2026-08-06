@@ -16,6 +16,7 @@ from magi.bus.jobs.services import (
     MagisService,
     MemoryService,
     McpService,
+    RuntimeProviderService,
     SessionService,
     SettingsService,
     TaskService,
@@ -51,6 +52,8 @@ class Bus:
     magis: MagisService
     token_usage: TokenUsageService
     dispatcher: DispatcherService
+    # Per-MAGI provider / api_key / model TOML facade.
+    runtime_provider: RuntimeProviderService
     # Phase 2 — platform-neutral Runtime lifecycle + registry.
     # Appended at the end so the dataclass field order is preserved
     # for callers that rely on positional construction.
@@ -163,6 +166,7 @@ def _bootstrap(
         magis=MagisService(),
         token_usage=TokenUsageService(state_dir),
         dispatcher=DispatcherService(state_dir),
+        runtime_provider=RuntimeProviderService(),
         runtime=runtime_service,
         registry=RuntimeRegistryService(dispatcher=runtime_service),
         control_registry=control_registry_service,

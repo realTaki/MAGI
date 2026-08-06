@@ -26,10 +26,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.db.runtime_settings import (
+from magi.bus.jobs.services.runtime_provider import (
+    RuntimeProviderService,
     RuntimeSettings,
-    load_runtime_settings,
-    save_runtime_settings,
 )
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.auth_gates import admin_gate
@@ -38,6 +37,7 @@ from magi.providers.factory import is_known_provider, known_providers
 logger = logging.getLogger("magi.api.runtime_provider")
 
 router = APIRouter(tags=["runtime-provider"])
+_service = RuntimeProviderService()
 
 
 class ProviderOut(BaseModel):
@@ -103,13 +103,13 @@ AdminGate = Annotated[str, Depends(_admin_gate)]
 
 @router.get("/magic/self/provider", response_model=ProviderOut)
 def get_self_provider(_admin: AdminGate) -> ProviderOut:
-    rs = load_runtime_settings()
+    rs = _service.get()
     return _to_out(rs)
 
 
 @router.patch("/magic/self/provider", response_model=ProviderOut)
 def patch_self_provider(payload: ProviderPatch, _admin: AdminGate) -> ProviderOut:
-    current = load_runtime_settings()
+    current = _service.get()
     new_provider = _validate_provider(payload.provider)
     # Patch semantics: None means "leave alone", "" means "clear".
     # Pydantic ``model_fields_set`` distinguishes "omitted" from "None"
@@ -121,14 +121,14 @@ def patch_self_provider(payload: ProviderPatch, _admin: AdminGate) -> ProviderOu
         api_key=payload.api_key if "api_key" in payload.model_fields_set else current.api_key,
         model=payload.model if "model" in payload.model_fields_set else current.model,
     )
-    save_runtime_settings(merged)
+    _service.save(merged)
     return _to_out(merged)
 
 
 @router.delete("/magic/self/provider", response_model=ProviderOut)
 def delete_self_provider(_admin: AdminGate) -> ProviderOut:
     """Clear all three fields.  Useful for re-provisioning."""
-    save_runtime_settings(RuntimeSettings())
+    _service.save(RuntimeSettings())
     return _to_out(RuntimeSettings())
 
 
