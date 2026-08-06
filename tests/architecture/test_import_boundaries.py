@@ -135,11 +135,11 @@ RULES: list[tuple[str, list[str]]] = [
     ("magi.bus.jobs.services.runtime", ["magi.orchestrator.kubernetes"]),
 ]
 
-# ``magi.launcher`` is the Composition-Root namespace — it is the sole
+# ``magi.startup`` is the Composition-Root namespace — it is the sole
 # package allowed to import everything (including storage + the
 # orchestrator package).  The exemption is applied inside
 # ``_rule_violations`` below.
-COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.launcher"}
+COMPOSITION_ROOT_PREFIXES: set[str] = {"magi.startup"}
 
 # ``magi.bus`` is itself allowed to import ``magi.bus.db`` and
 # ``magi.bus.db.models.*`` — that's the whole point of the consolidation.

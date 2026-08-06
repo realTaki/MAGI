@@ -380,10 +380,10 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
     import magi.bus.db.models.local.contact  # noqa: F401 — unified contact directory
     import magi.bus.db.models.magis.eva_runtime  # noqa: F401 — EVA lifecycle state
     import magi.bus.db.models.local.hook_evaluation  # noqa: F401 — per-handler evaluation audit
-    # Hook plugin config lives in ``magi.launcher.hook_config``,
-    # not under ``magi.bus.db.models.local`` because it's owned by the
-    # composition root, not by a bus service.  Importing here so
-    # the table is part of the shared ``Base.metadata``.
+    # Per plan §20.1 the launcher-owns-the-table rationale no longer
+    # applies — the hook-plugin config moved into the local models
+    # package as part of the launcher retirement.  The import is kept
+    # here so the ``Base.metadata`` stays the source of truth.
     import magi.bus.db.models.local.hook_plugin_config  # noqa: F401 — hook_plugin_configs
     import magi.bus.db.models.magis.magic  # noqa: F401 — individual MAGI rows
     import magi.bus.db.models.magis.magis  # noqa: F401 — MAGIS tree

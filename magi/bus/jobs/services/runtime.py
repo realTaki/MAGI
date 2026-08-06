@@ -1,12 +1,10 @@
 """Platform-neutral Runtime lifecycle + registry services.
 
-Phase 2 introduces two new BUS facade services:
-
-- :class:`BackendDispatcherService` — the seam through which any business
-  module starts / stops / deletes a runtime.  Today it delegates to the
-  in-process :func:`~magi.orchestrator.backends.factory.create` factory;
-  Phase 4-7 will replace the body with a real BUS command queue so the
-  Orchestrator Worker can consume commands asynchronously.
+- :class:`BackendDispatcherService` — the seam through which business
+  modules start / stop / delete a runtime.  With the unified startup
+  refactor (:mod:`magi.startup`), the backend abstraction has been
+  retired — local process management lives in :mod:`magi.startup.local`,
+  K8s resource creation in :mod:`magi.startup.kubernetes`.
 
 - :class:`RuntimeRegistryService` — resolves a
   :class:`~magi.bus.jobs.protocols.runtime.RuntimeEndpoint` for a magic_id,
@@ -59,11 +57,14 @@ class BackendDispatcherService:
 
     @property
     def backend(self) -> Any:
-        """Resolve the backend on demand; honours ``MAGI_BACKEND`` overrides."""
-        if self._backend is None:
-            from magi.orchestrator.backends.factory import create
+        """Resolve the backend on demand.
 
-            self._backend = create()
+        With the unified startup refactor, local process management is
+        handled by :mod:`magi.startup.local` and K8s resources by
+        :mod:`magi.startup.kubernetes`.  The legacy backend factory has
+        been retired; this property returns ``None`` and callers should
+        use the new startup modules instead.
+        """
         return self._backend
 
     def provision_magis(self, magis_id: int, magis_name: str) -> MagisProvisionResult:

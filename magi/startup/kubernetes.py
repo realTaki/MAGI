@@ -234,16 +234,47 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
     """
     name = _webui_resource_name()
     logger.info("deleting singleton WebUI resources: %s", name)
-    # The actual DELETE call is delegated to the legacy K8s client so
-    # the auth / RBAC story stays in one place.  Kept thin here.
+    ns = _namespace()
     try:
-        from magi.orchestrator.kubernetes import KubernetesEvaBackend
-
-        backend = KubernetesEvaBackend()
-        backend._delete(f"/apis/apps/v1/namespaces/{_namespace()}/deployments/{name}")
-        backend._delete(f"/api/v1/namespaces/{_namespace()}/services/{name}")
+        _k8s_delete(f"/apis/apps/v1/namespaces/{ns}/deployments/{name}")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("delete_webui_resources skipped: %s", exc)
+        logger.warning("skip delete deployment %s: %s", name, exc)
+    try:
+        _k8s_delete(f"/api/v1/namespaces/{ns}/services/{name}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("skip delete service %s: %s", name, exc)
+
+
+# ----------------------------------------------------------------------
+# Minimal K8s API adapter (was ``magi.orchestrator.kubernetes``)
+# ----------------------------------------------------------------------
+
+def _k8s_delete(path: str) -> None:
+    """Send a DELETE request to the Kubernetes API using the in-cluster
+    service account token.  Raises on failure."""
+    import os as _os
+    import httpx
+    from pathlib import Path as _Path
+
+    host = _os.environ.get("KUBERNETES_SERVICE_HOST")
+    port = _os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    base = _os.environ.get("MAGI_K8S_API_URL") or f"https://{host}:{port}"
+    token_path = _Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    ca_path = _Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+    if not host or not token_path.is_file():
+        raise RuntimeError("Kubernetes service-account credentials unavailable")
+
+    token = token_path.read_text().strip()
+    verify: bool | str = str(ca_path) if ca_path.is_file() else True
+
+    with httpx.Client(verify=verify, timeout=20.0) as client:
+        resp = client.delete(
+            f"{base}{path}",
+            headers={"authorization": f"Bearer {token}", "accept": "application/json"},
+        )
+    if resp.status_code >= 300:
+        raise RuntimeError(f"K8s DELETE {path}: {resp.status_code}")
 
 
 __all__ = [
