@@ -1,21 +1,26 @@
 """引擎工厂 — 根据 database_url 自动适配 SQLite / PostgreSQL。
 
-用法::
+支持多实例共存：local SQLite + MAGIS PostgreSQL 各持一个 EngineFactory::
 
-    from magi.new_bus.db import EngineFactory
+    from magi.new_bus.db.engine import build_local_factory, build_magis_factory
 
-    factory = EngineFactory("sqlite:///data/magi.db")
-    # 或
-    factory = EngineFactory("postgresql://user:pass@localhost:5432/magi")
+    local = build_local_factory("/var/magi/state")          # → EngineFactory("sqlite:////var/magi/state/magi.db")
+    magis = build_magis_factory("postgresql://user:pw@db/magis")
 
-    with factory.session() as s:
+    with local.session() as s:
         ...
+
+每个 ``EngineFactory`` 拥有自己的 ``Engine`` 和 ``sessionmaker``，但
+共享同一个 ``magi.bus.db.base.Base``（即同一 ``MetaData``）——所有
+inline ORM 类（无论 inline 在 new_bus Books/Queues 还是旧的
+``magi.bus.db.models``）注册到同一份 metadata。
 """
 
 from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -31,6 +36,10 @@ class EngineFactory:
 
     SQLite:  文件路径，加 WAL / foreign_keys / busy_timeout / BEGIN IMMEDIATE。
     PG:      连接 URL，开箱即用。
+
+    可以创建多个 EngineFactory 实例（一个 local，一个 magis），
+    每个实例独立维护 Engine + sessionmaker，但共享同一份
+    ``magi.bus.db.base.Base.metadata``。
     """
 
     def __init__(self, database_url: str):
@@ -54,6 +63,10 @@ class EngineFactory:
     def dialect(self) -> str:
         return self._dialect
 
+    @property
+    def url(self) -> str:
+        return self._url
+
     @contextmanager
     def session(self) -> Generator[Session, None, None]:
         s = self._session_factory()
@@ -63,6 +76,13 @@ class EngineFactory:
             s.close()
 
     def create_all(self) -> None:
+        """Create all tables in this engine's database.
+
+        Safe to call on a pre-existing database — SQLAlchemy skips
+        tables that already exist.  Note that ``Base.metadata`` is
+        shared with the old bus; if the old bus has already
+        created the tables, this is a no-op.
+        """
         Base.metadata.create_all(self._engine)
 
     # -- internal ---------------------------------------------------------
@@ -99,36 +119,22 @@ class EngineFactory:
             dbapi_conn.exec_driver_sql("BEGIN IMMEDIATE")
 
 
-# -- 模块级快捷方式 ---------------------------------------------------------
-
-_factory: EngineFactory | None = None
+# -- 便利构造器 -----------------------------------------------------------
 
 
-def get_engine(database_url: str | None = None) -> Engine:
-    global _factory
-    if _factory is None:
-        if database_url is None:
-            raise ValueError("首次调用 get_engine 必须提供 database_url")
-        _factory = EngineFactory(database_url)
-    return _factory.engine
+def build_local_factory(state_dir: str) -> EngineFactory:
+    """Build the local SQLite ``EngineFactory`` for one runtime's state dir.
+
+    The SQLite file lives at ``<state_dir>/magi.db``.
+    """
+    db_path = Path(state_dir) / "magi.db"
+    return EngineFactory(f"sqlite:///{db_path}")
 
 
-def get_session() -> Generator[Session, None, None]:
-    if _factory is None:
-        raise RuntimeError("EngineFactory 尚未初始化，请先调用 get_engine(url)")
-    s = _factory._session_factory()
-    try:
-        yield s
-    finally:
-        s.close()
+def build_magis_factory(database_url: str) -> EngineFactory:
+    """Build the MAGIS PostgreSQL ``EngineFactory`` from a connection URL.
 
-
-@contextmanager
-def open_session() -> Generator[Session, None, None]:
-    if _factory is None:
-        raise RuntimeError("EngineFactory 尚未初始化，请先调用 get_engine(url)")
-    s = _factory._session_factory()
-    try:
-        yield s
-    finally:
-        s.close()
+    No SQLite pragmas are applied (PG uses the connection-level
+    transaction model).
+    """
+    return EngineFactory(database_url)

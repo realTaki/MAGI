@@ -1,12 +1,7 @@
-"""BaseJobQueue — 作业队列基类。
+"""BaseJobQueue — Job 基类，同步和异步共用。
 
-子类提供三个类属性：
-- job_model:   ORM 行类
-- job_cls:     Job dataclass
-- result_cls:  Result dataclass
-
-ORM 列名与 dataclass 字段名一致的自动映射，无需手写钩子。
-约定：所有 Result dataclass 必须有 error 字段。
+同步 Job: 继承后只 override publish()，直接落库。
+异步 Job: 设置 job_model/job_cls/result_cls，启用 claim/submit_result/get_result。
 """
 
 from __future__ import annotations
@@ -30,51 +25,56 @@ ResultT = TypeVar("ResultT")
 
 
 class BaseJobQueue(Generic[RowT, JobT, ResultT]):
-    """子类设置 job_model / job_cls / result_cls 即可，零钩子。"""
 
-    job_model: type[RowT]
-    job_cls: type[JobT]
-    result_cls: type[ResultT]
+    # 异步 Job 设置这三个
+    job_model: type[RowT] | None = None
+    job_cls: type[JobT] | None = None
+    result_cls: type[ResultT] | None = None
 
     def __init__(self, factory: EngineFactory,
                  lease_seconds: int = DEFAULT_LEASE_SECONDS):
         self._factory = factory
         self._lease_seconds = lease_seconds
 
-    # -- public ------------------------------------------------------------
+    def _session(self):
+        return self._factory.session()
+
+    # -- publish (子类 override) -------------------------------------------
+
+    def publish(self, job: JobT) -> str:
+        raise NotImplementedError
+
+    # -- 异步队列 (需设置 job_model/job_cls/result_cls) -------------------
 
     def claim(self, *, worker_id: str) -> JobT | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = self._claim(s, worker_id=worker_id)
             s.commit()
             return self._row_to_job(row) if row else None
 
     def submit_result(self, *, job_id: str, result: ResultT) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             self._submit(s, job_id=job_id, result=result)
             s.commit()
 
     def get_result(self, *, job_id: str) -> ResultT | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             return self._get_result(s, job_id=job_id)
 
-    # -- private (通用逻辑) ------------------------------------------------
+    # -- 内部 --------------------------------------------------------------
 
     def _claim(self, session: Session, *, worker_id: str) -> RowT | None:
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
-
         while True:
             candidate = self._pick_candidate(session, now)
             if candidate is None:
                 return None
-
             if candidate.status == "processing" and candidate.attempts >= MAX_ATTEMPTS:
                 exhausted = self._make_exhausted_result(candidate)
                 self._submit(session, job_id=candidate.job_id, result=exhausted)
                 session.flush()
                 continue
-
             is_reclaim = candidate.status == "processing"
             candidate.status = "processing"
             candidate.leased_by = worker_id
@@ -89,10 +89,7 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
             select(self.job_model)
             .where(or_(
                 self.job_model.status == "pending",
-                and_(
-                    self.job_model.status == "processing",
-                    self.job_model.leased_until < now,
-                ),
+                and_(self.job_model.status == "processing", self.job_model.leased_until < now),
             ))
             .order_by(self.job_model.created_at, self.job_model.id)
             .limit(1)
@@ -111,20 +108,14 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
 
     def _get_result(self, session: Session, *, job_id: str) -> ResultT | None:
         row = session.get(self.job_model, job_id)
-        if row is None:
-            return None
-        if row.status not in ("completed", "failed"):
+        if row is None or row.status not in ("completed", "failed"):
             return None
         return self._read_result_from_job(row)
 
     # -- 自动映射 (ORM 列名 ↔ dataclass 字段名) --------------------------
 
     def _row_to_job(self, row: RowT) -> JobT:
-        kwargs: dict = {}
-        for f in dataclasses.fields(self.job_cls):
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return self.job_cls(**kwargs)
+        return self._map_row(row, self.job_cls)
 
     def _make_exhausted_result(self, row: RowT) -> ResultT:
         return self.result_cls(
@@ -148,3 +139,11 @@ class BaseJobQueue(Generic[RowT, JobT, ResultT]):
             if hasattr(row, f.name):
                 kwargs[f.name] = getattr(row, f.name)
         return self.result_cls(**kwargs)
+
+    @staticmethod
+    def _map_row(row, cls):
+        kwargs = {}
+        for f in dataclasses.fields(cls):
+            if hasattr(row, f.name):
+                kwargs[f.name] = getattr(row, f.name)
+        return cls(**kwargs)
