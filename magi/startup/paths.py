@@ -238,7 +238,7 @@ def resolve_state_dir(
       composition-root path (no env reads).
     - ``resolve_state_dir()`` — launcher compatibility zero-arg form;
       reads ``HOST_WORKSPACE_DIR`` / ``MAGI_NAME`` / ``MAGI_WORKSPACE_DIR``
-      exactly as the legacy :func:`magi.startup.paths.resolve_state_dir` did.
+      exactly as the legacy :func:`magi.launcher.paths.state_dir` did.
     """
     import os
 
@@ -272,7 +272,7 @@ def resolve_state_dir(
 def resolve_workspace_dir() -> Path:
     """Return the operator's persistent workspace root (zero-arg variant).
 
-    Mirror of the legacy :func:`magi.startup.paths.resolve_workspace_dir` zero-arg
+    Mirror of the legacy :func:`magi.launcher.paths.workspace_dir` zero-arg
     resolver.  Reads ``MAGI_WORKSPACE_DIR`` / ``HOST_WORKSPACE_DIR`` /
     ``MAGI_NAME`` in priority order; raises if none are set.
     """
@@ -301,7 +301,7 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
     """Idempotent workspace bootstrap (alias for :func:`ensure_workspace`).
 
     Preserved as a top-level function so legacy callers that import it by
-    name (e.g. ``magi.startup.cli``) keep working during migration.  Plan
+    name (e.g. ``magi.launcher.cli``) keep working during migration.  Plan
     §20.1 will retire the launcher along with this alias.
     """
     workspace.mkdir(parents=True, exist_ok=True)
