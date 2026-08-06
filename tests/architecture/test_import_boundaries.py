@@ -319,6 +319,7 @@ STATE_DIR_COMPOSITION_ROOT_ALLOWLIST: frozenset[str] = frozenset({
     "magi/channels/api/app.py",
     "magi/channels/api/runtime_control.py",
     "magi/channels/telegram/bot.py",
+    "magi/new_bus/bootstrap.py",
 })
 
 
