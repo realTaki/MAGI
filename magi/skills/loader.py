@@ -70,7 +70,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from magi.launcher.paths import workspace_dir
+from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 logger = logging.getLogger("magi.agent.skills.loader")
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from magi.launcher.paths import workspace_dir
+from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 logger = logging.getLogger("magi.agent.system_prompt")
 

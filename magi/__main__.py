@@ -74,7 +74,7 @@ class NodeConfig:
         # Log level honours DB setting if reachable.
         log_level = _DEFAULT_LOG_LEVEL
         try:
-            from magi.launcher.paths import state_dir as _state_dir
+            from magi.startup.paths import resolve_state_dir as _state_dir
             from magi.bus.db.settings import state_get
 
             db_level = state_get(str(_state_dir()), "system.log_level")

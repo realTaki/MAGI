@@ -321,7 +321,7 @@ def test_allowlist_is_empty() -> None:
 #
 # This test walks every non-BUS, non-launcher Python file and fails on
 # any of:
-#   - ``from magi.launcher.paths import state_dir`` (or its dynamic
+#   - ``from magi.startup.paths import resolve_state_dir as state_dir`` (or its dynamic
 #     equivalent via ``__import__`` / ``importlib.import_module``).
 #   - An ``import`` line resolving to ``magi.launcher.paths`` when the
 #     imported name is ``state_dir``.
@@ -353,7 +353,7 @@ def _state_dir_name_imports_or_calls(py_path: Path) -> list[tuple[int, str]]:
 
     findings: list[tuple[int, str]] = []
     for node in ast.walk(tree):
-        # ``from magi.launcher.paths import state_dir, ...``
+        # ``from magi.startup.paths import resolve_state_dir as state_dir, ...``
         if isinstance(node, ast.ImportFrom):
             if node.module in {"magi.launcher.paths"}:
                 for alias in node.names:

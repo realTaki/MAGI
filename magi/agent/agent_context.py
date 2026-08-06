@@ -14,7 +14,7 @@ from magi.agent.compaction import maybe_compact
 from magi.providers import ChatMessage, LLMNotConfiguredError, LLMProvider, get_provider
 from magi.agent.system_prompt import build_system_prompt, read_soul
 from magi.bus import ToolContext, get_bus
-from magi.launcher.paths import workspace_dir
+from magi.startup.paths import resolve_workspace_dir as workspace_dir
 from magi.prompts import load_bot_replies
 
 logger = logging.getLogger("magi.agent.agent_context")

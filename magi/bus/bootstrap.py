@@ -98,7 +98,7 @@ def bootstrap(
     The control-plane runtime registry (``control_registry`` on Bus)
     is bootstrapped from this same engine, not a separate database.
     """
-    from magi.launcher.paths import state_dir as _state_dir
+    from magi.startup.paths import resolve_state_dir as _state_dir
 
     return _bootstrap(
         str(_state_dir()),
@@ -229,7 +229,7 @@ def get_bus_store() -> "BusStore":
     """
     global _BUS_STORE
     if _BUS_STORE is None:
-        from magi.launcher.paths import state_dir as _launcher_state_dir
+        from magi.startup.paths import resolve_state_dir as _launcher_state_dir
         from magi.bus.db.store import BusStore as _BusStore
 
         _BUS_STORE = _BusStore(state_dir=str(_launcher_state_dir()))

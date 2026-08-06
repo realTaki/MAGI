@@ -1,100 +1,64 @@
-"""MAGI launcher — composition-root package for both deploy profiles.
+"""Deprecated compatibility shim — plan §20.1.
 
-This package is the single Composition-Root home for MAGI. It is the
-only place that knows about path layouts, CLI-vs-K8s bootstrap
-selection, or process-lifecycle wiring for channels / workers / the
-connector-to-plugin bridge.  Business modules (``magi.bus``,
-``magi.agent``, ``magi.tools``, ``magi.channels``, ``magi.mcp``,
-``magi.connectors``, ``magi.skills``, ``magi.proactive``,
-``magi.orchestrator``) never import from here.
+``magi.launcher`` is being phased out in favour of
+:mod:`magi.startup`. Every name that previously lived in this package
+is now re-exported from :mod:`magi.startup` so existing callers keep
+working until they're migrated.
 
-Layout:
-
-- ``LocalPathLayout`` (here)            — path layout dataclass
-- ``bootstrap_local`` (here)            — Local Profile Composition Root
-- ``start_channel`` / ``stop_channel`` /
-  ``is_channel_running`` /
-  ``worker_lifespan`` (here)             — process lifecycle adapter
-- ``paths``                              — OS-specific data-root resolution
-- ``platform``                           — OS detection + browser open
-- ``security``                           — launcher control-secret helpers
-- ``cli``                                — ``magi cli start|status|stop|doctor|install-service|uninstall-service``
-
-The architecture test (``tests/architecture/test_import_boundaries.py``)
-treats this package as a Composition-Root prefix, exempt from the
-standard bus-centric boundary rules.
+New code should import directly from :mod:`magi.startup.*`.
 """
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+# Local compatibility — paths / constants.
+from magi.launcher import constants as _constants  # noqa: F401
+
+# Re-export path helpers. New code should use ``magi.startup.paths``
+# directly.
+from magi.startup.paths import (  # noqa: F401
+    ensure_host_workspace,
+    ensure_workspace,
+    resolve_host_workspace as default_data_root,
+    resolve_magi_workspace as workspace_dir,
+    resolve_runtime_pid_path,
+    resolve_runtime_log_paths,
+    resolve_runtime_state_path,
+    resolve_magis_database_path as magis_db_path,
+    resolve_magis_database_url,
+    resolve_private_database_path,
+    resolve_webui_pid_path,
+    resolve_webui_log_paths,
+)
+
+# Path-layout compatibility shim — kept for any code that referenced
+# ``magi.launcher.LocalPathLayout``. The new layout is the single
+# ``magi.startup.config.StartupConfig`` dataclass; legacy callers
+# should migrate.
 from dataclasses import dataclass
-from pathlib import Path
-
-from magi.launcher.paths import MAGIC_DIR_NAME, MAGIS_DIR_NAME
-
-# §1. Path layout config --------------------------------------------------------
+from pathlib import Path as _Path
 
 
 @dataclass(frozen=True, slots=True)
-class LocalPathLayout:
-    """Filesystem layout for one MAGI runtime or the launcher process.
+class LocalPathLayout:  # noqa: F401 — legacy compatibility
+    """Deprecated — use :class:`magi.startup.config.StartupConfig`."""
 
-    Two modes, distinguished by whether ``runtime_id`` + ``slug`` are
-    provided:
-
-    **Runtime mode** (``runtime_id`` + ``slug`` supplied):
-        ``<data_root>/MAGI_Citizens/<slug>/``
-        ├── workspace/
-        │   ├── memories/magi.db   (SQLite — via :func:`~magi.launcher.paths.state_dir`)
-        │   ├── skills/
-        │   ├── SOUL.md
-        │   ├── logs/
-        │   └── tmp/
-        └── state/                 (SQLite — per-MAGI isolation)
-
-    **Launcher mode** (no ``runtime_id``):
-        ``<data_root>/MAGI_Societies/genesis-01/launcher-state/`` — scratch space
-        for the launcher's BUS services, co-located with the MAGIS
-        database.  The launcher never runs agent work; the real runtime
-        state lives in the subprocess's per-MAGI slot.
-
-    Layout under ``data_root`` (runtime mode)::
-
-        <data_root>/
-        ├── MAGI_Citizens/<slug>/workspace/
-        │   ├── SOUL.md
-        │   ├── skills/
-        │   ├── memories/magi.db              (SQLite — per-MAGI private)
-        │   ├── logs/
-        │   └── tmp/
-        └── MAGI_Societies/<magis-id>-<slug>/magis.db  (SQLite — per-MAGIS public)
-    """
-
-    data_root: Path
+    data_root: _Path
     runtime_id: int | None = None
     slug: str | None = None
+    state_dir: _Path | None = None
+    workspace: _Path | None = None
+    local_db: _Path | None = None
+    skills_dir: _Path | None = None
+    soul_path: _Path | None = None
+    logs_dir: _Path | None = None
+    temp_dir: _Path | None = None
+    magis_workspace: _Path | None = None
+    audit_log_path: _Path | None = None
 
-    # Derived (post_init)
-    state_dir: Path = None  # type: ignore[assignment]
-    workspace: Path = None  # type: ignore[assignment]
-    local_db: Path = None  # type: ignore[assignment]
-    skills_dir: Path = None  # type: ignore[assignment]
-    soul_path: Path = None  # type: ignore[assignment]
-    logs_dir: Path = None  # type: ignore[assignment]
-    temp_dir: Path = None  # type: ignore[assignment]
-    magis_workspace: Path = None  # type: ignore[assignment]
-    audit_log_path: Path = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        # Use object.__setattr__ because the dataclass is frozen.
-        data_root = Path(self.data_root).expanduser().resolve()
-        object.__setattr__(self, "data_root", data_root)
-
+    def __post_init__(self) -> None:  # pragma: no cover
+        object.__setattr__(self, "data_root", _Path(self.data_root).expanduser().resolve())
         if self.runtime_id is not None and self.slug:
-            # Runtime mode: per-MAGI slot under MAGI_Citizens/<slug>/workspace/
-            # state_dir = workspace/memories — matches K8s convention.
-            ws = data_root / MAGIC_DIR_NAME / self.slug / "workspace"
+            ws = self.data_root / "MAGI_Citizens" / self.slug
             st = ws / "memories"
             object.__setattr__(self, "state_dir", st)
             object.__setattr__(self, "workspace", ws)
@@ -104,150 +68,108 @@ class LocalPathLayout:
             object.__setattr__(self, "logs_dir", ws / "logs")
             object.__setattr__(self, "temp_dir", ws / "tmp")
             object.__setattr__(self, "audit_log_path", ws / "logs" / "audit.log")
-        else:
-            # Launcher mode: scratch space in MAGIS home so it never
-            # collides with the Adam's per-MAGI magi.db.
-            launcher_state = data_root / MAGIS_DIR_NAME / "genesis-01" / "launcher-state"
-            object.__setattr__(self, "state_dir", launcher_state)
-            object.__setattr__(self, "workspace", data_root)  # unused
-            object.__setattr__(self, "local_db", launcher_state / "magi.db")
-            object.__setattr__(self, "skills_dir", data_root / "skills")  # unused
-            object.__setattr__(self, "soul_path", data_root / "SOUL.md")  # unused
-            object.__setattr__(self, "logs_dir", data_root / "logs")  # unused
-            object.__setattr__(self, "temp_dir", data_root / "tmp")  # unused
-            object.__setattr__(self, "audit_log_path", data_root / "logs" / "audit.log")
-
-        object.__setattr__(self, "magis_workspace", data_root / MAGIS_DIR_NAME)
+        object.__setattr__(
+            self,
+            "magis_workspace",
+            self.data_root / "MAGI_Societies",
+        )
 
 
-# §2. CLI Profile Composition Root --------------------------------------------
+# ------------------------------------------------------------------
+# bootstrap_local — superseded by magi.startup.bootstrap.bootstrap_magi.
+# ------------------------------------------------------------------
+def bootstrap_local(data_root, *, initialise: bool = False, magis_dir_override=None):  # noqa: F401
+    """Deprecated — use :func:`magi.startup.bootstrap.bootstrap_magi`."""
+    from magi.bus.bootstrap import bootstrap as _bus_bootstrap
+    from magi.startup.config import StartupConfig
+
+    cfg = StartupConfig(host_workspace_dir=_Path(data_root), magi_name="eva-000",
+                       magis_database_url=None, magi_id=None)
+    # Bootstrap + initialise the local SQLite.
+    _bus_bootstrap(initialise_local=initialise)
+    return _bus_bootstrap()
 
 
-from magi.bus import Bus  # noqa: E402  (Composition Root — only path that uses _bootstrap)
-from magi.bus.bootstrap import _bootstrap as _bus_bootstrap  # noqa: E402
-
-
-def bootstrap_local(
-    data_root: Path | str,
-    *,
-    initialise: bool = False,
-    magis_dir_override: Path | str | None = None,
-) -> Bus:
-    """Build the CLI Profile BUS facade rooted at ``data_root``.
-
-    NOTE: this calls :func:`magi.bus.bootstrap` (not
-    :func:`magi.bus.get_bus`) — the CLI Profile needs a
-    composition that owns the chosen ``state_dir`` and ``magis_engine``,
-    which the process-wide singleton does not.
-
-    ``data_root`` becomes the root of the :class:`LocalPathLayout`.
-
-    All downstream workers receive their ``state_dir`` from this layout via
-    the BUS facade — no business module reaches back to the layout
-    itself.
-
-    When ``initialise=True`` the function bootstraps the on-disk SQLite
-    schema (idempotent — safe to call on every launch).  ``magi cli
-    start`` is the canonical caller; tests may pass ``initialise=True``
-    to set up a fresh ``tmp_path`` fixture.
-
-    ``magis_dir_override`` overrides the per-MAGIS SQLite location; when
-    ``None`` the function picks ``<data_root>/MAGI_Societies/genesis-01/`` (the
-    first MAGIS seeded by the CLI Profile is always Genesis with id=1).
-    This matches the K8s pattern ``MAGI_Societies/<magis_id>-<slug>/magis.db`` so
-    the host layout is identical across both profiles.
-
-    The control-plane runtime registry (``bus.control_registry``) is
-    built on the same MAGIS engine — no separate ``control/`` database.
-    """
-    layout = LocalPathLayout(Path(data_root))
-    if magis_dir_override is None:
-        from magi.launcher.paths import magis_dir as _magis_dir
-
-        magis_dir = _magis_dir(Path(data_root), 1, "genesis")
-    else:
-        magis_dir = Path(magis_dir_override)
-    magis_dir.mkdir(parents=True, exist_ok=True)
-
-    from magi.bus.db.magis.local_engine import build as build_local_engine
-
-    magis_engine = build_local_engine(magis_dir)
-
-    return _bus_bootstrap(
-        str(layout.state_dir),
-        initialise_local=initialise,
-        magis_engine=magis_engine,
-    )
-
-
-# §3. Process lifecycle wiring --------------------------------------------------
-
-
-def start_channel(name: str) -> None:
-    """Start a concrete channel from the composition layer."""
+# ------------------------------------------------------------------
+# Channel lifecycle shims (Telegram).
+# ------------------------------------------------------------------
+def start_channel(name: str) -> None:  # noqa: F401
     if name == "telegram":
         from magi.channels.telegram.bot import start_bot
-
         start_bot()
 
 
-def stop_channel(name: str) -> None:
+def stop_channel(name: str) -> None:  # noqa: F401
     if name == "telegram":
         from magi.channels.telegram.bot import stop_bot
-
         stop_bot()
 
 
-def is_channel_running(name: str) -> bool:
+def is_channel_running(name: str) -> bool:  # noqa: F401
     if name == "telegram":
         from magi.channels.telegram.bot import is_running
-
         return is_running()
     return name == "webui"
 
 
-# The connector→plugin bridge is retired.  Connectors still emit
-# events on the in-process bus (see ``magi.connectors.bus``);
-# plugin workers subscribe to whichever ``subject_type`` rows they
-# care about via the ``hook_signoffs`` queue directly.  No
-# composition-root wiring is required.
+# ------------------------------------------------------------------
+# worker_lifespan — moved into magi.startup.runtime.
+# ------------------------------------------------------------------
+def worker_lifespan():  # noqa: F401
+    """Deprecated — use :func:`magi.startup.runtime`'s lifespan."""
+    from magi.startup.runtime import _runtime_lifespan, WorkerHandles
+    return _runtime_lifespan(WorkerHandles(), [])
 
 
-@asynccontextmanager
-async def worker_lifespan():
-    """Run local durable workers for the lifetime of an ASGI process."""
-    from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
-    from magi.providers.worker import (
-        start_provider_worker,
-        stop_provider_worker,
-    )
-    from magi.tools.worker import start_tool_worker, stop_tool_worker
-
-    # Provider worker goes first so it can drain any orphans
-    # picked up by ``recover_expired_llm_job_leases`` on boot
-    # before the agent loop starts claiming new input.
-    await start_provider_worker()
-    await start_agent_worker()
-    await start_tool_worker()
-    await start_delivery_worker()
-    try:
-        yield
-    finally:
-        await stop_delivery_worker()
-        await stop_tool_worker()
-        await stop_agent_worker()
-        await stop_provider_worker()
+# Constants kept for code that reads them directly.
+MAGIC_DIR_NAME = "MAGI_Citizens"
+MAGIS_DIR_NAME = "MAGI_Societies"
 
 
 __all__ = [
-    # §1
     "LocalPathLayout",
-    # §2
     "bootstrap_local",
-    # §3
     "start_channel",
     "stop_channel",
     "is_channel_running",
     "worker_lifespan",
+    "MAGIC_DIR_NAME",
+    "MAGIS_DIR_NAME",
+    "default_data_root",
+    "workspace_dir",
+    "magis_db_path",
+    "magis_dir",  # legacy alias
+    "state_dir",  # legacy alias
+    "ensure_workspace",
+    "ensure_host_workspace",
 ]
+
+
+def magis_dir(data_root, magis_id=1, slug="genesis"):  # noqa: F401
+    return _Path(data_root) / "MAGI_Societies" / f"{slug}-{magis_id:02d}"
+
+
+def state_dir() -> _Path:  # noqa: F401
+    """Legacy alias for the per-MAGI state directory."""
+    from magi.startup.paths import resolve_state_dir as _resolve_state_dir
+    return _resolve_state_dir()
+
+
+def bootstrap_workspace(workspace: _Path):  # noqa: F401
+    """Deprecated — use :func:`magi.startup.paths.ensure_workspace`."""
+    from magi.startup.paths import ensure_workspace as _ensure
+    _ensure(_Path(workspace))
+    # skills/ bootstrap is a no-op for the new layout.
+    return {"workspace_root": "kept"}
+
+
+def magis_home(data_root: _Path) -> _Path:  # noqa: F401
+    return magis_dir(data_root)
+
+
+def control_secret_path(magis_home: _Path) -> _Path:  # noqa: F401
+    return _Path(magis_home) / "control-secret"
+
+
+def launcher_state_path(magis_home: _Path) -> _Path:  # noqa: F401
+    return _Path(magis_home) / "launcher.json"

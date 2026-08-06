@@ -44,7 +44,7 @@ def require_state_dir() -> str:
     Delegates to :func:`magi.launcher.paths.state_dir`.  The K8s Pod
     sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``HOST_WORKSPACE_DIR``.
     """
-    from magi.launcher.paths import state_dir as _state_dir
+    from magi.startup.paths import resolve_state_dir as _state_dir
     return str(_state_dir())
 
 

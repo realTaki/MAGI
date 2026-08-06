@@ -89,7 +89,7 @@ class StartupConfig:
         )
         host = Path(host_raw).expanduser().resolve()
 
-        magi_name = os.environ.get("MAGI_NAME", "eva-000")
+        magi_name = os.environ.get("MAGI_NAME", DEFAULT_MAGI_NAME)
 
         magis_db_url: str | None = os.environ.get("MAGIS_DATABASE_URL")
         if magis_db_url is not None:
@@ -146,7 +146,7 @@ class StartupConfig:
         # First MAGI must be eva-000 when bootstrapping
         if self.magis_database_url is None and self.magi_name != DEFAULT_MAGI_NAME:
             raise ConfigurationError(
-                f"The first MAGI must be 'eva-000', got {self.magi_name!r}. "
+                f"The first MAGI must be {DEFAULT_MAGI_NAME!r}, got {self.magi_name!r}. "
                 "To join an existing MAGIS, set MAGIS_DATABASE_URL and MAGI_ID."
             )
 

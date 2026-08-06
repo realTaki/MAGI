@@ -368,7 +368,7 @@ class RuntimeSettings:
 
 def _runtime_settings_path() -> Path:
     """Resolve the active MAGI's runtime-settings file path."""
-    from magi.launcher.paths import workspace_dir
+    from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
     return workspace_dir() / RUNTIME_SETTINGS_FILENAME
 

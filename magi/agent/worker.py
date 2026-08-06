@@ -21,7 +21,7 @@ from magi.bus import (
     get_bus_store,
     get_stream_hub,
 )
-from magi.launcher.paths import workspace_dir
+from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 logger = logging.getLogger("magi.agent.worker")
 

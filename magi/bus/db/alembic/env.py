@@ -36,7 +36,7 @@ if config.config_file_name is not None:
 # convenience for CLI workflows, so we only fall back to the global
 # ``state_dir()`` resolution when no URL has been provided by the
 # caller.
-from magi.launcher.paths import state_dir as _state_dir
+from magi.startup.paths import resolve_state_dir as _state_dir
 
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option(

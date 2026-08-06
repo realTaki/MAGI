@@ -58,7 +58,7 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminOrAssignedGate
-from magi.launcher.paths import workspace_dir
+from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 logger = logging.getLogger("magi.api.soul")
 

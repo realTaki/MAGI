@@ -1,4 +1,8 @@
-"""Authenticated FastAPI service that owns EVA Kubernetes operations."""
+"""Authenticated FastAPI service that owns EVA Kubernetes operations.
+
+Per plan §6 — there is no Backend abstraction. The orchestrator uses
+the Kubernetes path directly via :class:`magi.orchestrator.kubernetes.KubernetesEvaBackend`.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +18,8 @@ from magi.bus.jobs.protocols.lifecycle import (
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.orchestrator.backends.factory import create as create_backend
 from magi.orchestrator.contracts import EvaSpec, MagisBinding
+from magi.orchestrator.kubernetes import KubernetesEvaBackend
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:

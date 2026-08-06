@@ -184,7 +184,7 @@ def _bootstrap() -> NewBus:
         from magi.startup.paths import resolve_state_dir
         state = str(resolve_state_dir())
     except Exception:
-        from magi.launcher.paths import state_dir as _state_dir
+        from magi.startup.paths import resolve_state_dir as _state_dir
         state = str(_state_dir())
 
     return _bootstrap_with_dirs(state_dir=state)

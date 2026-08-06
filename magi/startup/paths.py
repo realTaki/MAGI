@@ -56,6 +56,13 @@ def resolve_host_workspace() -> Path:
     return Path.home() / ".magi"
 
 
+# Legacy launcher compatibility — plan §20.1 migrates the launcher
+# `state_dir()` / `workspace_dir()` zero-arg resolvers into the unified
+# :func:`resolve_state_dir` / :func:`resolve_workspace_dir` defined below.
+# These names read the same env vars the launcher did; semantics stay
+# identical until the legacy callers are retired.
+
+
 # ------------------------------------------------------------------
 # MAGI workspace
 # ------------------------------------------------------------------
@@ -222,24 +229,101 @@ def resolve_state_dir(
 ) -> Path:
     """Return the canonical state directory for BUS SQLite + migrations.
 
-    Per plan §9, ``magi.db`` lives directly under the MAGI workspace:
+    Plan §9 — ``magi.db`` lives directly under the MAGI workspace:
     ``<host>/MAGI_Citizens/<name>/magi.db``.
 
-    The launcher / K8s branches remain for backward compatibility
-    during the migration window.
+    Two calling conventions are supported:
+
+    - ``resolve_state_dir(host, name)`` — explicit, the canonical
+      composition-root path (no env reads).
+    - ``resolve_state_dir()`` — launcher compatibility zero-arg form;
+      reads ``HOST_WORKSPACE_DIR`` / ``MAGI_NAME`` / ``MAGI_WORKSPACE_DIR``
+      exactly as the legacy :func:`magi.launcher.paths.state_dir` did.
     """
     import os
 
+    # Explicit args win — no env reads.
     if host_workspace_dir is not None:
         if magi_name:
-            return host_workspace_dir / "MAGI_Citizens" / magi_name / "memories"
-        return host_workspace_dir / "MAGI_Societies" / "genesis" / "launcher-state"
+            return host_workspace_dir / "MAGI_Citizens" / magi_name / "workspace" / "memories"
+        return host_workspace_dir / "MAGI_Societies" / "genesis-01" / "launcher-state"
 
-    # K8s profile — no HOST_WORKSPACE_DIR set
+    # Zero-arg launcher-compat branch.
+    data_root = os.environ.get("HOST_WORKSPACE_DIR")
+    if data_root:
+        runtime_slug = os.environ.get("MAGI_NAME")
+        if runtime_slug:
+            return (
+                Path(data_root).expanduser().resolve()
+                / "MAGI_Citizens"
+                / runtime_slug
+                / "workspace"
+                / "memories"
+            )
+        return Path(data_root).expanduser().resolve() / "MAGI_Societies" / "genesis-01" / "launcher-state"
+
+    # K8s profile — no HOST_WORKSPACE_DIR set.
     raw_ws = os.environ.get("MAGI_WORKSPACE_DIR")
     if raw_ws:
         return Path(raw_ws) / "memories"
-    return Path.home() / ".magi" / "MAGI_Citizens" / (os.environ.get("MAGI_NAME", "eva-000")) / "memories"
+    return Path.home() / ".magi" / "MAGI_Citizens" / (os.environ.get("MAGI_NAME", "eva-000")) / "workspace" / "memories"
+
+
+def resolve_workspace_dir() -> Path:
+    """Return the operator's persistent workspace root (zero-arg variant).
+
+    Mirror of the legacy :func:`magi.launcher.paths.workspace_dir` zero-arg
+    resolver.  Reads ``MAGI_WORKSPACE_DIR`` / ``HOST_WORKSPACE_DIR`` /
+    ``MAGI_NAME`` in priority order; raises if none are set.
+    """
+    import os as _os
+
+    raw = _os.environ.get("MAGI_WORKSPACE_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    data_root = _os.environ.get("HOST_WORKSPACE_DIR")
+    if data_root:
+        runtime_slug = _os.environ.get("MAGI_NAME")
+        if runtime_slug:
+            return Path(data_root) / "MAGI_Citizens" / runtime_slug / "workspace"
+        return (
+            Path(data_root).expanduser().resolve()
+            / "MAGI_Societies"
+            / "genesis-01"
+            / "launcher-workspace"
+        )
+    raise RuntimeError(
+        "resolve_workspace_dir() needs MAGI_WORKSPACE_DIR or HOST_WORKSPACE_DIR"
+    )
+
+
+def bootstrap_workspace(workspace: Path) -> dict[str, str]:
+    """Idempotent workspace bootstrap (alias for :func:`ensure_workspace`).
+
+    Preserved as a top-level function so legacy callers that import it by
+    name (e.g. ``magi.launcher.cli``) keep working during migration.  Plan
+    §20.1 will retire the launcher along with this alias.
+    """
+    workspace.mkdir(parents=True, exist_ok=True)
+    created: dict[str, str] = {"workspace_root": "kept"}
+    for sub, label in (
+        ("skills", "skills/"),
+        ("memories", "memories/"),
+    ):
+        target = workspace / sub
+        target.mkdir(parents=True, exist_ok=True)
+        created[label] = "kept"
+    soul = workspace / "SOUL.md"
+    if not soul.exists():
+        bundled = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
+        if bundled.is_file():
+            soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
+            created["SOUL.md"] = "created"
+        else:
+            created["SOUL.md"] = "skipped (no bundled default)"
+    else:
+        created["SOUL.md"] = "kept"
+    return created
 
 
 def resolve_soul_path(workspace_dir: Path) -> Path:
@@ -253,9 +337,12 @@ def resolve_soul_path(workspace_dir: Path) -> Path:
 __all__ = [
     # host
     "resolve_host_workspace",
+    "resolve_state_dir",
+    "resolve_workspace_dir",
     # directory bootstrapping
     "ensure_host_workspace",
     "ensure_workspace",
+    "bootstrap_workspace",
     # MAGI workspace
     "resolve_magi_workspace",
     # databases
@@ -273,6 +360,5 @@ __all__ = [
     # subdirectories
     "resolve_skills_dir",
     "resolve_memories_dir",
-    "resolve_state_dir",
     "resolve_soul_path",
 ]

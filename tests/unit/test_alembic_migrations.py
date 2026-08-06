@@ -91,7 +91,7 @@ def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
-    from magi.launcher.paths import state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir as launcher_state_dir
 
     init_orm(seed_root=False)
 
@@ -125,7 +125,7 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
 
     from magi.bus.db import init_orm
     from magi.bus.db.alembic_runner import CANONICAL_HEAD
-    from magi.launcher.paths import state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir as launcher_state_dir
 
     state_path = Path(launcher_state_dir())
     db_path = state_path / "magi.db"
@@ -198,7 +198,7 @@ def test_baseline_includes_all_actor_runtime_columns(
     engine_mod._engine = engine_mod._SessionLocal = None
 
     from magi.bus.db import init_orm
-    from magi.launcher.paths import state_dir as launcher_state_dir
+    from magi.startup.paths import resolve_state_dir as launcher_state_dir
 
     init_orm(seed_root=False)
 
