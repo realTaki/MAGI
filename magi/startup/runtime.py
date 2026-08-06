@@ -83,20 +83,24 @@ async def run_magi(config: StartupConfig) -> None:
 def _build_bus(startup: StartupContext) -> object:
     """Construct the public BUS facade for this process.
 
-    Uses :func:`magi.bus.bootstrap.bootstrap` so the singleton Bus is
-    resolved from environment + injected MAGIS engine. The bus is the
-    single composition facade handed to every worker.
+    The path + DSN come from :class:`StartupContext` and are passed
+    through explicitly (plan §10 — no env mutation at runtime).
     """
-    # Inject startup context into the process environment so the bus
-    # resolver (which still reads HOST_WORKSPACE_DIR / state_dir) finds
-    # the values bootstrap already resolved.
-    os.environ["HOST_WORKSPACE_DIR"] = str(startup.host_workspace_dir)
-    if startup.is_first_magi:
-        os.environ.setdefault("MAGIS_DATABASE_URL", startup.magis_database_url)
-
     from magi.bus import bootstrap as bus_bootstrap
+    from magi.bus.db.magis.engine import set_injected_magis_engine
+    from magi.bus.db.magis.local_engine import build as build_local_engine
 
-    return bus_bootstrap(initialise_local=True)
+    # Pass the resolved path + engines into the bus so the resolver
+    # does not need to re-read process environment.
+    state_dir = startup.workspace_dir / "memories"
+    magis_engine = build_local_engine(startup.workspace_dir.parent.parent / "MAGI_Societies" / "genesis")
+    set_injected_magis_engine(magis_engine)
+
+    return bus_bootstrap(
+        initialise_local=True,
+        state_dir=str(state_dir),
+        magis_engine=magis_engine,
+    )
 
 
 # ----------------------------------------------------------------------

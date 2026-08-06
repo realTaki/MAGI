@@ -80,6 +80,7 @@ def bootstrap(
     initialise_local: bool = False,
     runtime_backend: object | None = None,
     magis_engine: object | None = None,
+    state_dir: str | None = None,
 ) -> Bus:
     """Create the public BUS facade for the container / K8s profile.
 
@@ -97,11 +98,15 @@ def bootstrap(
     dedicated MAGIS engine (Local Profile SQLite, K8s PostgreSQL, …).
     The control-plane runtime registry (``control_registry`` on Bus)
     is bootstrapped from this same engine, not a separate database.
+
+    ``state_dir`` (plan §10) lets the caller hand the resolved path
+    in explicitly so the bootstrap does **not** mutate ``os.environ``
+    or re-read it at composition time.
     """
     from magi.startup.paths import resolve_state_dir as _state_dir
 
     return _bootstrap(
-        str(_state_dir()),
+        state_dir or str(_state_dir()),
         initialise_local=initialise_local,
         runtime_backend=runtime_backend,
         magis_engine=magis_engine,

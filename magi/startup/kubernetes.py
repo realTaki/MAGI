@@ -24,6 +24,7 @@ from typing import Any
 import httpx
 
 from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.constants import RUNTIME_PORT, WEBUI_PORT
 from magi.startup.orchestrator_contracts import (
     EvaOperationResult,
     MagisProvisionResult,
@@ -83,12 +84,19 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
     Returns a dict with the three manifest documents; the caller (the
     CLI verb) is responsible for applying them via the legacy
     :mod:`magi.orchestrator.kubernetes` client.
+
+    The Service is intentionally ClusterIP (internal-only) per
+    plan §15 — only the singleton WebUI is externally exposed.
+    The Service ``port`` / ``targetPort`` forward to the Runtime's
+    internal port from :data:`magi.startup.constants.RUNTIME_PORT`,
+    *not* the operator-facing WebUI port.
     """
     if config.is_first_magi and config.magi_name != DEFAULT_MAGI_NAME:
         raise ValueError(f"first MAGI must be {DEFAULT_MAGI_NAME}")
     name = _eva_resource_name(magic_id, config.magi_name)
     pvc_name = f"{name}-workspace"
     ns = _namespace()
+    runtime_port = RUNTIME_PORT
     return {
         "pvc": {
                 "apiVersion": "v1",
@@ -105,7 +113,11 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
                 "metadata": {"name": name, "namespace": ns},
                 "spec": {
                     "selector": {"magi.io/magic-id": str(magic_id)},
-                    "ports": [{"name": "http", "port": 42069, "targetPort": 42069}],
+                    # ClusterIP is the default; do not mark externally
+                    # reachable (plan §15 — only the WebUI is).
+                    "ports": [
+                        {"name": "http", "port": runtime_port, "targetPort": runtime_port}
+                    ],
                 },
             },
         "deployment": {
@@ -209,6 +221,17 @@ def ensure_webui_deployment(*, config: StartupConfig) -> dict[str, Any]:
                                         "name": "MAGIS_DATABASE_URL",
                                         "value": config.magis_database_url or "",
                                     },
+                                    {
+                                        # Plan §15 — WebUI is the only
+                                        # externally routable surface;
+                                        # its port is hardcoded.
+                                        "name": "MAGI_WEBUI_PORT",
+                                        "value": str(WEBUI_PORT),
+                                    },
+                                    {
+                                        "name": "MAGI_WEBUI_HOST",
+                                        "value": "0.0.0.0",
+                                    },
                                 ],
                             }
                         ],
@@ -220,7 +243,12 @@ def ensure_webui_deployment(*, config: StartupConfig) -> dict[str, Any]:
 
 
 def ensure_webui_service(*, config: StartupConfig) -> dict[str, Any]:
-    """External Service for the singleton WebUI."""
+    """External Service for the singleton WebUI.
+
+    Plan §15 — ``LoadBalancer`` is correct because this *is* the
+    operator-facing surface.  ``port`` / ``targetPort`` forward to the
+    WebUI port, never the Runtime port.
+    """
     name = _webui_resource_name()
     ns = _namespace()
     return {
@@ -231,7 +259,13 @@ def ensure_webui_service(*, config: StartupConfig) -> dict[str, Any]:
             "spec": {
                 "type": "LoadBalancer",
                 "selector": {"app": "magi-webui"},
-                "ports": [{"name": "http", "port": 42069, "targetPort": 42069}],
+                "ports": [
+                    {
+                        "name": "http",
+                        "port": WEBUI_PORT,
+                        "targetPort": WEBUI_PORT,
+                    }
+                ],
             },
         },
     }
@@ -537,7 +571,15 @@ class KubernetesEvaBackend:
                 "metadata": {"name": name, "labels": labels},
                 "spec": {
                     "selector": {"magi.io/magic-id": str(spec.magic_id)},
-                    "ports": [{"name": "http", "port": 42069, "targetPort": "http"}],
+                    # The Service forwards to the Runtime's internal
+                    # port (plan §15 — no external MAGI exposure).
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": RUNTIME_PORT,
+                            "targetPort": RUNTIME_PORT,
+                        }
+                    ],
                 },
             },
         )
@@ -575,6 +617,18 @@ class KubernetesEvaBackend:
                                                     "key": "MAGIS_DATABASE_URL",
                                                 }
                                             },
+                                        },
+                                        {
+                                            # Plan §4 — the four startup-
+                                            # contract inputs come from the
+                                            # orchestrator. Plan §21 — Runtime
+                                            # port is hardcoded internally.
+                                            "name": "HOST_WORKSPACE_DIR",
+                                            "value": "/workspace",
+                                        },
+                                        {
+                                            "name": "MAGI_NAME",
+                                            "value": getattr(spec, "name", "") or "eva",
                                         },
                                         {
                                             "name": "MAGI_CONTROL_SECRET",

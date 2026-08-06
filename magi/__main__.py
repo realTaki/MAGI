@@ -28,16 +28,24 @@ from dataclasses import asdict, dataclass
 import uvicorn
 
 from magi import __version__
+from magi.startup.constants import (
+    DEFAULT_LOG_LEVEL,
+    RUNTIME_HOST,
+    RUNTIME_PORT,
+    WEBUI_HOST,
+    WEBUI_PORT,
+)
 
 logger = logging.getLogger("magi")
 
-# Internal runtime constants — plan §5 / §15 / §21.
-_RUNTIME_HOST: str = "0.0.0.0"
-_RUNTIME_PORT: int = 42069
-# WebUI (singleton, externally routable) — see plan §15.
-_WEBUI_HOST: str = "0.0.0.0"
-_WEBUI_PORT: int = 42069
-_DEFAULT_LOG_LEVEL: str = "info"
+# Internal host + port constants live in :mod:`magi.startup.constants`
+# (plan §5 / §15 / §21).  Aliases below keep the legacy module-local
+# name shape so the ``--check`` payload still reads naturally.
+_RUNTIME_HOST: str = RUNTIME_HOST
+_RUNTIME_PORT: int = RUNTIME_PORT
+_WEBUI_HOST: str = WEBUI_HOST
+_WEBUI_PORT: int = WEBUI_PORT
+_DEFAULT_LOG_LEVEL: str = DEFAULT_LOG_LEVEL
 
 
 # ----------------------------------------------------------------------
@@ -72,7 +80,7 @@ class NodeConfig:
             is_genesis = True
 
         # Log level honours DB setting if reachable.
-        log_level = _DEFAULT_LOG_LEVEL
+        log_level = DEFAULT_LOG_LEVEL
         try:
             from magi.startup.paths import resolve_state_dir as _state_dir
             from magi.bus.db.settings import state_get
@@ -85,8 +93,8 @@ class NodeConfig:
 
         return cls(
             state_dir=None,
-            host=_RUNTIME_HOST,
-            port=_RUNTIME_PORT,
+            host=RUNTIME_HOST,
+            port=RUNTIME_PORT,
             reload=os.environ.get("MAGI_DEV_RELOAD") == "1",
             log_level=log_level,
             runtime_id=runtime_id,
@@ -132,7 +140,7 @@ def run_webui() -> None:
     import os
 
     logging.basicConfig(
-        level=_DEFAULT_LOG_LEVEL.upper(),
+        level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     from magi.bus.db.magis import init_magis_public_db
@@ -141,9 +149,9 @@ def run_webui() -> None:
     uvicorn.run(
         "magi.channels.api.app:create_control_app",
         factory=True,
-        host=str(os.environ.get("MAGI_WEBUI_HOST") or _WEBUI_HOST),
-        port=int(os.environ.get("MAGI_WEBUI_PORT") or _WEBUI_PORT),
-        log_level=_DEFAULT_LOG_LEVEL,
+        host=str(os.environ.get("MAGI_WEBUI_HOST") or WEBUI_HOST),
+        port=int(os.environ.get("MAGI_WEBUI_PORT") or WEBUI_PORT),
+        log_level=DEFAULT_LOG_LEVEL,
         reload=False,
         reload_dirs=None,
     )
