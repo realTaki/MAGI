@@ -24,7 +24,7 @@ import uuid
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.protocols.llm_jobs import LLMJob
+from magi.bus.jobs.protocols.llm_jobs import LLMJob
 from magi.providers.worker import enqueue_llm_job
 
 logger = logging.getLogger("magi.agent.auto_title")

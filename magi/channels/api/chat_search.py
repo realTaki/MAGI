@@ -1,7 +1,7 @@
 """HTTP wrapper around the chat-history FTS5 search.
 
 This module is the FastAPI surface; the actual query lives in
-:class:`magi.bus.services.session.SessionService`. Keeping the HTTP wrapper
+:class:`magi.bus.jobs.services.session.SessionService`. Keeping the HTTP wrapper
 thin (admin gate, Pydantic response, error mapping) means the
 agent tool can call the same query without going through
 ``channels.webui.api.*`` — closing the package-boundary violation
@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 from magi.bus import get_bus
-from magi.bus.protocols.session import SearchHit, SearchUnavailable
+from magi.bus.jobs.protocols.session import SearchHit, SearchUnavailable
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
 from magi.channels.api.errors import MagiHTTPException

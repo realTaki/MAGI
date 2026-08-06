@@ -16,7 +16,7 @@ from magi.bus.db import init_orm
 from magi.bus.db.engine import open_session
 from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.db.models.queue import ControlJob
-from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
+from magi.bus.jobs.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
 
 
 @pytest.fixture()

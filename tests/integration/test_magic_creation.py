@@ -45,8 +45,8 @@ from magi.bus.db.runtime_settings import (
     load_runtime_settings,
     save_runtime_settings,
 )
-from magi.bus.services.magic import MagicService
-from magi.bus.services.magis import MagisService
+from magi.bus.jobs.services.magic import MagicService
+from magi.bus.jobs.services.magis import MagisService
 
 
 @pytest.fixture

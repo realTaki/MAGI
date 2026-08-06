@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from magi.bus.services import (
+from magi.bus.jobs.services import (
     ActionItemService,
     AgentRunsService,
     AuthService,
@@ -24,9 +24,9 @@ from magi.bus.services import (
     ToolCatalogService,
     ToolJobsService,
 )
-from magi.bus.services.control_registry import ControlRegistryService
-from magi.bus.services.dispatcher import DispatcherService
-from magi.bus.services.runtime import BackendDispatcherService, RuntimeRegistryService
+from magi.bus.jobs.services.control_registry import ControlRegistryService
+from magi.bus.jobs.services.dispatcher import DispatcherService
+from magi.bus.jobs.services.runtime import BackendDispatcherService, RuntimeRegistryService
 from magi.bus.db.store import BusStore
 
 @dataclass(frozen=True, slots=True)

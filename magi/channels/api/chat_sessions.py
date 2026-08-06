@@ -30,11 +30,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from magi.bus import get_bus
-from magi.bus.protocols.session import (
+from magi.bus.jobs.protocols.session import (
     Session, SessionCorruptError, SessionError, SessionMessage,
     SessionNotFoundError, SessionPathError, SessionSummary,
 )
-from magi.bus.services.session import SessionService
+from magi.bus.jobs.services.session import SessionService
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels import Channel

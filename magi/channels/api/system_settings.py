@@ -7,7 +7,7 @@ existing ``state_get`` / ``state_set`` / WAL concurrency story.
 
 This module owns only the **HTTP surface** — the FastAPI router,
 Pydantic request/response models, and the constants for the KV
-keys.  Reads and writes go through :mod:`magi.bus.services.setting`
+keys.  Reads and writes go through :mod:`magi.bus.jobs.services.setting`
 so the API layer never crosses the channels → db boundary.
 """
 
@@ -20,7 +20,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
-from magi.bus.services.setting import (
+from magi.bus.jobs.services.setting import (
     COMPACT_CONTEXT_WINDOW_KEY,
     COMPACT_KEEP_RECENT_KEY,
     COMPACT_THRESHOLD_PCT_KEY,

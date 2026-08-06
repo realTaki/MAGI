@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from magi.providers import ChatMessage, get_provider
 from magi.providers import estimate_messages_tokens
-from magi.bus.protocols.session import SessionMessage, new_session_id, utcnow_iso
+from magi.bus.jobs.protocols.session import SessionMessage, new_session_id, utcnow_iso
 
 if TYPE_CHECKING:
     pass
@@ -123,7 +123,7 @@ async def call_llm_for_summary(
     import asyncio
     import uuid as _uuid
     from magi.bus import get_bus_store
-    from magi.bus.protocols.llm_jobs import LLMJob
+    from magi.bus.jobs.protocols.llm_jobs import LLMJob
     from magi.providers.worker import enqueue_llm_job
 
     run_id = f"compact-{_uuid.uuid4().hex}"

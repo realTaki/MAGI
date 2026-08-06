@@ -9,7 +9,7 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from magi.bus.protocols.lifecycle import (
+from magi.bus.jobs.protocols.lifecycle import (
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,

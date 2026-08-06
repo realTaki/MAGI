@@ -21,8 +21,8 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.protocols.contact import ContactView, NoteView
-from magi.bus.services.contact import ContactsService
+from magi.bus.jobs.protocols.contact import ContactView, NoteView
+from magi.bus.jobs.services.contact import ContactsService
 from magi.channels.api.auth_gates import admin_gate, AdminGate
 from magi.channels.api.errors import MagiHTTPException
 

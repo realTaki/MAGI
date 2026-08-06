@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from magi.bus import AgentMessage, BusStore, ToolDefinition, bootstrap
-from magi.bus.services.tool_catalog import CatalogRevisionConflict, ToolCatalogValidationError
+from magi.bus.jobs.services.tool_catalog import CatalogRevisionConflict, ToolCatalogValidationError
 from magi.bus.db import init_orm
 
 

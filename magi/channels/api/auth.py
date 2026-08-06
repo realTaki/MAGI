@@ -52,8 +52,8 @@ from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.bus import get_bus
-from magi.bus.protocols.contact import ContactView
-from magi.bus.protocols.magis import OperatorView
+from magi.bus.jobs.protocols.contact import ContactView
+from magi.bus.jobs.protocols.magis import OperatorView
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.api import control_store

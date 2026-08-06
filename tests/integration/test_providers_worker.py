@@ -23,7 +23,7 @@ from magi.bus.db import init_orm
 from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.db.models.queue import LLMAttempt
 from magi.bus.db.engine import open_session
-from magi.bus.protocols.llm_jobs import LLMJob
+from magi.bus.jobs.protocols.llm_jobs import LLMJob
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
 from magi.providers.worker import (
@@ -555,7 +555,7 @@ async def test_drain_control_jobs_ignores_other_kinds(magi_state):
             kind="some.future.kind",
             payload={"x": 1},
         )
-        from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
+        from magi.bus.jobs.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
         from magi.bus.db.models.queue import ControlJob
 
         drained = await asyncio.to_thread(

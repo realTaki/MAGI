@@ -44,13 +44,13 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from magi.bus.protocols.session import new_session_id
-from magi.bus.protocols.task import TaskFullView, TaskRunView
-from magi.bus.services.contact import ContactsService
-from magi.bus.services.session import SessionService
-from magi.bus.services.setting import SettingsService
-from magi.bus.services.task import TaskService
-from magi.bus.services.task_scheduler_bridge import TaskSchedulerBridge
+from magi.bus.jobs.protocols.session import new_session_id
+from magi.bus.jobs.protocols.task import TaskFullView, TaskRunView
+from magi.bus.jobs.services.contact import ContactsService
+from magi.bus.jobs.services.session import SessionService
+from magi.bus.jobs.services.setting import SettingsService
+from magi.bus.jobs.services.task import TaskService
+from magi.bus.jobs.services.task_scheduler_bridge import TaskSchedulerBridge
 from magi.bus.task_schedule import (
     preset_to_cron,
     validate_cron,

@@ -58,9 +58,9 @@ from typing import Any
 # only the leaf modules here keeps the worker module load cheap
 # and lets the runtime's first ``bootstrap()`` call register each
 # model exactly once.
-from magi.bus.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
-from magi.bus.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
-from magi.bus.protocols.llm_jobs import LLMJob
+from magi.bus.jobs.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
+from magi.bus.jobs.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
+from magi.bus.jobs.protocols.llm_jobs import LLMJob
 from magi.bus.stream import StreamEvent
 from magi.providers import get_provider
 from magi.providers.errors import LLMError, LLMNotConfiguredError

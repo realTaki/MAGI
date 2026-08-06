@@ -16,7 +16,7 @@ with a verb discriminator:
     that specific tool result, not to the whole turn.
 
 Person records are NOT writable through these tools —
-they live in :mod:`magi.bus.services.contact` and
+they live in :mod:`magi.bus.jobs.services.contact` and
 have their own tool set (the LLM-managed directory of
 people the MAGI knows about).
 
@@ -35,7 +35,7 @@ import logging
 from typing import Any
 
 from magi.bus import get_bus
-from magi.bus.protocols.memory import ALL_KINDS, SOURCE_EVA
+from magi.bus.jobs.protocols.memory import ALL_KINDS, SOURCE_EVA
 from magi.tools.base import (
     Tool,
     ToolContext,

@@ -479,7 +479,7 @@ def _publish_provider_config_changed(settings: RuntimeSettings) -> None:
         )
         return
     try:
-        from magi.bus.protocols.control_jobs import (
+        from magi.bus.jobs.protocols.control_jobs import (
             PROVIDER_CONFIG_CHANGED,
         )
         store.enqueue_control_job(

@@ -178,7 +178,7 @@ class KubernetesEvaBackend:
         if spec.magis is None or spec.configuration is None:
             return
         from magi.bus import get_bus
-        from magi.bus.services.magis import MagisService
+        from magi.bus.jobs.services.magis import MagisService
 
         projection = MagisService.RuntimeConfigurationProjection(
             magis_id=spec.magis.id,

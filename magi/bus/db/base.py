@@ -11,7 +11,7 @@ Also exposes :func:`utcnow_naive` — the canonical
 "replacement for ``datetime.utcnow()``" used by every
 ORM ``default=`` and ``onupdate=`` in the project.
 Lives here (rather than in
-:mod:`magi.bus.protocols.session` where its sibling
+:mod:`magi.bus.jobs.protocols.session` where its sibling
 ``utcnow_iso`` lives) so the ORM model files can import
 it without triggering ``magi.agent.memory.__init__`` —
 which in turn imports the contact tools module, which
@@ -43,7 +43,7 @@ def utcnow_naive() -> datetime:
     ``datetime.now(timezone.utc)`` to silence Python
     3.12+'s ``datetime.utcnow()`` deprecation warning.
 
-    Companion to :func:`magi.bus.protocols.session.utcnow_iso`,
+    Companion to :func:`magi.bus.jobs.protocols.session.utcnow_iso`,
     which renders the same moment as an ISO string for
     the session-package tables (which use ``String(32)``
     columns rather than ``DateTime``). Two helpers,

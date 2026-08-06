@@ -9,7 +9,7 @@ your cached config".
 Today the only kind is ``provider.config_changed``; the worker
 drains that kind on every poll tick and rebuilds its cached
 ``LLMProvider`` if at least one row was deleted. Adding a second
-kind requires extending :class:`magi.bus.protocols.control_jobs.ControlJobKind`
+kind requires extending :class:`magi.bus.jobs.protocols.control_jobs.ControlJobKind`
 and the consumer's drain call — the model itself stays generic.
 
 Note: the runtime ships a single alembic revision

@@ -16,7 +16,7 @@ import pytest
 
 from magi.bus import AgentMessage, BusStore
 from magi.bus.db.models.queue import AgentInbox, DeliveryOutbox, ToolJob
-from magi.bus.protocols.agent import A2AInvocationRequest
+from magi.bus.jobs.protocols.agent import A2AInvocationRequest
 from magi.bus.db import (
     init_orm,
     open_session,

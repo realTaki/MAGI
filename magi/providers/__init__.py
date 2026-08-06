@@ -29,7 +29,7 @@ which submodule a class lives in::
     )
 """
 
-from magi.bus.protocols.llm_jobs import LLMJob, LLMJobKind, LLMJobResult
+from magi.bus.jobs.protocols.llm_jobs import LLMJob, LLMJobKind, LLMJobResult
 from magi.providers.errors import (
     LLMAuthError,
     LLMContextLengthError,

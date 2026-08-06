@@ -71,7 +71,7 @@ RULES: list[tuple[str, list[str]]] = [
     # (forbidden-deps table) + §5.6, the API MUST NOT depend on the
     # generic task scheduler worker — scheduler interaction is a BUS
     # protocol concern, not a Python one. The TASK bridge lives at
-    # ``magi.bus.services.task_scheduler_bridge``; the API reaches
+    # ``magi.bus.jobs.services.task_scheduler_bridge``; the API reaches
     # the scheduler only via that bridge.
     #
     # Phase 2/3 (Local Standalone Deployment plan §4.4) — the API
@@ -100,7 +100,7 @@ RULES: list[tuple[str, list[str]]] = [
     # implementations, LLM providers, or Telegram clients.
     # ``magi.channels.tasks`` is the explicit exception: the scheduler
     # worker is part of the bus-side task infrastructure, and
-    # ``magi.bus.services.task_scheduler_bridge`` is the single Python
+    # ``magi.bus.jobs.services.task_scheduler_bridge`` is the single Python
     # module allowed to hold the scheduler handle.
     #
     # Phase 2/3 (Local Standalone Deployment plan §4.4) — the BUS must
@@ -133,7 +133,7 @@ RULES: list[tuple[str, list[str]]] = [
     # Phase 2 — the dispatcher must not import the legacy K8s class
     # directly; it consumes the K8s *adapter* (which wraps the legacy
     # class) via the factory's Protocol surface.
-    ("magi.bus.services.runtime", ["magi.orchestrator.kubernetes"]),
+    ("magi.bus.jobs.services.runtime", ["magi.orchestrator.kubernetes"]),
 ]
 
 # ``magi.launcher`` is the Composition-Root namespace — it is the sole

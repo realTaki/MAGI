@@ -8,7 +8,7 @@ does not affect any other.
 
 ``bus.runtime.start`` / ``stop`` / ``delete`` is the single lifecycle
 entry point, identical to the K8s path.  ``magi cli start <name>``
-calls :class:`magi.bus.services.runtime.BackendDispatcherService` →
+calls :class:`magi.bus.jobs.services.runtime.BackendDispatcherService` →
 :func:`magi.orchestrator.backends.factory.create` → :meth:`start`.
 
 The backend tolerates ``control_registry=None`` — the runtime-process
@@ -34,13 +34,13 @@ from typing import Optional
 
 import httpx
 
-from magi.bus.protocols.lifecycle import (
+from magi.bus.jobs.protocols.lifecycle import (
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.bus.protocols.runtime import RuntimeEndpoint
-from magi.bus.services.control_registry import ControlRegistryService
+from magi.bus.jobs.protocols.runtime import RuntimeEndpoint
+from magi.bus.jobs.services.control_registry import ControlRegistryService
 
 DEFAULT_PORT = 42069
 HEALTH_POLL_TIMEOUT_S = 30.0

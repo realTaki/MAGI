@@ -179,7 +179,7 @@ class AgentWorker:
         from magi.agent._step_helpers import (
             assemble_agent_request, fallback_agent_result,
         )
-        from magi.bus.protocols.llm_jobs import LLMJob
+        from magi.bus.jobs.protocols.llm_jobs import LLMJob
         from magi.providers.worker import enqueue_llm_job
 
         attempt_id = self.store.start_llm_attempt(claim.run_id, claim.event_id)

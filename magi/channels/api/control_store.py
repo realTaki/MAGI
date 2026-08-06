@@ -2,7 +2,7 @@
 
 This module is the channel-side façade for the singleton WebUI's
 PG-backed control-plane KV.  Reads and writes are forwarded to
-:class:`magi.bus.services.magis.MagisService` so the channels → db
+:class:`magi.bus.jobs.services.magis.MagisService` so the channels → db
 boundary stays one-way (channels must not import ``magi.db.*``
 directly — see ``tests/architecture/test_import_boundaries.py``).
 

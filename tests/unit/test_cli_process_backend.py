@@ -20,8 +20,8 @@ from magi.bus.db.models.local.control_runtime import (
     ControlPortAllocation,
     ControlRuntimeState,
 )
-from magi.bus.protocols.lifecycle import RuntimeSpec
-from magi.bus.services.control_registry import ControlRegistryService
+from magi.bus.jobs.protocols.lifecycle import RuntimeSpec
+from magi.bus.jobs.services.control_registry import ControlRegistryService
 from magi.orchestrator.backends.base import RuntimeBackend
 from magi.orchestrator.backends.cli_process import CLIProcessRuntimeBackend
 

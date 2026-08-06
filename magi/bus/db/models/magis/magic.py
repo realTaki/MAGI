@@ -12,7 +12,7 @@ The ``provider`` / ``api_key`` columns are **legacy / fallback** paths.
 New MAGIs are created without credentials on the row — the runtime
 credentials live in a per-MAGI ``runtime_settings.toml`` inside the
 target workspace.  The authoritative read path is
-:meth:`magi.bus.services.magic.MagicService.provider_configuration`,
+:meth:`magi.bus.jobs.services.magic.MagicService.provider_configuration`,
 which reads the per-MAGI settings file first and only falls back to
 these columns for pre-refactor rows.
 
@@ -62,7 +62,7 @@ with rows created before the 2026-08 credential refactor. New rows are
 created with both columns ``NULL``; runtime credentials live in a
 per-MAGI ``runtime_settings.toml`` file inside the target workspace,
 and the authoritative read is
-:meth:`magi.bus.services.magic.MagicService.provider_configuration`.
+:meth:`magi.bus.jobs.services.magic.MagicService.provider_configuration`.
 These columns are read only as a fallback when the settings file is
 absent.
     """
@@ -104,7 +104,7 @@ def resolve_magic_credentials(magic_id: int | None = None) -> tuple[str | None, 
 
     .. deprecated::
         The single read path for LLM credentials is
-        :meth:`magi.bus.services.magic.MagicService.provider_configuration`,
+        :meth:`magi.bus.jobs.services.magic.MagicService.provider_configuration`,
         which prefers the per-MAGI ``runtime_settings.toml`` and only
         falls back to the inline ``magic.provider`` / ``magic.api_key``
         columns for pre-2026-08-refactor rows.  New code MUST use that

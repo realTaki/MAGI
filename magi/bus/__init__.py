@@ -7,7 +7,7 @@ The :class:`Bus` facade exposes a per-domain service namespace
 """
 
 from magi.bus.bootstrap import Bus, bootstrap, get_bus, get_bus_store
-from magi.bus.protocols import (
+from magi.bus.jobs.protocols import (
     A2AInvocationRequest,
     ActionItemView,
     AgentMessage,
@@ -45,14 +45,14 @@ from magi.bus.protocols import (
     ToolDefinition,
     ToolResult,
 )
-from magi.bus.protocols.lifecycle import (
+from magi.bus.jobs.protocols.lifecycle import (
     KubernetesBackendDetail,
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.bus.protocols.runtime import BackendKind, RuntimeEndpoint
-from magi.bus.services.runtime import (
+from magi.bus.jobs.protocols.runtime import BackendKind, RuntimeEndpoint
+from magi.bus.jobs.services.runtime import (
     BackendDispatcherService,
     OrchestratorUnavailable,
     RuntimeRegistryService,

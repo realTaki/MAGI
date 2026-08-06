@@ -283,7 +283,7 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     # ── dispatch start via the backend ──
     from magi.bus import get_bus
-    from magi.bus.protocols.lifecycle import RuntimeSpec
+    from magi.bus.jobs.protocols.lifecycle import RuntimeSpec
 
     bus = get_bus()
     spec = RuntimeSpec(magic_id=magic_id, name=slug)
@@ -372,7 +372,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
     os.environ["MAGI_BACKEND"] = "cli"
 
     from magi.bus import get_bus
-    from magi.bus.protocols.lifecycle import RuntimeSpec
+    from magi.bus.jobs.protocols.lifecycle import RuntimeSpec
 
     bus = get_bus()
     runtimes = bus.control_registry.list_runtimes()

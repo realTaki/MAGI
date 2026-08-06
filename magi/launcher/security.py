@@ -8,7 +8,7 @@ loopback-only control-plane HTTP API (``X-MAGI-Control-Secret`` header).
 
 The secret is intentionally a launcher concern, not a Business module
 concern.  Only :mod:`magi.launcher.cli` touches the raw bytes; the
-:class:`magi.bus.services.control_registry.ControlRegistryService`
+:class:`magi.bus.jobs.services.control_registry.ControlRegistryService`
 only ever sees the salted hash via :meth:`put_secret` / :meth:`verify_secret`.
 """
 

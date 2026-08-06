@@ -4,9 +4,9 @@ Defines the operations every backend (Kubernetes, Local Process, …)
 must implement.  See plan §4.2.
 
 The Protocol shape is what
-:class:`~magi.bus.services.runtime.BackendDispatcherService` consumes;
+:class:`~magi.bus.jobs.services.runtime.BackendDispatcherService` consumes;
 K8s-specific fields live in
-:class:`~magi.bus.protocols.lifecycle.KubernetesBackendDetail` and are
+:class:`~magi.bus.jobs.protocols.lifecycle.KubernetesBackendDetail` and are
 populated only by the K8s adapter.
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from magi.bus.protocols.lifecycle import (
+from magi.bus.jobs.protocols.lifecycle import (
     MagisProvisionResult,
     RuntimeOperationResult,
     RuntimeSpec,
