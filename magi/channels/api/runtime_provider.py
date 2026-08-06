@@ -26,7 +26,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.runtime_settings import (
+from magi.bus.db.runtime_settings import (
     RuntimeSettings,
     load_runtime_settings,
     save_runtime_settings,

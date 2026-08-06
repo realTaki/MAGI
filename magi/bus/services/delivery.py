@@ -7,7 +7,7 @@ import time as _time
 from typing import Any
 
 from magi.bus.protocols.agent import DeliveryClaim
-from magi.bus.store import BusStore
+from magi.bus.db.store import BusStore
 
 logger = logging.getLogger("magi.bus.service.delivery")
 

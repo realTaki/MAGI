@@ -57,7 +57,7 @@ from magi.bus.services.runtime import (
     OrchestratorUnavailable,
     RuntimeRegistryService,
 )
-from magi.bus.store import BusStore
+from magi.bus.db.store import BusStore
 from magi.bus.stream import StreamEvent, StreamHub, get_stream_hub
 
 

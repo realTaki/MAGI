@@ -187,7 +187,7 @@ class MagicService:
         columns).
         """
         from magi.bus.db.magis import open_magis_session
-        from magi.bus.runtime_settings import load_runtime_settings
+        from magi.bus.db.runtime_settings import load_runtime_settings
 
         with open_magis_session() as session:
             magic = self._runtime_magic(session)

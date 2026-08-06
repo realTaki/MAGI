@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from magi.bus.protocols.tools import ToolClaim
-from magi.bus.store import BusStore
+from magi.bus.db.store import BusStore
 
 
 class ToolJobsService:

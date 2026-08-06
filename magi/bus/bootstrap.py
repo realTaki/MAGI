@@ -27,7 +27,7 @@ from magi.bus.services import (
 from magi.bus.services.control_registry import ControlRegistryService
 from magi.bus.services.dispatcher import DispatcherService
 from magi.bus.services.runtime import BackendDispatcherService, RuntimeRegistryService
-from magi.bus.store import BusStore
+from magi.bus.db.store import BusStore
 
 @dataclass(frozen=True, slots=True)
 class Bus:
@@ -226,7 +226,7 @@ def get_bus_store() -> "BusStore":
     global _BUS_STORE
     if _BUS_STORE is None:
         from magi.launcher.paths import state_dir as _launcher_state_dir
-        from magi.bus.store import BusStore as _BusStore
+        from magi.bus.db.store import BusStore as _BusStore
 
         _BUS_STORE = _BusStore(state_dir=str(_launcher_state_dir()))
     return _BUS_STORE

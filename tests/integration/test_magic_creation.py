@@ -39,7 +39,7 @@ from magi.bus.db.models.magis.magis_membership import (
     MAGISMembership,
     MAGISRole,
 )
-from magi.bus.runtime_settings import (
+from magi.bus.db.runtime_settings import (
     RUNTIME_SETTINGS_FILENAME,
     RuntimeSettings,
     load_runtime_settings,

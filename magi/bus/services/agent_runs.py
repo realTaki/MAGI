@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from magi.bus.protocols.agent import AgentMessage, BusClaim, RunResult
-from magi.bus.store import BusStore
+from magi.bus.db.store import BusStore
 
 
 class AgentRunsService:
