@@ -27,75 +27,82 @@ class NewBus:
     Constructed by :func:`bootstrap_new_bus` in the composition root;
     workers receive a ready-to-use ``NewBus`` via constructor injection.
 
+    Naming conventions
+    ------------------
+    - ``*_job_board``   — full round-trip (publish → claim → submit_result)
+    - ``*_notify_board`` — fire-and-forget (publish only, no result tracking)
+    - plain nouns       — Book (CRUD without another worker involved)
+
     Usage::
 
         bus = bootstrap_new_bus(state_dir="...", magis_url="...")
-        job = bus.tool_jobs.claim(worker_id="w1")
-        magic = bus.magic.get(magic_id=1)  # None when MAGIS absent
+        job = bus.tool_job_board.claim(worker_id="w1")
+        magic_book = bus.magic_book.get(magic_id=1)  # None when MAGIS absent
 
-    When MAGIS is not configured, all magis-related fields are
+    When MAGIS is not configured, all magis_book-related fields are
     ``None``.
     """
 
-    # -- local: sessions ----------------------------------------------------
+    # -- local: sessions_book (Books) ---------------------------------------------
 
-    sessions: object  # SessionBook
-    messages: object  # MessageBook
+    sessions_book: object  # SessionBook
+    messages_book: object  # MessageBook
 
-    # -- local: memory & contacts -------------------------------------------
+    # -- local: memory_book & contacts_book (Books) ------------------------------------
 
-    memory: object  # MemoryBook
-    contacts: object  # ContactBook
-    contact_notes: object  # ContactNoteBook
+    memory_book: object  # MemoryBook
+    contacts_book: object  # ContactBook
+    contact_notes_book: object  # ContactNoteBook
 
-    # -- local: settings ----------------------------------------------------
+    # -- local: settings_book (Book + Notify boards) ------------------------------
 
-    settings: object  # SettingBook
-    set_config: object  # setConfigNotifyBoard
-    set_setting: object  # setSettingNotifyBoard
+    settings_book: object  # SettingBook
+    set_config_notify_board: object  # setConfigNotifyBoard
+    set_setting_notify_board: object  # setSettingNotifyBoard
 
-    # -- local: tasks -------------------------------------------------------
+    # -- local: tasks_book (Books + Notify board) ---------------------------------
 
-    tasks: object  # TaskBook
-    task_presets: object  # TaskPresetBook
-    task_runs: object  # TaskRunBook
-    schedule_task: object  # scheduleTaskNotifyBoard
+    tasks_book: object  # TaskBook
+    task_presets_book: object  # TaskPresetBook
+    task_runs_book: object  # TaskRunBook
+    schedule_task_notify_board: object  # scheduleTaskNotifyBoard
 
-    # -- local: tools & MCP -------------------------------------------------
+    # -- local: tools & MCP (Books + Job board) ------------------------------
 
-    tool_definitions: object  # ToolDefinitionBook
-    tool_catalog: object  # ToolCatalogStateBook
-    mcp_servers: object  # McpServerBook
-    tool_jobs: object  # runToolJobBoard
+    tool_definitions_book: object  # ToolDefinitionBook
+    tool_catalog_book: object  # ToolCatalogStateBook
+    mcp_servers_book: object  # McpServerBook
+    tool_job_board: object  # runToolJobBoard
 
-    # -- local: agent -------------------------------------------------------
+    # -- local: agent (Job boards) -------------------------------------------
 
-    agent_runs: object  # runAgentJobBoard
-    chat: object  # chatJobBoard
+    agent_job_board: object  # runAgentJobBoard
+    chat_job_board: object  # chatJobBoard
 
-    # -- local: LLM ---------------------------------------------------------
+    # -- local: LLM (Job board) ----------------------------------------------
 
-    llm_jobs: object  # callLLMJobBoard
+    llm_job_board: object  # callLLMJobBoard
 
-    # -- local: delivery & A2A -----------------------------------------------
+    # -- local: delivery & A2A (Job boards) ----------------------------------
 
-    delivery: object  # deliveryJobBoard
-    a2a: object  # sendA2AJobBoard
+    delivery_job_board: object  # deliveryJobBoard
+    a2a_job_board: object  # sendA2AJobBoard
 
-    # -- local: control signals ---------------------------------------------
+    # -- local: control (Job boards) -----------------------------------------
 
-    control: object  # controlJobBoard
+    control_job_board: object  # controlJobBoard
+    provider_config_job_board: object  # providerConfigJobBoard
 
-    # -- local: contacts & memory (write path, fire-and-forget) --------------
+    # -- local: contacts_book & memory_book (Notify boards) ----------------------------
 
-    save_contact: object  # contactNotifyBoard
-    save_memory: object  # rememberNotifyBoard
+    save_contact_notify_board: object  # contactNotifyBoard
+    save_memory_notify_board: object  # rememberNotifyBoard
 
-    # -- local: misc ---------------------------------------------------------
+    # -- local: misc (Books) -------------------------------------------------
 
-    token_usage: object  # TokenUsageBook
-    action_items: object  # ActionItemBook
-    hook_signoffs: object  # HookSignoffBook
+    token_usage_book: object  # TokenUsageBook
+    action_items_book: object  # ActionItemBook
+    hook_signoffs_book: object  # HookSignoffBook
 
     # -- internal factories (advanced / test use) ---------------------------
     # Positioned *before* defaulted fields so dataclass __init__ ordering
@@ -104,25 +111,25 @@ class NewBus:
     _local_factory: EngineFactory = field(repr=False)
     _magis_factory: EngineFactory | None = field(repr=False, default=None)
 
-    # -- magis: society tree (all Optional — None when MAGIS DB absent) ------
+    # -- magis_book: society tree (all Optional — None when MAGIS DB absent) ------
 
-    magic: object | None = None  # MagicBook | None
-    magis: object | None = None  # MagisBook | None
-    magis_admins: object | None = None  # MagisAdminBook | None
-    memberships: object | None = None  # MagisMembershipBook | None
-    roles: object | None = None  # MagisRoleBook | None
+    magic_book: object | None = None  # MagicBook | None
+    magis_book: object | None = None  # MagisBook | None
+    magis_admins_book: object | None = None  # MagisAdminBook | None
+    memberships_book: object | None = None  # MagisMembershipBook | None
+    roles_book: object | None = None  # MagisRoleBook | None
 
-    # -- magis: runtimes ----------------------------------------------------
+    # -- magis_book: runtimes (Books) --------------------------------------------
 
-    eva_runtimes: object | None = None  # EvaRuntimeBook | None
-    control_runtimes: object | None = None  # ControlRuntimeBook | None
-    control_secrets: object | None = None  # ControlSecretBook | None
-    port_allocations: object | None = None  # PortAllocationBook | None
-    workspace_archives: object | None = None  # WorkspaceArchiveBook | None
+    eva_runtimes_book: object | None = None  # EvaRuntimeBook | None
+    control_runtimes_book: object | None = None  # ControlRuntimeBook | None
+    control_secrets_book: object | None = None  # ControlSecretBook | None
+    port_allocations_book: object | None = None  # PortAllocationBook | None
+    workspace_archives_book: object | None = None  # WorkspaceArchiveBook | None
 
-    # -- magis: auth --------------------------------------------------------
+    # -- magis_book: auth (Book) --------------------------------------------------
 
-    auth_credentials: object | None = None  # AuthCredentialBook | None
+    auth_credentials_book: object | None = None  # AuthCredentialBook | None
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +203,7 @@ def _bootstrap_with_dirs(
         contactNotifyBoard,
         controlJobBoard,
         deliveryJobBoard,
+        providerConfigJobBoard,
         rememberNotifyBoard,
         runAgentJobBoard,
         runToolJobBoard,
@@ -214,102 +222,106 @@ def _bootstrap_with_dirs(
     magis_factory = build_magis_factory(magis_url) if magis_url else None
 
     # ---- local books -------------------------------------------------------
-    sessions = SessionBook(local_factory)
-    messages = MessageBook(local_factory)
-    memory = MemoryBook(local_factory)
-    contacts = ContactBook(local_factory)
-    contact_notes = ContactNoteBook(local_factory)
-    settings = SettingBook(local_factory)
-    tasks = TaskBook(local_factory)
-    task_presets = TaskPresetBook(local_factory)
-    task_runs = TaskRunBook(local_factory)
-    tool_definitions = ToolDefinitionBook(local_factory)
-    tool_catalog = ToolCatalogStateBook(local_factory)
-    mcp_servers = McpServerBook(local_factory)
-    token_usage = TokenUsageBook(local_factory)
-    action_items = ActionItemBook(local_factory)
-    hook_signoffs = HookSignoffBook(local_factory)
+    sessions_book = SessionBook(local_factory)
+    messages_book = MessageBook(local_factory)
+    memory_book = MemoryBook(local_factory)
+    contacts_book = ContactBook(local_factory)
+    contact_notes_book = ContactNoteBook(local_factory)
+    settings_book = SettingBook(local_factory)
+    tasks_book = TaskBook(local_factory)
+    task_presets_book = TaskPresetBook(local_factory)
+    task_runs_book = TaskRunBook(local_factory)
+    tool_definitions_book = ToolDefinitionBook(local_factory)
+    tool_catalog_book = ToolCatalogStateBook(local_factory)
+    mcp_servers_book = McpServerBook(local_factory)
+    token_usage_book = TokenUsageBook(local_factory)
+    action_items_book = ActionItemBook(local_factory)
+    hook_signoffs_book = HookSignoffBook(local_factory)
 
-    # ---- local jobs --------------------------------------------------------
-    agent_runs = runAgentJobBoard(local_factory)
-    tool_jobs = runToolJobBoard(local_factory)
-    llm_jobs = callLLMJobBoard(local_factory)
-    delivery = deliveryJobBoard(local_factory)
-    a2a = sendA2AJobBoard(local_factory)
-    chat = chatJobBoard(local_factory)
-    control = controlJobBoard(local_factory)
-    set_config = setConfigNotifyBoard(local_factory)
-    set_setting = setSettingNotifyBoard(local_factory)
-    schedule_task = scheduleTaskNotifyBoard(local_factory)
-    save_contact = contactNotifyBoard(local_factory)
-    save_memory = rememberNotifyBoard(local_factory)
+    # ---- local job boards ---------------------------------------------------
+    agent_job_board = runAgentJobBoard(local_factory)
+    tool_job_board = runToolJobBoard(local_factory)
+    llm_job_board = callLLMJobBoard(local_factory)
+    delivery_job_board = deliveryJobBoard(local_factory)
+    a2a_job_board = sendA2AJobBoard(local_factory)
+    chat_job_board = chatJobBoard(local_factory)
+    control_job_board = controlJobBoard(local_factory)
+    provider_config_job_board = providerConfigJobBoard(local_factory)
 
-    # ---- magis books -------------------------------------------------------
+    # ---- local notify boards ------------------------------------------------
+    set_config_notify_board = setConfigNotifyBoard(local_factory)
+    set_setting_notify_board = setSettingNotifyBoard(local_factory)
+    schedule_task_notify_board = scheduleTaskNotifyBoard(local_factory)
+    save_contact_notify_board = contactNotifyBoard(local_factory)
+    save_memory_notify_board = rememberNotifyBoard(local_factory)
+
+    # ---- magis_book books -------------------------------------------------------
     if magis_factory is not None:
-        magic = MagicBook(magis_factory)
-        magis = MagisBook(magis_factory)
-        magis_admins = MagisAdminBook(magis_factory)
-        memberships = MagisMembershipBook(magis_factory)
-        roles = MagisRoleBook(magis_factory)
-        eva_runtimes = EvaRuntimeBook(magis_factory)
-        control_runtimes = ControlRuntimeBook(magis_factory)
-        control_secrets = ControlSecretBook(magis_factory)
-        port_allocations = PortAllocationBook(magis_factory)
-        workspace_archives = WorkspaceArchiveBook(magis_factory)
-        auth_credentials = AuthCredentialBook(magis_factory)
+        magic_book = MagicBook(magis_factory)
+        magis_book = MagisBook(magis_factory)
+        magis_admins_book = MagisAdminBook(magis_factory)
+        memberships_book = MagisMembershipBook(magis_factory)
+        roles_book = MagisRoleBook(magis_factory)
+        eva_runtimes_book = EvaRuntimeBook(magis_factory)
+        control_runtimes_book = ControlRuntimeBook(magis_factory)
+        control_secrets_book = ControlSecretBook(magis_factory)
+        port_allocations_book = PortAllocationBook(magis_factory)
+        workspace_archives_book = WorkspaceArchiveBook(magis_factory)
+        auth_credentials_book = AuthCredentialBook(magis_factory)
     else:
-        magic = None
-        magis = None
-        magis_admins = None
-        memberships = None
-        roles = None
-        eva_runtimes = None
-        control_runtimes = None
-        control_secrets = None
-        port_allocations = None
-        workspace_archives = None
-        auth_credentials = None
+        magic_book = None
+        magis_book = None
+        magis_admins_book = None
+        memberships_book = None
+        roles_book = None
+        eva_runtimes_book = None
+        control_runtimes_book = None
+        control_secrets_book = None
+        port_allocations_book = None
+        workspace_archives_book = None
+        auth_credentials_book = None
 
     # ---- assemble ----------------------------------------------------------
     return NewBus(
-        sessions=sessions,
-        messages=messages,
-        memory=memory,
-        contacts=contacts,
-        contact_notes=contact_notes,
-        settings=settings,
-        set_config=set_config,
-        set_setting=set_setting,
-        tasks=tasks,
-        task_presets=task_presets,
-        task_runs=task_runs,
-        schedule_task=schedule_task,
-        tool_definitions=tool_definitions,
-        tool_catalog=tool_catalog,
-        mcp_servers=mcp_servers,
-        tool_jobs=tool_jobs,
-        agent_runs=agent_runs,
-        chat=chat,
-        llm_jobs=llm_jobs,
-        delivery=delivery,
-        a2a=a2a,
-        control=control,
-        save_contact=save_contact,
-        save_memory=save_memory,
-        token_usage=token_usage,
-        action_items=action_items,
-        hook_signoffs=hook_signoffs,
-        magic=magic,
-        magis=magis,
-        magis_admins=magis_admins,
-        memberships=memberships,
-        roles=roles,
-        eva_runtimes=eva_runtimes,
-        control_runtimes=control_runtimes,
-        control_secrets=control_secrets,
-        port_allocations=port_allocations,
-        workspace_archives=workspace_archives,
-        auth_credentials=auth_credentials,
+        sessions_book=sessions_book,
+        messages_book=messages_book,
+        memory_book=memory_book,
+        contacts_book=contacts_book,
+        contact_notes_book=contact_notes_book,
+        settings_book=settings_book,
+        set_config_notify_board=set_config_notify_board,
+        set_setting_notify_board=set_setting_notify_board,
+        tasks_book=tasks_book,
+        task_presets_book=task_presets_book,
+        task_runs_book=task_runs_book,
+        schedule_task_notify_board=schedule_task_notify_board,
+        tool_definitions_book=tool_definitions_book,
+        tool_catalog_book=tool_catalog_book,
+        mcp_servers_book=mcp_servers_book,
+        tool_job_board=tool_job_board,
+        agent_job_board=agent_job_board,
+        chat_job_board=chat_job_board,
+        llm_job_board=llm_job_board,
+        delivery_job_board=delivery_job_board,
+        a2a_job_board=a2a_job_board,
+        control_job_board=control_job_board,
+        provider_config_job_board=provider_config_job_board,
+        save_contact_notify_board=save_contact_notify_board,
+        save_memory_notify_board=save_memory_notify_board,
+        token_usage_book=token_usage_book,
+        action_items_book=action_items_book,
+        hook_signoffs_book=hook_signoffs_book,
+        magic_book=magic_book,
+        magis_book=magis_book,
+        magis_admins_book=magis_admins_book,
+        memberships_book=memberships_book,
+        roles_book=roles_book,
+        eva_runtimes_book=eva_runtimes_book,
+        control_runtimes_book=control_runtimes_book,
+        control_secrets_book=control_secrets_book,
+        port_allocations_book=port_allocations_book,
+        workspace_archives_book=workspace_archives_book,
+        auth_credentials_book=auth_credentials_book,
         _local_factory=local_factory,
         _magis_factory=magis_factory,
     )

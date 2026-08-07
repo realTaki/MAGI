@@ -1,8 +1,25 @@
-"""providerConfigJobBoard — provider 专属配置变更作业。
+"""providerConfigJobBoard — provider 配置变更通知（统一 board）。
 
-与通用 ``controlJobBoard`` 不同，这个 board 只有 ``ProvidersWorker``
-会 claim。WebUI 修改 provider/api_key/model 后 publish 到此处，
-provider worker 收到后重建缓存的 SDK client。
+当 WebUI 修改 provider / API key / model 后，api 侧 publish 到本
+board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
+缓存的 SDK client 并 submit ``ProviderConfigResult``。
+
+设计要点
+========
+
+- **与 ``controlJobBoard`` 区分**：``controlJob`` 是 generic 的
+  运行时信号 channel，多个 worker 都可能 claim；本 board 专门
+  服务 provider 配置变更，只有一个 claimer（provider worker）。
+  将来其他模块需要类似的"配置变更触发重建"语义时，各开自己的
+  board，不共用 controlJob。
+
+- **payload 只用于审计 / 调试**：worker 重建时不需要解析 payload，
+  因为它直接重新读 ``bus.magic.provider_configuration()`` 拿到最新
+  状态。payload 字段保留是为 audit 行能记下"这次是什么变了"。
+
+- **fire-and-forget friendly**：调用方 publish 后不需要等 result；
+  worker claim → rebuild → submit 即可，最坏情况是 result 行一直
+  pending，audit 能查到。
 """
 
 from __future__ import annotations
