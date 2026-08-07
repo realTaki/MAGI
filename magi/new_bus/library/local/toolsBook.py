@@ -5,13 +5,10 @@ Two tables:
   catalog revision + snapshot hash
 - ``tool_definitions``   — one row per catalog tool
 
-Schema mirrors the old bus's ``tool_catalog_state`` + ``tool_definitions``.
-
-This file also owns the LLM-contract DTOs (``ToolDefinition`` and
-``ToolCatalogSnapshot``) — they describe what's *in* the catalog,
-so they live next to the Books that publish them. Execution-
-facing DTOs (:class:`ToolContext`, :class:`ToolResult`) live in
-:mod:`magi.tools.base` next to the :class:`Tool` class.
+``ToolDefinition`` is the sole public DTO — it serves both read and
+write paths. The Book handles serialization of semantic fields
+(``input_schema`` → ``spec_json``, ``allowed_roles`` → ``allowed_roles_json``)
+internally.
 """
 
 from __future__ import annotations
@@ -39,41 +36,24 @@ from magi.new_bus.db.base import Base
 
 @dataclass(frozen=True, slots=True)
 class ToolCatalogState:
+    """Singleton catalog-state row DTO."""
+
     id: int
     revision: int
     snapshot_hash: str
 
 
-#: Persistent-row DTO. The LLM-contract DTO with the same name
-#: (``ToolDefinition``) lives in this file too — keep them
-#: apart by import path: the contract DTO has the LLM-visible
-#: fields (``input_schema``, ``allowed_roles``, ``schema_hash``)
-#: while this one has the storage shape (``spec_json``).
-@dataclass(frozen=True, slots=True)
-class ToolDefinitionRow:
-    id: int
-    name: str
-    spec_json: str
-    spec_dict: dict[str, Any] | None = None
-    revision: int = 0
-    enabled: int = 1
-    description: str | None = None
-    source: str = "manual"
-    #: JSON-serialized tuple[str, ...] (or None when no role gate).
-    #: Stored as a JSON string to match the existing ``spec_json`` /
-    #: ``spec_dict`` convention — callers that need the typed tuple
-    #: deserialize via :func:`_parse_allowed_roles` (or use
-    #: :meth:`ToolDefinitionBook.list_definitions` which already does it).
-    allowed_roles_json: str | None = None
-
-
-#: LLM-contract DTO — what the agent sees as a menu item. Pure
-#: data, crosses worker/agent/HTTP without exposing a registry
-#: or ORM row. ``schema_hash`` lets the worker detect that an
-#: agent's enqueued call used a stale menu (the catalog moved
-#: forward between the agent's LLM call and the tool claim).
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
+    """LLM-contract DTO — the tool as the agent sees it.
+
+    This is the **only** public DTO for tool definitions.  It is used
+    for both reads (returned by :meth:`ToolDefinitionBook.list_enabled`)
+    and writes (passed to :meth:`ToolDefinitionBook.upsert_many`).
+    The Book owns serialization of ``input_schema`` (→ ``spec_json``)
+    and ``allowed_roles`` (→ ``allowed_roles_json``).
+    """
+
     name: str
     source: str
     description: str
@@ -111,13 +91,14 @@ class _ToolDefinitionRow(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Deprecated duplicate of ``spec_json``; kept for schema compatibility
+    #: but no longer written by ToolDefinitionBook.  New rows get NULL.
     spec_dict: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
-    # JSON-serialized list[str] (or NULL when no role gate). Stored as
-    # Text to match ``spec_json``/``spec_dict`` convention.
+    # JSON-serialized list[str] or NULL (no role gate).
     allowed_roles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (UniqueConstraint("name", name="uq_tool_definitions_name"),)
@@ -143,17 +124,8 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
     ) -> ToolCatalogState:
         """Atomic replacement of the singleton catalog state.
 
-        The tools worker is the single writer today (MCP gets
-        its own worker later), so the optimistic-lock check
-        lives in the worker if/when concurrent writers appear.
-        This method just writes the new revision + hash
-        atomically.
-
-        ``revision`` should be monotonically increasing from
-        the caller's POV; the book doesn't enforce it (yet) —
-        when a second writer arrives, port the
-        ``expected_previous_revision`` check from the old
-        ``ToolCatalogService.replace_snapshot``.
+        The tools worker is the single writer today; when concurrent
+        writers appear the optimistic-lock check goes in the caller.
         """
         with self._session() as s:
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
@@ -170,32 +142,54 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
         return self._row_to_dto(row)
 
 
-class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
+class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
     model_cls = _ToolDefinitionRow
-    dto_cls = ToolDefinitionRow
+    dto_cls = ToolDefinition
 
-    def get(self, *, tool_id: int) -> ToolDefinitionRow | None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.id == tool_id)
-            )
-            return self._row_to_dto(row) if row else None
+    # -- mapping ---------------------------------------------------------
 
-    def get_by_name(self, *, name: str) -> ToolDefinitionRow | None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
-            )
-            return self._row_to_dto(row) if row else None
+    def _row_to_dto(self, row: _ToolDefinitionRow) -> ToolDefinition:
+        """Deserialize storage columns → semantic :class:`ToolDefinition`."""
+        try:
+            input_schema = json.loads(row.spec_json) if row.spec_json else {}
+        except json.JSONDecodeError:
+            input_schema = {}
+        return ToolDefinition(
+            name=row.name,
+            source=row.source,
+            description=row.description or "",
+            input_schema=input_schema,
+            allowed_roles=_parse_allowed_roles(row.allowed_roles_json),
+            enabled=bool(row.enabled),
+            revision=row.revision,
+        )
 
-    def list_all(self) -> list[ToolDefinitionRow]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_ToolDefinitionRow).order_by(_ToolDefinitionRow.name)
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
+    def _apply_definition(
+        self, dto: ToolDefinition, row: _ToolDefinitionRow, *,
+        update_source: bool,
+    ) -> None:
+        """Serialize semantic fields into storage columns on an ORM row.
 
-    def list_enabled(self) -> list[ToolDefinitionRow]:
+        ``update_source``: when creating a new row, set ``source`` from
+        the DTO.  When updating an existing row that was matched via a
+        source filter, preserve the existing value (the filter already
+        guarantees it matches).
+        """
+        row.spec_json = json.dumps(dto.input_schema, ensure_ascii=False)
+        row.description = dto.description or None
+        row.enabled = 1 if dto.enabled else 0
+        row.revision = dto.revision
+        row.allowed_roles_json = (
+            json.dumps(list(dto.allowed_roles), ensure_ascii=False)
+            if dto.allowed_roles else None
+        )
+        if update_source:
+            row.source = dto.source
+
+    # -- reads -----------------------------------------------------------
+
+    def list_enabled(self) -> list[ToolDefinition]:
+        """All enabled rows as :class:`ToolDefinition` DTOs."""
         with self._session() as s:
             rows = s.scalars(
                 select(_ToolDefinitionRow)
@@ -203,35 +197,6 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
                 .order_by(_ToolDefinitionRow.name)
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def list_definitions(self) -> list[ToolDefinition]:
-        """All enabled rows as :class:`ToolDefinition` LLM-contract DTOs.
-
-        This is the read path the agent loop / API will migrate to —
-        returns the typed contract DTO with ``allowed_roles`` as a
-        proper tuple and ``input_schema`` already deserialized. Today
-        both call sites still go through the legacy ``bus.tool_catalog``
-        service; this method exists so the migration can switch over
-        in one place.
-        """
-        out: list[ToolDefinition] = []
-        for r in self.list_enabled():
-            try:
-                input_schema = json.loads(r.spec_json) if r.spec_json else {}
-            except json.JSONDecodeError:
-                input_schema = {}
-            allowed = _parse_allowed_roles(r.allowed_roles_json)
-            out.append(ToolDefinition(
-                name=r.name,
-                source=r.source,
-                description=r.description or "",
-                input_schema=input_schema,
-                allowed_roles=allowed,
-                enabled=bool(r.enabled),
-                implementation_version=None,
-                revision=r.revision,
-            ))
-        return out
 
     def list_schemas(
         self,
@@ -242,14 +207,10 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
         """Anthropic-shaped schemas for the caller, role-filtered.
 
         Mirrors :func:`magi.tools.registry.get_tool_schemas` so the
-        agent loop can swap implementations without changing call
-        sites. ``caller_admin=True`` bypasses the role enum (WebUI
-        operator shortcut); ``caller_role=None`` falls through the
-        permissive branch (``ALLOWED_ROLES`` empty OR unknown caller
-        — see :func:`_role_allowed`).
+        agent loop can swap implementations without changing call sites.
         """
         out: list[dict[str, Any]] = []
-        for d in self.list_definitions():
+        for d in self.list_enabled():
             if not _role_allowed(d.allowed_roles, caller_role, caller_admin):
                 continue
             out.append({
@@ -259,141 +220,47 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
             })
         return out
 
-    def upsert(self, *, name: str, spec_json: str, revision: int = 0,
-               description: str | None = None, source: str = "manual",
-               spec_dict: str | None = None,
-               allowed_roles_json: str | None = None) -> ToolDefinitionRow:
-        desired = ToolDefinitionRow(
-            id=0,  # placeholder — helper reads only the data fields
-            name=name, spec_json=spec_json, revision=revision,
-            description=description, source=source, spec_dict=spec_dict,
-            allowed_roles_json=allowed_roles_json,
-        )
-        with self._session() as s:
-            existing = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
-            )
-            if existing is None:
-                row = _ToolDefinitionRow(name=name)
-                _apply_definition(row, desired, update_source=True)
-                s.add(row)
-            else:
-                row = existing
-                _apply_definition(row, desired, update_source=True)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    # -- writes ----------------------------------------------------------
 
-    def set_enabled(self, *, name: str, enabled: bool) -> None:
-        """Toggle ``enabled`` for one tool by name.
-
-        Does not delete the row — disabled tools are retained so
-        history (e.g. audit logs, schema snapshots) stays
-        queryable. Returns silently if the name is unknown; the
-        caller decides whether to treat that as an error.
-        """
-        with self._session() as s:
-            row = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
-            )
-            if row is None:
-                return
-            row.enabled = 1 if enabled else 0
-            s.commit()
-
-    def delete(self, *, name: str) -> None:
-        """Permanently remove a tool row.
-
-        Distinct from :meth:`set_enabled` (which retains the
-        row with ``enabled=0``). Use for MCP catalog teardown
-        when a server is decommissioned — not for routine
-        disable.
-        """
-        with self._session() as s:
-            row = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
-            )
-            if row is None:
-                return
-            s.delete(row)
-            s.commit()
-
-    def upsert_many(self, *, definitions: list[ToolDefinitionRow]) -> None:
+    def upsert_many(
+        self, *, definitions: list[ToolDefinition], source: str = "builtin",
+    ) -> None:
         """Bulk upsert definitions in a single transaction.
 
-        Used by the tools worker's catalog publish path — all
-        builtin definitions land in one atomic write so the
-        agent never sees a half-published catalog. Existing
-        rows are updated in place; the supplied list is
-        authoritative for ``source='builtin'`` rows (existing
-        rows with the same name but a different source are left
-        alone — that's MCP's concern).
+        Only rows matching ``source`` are updated — rows with other
+        sources (future MCP) are left alone.  New rows are created with
+        ``dto.source``.
+
+        Used by the tools worker's catalog publish path so all builtin
+        definitions land atomically.
         """
         with self._session() as s:
             names = [d.name for d in definitions]
-            existing = {}
+            existing: dict[str, _ToolDefinitionRow] = {}
             if names:
                 rows = s.scalars(
                     select(_ToolDefinitionRow).where(
                         _ToolDefinitionRow.name.in_(names),
-                        _ToolDefinitionRow.source == "builtin",
+                        _ToolDefinitionRow.source == source,
                     )
                 ).all()
                 existing = {r.name: r for r in rows}
             for d in definitions:
                 target = existing.get(d.name)
                 if target is None:
-                    row = _ToolDefinitionRow(name=d.name)
-                    _apply_definition(row, d, update_source=True)
-                    s.add(row)
+                    target = _ToolDefinitionRow(name=d.name)
+                    self._apply_definition(d, target, update_source=True)
+                    s.add(target)
                 else:
-                    _apply_definition(target, d, update_source=False)
+                    self._apply_definition(d, target, update_source=False)
             s.commit()
 
 
-# -- internal helpers ------------------------------------------------------
-
-
-def _apply_definition(
-    target: _ToolDefinitionRow,
-    source: ToolDefinitionRow,
-    *,
-    update_source: bool,
-) -> None:
-    """Copy fields from a :class:`ToolDefinitionRow` DTO onto an ORM row.
-
-    Shared by single-row :meth:`ToolDefinitionBook.upsert` and bulk
-    :meth:`ToolDefinitionBook.upsert_many` — the two paths diverge
-    only on ``source``: single-row upsert overwrites it (the caller
-    is free to migrate a tool from one catalog to another), bulk
-    upsert treats it as the ownership foreign key and preserves
-    the existing value when updating an already-present row.
-
-    Callers construct ``target`` themselves — a bare
-    :class:`_ToolDefinitionRow` for create, the looked-up row for
-    update — and pass ``update_source=True`` on create paths so
-    ``source`` lands on the new row (its column default of
-    ``"manual"`` is just a placeholder).
-    """
-    target.spec_json = source.spec_json
-    target.spec_dict = source.spec_dict
-    target.revision = source.revision
-    target.enabled = source.enabled
-    target.description = source.description
-    target.allowed_roles_json = source.allowed_roles_json
-    if update_source:
-        target.source = source.source
+# -- internal helpers ----------------------------------------------------
 
 
 def _parse_allowed_roles(json_str: str | None) -> tuple[str, ...]:
-    """Decode the ``allowed_roles_json`` column back into a tuple.
-
-    Tolerates bad data (corrupt row, empty list, non-string entries)
-    by returning an empty tuple — the caller's role filter then
-    treats the tool as unrestricted, which matches what an
-    admin-only ``ALLOWED_ROLES`` would do if it were silently
-    dropped during publish.
-    """
+    """Decode ``allowed_roles_json`` → tuple, tolerating bad data."""
     if not json_str:
         return ()
     try:
@@ -410,13 +277,7 @@ def _role_allowed(
     caller_role: str | None,
     caller_admin: bool,
 ) -> bool:
-    """Mirror of :meth:`Tool.is_allowed_for_role` (kept inline to
-    avoid a new_bus → tools layer dependency).
-
-    Behavior must stay aligned with :class:`magi.tools.base.Tool`'s
-    implementation — both are tested by the same fixtures. See
-    that method's docstring for the rationale of each branch.
-    """
+    """Mirror of :meth:`Tool.is_allowed_for_role`."""
     if caller_admin:
         return True
     if not allowed_roles:
@@ -428,7 +289,6 @@ def _role_allowed(
 
 __all__ = [
     "ToolCatalogState",
-    "ToolDefinitionRow",
     "ToolDefinition",
     "ToolCatalogSnapshot",
     "ToolCatalogStateBook",

@@ -194,33 +194,10 @@ class ToolsWorker:
         The catalog revision is bumped on every publish so the
         next claim can detect stale-schema calls.
         """
-        from magi.new_bus.library.local import (
-            ToolCatalogState,
-            ToolDefinitionRow,
-        )
-
         definitions = _build_builtin_definitions()
-        rows: list[ToolDefinitionRow] = []
-        for d in definitions:
-            rows.append(ToolDefinitionRow(
-                id=0,  # SQLite assigns; ignored on insert
-                name=d.name,
-                spec_json=json.dumps(d.input_schema, ensure_ascii=False),
-                spec_dict=json.dumps(d.input_schema, ensure_ascii=False),
-                revision=0,  # overwritten below
-                enabled=1 if d.enabled else 0,
-                description=d.description,
-                source=d.source,
-                # Roles as JSON string — matches the Book's storage
-                # convention (see ToolDefinitionRow.allowed_roles_json).
-                # Without this, ``_hash_from_row`` would reconstruct
-                # the definition with an empty tuple and every claim
-                # would fail the schema_hash check.
-                allowed_roles_json=json.dumps(
-                    list(d.allowed_roles), ensure_ascii=False,
-                ) if d.allowed_roles else None,
-            ))
-        self.bus.tool_definitions_book.upsert_many(definitions=rows)
+        self.bus.tool_definitions_book.upsert_many(
+            definitions=definitions, source="builtin",
+        )
 
         # Bump revision + recompute snapshot_hash.
         # snapshot_hash = sha256(canonical_json of (source, name,
@@ -235,7 +212,7 @@ class ToolsWorker:
         hash_input = sorted(
             (
                 r.source, r.name, hash_by_name.get(r.name, ""),
-                r.enabled, next_revision,
+                int(r.enabled), next_revision,
             )
             for r in enabled_rows
         )
@@ -248,7 +225,7 @@ class ToolsWorker:
         logger.info(
             "tools worker: published %d builtin tool(s) "
             "(catalog revision=%d)",
-            len(rows), next_revision,
+            len(definitions), next_revision,
         )
 
     # ----- per-job execution --------------------------------------------

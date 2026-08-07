@@ -57,10 +57,9 @@ from magi.new_bus.library.local.tokenUsageBook import TokenUsage, TokenUsageBook
 from magi.new_bus.library.local.toolsBook import (
     ToolCatalogState,
     ToolCatalogStateBook,
-    ToolDefinitionRow,
-    ToolDefinitionBook,
-    ToolDefinition,
     ToolCatalogSnapshot,
+    ToolDefinition,
+    ToolDefinitionBook,
 )
 
 
@@ -108,8 +107,7 @@ __all__ = [
     "TokenUsageBook",
     "ToolCatalogState",
     "ToolCatalogStateBook",
-    "ToolDefinitionRow",
-    "ToolDefinitionBook",
-    "ToolDefinition",
     "ToolCatalogSnapshot",
+    "ToolDefinition",
+    "ToolDefinitionBook",
 ]
