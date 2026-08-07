@@ -6,11 +6,12 @@
 - **只依赖 new_bus**。老的 bus store / StreamHub / agent_inbox 一概
   不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 new_bus 再说）。
 
-- **配置变更双触发**：主路径是 worker 每轮 poll ``bus.magic``，若
-  签名变化（``(provider, api_key_last4, model)``）就重建 SDK client；
-  同时 worker 也 claim ``bus.change_provider_config_job_board`` 上的
-  job（publisher 未来由 WebUI 迁移后调用 ``publish`` 触发）。两条
-  路径等价：都会让 worker 重新读 ``bus.magic`` 然后 ``_rebuild_provider``。
+- **配置变更单一触发**：worker 只在 claim 到
+  ``bus.change_provider_config_job_board`` 上的 job 时才重建
+  SDK client。``publish()`` 已经 self-contained write 了
+  ``settings_book``，调用方 publish 一次 = 改 settings + 排队。
+  worker 不做漂移轮询 —— 避免 DB 一变就热 build、紧接着
+  claim 到 job 又 rebuild 的双重重置。
 
 - **dumb invoker**。Worker 不知道这次调用来自 agent turn /
   compaction / auto_title —— 全部统一走 :class:`CallLLMJob` → SDK →
@@ -83,26 +84,6 @@ _PROVIDER_OPTIONS: list[dict[str, str]] = [
 ]
 
 
-def _config_signature(bus: "NewBus") -> tuple[str | None, str | None, str | None]:
-    """Cheap fingerprint of the provider config in ``bus.settings_book``;
-    rebuild when it changes.
-
-    ``api_key`` is reduced to last-4 to avoid comparing full secrets
-    in memory on every loop iteration.
-    """
-    sb = getattr(bus, "settings_book", None)
-    if sb is None:
-        return (None, None, None)
-    try:
-        provider = sb.get(key="provider.name")
-        api_key = sb.get(key="provider.api_key") or ""
-        model = sb.get(key="provider.model")
-    except Exception:  # noqa: BLE001
-        return (None, None, None)
-    api_key_last4 = api_key[-4:] if api_key else None
-    return (provider, api_key_last4, model)
-
-
 class ProvidersWorker:
     """Consumer that owns every LLM API call in a MAGI process.
 
@@ -133,11 +114,10 @@ class ProvidersWorker:
         self._inflight: set[asyncio.Task[None]] = set()
 
         # Cached LLM client + the typed error that prevented us from
-        # building one. ``_config_sig`` is the fingerprint used to
-        # detect external config changes between rebuilds.
+        # building one. The cache is refreshed only on a claimed
+        # ``ChangeProviderConfigJob`` — never by drift polling.
         self._provider: LLMProvider | None = None
         self._provider_error: LLMError | None = None
-        self._config_sig: tuple[str | None, str | None, str | None] = (None, None, None)
 
     async def start(self) -> None:
         if self._task is not None:
@@ -185,12 +165,7 @@ class ProvidersWorker:
                 await self._handle_config_job(cfg_job)
                 continue
 
-            # 2. Cheap poll for config drift — if magic config
-            #    changed since the last rebuild, rebuild now even
-            #    without a publisher round-trip.
-            self._check_config_drift()
-
-            # 3. Claim one LLM job.
+            # 2. Claim one LLM job.
             job = await asyncio.to_thread(
                 self.bus.llm_job_board.claim, worker_id=self.worker_id,
             )
@@ -231,23 +206,6 @@ class ProvidersWorker:
                 job.job_id,
             )
 
-    def _check_config_drift(self) -> None:
-        """Compare current settings_book config to last-seen signature;
-        rebuild on change.
-
-        Cheap (three ``settings_book.get()`` calls); runs once per
-        loop iteration. The signature is reduced to a
-        ``(provider, api_key_last4, model)`` tuple so we don't compare
-        full secrets in memory.
-        """
-        sig = _config_signature(self.bus)
-        if sig != self._config_sig:
-            logger.info(
-                "providers worker: settings config drift detected (%s → %s); rebuilding",
-                self._config_sig, sig,
-            )
-            self._rebuild_provider()
-
     def _rebuild_provider(self) -> None:
         """(Re)build the cached :class:`LLMProvider` from current config.
 
@@ -281,10 +239,6 @@ class ProvidersWorker:
                 "providers worker: cached LLM client (%s)",
                 type(provider).__name__,
             )
-
-        # Refresh the fingerprint regardless of build outcome so we
-        # don't busy-loop on the same error.
-        self._config_sig = _config_signature(self.bus)
 
     # ----- provider-options publishing ----------------------------------
 
