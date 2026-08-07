@@ -1,8 +1,8 @@
-"""providerConfigJobBoard — provider 配置变更通知（统一 board）。
+"""changeProviderConfigJobBoard — provider 配置变更通知。
 
 当 WebUI 修改 provider / API key / model 后，api 侧 publish 到本
 board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
-缓存的 SDK client 并 submit ``ProviderConfigResult``。
+缓存的 SDK client 并 submit :class:`ChangeProviderConfigResult`。
 
 设计要点
 ========
@@ -20,25 +20,28 @@ board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
 - **fire-and-forget friendly**：调用方 publish 后不需要等 result；
   worker claim → rebuild → submit 即可，最坏情况是 result 行一直
   pending，audit 能查到。
+
+- **命名**：job board 必须以动词打头（``runAgent`` / ``sendA2A`` /
+  ``chat`` / ``callLLM`` / ...），所以这里是 ``changeProviderConfig``
+  —— "apply this config change"。
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, JSON
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobBoard
+from magi.new_bus.guild.base import BaseJobBoard, new_job_id
 
 
 # -- public dataclasses ----------------------------------------------------
 
 @dataclass(frozen=True, slots=True)
-class ProviderConfigJob:
+class ChangeProviderConfigJob:
     """一次 provider 配置变更。
 
     ``payload`` 可携带 ``{provider, model}`` 等变更详情，
@@ -50,7 +53,7 @@ class ProviderConfigJob:
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderConfigResult:
+class ChangeProviderConfigResult:
     job_id: str
     success: bool
     error: str | None = None
@@ -58,8 +61,8 @@ class ProviderConfigResult:
 
 # -- internal ORM ----------------------------------------------------------
 
-class _ProviderConfigRow(Base):
-    __tablename__ = "provider_config_jobs"
+class _ChangeProviderConfigRow(Base):
+    __tablename__ = "change_provider_config_jobs"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -80,17 +83,17 @@ class _ProviderConfigRow(Base):
 
 # -- Board -----------------------------------------------------------------
 
-class providerConfigJobBoard(
-    BaseJobBoard[_ProviderConfigRow, ProviderConfigJob, ProviderConfigResult]
+class changeProviderConfigJobBoard(
+    BaseJobBoard[_ChangeProviderConfigRow, ChangeProviderConfigJob, ChangeProviderConfigResult]
 ):
-    job_model = _ProviderConfigRow
-    job_cls = ProviderConfigJob
-    result_cls = ProviderConfigResult
+    job_model = _ChangeProviderConfigRow
+    job_cls = ChangeProviderConfigJob
+    result_cls = ChangeProviderConfigResult
 
-    def publish(self, job: ProviderConfigJob) -> str:
+    def publish(self, job: ChangeProviderConfigJob) -> str:
         with self._factory.session() as s:
-            row = _ProviderConfigRow(
-                job_id=uuid.uuid4().hex,
+            row = _ChangeProviderConfigRow(
+                job_id=job.job_id or new_job_id(),
                 status="pending",
                 payload=job.payload,
             )
