@@ -1,70 +1,60 @@
-"""Durable provider consumer owned by :mod:`magi.providers`.
+"""ProvidersWorker — new_bus 上唯一的 LLM 调用执行点。
 
-The :class:`ProvidersWorker` is the **single** place every LLM
-API call in MAGI goes through. It owns:
+设计原则
+========
 
-- the durable queue (``llm_attempts`` rows with ``status="queued"``
-  the agent loop writes via :func:`enqueue_llm_job`);
-- the streaming deltas (``StreamHub`` publishes keyed by ``run_id``
-  so existing WebSocket / SSE consumers don't need to know about
-  the worker).
+- **只依赖 new_bus**。老的 bus store / StreamHub / agent_inbox 一概
+  不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 new_bus 再说）。
 
-Design principle
-================
+- **配置变更双触发**：主路径是 worker 每轮 poll ``bus.magic``，若
+  签名变化（``(provider, api_key_last4, model)``）就重建 SDK client；
+  同时 worker 也 claim ``bus.change_provider_config_job_board`` 上的
+  job（publisher 未来由 WebUI 迁移后调用 ``publish`` 触发）。两条
+  路径等价：都会让 worker 重新读 ``bus.magic`` 然后 ``_rebuild_provider``。
 
-The worker is **a dumb LLM invoker**. It does not know whether the
-queued job came from an agent turn, chat-history compaction, or a
-session-title job. The origin caller reads the result off the
-``LLMAttempt.response`` row (or via the ``provider.completed`` inbox
-event) and does its own post-processing in its own layer.
+- **dumb invoker**。Worker 不知道这次调用来自 agent turn /
+  compaction / auto_title —— 全部统一走 :class:`CallLLMJob` → SDK →
+  :class:`CallLLMResult`。调用方需要区分由调用方在自己的层做。
 
-Hook firing
+- **stream = async iterator**。``provider.stream()`` 返回
+  ``AsyncIterator[LLMStreamEvent]``，worker 内部 iterate 聚合文本
+  和 tool_use，最后写一个 :class:`CallLLMResult`。不需要任何外部
+  消息队列（StreamHub 已退役）。
+
+- **provider 列表 publish**：startup 时 worker 把当前代码支持的
+  provider id 列表写到 ``bus.settings``（key ``providers.options``），
+  WebUI 从 Book 读，不 import :mod:`magi.providers`。
+
+入队 helper
 ===========
 
-The worker does NOT fire hooks itself.  All hook dispatching
-happens inside the bus.store boundary methods:
-``enqueue_llm_job`` stamps a ``hook_signoffs`` row per enabled
-plugin subscribed to ``LLM_REQUEST_PREPARED``; ``complete_llm_attempt``
-stamps one for ``LLM_RESPONSE_RECEIVED``.  The provider worker
-is the *last* thing that touches the LLM row in the lifecycle
-because it is filtered by ``claim_next_llm_job`` until every
-plugin has acked its signoff.
-
-The provider worker is hook-agnostic: it never imports
-``magi.plugins`` or ``magi.bus.hooks``.  Plugins that want to
-observe LLM I/O consume the ``hook_signoffs`` queue directly via
-``bus.store.claim_pending_signoffs(plugin_id)`` --
-they see every request and response through the BUS, not the
-worker.
+旧的 :func:`enqueue_llm_job` helper 已删除。调用方直接
+``bus.llm_job_board.publish(CallLLMJob(...))``。Agent / tool 等模块
+目前还在老 bus 上，会暂时坏掉——按 user 指示"以后再修"。
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import suppress
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-# ``magi.bus.bootstrap`` and ``magi.bus.store`` are *deferred*
-# to runtime (inside the methods that need them). Eager import
-# would transitively register ``magi.bus.db.models.local.hook_evaluation``
-# which carries a SQLAlchemy ``Mapped`` named ``metadata`` -- that
-# collides with the reserved ``Base.metadata`` on SQLAlchemy's
-# declarative API. The double-registration trips the error any
-# time ``magi.bus.bootstrap`` is statically imported after the
-# app's own bootstrap has already registered the model. Touching
-# only the leaf modules here keeps the worker module load cheap
-# and lets the runtime's first ``bootstrap()`` call register each
-# model exactly once.
-from magi.bus.jobs.protocols.agent import AgentMessage, BusStoreProtocol, InboxKind
-from magi.bus.jobs.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
-from magi.bus.jobs.protocols.llm_jobs import LLMJob
-from magi.bus.stream import StreamEvent
-from magi.providers import get_provider
+from magi.new_bus.guild import (
+    CallLLMJob,
+    CallLLMResult,
+    ChangeProviderConfigJob,
+    ChangeProviderConfigResult,
+)
 from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
+from magi.providers.base import LLMProvider, LLMStreamEvent
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
 
 logger = logging.getLogger("magi.providers.worker")
 
@@ -73,30 +63,60 @@ logger = logging.getLogger("magi.providers.worker")
 # without starving shorter turns. Override via ``MAGI_PROVIDER_CONCURRENCY``.
 _DEFAULT_CONCURRENCY = 2
 
-# Socket-side run deadline check: if the run's deadline already
-# passed before the worker started the call, fail-fast without
-# paying the upstream latency.
-_DEADLINE_ERROR_CODE = "magi.run_deadline_exceeded"
-
 # Stable short codes for the operator-facing error envelope.
 _NOT_CONFIGURED_CODE = "magi.llm_credentials_required"
 _PROVIDER_CRASHED_CODE = "chat.provider_crashed"
 
+# Setting key under which the worker publishes the supported-provider
+# list (id + human label). WebUI reads this from ``bus.settings`` —
+# it never imports :mod:`magi.providers` for the dropdown source.
+_PROVIDERS_KEY = "providers.options"
+
+# The provider-list payload is code-defined: it never changes between
+# worker reloads, so writing it once at startup is enough. If a new
+# provider ships, the next worker start re-publishes.
+_PROVIDER_OPTIONS: list[dict[str, str]] = [
+    {"value": "claude", "label": "Anthropic (Claude)"},
+    {"value": "minimax-global", "label": "Minimax (Global)"},
+    {"value": "minimax-cn", "label": "Minimax (China)"},
+    {"value": "openai", "label": "OpenAI"},
+]
+
+
+def _config_signature(bus: "NewBus") -> tuple[str | None, str | None, str | None]:
+    """Cheap fingerprint of the provider config in ``bus.settings_book``;
+    rebuild when it changes.
+
+    ``api_key`` is reduced to last-4 to avoid comparing full secrets
+    in memory on every loop iteration.
+    """
+    sb = getattr(bus, "settings_book", None)
+    if sb is None:
+        return (None, None, None)
+    try:
+        provider = sb.get(key="provider.name")
+        api_key = sb.get(key="provider.api_key") or ""
+        model = sb.get(key="provider.model")
+    except Exception:  # noqa: BLE001
+        return (None, None, None)
+    api_key_last4 = api_key[-4:] if api_key else None
+    return (provider, api_key_last4, model)
+
 
 class ProvidersWorker:
-    """Consumer that owns every LLM API call in a MAGI process."""
+    """Consumer that owns every LLM API call in a MAGI process.
+
+    Receives a fully-wired :class:`NewBus` via constructor injection.
+    """
 
     def __init__(
         self,
+        bus: "NewBus",
         *,
-        store: BusStoreProtocol | None = None,
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        # Lazy-resolve the store so the module load doesn't trigger
-        # the bus.bootstrap double-import chain (see top-of-file
-        # note). Tests injecting a store skip this entirely.
-        self.store = store or _lazy_get_bus_store()
+        self.bus = bus
         self.worker_id = f"provider-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         if concurrency is None:
@@ -109,299 +129,137 @@ class ProvidersWorker:
         self.concurrency = max(1, concurrency)
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
-        self._wake = asyncio.Event()
         self._slots = asyncio.Semaphore(self.concurrency)
         self._inflight: set[asyncio.Task[None]] = set()
+
         # Cached LLM client + the typed error that prevented us from
-        # building one (so a job claimed with no config can settle as
-        # ``failed`` with the operator-facing envelope). Populated in
-        # ``_rebuild_provider``; rebuilt when ``control_jobs`` carries a
-        # ``provider.config_changed`` row. ``self._provider`` is read by
-        # every parallel job slot and only written from ``_run``, so no
-        # lock is needed.
+        # building one. ``_config_sig`` is the fingerprint used to
+        # detect external config changes between rebuilds.
         self._provider: LLMProvider | None = None
         self._provider_error: LLMError | None = None
-
-    # ----- lifecycle ----------------------------------------------------
+        self._config_sig: tuple[str | None, str | None, str | None] = (None, None, None)
 
     async def start(self) -> None:
         if self._task is not None:
             return
-        recovered = self.store.recover_expired_llm_job_leases()
-        if recovered:
-            logger.warning(
-                "providers worker: recovered %d expired leases at boot",
-                recovered,
-            )
-        # Resolve the cached provider *before* the run loop starts so a
-        # missing config cannot block boot; the failure path lives in
-        # ``_rebuild_provider`` (logs + records ``_provider_error``).
+
+        # Publish supported-provider list to bus.settings so the
+        # WebUI can read it from a Book without importing
+        # :mod:`magi.providers`. Fire-and-forget — failure here
+        # doesn't block boot.
+        self._publish_provider_options()
+
+        # Build the cached provider client from current config.
         self._rebuild_provider()
+
         self._stopping = False
-        self._task = asyncio.create_task(self._run(), name="magi-provider-worker")
+        self._task = asyncio.create_task(
+            self._run(), name="magi-provider-worker"
+        )
 
     async def stop(self) -> None:
         self._stopping = True
-        self._wake.set()
         if self._task is not None:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
-        # Drain in-flight provider calls so the process exits cleanly.
         if self._inflight:
             await asyncio.gather(*self._inflight, return_exceptions=True)
             self._inflight.clear()
         self._provider = None
         self._provider_error = None
 
-    def notify(self) -> None:
-        """Wake the poller after an in-process publish."""
-        self._wake.set()
-
     # ----- main loop ----------------------------------------------------
 
     async def _run(self) -> None:
         while not self._stopping:
-            # Drain transient control signals before polling LLM
-            # jobs. ``provider.config_changed`` is the only kind today;
-            # ``drain_control_jobs`` returns 0 cheaply when the queue
-            # is empty. Multiple queued rows coalesce into one rebuild
-            # (the count is what matters, not the rows themselves).
-            if self.store.drain_control_jobs(
+            # 1. Drain any explicitly-published config-change job.
+            #    The api channel doesn't publish yet (still on old
+            #    bus), but this is the future hook.
+            cfg_job = await asyncio.to_thread(
+                self.bus.change_provider_config_job_board.claim,
                 worker_id=self.worker_id,
-                kind=PROVIDER_CONFIG_CHANGED,
-            ):
-                self._rebuild_provider()
-            claim = self.store.claim_next_llm_job(self.worker_id)
-            if claim is None:
-                self._wake.clear()
-                try:
-                    await asyncio.wait_for(
-                        self._wake.wait(), timeout=self.poll_seconds,
-                    )
-                except TimeoutError:
-                    pass
+            )
+            if cfg_job is not None:
+                await self._handle_config_job(cfg_job)
                 continue
-            attempt_id, run_id, inbox_event_id = claim
+
+            # 2. Cheap poll for config drift — if magic config
+            #    changed since the last rebuild, rebuild now even
+            #    without a publisher round-trip.
+            self._check_config_drift()
+
+            # 3. Claim one LLM job.
+            job = await asyncio.to_thread(
+                self.bus.llm_job_board.claim, worker_id=self.worker_id,
+            )
+            if job is None:
+                await asyncio.sleep(self.poll_seconds)
+                continue
+
             await self._slots.acquire()
-            task = asyncio.create_task(
-                self._invoke_safe(attempt_id, run_id, inbox_event_id),
-                name=f"provider-job-{attempt_id}",
+            task_obj = asyncio.create_task(
+                self._invoke_safe(job),
+                name=f"provider-job-{job.job_id}",
             )
-            self._inflight.add(task)
-            task.add_done_callback(self._inflight.discard)
+            self._inflight.add(task_obj)
+            task_obj.add_done_callback(self._inflight.discard)
 
-    async def _invoke_safe(
-        self,
-        attempt_id: str,
-        run_id: str,
-        inbox_event_id: str | None,
-    ) -> None:
-        try:
-            await self._invoke_provider(attempt_id, run_id, inbox_event_id)
-        except asyncio.CancelledError:
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={
-                    "detail": "providers worker cancelled",
-                    "code": "magi.run_cancelled",
-                },
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code="magi.run_cancelled",
-                error_detail="providers worker cancelled",
-            )
-            raise
-        except Exception as exc:  # noqa: BLE001 -- worker MUST NOT crash the bus
-            logger.exception(
-                "providers worker: unhandled exception on attempt %s",
-                attempt_id,
-            )
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": str(exc), "code": _PROVIDER_CRASHED_CODE},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=_PROVIDER_CRASHED_CODE,
-                error_detail=str(exc),
-            )
-        finally:
-            self._slots.release()
+    # ----- config change -------------------------------------------------
 
-    # ----- the single LLM call site ------------------------------------
-
-    async def _invoke_provider(
-        self,
-        attempt_id: str,
-        run_id: str,
-        inbox_event_id: str | None,
-    ) -> None:
-        # 1. Re-check deadline -- fail-fast if the run already expired
-        # while the row sat in the queue.
-        if not self.store.is_run_within_deadline(run_id):
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": "run deadline exceeded before provider call",
-                       "code": _DEADLINE_ERROR_CODE},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=_DEADLINE_ERROR_CODE,
-                error_detail="run deadline exceeded before provider call",
-            )
-            return
-
-        # 2. Load the serialized request the caller enqueued.
-        request = self.store.load_llm_job_request(attempt_id)
-        if request is None:
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={
-                    "detail": "provider job had no serialized request",
-                    "code": _PROVIDER_CRASHED_CODE,
-                },
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=_PROVIDER_CRASHED_CODE,
-                error_detail="provider job had no serialized request",
-            )
-            return
-
-        # 3. Resolve provider from the cache populated by
-        # ``_rebuild_provider`` (called in ``start()`` and after every
-        # drained ``provider.config_changed`` row). ``self._provider``
-        # is the immutable SDK client; ``self._provider_error`` carries
-        # the typed error from the last build attempt so a job claimed
-        # while config is missing settles with the right envelope.
-        provider = self._provider
-        if provider is None:
-            exc = self._provider_error or LLMNotConfiguredError(
-                "MAGI runtime has no LLM provider / API key configured; "
-                "set it in MAGI management",
-            )
-            error_code = (
-                _NOT_CONFIGURED_CODE
-                if isinstance(exc, LLMNotConfiguredError)
-                else type(exc).__name__
-            )
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": str(exc), "code": error_code},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=error_code,
-                error_detail=str(exc),
-            )
-            return
-
-        # 4. Publish ``llm.started`` deltas.  The LLM_REQUEST_PREPARED
-        # hook already fired at enqueue time (before the worker was
-        # bound); the worker doesn't re-fire it.
-        from magi.bus.stream import get_stream_hub as _get_hub
-        hub = _get_hub()
-        hub.publish(StreamEvent(run_id, attempt_id, 1, "llm.started", {}))
-
-        # 5. Call the provider. ``chat()`` for non-streaming,
-        # ``stream()`` for incremental deltas.  The LLM_RESPONSE_RECEIVED
-        # hook fires automatically when ``complete_llm_attempt`` is
-        # called below (see bus.store.bus_store.py).
-        chat_messages = [
-            ChatMessage(role=m["role"], content=m.get("content") or "")
-            for m in request.get("messages") or []
-        ]
-        tools = list(request.get("tools") or []) or None
-        streaming = bool(request.get("streaming"))
-        max_tokens = int(request.get("max_tokens") or 1024)
-        system = request.get("system")
-
-        async def _forward(event) -> None:
-            # ``event`` is a provider-emitted ``LLMStreamEvent``;
-            # we re-emit on the StreamHub so WebSocket / SSE keeps
-            # working unchanged. The sequence number here is opaque
-            # to the worker -- the hub consumer orders it.
-            hub.publish(
-                StreamEvent(
-                    run_id,
-                    attempt_id,
-                    0,  # sequence is overwritten by hub consumers
-                    f"llm.{event.kind}",
-                    dict(event.payload),
-                ),
-            )
-
-        try:
-            if streaming:
-                result = await provider.stream(
-                    system=system,
-                    messages=chat_messages,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                    on_event=_forward,
-                )
-            else:
-                result = await provider.chat(
-                    system=system,
-                    messages=chat_messages,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                )
-        except LLMNotConfiguredError as exc:
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": str(exc), "code": _NOT_CONFIGURED_CODE},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=_NOT_CONFIGURED_CODE,
-                error_detail=str(exc),
-            )
-            return
-        except LLMError as exc:
-            self.store.complete_llm_attempt(
-                attempt_id,
-                error={"detail": str(exc), "code": type(exc).__name__},
-            )
-            self._publish_completion(
-                run_id, attempt_id, "failed",
-                error_code=type(exc).__name__,
-                error_detail=str(exc),
-            )
-            return
-
-        # 6. Terminal write -- success. ``complete_llm_attempt`` fires
-        # the LLM_RESPONSE_RECEIVED OBSERVE hook (when the caller
-        # attached a hook_context to the LLMJob).
-        self.store.complete_llm_attempt(
-            attempt_id,
-            response=self._response_payload(result),
+    async def _handle_config_job(self, job: ChangeProviderConfigJob) -> None:
+        """Rebuild the cached provider client on a config-change job."""
+        logger.info(
+            "providers worker: changeProviderConfig received, rebuilding client"
         )
-        self._publish_completion(run_id, attempt_id, "completed")
+        self._rebuild_provider()
+        if self._provider is not None:
+            result = ChangeProviderConfigResult(job_id=job.job_id, success=True)
+        else:
+            result = ChangeProviderConfigResult(
+                job_id=job.job_id, success=False,
+                error=str(self._provider_error) if self._provider_error else "unknown",
+            )
+        try:
+            self.bus.change_provider_config_job_board.submit_result(
+                key=job.job_id, result=result,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "providers worker: failed to submit changeProviderConfig result for %s",
+                job.job_id,
+            )
 
-    # ----- helpers ------------------------------------------------------
+    def _check_config_drift(self) -> None:
+        """Compare current settings_book config to last-seen signature;
+        rebuild on change.
+
+        Cheap (three ``settings_book.get()`` calls); runs once per
+        loop iteration. The signature is reduced to a
+        ``(provider, api_key_last4, model)`` tuple so we don't compare
+        full secrets in memory.
+        """
+        sig = _config_signature(self.bus)
+        if sig != self._config_sig:
+            logger.info(
+                "providers worker: settings config drift detected (%s → %s); rebuilding",
+                self._config_sig, sig,
+            )
+            self._rebuild_provider()
 
     def _rebuild_provider(self) -> None:
-        """(Re)build the cached ``LLMProvider`` from the current config.
-
-        Synchronous: ``get_provider`` opens a SQLAlchemy session and
-        reads ``runtime_settings.toml``, then constructs the SDK
-        client. None of those steps do network I/O, so there's no
-        reason to defer to a thread. Tests inject a fake via the
-        module-level ``magi.providers.worker.get_provider`` binding,
-        so this method reads through that name (re-bound through the
-        package's ``__init__``) to keep the patch seam working.
+        """(Re)build the cached :class:`LLMProvider` from current config.
 
         Never raises: a missing / invalid config logs once and leaves
         ``self._provider = None`` so the next claimed job settles
         with the operator-facing envelope instead of crashing the
         worker.
         """
+        from magi.providers import get_provider
+
         try:
-            provider = get_provider()
+            provider = get_provider(bus=self.bus)
         except LLMNotConfiguredError as exc:
             self._provider = None
             self._provider_error = exc
@@ -409,7 +267,6 @@ class ProvidersWorker:
                 "providers worker: no LLM configured (%s); jobs will fail-fast",
                 exc,
             )
-            return
         except LLMError as exc:
             self._provider = None
             self._provider_error = exc
@@ -417,91 +274,266 @@ class ProvidersWorker:
                 "providers worker: cannot build LLM (%s); jobs will fail-fast",
                 exc,
             )
+        else:
+            self._provider = provider
+            self._provider_error = None
+            logger.info(
+                "providers worker: cached LLM client (%s)",
+                type(provider).__name__,
+            )
+
+        # Refresh the fingerprint regardless of build outcome so we
+        # don't busy-loop on the same error.
+        self._config_sig = _config_signature(self.bus)
+
+    # ----- provider-options publishing ----------------------------------
+
+    def _publish_provider_options(self) -> None:
+        """Write supported-provider list to ``bus.settings_book``.
+
+        The data is code-defined: a new provider ships when this
+        module is updated, so re-publishing on every worker start is
+        enough — no live reload needed. WebUI reads this key from
+        the same ``settings_book`` and never imports
+        :mod:`magi.providers`.
+        """
+        sb = getattr(self.bus, "settings_book", None)
+        if sb is None:
             return
-        self._provider = provider
-        self._provider_error = None
-        logger.info(
-            "providers worker: cached LLM client (%s)",
-            type(provider).__name__,
-        )
+        try:
+            sb.set(
+                key=_PROVIDERS_KEY,
+                value=json.dumps(_PROVIDER_OPTIONS, ensure_ascii=False),
+            )
+            logger.info(
+                "providers worker: published known providers to bus.settings_book[%s]",
+                _PROVIDERS_KEY,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "providers worker: failed to publish known providers"
+            )
 
-    @staticmethod
-    def _response_payload(result: ChatResult) -> dict[str, Any]:
-        return {
-            "text": result.text,
-            "thinking": result.thinking,
-            "tool_uses": list(result.tool_uses),
-            "raw_blocks": list(result.raw_blocks),
-            "model": result.model,
-            "usage": result.usage,
-            "stop_reason": result.stop_reason,
-        }
+    # ----- LLM invocation -----------------------------------------------
 
-    def _publish_completion(
-        self,
-        run_id: str,
-        attempt_id: str,
-        status: str,  # "completed" | "failed"
-        *,
-        error_code: str | None = None,
-        error_detail: str | None = None,
-    ) -> None:
-        """Publish a ``provider.completed`` AgentInbox event to wake the agent."""
-        msg = AgentMessage(
-            event_id=f"provider-result:{attempt_id}",
-            text="",
-            channel="agent.internal",
-            session_id=None,
-            uid=None,
-            kind=_provider_completed_kind(),
-            target_run_id=run_id,
-            metadata={
-                "attempt_id": attempt_id,
-                "status": status,
-                "error_code": error_code,
-                "error_detail": error_detail,
+    async def _invoke_safe(self, job: CallLLMJob) -> None:
+        try:
+            await self._invoke_provider(job)
+        except asyncio.CancelledError:
+            self._safe_submit_failure(
+                job,
+                error_code="magi.run_cancelled",
+                error_detail="providers worker cancelled",
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001 -- worker MUST NOT crash
+            logger.exception(
+                "providers worker: unhandled exception on job %s",
+                job.job_id,
+            )
+            self._safe_submit_failure(
+                job,
+                error_code=_PROVIDER_CRASHED_CODE,
+                error_detail=str(exc),
+            )
+        finally:
+            self._slots.release()
+
+    async def _invoke_provider(self, job: CallLLMJob) -> None:
+        """Deserialize the job, call the provider, submit the result."""
+        # Resolve cached provider.
+        provider = self._provider
+        if provider is None:
+            exc = self._provider_error or LLMNotConfiguredError(
+                "MAGI runtime has no LLM provider configured"
+            )
+            error_code = (
+                _NOT_CONFIGURED_CODE
+                if isinstance(exc, LLMNotConfiguredError)
+                else type(exc).__name__
+            )
+            self._safe_submit_failure(
+                job, error_code=error_code, error_detail=str(exc),
+            )
+            return
+
+        messages = list(job.messages or [])
+        max_tokens = int(job.max_tokens or 1024)
+        tools = job.tools or None
+        streaming = bool(job.streaming)
+
+        # Wire format is ``list[dict]``; system prompt is the first
+        # message with ``role="system"`` (caller's convention).
+        system: str | None = None
+        chat_messages: list[dict] = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            if system is None and m.get("role") == "system":
+                system = m.get("content") or ""
+                continue
+            chat_messages.append(m)
+
+        try:
+            if streaming:
+                result_dict = await self._consume_stream(
+                    provider=provider,
+                    system=system,
+                    messages=chat_messages,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                )
+            else:
+                result_dict = await provider.chat(
+                    system=system,
+                    messages=chat_messages,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                )
+        except LLMNotConfiguredError as exc:
+            self._safe_submit_failure(
+                job,
+                error_code=_NOT_CONFIGURED_CODE,
+                error_detail=str(exc),
+            )
+            return
+        except LLMError as exc:
+            self._safe_submit_failure(
+                job,
+                error_code=type(exc).__name__,
+                error_detail=str(exc),
+            )
+            return
+
+        result = CallLLMResult(
+            job_id=job.job_id,
+            success=True,
+            response={
+                "text": result_dict.get("text") or "(empty reply)",
+                "thinking": result_dict.get("thinking"),
+                "tool_uses": list(result_dict.get("tool_uses") or []),
+                "raw_blocks": list(result_dict.get("raw_blocks") or []),
             },
+            finish_reason=result_dict.get("stop_reason"),
+            token_usage=result_dict.get("usage"),
+            model=result_dict.get("model") or "",
+            stream_key=result_dict.get("stream_key") or "",
         )
         try:
-            self.store.publish_agent_message(msg)
-        except Exception:
+            self.bus.llm_job_board.submit_result(key=job.job_id, result=result)
+        except Exception:  # noqa: BLE001
             logger.exception(
-                "providers worker: failed to publish %s for attempt %s",
-                status, attempt_id,
+                "providers worker: failed to submit llm result for %s",
+                job.job_id,
+            )
+
+    async def _consume_stream(
+        self,
+        *,
+        provider: LLMProvider,
+        system: str | None,
+        messages: list[dict],
+        max_tokens: int,
+        tools: list[dict] | None,
+    ) -> dict[str, Any]:
+        """Drain ``provider.stream()``, push text deltas to StreamHub.
+
+        Returns a dict with the complete result plus ``stream_key``
+        so the caller can read incremental text from
+        ``bus.stream_hub.get(stream_key)``.
+        """
+        import uuid as _uuid
+
+        stream_key = _uuid.uuid4().hex
+        q: asyncio.Queue[Any] = self.bus.stream_hub.create(stream_key)
+
+        iterator: AsyncIterator[LLMStreamEvent] = provider.stream(
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            tools=tools,
+        )
+        terminal: dict[str, Any] | None = None
+        try:
+            async for event in iterator:
+                if event.kind == "text.delta":
+                    text = event.payload.get("text")
+                    if text:
+                        q.put_nowait(text)
+                elif event.kind == "usage.updated":
+                    terminal = event.payload
+        finally:
+            q.put_nowait(None)  # sentinel — consumer stops
+            self.bus.stream_hub.close(stream_key)
+
+        if terminal is None:
+            return await provider.chat(
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                tools=tools,
+            )
+        return {
+            "text": terminal.get("text") or "(empty reply)",
+            "thinking": terminal.get("thinking"),
+            "tool_uses": list(terminal.get("tool_uses") or []),
+            "raw_blocks": list(terminal.get("raw_blocks") or []),
+            "model": terminal.get("model") or "",
+            "usage": terminal.get("usage"),
+            "stop_reason": terminal.get("stop_reason"),
+            "stream_key": stream_key,
+        }
+
+    # ----- helpers ------------------------------------------------------
+
+    def _safe_submit_failure(
+        self,
+        job: CallLLMJob,
+        *,
+        error_code: str,
+        error_detail: str,
+    ) -> None:
+        """Submit a failed :class:`CallLLMResult`. Swallows errors so
+        the worker loop never crashes on a transient DB blip."""
+        result = CallLLMResult(
+            job_id=job.job_id,
+            success=False,
+            error=error_detail,
+            error_code=error_code,
+        )
+        try:
+            self.bus.llm_job_board.submit_result(key=job.job_id, result=result)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "providers worker: failed to submit failure for %s",
+                job.job_id,
             )
 
 
-def _provider_completed_kind() -> InboxKind:
-    """Cast the string literal -- keeps the type-checker honest."""
-    return "provider.completed"  # type: ignore[return-value]
-
-
-def _lazy_get_bus_store() -> BusStoreProtocol:
-    """Resolve the process-global ``BusStore`` lazily.
-
-    Importing ``magi.bus.bootstrap`` at module load would trigger a
-    SQLAlchemy model double-registration against
-    ``Base.metadata`` (see top-of-file note). Defer the import to
-    first use; by then the runtime's own ``bootstrap()`` has run
-    and the model is registered exactly once.
-    """
-    from magi.bus.bootstrap import get_bus_store as _get
-    return _get()
-
-
-# ----- module-level singletons ---------------------------------------
+# ---------------------------------------------------------------------------
+# module-level singletons
+# ---------------------------------------------------------------------------
 
 
 _worker: ProvidersWorker | None = None
 
 
 async def start_provider_worker(
-    *, store: BusStoreProtocol | None = None,
+    bus: "NewBus | None" = None,
 ) -> ProvidersWorker:
-    """Start the process-local provider worker after SQLite is ready."""
+    """Start the process-local provider worker.
+
+    ``bus`` is the wired :class:`NewBus` from the composition root.
+    It's optional only for backwards-compat with callers that don't
+    pass it (legacy tests); the production runtime always supplies it.
+    """
     global _worker
     if _worker is None:
-        _worker = ProvidersWorker(store=store)
+        if bus is None:
+            raise RuntimeError(
+                "start_provider_worker requires a NewBus"
+            )
+        _worker = ProvidersWorker(bus)
         await _worker.start()
     return _worker
 
@@ -513,68 +545,8 @@ async def stop_provider_worker() -> None:
         _worker = None
 
 
-async def enqueue_llm_job(job: LLMJob) -> str:
-    """Publish-side helper used by Phase D callers.
-
-    Inserts the queued row and writes the serialized request JSON so
-    the worker can read it back via
-    :meth:`magi.bus.store.BusStore.load_llm_job_request`.
-    Wakes the local worker (no-op across processes; that's fine --
-    the poller will pick the row up on its next tick).
-
-    Hook dispatching is handled inside
-    :meth:`magi.bus.store.BusStore.enqueue_llm_job`: it stamps a
-    ``hook_signoffs`` row per enabled plugin subscribed to
-    ``LLM_REQUEST_PREPARED`` so plugin workers observe the row
-    before the provider worker claims it.  The worker is filtered
-    by ``claim_next_llm_job`` until every plugin has acked its
-    signoff, so the LLM call cannot run until plugin observers have
-    had their chance.
-    the row up -- the caller (agent turn) observes the DENY and
-    falls back to a synthetic response.
-    """
-    store = _lazy_get_bus_store()
-    request = {
-        "system": job.system,
-        "messages": list(job.messages),
-        "max_tokens": job.max_tokens,
-        "tools": list(job.tools) if job.tools else None,
-        "streaming": job.streaming,
-        # Carry ``extra`` through so callers (auto_title in Phase D)
-        # can recover context when reading the result back without
-        # an extra DB lookup.
-        "extra": dict(job.extra),
-    }
-    # The new bus.store.enqueue_llm_job signature takes ``request``
-    # in the same call so the GATE materializer can read the LLM
-    # request payload.  When the bus.store retro-fit isn't in place
-    # yet, fall back to the old two-step enqueue + persist.
-    try:
-        result = store.enqueue_llm_job(
-            run_id=job.run_id,
-            request=request,
-            inbox_event_id=job.inbox_event_id,
-            kind=job.kind,
-            hook_context=job.hook_context,
-        )
-        attempt_id = result.row_id
-    except TypeError:
-        # Legacy bus.store (pre-hook-firing): no ``request`` / no
-        # ``hook_context`` kwargs.  Fall back to the two-step path.
-        attempt_id = store.enqueue_llm_job(
-            run_id=job.run_id,
-            inbox_event_id=job.inbox_event_id,
-            kind=job.kind,
-        )
-        store.persist_llm_job_request(attempt_id, request=request)
-    if _worker is not None:
-        _worker.notify()
-    return attempt_id
-
-
 __all__ = [
     "ProvidersWorker",
     "start_provider_worker",
     "stop_provider_worker",
-    "enqueue_llm_job",
 ]
