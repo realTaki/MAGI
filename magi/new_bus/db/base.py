@@ -42,4 +42,14 @@ class Base(DeclarativeBase):
     own ``MetaData`` instance and its own Table registry.  Sharing
     a single SQLite file with the old bus is supported because the
     two metadatas never see each other's Tables.
+
+    Several new_bus ORM classes legitimately share ``__tablename__``
+    (e.g. a ``library.local.*Book`` and its sibling
+    ``guild.*Notify``) because they describe the same SQLite table
+    from two angles: the Book layer is CRUD; the Notify layer is
+    fire-and-forget. Whichever module is imported first wins the
+    Table registration; every later module that declares an ORM
+    with the same ``__tablename__`` must opt in with
+    ``__table_args__ = {"extend_existing": True}`` — otherwise
+    SQLAlchemy refuses the second registration.
     """

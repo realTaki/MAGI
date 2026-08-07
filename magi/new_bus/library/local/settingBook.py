@@ -32,6 +32,10 @@ class Setting:
 
 class _SettingRow(Base):
     __tablename__ = "settings"
+    # ``setSettingNotify`` (in ``magi.new_bus.guild``) registers the
+    # same Table for its fire-and-forget path; whichever module is
+    # imported first wins, and the other must opt-in.
+    __table_args__ = {"extend_existing": True}
 
     key: Mapped[str] = mapped_column(String(255), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)

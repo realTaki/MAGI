@@ -6,12 +6,20 @@
 差异只有 base_url / 默认模型 / 错误标签。本基类统一处理：
 
 - SDK 客户端构造（带 timeout）
-- ``messages.create`` 调用
-- 错误映射（auth / rate-limit / network / context-length / 4xx-5xx）
+- ``messages.create`` 调用（含流式）
+- 错误映射（auth / permission-denied / rate-limit / network /
+  context-length / 4xx-5xx）
 - 响应拆解（text / thinking / tool_use 提取；其它进 raw_blocks）
 
-子类只需声明三个类属性（``_BASE_URL`` / ``_DEFAULT_MODEL`` /
-``_ERROR_LABEL``）就够了。
+子类使用
+========
+
+最简单的方式是声明三个类属性（``_BASE_URL`` / ``_DEFAULT_MODEL`` /
+``_ERROR_LABEL``），由基类 ``__init__`` 读 ``_BASE_URL`` 构造 SDK
+client。
+
+如果需要在运行时切换 base_url（例如 Minimax 的多 region），也可以
+``base_url=`` 关键字直接传给构造器，临时覆盖类属性。
 """
 
 from __future__ import annotations

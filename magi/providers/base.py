@@ -1,9 +1,16 @@
 """LLM provider 抽象接口 + 流式事件类型。
 
-运行时（worker）只通过 :class:`LLMProvider` 调用模型，与具体厂商
-解耦。Wire format 直接是 ``list[dict]``（job 上的 messages），
-不再使用中间 dataclass；每个 provider 内部自行翻成 SDK 期望的
-形状。返回值是 plain dict，与 :class:`CallLLMResult.response` 直接对齐。
+抽象层边界
+==========
+
+:class:`LLMProvider` 是 providers 包的**唯一**对外契约，运行时
+(:class:`~magi.providers.worker.ProvidersWorker`) 只通过它调用
+模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（new_bus
+的 :class:`~magi.new_bus.guild.callLLMJob.CallLLMJob` 上的
+``messages`` 字段），不再使用中间 dataclass；每个 provider 子类
+内部自行翻成 SDK 期望的形状。返回值是 plain dict，与
+:class:`~magi.new_bus.guild.callLLMJob.CallLLMResult.response` 直
+接对齐。
 
 设计要点
 ========
@@ -16,13 +23,22 @@
   表达。
 
 - :meth:`LLMProvider.stream` 返回 :class:`AsyncIterator` yield
-  :class:`LLMStreamEvent`。调用方 iterate 拿到增量事件，自己聚
-  合最终结果；不需要在 provider 层维护一个 message queue 广播
-  给多个订阅者。
+  :class:`LLMStreamEvent`。**调用方只有 worker 一个**——它 iterate
+  拿到增量事件，自己决定哪些字段推到 ``bus.stream_hub`` 管道
+  （v0 是 text delta 直推 plain string + None 哨兵）、哪些聚合
+  到最终 ``CallLLMResult``。provider 包不维护广播给多个订阅者的
+  message queue。
+
+- :class:`LLMStreamEvent` 是 **provider ↔ worker 之间**的 typed
+  契约，**不进 bus**。``bus.stream_hub`` 是 in-process named
+  pipe 传输层（``asyncio.Queue[Any]``），item 形状由 worker 决定。
+  外部消费者通过 ``CallLLMResult.stream_key`` 拿 hub 句柄，不
+  需要知道 ``LLMStreamEvent`` 存在。
 
 - :class:`LLMStreamEvent.kind` 是 ``"text.delta"`` /
-  ``"tool_arguments.delta"`` / ``"usage.updated"`` 之一，
-  worker 据此聚合。
+  ``"tool_arguments.delta"`` / ``"usage.updated"`` 之一。
+  worker 在最后收到 ``"usage.updated"`` 时把它当作终态 payload
+  直接 pack 进 ``CallLLMResult``。
 """
 
 from __future__ import annotations
@@ -61,11 +77,12 @@ class LLMProvider(ABC):
     子类需要：
 
     - 设置 :attr:`name`（实例 / 类属性均可）：canonical provider id，
-      出现在 audit row 和 magic 配置里。
+      出现在 audit row 和 ``bus.settings_book`` 配置里。
     - 实现 :meth:`default_model`：调用方没显式传 model 时用这个。
     - 实现 :meth:`chat`：返回 dict（见模块 docstring）。
     - 可选覆写 :meth:`stream`：默认实现是 chat() 的退化版
-      （yield 一次 text.delta + 一次 usage.updated）。
+      （yield 一次 text.delta + 一次 usage.updated）。原生 SDK
+      流式支持的子类（Anthropic / OpenAI）都覆写了它。
     """
 
     name: str = ""
@@ -105,8 +122,11 @@ class LLMProvider(ABC):
         as a single delta each.
 
         Subclasses with native SDK streaming should override this so
-        the consumer sees incremental deltas rather than one final
-        bundle.
+        the consumer (the worker) sees incremental deltas rather than
+        one final bundle. The terminal ``usage.updated`` event's
+        payload is treated as the authoritative final-state dict by
+        the worker — subclasses should pack the same fields
+        :meth:`chat` returns.
         """
 
         async def _iterator() -> AsyncIterator[LLMStreamEvent]:

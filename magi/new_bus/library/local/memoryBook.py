@@ -46,6 +46,14 @@ class Memory:
 
 class _MemoryRow(Base):
     __tablename__ = "memory_entries"
+    # ``rememberNotify`` (in ``magi.new_bus.guild``) registers a Table
+    # with the same name; whichever module is imported first wins and
+    # the other must opt-in to sharing the existing Table object.
+    # SQLAlchemy convention: dict kwargs must come last in the tuple.
+    __table_args__ = (
+        Index("ix_memory_entries_owner_importance", "uid", "completed_at", "importance"),
+        {"extend_existing": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     uid: Mapped[int] = mapped_column(
@@ -64,10 +72,6 @@ class _MemoryRow(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
-
-    __table_args__ = (
-        Index("ix_memory_entries_owner_importance", "uid", "completed_at", "importance"),
     )
 
 

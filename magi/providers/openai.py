@@ -160,8 +160,9 @@ def _convert_usage(usage_obj: Any) -> dict[str, Any] | None:
     """Translate an OpenAI usage object into the canonical token envelope.
 
     Renames ``prompt_tokens``/``completion_tokens``/``total_tokens`` to
-    the wire-format keys the rest of the runtime reads; preserves any
-    extra metadata (``prompt_tokens_details`` etc.) verbatim.
+    the wire-format keys the worker reads off ``CallLLMResult``;
+    preserves any extra metadata (``prompt_tokens_details`` etc.)
+    verbatim.
     """
     raw = safe_dump(usage_obj)
     if raw is None:

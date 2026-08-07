@@ -56,10 +56,11 @@ package does its own thing"):
   re-exporting.
 - ``ChatMessage`` / ``ChatResult`` — deleted; wire format is plain
   ``list[dict]``.
-- ``known_providers`` / ``is_known_provider`` — kept module-private
-  inside :mod:`magi.providers.factory`; the worker publishes the
-  list to ``bus.settings[providers.options]`` at startup for WebUI.
-- ``provider_options_for_ui` — deleted; same reason.
+- ``known_providers`` / ``is_known_provider`` /
+  ``provider_options_for_ui`` — all deleted. The supported-provider
+  list now lives at ``bus.settings_book["providers.options"]``,
+  which the worker writes at startup and WebUI reads from a Book
+  without importing :mod:`magi.providers`.
 - ``enqueue_llm_job`` — deleted; callers do
   ``bus.llm_job_board.publish(CallLLMJob(...))``.
 - token estimators — moved to :mod:`magi.agent.tokens` since they

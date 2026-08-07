@@ -69,8 +69,8 @@ _NOT_CONFIGURED_CODE = "magi.llm_credentials_required"
 _PROVIDER_CRASHED_CODE = "chat.provider_crashed"
 
 # Setting key under which the worker publishes the supported-provider
-# list (id + human label). WebUI reads this from ``bus.settings`` —
-# it never imports :mod:`magi.providers` for the dropdown source.
+# list (id + human label). WebUI reads this from ``bus.settings_book``
+# — it never imports :mod:`magi.providers` for the dropdown source.
 _PROVIDERS_KEY = "providers.options"
 
 # The provider-list payload is code-defined: it never changes between

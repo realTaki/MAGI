@@ -17,7 +17,11 @@ only needs to react to a handful:
                                response body, etc.).
 
 Each subclass carries the upstream message so the audit row can
-hold the actual reason (not just "LLMError").
+hold the actual reason (not just "LLMError"). The worker maps
+``type(exc).__name__`` (or the dedicated
+``"magi.llm_credentials_required"`` short code for
+:class:`LLMNotConfiguredError`) to ``CallLLMResult.error_code``;
+external code reads the string and never catches the class.
 """
 
 from __future__ import annotations
@@ -30,13 +34,16 @@ class LLMError(Exception):
 
 
 class LLMNotConfiguredError(LLMError):
-    """The MAGI runtime has no provider / API key configured.
+    """No LLM provider / API key is configured for the runtime.
 
-    The factory reads the credentials from the seeded adam
-    ``Magi`` row; if that row's ``provider`` / ``api_key`` is
-    unset, the factory raises this. Distinct from
-    :class:`LLMAuthError` (key rejected by the vendor) — this
-    one means the operator hasn't configured the runtime yet.
+    :func:`magi.providers.factory.get_provider` reads the
+    credentials from ``bus.settings_book`` (keys
+    ``provider.name`` / ``provider.api_key``); when those are
+    unset, it raises this. Distinct from :class:`LLMAuthError`
+    (key rejected by the vendor) — this one means the operator
+    hasn't configured the runtime yet (and the worker's
+    ``CallLLMResult.error_code`` will read
+    ``"magi.llm_credentials_required"``).
     """
 
 

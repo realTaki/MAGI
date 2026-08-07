@@ -90,6 +90,10 @@ class TaskPreset:
 
 class _TaskRow(Base):
     __tablename__ = "tasks"
+    # ``scheduleTaskNotify`` (in ``magi.new_bus.guild``) registers
+    # the same Table for its fire-and-forget path; whichever module
+    # is imported first wins, and the other must opt-in.
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)

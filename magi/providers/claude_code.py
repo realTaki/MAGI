@@ -7,14 +7,15 @@ URL explicitly so the subclass is self-describing and
 the ``_BASE_URL`` invariant in the base class is
 checked.
 
-Provider id: ``"claude"``. Operator-facing label
-(``provider_options_for_ui``): ``"Anthropic (Claude)"``.
+Provider id: ``"claude"``. Operator-facing label (in
+``bus.settings_book["providers.options"]``):
+``"Anthropic (Claude)"``.
 
 Default model: ``claude-opus-4-7`` — Anthropic's
 strongest general-purpose model as of the v0 cut.
-Operators can override per-contact by passing
-``model=`` to ``get_provider(...)`` (or the
-``contact_model`` argument on the agent loop).
+Operators can override per-MAGI by writing
+``bus.settings_book["provider.model"]`` (the worker
+picks it up on the next ``changeProviderConfig`` job).
 """
 
 from __future__ import annotations

@@ -13,12 +13,11 @@ client. This is a thin subclass of
 :class:`magi.providers.anthropic.AnthropicProvider`
 that fixes the per-region config.
 
-A bare ``"minimax"`` in ``Contact.provider`` is
-treated as a synonym for ``"minimax-cn"``; the
-factory handles that.
+A bare ``"minimax"`` is treated as a synonym for
+``"minimax-cn"``; the factory handles that.
 
-Default model: ``MiniMax-M2.7``. Same override path
-as Claude (``model=`` to ``get_provider``).
+Default model: ``MiniMax-M2.7``. Operators can override
+per-MAGI by writing ``bus.settings_book["provider.model"]``.
 
 Note on the URL path: the ``/anthropic`` segment is
 part of the host's URL path, not a hint about the
@@ -41,10 +40,8 @@ _BASE_URLS: dict[str, str] = {
     "minimax-global": "https://api.minimax.io/anthropic",
 }
 
-# Default model. Operators can override per-contact
-# by extending the Contact model with a model
-# column (the ``contact_model`` argument passed to
-# the durable agent message already carries this).
+# Default model. Operators can override per-MAGI by
+# writing ``bus.settings_book["provider.model"]``.
 _DEFAULT_MODEL = "MiniMax-M2.7"
 
 
