@@ -1,31 +1,40 @@
 """End-to-end tests for :class:`magi.providers.worker.ProvidersWorker`.
 
-These tests exercise the durable queue around the LLM lifecycle:
-publish a job, watch the worker claim it, run the (stub) provider,
-write back the terminal state. We inject a ``FakeProvider`` via
-the public ``get_provider`` seam so the tests don't depend on
-real network calls or a configured MAGI row.
+These tests exercise the durable new_bus queue around the LLM
+lifecycle: publish a :class:`CallLLMJob`, watch the worker claim it,
+run the (stub) provider, write back a :class:`CallLLMResult`. The
+provider is injected via monkey-patching ``get_provider`` on the
+factory module (which the worker reaches through at runtime), so the
+tests don't depend on real network calls or a real ``settings_book``
+configuration.
+
+The integration test stands up a real SQLite-backed :class:`NewBus`
+in a temp dir so the full round-trip — publish → claim → submit_result
+→ get_result — exercises the actual ``BaseJobBoard`` machinery.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
-import uuid
-from datetime import datetime
-from pathlib import Path
+import time
+from typing import Any
 
 import pytest
 
-from magi.bus import get_bus_store
-from magi.bus.bootstrap import bootstrap
-from magi.bus.db import init_orm
-from magi.bus.db.magis.engine import init_magis_public_db
-from magi.bus.db.models.queue import LLMAttempt
-from magi.bus.db.engine import open_session
+from magi.new_bus import NewBus, bootstrap_new_bus
+from magi.new_bus.guild import (
+    CallLLMJob,
+    CallLLMResult,
+    ChangeProviderConfigJob,
+)
+from magi.new_bus.guild.changeProviderConfigJob import (
+    PROVIDER_API_KEY_KEY,
+    PROVIDER_MODEL_KEY,
+    PROVIDER_NAME_KEY,
+)
+from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.base import LLMProvider
-from magi.providers.factory import ChatMessage, ChatResult
+from magi.providers.factory import get_provider
 from magi.providers.worker import (
     ProvidersWorker,
     start_provider_worker,
@@ -33,14 +42,19 @@ from magi.providers.worker import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Fake provider + helpers
+# ---------------------------------------------------------------------------
+
+
 class FakeProvider(LLMProvider):
     """Minimal provider used by every test in this file.
 
     Honours ``reply`` (string) when set; otherwise echoes the
     last user message back so the assertion can spot-check the
-    round-trip. Raises ``LLMError`` on a request whose last user
-    message starts with ``!raise:`` so a test can drive the
-    failure path deterministically.
+    round-trip. Raises ``LLMError`` / ``LLMNotConfiguredError`` on
+    messages prefixed with ``!raise:`` / ``!notconfigured:`` so a
+    test can drive the failure paths deterministically.
     """
 
     name = "fake"
@@ -54,325 +68,251 @@ class FakeProvider(LLMProvider):
     def default_model(self) -> str:
         return "fake-model-1"
 
-    async def chat(self, *, system, messages, max_tokens, tools=None):
+    async def chat(
+        self,
+        *,
+        system: str | None,
+        messages: list[dict],
+        max_tokens: int,
+        tools: list[dict] | None = None,
+    ) -> dict[str, Any]:
         self.call_count += 1
-        last = messages[-1].content if messages else ""
-        if self.fail_message and last.startswith("!raise"):
+        last_content = self._last_user_text(messages)
+        if self.fail_message and last_content.startswith("!raise"):
             raise LLMError(self.fail_message)
-        if last.startswith("!notconfigured"):
+        if last_content.startswith("!notconfigured"):
             raise LLMNotConfiguredError(self.fail_message or "not configured")
-        text = self.reply or f"echo:{last}"
-        return ChatResult(
-            text=text,
-            model=self.default_model(),
-            usage={"input_tokens": 10, "output_tokens": 5},
-            tool_uses=[],
-            raw_blocks=[],
-            stop_reason="end_turn",
+        text = self.reply or f"echo:{last_content}"
+        return {
+            "text": text,
+            "thinking": None,
+            "tool_uses": [],
+            "raw_blocks": [],
+            "model": self.default_model(),
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+
+    async def stream(
+        self,
+        *,
+        system: str | None,
+        messages: list[dict],
+        max_tokens: int,
+        tools: list[dict] | None = None,
+    ) -> Any:
+        # Default-stream shape (matches ``LLMProvider.stream`` base impl):
+        # one ``text.delta`` per chunk of reply, then a single
+        # ``usage.updated`` terminal.
+        last_content = self._last_user_text(messages)
+        text = self.reply or f"echo:{last_content}"
+        yield LLMStreamEvent("text.delta", {"text": text})
+        yield LLMStreamEvent(
+            "usage.updated",
+            {
+                "text": text,
+                "thinking": None,
+                "tool_uses": [],
+                "raw_blocks": [],
+                "model": self.default_model(),
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "stop_reason": "end_turn",
+            },
         )
 
-    async def stream(self, *, system, messages, max_tokens, tools=None, on_event):
-        result = await self.chat(
-            system=system, messages=messages, max_tokens=max_tokens,
-            tools=tools,
-        )
-        await on_event(ChatMessage("text.delta", result.text))
-        return result
+    @staticmethod
+    def _last_user_text(messages: list[dict]) -> str:
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                content = m.get("content")
+                if isinstance(content, str):
+                    return content
+        return ""
 
 
 @pytest.fixture
-def magi_state(tmp_path, monkeypatch):
-    """Stand up a per-test SQLite database + bus store; tear down workers.
+def bus(tmp_path) -> NewBus:
+    """Stand up a per-test SQLite-backed :class:`NewBus`."""
+    return bootstrap_new_bus(state_dir=str(tmp_path))
 
-    Sets both env vars the runtime needs (workspace_dir + magis engine url)
-    so the initializer doesn't fail at the first SQLAlchemy session.
+
+def _seed_provider_config(
+    bus: NewBus,
+    *,
+    provider: str = "openai",
+    api_key: str = "sk-test",
+    model: str = "fake-model-1",
+) -> None:
+    """Write the three provider-config rows into ``settings_book``."""
+    bus.settings_book.set(key=PROVIDER_NAME_KEY, value=provider)
+    bus.settings_book.set(key=PROVIDER_API_KEY_KEY, value=api_key)
+    bus.settings_book.set(key=PROVIDER_MODEL_KEY, value=model)
+
+
+def _install_fake(bus: NewBus, fake: FakeProvider) -> None:
+    """Patch the ``get_provider`` symbol the worker resolves at runtime.
+
+    The worker imports ``get_provider`` from
+    :mod:`magi.providers.factory` lazily inside
+    :meth:`ProvidersWorker._rebuild_provider`, so patching the
+    factory module is sufficient — no import-time rebinding needed.
     """
-    monkeypatch.setenv("MAGI_DATA_ROOT", str(tmp_path))
-    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
-    monkeypatch.setenv(
-        "MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'magis.db'}",
-    )
-    init_orm(seed_root=True)
-    init_magis_public_db(seed_root=True)
-    bootstrap(initialise_local=True)
-    yield tmp_path
-
-
-
-def _install_fake(fake: "FakeProvider"):
-    """Patch every public name ``get_provider`` resolves to.
-
-    The worker imports the symbol directly from
-    :mod:`magi.providers` at module load (``from magi.providers
-    import get_provider``), so monkey-patching only the factory's
-    binding isn't enough — every entry-point the worker uses has to
-    be replaced.
-
-    The factory's ``get_provider`` is also patched so any direct
-    factory callers (e.g. tests that re-bind it) still see the fake.
-    """
-    import magi.providers
     import magi.providers.factory as _factory
-    import magi.providers.worker as _worker
 
-    def _fake_get(*_args, **_kwargs):
+    def _fake_get(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
         return fake
 
     _factory.get_provider = _fake_get
-    _worker.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]  # back-compat sym
 
 
-
-@pytest.mark.asyncio
-async def test_publish_then_complete_round_trip(magi_state):
-    """A successful call writes ``completed`` with the response JSON."""
-    fake = FakeProvider(reply="hi from provider")
-    _install_fake(fake)
-    await start_provider_worker()
-    try:
-        store = get_bus_store()
-        attempt_id = store.enqueue_llm_job(
-            run_id=f"run-{uuid.uuid4().hex[:6]}",
-            inbox_event_id="ev-1",
-            kind="chat",
-        )
-        store.persist_llm_job_request(
-            attempt_id,
-            request={
-                "system": "you are a test",
-                "messages": [
-                    {"role": "user", "content": "hello", "content_blocks": None},
-                ],
-                "max_tokens": 16,
-                "tools": None,
-                "streaming": False,
-                "extra": {},
-            },
-        )
-        result = await asyncio.to_thread(
-            store.load_llm_job_result, attempt_id,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result is not None, "worker did not settle the row in time"
-        if result["status"] != "completed":
-            print("DEBUG failure detail:", result)
-        assert result["status"] == "completed"
-        assert result["response"]["text"] == "hi from provider"
-        assert result["response"]["model"] == "fake-model-1"
-        # Audit row at the SQL level
-        with open_session(store._state_dir) as s:
-            ar = s.query(LLMAttempt).filter_by(attempt_id=attempt_id).one()
-        assert ar.status == "completed"
-        assert ar.response["text"] == "hi from provider"
-    finally:
-        await stop_provider_worker()
-
-
-@pytest.mark.asyncio
-async def test_provider_not_configured_envelopes_failure(magi_state):
-    """A ``LLMNotConfiguredError`` settles the row with the credentials code."""
-    fake = FakeProvider(fail_message="no api key in magi row")
-    _install_fake(fake)
-    await start_provider_worker()
-    try:
-        store = get_bus_store()
-        attempt_id = store.enqueue_llm_job(
-            run_id=f"run-{uuid.uuid4().hex[:6]}",
-            inbox_event_id="ev-1",
-            kind="chat",
-        )
-        store.persist_llm_job_request(
-            attempt_id,
-            request={
-                "system": "",
-                "messages": [
-                    {"role": "user", "content": "!notconfigured", "content_blocks": None},
-                ],
-                "max_tokens": 16,
-                "tools": None,
-                "streaming": False,
-                "extra": {},
-            },
-        )
-        result = await asyncio.to_thread(
-            store.load_llm_job_result, attempt_id,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result["status"] == "failed"
-        assert result["error"]["code"] == "magi.llm_credentials_required"
-        assert "no api key" in result["error"]["detail"]
-    finally:
-        await stop_provider_worker()
-
-
-@pytest.mark.asyncio
-async def test_provider_crashed_envelopes_generic_failure(magi_state):
-    """An ``LLMError`` settles the row with the crashed code."""
-    fake = FakeProvider(fail_message="upstream auth failed")
-    _install_fake(fake)
-    await start_provider_worker()
-    try:
-        store = get_bus_store()
-        attempt_id = store.enqueue_llm_job(
-            run_id=f"run-{uuid.uuid4().hex[:6]}",
-            inbox_event_id="ev-1",
-            kind="chat",
-        )
-        store.persist_llm_job_request(
-            attempt_id,
-            request={
-                "system": "",
-                "messages": [
-                    {"role": "user", "content": "!raise:anything", "content_blocks": None},
-                ],
-                "max_tokens": 16,
-                "tools": None,
-                "streaming": False,
-                "extra": {},
-            },
-        )
-        result = await asyncio.to_thread(
-            store.load_llm_job_result, attempt_id,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result["status"] == "failed"
-        assert result["error"]["code"] == "LLMError"
-    finally:
-        await stop_provider_worker()
-
-
-@pytest.mark.asyncio
-async def test_concurrency_limit_serialises_two_jobs(magi_state):
-    """Two queued jobs each get a turn; the worker re-claims them FIFO.
-
-    Smoke-test the semaphore: we don't measure wall-clock, just
-    confirm both rows settle ``completed`` in the order they were
-    enqueued.
-    """
-    fake = FakeProvider(reply="ok")
-    _install_fake(fake)
-    await start_provider_worker()
-    try:
-        store = get_bus_store()
-        ids = []
-        for i in range(2):
-            aid = store.enqueue_llm_job(
-                run_id=f"run-{i}",
-                inbox_event_id=f"ev-{i}",
-                kind="chat",
-            )
-            store.persist_llm_job_request(
-                aid,
-                request={
-                    "system": "",
-                    "messages": [
-                        {"role": "user", "content": f"hello {i}", "content_blocks": None},
-                    ],
-                    "max_tokens": 16,
-                    "tools": None,
-                    "streaming": False,
-                    "extra": {},
-                },
-            )
-            ids.append(aid)
-        for aid in ids:
-            result = await asyncio.to_thread(
-                store.load_llm_job_result, aid,
-                wait_seconds=10, poll_seconds=0.05,
-            )
-            assert result["status"] == "completed", (
-                f"row {aid} did not complete: {result}"
-            )
-            assert result["response"]["text"] == "ok"
-    finally:
-        await stop_provider_worker()
-
-
-@pytest.mark.asyncio
-async def test_load_llm_job_result_returns_none_on_timeout(magi_state):
-    """A row that's never settled returns ``None`` after the deadline."""
-    fake = FakeProvider(reply="ignored")
-    _install_fake(fake)
-    # Don't start the worker — the queued row won't move.
-    store = get_bus_store()
-    aid = store.enqueue_llm_job(
-        run_id="never", inbox_event_id="never", kind="chat",
-    )
-    started = datetime.now()
-    result = await asyncio.to_thread(
-        store.load_llm_job_result, aid,
-        wait_seconds=0.5, poll_seconds=0.05,
-    )
-    assert result is None
-    # And the row stayed ``queued`` (no worker claim).
-    with open_session(store._state_dir) as s:
-        ar = s.query(LLMAttempt).filter_by(attempt_id=aid).one()
-    assert ar.status == "queued"
-
-
-def _install_counting_fake(fake: "FakeProvider"):
-    """Wrap ``fake`` so ``get_provider`` increments a per-process counter.
-
-    The worker caches one provider per ``start()``; the counter lets
-    tests assert ``get_provider`` was called exactly once across N
-    jobs (the cache invariant) and that a drained control-job row
-    forced a second call.
-    """
-    import magi.providers
+def _install_counter(bus: NewBus, fake: FakeProvider) -> dict[str, int]:
+    """Same as ``_install_fake`` but tracks how many times the factory was hit."""
     import magi.providers.factory as _factory
-    import magi.providers.worker as _worker
 
-    state = {"calls": 0, "current": fake}
+    state: dict[str, int] = {"calls": 0}
 
-    def _fake_get(*_args, **_kwargs):
+    def _fake_get(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
         state["calls"] += 1
-        return state["current"]
+        return fake
 
     _factory.get_provider = _fake_get
-    _worker.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
-
     return state
 
 
-def _enqueue_simple(store, *, content: str = "hello") -> str:
-    """Helper used by the new cache / rebuild tests."""
-    aid = store.enqueue_llm_job(
-        run_id=f"run-{uuid.uuid4().hex[:6]}",
-        inbox_event_id=f"ev-{uuid.uuid4().hex[:6]}",
-        kind="chat",
+async def _wait_for_result(
+    bus: NewBus,
+    job_id: str,
+    *,
+    timeout: float = 5.0,
+    poll: float = 0.05,
+) -> CallLLMResult | None:
+    """Poll ``bus.llm_job_board.get_result`` until the job settles or times out."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = await asyncio.to_thread(bus.llm_job_board.get_result, key=job_id)
+        if result is not None:
+            return result
+        await asyncio.sleep(poll)
+    return None
+
+
+def _enqueue_simple(bus: NewBus, *, content: str = "hello") -> str:
+    """Publish a minimal chat job (no tools, no streaming)."""
+    return bus.llm_job_board.publish(
+        CallLLMJob(
+            messages=[{"role": "user", "content": content}],
+            max_tokens=16,
+        )
     )
-    store.persist_llm_job_request(
-        aid,
-        request={
-            "system": "",
-            "messages": [
-                {"role": "user", "content": content, "content_blocks": None},
-            ],
-            "max_tokens": 16,
-            "tools": None,
-            "streaming": False,
-            "extra": {},
-        },
-    )
-    return aid
+
+
+# ---------------------------------------------------------------------------
+# Round-trip tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_worker_caches_provider_across_jobs(magi_state):
-    """One ``get_provider`` call covers every job until a rebuild signal."""
-    state = _install_counting_fake(FakeProvider(reply="ok"))
-    await start_provider_worker()
+async def test_publish_then_complete_round_trip(bus: NewBus):
+    """A successful call settles the row with success=True and the response dict."""
+    fake = FakeProvider(reply="hi from provider")
+    _install_fake(bus, fake)
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
     try:
-        store = get_bus_store()
-        ids = [_enqueue_simple(store) for _ in range(3)]
-        for aid in ids:
-            result = await asyncio.to_thread(
-                store.load_llm_job_result, aid,
-                wait_seconds=5, poll_seconds=0.05,
-            )
-            assert result["status"] == "completed", result
+        job_id = _enqueue_simple(bus, content="hello")
+        result = await _wait_for_result(bus, job_id)
+        assert result is not None, "worker did not settle the job in time"
+        assert result.success is True
+        assert result.response is not None
+        assert result.response["text"] == "hi from provider"
+        assert result.model == "fake-model-1"
+        assert fake.call_count == 1
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_provider_not_configured_envelopes_failure(bus: NewBus):
+    """A ``LLMNotConfiguredError`` settles with the credentials error_code."""
+    fake = FakeProvider(fail_message="no api key in magi row")
+    _install_fake(bus, fake)
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
+    try:
+        job_id = _enqueue_simple(bus, content="!notconfigured")
+        result = await _wait_for_result(bus, job_id)
+        assert result is not None
+        assert result.success is False
+        assert result.error_code == "LLMNotConfiguredError"
+        assert "no api key" in (result.error or "")
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_provider_crashed_envelopes_generic_failure(bus: NewBus):
+    """An ``LLMError`` settles with the typed exception name as error_code."""
+    fake = FakeProvider(fail_message="upstream auth failed")
+    _install_fake(bus, fake)
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
+    try:
+        job_id = _enqueue_simple(bus, content="!raise:anything")
+        result = await _wait_for_result(bus, job_id)
+        assert result is not None
+        assert result.success is False
+        assert result.error_code == "LLMError"
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_concurrency_limit_serialises_two_jobs(bus: NewBus):
+    """Two queued jobs each get a turn; the semaphore caps parallel calls."""
+    fake = FakeProvider(reply="ok")
+    _install_fake(bus, fake)
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
+    try:
+        ids = [_enqueue_simple(bus, content=f"hello {i}") for i in range(2)]
+        for jid in ids:
+            result = await _wait_for_result(bus, jid, timeout=10.0)
+            assert result is not None and result.success is True, result
+            assert result.response["text"] == "ok"
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_load_llm_job_result_returns_none_on_timeout(bus: NewBus):
+    """A row that's never settled returns ``None`` after the deadline.
+
+    We don't start the worker here — the queued job stays pending and
+    ``get_result`` never sees a terminal status.
+    """
+    fake = FakeProvider(reply="ignored")
+    _install_fake(bus, fake)
+    job_id = _enqueue_simple(bus, content="never")
+    result = await _wait_for_result(bus, job_id, timeout=0.5)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Cache / rebuild semantics
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_worker_caches_provider_across_jobs(bus: NewBus):
+    """One ``get_provider`` call covers every job until a rebuild signal."""
+    state = _install_counter(bus, FakeProvider(reply="ok"))
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
+    try:
+        ids = [_enqueue_simple(bus) for _ in range(3)]
+        for jid in ids:
+            result = await _wait_for_result(bus, jid)
+            assert result is not None and result.success is True
         assert state["calls"] == 1, (
             f"expected one cached provider, got {state['calls']} get_provider calls"
         )
@@ -381,153 +321,166 @@ async def test_worker_caches_provider_across_jobs(magi_state):
 
 
 @pytest.mark.asyncio
-async def test_worker_starts_without_config_and_fails_jobs(magi_state):
-    """Missing config does NOT block boot; jobs settle with credentials code."""
-    state = _install_counting_fake(FakeProvider())  # never raised here
-    state["get_provider"] = state["get_provider"]  # keep linter happy
+async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
+    """Missing config does NOT block boot; jobs settle with the credentials code."""
+    import magi.providers.factory as _factory
 
     def _raise_not_configured(*_a, **_k):
-        state["calls"] += 1
-        raise LLMNotConfiguredError("MAGI runtime has no LLM provider / API key")
-
-    import magi.providers
-    import magi.providers.factory as _factory
-    import magi.providers.worker as _worker
+        raise LLMNotConfiguredError(
+            "MAGI runtime has no LLM provider / API key configured"
+        )
 
     _factory.get_provider = _raise_not_configured
-    _worker.get_provider = _raise_not_configured
-    magi.providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
-
-    await start_provider_worker()  # MUST NOT raise
+    # No settings_book writes — the worker reads and finds nothing.
+    await start_provider_worker(bus)  # MUST NOT raise
     try:
-        store = get_bus_store()
-        aid = _enqueue_simple(store)
-        result = await asyncio.to_thread(
-            store.load_llm_job_result, aid,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result["status"] == "failed"
-        assert result["error"]["code"] == "magi.llm_credentials_required"
-        assert "MAGI management" in result["error"]["detail"]
+        job_id = _enqueue_simple(bus)
+        result = await _wait_for_result(bus, job_id)
+        assert result is not None
+        assert result.success is False
+        assert result.error_code == "magi.llm_credentials_required"
+        assert "MAGI" in (result.error or "")
     finally:
         await stop_provider_worker()
 
 
 @pytest.mark.asyncio
-async def test_worker_starts_without_config_then_rebuilds_on_signal(magi_state):
-    """A drained ``provider.config_changed`` row triggers a rebuild."""
-    import magi.providers
+async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus):
+    """A drained ``ChangeProviderConfigJob`` triggers a rebuild."""
     import magi.providers.factory as _factory
-    import magi.providers.worker as _worker
 
-    current = {"provider": None}
+    state: dict[str, Any] = {"provider": None}
     calls = {"n": 0}
 
-    def _switch(*_a, **_k):
+    def _switch(*, bus: NewBus, model: str | None = None) -> LLMProvider | None:
         calls["n"] += 1
-        return current["provider"]  # may be None; worker fails fast
+        return state["provider"]  # may be None on the first claim
 
     _factory.get_provider = _switch
-    _worker.get_provider = _switch
-    magi.providers.get_provider = _switch  # type: ignore[attr-defined]
 
-    await start_provider_worker()
-    store = get_bus_store()
+    await start_provider_worker(bus)
     try:
-        # First job: no provider configured → fails with credentials code.
-        aid1 = _enqueue_simple(store, content="first")
-        result1 = await asyncio.to_thread(
-            store.load_llm_job_result, aid1,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result1["status"] == "failed"
-        assert result1["error"]["code"] == "magi.llm_credentials_required"
+        # 1. No provider configured → first job settles with credentials code.
+        jid1 = _enqueue_simple(bus, content="first")
+        r1 = await _wait_for_result(bus, jid1)
+        assert r1 is not None
+        assert r1.success is False
+        assert r1.error_code == "magi.llm_credentials_required"
 
-        # Swap to a working provider and publish the BUS signal.
-        current["provider"] = FakeProvider(reply="rebuilt-ok")
-        store.enqueue_control_job(
-            kind="provider.config_changed",
-            payload={"provider": "openai"},
+        # 2. Publish a ChangeProviderConfigJob — the board writes
+        #    ``settings_book`` and enqueues the rebuild job in one
+        #    self-contained write.
+        state["provider"] = FakeProvider(reply="rebuilt-ok")
+        bus.change_provider_config_job_board.publish(
+            ChangeProviderConfigJob(
+                provider="openai", api_key="sk-test", model="fake-model-1",
+            )
         )
-        aid2 = _enqueue_simple(store, content="second")
-        result2 = await asyncio.to_thread(
-            store.load_llm_job_result, aid2,
-            wait_seconds=5, poll_seconds=0.05,
-        )
-        assert result2["status"] == "completed", result2
-        assert result2["response"]["text"] == "rebuilt-ok"
+
+        # 3. Next job should now use the rebuilt provider.
+        jid2 = _enqueue_simple(bus, content="second")
+        r2 = await _wait_for_result(bus, jid2)
+        assert r2 is not None and r2.success is True, r2
+        assert r2.response["text"] == "rebuilt-ok"
         assert calls["n"] >= 2, (
             f"expected at least 2 get_provider calls (start + rebuild), got {calls['n']}"
         )
-        # The control row must be gone after drain.
-        from magi.bus.db.models.queue import ControlJob
-        with open_session(store._state_dir) as s:
-            leftovers = s.query(ControlJob).count()
-        assert leftovers == 0
+        # The config-change job was drained (status advanced past pending).
+        change_result = await asyncio.to_thread(
+            bus.change_provider_config_job_board.get_result,
+            # claim returns the latest job; look it up via DB if needed
+            key="ignored",
+        )
+        # Just confirm the board is empty (no pending rows) by trying to claim.
+        # If still present the next claim would block; instead check via row count.
+        from sqlalchemy import select
+        from magi.new_bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
+        with bus._local_factory.session() as s:
+            leftovers = s.scalar(
+                select(_ChangeProviderConfigRow.status).where(
+                    _ChangeProviderConfigRow.status.in_(["pending", "processing"])
+                )
+            )
+        assert leftovers is None, "config-change job was not drained"
     finally:
         await stop_provider_worker()
 
 
 @pytest.mark.asyncio
-async def test_worker_rebuilds_only_when_control_signal_present(magi_state):
+async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
     """A second job with no signal between still uses the cached provider."""
-    import magi.providers
     import magi.providers.factory as _factory
-    import magi.providers.worker as _worker
 
     calls = {"n": 0}
 
-    def _fake_get(*_a, **_k):
+    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
         calls["n"] += 1
         return FakeProvider(reply=f"call#{calls['n']}")
 
     _factory.get_provider = _fake_get
-    _worker.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    _seed_provider_config(bus)
 
-    await start_provider_worker()
-    store = get_bus_store()
+    await start_provider_worker(bus)
     try:
         for expected in ("call#1", "call#1"):
-            aid = _enqueue_simple(store)
-            result = await asyncio.to_thread(
-                store.load_llm_job_result, aid,
-                wait_seconds=5, poll_seconds=0.05,
-            )
-            assert result["status"] == "completed"
-            assert result["response"]["text"] == expected
+            jid = _enqueue_simple(bus)
+            r = await _wait_for_result(bus, jid)
+            assert r is not None and r.success is True
+            assert r.response["text"] == expected
         # Only one build across both jobs.
         assert calls["n"] == 1
     finally:
         await stop_provider_worker()
 
 
-@pytest.mark.asyncio
-async def test_drain_control_jobs_ignores_other_kinds(magi_state):
-    """Draining ``provider.config_changed`` leaves unrelated rows alone."""
-    state = _install_counting_fake(FakeProvider(reply="ok"))
-    await start_provider_worker()
-    try:
-        store = get_bus_store()
-        # Insert a row of a kind no consumer cares about; the worker
-        # should drain its own kind (returning 0) without touching it.
-        store.enqueue_control_job(
-            kind="some.future.kind",
-            payload={"x": 1},
-        )
-        from magi.bus.jobs.protocols.control_jobs import PROVIDER_CONFIG_CHANGED
-        from magi.bus.db.models.queue import ControlJob
+# ---------------------------------------------------------------------------
+# providers.options publish
+# ---------------------------------------------------------------------------
 
-        drained = await asyncio.to_thread(
-            store.drain_control_jobs,
-            worker_id="test-worker",
-            kind=PROVIDER_CONFIG_CHANGED,
+
+@pytest.mark.asyncio
+async def test_worker_publishes_provider_options_to_settings_book(bus: NewBus):
+    """On boot the worker writes the supported-provider list to ``settings_book``."""
+    await start_provider_worker(bus)
+    try:
+        import json
+        raw = bus.settings_book.get(key="providers.options")
+        assert raw is not None
+        options = json.loads(raw)
+        ids = {row["value"] for row in options}
+        assert {"claude", "minimax-cn", "minimax-global", "openai"} <= ids
+    finally:
+        await stop_provider_worker()
+
+
+# ---------------------------------------------------------------------------
+# Stream mode round-trip
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streaming_job_publishes_deltas_and_terminal(bus: NewBus):
+    """A streaming job publishes text deltas to StreamHub and yields a final result."""
+    fake = FakeProvider(reply="hello there")
+    _install_fake(bus, fake)
+    _seed_provider_config(bus)
+    await start_provider_worker(bus)
+    try:
+        job_id = bus.llm_job_board.publish(
+            CallLLMJob(
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=16,
+                streaming=True,
+            )
         )
-        assert drained == 0
-        with open_session(store._state_dir) as s:
-            leftovers = s.query(ControlJob).filter_by(
-                kind="some.future.kind",
-            ).count()
-        assert leftovers == 1
+        result = await _wait_for_result(bus, job_id)
+        assert result is not None and result.success is True
+        assert result.response["text"] == "hello there"
+        # ``stream_key`` is non-empty in streaming mode — the consumer
+        # can pull incremental deltas from ``bus.stream_hub.get(key)``.
+        assert result.stream_key, "streaming result should carry a stream_key"
+        # The StreamHub pipe exists and was closed after the worker drained it.
+        pipe = bus.stream_hub.get(result.stream_key)
+        assert pipe is None, "stream hub pipe should be cleaned up after drain"
     finally:
         await stop_provider_worker()

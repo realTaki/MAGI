@@ -7,15 +7,16 @@ tests focus on:
 
   - the request payload (system, messages, tool schemas)
     sent to the SDK
-  - the response → :class:`ChatResult` translation
+  - the response → dict translation
     (text, parallel tool calls, finish reasons, usage,
     reasoning metadata, malformed arguments)
-  - the streaming aggregate (text/tool-arg deltas,
-    parallel tool calls, usage event)
+  - the streaming ``AsyncIterator[LLMStreamEvent]``
+    (text deltas, tool-arg deltas, parallel tool calls,
+    usage.updated terminal event)
   - the typed error mapping (auth, rate-limit, network,
     context-length, generic)
   - the factory wiring (``openai`` accepted as a
-    provider id, dropdown row, runtime instantiation)
+    provider id, runtime instantiation via ``NewBus``)
 """
 
 from __future__ import annotations
@@ -27,6 +28,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
+from magi.new_bus.guild.changeProviderConfigJob import (
+    PROVIDER_API_KEY_KEY,
+    PROVIDER_MODEL_KEY,
+    PROVIDER_NAME_KEY,
+)
+from magi.providers.base import LLMStreamEvent
 from magi.providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
@@ -34,7 +41,6 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.base import LLMStreamEvent
 from magi.providers.factory import get_provider
 from magi.providers.openai import OpenAIProvider
 
@@ -79,7 +85,7 @@ def _make_response(
     message: MagicMock,
     finish_reason: str = "stop",
     model: str = "gpt-4o-mini",
-    usage: dict[str, Any] | None = None,
+    usage: dict[str, Any] | None | object = None,
 ) -> MagicMock:
     choice = MagicMock()
     choice.message = message
@@ -162,10 +168,10 @@ async def test_chat_passes_system_and_messages(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system="you are helpful",
-        messages=[ChatMessage(role="user", content="hello")],
+        messages=[{"role": "user", "content": "hello"}],
         max_tokens=128,
     )
-    assert result.text == "hi there"
+    assert result["text"] == "hi there"
     call_kwargs = mock_openai.chat.completions.create.await_args.kwargs
     assert call_kwargs["model"] == provider.model
     assert call_kwargs["max_tokens"] == 128
@@ -183,7 +189,7 @@ async def test_chat_omits_system_when_none(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=16,
     )
     sdk_messages = mock_openai.chat.completions.create.await_args.kwargs["messages"]
@@ -198,7 +204,7 @@ async def test_chat_converts_tools_to_openai_shape(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=16,
         tools=[
             {
@@ -238,7 +244,7 @@ async def test_chat_passes_through_passthrough_function_tool(mock_openai):
     }
     await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=16,
         tools=[passthrough],
     )
@@ -268,8 +274,8 @@ async def test_chat_replays_assistant_tool_use_blocks(mock_openai):
     await provider.chat(
         system=None,
         messages=[
-            ChatMessage(role="user", content="what's the weather?"),
-            ChatMessage(role="assistant", content="calling the tool", content_blocks=replay),
+            {"role": "user", "content": "what's the weather?"},
+            {"role": "assistant", "content": "calling the tool", "content_blocks": replay},
         ],
         max_tokens=16,
     )
@@ -299,10 +305,10 @@ async def test_chat_emits_tool_role_messages_for_tool_results(mock_openai):
     await provider.chat(
         system=None,
         messages=[
-            ChatMessage(role="user", content="", content_blocks=[
+            {"role": "user", "content": "", "content_blocks": [
                 {"type": "tool_result", "tool_use_id": "call-1", "content": "21C"},
                 {"type": "tool_result", "tool_use_id": "call-2", "content": "rainy"},
-            ]),
+            ]},
         ],
         max_tokens=16,
     )
@@ -322,11 +328,11 @@ async def test_chat_user_message_with_text_and_tool_results(mock_openai):
     await provider.chat(
         system=None,
         messages=[
-            ChatMessage(
-                role="user",
-                content="here are the results",
-                content_blocks=[{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}],
-            ),
+            {
+                "role": "user",
+                "content": "here are the results",
+                "content_blocks": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}],
+            },
         ],
         max_tokens=16,
     )
@@ -336,7 +342,7 @@ async def test_chat_user_message_with_text_and_tool_results(mock_openai):
 
 
 # ---------------------------------------------------------------------------
-# chat(): response → ChatResult
+# chat(): response → dict
 # ---------------------------------------------------------------------------
 
 
@@ -355,20 +361,18 @@ async def test_chat_parses_parallel_tool_calls(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="go")],
+        messages=[{"role": "user", "content": "go"}],
         max_tokens=16,
     )
-    assert len(result.tool_uses) == 2
-    by_id = {tu["id"]: tu for tu in result.tool_uses}
+    assert len(result["tool_uses"]) == 2
+    by_id = {tu["id"]: tu for tu in result["tool_uses"]}
     assert by_id["call-A"]["name"] == "get_weather"
     assert by_id["call-A"]["input"] == {"city": "A"}
     assert by_id["call-B"]["name"] == "get_time"
-    assert result.stop_reason == "tool_use"
-    # raw_blocks contain the tool_use entries the agent
-    # will replay next turn.
-    types = [block["type"] for block in result.raw_blocks]
+    assert result["stop_reason"] == "tool_use"
+    types = [block["type"] for block in result["raw_blocks"]]
     assert "tool_use" in types
-    assert result.text == "(empty reply)"
+    assert result["text"] == "(empty reply)"
 
 
 @pytest.mark.asyncio
@@ -389,10 +393,10 @@ async def test_chat_normalizes_finish_reasons(mock_openai):
         )
         result = await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
-        assert result.stop_reason == expected, (upstream, result.stop_reason)
+        assert result["stop_reason"] == expected, (upstream, result["stop_reason"])
 
 
 @pytest.mark.asyncio
@@ -409,15 +413,15 @@ async def test_chat_normalizes_usage_keys(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=8,
     )
-    assert result.usage is not None
-    assert result.usage["input_tokens"] == 7
-    assert result.usage["output_tokens"] == 13
-    assert result.usage["total_tokens"] == 20
+    assert result["usage"] is not None
+    assert result["usage"]["input_tokens"] == 7
+    assert result["usage"]["output_tokens"] == 13
+    assert result["usage"]["total_tokens"] == 20
     # extra details are preserved
-    assert result.usage["prompt_tokens_details"] == {"cached_tokens": 3}
+    assert result["usage"]["prompt_tokens_details"] == {"cached_tokens": 3}
 
 
 @pytest.mark.asyncio
@@ -435,12 +439,12 @@ async def test_chat_records_optional_reasoning_details(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=8,
     )
-    assert result.thinking == "step 1\nstep 2"
+    assert result["thinking"] == "step 1\nstep 2"
     # raw_blocks should now contain a thinking block
-    assert any(b.get("type") == "thinking" for b in result.raw_blocks)
+    assert any(b.get("type") == "thinking" for b in result["raw_blocks"])
 
 
 @pytest.mark.asyncio
@@ -462,10 +466,10 @@ async def test_chat_handles_malformed_tool_arguments(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=8,
     )
-    assert result.tool_uses == [{"id": "call-1", "name": "get_weather", "input": {}}]
+    assert result["tool_uses"] == [{"id": "call-1", "name": "get_weather", "input": {}}]
 
 
 @pytest.mark.asyncio
@@ -477,10 +481,10 @@ async def test_chat_returns_empty_reply_when_text_missing(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=8,
     )
-    assert result.text == "(empty reply)"
+    assert result["text"] == "(empty reply)"
 
 
 @pytest.mark.asyncio
@@ -492,10 +496,10 @@ async def test_chat_records_model_name_from_response(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     result = await provider.chat(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=8,
     )
-    assert result.model == "gpt-4o-2024-08-06"
+    assert result["model"] == "gpt-4o-2024-08-06"
 
 
 # ---------------------------------------------------------------------------
@@ -514,7 +518,7 @@ async def test_chat_auth_error_maps_to_LLMAuthError(mock_openai):
     with pytest.raises(LLMAuthError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -530,7 +534,7 @@ async def test_chat_permission_denied_maps_to_LLMAuthError(mock_openai):
     with pytest.raises(LLMAuthError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -546,7 +550,7 @@ async def test_chat_rate_limit_maps_to_LLMRateLimitError(mock_openai):
     with pytest.raises(LLMRateLimitError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -558,7 +562,7 @@ async def test_chat_timeout_maps_to_LLMNetworkError(mock_openai):
     with pytest.raises(LLMNetworkError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -570,7 +574,7 @@ async def test_chat_connection_error_maps_to_LLMNetworkError(mock_openai):
     with pytest.raises(LLMNetworkError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -586,7 +590,7 @@ async def test_chat_bad_request_context_length_maps(mock_openai):
     with pytest.raises(LLMContextLengthError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -602,7 +606,7 @@ async def test_chat_bad_request_other_maps_to_LLMError(mock_openai):
     with pytest.raises(LLMError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -618,7 +622,7 @@ async def test_chat_status_error_maps_to_LLMNetworkError(mock_openai):
     with pytest.raises(LLMNetworkError):
         await provider.chat(
             system=None,
-            messages=[ChatMessage(role="user", content="hi")],
+            messages=[{"role": "user", "content": "hi"}],
             max_tokens=8,
         )
 
@@ -696,16 +700,12 @@ async def test_stream_emits_text_and_tool_deltas(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
 
     events: list[LLMStreamEvent] = []
-
-    async def _on_event(event: LLMStreamEvent) -> None:
-        events.append(event)
-
-    result = await provider.stream(
+    async for event in provider.stream(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=16,
-        on_event=_on_event,
-    )
+    ):
+        events.append(event)
 
     text_deltas = [e for e in events if e.kind == "text.delta"]
     tool_deltas = [e for e in events if e.kind == "tool_arguments.delta"]
@@ -714,14 +714,15 @@ async def test_stream_emits_text_and_tool_deltas(mock_openai):
     assert [d.payload["text"] for d in text_deltas] == ["Hello, ", "world!"]
     assert len(tool_deltas) == 2
     assert "".join(d.payload["partial_json"] for d in tool_deltas) == '{"city":"BJ"}'
-    assert usage_events and usage_events[0].payload["input_tokens"] == 5
-    assert usage_events[0].payload["output_tokens"] == 9
+    terminal = usage_events[-1]
+    assert terminal.payload["usage"]["input_tokens"] == 5
+    assert terminal.payload["usage"]["output_tokens"] == 9
 
-    assert result.text == "Hello, world!"
-    assert result.tool_uses == [
+    assert terminal.payload["text"] == "Hello, world!"
+    assert terminal.payload["tool_uses"] == [
         {"id": "call-1", "name": "get_weather", "input": {"city": "BJ"}}
     ]
-    assert result.stop_reason == "tool_use"
+    assert terminal.payload["stop_reason"] == "tool_use"
 
 
 @pytest.mark.asyncio
@@ -740,17 +741,17 @@ async def test_stream_aggregates_parallel_tool_calls(mock_openai):
     mock_openai.chat.completions.create.side_effect = _stream_chunks
     provider = OpenAIProvider(api_key="sk-test")
 
-    async def _on_event(_event: LLMStreamEvent) -> None:
-        return None
-
-    result = await provider.stream(
+    events: list[LLMStreamEvent] = []
+    async for event in provider.stream(
         system=None,
-        messages=[ChatMessage(role="user", content="hi")],
+        messages=[{"role": "user", "content": "hi"}],
         max_tokens=16,
-        on_event=_on_event,
-    )
-    assert len(result.tool_uses) == 2
-    by_id = {tu["id"]: tu for tu in result.tool_uses}
+    ):
+        events.append(event)
+
+    terminal = next(e for e in events if e.kind == "usage.updated")
+    assert len(terminal.payload["tool_uses"]) == 2
+    by_id = {tu["id"]: tu for tu in terminal.payload["tool_uses"]}
     assert by_id["call-A"]["input"] == {"city": "A"}
     assert by_id["call-B"]["input"] == {"zone": "B"}
 
@@ -768,18 +769,17 @@ async def test_stream_text_only_reply(mock_openai):
     provider = OpenAIProvider(api_key="sk-test")
     events: list[LLMStreamEvent] = []
 
-    async def _on_event(event: LLMStreamEvent) -> None:
+    async for event in provider.stream(
+        system=None,
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=16,
+    ):
         events.append(event)
 
-    result = await provider.stream(
-        system=None,
-        messages=[ChatMessage(role="user", content="hi")],
-        max_tokens=16,
-        on_event=_on_event,
-    )
-    assert result.text == "all good"
-    assert result.stop_reason == "end_turn"
-    assert result.tool_uses == []
+    terminal = next(e for e in events if e.kind == "usage.updated")
+    assert terminal.payload["text"] == "all good"
+    assert terminal.payload["stop_reason"] == "end_turn"
+    assert terminal.payload["tool_uses"] == []
     assert [e.payload["text"] for e in events if e.kind == "text.delta"] == ["all", " good"]
 
 
@@ -792,52 +792,46 @@ async def test_stream_wraps_openai_error(mock_openai):
     )
     provider = OpenAIProvider(api_key="sk-test")
 
-    async def _on_event(_event: LLMStreamEvent) -> None:
-        return None
-
+    iterator = provider.stream(
+        system=None,
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=16,
+    )
     with pytest.raises(LLMRateLimitError):
-        await provider.stream(
-            system=None,
-            messages=[ChatMessage(role="user", content="hi")],
-            max_tokens=16,
-            on_event=_on_event,
-        )
+        async for _ in iterator:
+            pass
 
 
 # ---------------------------------------------------------------------------
-# Factory wiring
+# Factory wiring (via NewBus + settings_book)
 # ---------------------------------------------------------------------------
 
 
-def test_get_provider_returns_OpenAIProvider_when_configured(monkeypatch):
-    import magi.bus as bus_module
+def _make_bus(*, name: str | None, api_key: str | None, model: str | None) -> MagicMock:
+    """Build a minimal ``NewBus``-shaped mock with only settings_book wired."""
+    bus = MagicMock()
+    settings: dict[str, str] = {}
+    if name is not None:
+        settings[PROVIDER_NAME_KEY] = name
+    if api_key is not None:
+        settings[PROVIDER_API_KEY_KEY] = api_key
+    if model is not None:
+        settings[PROVIDER_MODEL_KEY] = model
 
-    class _FakeConfig:
-        provider = "openai"
-        api_key = "sk-test"
-        model = "gpt-4o-mini"
+    bus.settings_book.get = MagicMock(side_effect=lambda *, key: settings.get(key))
+    bus.settings_book.set = MagicMock(side_effect=lambda *, key, value: settings.__setitem__(key, value))
+    return bus
 
-    fake_bus = MagicMock()
-    fake_bus.magic.provider_configuration.return_value = _FakeConfig()
-    monkeypatch.setattr(bus_module, "get_bus", lambda: fake_bus)
 
-    provider = get_provider()
+def test_get_provider_returns_OpenAIProvider_when_configured():
+    bus = _make_bus(name="openai", api_key="sk-test", model="gpt-4o-mini")
+    provider = get_provider(bus=bus)
     assert isinstance(provider, OpenAIProvider)
     assert provider.model == "gpt-4o-mini"
     assert provider.api_key == "sk-test"
 
 
-def test_get_provider_uses_call_model_override(monkeypatch):
-    import magi.bus as bus_module
-
-    class _FakeConfig:
-        provider = "openai"
-        api_key = "sk-test"
-        model = "gpt-4o-mini"
-
-    fake_bus = MagicMock()
-    fake_bus.magic.provider_configuration.return_value = _FakeConfig()
-    monkeypatch.setattr(bus_module, "get_bus", lambda: fake_bus)
-
-    provider = get_provider(model="gpt-4o")
+def test_get_provider_uses_call_model_override():
+    bus = _make_bus(name="openai", api_key="sk-test", model="gpt-4o-mini")
+    provider = get_provider(bus=bus, model="gpt-4o")
     assert provider.model == "gpt-4o"
