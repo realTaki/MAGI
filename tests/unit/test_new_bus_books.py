@@ -274,6 +274,78 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
+def test_action_item_book_add_invariants(factory, contact_id):
+    """The Book owns write invariants — title non-empty,
+    column-length caps, enum membership — so every caller
+    path gets the same validation without re-implementing
+    them. Each violation must raise ``ValueError`` (the
+    tool worker / dashboard API catch and surface as
+    ``is_error=True`` / 4xx).
+    """
+    book = ActionItemBook(factory)
+
+    # Empty / whitespace-only title is rejected.
+    with pytest.raises(ValueError, match="title must be a non-empty"):
+        book.add(uid=contact_id, title="")
+    with pytest.raises(ValueError, match="title must be a non-empty"):
+        book.add(uid=contact_id, title="   ")
+    with pytest.raises(ValueError, match="title"):
+        book.add(uid=contact_id)  # type: ignore[call-arg]
+
+    # Title over the column cap (200 chars) is rejected.
+    with pytest.raises(ValueError, match="title length"):
+        book.add(uid=contact_id, title="x" * 201)
+
+    # Description over 1000 chars is rejected.
+    with pytest.raises(ValueError, match="description length"):
+        book.add(uid=contact_id, title="ok", description="d" * 1001)
+
+    # target_url over 500 chars is rejected.
+    with pytest.raises(ValueError, match="target_url length"):
+        book.add(uid=contact_id, title="ok", target_url="u" * 501)
+
+    # priority must be in ALL_PRIORITIES.
+    with pytest.raises(ValueError, match="priority must be one of"):
+        book.add(uid=contact_id, title="ok", priority="urgent")
+    # priority "normal" (default) and "high" both pass.
+    a = book.add(uid=contact_id, title="a", priority="normal")
+    assert a.priority == "normal"
+    b = book.add(uid=contact_id, title="b", priority="high")
+    assert b.priority == "high"
+
+    # source must be in ALL_SOURCES.
+    with pytest.raises(ValueError, match="source must be one of"):
+        book.add(uid=contact_id, title="ok", source="system")
+    c = book.add(uid=contact_id, title="c", source="user")
+    assert c.source == "user"
+    d = book.add(uid=contact_id, title="d", source="proactive")
+    assert d.source == "proactive"
+
+
+def test_action_item_book_complete_note_invariant(factory, contact_id):
+    """``complete`` enforces ``completion_note`` ≤500 chars
+    regardless of who calls it (tool, API, future agent)."""
+    book = ActionItemBook(factory)
+    item = book.add(uid=contact_id, title="x")
+
+    # Note at exactly the cap is fine.
+    ok = book.complete(
+        action_item_id=item.id,
+        note="n" * 500,
+        completed_by_uid=contact_id,
+    )
+    assert ok is not None
+
+    # Note one over the cap raises.
+    item2 = book.add(uid=contact_id, title="y")
+    with pytest.raises(ValueError, match="completion_note length"):
+        book.complete(
+            action_item_id=item2.id,
+            note="n" * 501,
+            completed_by_uid=contact_id,
+        )
+
+
 # -- TokenUsageBook ----------------------------------------------------
 
 

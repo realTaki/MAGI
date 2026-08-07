@@ -2,43 +2,40 @@
 the calling operator.
 
 Umbrella term: "todo", "task", "记一下", "待办" — all map
-here. Creates one row per call (``kind='llm_action_item_<id>'``,
-``source='llm'``, ``uid=ctx.uid``). Re-calling with the
-same title creates a *new* row — the operator may want two
-parallel action items with similar titles; we don't guess
-duplicates from a free-text title.
+here. Creates one row per call (``uid=ctx.uid``). Re-calling
+with the same title creates a *new* row — the operator
+may want two parallel action items with similar titles;
+we don't guess duplicates from a free-text title.
 
 Scope (per-contact, role-gated): only ``admin`` (per
 :attr:`ctx.bus.magis_admins_book`) and ``assigned`` (per
 ``Contact.role``) operators may operate on their own action
 items. ``guest`` callers don't see the tool in their menu.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.action_items_book``
+— the Book is pure CRUD and exposes ``add(...)`` plus
+``to_dict`` on the returned DTO. ``source`` is decided by
+the caller (default ``'user'``): chat-driven operator
+tool calls leave it unset; scheduled tasks or agent
+loops that reach this tool *without* an operator in the
+loop pass ``source='proactive'`` so the provenance tag
+reflects actual causation rather than the path the write
+happened to take. The old bus service at
+:mod:`magi.bus.jobs.services.action_item` is no longer
+imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import uuid
 from datetime import datetime
 from typing import Any
 
+from magi.new_bus.library.local.actionItemBook import SOURCE_USER
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.add_action_item")
-
-# Stable kind prefix for LLM-driven action items. Each row
-# gets a unique per-row suffix (``_<8-hex>``) so multiple
-# open action items per operator don't collide with the
-# partial unique index ``ux_action_items_open_per_kind``
-# (which enforces one OPEN row per ``(uid, kind)``
-# for stable system kinds like ``llm_credentials_missing``).
-# ``list_action_item`` filters by
-# ``kind LIKE 'llm_action_item_%'``.
-_LLM_ACTION_ITEM_KIND_PREFIX = "llm_action_item"
-
-
-def _new_llm_action_item_kind() -> str:
-    return f"{_LLM_ACTION_ITEM_KIND_PREFIX}_{uuid.uuid4().hex[:8]}"
 
 
 class AddActionItemTool(Tool):
@@ -54,8 +51,12 @@ class AddActionItemTool(Tool):
         "description (optional, ≤1000 chars), priority "
         "('normal' default / 'high'), due_date "
         "(optional ISO date like '2026-07-30'), "
-        "target_url (optional in-app link). Each call creates one "
-        "row; close with complete_action_item."
+        "target_url (optional in-app link), source "
+        "('user' default / 'proactive' — only set "
+        "'proactive' when this tool was reached via a "
+        "scheduled task / agent loop rather than a chat "
+        "turn). Each call creates one row; close with "
+        "complete_action_item."
     )
     input_schema = {
         "type": "object",
@@ -110,94 +111,92 @@ class AddActionItemTool(Tool):
                     "ignored at render time."
                 ),
             },
+            "source": {
+                "type": "string",
+                "enum": ["user", "proactive"],
+                "default": "user",
+                "description": (
+                    "Provenance tag — who is the causal "
+                    "head of this write? ``'user'`` (default) "
+                    "for chat-driven operator tool calls, "
+                    "``'proactive'`` when a scheduled "
+                    "task / agent loop invoked this tool "
+                    "without an operator in the loop. "
+                    "Stamped onto the row so the dashboard "
+                    "and audit trail reflect actual "
+                    "causation, not the path the write "
+                    "happened to take."
+                ),
+            },
         },
         "required": ["title"],
     }
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
+    @Tool.require_bus
     async def run(
         self,
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        # Shape translation — turn kwargs into the typed
+        # arguments :meth:`ActionItemBook.add` wants. The
+        # Book owns the write invariants (non-empty title,
+        # length caps, enum membership for ``priority`` and
+        # ``source``) so we don't re-check those here. A
+        # violation raises ValueError, which the worker
+        # catches and surfaces as ``is_error=True`` to the
+        # LLM.
         title = (kwargs.get("title") or "").strip()
-        if not title:
-            return ToolResult(
-                content="title is required and must be non-empty",
-                is_error=True,
-            )
-        if len(title) > 200:
-            return ToolResult(
-                content=f"title is too long ({len(title)} > 200)",
-                is_error=True,
-            )
         description = kwargs.get("description")
-        if description is not None and len(description) > 1000:
-            return ToolResult(
-                content=(
-                    f"description is too long "
-                    f"({len(description)} > 1000)"
-                ),
-                is_error=True,
-            )
         priority = kwargs.get("priority") or "normal"
-        if priority not in ("normal", "high"):
-            return ToolResult(
-                content=(
-                    f"priority must be 'normal' or 'high', "
-                    f"got {priority!r}"
-                ),
-                is_error=True,
-            )
         target_url = kwargs.get("target_url")
-        if target_url is not None and len(target_url) > 500:
-            return ToolResult(
-                content=(
-                    f"target_url is too long "
-                    f"({len(target_url)} > 500)"
-                ),
-                is_error=True,
-            )
+        source = kwargs.get("source") or SOURCE_USER
 
+        # ``due_date`` stays tool-side: the kwargs may carry
+        # an ISO date string, but the Book expects a
+        # ``datetime``. Parse leniently so callers can pass
+        # either ``YYYY-MM-DD`` or ``YYYY-MM-DDTHH:MM[:SS]``.
         due_date: datetime | None = None
         raw_due = kwargs.get("due_date")
         if raw_due is not None and str(raw_due).strip():
             raw = str(raw_due).strip()
-            # Accept YYYY-MM-DD or YYYY-MM-DDTHH:MM[:SS] as
-            # lenient date parsing. We don't validate
-            # calendar correctness — the ORM column is
-            # nullable; a malformed date that parses to
-            # NaN will be silently set to None.
             try:
-                # Try ISO datetime first
                 due_date = datetime.fromisoformat(raw)
             except ValueError:
                 try:
-                    # Fallback: date-only
                     due_date = datetime.strptime(raw, "%Y-%m-%d")
                 except ValueError:
-                    return ToolResult(
-                        content=(
-                            f"due_date must be a valid date "
-                            f"(YYYY-MM-DD), got {raw!r}"
-                        ),
-                        is_error=True,
+                    return ToolResult.err(
+                        f"due_date must be a valid date "
+                        f"(YYYY-MM-DD), got {raw!r}"
                     )
 
-        item = ctx.bus.action_items_book.create_llm(
-            uid=int(ctx.uid), kind=_new_llm_action_item_kind(), title=title,
-            description=description, target_url=target_url, priority=priority, due_date=due_date,
-        )
+        try:
+            item = ctx.bus.action_items_book.add(
+                uid=int(ctx.uid),
+                title=title,
+                description=description,
+                target_url=target_url,
+                priority=priority,
+                due_date=due_date,
+                source=source,
+            )
+        except ValueError as e:
+            # Book owns the write invariants (title
+            # non-empty, length caps, enum membership for
+            # ``priority`` / ``source``). Translate the
+            # ValueError to a clean LLM-facing error;
+            # without this the worker would only catch it
+            # at the outer layer and surface as a
+            # "tool.crashed" envelope, which misleads
+            # callers into thinking a bug fired.
+            return ToolResult.err(str(e))
+
         logger.info(
-            "add_action_item: item %s created for contact=%s title=%r",
-            item.id, ctx.uid, title,
+            "add_action_item: item %s created for contact=%s "
+            "title=%r source=%r",
+            item.id, ctx.uid, title, source,
         )
-        body = json.dumps({"created": item.to_dict()}, indent=2, ensure_ascii=False)
-        # 8 KB matches the LLM-side truncation budget in
-        # ``ToolResult`` (``base.ToolResult`` docstring) —
-        # a chat turn shouldn't return a multi-KB action-item
-        # list when the operator can just look at the dashboard.
-        if len(body) > 8 * 1024:
-            body = body[: 8 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+        return ToolResult.ok({"created": item.to_dict()})

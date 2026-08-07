@@ -16,7 +16,6 @@ items. ``guest`` callers don't see the tool in their menu.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -69,6 +68,7 @@ class CompleteActionItemTool(Tool):
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
+    @Tool.require_bus
     async def run(
         self,
         ctx: ToolContext,
@@ -78,31 +78,41 @@ class CompleteActionItemTool(Tool):
         try:
             item_id = int(raw_id)
         except (TypeError, ValueError):
-            return ToolResult(
-                content=f"item_id must be an integer, got {raw_id!r}",
-                is_error=True,
-            )
+            return ToolResult.err(f"item_id must be an integer, got {raw_id!r}")
         note = kwargs.get("note")
-        if note is not None and len(note) > 500:
-            return ToolResult(
-                content=f"note is too long ({len(note)} > 500)",
-                is_error=True,
-            )
+        # ``note`` length is enforced by
+        # :meth:`ActionItemBook.complete` — we don't
+        # re-check here.
 
         ct_id = int(ctx.uid)
-        row = ctx.bus.action_items_book.complete_for_owner(
-            action_item_id=item_id, owner_uid=ct_id, note=note,
-        )
-        if row is None:
-            return ToolResult(
-                content=(
-                    f"action item {item_id} not found or "
-                    f"not owned by the calling operator"
-                ),
-                is_error=True,
+        # Auth lives at the tool layer, not in the Book:
+        # ``ActionItemBook.complete`` is a pure data write.
+        # Strict per-contact privacy is enforced here by a
+        # ``get`` followed by a ``row.uid == caller`` check
+        # before any write fires. The TOCTOU window between
+        # ``get`` and ``complete`` is fine for the
+        # single-writer chat tool; a future tx-scoped guard
+        # would tighten it for multi-writer surfaces.
+        existing = ctx.bus.action_items_book.get(item_id=item_id)
+        if existing is None or existing.uid != ct_id:
+            return ToolResult.err(
+                f"action item {item_id} not found or "
+                f"not owned by the calling operator"
             )
+        try:
+            row = ctx.bus.action_items_book.complete(
+                action_item_id=item_id,
+                note=note,
+                completed_by_uid=ct_id,
+            )
+        except ValueError as e:
+            # ``note`` length invariant lives on the Book.
+            # Translate the ValueError to an LLM-facing
+            # error rather than letting it bubble to the
+            # worker's "tool.crashed" envelope (which would
+            # imply a programming error rather than a
+            # caller fixable at the prompt).
+            return ToolResult.err(str(e))
+        assert row is not None  # just looked it up
         logger.info("complete_action_item: item %s completed by %s", item_id, ct_id)
-        body = json.dumps({"item": row.to_dict()}, indent=2, ensure_ascii=False)
-        if len(body) > 8 * 1024:
-            body = body[: 8 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+        return ToolResult.ok({"item": row.to_dict()})

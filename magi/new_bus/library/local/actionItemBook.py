@@ -62,6 +62,18 @@ ALL_PRIORITIES = frozenset({PRIORITY_NORMAL, PRIORITY_HIGH})
 # default mix.
 _COMPLETED_VISIBLE_DAYS = 7
 
+# Column-length invariants. Mirror the ORM column
+# declarations (``String(200)`` / ``String(1000)`` /
+# ``String(500)``) and the ``completion_note`` /
+# ``description`` business caps. The Book enforces them so
+# every caller — chat-driven tool, dashboard API, proactive
+# policy, future agent loop — gets the same validation
+# without each path re-implementing length checks.
+_TITLE_MAX = 200
+_DESCRIPTION_MAX = 1000
+_TARGET_URL_MAX = 500
+_COMPLETION_NOTE_MAX = 500
+
 
 @dataclass(frozen=True, slots=True)
 class ActionItem:
@@ -152,7 +164,6 @@ class _ActionItemRow(Base):
     dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
-# -- helpers -------------------------------------------------------------
 
 
 # -- Book ----------------------------------------------------------------
@@ -266,13 +277,42 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     ) -> ActionItem:
         """Insert one action item row.
 
+        Owns all write invariants: title non-empty + ≤200
+        chars, description ≤1000, target_url ≤500, ``priority``
+        in :data:`ALL_PRIORITIES`, ``source`` in
+        :data:`ALL_SOURCES`. Every caller — chat-driven
+        tool, dashboard API, proactive policy, future agent
+        loop — gets the same validation without each path
+        re-implementing length checks.
+
         Callers pass ``source=`` explicitly — chat-driven
         tools pass :data:`SOURCE_USER`, proactive policies
         pass :data:`SOURCE_PROACTIVE`. The default
         (:data:`SOURCE_PROACTIVE`) is the safe side: a
         writer that forgets to tag is treated as system
         action, which is non-repudiable.
+
+        Raises :class:`ValueError` on invariant violation;
+        translators (the tool worker, the dashboard route
+        handler) catch and surface as ``is_error=True`` /
+        4xx.
         """
+        if not title or not title.strip():
+            raise ValueError("title must be a non-empty string")
+        if len(title) > _TITLE_MAX:
+            raise ValueError(
+                f"title length {len(title)} exceeds maximum {_TITLE_MAX}"
+            )
+        if description is not None and len(description) > _DESCRIPTION_MAX:
+            raise ValueError(
+                f"description length {len(description)} exceeds "
+                f"maximum {_DESCRIPTION_MAX}"
+            )
+        if target_url is not None and len(target_url) > _TARGET_URL_MAX:
+            raise ValueError(
+                f"target_url length {len(target_url)} exceeds "
+                f"maximum {_TARGET_URL_MAX}"
+            )
         if priority not in ALL_PRIORITIES:
             raise ValueError(
                 f"priority must be one of {sorted(ALL_PRIORITIES)!r}, got {priority!r}"
@@ -313,15 +353,24 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         ``row.uid == caller_uid`` check before reaching
         here.
 
-        Idempotent: re-calling on an already-completed row
-        is a no-op; the existing row is returned untouched
-        so the LLM tool can serialize the same DTO either
-        way. ``note`` is captured only when there is
-        actually a transition (open → closed) — second
-        passes do not overwrite the original note.
+        Owns the ``completion_note`` length invariant
+        (≤500 chars, mirrors the ORM column). Idempotent:
+        re-calling on an already-completed row is a no-op;
+        the existing row is returned untouched so the LLM
+        tool can serialise the same DTO either way.
+        ``note`` is captured only when there is actually a
+        transition (open → closed) — second passes do not
+        overwrite the original note.
 
         Returns ``None`` when the row doesn't exist.
+        Raises :class:`ValueError` if ``note`` exceeds
+        :data:`COMPLETION_NOTE_MAX` characters.
         """
+        if note is not None and len(note) > _COMPLETION_NOTE_MAX:
+            raise ValueError(
+                f"completion_note length {len(note)} "
+                f"exceeds maximum {_COMPLETION_NOTE_MAX}"
+            )
         with self._session() as s:
             row = s.get(_ActionItemRow, action_item_id)
             if row is None:
