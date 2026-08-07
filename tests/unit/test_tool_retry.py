@@ -1,3 +1,7 @@
+# TODO: migrate to new_bus — currently failing under the
+# tools/new_bus migration (see magi/startup/runtime.py and
+# magi/new_bus). Re-baseline this test file when the agent
+# loop moves to bus.tool_job_board + the new ToolWorker.
 """Coverage for the tool-job retry / dead-letter path (design §11.2).
 
 A failed tool job moves to ``status='retry'`` until

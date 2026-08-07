@@ -1,3 +1,7 @@
+# TODO: migrate to new_bus — currently failing under the
+# tools/new_bus migration (see magi/startup/runtime.py and
+# magi/new_bus). Re-baseline this test file when the agent
+# loop moves to bus.tool_job_board + the new ToolWorker.
 """AgentWorker tests for the durable asynchronous channel.
 
 The legacy synchronous path that lived in ``magi.agent.step`` has

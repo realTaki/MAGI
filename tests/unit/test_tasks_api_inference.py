@@ -1,3 +1,7 @@
+# TODO: migrate to new_bus — currently failing under the
+# tools/new_bus migration (see magi/startup/runtime.py and
+# magi/new_bus). Re-baseline this test file when the agent
+# loop moves to bus.tool_job_board + the new ToolWorker.
 """Round-trip tests for the API-side ``delivery_to`` derivation.
 
 The unified rule: ``delivery_to`` is server-derived per

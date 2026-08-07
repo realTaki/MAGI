@@ -1,3 +1,7 @@
+# TODO: migrate to new_bus — currently failing under the
+# tools/new_bus migration (see magi/startup/runtime.py and
+# magi/new_bus). Re-baseline this test file when the agent
+# loop moves to bus.tool_job_board + the new ToolWorker.
 """§20.6 — StreamHub lifecycle guarantees.
 
 The stream surface is best-effort: deltas may be lost on

@@ -1,3 +1,7 @@
+# TODO: migrate to new_bus — currently failing under the
+# tools/new_bus migration (see magi/startup/runtime.py and
+# magi/new_bus). Re-baseline this test file when the agent
+# loop moves to bus.tool_job_board + the new ToolWorker.
 """Coverage for the ``tool_calls.ordinal`` column added by 0010.
 
 The actor worker assigns a monotonic within-run ordinal at every
