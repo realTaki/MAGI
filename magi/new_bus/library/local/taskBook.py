@@ -131,6 +131,13 @@ class _TaskRow(Base):
         Index("ix_tasks_enabled_last_run", "enabled", "last_run_at"),
         Index("ix_tasks_contact", "uid"),
         Index("ix_tasks_preset_key", "preset_key"),
+        # ``scheduleTaskNotify`` (in ``magi.new_bus.guild``) registers
+        # the same Table for its fire-and-forget path; whichever module
+        # is imported first wins, and the other must opt-in. Combined
+        # with the constraints / indexes above in a single tuple so the
+        # second declaration doesn't shadow the first. SQLAlchemy
+        # convention: dict kwargs must come last in the tuple.
+        {"extend_existing": True},
     )
 
 

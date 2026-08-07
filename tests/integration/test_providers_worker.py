@@ -133,7 +133,13 @@ class FakeProvider(LLMProvider):
 @pytest.fixture
 def bus(tmp_path) -> NewBus:
     """Stand up a per-test SQLite-backed :class:`NewBus`."""
-    return bootstrap_new_bus(state_dir=str(tmp_path))
+    new_bus = bootstrap_new_bus(state_dir=str(tmp_path))
+    # ``bootstrap_new_bus`` wires the books / job boards but does not
+    # create the SQLite schema — that's the composition root's job in
+    # production. Tests have to do it explicitly so writes find a real
+    # table to land in.
+    new_bus._local_factory.create_all()
+    return new_bus
 
 
 def _seed_provider_config(
@@ -152,21 +158,26 @@ def _seed_provider_config(
 def _install_fake(bus: NewBus, fake: FakeProvider) -> None:
     """Patch the ``get_provider`` symbol the worker resolves at runtime.
 
-    The worker imports ``get_provider`` from
-    :mod:`magi.providers.factory` lazily inside
-    :meth:`ProvidersWorker._rebuild_provider`, so patching the
-    factory module is sufficient — no import-time rebinding needed.
+    The worker does ``from magi.providers import get_provider`` (which
+    re-exports from :mod:`magi.providers.factory`), so we patch both
+    names — whichever symbol the worker resolves first wins, but if
+    someone calls the factory module directly they should still see
+    the fake.  Rebinding the package attribute also handles legacy
+    monkey-patch seams.
     """
+    import magi.providers
     import magi.providers.factory as _factory
 
     def _fake_get(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
         return fake
 
     _factory.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
 
 
 def _install_counter(bus: NewBus, fake: FakeProvider) -> dict[str, int]:
     """Same as ``_install_fake`` but tracks how many times the factory was hit."""
+    import magi.providers
     import magi.providers.factory as _factory
 
     state: dict[str, int] = {"calls": 0}
@@ -176,6 +187,7 @@ def _install_counter(bus: NewBus, fake: FakeProvider) -> dict[str, int]:
         return fake
 
     _factory.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
     return state
 
 
@@ -243,7 +255,11 @@ async def test_provider_not_configured_envelopes_failure(bus: NewBus):
         result = await _wait_for_result(bus, job_id)
         assert result is not None
         assert result.success is False
-        assert result.error_code == "LLMNotConfiguredError"
+        # The worker special-cases :class:`LLMNotConfiguredError` and
+        # surfaces it as the stable ``magi.llm_credentials_required``
+        # operator-facing code (so admin UX doesn't depend on the
+        # internal Python class name).
+        assert result.error_code == "magi.llm_credentials_required"
         assert "no api key" in (result.error or "")
     finally:
         await stop_provider_worker()
@@ -323,6 +339,7 @@ async def test_worker_caches_provider_across_jobs(bus: NewBus):
 @pytest.mark.asyncio
 async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
     """Missing config does NOT block boot; jobs settle with the credentials code."""
+    import magi.providers
     import magi.providers.factory as _factory
 
     def _raise_not_configured(*_a, **_k):
@@ -331,6 +348,7 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
         )
 
     _factory.get_provider = _raise_not_configured
+    magi.providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
     # No settings_book writes — the worker reads and finds nothing.
     await start_provider_worker(bus)  # MUST NOT raise
     try:
@@ -347,6 +365,7 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
 @pytest.mark.asyncio
 async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus):
     """A drained ``ChangeProviderConfigJob`` triggers a rebuild."""
+    import magi.providers
     import magi.providers.factory as _factory
 
     state: dict[str, Any] = {"provider": None}
@@ -357,6 +376,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
         return state["provider"]  # may be None on the first claim
 
     _factory.get_provider = _switch
+    magi.providers.get_provider = _switch  # type: ignore[attr-defined]
 
     await start_provider_worker(bus)
     try:
@@ -386,13 +406,6 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
             f"expected at least 2 get_provider calls (start + rebuild), got {calls['n']}"
         )
         # The config-change job was drained (status advanced past pending).
-        change_result = await asyncio.to_thread(
-            bus.change_provider_config_job_board.get_result,
-            # claim returns the latest job; look it up via DB if needed
-            key="ignored",
-        )
-        # Just confirm the board is empty (no pending rows) by trying to claim.
-        # If still present the next claim would block; instead check via row count.
         from sqlalchemy import select
         from magi.new_bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
         with bus._local_factory.session() as s:
@@ -409,6 +422,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
 @pytest.mark.asyncio
 async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
     """A second job with no signal between still uses the cached provider."""
+    import magi.providers
     import magi.providers.factory as _factory
 
     calls = {"n": 0}
@@ -418,6 +432,7 @@ async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
         return FakeProvider(reply=f"call#{calls['n']}")
 
     _factory.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
     _seed_provider_config(bus)
 
     await start_provider_worker(bus)
