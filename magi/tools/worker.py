@@ -210,6 +210,14 @@ class ToolsWorker:
                 enabled=1 if d.enabled else 0,
                 description=d.description,
                 source=d.source,
+                # Roles as JSON string — matches the Book's storage
+                # convention (see ToolDefinitionRow.allowed_roles_json).
+                # Without this, ``_hash_from_row`` would reconstruct
+                # the definition with an empty tuple and every claim
+                # would fail the schema_hash check.
+                allowed_roles_json=json.dumps(
+                    list(d.allowed_roles), ensure_ascii=False,
+                ) if d.allowed_roles else None,
             ))
         self.bus.tool_definitions_book.upsert_many(definitions=rows)
 
@@ -398,24 +406,39 @@ def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
 def _hash_from_row(row: Any, tool_name: str) -> str:
     """Recompute schema_hash for a stored row.
 
-    The persistent row only stores ``spec_json``, not the full
-    ``ToolDefinition``. We rebuild a minimal ``ToolDefinition``
-    (with empty allowed_roles / no implementation_version) and
-    hash it — same canonical JSON shape as
-    :func:`_schema_hash` for the fields we care about, modulo
-    the few optional ones (allowed_roles defaults to (), which
-    matches the registered builtin tools' default).
+    The persistent row only stores ``spec_json`` /
+    ``allowed_roles_json``, not the full ``ToolDefinition``. We
+    rebuild a minimal one and hash it — same canonical JSON shape
+    as :func:`_schema_hash` for the fields we care about.
+
+    ``allowed_roles`` is read from the row (not defaulted to ``()``)
+    — pre-fix the recomputed hash silently dropped role info, which
+    meant any claim on a role-gated tool failed the schema_hash
+    check. The publish path now writes the roles to the row, so we
+    must read them back here for the hashes to round-trip.
+    ``implementation_version`` isn't stored yet; left as ``None``
+    (matches every builtin today).
     """
     try:
         input_schema = json.loads(row.spec_json) if row.spec_json else {}
     except json.JSONDecodeError:
         return ""
+    allowed_roles: tuple[str, ...] = ()
+    if row.allowed_roles_json:
+        try:
+            parsed = json.loads(row.allowed_roles_json)
+            if isinstance(parsed, list):
+                allowed_roles = tuple(
+                    str(r) for r in parsed if isinstance(r, str)
+                )
+        except json.JSONDecodeError:
+            pass
     d = ToolDefinition(
         name=row.name,
         source=row.source,
         description=row.description or "",
         input_schema=input_schema,
-        allowed_roles=(),
+        allowed_roles=allowed_roles,
         enabled=bool(row.enabled),
         implementation_version=None,
     )

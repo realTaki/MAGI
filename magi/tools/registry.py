@@ -1,14 +1,25 @@
 
-"""Tool registry — the single source of truth for which
-tools the LLM can call.
+"""Tool registry — the in-process map of *executable* Tool
+instances the tools worker dispatches to.
 
-v0 hard-codes four tools here. When ``skill_loader`` (D.17)
-lands, skills get appended to this list at runtime based
-on the deployer's config; the registry API stays the same
-so the agent loop doesn't have to grow with it.
+This is **not** the agent-visible catalog. The catalog (what
+the LLM sees as its menu) lives in the new_bus
+:mod:`magi.new_bus.library.local.toolsBook` and is fed by
+worker startup via :func:`magi.tools.worker._publish_builtin_catalog`.
+This module owns only the dispatch half: a cache of
+:class:`~magi.tools.base.Tool` instances, plus the MCP
+loader that appends to it. When :func:`get_tool` looks up a
+tool by name, it walks this cache — there is no
+``get_tools()`` / ``get_tool_schemas()`` here anymore, by
+design: agent-side menu reads go to the Book, not here.
 
-Imports are lazy: each tool is imported on first call
-to :func:`get_tools`, not at module load time. That's how
+v0 hard-codes the builtin set here. When ``skill_loader``
+(D.17) lands, skills get appended to this list at runtime
+based on the deployer's config; the registry API stays the
+same so the worker doesn't have to grow with it.
+
+Imports are lazy: each tool is imported on first call to
+:func:`_build_tools`, not at module load time. That's how
 tests can patch one tool (``monkeypatch.setattr``) without
 triggering the rest of the registry's side-effects.
 """
@@ -23,19 +34,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.tools.registry")
 
-# Single-shot cache so we don't re-instantiate the tool
-# classes on every chat turn. The cache lives for the
-# process lifetime; tests that want a fresh set use
-# ``reset_cache()``.
+# Single-shot cache of builtin :class:`Tool` instances — the
+# dispatch backend. Populated lazily on the first
+# :func:`get_tool` / :func:`bootstrap_mcp_tools` call.
+# Lives for the process lifetime; tests that need a fresh
+# set either ``del magi.tools.registry._tools_cache`` or
+# restart the process.
 _tools_cache: list["Tool"] | None = None
 
 # MCP tools are loaded once at boot via
 # :func:`bootstrap_mcp_tools` and appended on top of
 # ``_tools_cache``. A separate slot keeps the two surfaces
-# (built-in tools / MCP-discovered tools) distinct so a
-# ``reset_cache`` call doesn't have to re-connect MCP. The
-# agent loop never reads this directly; ``get_tools``
-# merges the two lists.
+# (built-in tools / MCP-discovered tools) distinct so the
+# MCP connection isn't re-opened on a builtin reload. The
+# agent loop never reads this directly; :func:`get_tool`
+# walks builtin first, then MCP.
 _mcp_tools_cache: list["Tool"] | None = None
 
 # Stamp of the most recent successful MCP load —
@@ -55,6 +68,12 @@ def _build_tools() -> list["Tool"]:
     Importing inside the function (not at module top)
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
+
+    Returned list is the dispatch order (builtin tools in
+    the order they appear here). MCP tools are appended
+    on top by :func:`bootstrap_mcp_tools`. Tool worker
+    claim paths consult :func:`get_tool`, which walks
+    builtin first then MCP.
     """
     from magi.tools.shell.run import BashRunTool
     from magi.tools.shell.output import BashOutputTool
@@ -147,114 +166,33 @@ def _build_tools() -> list["Tool"]:
     ]
 
 
-def get_tools(
-    caller_role: str | None = None,
-    caller_admin: bool = False,
-) -> list["Tool"]:
-    """Return all registered tools (cached after first call).
-
-    Built-in tools are appended first; MCP tools (loaded at
-    boot) come after. Order matters to the LLM (the agent
-    loop passes ``schemas`` in order; some models put more
-    weight on the first few tools), so MCP belongs at the
-    end of the menu.
-
-    ``caller_role`` filters out tools whose
-    :attr:`Tool.ALLOWED_ROLES` exclude the caller. ``None``
-    (caller didn't supply a role — tests, boot-time probes)
-    returns tools with no role restriction; role-restricted
-    tools are stripped (better than silently exposing
-    admin-only tools to unidentified callers).
-
-    ``caller_admin=True`` is the post-2024 split shortcut:
-    a WebUI-signed-in operator sees the full menu regardless
-    of their ``role`` enum value. Mirrors the API's
-    ``_enforce_creator_can_create`` helper.
-    """
-    global _tools_cache
-    if _tools_cache is None:
-        _tools_cache = _build_tools()
-    all_tools = _tools_cache + (_mcp_tools_cache or [])
-    return [
-        t for t in all_tools
-        if t.is_allowed_for_role(caller_role, admin=caller_admin)
-    ]
-
-
 def get_tool(
     name: str,
     caller_role: str | None = None,
     caller_admin: bool = False,
 ) -> "Tool | None":
-    """Look up a single tool by name. ``None`` if no such
-    tool is registered — the agent loop turns that into
-    an ``is_error=true`` ``tool_result`` for the LLM.
+    """Look up a single tool by name for dispatch.
 
-    Role-gated lookup honors ``caller_role``: an
-    admin-only tool is invisible to a caller who passes
-    a different role (matches the menu-filter behaviour
-    of :func:`get_tools`).
+    Returns ``None`` if no such tool is registered, or if
+    the tool is gated by ``ALLOWED_ROLES`` and the caller
+    doesn't match — the worker turns that into an
+    ``is_error=true`` tool_result for the LLM.
+
+    Role-gated lookup honors ``caller_role`` / ``caller_admin``
+    the same way the old :func:`get_tools` filter did. The
+    cache is initialized lazily here (was previously
+    initialized inside :func:`get_tools`).
     """
-    for t in get_tools(caller_role=caller_role, caller_admin=caller_admin):
-        if t.name == name:
-            return t
-    return None
-
-
-def get_tools_grouped(
-    caller_role: str | None = None,
-    caller_admin: bool = False,
-) -> tuple[list["Tool"], list["Tool"]]:
-    """Return ``(built_in, mcp)`` lists, both filtered
-    through :meth:`Tool.is_allowed_for_role` with
-    ``caller_role``.
-
-    Surfaces that want to render the two registries
-    distinctly (audit dashboards, status pages,
-    :mod:`magi.channels.api.tools`) reach for this
-    helper instead of touching :data:`_tools_cache` /
-    :data:`_mcp_tools_cache` directly. The MCP cache is
-    :data:`None` before :func:`bootstrap_mcp_tools` has
-    run; we treat that as "no MCP tools yet" and return
-    ``([], [])`` semantics for that side.
-    """
-    global _tools_cache, _mcp_tools_cache
+    global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
-    built_in = [
-        t for t in _tools_cache
-        if t.is_allowed_for_role(caller_role, admin=caller_admin)
-    ]
-    mcp = [
-        t for t in (_mcp_tools_cache or [])
-        if t.is_allowed_for_role(caller_role, admin=caller_admin)
-    ]
-    return built_in, mcp
-
-
-def get_tool_schemas(
-    caller_role: str | None = None,
-    caller_admin: bool = False,
-) -> list[dict]:
-    """Schemas (Anthropic-shaped) for every registered
-    tool — passed straight to ``provider.chat(tools=...)``.
-
-    The list order is stable (it's the order
-    :func:`_build_tools` constructs), so the LLM sees the
-    same menu every turn.
-    """
-    return [
-        t.to_anthropic_schema() for t in
-        get_tools(caller_role=caller_role, caller_admin=caller_admin)
-    ]
-
-
-def reset_cache() -> None:
-    """Drop the cached tool instances. Test-only — lets a
-    monkeypatched tool class show up in :func:`get_tools`
-    on the next call. Production code never calls this."""
-    global _tools_cache
-    _tools_cache = None
+    for t in _tools_cache:
+        if t.name == name:
+            return t if t.is_allowed_for_role(caller_role, admin=caller_admin) else None
+    for t in (_mcp_tools_cache or []):
+        if t.name == name:
+            return t if t.is_allowed_for_role(caller_role, admin=caller_admin) else None
+    return None
 
 
 def bootstrap_mcp_tools() -> list["Tool"]:
@@ -263,7 +201,7 @@ def bootstrap_mcp_tools() -> list["Tool"]:
     Sync from the caller's POV — it runs the asyncio
     bootstrap in a private event loop and returns the
     discovered tools (also cached so subsequent
-    :func:`get_tools` calls reuse them).
+    :func:`get_tool` calls see them).
 
     The loader reads from the ``mcp_servers`` table — the
     table is the only source of truth (the legacy
@@ -298,22 +236,6 @@ def bootstrap_mcp_tools() -> list["Tool"]:
         logger.info("MCP bootstrap registered %d tool(s): %s",
                     len(tools), ", ".join(t.name for t in tools))
     return tools
-
-
-def reset_mcp_cache() -> None:
-    """Drop only the MCP tool cache.
-
-    Unlike :func:`reset_cache` (which wipes the built-in
-    tools too), this is used by tests that want to swap the
-    MCP config without rebuilding the slow built-in list.
-
-    Also resets the load stamp so the next
-    :func:`maybe_reload_mcp_tools` will fire even if the
-    test edits the table without bumping ``updated_at``.
-    """
-    global _mcp_tools_cache, _mcp_loaded_at_db
-    _mcp_tools_cache = None
-    _mcp_loaded_at_db = None
 
 
 def maybe_reload_mcp_tools() -> list["Tool"] | None:

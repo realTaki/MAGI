@@ -207,13 +207,13 @@ def test_token_usage_book(factory, contact_id):
 # -- ToolCatalogStateBook + ToolDefinitionBook -------------------------
 
 
-def test_tool_catalog_bump(factory):
+def test_tool_catalog_replace_snapshot(factory):
     sbook = ToolCatalogStateBook(factory)
     assert sbook.get() is None
-    s = sbook.bump(revision=1, snapshot_hash="abc")
+    s = sbook.replace_snapshot(revision=1, snapshot_hash="abc")
     assert isinstance(s, ToolCatalogState)
     assert s.revision == 1
-    s2 = sbook.bump(revision=2, snapshot_hash="def")
+    s2 = sbook.replace_snapshot(revision=2, snapshot_hash="def")
     assert s2.revision == 2
 
 
