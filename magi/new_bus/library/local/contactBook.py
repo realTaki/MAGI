@@ -131,12 +131,12 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
     dto_cls = Contact
 
     def get(self, *, contact_id: int) -> Contact | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
             return self._row_to_dto(row) if row else None
 
     def get_by_telegram(self, *, telegram_id: int) -> Contact | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ContactRow).where(_ContactRow.telegram_id == telegram_id)
             )
@@ -145,7 +145,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
     def add(self, *, name: str, role: str = ROLE_GUEST,
             display_name: str | None = None,
             telegram_id: int | None = None) -> Contact:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ContactRow(
                 name=name, role=role, display_name=display_name,
                 telegram_id=telegram_id,
@@ -156,14 +156,14 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         return self._row_to_dto(row)
 
     def list_all(self) -> list[Contact]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ContactRow).order_by(_ContactRow.id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_active(self) -> list[Contact]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ContactRow)
                 .where(_ContactRow.separated_at.is_(None))
@@ -172,7 +172,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             return [self._row_to_dto(r) for r in rows]
 
     def separate(self, *, contact_id: int) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
             if row is None:
                 return
@@ -185,7 +185,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
     dto_cls = ContactNote
 
     def list_for_contact(self, *, contact_id: int) -> list[ContactNote]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ContactNoteRow)
                 .where(_ContactNoteRow.contact_id == contact_id)
@@ -195,7 +195,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
 
     def add(self, *, contact_id: int, note: str, source: str = SOURCE_EVA,
             kind: str = "permanent") -> ContactNote:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ContactNoteRow(
                 contact_id=contact_id, note=note, source=source, kind=kind,
             )

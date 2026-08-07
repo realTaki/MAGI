@@ -133,7 +133,7 @@ class changeProviderConfigJobBoard(
         #    an in-place model swap (only model set); the legacy
         #    ``payload`` is kept for audit only.
         job_id = job.job_id or new_job_id()
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ChangeProviderConfigRow(
                 job_id=job_id,
                 status="pending",

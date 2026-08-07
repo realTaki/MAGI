@@ -131,7 +131,7 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
     dto_cls = ToolCatalogState
 
     def get(self) -> ToolCatalogState | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
             return self._row_to_dto(row) if row else None
 
@@ -155,7 +155,7 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
         ``expected_previous_revision`` check from the old
         ``ToolCatalogService.replace_snapshot``.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
             if row is None:
                 row = _ToolCatalogStateRow(
@@ -175,28 +175,28 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
     dto_cls = ToolDefinitionRow
 
     def get(self, *, tool_id: int) -> ToolDefinitionRow | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.id == tool_id)
             )
             return self._row_to_dto(row) if row else None
 
     def get_by_name(self, *, name: str) -> ToolDefinitionRow | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
             )
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[ToolDefinitionRow]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ToolDefinitionRow).order_by(_ToolDefinitionRow.name)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_enabled(self) -> list[ToolDefinitionRow]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ToolDefinitionRow)
                 .where(_ToolDefinitionRow.enabled == 1)
@@ -269,7 +269,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
             description=description, source=source, spec_dict=spec_dict,
             allowed_roles_json=allowed_roles_json,
         )
-        with self._factory.session() as s:
+        with self._session() as s:
             existing = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
             )
@@ -292,7 +292,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
         queryable. Returns silently if the name is unknown; the
         caller decides whether to treat that as an error.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
             )
@@ -309,7 +309,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
         when a server is decommissioned — not for routine
         disable.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
             )
@@ -329,7 +329,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
         rows with the same name but a different source are left
         alone — that's MCP's concern).
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             names = [d.name for d in definitions]
             existing = {}
             if names:

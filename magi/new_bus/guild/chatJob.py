@@ -77,7 +77,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
 
     def publish(self, job: ChatJob) -> str:
         """发布聊天作业，返回 job_id。"""
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ChatJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",

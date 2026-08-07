@@ -123,7 +123,7 @@ class runToolJobBoard(BaseJobBoard[_ToolJobRow, RunToolJob, RunToolResult]):
     result_cls = RunToolResult
 
     def publish(self, job: RunToolJob) -> str:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ToolJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",

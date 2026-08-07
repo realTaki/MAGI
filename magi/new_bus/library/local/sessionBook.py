@@ -117,14 +117,14 @@ class SessionBook(BaseBook[_SessionRow, Session]):
     dto_cls = Session
 
     def get(self, *, session_id: str) -> Session | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_SessionRow).where(_SessionRow.session_id == session_id)
             )
             return self._row_to_dto(row) if row else None
 
     def list_for_owner(self, *, uid: int) -> list[Session]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_SessionRow)
                 .where(_SessionRow.uid == uid)
@@ -135,7 +135,7 @@ class SessionBook(BaseBook[_SessionRow, Session]):
     def add(self, *, session_id: str, delivery_address: str, uid: int,
             channel: str, title: str | None = None,
             created_at: str = "", updated_at: str = "") -> Session:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _SessionRow(
                 session_id=session_id,
                 delivery_address=delivery_address,
@@ -151,7 +151,7 @@ class SessionBook(BaseBook[_SessionRow, Session]):
         return self._row_to_dto(row)
 
     def touch(self, *, session_id: str, updated_at: str) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_SessionRow).where(_SessionRow.session_id == session_id)
             )
@@ -166,13 +166,13 @@ class MessageBook(BaseBook[_MessageRow, Message]):
     dto_cls = Message
 
     def get(self, *, message_id: int) -> Message | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
             return self._row_to_dto(row) if row else None
 
     def list_for_session(self, *, session_id: str,
                          include_archived: bool = False) -> list[Message]:
-        with self._factory.session() as s:
+        with self._session() as s:
             stmt = select(_MessageRow).where(_MessageRow.session_id == session_id)
             if not include_archived:
                 stmt = stmt.where(_MessageRow.archived == 0)
@@ -184,7 +184,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             ts: str, content_blocks: list[dict[str, Any]] | None = None,
             run_id: str | None = None,
             llm_attempt_id: str | None = None) -> Message:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MessageRow(
                 session_id=session_id,
                 message_id=message_id,
@@ -201,7 +201,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         return self._row_to_dto(row)
 
     def archive(self, *, message_id: int) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
             if row is None:
                 return

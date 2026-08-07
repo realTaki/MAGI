@@ -83,12 +83,12 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
     dto_cls = Memory
 
     def get(self, *, memory_id: int) -> Memory | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
             return self._row_to_dto(row) if row else None
 
     def list_by_owner(self, *, uid: int) -> list[Memory]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MemoryRow)
                 .where(_MemoryRow.uid == uid)
@@ -98,7 +98,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
     def add(self, *, uid: int, kind: str, subject: str, body: str,
             importance: int = 3, source: str = SOURCE_EVA) -> Memory:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MemoryRow(
                 uid=uid, kind=kind, subject=subject,
                 body=body, importance=importance, source=source,
@@ -109,7 +109,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         return self._row_to_dto(row)
 
     def mark_completed(self, *, memory_id: int) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
             if row is None:
                 return
@@ -117,7 +117,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
             s.commit()
 
     def delete(self, *, memory_id: int) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
             if row is None:
                 return False

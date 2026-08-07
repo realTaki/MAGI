@@ -62,7 +62,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
     result_cls = DeliveryResult
 
     def publish(self, job: DeliveryJob) -> str:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _DeliveryJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",

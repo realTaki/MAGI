@@ -219,7 +219,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     # -- single-row reads -------------------------------------------------
 
     def get(self, *, item_id: int) -> ActionItem | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ActionItemRow).where(_ActionItemRow.id == item_id)
             )
@@ -260,7 +260,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         views, or ``None`` for everything the operator
         owns.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             stmt = select(_ActionItemRow).where(
                 _ActionItemRow.uid == owner_uid,
             )
@@ -320,7 +320,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             raise ValueError(
                 f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}"
             )
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ActionItemRow(
                 uid=uid,
                 title=title,
@@ -361,7 +361,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
 
         Returns ``None`` when the row doesn't exist.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.get(_ActionItemRow, action_item_id)
             if row is None:
                 return None

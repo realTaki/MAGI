@@ -58,7 +58,7 @@ class controlJobBoard(BaseJobBoard[_ControlJobRow, ControlJob, ControlJobResult]
     result_cls = ControlJobResult
 
     def publish(self, job: ControlJob) -> str:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _ControlJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",

@@ -86,12 +86,12 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     dto_cls = Setting
 
     def get(self, *, key: str) -> str | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_SettingRow).where(_SettingRow.key == key))
             return row.value if row else None
 
     def set(self, *, key: str, value: str) -> Setting:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_SettingRow).where(_SettingRow.key == key))
             if row is None:
                 row = _SettingRow(key=key, value=value)
@@ -103,7 +103,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         return self._row_to_dto(row)
 
     def delete(self, *, key: str) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_SettingRow).where(_SettingRow.key == key))
             if row is None:
                 return False
@@ -112,12 +112,12 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             return True
 
     def list_keys(self) -> list[str]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(select(_SettingRow.key)).all()
             return list(rows)
 
     def list_all(self) -> list[Setting]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(select(_SettingRow).order_by(_SettingRow.key)).all()
             return [self._row_to_dto(r) for r in rows]
 

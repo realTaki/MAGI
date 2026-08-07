@@ -191,26 +191,26 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     dto_cls = Task
 
     def get(self, *, task_id: str) -> Task | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
             return self._row_to_dto(row) if row else None
 
     def list_for_owner(self, *, uid: int) -> list[Task]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TaskRow).where(_TaskRow.uid == uid)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_enabled(self) -> list[Task]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TaskRow).where(_TaskRow.enabled == 1)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def add(self, **kwargs) -> Task:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _TaskRow(**kwargs)
             s.add(row)
             s.commit()
@@ -218,7 +218,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         return self._row_to_dto(row)
 
     def disable(self, *, task_id: str) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
             if row is None:
                 return
@@ -231,12 +231,12 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     dto_cls = TaskRun
 
     def get(self, *, run_id: str) -> TaskRun | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run_id))
             return self._row_to_dto(row) if row else None
 
     def list_for_task(self, *, task_id: str) -> list[TaskRun]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TaskRunRow)
                 .where(_TaskRunRow.task_id == task_id)
@@ -245,7 +245,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             return [self._row_to_dto(r) for r in rows]
 
     def add(self, **kwargs) -> TaskRun:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _TaskRunRow(**kwargs)
             s.add(row)
             s.commit()
@@ -257,7 +257,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
                  reply_excerpt: str | None = None,
                  finished_at: str = "",
                  latency_ms: int | None = None) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run_id))
             if row is None:
                 return
@@ -274,21 +274,21 @@ class TaskPresetBook(BaseBook[_TaskPresetRow, TaskPreset]):
     dto_cls = TaskPreset
 
     def get(self, *, preset_id: str) -> TaskPreset | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_TaskPresetRow).where(_TaskPresetRow.id == preset_id)
             )
             return self._row_to_dto(row) if row else None
 
     def list_enabled(self) -> list[TaskPreset]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TaskPresetRow).where(_TaskPresetRow.enabled == 1)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def add(self, **kwargs) -> TaskPreset:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _TaskPresetRow(**kwargs)
             s.add(row)
             s.commit()

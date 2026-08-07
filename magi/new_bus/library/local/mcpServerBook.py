@@ -58,28 +58,28 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     dto_cls = McpServer
 
     def get(self, *, server_id: int) -> McpServer | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_McpServerRow).where(_McpServerRow.id == server_id)
             )
             return self._row_to_dto(row) if row else None
 
     def get_by_name(self, *, name: str) -> McpServer | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_McpServerRow).where(_McpServerRow.name == name)
             )
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[McpServer]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_McpServerRow).order_by(_McpServerRow.name)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_enabled(self) -> list[McpServer]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_McpServerRow)
                 .where(_McpServerRow.enabled == 1)
@@ -90,7 +90,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     def add(self, *, name: str, transport: str,
             config: dict[str, Any] | None = None,
             enabled: bool = True) -> McpServer:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _McpServerRow(
                 name=name, transport=transport,
                 config=config or {}, enabled=1 if enabled else 0,
@@ -104,7 +104,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
                transport: str | None = None,
                config: dict[str, Any] | None = None,
                enabled: bool | None = None) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_McpServerRow).where(_McpServerRow.id == server_id)
             )
@@ -119,7 +119,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             s.commit()
 
     def delete(self, *, server_id: int) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_McpServerRow).where(_McpServerRow.id == server_id)
             )

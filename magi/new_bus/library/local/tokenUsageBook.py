@@ -74,7 +74,7 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
     dto_cls = TokenUsage
 
     def list_for_run(self, *, run_id: str) -> list[TokenUsage]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TokenUsageRow)
                 .where(_TokenUsageRow.run_id == run_id)
@@ -83,7 +83,7 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
             return [self._row_to_dto(r) for r in rows]
 
     def list_for_owner(self, *, uid: int) -> list[TokenUsage]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TokenUsageRow)
                 .where(_TokenUsageRow.uid == uid)
@@ -96,7 +96,7 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
             run_id: str | None = None, llm_attempt_id: str | None = None,
             cost_usd: float = 0.0,
             extra: dict[str, Any] | None = None) -> TokenUsage:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _TokenUsageRow(
                 uid=uid, run_id=run_id, llm_attempt_id=llm_attempt_id,
                 provider=provider, model=model,
@@ -109,7 +109,7 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
         return self._row_to_dto(row)
 
     def sum_for_run(self, *, run_id: str) -> tuple[int, int]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_TokenUsageRow).where(_TokenUsageRow.run_id == run_id)
             ).all()

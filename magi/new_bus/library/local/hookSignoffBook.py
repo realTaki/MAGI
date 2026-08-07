@@ -81,14 +81,14 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
     dto_cls = HookSignoff
 
     def get(self, *, signoff_id: int) -> HookSignoff | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_HookSignoffRow).where(_HookSignoffRow.id == signoff_id)
             )
             return self._row_to_dto(row) if row else None
 
     def list_pending(self) -> list[HookSignoff]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_HookSignoffRow)
                 .where(_HookSignoffRow.status == "pending")
@@ -97,7 +97,7 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
             return [self._row_to_dto(r) for r in rows]
 
     def list_for_plugin(self, *, plugin_id: str) -> list[HookSignoff]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_HookSignoffRow)
                 .where(_HookSignoffRow.plugin_id == plugin_id)

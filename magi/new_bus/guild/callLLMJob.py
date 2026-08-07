@@ -94,7 +94,7 @@ class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
     result_cls = CallLLMResult
 
     def publish(self, job: CallLLMJob) -> str:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _LLMJobRow(
                 job_id=uuid.uuid4().hex,
                 status="pending",
