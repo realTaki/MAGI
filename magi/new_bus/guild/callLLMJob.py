@@ -36,7 +36,12 @@ class CallLLMJob:
 
 @dataclass(frozen=True, slots=True)
 class CallLLMResult:
-    """一次 LLM 推理的完成结果。"""
+    """一次 LLM 推理的完成结果。
+
+    ``stream_key`` 非空时表示流式模式：调用方用
+    ``bus.stream_hub.get(stream_key)`` 拿到 ``asyncio.Queue``，
+    从中迭代读取增量文本（``None`` 哨兵表示结束）。
+    """
 
     job_id: str
     success: bool
@@ -44,6 +49,7 @@ class CallLLMResult:
     finish_reason: str | None = None
     token_usage: dict | None = None
     model: str = ""                     # provider 实际使用的模型
+    stream_key: str = ""                # bus.stream_hub 的管道句柄
     error: str | None = None
     error_code: str = ""                # 稳定错误码，如 "LLMAuthError"
 
@@ -69,6 +75,7 @@ class _LLMJobRow(Base):
     finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     error_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)

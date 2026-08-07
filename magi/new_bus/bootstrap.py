@@ -98,6 +98,10 @@ class NewBus:
     save_contact_notify_board: object  # contactNotifyBoard
     save_memory_notify_board: object  # rememberNotifyBoard
 
+    # -- local: streaming ---------------------------------------------------
+
+    stream_hub: object  # StreamHub
+
     # -- local: misc (Books) -------------------------------------------------
 
     token_usage_book: object  # TokenUsageBook
@@ -238,6 +242,11 @@ def _bootstrap_with_dirs(
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
 
+    # ---- stream hub (in-process pipe registry) ------------------------------
+    from magi.new_bus.stream import StreamHub
+
+    stream_hub = StreamHub()
+
     # ---- local job boards ---------------------------------------------------
     agent_job_board = runAgentJobBoard(local_factory)
     tool_job_board = runToolJobBoard(local_factory)
@@ -313,6 +322,7 @@ def _bootstrap_with_dirs(
         token_usage_book=token_usage_book,
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,
+        stream_hub=stream_hub,
         magic_book=magic_book,
         magis_book=magis_book,
         magis_admins_book=magis_admins_book,
