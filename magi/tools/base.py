@@ -37,9 +37,10 @@ without importing the whole batch).
 
 from __future__ import annotations
 
+import functools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Concatenate, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     from magi.new_bus import NewBus
@@ -99,7 +100,72 @@ class ToolResult:
     is_error: bool = False
 
 
-__all__ = ["Tool", "ToolContext", "ToolResult"]
+__all__ = ["Tool", "ToolContext", "ToolResult", "require_bus"]
+
+
+# -- require_bus decorator -------------------------------------------------
+#
+# Opt-in guard for tools that touch ``ctx.bus.<book>``.
+#
+# Not every tool needs a bus — filesystem read/write, shell
+# bash, list_files etc. only need ``ctx.workspace`` and run
+# cleanly with ``bus=None`` in tests and boot probes. We
+# shouldn't blanket-gate every tool because that would
+# mislead readers into thinking all tools depend on the bus.
+
+_P = ParamSpec("_P")
+_ToolT = TypeVar("_ToolT", bound="Tool")
+
+
+def require_bus(
+    method: Callable[
+        Concatenate[_ToolT, ToolContext, _P], Awaitable[ToolResult]
+    ],
+) -> Callable[
+    Concatenate[_ToolT, ToolContext, _P], Awaitable[ToolResult]
+]:
+    """Decorate a :meth:`Tool.run` to fail closed when
+    ``ctx.bus`` is missing.
+
+    Usage::
+
+        class AddActionItemTool(Tool):
+            @require_bus
+            async def run(self, ctx, **kwargs):
+                ...
+
+    The decorator is OPT-IN. Tools that don't touch the
+    bus (filesystem ops, shell tools, etc.) leave
+    ``run`` undecorated and run with ``bus=None`` in tests.
+
+    Type-checker note: ``_ToolT`` is bound to :class:`Tool`
+    but is *not* pinned to :class:`Tool` — the decorator
+    carries the **subclass** through, so a method defined
+    as ``async def run(self: AddActionItemTool, ctx, ...)``
+    keeps ``self`` typed as ``AddActionItemTool`` after
+    decoration. Pinning ``self: Tool`` here would force
+    every subclass to type-erasure its own type back to
+    :class:`Tool`, defeating ``Self``-style inference.
+    """
+
+    @functools.wraps(method)
+    async def wrapper(
+        self: _ToolT,
+        ctx: ToolContext,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> ToolResult:
+        if ctx.bus is None:
+            return ToolResult(
+                content=(
+                    "tool context has no bus; the caller side "
+                    "has not migrated to new_bus"
+                ),
+                is_error=True,
+            )
+        return await method(self, ctx, *args, **kwargs)
+
+    return wrapper
 
 
 class Tool(ABC):
@@ -108,8 +174,17 @@ class Tool(ABC):
     Subclass and set ``name`` / ``description`` /
     ``input_schema`` / ``ALLOWED_ROLES`` as class attributes,
     then implement :meth:`run`. Override :meth:`gate` when
-    the default role check isn't enough (e.g. contact-ownership
-    on top of role).
+    the default role check isn't enough (e.g. contact-
+    ownership on top of role).
+
+    Tools that touch the bus (``ctx.bus.<book>.X(...)``)
+    should decorate their :meth:`run` with
+    :func:`require_bus` to opt into the
+    ``ctx.bus is None`` failure-closed path. Tools that
+    only need ``ctx.workspace`` (filesystem, shell, the
+    memory ops that don't go through new_bus) **don't**
+    decorate — they keep running with ``bus=None`` in
+    tests and boot probes.
     """
 
     #: The name the LLM uses to invoke this tool. Must
@@ -165,6 +240,11 @@ class Tool(ABC):
           - never raise to surface "expected failure" —
             wrap in ``ToolResult(is_error=True, ...)`` so
             the loop's bookkeeping is uniform
+
+        Tools that touch ``ctx.bus.<book>`` should
+        decorate this method with :func:`require_bus` —
+        see the Tool class docstring for the opt-in
+        contract.
         """
 
     def gate(self, ctx: ToolContext) -> str | None:

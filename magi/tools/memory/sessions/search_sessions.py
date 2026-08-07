@@ -61,7 +61,7 @@ from __future__ import annotations
 from typing import Any
 
 from magi.bus.jobs.protocols.session import SearchHit, SearchUnavailable
-from magi.tools.base import Tool, ToolContext, ToolResult
+from magi.tools.base import Tool, ToolContext, ToolResult, require_bus
 
 _MAX_HITS = 20
 _DEFAULT_CONTEXT_N = 5
@@ -136,6 +136,7 @@ class SearchSessionsTool(Tool):
         "required": ["q"],
     }
 
+    @require_bus
     async def run(
         self,
         ctx: ToolContext,

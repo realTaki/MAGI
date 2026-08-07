@@ -35,7 +35,7 @@ from magi.new_bus.library.local import (
     TokenUsageBook,
     ToolCatalogState,
     ToolCatalogStateBook,
-    ToolDefinitionRow,
+    ToolDefinition,
     ToolDefinitionBook,
 )
 
@@ -181,49 +181,49 @@ def test_mcp_server_book(factory):
 
 
 def test_action_item_book(factory, contact_id):
-    """Basic add → mark_done round-trip on the new schema.
+    """Basic add → complete round-trip on the new schema.
 
     Schema note: the book was refactored from ``body``/``status``
     to ``description``/``completed_at`` — the open/done state
     lives on ``completed_at is None`` vs ``is not None``.
     """
     book = ActionItemBook(factory)
-    item = book.add(uid=contact_id, kind="alert", title="x", description="y")
+    item = book.add(uid=contact_id, title="x", description="y")
     assert isinstance(item, ActionItem)
     assert item.completed_at is None  # "open" == not yet completed
-    book.mark_done(item_id=item.id)
+    completed = book.complete(action_item_id=item.id)
+    assert completed is not None
+    assert completed.completed_at is not None  # "done" == completed_at stamped
     refreshed = book.get(item_id=item.id)
     assert refreshed is not None
-    assert refreshed.completed_at is not None  # "done" == completed_at stamped
+    assert refreshed.completed_at == completed.completed_at
 
 
-def test_action_item_book_complete_for_owner(factory, contact_id):
-    """Owner-scoped completion — the path ``complete_action_item``
-    tool hits. Covers note capture, idempotency (second call does
-    NOT overwrite the first ``completed_at`` / ``completion_note``),
-    and strict per-contact privacy (wrong owner → ``None``,
-    row untouched).
+def test_action_item_book_complete(factory, contact_id):
+    """The ``complete`` primitive — pure data write.
+
+    Authorization ("is the caller allowed to close this
+    row?") lives one layer up at the tool — ``get`` then
+    ``row.uid == caller`` then ``complete``. The Book
+    stays a thin writer, so this test only covers:
+
+    * happy path stamps ``completed_at`` / ``completed_by_uid``
+      / ``completion_note``
+    * idempotency on re-call (no overwrite of ``completed_at``
+      or ``completion_note``)
+    * missing ``action_item_id`` returns ``None``
     """
-    from magi.new_bus.library.local.contactBook import ContactBook
-
     book = ActionItemBook(factory)
-    other_id = ContactBook(factory).add(name="Other").id
-    item = book.add(uid=contact_id, kind="alert", title="x", description="y")
+    item = book.add(uid=contact_id, title="x", description="y")
 
-    # Wrong owner → None, row stays open.
-    denied = book.complete_for_owner(
-        action_item_id=item.id,
-        owner_uid=other_id,
-        note="hax",
-    )
-    assert denied is None
-    assert book.get(item_id=item.id).completed_at is None
+    # Missing row → None (no exception).
+    assert book.complete(action_item_id=99999) is None
 
-    # Right owner → completed, note captured, completed_by_uid stamped.
-    completed = book.complete_for_owner(
+    # Right path: completes, stamps completed_by_uid + note.
+    completed = book.complete(
         action_item_id=item.id,
-        owner_uid=contact_id,
         note="done!",
+        completed_by_uid=contact_id,
     )
     assert completed is not None
     assert completed.id == item.id
@@ -232,25 +232,43 @@ def test_action_item_book_complete_for_owner(factory, contact_id):
     assert completed.completion_note == "done!"
     first_completed_at = completed.completed_at
 
-    # Idempotent re-call: first writer wins on both
-    # ``completed_at`` and ``completion_note`` — the row is
-    # already done, no second stamp.
-    again = book.complete_for_owner(
+    # Idempotent: second call does NOT overwrite
+    # ``completed_at`` / ``completion_note``.
+    again = book.complete(
         action_item_id=item.id,
-        owner_uid=contact_id,
         note="updated note that must NOT overwrite",
+        completed_by_uid=contact_id,
     )
     assert again is not None
     assert again.completed_at == first_completed_at
     assert again.completion_note == "done!"
 
-    # Non-existent row → None (no exception).
-    missing = book.complete_for_owner(
-        action_item_id=99999,
-        owner_uid=contact_id,
-        note=None,
+
+def test_action_item_book_complete_no_owner_check(factory, contact_id):
+    """Cross-row write is the Book's job to permit — the
+    tool layer refuses it via the ``get``+``uid`` check
+    before reaching this primitive. This test pins the
+    current behaviour so any future "add auth here" drift
+    is a deliberate, visible change.
+    """
+    from magi.new_bus.library.local.contactBook import ContactBook
+
+    book = ActionItemBook(factory)
+    other_id = ContactBook(factory).add(name="Other").id
+    # Operator A's row, but we let the caller drive the close.
+    item = book.add(uid=contact_id, title="x", description="y")
+
+    # Any caller with the id can complete; the tool's
+    # ``get``+``row.uid`` check is what blocks this in
+    # production. The Book is intentionally permissive.
+    closed = book.complete(
+        action_item_id=item.id,
+        completed_by_uid=other_id,
+        note="closed on someone else's behalf — auth was external",
     )
-    assert missing is None
+    assert closed is not None
+    assert closed.completed_by_uid == other_id
+    assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
 # -- TokenUsageBook ----------------------------------------------------
@@ -286,13 +304,26 @@ def test_tool_catalog_replace_snapshot(factory):
 
 def test_tool_definition_upsert(factory):
     book = ToolDefinitionBook(factory)
-    t = book.upsert(name="echo", spec_json='{"x":1}', description="echoes")
-    assert isinstance(t, ToolDefinitionRow)
-    assert t.name == "echo"
-    # upsert again
-    t2 = book.upsert(name="echo", spec_json='{"x":2}', description="echoes v2")
-    assert t2.id == t.id
-    assert t2.spec_json == '{"x":2}'
+    d = ToolDefinition(
+        name="echo", source="builtin", description="echoes",
+        input_schema={"x": 1},
+    )
+    book.upsert_many(definitions=[d], source="builtin")
+    rows = book.list_enabled()
+    assert len(rows) == 1
+    assert rows[0].name == "echo"
+    assert rows[0].input_schema == {"x": 1}
+
+    # upsert again — should update in place
+    d2 = ToolDefinition(
+        name="echo", source="builtin", description="echoes v2",
+        input_schema={"x": 2},
+    )
+    book.upsert_many(definitions=[d2], source="builtin")
+    rows = book.list_enabled()
+    assert len(rows) == 1
+    assert rows[0].description == "echoes v2"
+    assert rows[0].input_schema == {"x": 2}
 
 
 # -- TaskBook + TaskRunBook + TaskPresetBook -------------------------
@@ -361,6 +392,6 @@ __all__ = [
     "TokenUsageBook",
     "ToolCatalogState",
     "ToolCatalogStateBook",
-    "ToolDefinitionRow",
+    "ToolDefinition",
     "ToolDefinitionBook",
 ]
