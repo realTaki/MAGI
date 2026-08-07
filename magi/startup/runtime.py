@@ -161,7 +161,7 @@ async def _runtime_lifespan(
         except Exception as exc:  # noqa: BLE001
             logger.warning("telegram bootstrap skipped: %s", exc)
 
-    await start_provider_worker()
+    await start_provider_worker(bus=new_bus)
     await start_agent_worker()
     await start_tool_worker()
     await start_delivery_worker()
@@ -204,6 +204,8 @@ async def worker_lifespan():
     )
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
+    # Legacy path — no NewBus available in standalone worker pool.
+    # start_provider_worker() builds its own bus internally.
     await start_provider_worker()
     await start_agent_worker()
     await start_tool_worker()
