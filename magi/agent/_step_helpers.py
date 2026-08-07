@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from magi.agent import agent_context
-from magi.providers.provider import ChatMessage
+from magi.providers.factory import ChatMessage
 
 
 async def assemble_agent_request(

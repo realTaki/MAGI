@@ -13,8 +13,10 @@
 
 ```text
 每个 MAGI
-  私有 PVC ────────────────> /workspace
+  私有 PVC ────────────────> /workspace   (即 HOST_WORKSPACE_DIR)
   私有 SQLite ─────────────> 记忆、会话、任务、本地设置
+  Final workspace path    ──> <HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>
+                                  (由 magi.startup.paths 推导,永不由调用方传入)
 
 每个 MAGIS
   PostgreSQL ──────────────> 组织树、MAGI、角色、直接归属、instructions、provider、运行状态
@@ -46,9 +48,15 @@ Kubernetes Secret
 ## Kubernetes 资源与生命周期
 
 Genesis 在部署时拥有一个 PostgreSQL Deployment、数据库 PVC、公共工作区 PVC 和
-数据库 Secret。创建子 MAGIS 时，受限 orchestrator 创建同构资源。启动 MAGI 时，
-控制面先把直接 Membership、角色、instructions 和 provider 配置投影至目标 MAGIS
-PostgreSQL，然后才创建该 MAGI 的 Deployment 和私有 PVC。
+数据库 Secret。创建子 MAGIS 时，`magi.startup.kubernetes` 创建同构资源。
+启动 MAGI 时，控制面先把直接 Membership、角色、instructions 和 provider
+配置投影至目标 MAGIS PostgreSQL，然后才创建该 MAGI 的 Deployment 和
+私有 PVC。
+
+Deployment 通过环境变量向容器传入 `HOST_WORKSPACE_DIR`、`MAGI_NAME`、
+`MAGIS_DATABASE_URL`、`MAGI_ID` 四个统一启动契约字段；不传 Host / Port
+/ Reload，也不传最终 workspace 路径。Runtime 通过 `magi.startup.bootstrap`
+加载自身身份,无需 PID / 容器名作为身份标识。
 
 停止和删除是不同操作：
 

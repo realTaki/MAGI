@@ -28,7 +28,7 @@ def record_token_usage(
     bookkeeping for no measurable gain.
 
     ``usage`` keys follow the Anthropic SDK's ``Usage`` shape
-    (see :class:`magi.providers.provider.ChatResult.usage`).
+    (see :class:`magi.providers.factory.ChatResult.usage`).
     Unknown keys are ignored; missing keys default to 0 so
     a provider that returned no usage metadata still gets a
     row (call count stays honest).

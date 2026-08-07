@@ -32,8 +32,9 @@
 | **ADAM** | *A*utonomous *D*ispatch *A*gent *M*anager — 一个 Society 的**领导**型 MAGIC。负责控制面 (WebUI)、员工管理、MAGIC 派发 / 回收、provider 与 skill 全局配置。`magic_position='adam'`。每个 Society 恰好一个。|
 | **EVA**  | *E*xtended *V*irtual *A*gent — Society 的**工作**型 MAGIC。Society 可创建 / 配置 / 启动 / 停止 / 退役**多个** EVA,每个 EVA 绑定一名已指派的 employee (Telegram ID)。|
 
-**同构原则:** ADAM 与 EVA 跑**同一份 `magi` 二进制**;archetype 仅由环境变量
-`MAGI_NODE_ROLE` 在 boot 时选出,代码不动。它们不是两个独立产品。
+**同构原则:** ADAM 与 EVA 跑**同一份 `magi` 二进制**;archetype 不是
+boot 时由环境变量选择的——它由该 MAGIC 在其直属 MAGIS 中的 Membership
+与 Role 决定,从 BUS 读取。代码里没有两个产品的分支。
 
 | Term    | Meaning |
 |---------|---------|
@@ -41,8 +42,9 @@
 | **EVA**  | *E*xtended *V*irtual *A*gent — a **worker-archetype** MAGIC. A Society can create / configure / start / stop / retire **multiple** EVAs, each bound to one assigned employee (Telegram ID). |
 
 **Same-binary principle:** ADAM and EVA run the **same `magi` binary**;
-the archetype is picked at boot via the `MAGI_NODE_ROLE` env var, with no
-code branches at deploy time. They are not two separate products.
+the archetype is **not** an env-var toggle at boot — it is determined by
+the MAGIC's Membership and Role in its direct MAGIS, read through BUS.
+The legacy `MAGI_NODE_ROLE=adam/eva` boot selector is gone.
 
 ---
 
@@ -62,9 +64,10 @@ code branches at deploy time. They are not two separate products.
 > *EVA* → *EVA* (different word + new backronym).
 >
 > **2026-08 follow-up:** the lowercase internal token was **also** flipped
-> from `eve` → `eva`. `MAGI_NODE_ROLE=eva`, `source='eva'`, and
-> `magic.position='eva'` now all share the spelling with the display name.
-> Validation set in `magi/__main__.py` is `{"adam", "eva"}`.
+> from `eve` → `eva`. `source='eva'` and `magic.position='eva'` now all
+> share the spelling with the display name. With the unified startup
+> refactor, the `MAGI_NODE_ROLE` boot selector is gone; the role is
+> resolved through BUS from the persistent MAGIS Membership/Role.
 
 ---
 
@@ -72,13 +75,15 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                       | 含义 |
 |----------------------------|------|
-| **MAGI 节点**                | 一个正在跑的 MAGI 进程 (容器)。可能是 ADAM,也可能是 EVA。节点凭 `MAGI_NODE_ROLE` 选择 archetype,凭 `MAGI_RUNTIME_ID` 标识自己的身份。|
-| **`MAGI_NODE_ROLE`**         | 环境变量,值为 `adam` 或 `eva`(小写,在代码 `magi/__main__.py` 内做 `{"adam","eva"}` 校验)。值是**内部 identifier**,不参与 UI 显示;**不要**和角色显示名 ADAM/EVA 混为一谈。|
+| **MAGI 节点**                | 一个正在跑的 MAGI 进程(容器或本地进程)。可能是 ADAM,也可能是 EVA。archetype 由它在直属 MAGIS 中的 Membership / Role 决定,通过 BUS 读取。|
+| **`MAGI_NAME`**              | 显示名,默认值 `eva-000`。参与 workspace 推导:`<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>`。不是 SQL 标识符,只是人类可读的 slot 名。|
+| **`MAGI_ID`**                | 持久化身份 — 加入既有 MAGIS 时由环境变量传入,运行时由 BUS 校验 Membership / Role。绝不能是 PID、Pod 名或临时 Runtime ID。|
 
 | Term                      | Meaning |
 |---------------------------|---------|
-| **MAGI node**             | A running MAGI process (container). May be ADAM or EVA. Identified by its `MAGI_NODE_ROLE` (archetype) + `MAGI_RUNTIME_ID` (identity). |
-| **`MAGI_NODE_ROLE`**      | Env var, value `adam` or `eva` (lowercase — internal token, **not** a display name). Validated in `magi/__main__.py` against `{"adam","eva"}`. |
+| **MAGI node**             | A running MAGI process (container or local process). May be ADAM or EVA. Its archetype is determined by its direct MAGIS Membership / Role, read through BUS. |
+| **`MAGI_NAME`**           | Display name; default `eva-000`. Participates in workspace derivation (`<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>`). Not a SQL identifier. |
+| **`MAGI_ID`**             | Persistent identity (env var when joining an existing MAGIS). Validated against MAGIS Membership / Role through BUS at boot. Never a PID, pod name, or ephemeral runtime id. |
 
 ---
 
@@ -104,13 +109,13 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                            | 含义 |
 |---------------------------------|------|
-| **MAGI 私有 SQLite**              | `<workspace>/memories/magi.db`。每个 MAGIC 一份。存私人记忆、会话、联系人、本地设置、token usage、action items、runtime 状态、MCP server 配置。路径由 `MAGI_WORKSPACE_DIR`（K8s）或 `HOST_WORKSPACE_DIR`（CLI）解析。|
+| **MAGI 私有 SQLite**              | `<workspace>/memories/magi.db`。每个 MAGIC 一份。存私人记忆、会话、联系人、本地设置、token usage、action items、runtime 状态、MCP server 配置。路径由 `HOST_WORKSPACE_DIR` + `MAGI_NAME` 推导(K8s / k8s-dev / CLI 全部一致)。|
 | **MAGIS 公共数据库**              | `MAGIS_DATABASE_URL` 指向。K8s 为 PostgreSQL，CLI / k8s-dev 为独立 SQLite。存 MAGIS 树、MAGIC 注册表、`magis_memberships`、`magis_roles`、ADAM/EVA roles、team/role instruction、provider 配置。|
 | **Genesis**                      | 启动时播种的 root MAGIS,是组织树的根节点;**不依赖**名字字面量,而是 `parent_id IS NULL` 判定。|
 
 | Term                          | Meaning |
 |-------------------------------|---------|
-| **MAGI private SQLite**       | `<workspace>/memories/magi.db` — one per MAGIC. Holds private memory, sessions, contacts, local settings, token usage, action items, runtime state, MCP server config. Path resolved from `MAGI_WORKSPACE_DIR` (K8s) or `HOST_WORKSPACE_DIR` (CLI). |
+| **MAGI private SQLite**       | `<workspace>/memories/magi.db` — one per MAGIC. Holds private memory, sessions, contacts, local settings, token usage, action items, runtime state, MCP server config. Path derived from `HOST_WORKSPACE_DIR` + `MAGI_NAME` (identical across K8s / k8s-dev / CLI). |
 | **MAGIS public database**     | Reached via `MAGIS_DATABASE_URL`. PostgreSQL in K8s, separate SQLite in CLI / k8s-dev mode. Holds the MAGIS tree, MAGIC registry, `magis_memberships`, `magis_roles` (incl. ADAM/EVA), team + role instructions, provider config. |
 | **Genesis**                   | The root MAGIS seeded on first boot. Identified by `parent_id IS NULL`, **not** by literal name. |
 
@@ -134,14 +139,16 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                    | 含义 |
 |-------------------------|------|
-| **`magi/__main__.py`**  | 单一可执行入口。`magi` 启动 runtime,`magi webui` 启动 singleton 控制面。|
+| **`magi/__main__.py`**  | 命令行入口,**仅做命令路由**。`magi runtime` (默认) → `magi.startup.runtime.run_magi`,`magi webui` → singleton 控制面,`magi cli <verb>` → `magi.startup.cli`。实际装配由 `magi.startup` 完成。|
+| **`magi.startup`**      | 唯一统一启动包 —— `config` / `paths` / `context` / `bootstrap` / `runtime` / `local` / `webui` / `kubernetes` / `cli`。Runtime / CLI / Kubernetes 之间没有并列的启动层。|
 | **`magi-orchestrator`** | 独立 Kubernetes 控制面进程 — 唯一可以创建 / 删除 MAGI Deployment 与 PostgreSQL Secret 的组件。MAGI 节点**不**直接拿 K8s token 或 docker socket。|
 | **`magi.bus`**          | BUS — 系统内部 module 边界。ORM 模型、业务服务、DTO 都收编在 `magi/bus/` 下;**所有**通道和 orchestrator 都从这里导入,不允许别处造表。|
 | **`magi.channels`**     | 通道适配器层(Telegram、WebUI、A2A、Scheduled)。只通过 bus 业务服务拿数据,不直接碰 ORM。|
 
 | Term                    | Meaning |
 |-------------------------|---------|
-| **`magi/__main__.py`**  | The single CLI entry. `magi` boots a runtime; `magi webui` boots the singleton control plane. |
+| **`magi/__main__.py`**  | The CLI entry, **command routing only**. `magi runtime` (default) → `magi.startup.runtime.run_magi`; `magi webui` → singleton control plane; `magi cli <verb>` → `magi.startup.cli`. Actual composition lives under `magi.startup`. |
+| **`magi.startup`**      | The single unified startup package — `config` / `paths` / `context` / `bootstrap` / `runtime` / `local` / `webui` / `kubernetes` / `cli`. No parallel Runtime / CLI / Kubernetes startup modules. |
 | **`magi-orchestrator`** | Standalone K8s control-plane process — the **only** component allowed to create / delete MAGI Deployments and PostgreSQL Secrets. MAGI nodes never receive K8s tokens or docker socket. |
 | **`magi.bus`**          | The BUS — internal module boundary. Holds ORM models, business services, DTOs. Channels and orchestrator import from here; nothing else may build tables. |
 | **`magi.channels`**     | Channel adapters (Telegram, WebUI, A2A, Scheduled). Read/write only through bus services — no direct ORM access. |
@@ -152,14 +159,14 @@ code branches at deploy time. They are not two separate products.
 
 | 名词                       | 含义 |
 |----------------------------|------|
-| **`Source.EVA`** (column value) | `source = "eva"` 是一个**数据来源标识**,表示这条 `action_items` / `contacts.note` / `memory_entries` 行由 EVA 写入。该字符串保留为**小写 `eva`** —— 因为它和 `MAGI_NODE_ROLE=eva` 走同一份"角色枚举",与 SQL/Python 标识符保持一致,与 ADAM/EVA 角色**显示**名分开。|
+| **`Source.EVA`** (column value) | `source = "eva"` 是一个**数据来源标识**,表示这条 `action_items` / `contacts.note` / `memory_entries` 行由 EVA 写入。该字符串保留为**小写 `eva`** —— 与 `magic.position='eva'` 走同一份"角色枚举",与 SQL/Python 标识符保持一致,与 ADAM/EVA 角色**显示**名分开。|
 | **`Magi` (class)**         | ORM 模型名,table = `magic`。单数。|
 | **`MAGIC` (constant)**     | ORM 模型名,同上。**大写** 是 SQLAlchemy class convention,不是 ADAM/EVA role 显示名。|
 | **`magis_*` (table prefix)** | 所有 MAGIS 级表都加 `magis_` 前缀,用于在公共 PostgreSQL 里和未来的其他 schema 隔离。|
 
 | Term                       | Meaning |
 |----------------------------|---------|
-| **`Source.EVA`** (`source='eva'`) | The **data-source tag** on `action_items` / `contact_notes` / `memory_entries` rows written by an EVA. The literal string stays lowercase `eva` — it shares the same internal role token (`MAGI_NODE_ROLE=eva`), distinct from the ADAM/EVA **display** names. |
+| **`Source.EVA`** (`source='eva'`) | The **data-source tag** on `action_items` / `contact_notes` / `memory_entries` rows written by an EVA. The literal string stays lowercase `eva` — it shares the same internal role enum as `magic.position='eva'`, distinct from the ADAM/EVA **display** names. |
 | **`MAGIC` (ORM class)**    | The single-MAGI ORM row (table `magic`). All caps — SQLAlchemy convention, not the ADAM/EVA role labels. |
 | **`magis_*` (table prefix)** | All MAGIS-level tables are prefixed `magis_` so they stay isolated in the shared public PostgreSQL. |
 
@@ -211,32 +218,35 @@ multi-agent 通信 / 输入输出审计 / 工具审批 / 外部消息投递 / �
 
 | 名词 | 含义 |
 |------|------|
-| **k8s** | 生产部署形态 — `deploy/k8s/`。把 `magi:0.1.0` 镜像部署到现有 K8s 集群,每个 MAGI 一个 Pod,MAGIS 公共数据库为 PostgreSQL。运维者需提供 K8s 集群配置。|
+| **k8s** | 生产部署形态 — `deploy/k8s/`。把 `magi:0.1.0` 镜像部署到现有 K8s 集群,每个 MAGI 一个 Pod,MAGIS 公共数据库为 PostgreSQL。`magi.startup.kubernetes` 负责 PVC / Deployment / Service / WebUI 资源。|
 | **k8s-dev** | kind 单机 dev 形态 — `deploy/k8s-dev/`。单节点 kind 集群,源码挂载到 `/mnt/magi`,后端 Uvicorn + WebUI Vite 都能 HMR。它**也是**一种"local"运行方式(同样跑在本机),所以**不**叫 local,以免和下面的 `cli` 路径混淆。|
-| **cli** | 单机非容器形态 — `deploy/cli/`。完全脱离 Docker / k8s,每个 MAGI 一个 OS 进程,systemd 注册可选;由 `magi cli start` / `magi cli install-service` 驱动。原本叫 "local",但 `k8s-dev` 同样跑在本机,名字歧义;改为 **cli**——"command-line driven, container-free"。|
+| **cli** | 单机非容器形态 — `deploy/cli/`。完全脱离 Docker / k8s,每个 MAGI 一个 OS 进程,systemd 注册可选;由统一的 `magi.startup.cli` 动词(`magi run` / `create` / `start` / `stop` / `restart` / `status`)驱动。原本叫 "local",但 `k8s-dev` 同样跑在本机,名字歧义;改为 **cli**——"command-line driven, container-free"。|
 
 | Term | Meaning |
 |------|---------|
-| **k8s** | Production deploy — `deploy/k8s/`. Pushes `magi:0.1.0` to an existing cluster; one Pod per MAGIC; MAGIS public DB is PostgreSQL. Operator supplies the cluster config. |
+| **k8s** | Production deploy — `deploy/k8s/`. Pushes `magi:0.1.0` to an existing cluster; one Pod per MAGIC; MAGIS public DB is PostgreSQL. `magi.startup.kubernetes` owns PVC / Deployment / Service / WebUI resource creation. |
 | **k8s-dev** | Single-node kind dev deploy — `deploy/k8s-dev/`. Source mounted into `/mnt/magi`; backend Uvicorn + WebUI Vite both reload on save. This **is** a local-mode run, so we **don't** call it "local" — that name was reserved for the non-container profile to avoid ambiguity. |
-| **cli** | Container-free single-machine profile — `deploy/cli/`. Each MAGIC is its own OS process; systemd registration is optional. Driven by `magi cli start` / `magi cli install-service`. The old name "local" was retired because `k8s-dev` is also a kind of local run; **cli** ("command-line, no container") replaces it. |
+| **cli** | Container-free single-machine profile — `deploy/cli/`. Each MAGIC is its own OS process; systemd registration is optional. Driven by the unified `magi.startup.cli` verbs (`magi run` / `create` / `start` / `stop` / `restart` / `status`). The old name "local" was retired because `k8s-dev` is also a kind of local run; **cli** ("command-line, no container") replaces it. |
 
-> **Backend kind identifier** — the runtime backend is selected by
-> `MAGI_BACKEND`. Values: `"kubernetes"` (default), `"cli"` (CLI Profile).
-> The literal string `"local"` was retired in the 2026-08 rename.
-> `BackendKind = Literal["kubernetes", "cli"]` in
-> `magi/bus/protocols/runtime.py`.
+> **`RuntimeBackend` removed.** The legacy `MAGI_BACKEND` selector
+> (`"kubernetes"` / `"cli"`) and the `BackendKind` type are gone. Local
+> process management (`magi.startup.local`) and Kubernetes resource
+> creation (`magi.startup.kubernetes`) now sit side by side under
+> `magi.startup` with no polymorphic surface between them — there is
+> exactly one local path and exactly one K8s path, each with its own
+> verbs.
 
 ---
 
 ## 一句话总结
 
-> **MAGI** 是产品 / **MAGIS** 是组织 / **MAGIC** 是 agent / **ADAM** 是控制面 leader / **EVA** 是员工 worker。EVA 复用同一份 binary,仅靠 `MAGI_NODE_ROLE` 切身份。私有 SQLite 跟节点走;公共 PostgreSQL 跟 MAGIS 走。orchestrator 是唯一能 shape 集群的进程。**部署形态三选一**:生产用 **k8s**,本地+源码热更新用 **k8s-dev**,纯单机无容器用 **cli**——三者共享同一份应用抽象。
+> **MAGI** 是产品 / **MAGIS** 是组织 / **MAGIC** 是 agent / **ADAM** 是控制面 leader / **EVA** 是员工 worker。所有启动逻辑收编在 `magi.startup`;archetype 由 MAGIS Membership / Role 决定。私有 SQLite 跟节点走;公共 PostgreSQL 跟 MAGIS 走。**部署形态三选一**:生产用 **k8s**,本地+源码热更新用 **k8s-dev**,纯单机无容器用 **cli**——三者共享同一份应用抽象。
 
 > **MAGI** is the product / **MAGIS** is the organisation / **MAGIC** is an agent.
 > **ADAM** is the control-plane leader / **EVA** is the employee worker.
-> EVA reuses the same binary; only the `MAGI_NODE_ROLE` env var flips the
-> archetype. Private SQLite follows the node; public PostgreSQL follows the
-> MAGIS. The orchestrator is the *only* process that may shape the cluster.
-> Three deploy profiles ship side-by-side: **k8s** (production), **k8s-dev**
-> (kind + HMR on a single box), **cli** (container-free, per-MAGI OS process).
+> All startup code is consolidated under `magi.startup`; the archetype
+> is determined by the direct MAGIS Membership / Role, read through BUS.
+> Private SQLite follows the node; public PostgreSQL follows the MAGIS.
+> Three deploy profiles ship side-by-side: **k8s** (production),
+> **k8s-dev** (kind + HMR on a single box), **cli** (container-free,
+> per-MAGI OS process).

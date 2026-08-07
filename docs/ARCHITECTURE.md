@@ -60,23 +60,41 @@ the ADAM / EVA archetype mapping.
 
 **One agent = one container = one runtime process.**
 
-There is one binary (`magi`). At boot, `MAGI_NODE_ROLE` selects the archetype
-preset (`adam` or `eva`). The actual role, instructions and provider
-configuration are read through BUS from the MAGIS database. Every
-architectural choice is an independent configuration axis:
+There is one binary (`magi`). All startup-related code — config parsing,
+path derivation, bootstrap, runtime composition, local process management,
+Kubernetes resource creation, WebUI lifecycle — lives in a single package,
+`magi.startup` (see [Part IV — Unified Startup](#part-iv--unified-startup)).
+There is no parallel Runtime / CLI / Kubernetes startup layer; the entire
+contract is four inputs:
 
-| Axis | Env var | Default by archetype |
+| Input | Purpose | Default |
 |---|---|---|
-| Position | `MAGI_NODE_ROLE` | `adam` = leader, `eva` = member |
-| Channels | `settings.channels.enabled` (DB) | seeded `[webui]`; editable in the UI — not a launch flag |
-| Private state | `<workspace>/memories/magi.db` | SQLite, one per MAGI; resolved from `MAGI_WORKSPACE_DIR` (K8s) or `HOST_WORKSPACE_DIR` (Local) |
+| `HOST_WORKSPACE_DIR` | Operator-side root of persistent data | `~/.magi` (Linux) / `~/Documents/.magi` (macOS, Windows) |
+| `MAGI_NAME` | Display name (participates in workspace derivation) | `eva-000` |
+| `MAGIS_DATABASE_URL` | MAGIS DSN; omit ⇒ bootstrap the first MAGIS | unset |
+| `MAGI_ID` | Persistent identity when joining an existing MAGIS | unset |
+
+The on-disk workspace is **derived** — `HOST_WORKSPACE_DIR / "MAGI_Citizens"
+/ MAGI_NAME` — and is never configured directly. Runtime Host / Port and
+the Reload flag are hardcoded by the runtime role; there is no operator
+knob. ADAM / EVA archetypes are no longer a boot-time env selector — the
+actual role, instructions and provider configuration are read through BUS
+from the MAGIS database, so two containers running the same image can hold
+either role without any deploy-time branch.
+
+Other architectural axes that remain:
+
+| Axis | Source | Default |
+|---|---|---|
+| Channels | `settings.channels.enabled` (DB via BUS) | seeded `[webui]`; editable in the UI — not a launch flag |
+| Private state | `<workspace>/memories/magi.db` | one SQLite per MAGI, derived from `HOST_WORKSPACE_DIR` + `MAGI_NAME` |
 | MAGIS database | `MAGIS_DATABASE_URL` | direct MAGIS PostgreSQL (K8s) or separate SQLite (Local) |
 | LLM provider | MAGIS database (via BUS) | per-MAGI configuration; not injected as an env var |
 
-All persistence — private SQLite and MAGIS database — is reached only through
-BUS. Domain modules (Agent, Tools, Channels, proactive, connectors,
-orchestrator) never construct an engine, open a session, or execute a query
-directly.
+All persistence — private SQLite and MAGIS database — is reached only
+through BUS. Domain modules (Agent, Tools, Channels, proactive,
+connectors, orchestrator) never construct an engine, open a session, or
+execute a query directly.
 
 ---
 
@@ -95,20 +113,27 @@ boundaries:
 
 **CLI Profile process model** (each MAGI is an independent process):
 
-```
-magi-adam.service        127.0.0.1:42069    (systemd unit, port 42069)
-magi-eva-00.service      127.0.0.1:42070    (independent systemd unit)
-magi-eva-01.service      127.0.0.1:42071    (independent systemd unit)
+The CLI Profile is driven by the unified `magi.startup.cli` verbs:
+
+```text
+magi run                   # bootstrap + serve one MAGI in-process (default: eva-000)
+magi create --name eva-001 # register a new MAGI under an existing MAGIS
+magi start  --name X       # spawn a detached subprocess for one MAGI
+magi stop   --name X
+magi restart --name X
+magi status --name X
+magi webui                 # boot the singleton WebUI in-process
 ```
 
-`magi cli start` uses `execve` to replace the current process with
-`magi runtime` — no launcher, no supervisor, no subprocess tree.
-`magi cli install-service` registers one systemd user unit per MAGI
-so each MAGI starts, crashes, and restarts independently.
-
-Each runtime is an independent OS process with its own workspace, SQLite,
-port, logs, and provider configuration. CLI Profile is a trusted single-user
-mode; it provides no container-level isolation.
+Each MAGI is its own independent OS process with its own workspace,
+SQLite, internal Runtime port, logs, and provider configuration. Process
+management lives in `magi.startup.local`; PID files are pinned to
+`<workspace>/run/magi.pid` and logs to `<workspace>/logs/stdout.log`
+plus `<workspace>/logs/stderr.log`. The WebUI lifecycle belongs to the
+**host** workspace root (`~/.magi/run/webui.pid` plus
+`~/.magi/logs/webui.*.log`) because it is shared by the whole MAGIS, not
+by any one MAGI. CLI Profile is a trusted single-user mode; it provides
+no container-level isolation.
 
 ---
 
@@ -116,8 +141,17 @@ mode; it provides no container-level isolation.
 
 ```
 magi/
-├── __main__.py        # composition root; calls bus.bootstrap() to wire workers/adapters
-├── runtime.py         # process composition: worker_lifespan() for ASGI apps
+├── __main__.py        # thin CLI shim; forwards verbs to magi.startup.cli
+├── startup/           # ALL startup code lives here — see Part IV
+│   ├── config.py      #   StartupConfig (the 4 startup inputs) + validation
+│   ├── paths.py       #   all on-disk path derivation
+│   ├── context.py     #   StartupContext (post-bootstrap frozen handle)
+│   ├── bootstrap.py   #   first-MAGI vs join-MAGI bootstrap (idempotent)
+│   ├── runtime.py     #   run_magi() — bus + workers + channels + api composition
+│   ├── local.py       #   create / start / stop / restart / status for local MAGI
+│   ├── webui.py       #   singleton WebUI lifecycle (local process + K8s)
+│   ├── kubernetes.py  #   PVC / Deployment / Service / WebUI resource creation
+│   └── cli.py         #   magi run | create | start | stop | restart | status | webui
 ├── bus/               # sole public protocol & data-access boundary
 │   ├── contracts/     # immutable DTOs, AgentMessage, queue records
 │   ├── services/      # domain-oriented facades (agent_runs, tool_catalog, delivery, ...)
@@ -130,7 +164,7 @@ magi/
 │   └── llm/           # provider adapters (Anthropic, Minimax, OpenAI)
 ├── tools/             # executable registry, discovery, ToolWorker
 ├── channels/          # protocol adapters and delivery workers
-│   ├── api/           # WebUI backend (HTTP/SSE/WS)
+│   ├── api/           # shared HTTP API (WebUI backend, A2A ingress, …)
 │   ├── tasks/         # generic scheduler Worker (consumes task commands via BUS)
 │   ├── telegram/      # TG bot adapter
 │   ├── a2a/           # Agent-to-Agent channel
@@ -139,13 +173,17 @@ magi/
 ├── mcp/               # MCP Server adapter (connects MCP tools into Tools)
 ├── connectors/        # product-specific tool adapters (Gmail, Calendar, …)
 ├── proactive/         # system-level tasks and heartbeats (enhances Agent initiative)
-├── orchestrator/      # K8s / local process lifecycle backend
+├── orchestrator/      # K8s / local process lifecycle client + Worker
 ├── plugins/           # plugin discovery and lifecycle (BUS-only)
 ├── db/                # SQLAlchemy models, engines, migrations (BUS-only)
 ├── prompts/           # central Markdown + YAML prompt corpus and hot-reload loader
 ├── types.py           # shared dataclasses (ToolContext, ToolResult)
 └── WebUI/             # React 19 + Vite 5 + Tailwind v4 SPA
 ```
+
+The legacy `magi.launcher`, `magi.runtime` composition module and the
+`CLIProcessRuntimeBackend` abstraction are removed; their responsibilities
+are consolidated into `magi.startup`.
 
 ---
 
@@ -198,26 +236,33 @@ Two storage domains, both reached only through BUS:
 
 ### CLI Profile storage
 
-```
-MAGI_HOME/                         (~/.magi on Linux)
+```text
+HOST_WORKSPACE_DIR/                (default: ~/.magi on Linux;
+                                   ~/Documents/.magi on macOS / Windows)
 ├── MAGI_Societies/<magis_id>-<slug>/  # one SQLite per MAGIS
-│   ├── magis.db                   # organisation + control-plane state
-│   ├── control-secret             # launcher HMAC key
-│   └── launcher-state/            # launcher BUS scratch
-└── MAGI_Citizens/<slug>/         # slug derived from MAGIC name (e.g. eva-000)
-    └── workspace/                 # per-MAGI workspace (= K8s /workspace)
-        ├── memories/magi.db       # private SQLite
-        ├── skills/
-        ├── SOUL.md
-        ├── logs/
-        └── tmp/
+│   └── magis.db                   # organisation + control-plane state
+├── MAGI_Citizens/<name>/          # workspace derived from MAGI_NAME
+│   ├── magi.db / runtime.json     # private SQLite + identity snapshot
+│   ├── skills/
+│   ├── SOUL.md
+│   ├── logs/
+│   └── run/                       # per-MAGI PID + lock files
+└── run/webui.pid                  # singleton WebUI pid (host-level, not per-MAGI)
+└── logs/webui.{stdout,stderr}.log # singleton WebUI logs (host-level)
 ```
 
-MAGIS data is never written into a MAGI's private `magi.db`; each MAGIS has
-its own SQLite file with WAL, busy timeout, and foreign keys. The
+The on-disk layout is **derived** from `HOST_WORKSPACE_DIR` + `MAGI_NAME`
+through `magi.startup.paths`. There is no final-workspace CLI flag. The
+WebUI lifecycle state lives on the host root because WebUI is owned by the
+MAGIS, not by any single MAGI; per-MAGI PID and log files live inside the
+per-MAGI workspace.
+
+MAGIS data is never written into a MAGI's private `magi.db`; each MAGIS
+has its own SQLite file with WAL, busy timeout, and foreign keys. The
 `workspace/memories/magi.db` convention is identical across all three
-deployment modes — K8s Pods resolve `<workspace>` from `MAGI_WORKSPACE_DIR`,
-CLI processes resolve it from `HOST_WORKSPACE_DIR`.
+deployment modes — K8s Pods resolve `<workspace>` from the PVC mount path
+passed in as `HOST_WORKSPACE_DIR`, CLI processes use `HOST_WORKSPACE_DIR`
+on the host.
 
 ### Private SQLite tables
 
@@ -545,31 +590,26 @@ remains BUS-only.
 
 ### `magi.orchestrator`
 
-**Owns:** constrained runtime lifecycle operations (create, start, stop,
-delete MAGI instances) through a platform-agnostic `RuntimeBackend`.
+**Owns:** the K8s control-plane worker that handles constrained runtime
+lifecycle operations (create, start, stop, delete MAGI instances) via the
+Kubernetes API. The Orchestrator Worker consumes lifecycle commands from
+BUS and writes results back through BUS. BUS never imports the K8s
+client; the client never accesses the registry ORM directly.
 
-```python
-class RuntimeBackend(Protocol):
-    def start(self, spec: RuntimeSpec) -> RuntimeOperationResult: ...
-    def stop(self, spec: RuntimeSpec) -> RuntimeOperationResult: ...
-    def delete(self, spec: RuntimeSpec) -> RuntimeOperationResult: ...
-    def inspect(self, runtime_id: int) -> RuntimeStatus: ...
-    def reconcile(self) -> ReconcileResult: ...
+```text
+WebUI → channels.api → BUS → Orchestrator Worker → Kubernetes API
+                              ↓
+                       BUS 状态/结果事件
 ```
 
-Implementations: `KubernetesRuntimeBackend` (production / k8s-dev).
-The CLI Profile has no orchestrator backend — each MAGI is an independent
-OS process, managed directly by systemd or run in the foreground.
-
-The Orchestrator Worker consumes lifecycle commands from BUS, calls the
-backend, and writes results back through BUS. BUS never imports the backend;
-the backend never accesses the registry ORM directly.
-
-```
-WebUI → channels.api → BUS → Orchestrator Worker → RuntimeBackend
-                                ↓
-                         BUS 状态/结果事件
-```
+The CLI Profile has **no orchestrator backend** — each MAGI is its own
+OS process, spawned by `magi.startup.local` (subprocess + PID file) and
+optionally registered as a systemd unit. The legacy
+`CLIProcessRuntimeBackend` abstraction has been removed; there is no
+single `RuntimeBackend` protocol with multiple implementations — local
+process management and K8s resource creation live side by side under
+`magi.startup` (`.local` and `.kubernetes`) without sharing a polymorphic
+surface.
 
 ### `magi.__main__` (Composition Root)
 
@@ -826,9 +866,12 @@ One SQLite file = one writable runtime. No concurrent Pods or processes, no
 network filesystem sharing. Local MAGIS SQLite uses the same WAL/busy/FK
 configuration.
 
-Path resolution: K8s Pods set `MAGI_WORKSPACE_DIR` to the PVC mount point;
-Local processes set `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_RUNTIME_SLUG`.
-There is no hardcoded `/workspace` path anywhere in the codebase.
+Path resolution: every deployment mode — K8s Pod, k8s-dev Pod, local
+process — uses the **same** `HOST_WORKSPACE_DIR` + `MAGI_NAME` derivation
+through `magi.startup.paths`. K8s orchestrator passes `HOST_WORKSPACE_DIR`
+as the PVC mount root; local processes set it on the host. There is no
+hardcoded `/workspace` path anywhere in the codebase, and there is no
+final-workspace CLI flag.
 
 BUS commits durable work before signaling an in-memory wake-up. Bounded polling
 and startup recovery are the fallback.
@@ -837,12 +880,14 @@ and startup recovery are the fallback.
 
 CLI Profile is a trusted single-user mode:
 
-- WebUI and Runtime bind `127.0.0.1` by default.
+- The Runtime binds a fixed internal host + port; WebUI exposes
+  `127.0.0.1` by default. Both addresses are hardcoded — there is no
+  operator knob to override Host or Port.
 - Control secret uses cryptographically secure random generation.
 - Provider API keys never enter CLI argv, logs, or launch JSON.
 - Runtime proxy validates HMAC, target runtime ID, and freshness.
 - Workspace paths use canonicalisation and boundary checks.
-- Each MAGI is an independent OS process — no subprocess management, no `shell=True`.
+- Each MAGI is an independent OS process — no supervisor tree, no `shell=True`.
 - Delete defaults to archive, not permanent workspace removal.
 - Documentation clearly states CLI Profile is not a security sandbox.
 
@@ -860,16 +905,245 @@ The architecture is converged when:
 - Agent reads Tool Catalog from BUS, never imports the registry.
 - StreamHub views are best-effort; committed state is authoritative.
 - All cross-worker state changes are recoverable from BUS/DB.
-- `magi.__main__` is assembly-only, no business logic.
+- `magi.__main__` is a thin CLI shim; all composition lives in `magi.startup.runtime`.
+- All startup code (config, paths, bootstrap, runtime, local, webui,
+  kubernetes, cli) lives in one package: `magi.startup`.
+- `magi run` boots the first MAGI (`eva-000`) by default; subsequent
+  MAGIs join via `magi run --name X --magis … --magi-id …`.
+- One WebUI per MAGIS, started with the first MAGI; subsequent MAGIs do
+  not start a second WebUI.
 - Architecture import rules are enforced by automated tests.
 
 ---
 
-# Glossary
+# Part IV — Unified Startup
 
-- **MAGI** — The general kind of autonomous agent in this system.
-- **MAGIS** — A MAGI Society. A group of MAGI that forms a tree via `parent_id`.
-- **MAGIC** — Internal table/API name for an individual MAGI; not a separate product term.
+> The startup domain — how a MAGI is created, bootstrapped, and brought up,
+> together with the one and only WebUI of a MAGIS — is consolidated in a
+> single package, `magi.startup`. Everything else in Parts I–III assumes that
+> package produced a ready `StartupContext`; this Part explains why the
+> startup domain is shaped the way it is, and what its actual surface is.
+
+## One Binary, One Package, Four Inputs
+
+The `magi` binary is the **only** runtime binary. It serves two service
+roles (`magi` boots a MAGI Runtime; `magi webui` boots the singleton WebUI
+control plane). All startup logic — config parsing, path derivation,
+bootstrap, runtime composition, local process management, Kubernetes
+resource creation, and WebUI lifecycle — lives in **one package**:
+`magi.startup`. There are **no parallel** Runtime / CLI / Kubernetes startup
+modules and **no abstract backend** polymorphism with a single
+implementation.
+
+The startup contract has exactly four inputs:
+
+| Input | Purpose | Default |
+|---|---|---|
+| `HOST_WORKSPACE_DIR` | Operator-side root of persistent data | `~/.magi` (Linux) / `~/Documents/.magi` (macOS, Windows) |
+| `MAGI_NAME` | Display name; participates in workspace derivation | `eva-000` (the first MAGI) |
+| `MAGIS_DATABASE_URL` | MAGIS DSN; **omit ⇒ bootstrap the first MAGIS** | unset |
+| `MAGI_ID` | Persistent identity when joining an existing MAGIS | unset |
+
+The on-disk workspace **is derived**, never passed in:
+
+```text
+workspace_dir = HOST_WORKSPACE_DIR / "MAGI_Citizens" / MAGI_NAME
+```
+
+Local, container and Kubernetes all use the exact same derivation. There is
+no final-workspace CLI flag, env var, or config key. Workspace identity is
+verified against the persisted identity file on disk; conflict fails rather
+than overrides.
+
+## Distinguishing "Bootstrap MAGIS" from "Join MAGIS"
+
+The single judgement that decides which path runs is:
+
+```text
+Is MAGIS_DATABASE_URL provided?
+```
+
+- **No MAGIS**: this is the first MAGI. The bootstrap creates the MAGIS
+  database, the Genesis MAGIS, the `eva-000` identity, its Membership, sets
+  it as ADAM of Genesis, prepares its private workspace, starts its Runtime,
+  and **starts the singleton WebUI**. Every step is idempotent: re-running
+  `magi run` does not create a second Genesis, a second `eva-000`, or a
+  second WebUI.
+- **MAGIS provided**: this MAGI joins an existing MAGIS. The startup loads
+  the persistent identity by `MAGI_ID`, validates Membership and Role,
+  validates that the workspace on disk matches the same `MAGIS_DATABASE_URL`
+  + `MAGI_ID`, then starts the Runtime. It **never** creates a new MAGIS, a
+  Genesis, a second ADAM, an unknown identity, or a second WebUI. A bad
+  `MAGI_ID` fails the boot — the Runtime does not auto-register itself.
+
+## First-MAGI Constraint and WebUI Singleton
+
+The first MAGI is always `eva-000`. Combining `MAGIS_DATABASE_URL=…` with
+`MAGI_NAME != "eva-000"` is rejected by config validation.
+
+The whole MAGIS has **exactly one WebUI**. WebUI is the only externally
+exposed service; it is brought up with the first MAGI (`eva-000`) and
+recovered together with it. Any subsequent MAGI never starts a second WebUI
+— neither on local processes nor as a second Kubernetes Deployment /
+Service. The WebUI PID and logs sit on the **host** workspace root
+(`~/.magi/run/webui.pid`, `~/.magi/logs/webui.{stdout,stderr}.log`) precisely
+because WebUI is owned by the MAGIS, not by any one MAGI.
+
+## Package Layout
+
+```text
+magi/startup/
+├── config.py        # StartupConfig — the four inputs, validation, defaulting
+├── paths.py         # all on-disk path derivation (host / workspace / DB / PID / logs)
+├── context.py       # StartupContext — frozen output of bootstrap, consumed by runtime
+├── bootstrap.py     # first-MAGI vs join-existing-MAGI bootstrap, idempotent
+├── runtime.py       # Runtime composition (bus, workers, channels, api, lifespan)
+├── local.py         # local process management — create / start / stop / restart / status
+├── webui.py         # singleton WebUI lifecycle — local process or K8s Deployment
+├── kubernetes.py    # K8s resource creation — PVC / Deployment / Service / WebUI
+└── cli.py           # unified CLI: magi run | create | start | stop | restart | status
+```
+
+`magi/__main__.py` is intentionally thin — it only parses the legacy
+`magi [runtime|webui|cli] [--check]` form and forwards to the corresponding
+`magi.startup.cli` command. All composition lives behind `magi.startup`.
+
+## `StartupConfig` and `StartupContext`
+
+`StartupConfig` is the single frozen source of truth for all startup inputs:
+
+```python
+@dataclass(frozen=True)
+class StartupConfig:
+    host_workspace_dir: Path     # default: ~/.magi
+    magi_name: str               # default: "eva-000"
+    magis_database_url: str | None  # None ⇒ bootstrap first MAGIS
+    magi_id: str | None          # required when joining an existing MAGIS
+
+    @property
+    def workspace_dir(self) -> Path:
+        # Always derived — never configurable directly.
+        return host_workspace_dir / "MAGI_Citizens" / magi_name
+
+    @property
+    def is_first_magi(self) -> bool:
+        return self.magis_database_url is None
+```
+
+`StartupContext` is what the rest of the system actually consumes. It is
+built once, after bootstrap, and carries everything Runtime / Channels /
+Tools / BUS need to do their job:
+
+```text
+StartupContext
+├── host_workspace_dir, workspace_dir
+├── magi_name, magi_id (persistent identity)
+├── magis_database_url, private_database_url
+└── is_first_magi
+```
+
+Code never re-reads or re-mutates env vars during execution; the context is
+the only handle the runtime hands to its subsystems.
+
+## Bootstrap Flows
+
+Both flows are idempotent. The full lifecycle they protect:
+
+```
+MAGIS workspace, Genesis row, EVA-000 identity, EVA-000 ADAM Membership,
+private SQLite file, runtime.json identity snapshot — all written with
+on-conflict-do-nothing semantics. Restarting `magi run` is safe.
+```
+
+When joining an existing MAGIS:
+
+```
+1. connect MAGIS_DATABASE_URL
+2. load MAGI by MAGI_ID  → fail if not found (no auto-registration)
+3. verify direct Membership and Role
+4. validate MAGI_NAME matches the persisted name
+5. validate the on-disk workspace identity (magi_id + magis_database_url)
+   matches the supplied ones — conflict fails the boot
+6. initialize the per-MAGI private database and prepare the workspace
+```
+
+If the workspace on disk holds one identity and the boot args supply a
+different one, **boot fails** — the system never overwrites an existing
+identity with another.
+
+## Runtime Composition
+
+`magi.startup.runtime.run_magi(config)` is the only way to run a MAGI:
+
+```text
+context = bootstrap_magi(config)
+bus      = build_bus(context)
+workers  = build_workers(context, bus)
+channels = build_channels(context, bus)
+api      = build_runtime_api(context, bus)
+
+async with runtime_lifespan(...):
+    await serve_runtime_api(api)
+```
+
+The runtime module is responsible for **running one MAGI**. It does not
+spawn child MAGIs, manage PID files, create Kubernetes resources, run the
+WebUI, or accept runtime-level Host / Port / Reload knobs.
+
+## Local vs Kubernetes
+
+Local and Kubernetes differ only in the **outer resource layer**:
+
+| | Local (CLI) | Kubernetes |
+|---|---|---|
+| Outer resource prep | directories + subprocess | PVC + Deployment + (internal) Service |
+| Runtime entrypoint | `magi run` / `magi start --name …` (managed by `magi.startup.local`) | container `command: ["magi"]` with env set by orchestrator |
+| WebUI | `magi webui` subprocess managed by `magi.startup.webui` | a single `magi-webui` Deployment + external Service, created once with `eva-000` |
+| Process model | independent OS process per MAGI | independent Pod per MAGI |
+
+Beyond that layer, both paths run the **same** `bootstrap → runtime` flow
+with the same configuration contract.
+
+In Kubernetes, the orchestrator (`magi.startup.kubernetes`) creates the
+PVC, the MAGI Deployment, the internal Service and, only on the first
+deployment of `eva-000`, the WebUI Deployment and the external Service.
+The Deployment passes the four contractual env vars (`HOST_WORKSPACE_DIR`,
+`MAGI_NAME`, `MAGIS_DATABASE_URL`, `MAGI_ID`); it never passes Host,
+Port, Reload, or the final workspace path.
+
+## Network Boundaries
+
+- **Runtime**: fixed internal host + port, hardcoded. Different Pods have
+  separate network namespaces, so there is no conflict. The Runtime is
+  reachable only as a ClusterIP; it is never exposed externally.
+- **WebUI**: the **only** externally exposed component. One per MAGIS,
+  always paired with `eva-000`. Receives browser traffic, terminates the
+  proxy, then signs every internal request HMAC-bound to method, path,
+  operator and selected `magic_id`.
+- **Reload**: hardcoded by the runtime role (production off,
+  development on); there is no operator knob.
+
+## CLI Surface
+
+The unified CLI verbs live in `magi.startup.cli`:
+
+```bash
+magi run                  # bootstrap + serve one MAGI in-process
+magi create               # register a new MAGI under an existing MAGIS
+magi start   --name X     # spawn a detached subprocess for one MAGI
+magi stop    --name X     # SIGTERM one MAGI's subprocess (+ WebUI if first)
+magi restart --name X     # stop + start
+magi status  --name X     # list local slots and liveness
+magi webui                # boot the singleton WebUI in-process
+```
+
+The legacy `magi [runtime|webui|cli]` form is preserved as a thin shim
+that forwards to `magi.startup.cli`; it is **not** the canonical
+interface.
+
+---
+
+# Glossary
 - **ADAM** — Leading MAGI role for its direct MAGIS. MAGIS administrator grants
   are direct-only and do not inherit across the society tree.
 - **EVA** — Default working MAGI role. Executes tasks and collaborates.

@@ -19,12 +19,12 @@ SPA，也不直接暴露给浏览器；它只提供 ClusterIP 可达的 Runtime 
 Browser
   │ selected MAGI + cookie
   ▼
-magi-webui
+magi-webui (singleton, only externally exposed)
   │ discovers running MAGI, then routes only to the selected target
   │ signs method + path + identity capabilities + magic_id
   ▼
-magi Runtime Service
-  │ checks MAGI_RUNTIME_ID and HMAC freshness
+magi Runtime (private Runtime API)
+  │ checks identity binding and HMAC freshness
   ▼
 private SQLite, workspace, MAGIS database
 ```
@@ -43,7 +43,8 @@ MAGI 返回 `runtime.not_running`，而不是尝试访问其私有数据。
 
 浏览器 Cookie 仅由 `magi-webui` 验证。WebUI 使用 `MAGI_CONTROL_SECRET` 生成 60 秒
 有效的 HMAC；签名覆盖 HTTP method、完整 path/query、时间戳、目标 MAGI ID 和操作者 ID。
-每个 runtime 必须有 `MAGI_RUNTIME_ID`，并拒绝目标 ID 不匹配或签名过期的请求。
+每个 Runtime 通过 BUS 校验请求绑定到的 `MAGI_ID` / membership / role，拒绝
+目标身份不匹配或签名过期的请求。
 
 被验证的身份会映射到目标 MAGI 私有 SQLite 的 Contact，以保持原有的会话、任务和联系人
 ID 作用域。映射使用 Telegram ID；MAGI 私有 SQLite 主键不会跨节点传播。
@@ -72,16 +73,18 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
   `magi webui`，只使用运行时注册元数据和内部服务，不挂载 PVC 或 workspace。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
-  `MAGI_WORKSPACE_DIR=/workspace` 指向 PVC 挂载点。
-- orchestrator 在启动新的 MAGI 时，同时创建同名的内部 ClusterIP Service；停止时保留，
-  删除 MAGI 时一并删除。
+  `HOST_WORKSPACE_DIR` 指向 PVC 挂载点（如 `/workspace`），`MAGI_NAME=eva-000`，
+  `MAGIS_DATABASE_URL` / `MAGI_ID` 由 Secret 注入。
+- orchestrator（`magi.startup.kubernetes`）在启动新的 MAGI 时，同时创建同名的内部
+  ClusterIP Service；停止时保留，删除 MAGI 时一并删除。
 - `deploy/k8s-dev/control-dev/`：kind 开发 overlay。仍使用 `magi:dev` 这个同一镜像标签，
-  但用 Vite HMR 服务统一 WebUI，后端监听容器内 `:8000`。
+  但用 Vite HMR 服务统一 WebUI，后端监听容器内固定内部端口。
 
 生产启动使用 `deploy/k8s/bootstrap-k8s.sh`；脚本会部署 orchestrator、初始 runtime 和
 `magi-webui`，并提示将本地端口转发到 `svc/magi-webui`。dev 模式请改用
-`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/cli/`，每个 MAGI
-是独立 OS 进程（`magi cli start` 或 systemd 管理）。
+`deploy/k8s-dev/bootstrap-k8s-dev.sh`。非容器单机部署走 `deploy/cli/`，由
+`magi.startup.local` 拉起每个 MAGI 的独立 OS 进程（`magi start --name X`
+或 systemd `magi-*.service` 管理）。
 
 ## 仍需后续增强的部分
 
