@@ -1,8 +1,11 @@
-"""changeProviderConfigJobBoard — provider 配置变更通知。
+"""changeProviderConfigJobBoard — provider 配置变更作业。
 
 当 WebUI 修改 provider / API key / model 后，api 侧 publish 到本
 board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
 缓存的 SDK client 并 submit :class:`ChangeProviderConfigResult`。
+
+``publish()`` 自己在写入 job 行前先把配置落 ``settings_book``，
+调用方不需要记住这一步。
 
 设计要点
 ========
@@ -10,26 +13,21 @@ board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
 - **与 ``controlJobBoard`` 区分**：``controlJob`` 是 generic 的
   运行时信号 channel，多个 worker 都可能 claim；本 board 专门
   服务 provider 配置变更，只有一个 claimer（provider worker）。
-  将来其他模块需要类似的"配置变更触发重建"语义时，各开自己的
-  board，不共用 controlJob。
 
-- **payload 只用于审计 / 调试**：worker 重建时不需要解析 payload，
-  因为它直接重新读 ``bus.magic.provider_configuration()`` 拿到最新
-  状态。payload 字段保留是为 audit 行能记下"这次是什么变了"。
+- **self-contained write**：``publish()`` 同时完成"落 settings_book"
+  + "创建 job 行"两步。调用方只需要构造一次
+  :class:`ChangeProviderConfigJob`，不需要自己调 ``settings_book.set``。
 
-- **fire-and-forget friendly**：调用方 publish 后不需要等 result；
-  worker claim → rebuild → submit 即可，最坏情况是 result 行一直
-  pending，audit 能查到。
-
-- **命名**：job board 必须以动词打头（``runAgent`` / ``sendA2A`` /
-  ``chat`` / ``callLLM`` / ...），所以这里是 ``changeProviderConfig``
-  —— "apply this config change"。
+- **命名**：job board 以动词打头（``changeProviderConfig`` → "apply
+  this config change"）。
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,18 +35,33 @@ from sqlalchemy.orm import Mapped, mapped_column
 from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.guild.base import BaseJobBoard, new_job_id
 
+if TYPE_CHECKING:
+    from magi.new_bus.library.local.settingBook import SettingBook
 
-# -- public dataclasses ----------------------------------------------------
+logger = logging.getLogger("magi.new_bus.guild.changeProviderConfig")
+
+
+# ── settings keys ─────────────────────────────────────────────────────────
+
+PROVIDER_NAME_KEY = "provider.name"
+PROVIDER_API_KEY_KEY = "provider.api_key"
+PROVIDER_MODEL_KEY = "provider.model"
+
+
+# ── public dataclasses ─────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True, slots=True)
 class ChangeProviderConfigJob:
     """一次 provider 配置变更。
 
-    ``payload`` 可携带 ``{provider, model}`` 等变更详情，
-    目前 provider worker 只关心"变了"这一事实本身，立即重建。
+    ``publish()`` 会自动把 ``provider`` / ``api_key`` / ``model``
+    写入 ``settings_book``，调用方只管构造。
     """
 
-    payload: dict | None = None
+    provider: str | None = None
+    api_key: str | None = None
+    model: str | None = None
     job_id: str = ""
 
 
@@ -59,7 +72,8 @@ class ChangeProviderConfigResult:
     error: str | None = None
 
 
-# -- internal ORM ----------------------------------------------------------
+# ── internal ORM ───────────────────────────────────────────────────────────
+
 
 class _ChangeProviderConfigRow(Base):
     __tablename__ = "change_provider_config_jobs"
@@ -68,6 +82,7 @@ class _ChangeProviderConfigRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
+    # 保留 payload 字段以兼容已有数据；新 publish 不再写入
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -81,23 +96,57 @@ class _ChangeProviderConfigRow(Base):
     )
 
 
-# -- Board -----------------------------------------------------------------
+# ── Board ──────────────────────────────────────────────────────────────────
+
 
 class changeProviderConfigJobBoard(
     BaseJobBoard[_ChangeProviderConfigRow, ChangeProviderConfigJob, ChangeProviderConfigResult]
 ):
+    """Provider 配置变更作业板。
+
+    ``publish()`` 写入两步：先落 ``settings_book``，再建 job 行。
+    """
+
     job_model = _ChangeProviderConfigRow
     job_cls = ChangeProviderConfigJob
     result_cls = ChangeProviderConfigResult
 
+    def __init__(self, factory, *, settings_book: "SettingBook | None" = None):
+        super().__init__(factory)
+        self._settings_book = settings_book
+
     def publish(self, job: ChangeProviderConfigJob) -> str:
+        # 1. 把配置写入 settings_book（调用方不需要记住这步）。
+        if self._settings_book is not None:
+            self._write_to_settings(job)
+
+        # 2. 创建 job 行。
+        job_id = job.job_id or new_job_id()
         with self._factory.session() as s:
             row = _ChangeProviderConfigRow(
-                job_id=job.job_id or new_job_id(),
+                job_id=job_id,
                 status="pending",
-                payload=job.payload,
+                payload={
+                    "provider": job.provider,
+                    "api_key_last4": (job.api_key or "")[-4:] or None,
+                    "model": job.model,
+                },
             )
             s.add(row)
             s.flush()
             s.commit()
-            return row.job_id
+        return job_id
+
+    def _write_to_settings(self, job: ChangeProviderConfigJob) -> None:
+        """Upsert provider config into ``settings_book``."""
+        sb = self._settings_book
+        if job.provider is not None:
+            sb.set(key=PROVIDER_NAME_KEY, value=job.provider)
+        if job.api_key is not None:
+            sb.set(key=PROVIDER_API_KEY_KEY, value=job.api_key)
+        if job.model is not None:
+            sb.set(key=PROVIDER_MODEL_KEY, value=job.model)
+        logger.info(
+            "changeProviderConfig: wrote provider=%r model=%r to settings_book",
+            job.provider, job.model,
+        )
