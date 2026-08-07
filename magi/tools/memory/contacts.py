@@ -30,13 +30,16 @@ from magi.tools.base import (
 
 logger = logging.getLogger("magi.tools.memory.contacts")
 
-# Tool author gate. After the 2024 role/admin split,
-# ``role='admin'`` is no longer a reachable value — the
-# ``admin`` boolean carries WebUI access rights instead.
-# The gate (``admin=True OR role='assigned'``) is now
-# centralized in :meth:`Tool.check_gate`, which reads
-# ``ctx.bus.contacts_book`` to resolve both the role and
-# the admin flag.  Per-tool ``_gate()`` helpers are gone.
+# Tool author gate. ``role`` only carries ``assigned`` /
+# ``guest`` — there is no ``role='admin'`` value. Admin is
+# a MAGIS-level concept, resolved at runtime via
+# :attr:`ctx.bus.magis_admins_book` (see
+# :meth:`magi.tools.base.Tool.gate`). The
+# ``ALLOWED_ROLES = {"admin", "assigned"}`` whitelist
+# admits callers whose effective role-tag set intersects
+# it — ``admin`` from a MAGIS admin row, ``assigned``
+# from the contact's local role. Per-tool ``_gate()``
+# helpers are gone; everything goes through ``Tool.gate``.
 
 
 def _err(msg: str) -> ToolResult:

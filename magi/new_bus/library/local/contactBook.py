@@ -42,11 +42,22 @@ ALL_ROLES = frozenset({ROLE_ASSIGNED, ROLE_GUEST})
 
 @dataclass(frozen=True, slots=True)
 class Contact:
+    """Per-MAGI operator record.
+
+    ``role`` is the MAGI-local role tag (``assigned`` /
+    ``guest`` / ``contact``). Admin is **not** a column
+    here — it's a MAGIS-level concept and lives in
+    :class:`~magi.new_bus.library.magis.magisBook.MagisAdminBook`
+    (``magis_admins`` table). A user can be ``assigned`` in
+    this MAGI **and** admin in any MAGIS — the two flags
+    are orthogonal. Tool gating combines both via
+    :meth:`magi.tools.base.Tool.gate`.
+    """
+
     id: int
     name: str
     display_name: str | None = None
     role: str = ROLE_GUEST
-    admin: bool = False
     telegram_id: int | None = None
     separated_at: datetime | None = None
     last_seen_at: datetime | None = None
@@ -76,9 +87,6 @@ class _ContactRow(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
-    admin: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
-    )
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(
@@ -135,12 +143,12 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             return self._row_to_dto(row) if row else None
 
     def add(self, *, name: str, role: str = ROLE_GUEST,
-            display_name: str | None = None, admin: bool = False,
+            display_name: str | None = None,
             telegram_id: int | None = None) -> Contact:
         with self._factory.session() as s:
             row = _ContactRow(
                 name=name, role=role, display_name=display_name,
-                admin=admin, telegram_id=telegram_id,
+                telegram_id=telegram_id,
             )
             s.add(row)
             s.commit()
@@ -162,14 +170,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 .order_by(_ContactRow.id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def set_admin(self, *, contact_id: int, admin: bool = True) -> None:
-        with self._factory.session() as s:
-            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
-            if row is None:
-                return
-            row.admin = admin
-            s.commit()
 
     def separate(self, *, contact_id: int) -> None:
         with self._factory.session() as s:

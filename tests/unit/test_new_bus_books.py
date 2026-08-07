@@ -108,19 +108,22 @@ def test_memory_book_list_by_owner(factory, contact_id):
 
 
 def test_contact_book_full_lifecycle(factory):
+    """Add → get → get_by_telegram. Admin lives on the
+    MAGIS ``magis_admins`` table (separate), not on
+    ``Contact`` — verified by the absence of any
+    ``Contact.admin`` field on the DTO."""
     book = ContactBook(factory)
-    c = book.add(name="Alice", telegram_id=12345, admin=True)
+    c = book.add(name="Alice", telegram_id=12345)
     assert isinstance(c, Contact)
-    assert c.name == "Alice" and c.admin is True
+    assert c.name == "Alice"
+    # DTO surface has no admin attribute — admin is MAGIS-side.
+    assert not hasattr(c, "admin") or getattr(c, "admin", None) is None
 
     found = book.get(contact_id=c.id)
     assert found is not None and found.telegram_id == 12345
 
     tg = book.get_by_telegram(telegram_id=12345)
     assert tg is not None and tg.id == c.id
-
-    book.set_admin(contact_id=c.id, admin=False)
-    assert book.get(contact_id=c.id).admin is False
 
 
 def test_contact_note_book(factory):

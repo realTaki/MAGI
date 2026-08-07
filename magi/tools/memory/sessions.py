@@ -21,7 +21,7 @@ Scope
 -----
 
 Same per-contact scope as the WebUI's ``/api/chat/search``:
-the calling admin's ``Contact.id`` (resolved by the
+the calling operator's ``Contact.id`` (resolved by the
 agent loop from the ``magi_session`` cookie on every call).
 The SQL filter scopes by ``chat_sessions.uid``;
 channel and per-channel delivery address are not part of the search predicate.
@@ -173,12 +173,12 @@ class SearchSessionsTool(Tool):
             )
         limit = max(1, min(limit, _MAX_HITS))
 
-        # Scope: the calling admin's uid. Cross-
+        # Scope: the calling operator's uid. Cross-
         # platform: every session row whose ``uid``
         # matches — webui conversations AND any TG / future
-        # IM conversations handled by that admin contact
-        # all match. Channel and per-channel delivery address are not part of the
-        # search predicate.
+        # IM conversations handled by that operator all
+        # match. Channel and per-channel delivery address
+        # are not part of the search predicate.
         uid = ctx.uid
 
         try:

@@ -28,10 +28,13 @@ own provider / API key. This mirrors the WebUI flow so
 the operator's mental model stays consistent: "when this
 fires, it runs as me".
 
-Admin gate: non-admin / non-assigned contacts get
-``is_error=True``. Same logic as the API (``admin`` and
-``assigned`` only — ``contact`` and ``guest`` are
-barred since they don't sign in to a MAGI node).
+Admin gate: callers whose effective role-tag set
+(``Contact.role`` ∪ ``{admin}`` if
+``ctx.bus.magis_admins_book.is_admin_for(uid=...)`` is
+truthy) doesn't intersect ``{"admin", "assigned"}``
+get ``is_error=True`` at the gate step. ``guest``
+callers have no MAGI-node session and aren't expected
+to chat.
 
 Idempotent on ``name``: a second call with the same
 name updates the existing row in place. The LLM retries

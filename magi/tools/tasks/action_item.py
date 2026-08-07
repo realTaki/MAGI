@@ -24,13 +24,17 @@ Three surfaces pinned:
 
 Scope (per-contact, role-gated):
 
-  - The assigned user (``'assigned'``) and any operator
-    (``admin=True``) can use these tools for their own
-    action items only. The ``guest`` role doesn't see
-    the tools in their menu: the registry's
-    :func:`get_tools(caller_role=...)` filter (see
-    ``magi/tools/registry.py``) strips them out
-    before the LLM sees the schema.
+  - The assigned user (``role='assigned'``) and any
+    MAGIS admin (per :attr:`ctx.bus.magis_admins_book`)
+    can use these tools for their own action items only.
+    ``ALLOWED_ROLES = {"admin", "assigned"}`` admits both
+    via :meth:`Tool.gate`'s effective-role-tag logic —
+    the two flags are orthogonal, so a single caller can
+    satisfy the gate through either path.
+  - The ``guest`` role doesn't see the tools in their
+    menu: the LLM-side menu filter (``toolsBook`` /
+    ``bus.tool_catalog``) strips them out before the
+    schema is emitted.
   - Each tool also re-checks the caller's role inside
     ``run`` (belt-and-suspenders) — a future caller that
     bypasses ``get_tools`` (or calls the tool class
@@ -63,9 +67,10 @@ from magi.tools.base import (
 logger = logging.getLogger("magi.tools.tasks.action_item")
 
 # Same gate as the WebUI API and as ``ScheduleTaskTool``:
-# only ``admin`` and ``assigned`` operators may operate
-# on their own action items. ``contact`` and ``guest``
-# have no MAGI-node session and aren't expected to chat
+# only ``admin`` (per :attr:`ctx.bus.magis_admins_book`)
+# and ``assigned`` (per ``Contact.role``) operators may
+# operate on their own action items. ``guest`` callers
+# have no MAGI-node session and aren't expected to chat.
 # Role gating is centralised in :meth:`Tool.gate`; tools
 # declare their role whitelist via :attr:`Tool.ALLOWED_ROLES`
 # on the class — no per-module `_ALLOWED_ROLES` / `_gate()`
