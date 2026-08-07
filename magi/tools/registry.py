@@ -78,11 +78,9 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.shell.run import BashRunTool
     from magi.tools.shell.output import BashOutputTool
     from magi.tools.shell.kill import BashKillTool
-    from magi.tools.tasks.action_item import (
-        AddActionItemTool,
-        CompleteActionItemTool,
-        ListActionItemTool,
-    )
+    from magi.tools.tasks.add_action_item import AddActionItemTool
+    from magi.tools.tasks.complete_action_item import CompleteActionItemTool
+    from magi.tools.tasks.list_action_item import ListActionItemTool
     from magi.tools.filesystem.edit_file import EditFileTool
     from magi.tools.filesystem.list_files import ListFilesTool
     from magi.tools.comms.message_magi import MessageMagiTool
@@ -95,23 +93,19 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.filesystem.read_file import ReadFileTool
     from magi.tools.tasks.schedule import ScheduleTaskTool
     from magi.skills.loader_tool import SkillLoaderTool
-    from magi.tools.memory.sessions import SearchSessionsTool
+    from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
     from magi.tools.comms.send_message import SendMessageTool
     from magi.tools.filesystem.write_file import WriteFileTool
-    from magi.tools.memory.contacts import (
-        AddContactNoteTool,
-        AddContactTool,
-        DeleteContactNoteTool,
-        SearchContactsTool,
-        UpdateContactNoteTool,
-        UpdateDailyNoteTool,
-    )
-    from magi.tools.memory.self import (
-        AddMemoryTool,
-        CompleteMemoryTool,
-        DeleteMemoryTool,
-        UpdateMemoryTool,
-    )
+    from magi.tools.memory.contacts.add_contact import AddContactTool
+    from magi.tools.memory.contacts.add_contact_note import AddContactNoteTool
+    from magi.tools.memory.contacts.delete_contact_note import DeleteContactNoteTool
+    from magi.tools.memory.contacts.search_contacts import SearchContactsTool
+    from magi.tools.memory.contacts.update_contact_note import UpdateContactNoteTool
+    from magi.tools.memory.contacts.update_daily_note import UpdateDailyNoteTool
+    from magi.tools.memory.core_memory.add_memory import AddMemoryTool
+    from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
+    from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
+    from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
 
     return [
         ReadFileTool(),
