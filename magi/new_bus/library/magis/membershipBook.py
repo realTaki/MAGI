@@ -128,14 +128,14 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
     dto_cls = MagisRole
 
     def get(self, *, role_id: int) -> MagisRole | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
             )
             return self._row_to_dto(row) if row else None
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisRole]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MagisRoleRow)
                 .where(_MagisRoleRow.magis_id == magis_id)
@@ -144,7 +144,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
             return [self._row_to_dto(r) for r in rows]
 
     def find(self, *, magis_id: int, name: str) -> MagisRole | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisRoleRow).where(
                     _MagisRoleRow.magis_id == magis_id,
@@ -155,7 +155,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
 
     def add(self, *, magis_id: int, name: str,
             instruction: str = "", is_reserved: bool = False) -> MagisRole:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MagisRoleRow(
                 magis_id=magis_id, name=name,
                 instruction=instruction, is_reserved=is_reserved,
@@ -177,7 +177,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         PK, which is what used to be ``magic.id`` before the
         ``magic`` table was retired).
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisMembershipRow)
                 .where(_MagisMembershipRow.id == magi_id)
@@ -186,7 +186,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisMembership]:
         """All MAGIs registered under a given parent MAGIS."""
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MagisMembershipRow)
                 .where(_MagisMembershipRow.magis_id == magis_id)
@@ -201,7 +201,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         a FK target from elsewhere (``magis.adam_id``,
         ``eva_runtimes.magic_id``).
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MagisMembershipRow(magis_id=magis_id, role_id=role_id)
             s.add(row)
             s.commit()
@@ -210,7 +210,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 
     def remove(self, *, magi_id: int) -> bool:
         """Unregister a MAGI by its per-MAGI identity."""
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisMembershipRow)
                 .where(_MagisMembershipRow.id == magi_id)

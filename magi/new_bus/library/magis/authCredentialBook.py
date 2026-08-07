@@ -76,7 +76,7 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
     dto_cls = AuthCredential
 
     def get(self, *, credential_id: int) -> AuthCredential | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_AuthCredentialRow)
                 .where(_AuthCredentialRow.id == credential_id)
@@ -84,7 +84,7 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
             return self._row_to_dto(row) if row else None
 
     def find(self, *, uid: int, kind: str) -> AuthCredential | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_AuthCredentialRow).where(
                     _AuthCredentialRow.uid == uid,
@@ -94,14 +94,14 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
             return self._row_to_dto(row) if row else None
 
     def list_for_contact(self, *, uid: int) -> list[AuthCredential]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_AuthCredentialRow).where(_AuthCredentialRow.uid == uid)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def add(self, *, uid: int, kind: str, secret_hash: str) -> AuthCredential:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _AuthCredentialRow(uid=uid, kind=kind, secret_hash=secret_hash)
             s.add(row)
             s.commit()
@@ -109,7 +109,7 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
         return self._row_to_dto(row)
 
     def update_hash(self, *, credential_id: int, secret_hash: str) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_AuthCredentialRow)
                 .where(_AuthCredentialRow.id == credential_id)
@@ -120,7 +120,7 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
             s.commit()
 
     def delete(self, *, credential_id: int) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_AuthCredentialRow)
                 .where(_AuthCredentialRow.id == credential_id)

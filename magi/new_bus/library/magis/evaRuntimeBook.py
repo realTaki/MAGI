@@ -75,14 +75,14 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
     dto_cls = EvaRuntime
 
     def get(self, *, runtime_id: int) -> EvaRuntime | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_EvaRuntimeRow).where(_EvaRuntimeRow.id == runtime_id)
             )
             return self._row_to_dto(row) if row else None
 
     def get_for_magic(self, *, magic_id: int) -> EvaRuntime | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_EvaRuntimeRow)
                 .where(_EvaRuntimeRow.magic_id == magic_id)
@@ -90,7 +90,7 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[EvaRuntime]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(select(_EvaRuntimeRow).order_by(_EvaRuntimeRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
@@ -100,7 +100,7 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
                namespace: str | None = None,
                image: str | None = None,
                extra: str | None = None) -> EvaRuntime:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_EvaRuntimeRow)
                 .where(_EvaRuntimeRow.magic_id == magic_id)
@@ -124,7 +124,7 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
         return self._row_to_dto(row)
 
     def set_observed(self, *, runtime_id: int, observed_state: str) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_EvaRuntimeRow).where(_EvaRuntimeRow.id == runtime_id)
             )

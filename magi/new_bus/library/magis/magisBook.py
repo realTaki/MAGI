@@ -116,17 +116,17 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
     dto_cls = Magis
 
     def get(self, *, magis_id: int) -> Magis | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
             return self._row_to_dto(row) if row else None
 
     def get_by_name(self, *, name: str) -> Magis | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MagisRow).where(_MagisRow.name == name))
             return self._row_to_dto(row) if row else None
 
     def get_root(self) -> Magis | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisRow)
                 .where(_MagisRow.parent_id.is_(None))
@@ -135,12 +135,12 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[Magis]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_children(self, *, parent_id: int) -> list[Magis]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MagisRow)
                 .where(_MagisRow.parent_id == parent_id)
@@ -150,7 +150,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
 
     def add(self, *, name: str, parent_id: int | None = None,
             adam_id: int | None = None, instruction: str = "") -> Magis:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MagisRow(
                 name=name, parent_id=parent_id, adam_id=adam_id,
                 instruction=instruction,
@@ -161,7 +161,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
         return self._row_to_dto(row)
 
     def set_adam(self, *, magis_id: int, adam_id: int | None) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
             if row is None:
                 return
@@ -174,7 +174,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
     dto_cls = MagisAdmin
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisAdmin]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MagisAdminRow)
                 .where(_MagisAdminRow.magis_id == magis_id)
@@ -182,7 +182,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             return [self._row_to_dto(r) for r in rows]
 
     def list_for_contact(self, *, uid: int) -> list[MagisAdmin]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_MagisAdminRow)
                 .where(_MagisAdminRow.uid == uid)
@@ -202,7 +202,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         ``"assigned"``. Per-MAGI ``role`` + MAGIS ``admin``
         are orthogonal — see :class:`Contact` docstring.
         """
-        with self._factory.session() as s:
+        with self._session() as s:
             return s.scalar(
                 select(_MagisAdminRow.id)
                 .where(_MagisAdminRow.uid == uid)
@@ -210,7 +210,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             ) is not None
 
     def add(self, *, uid: int, magis_id: int) -> MagisAdmin:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = _MagisAdminRow(uid=uid, magis_id=magis_id)
             s.add(row)
             s.commit()
@@ -218,7 +218,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         return self._row_to_dto(row)
 
     def remove(self, *, uid: int, magis_id: int) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_MagisAdminRow).where(
                     _MagisAdminRow.uid == uid,

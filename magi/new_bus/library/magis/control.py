@@ -166,7 +166,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
     dto_cls = ControlRuntime
 
     def get(self, *, runtime_id: int) -> ControlRuntime | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlRuntimeRow)
                 .where(_ControlRuntimeRow.runtime_id == runtime_id)
@@ -174,7 +174,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[ControlRuntime]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ControlRuntimeRow).order_by(_ControlRuntimeRow.runtime_id)
             ).all()
@@ -182,7 +182,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
 
     def upsert_desired(self, *, runtime_id: int, backend_kind: str,
                        desired: str) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlRuntimeRow)
                 .where(_ControlRuntimeRow.runtime_id == runtime_id)
@@ -204,7 +204,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
 
     def record_spawn(self, *, runtime_id: int, pid: int,
                       base_url: str, port: int) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlRuntimeRow)
                 .where(_ControlRuntimeRow.runtime_id == runtime_id)
@@ -222,7 +222,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             s.commit()
 
     def record_stop(self, *, runtime_id: int) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlRuntimeRow)
                 .where(_ControlRuntimeRow.runtime_id == runtime_id)
@@ -238,7 +238,7 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             s.commit()
 
     def mark_stale(self, *, runtime_id: int, stale: bool = True) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlRuntimeRow)
                 .where(_ControlRuntimeRow.runtime_id == runtime_id)
@@ -255,7 +255,7 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
     dto_cls = PortAllocation
 
     def get(self, *, runtime_id: int) -> PortAllocation | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlPortAllocationRow)
                 .where(_ControlPortAllocationRow.runtime_id == runtime_id)
@@ -263,7 +263,7 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
             return self._row_to_dto(row) if row else None
 
     def list_held_ports(self) -> list[int]:
-        with self._factory.session() as s:
+        with self._session() as s:
             rows = s.scalars(
                 select(_ControlPortAllocationRow.port)
                 .where(_ControlPortAllocationRow.released_at.is_(None))
@@ -272,7 +272,7 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
 
     def allocate(self, *, runtime_id: int, port: int) -> PortAllocation:
         now = utcnow_naive()
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlPortAllocationRow)
                 .where(_ControlPortAllocationRow.runtime_id == runtime_id)
@@ -292,7 +292,7 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
         return self._row_to_dto(row)
 
     def release(self, *, runtime_id: int) -> bool:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlPortAllocationRow)
                 .where(
@@ -312,7 +312,7 @@ class WorkspaceArchiveBook(BaseBook[_ControlWorkspaceArchiveRow, WorkspaceArchiv
     dto_cls = WorkspaceArchive
 
     def get(self, *, runtime_id: int) -> WorkspaceArchive | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlWorkspaceArchiveRow)
                 .where(_ControlWorkspaceArchiveRow.runtime_id == runtime_id)
@@ -321,7 +321,7 @@ class WorkspaceArchiveBook(BaseBook[_ControlWorkspaceArchiveRow, WorkspaceArchiv
 
     def archive(self, *, runtime_id: int, archive_path: str) -> WorkspaceArchive:
         now = utcnow_naive()
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlWorkspaceArchiveRow)
                 .where(_ControlWorkspaceArchiveRow.runtime_id == runtime_id)
@@ -346,14 +346,14 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
     dto_cls = ControlSecret
 
     def get(self, *, name: str) -> ControlSecret | None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlSecretRow).where(_ControlSecretRow.name == name)
             )
             return self._row_to_dto(row) if row else None
 
     def put(self, *, name: str, secret_hash: bytes, salt: bytes) -> None:
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlSecretRow).where(_ControlSecretRow.name == name)
             )
@@ -373,7 +373,7 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
     def verify(self, *, name: str, raw: bytes) -> bool:
         import hashlib, hmac
 
-        with self._factory.session() as s:
+        with self._session() as s:
             row = s.scalar(
                 select(_ControlSecretRow).where(_ControlSecretRow.name == name)
             )
