@@ -23,10 +23,10 @@ from magi.new_bus.guild.deliveryJob import DeliveryJob, DeliveryResult, delivery
 from magi.new_bus.guild.controlJob import ControlJob, ControlJobResult, controlJobBoard
 from magi.new_bus.guild.runAgentJob import RunAgentJob, RunAgentResult, runAgentJobBoard
 from magi.new_bus.guild.sendA2AJob import SendA2AJob, SendA2AResult, sendA2AJobBoard
-from magi.new_bus.guild.providerConfigJob import (
-    ProviderConfigJob,
-    ProviderConfigResult,
-    providerConfigJobBoard,
+from magi.new_bus.guild.changeProviderConfigJob import (
+    ChangeProviderConfigJob,
+    ChangeProviderConfigResult,
+    changeProviderConfigJobBoard,
 )
 
 # 单向 (publish 直接落库)
@@ -48,7 +48,7 @@ __all__ = [
     "ControlJob", "ControlJobResult", "controlJobBoard",
     "RunAgentJob", "RunAgentResult", "runAgentJobBoard",
     "SendA2AJob", "SendA2AResult", "sendA2AJobBoard",
-    "ProviderConfigJob", "ProviderConfigResult", "providerConfigJobBoard",
+    "ChangeProviderConfigJob", "ChangeProviderConfigResult", "changeProviderConfigJobBoard",
     # 单向 (Notify)
     "SetConfigNotify", "setConfigNotifyBoard",
     "SetSettingNotify", "setSettingNotifyBoard",

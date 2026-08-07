@@ -95,8 +95,8 @@ def _build_buses(startup: StartupContext) -> tuple[object, "NewBus"]:
     New bus: wired from the same paths, available for gradual migration.
     """
     from magi.bus import bootstrap as bus_bootstrap
-    from magi.bus.db.magis.engine import set_injected_magis_engine
-    from magi.bus.db.magis.local_engine import build as build_local_engine
+    from magi.bus.db.magis_book.engine import set_injected_magis_engine
+    from magi.bus.db.magis_book.local_engine import build as build_local_engine
 
     from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 
@@ -145,7 +145,8 @@ async def _runtime_lifespan(
     crash); delivery worker goes last (so it sees everything produced by
     the rest).
 
-    ``new_bus`` is accepted for future worker migration — existing
+    ``new_bus`` is required for :func:`start_provider_worker` — the
+    provider worker has been migrated to new_bus; the rest of the
     workers still use the old bus global singleton internally.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
@@ -192,6 +193,9 @@ async def worker_lifespan():
     Plan §20.1 — this replaces :func:`magi.launcher.worker_lifespan`.
     The :func:`channels.api.app` FastAPI lifespan pulls in the same set
     of workers without dragging the Runtime's uvicorn into the picture.
+
+    Builds its own :class:`NewBus` from the active workspace so the
+    provider worker (now on new_bus) has a bus to claim from.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels.delivery import (
@@ -203,10 +207,13 @@ async def worker_lifespan():
         stop_provider_worker,
     )
     from magi.tools.worker import start_tool_worker, stop_tool_worker
+    from magi.new_bus.bootstrap import bootstrap_new_bus
+    from magi.startup.paths import resolve_workspace_dir
 
-    # Legacy path — no NewBus available in standalone worker pool.
-    # start_provider_worker() builds its own bus internally.
-    await start_provider_worker()
+    state_dir = str(resolve_workspace_dir() / "memories")
+    new_bus = bootstrap_new_bus(state_dir=state_dir)
+
+    await start_provider_worker(bus=new_bus)
     await start_agent_worker()
     await start_tool_worker()
     await start_delivery_worker()
@@ -265,9 +272,9 @@ def _build_channels(
     _startup: StartupContext,
     new_bus: "NewBus | None" = None,
 ) -> list[str]:
-    """Resolve enabled message channels from BUS settings.
+    """Resolve enabled message channels from BUS settings_book.
 
-    Channels state lives in ``settings.channels.enabled`` per the
+    Channels state lives in ``settings_book.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
     Prefers ``new_bus`` when available; falls back to the old bus
@@ -278,7 +285,7 @@ def _build_channels(
     # Try new_bus first (explicitly wired, no global lookup).
     if new_bus is not None:
         try:
-            raw = new_bus.settings.get("channels.enabled")
+            raw = new_bus.settings_book.get("channels.enabled")
             if raw:
                 parsed = json.loads(raw)
                 if isinstance(parsed, list):
@@ -351,7 +358,7 @@ def _log_level(new_bus: "NewBus | None" = None) -> str:
     # Try new_bus first (explicitly wired, no global lookup).
     if new_bus is not None:
         try:
-            raw = new_bus.settings.get("system.log_level")
+            raw = new_bus.settings_book.get("system.log_level")
             if raw and raw in {"debug", "info", "warning", "error"}:
                 return raw
         except Exception:  # noqa: BLE001

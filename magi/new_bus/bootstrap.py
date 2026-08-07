@@ -91,7 +91,7 @@ class NewBus:
     # -- local: control (Job boards) -----------------------------------------
 
     control_job_board: object  # controlJobBoard
-    provider_config_job_board: object  # providerConfigJobBoard
+    change_provider_config_job_board: object  # changeProviderConfigJobBoard
 
     # -- local: contacts_book & memory_book (Notify boards) ----------------------------
 
@@ -199,11 +199,11 @@ def _bootstrap_with_dirs(
     )
     from magi.new_bus.guild import (
         callLLMJobBoard,
+        changeProviderConfigJobBoard,
         chatJobBoard,
         contactNotifyBoard,
         controlJobBoard,
         deliveryJobBoard,
-        providerConfigJobBoard,
         rememberNotifyBoard,
         runAgentJobBoard,
         runToolJobBoard,
@@ -246,7 +246,7 @@ def _bootstrap_with_dirs(
     a2a_job_board = sendA2AJobBoard(local_factory)
     chat_job_board = chatJobBoard(local_factory)
     control_job_board = controlJobBoard(local_factory)
-    provider_config_job_board = providerConfigJobBoard(local_factory)
+    change_provider_config_job_board = changeProviderConfigJobBoard(local_factory)
 
     # ---- local notify boards ------------------------------------------------
     set_config_notify_board = setConfigNotifyBoard(local_factory)
@@ -305,7 +305,7 @@ def _bootstrap_with_dirs(
         delivery_job_board=delivery_job_board,
         a2a_job_board=a2a_job_board,
         control_job_board=control_job_board,
-        provider_config_job_board=provider_config_job_board,
+        change_provider_config_job_board=change_provider_config_job_board,
         save_contact_notify_board=save_contact_notify_board,
         save_memory_notify_board=save_memory_notify_board,
         token_usage_book=token_usage_book,
