@@ -12,7 +12,7 @@ Schema mirrors the old bus's ``action_items`` table.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import (
     Boolean,
@@ -94,17 +94,15 @@ class ActionItem:
 
         Mirrors ``magi.bus.jobs.protocols.action_item.ActionItemView``
         so the WebUI API and the LLM tool see the same field
-        names they saw pre-migration. ``BaseBook._row_to_dto``
-        already serialises ``datetime`` fields via ``isoformat``
-        by the time this method runs, so the three timestamp
-        fields may already be strings — :func:`_iso` is a
-        no-op pass-through for non-datetime values.
+        names they saw pre-migration.
+
+        No timestamp coercion here: ``BaseBook._row_to_dto`` has
+        already rendered every ``datetime`` column through
+        :func:`~magi.new_bus.library.base.to_iso`, so the three
+        timestamp fields are ISO-8601 ``Z`` strings by the time
+        this runs.
         """
-        d = asdict(self)
-        d["created_at"] = _iso(self.created_at)
-        d["due_date"] = _iso(self.due_date)
-        d["completed_at"] = _iso(self.completed_at)
-        return d
+        return asdict(self)
 
 
 # -- internal ORM --------------------------------------------------------
@@ -157,25 +155,6 @@ class _ActionItemRow(Base):
 # -- helpers -------------------------------------------------------------
 
 
-def _iso(value: datetime | str | None) -> str | None:
-    """ISO-8601 UTC string. Naive datetimes (the ORM column
-    shape) get a trailing ``Z`` so JSON consumers parse them
-    as UTC.
-
-    Pass-through for strings: :meth:`BaseBook._row_to_dto`
-    already runs ``isoformat()`` on the wire shape in some
-    flows; this helper handles both cases without forcing
-    callers to know which path they're on.
-    """
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    if value.tzinfo is None:
-        return value.isoformat() + "Z"
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
 # -- Book ----------------------------------------------------------------
 
 
@@ -187,34 +166,16 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     :mod:`magi.proactive` — pass the ``source`` tag
     explicitly so the audit trail reflects who caused
     the write.
+
+    Timestamp serialisation is inherited: ``BaseBook._row_to_dto``
+    renders every ``datetime`` column through
+    :func:`~magi.new_bus.library.base.to_iso` (ISO-8601 with a
+    trailing ``Z``). This Book used to override the mapper solely
+    to get that ``Z``; the base now does it for all 18 Books.
     """
 
     model_cls = _ActionItemRow
     dto_cls = ActionItem
-
-    def _row_to_dto(self, row: _ActionItemRow) -> ActionItem:
-        """Override the base mapper so timestamps come out as
-        ISO-8601 UTC strings with a trailing ``Z`` (matches
-        the old bus's ``_iso`` shape that the API and LLM
-        tool both consume). The base implementation uses
-        ``datetime.isoformat()`` without a tz marker, which
-        would surface as naive timestamps in the wire shape.
-        """
-        return ActionItem(
-            id=row.id,
-            uid=row.uid,
-            title=row.title,
-            description=row.description,
-            target_url=row.target_url,
-            priority=row.priority,
-            due_date=_iso(row.due_date),
-            source=row.source,
-            created_at=_iso(row.created_at),
-            completed_at=_iso(row.completed_at),
-            completed_by_uid=row.completed_by_uid,
-            completion_note=row.completion_note,
-            dismissed=row.dismissed,
-        )
 
     # -- single-row reads -------------------------------------------------
 

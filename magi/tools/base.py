@@ -38,6 +38,7 @@ without importing the whole batch).
 from __future__ import annotations
 
 import functools
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -86,6 +87,15 @@ class ToolContext:
     bus: "NewBus | None" = None
 
 
+#: Truncation budget for :meth:`ToolResult.ok`. Mirrors the worker's
+#: own cut in ``magi.tools.worker._to_result`` (``content[:8000]``) —
+#: the worker truncates unconditionally to fit the column, so a
+#: payload that overflows would be cut anyway, just silently. Cutting
+#: here instead lets us append an explicit marker so the model knows
+#: it's looking at a partial result rather than the whole list.
+_MAX_CONTENT = 8 * 1024
+
+
 @dataclass(frozen=True, slots=True)
 class ToolResult:
     """A provider-valid result emitted by a tool worker.
@@ -94,10 +104,38 @@ class ToolResult:
     wrap the failure in :class:`ToolResult` with ``is_error=True``
     so the worker's bookkeeping stays uniform. Real bugs raise;
     the worker catches and translates them.
+
+    :meth:`ok` / :meth:`err` are the constructors for the common
+    case (a JSON payload / an error string). Tools returning plain
+    prose still construct ``ToolResult(content=...)`` directly.
     """
 
     content: str
     is_error: bool = False
+
+    @classmethod
+    def ok(cls, payload: Any) -> "ToolResult":
+        """Success carrying a JSON-serialised ``payload``.
+
+        ``payload`` is rendered with ``indent=2`` and
+        ``ensure_ascii=False`` — the model reads this text, so
+        CJK stays legible rather than escaping to ``\\uXXXX``.
+        Output over :data:`_MAX_CONTENT` is cut with a visible
+        ``…(truncated)`` marker.
+        """
+        body = json.dumps(payload, indent=2, ensure_ascii=False)
+        if len(body) > _MAX_CONTENT:
+            body = body[:_MAX_CONTENT] + "\n…(truncated)"
+        return cls(content=body, is_error=False)
+
+    @classmethod
+    def err(cls, msg: str) -> "ToolResult":
+        """Expected failure carrying an operator-readable ``msg``.
+
+        Not for bugs — those raise and the worker translates them
+        into a ``tool.crashed`` envelope.
+        """
+        return cls(content=msg, is_error=True)
 
 
 __all__ = ["Tool", "ToolContext", "ToolResult"]

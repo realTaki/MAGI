@@ -12,6 +12,9 @@ from magi.new_bus.db import EngineFactory
 from magi.new_bus.library.local import (
     ActionItem,
     ActionItemBook,
+    ALL_SOURCES,
+    Channel,
+    ChannelEnum,
     Contact,
     ContactBook,
     ContactNoteBook,
@@ -26,10 +29,10 @@ from magi.new_bus.library.local import (
     SettingBook,
     Session,
     SessionBook,
+    SOURCE_PROACTIVE,
+    SOURCE_USER,
     Task,
     TaskBook,
-    TaskPreset,
-    TaskPresetBook,
     TaskRun,
     TaskRunBook,
     TokenUsageBook,
@@ -326,36 +329,120 @@ def test_tool_definition_upsert(factory):
     assert rows[0].input_schema == {"x": 2}
 
 
-# -- TaskBook + TaskRunBook + TaskPresetBook -------------------------
+# -- TaskBook + TaskRunBook (unified user-task + preset Book) --------
 
 
 def test_task_book_lifecycle(factory, contact_id):
-    pbook = TaskPresetBook(factory)
-    preset = pbook.add(
-        id="p1", key="daily", name="Daily", prompt="hi",
-        frequency="daily", hour=9, minute=0, target_channel="webui",
-    )
-    assert isinstance(preset, TaskPreset)
-
+    """One ``TaskBook`` carries BOTH user tasks
+    (``source=SOURCE_USER``) and preset templates
+    (``source=SOURCE_PROACTIVE``). User task links to a
+    preset via ``preset_id`` / ``preset_key`` — same table,
+    same Book.
+    """
     tbook = TaskBook(factory)
+
+    # Preset row: source=SOURCE_PROACTIVE, structured
+    # frequency/hour/minute, no uid.
+    preset = tbook.add(
+        id="p1",
+        name="Daily-preset",
+        prompt="preset prompt",
+        key="daily",
+        frequency="daily",
+        hour=9,
+        minute=0,
+        target_channel="webui",
+        source=SOURCE_PROACTIVE,
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    assert isinstance(preset, Task)
+    assert preset.source == SOURCE_PROACTIVE
+    assert preset.key == "daily"
+    assert preset.uid is None
+
+    # User task row: source=SOURCE_USER, cron string,
+    # owned by a contact, links back to the preset.
     t = tbook.add(
-        id="t1", name="MyTask", prompt="do", cron="0 9 * * *",
-        uid=contact_id, target_channel="webui",
-        preset_id="p1", preset_key="daily",
+        id="t1",
+        name="MyTask",
+        prompt="do",
+        cron="0 9 * * *",
+        uid=contact_id,
+        target_channel="webui",
+        preset_id="p1",
+        preset_key="daily",
+        source=SOURCE_USER,
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
     assert isinstance(t, Task)
+    assert t.source == SOURCE_USER
+    assert t.preset_id == "p1"
     assert t.preset_key == "daily"
+    assert t.uid == contact_id
 
+    # list_for_owner: only SOURCE_USER rows owned by uid.
+    owned = tbook.list_for_owner(uid=contact_id)
+    assert len(owned) == 1
+    assert owned[0].id == "t1"
+
+    # list_presets: only SOURCE_PROACTIVE enabled rows.
+    presets = tbook.list_presets()
+    assert len(presets) == 1
+    assert presets[0].id == "p1"
+    assert presets[0].source == SOURCE_PROACTIVE
+
+    # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
     r = rbook.add(
         id="r1", task_id="t1", trigger="manual",
         started_at="2026-08-05T09:00:00Z", status="running",
     )
     assert isinstance(r, TaskRun)
-    rbook.complete(run_id="r1", status="success", finished_at="2026-08-05T09:01:00Z")
+    rbook.complete(
+        run_id="r1", status="success",
+        finished_at="2026-08-05T09:01:00Z",
+    )
     assert rbook.get(run_id="r1").status == "success"
+
+
+def test_task_book_add_rejects_unknown_source(factory):
+    """``source`` must be in ``ALL_SOURCES``. Mirrors the
+    ``actionItemBook.add`` precedent — keeps the closed-set
+    discipline even though the DB column is a loose
+    ``String(16)``.
+    """
+    book = TaskBook(factory)
+    with pytest.raises(ValueError, match="source must be one of"):
+        book.add(
+            id="t-bad",
+            name="bad",
+            prompt="x",
+            cron="0 0 * * *",
+            uid=1,
+            target_channel="webui",
+            source="system-external-thing",
+        )
+
+
+def test_channel_enum_values():
+    """Pin the enum values — the dashboard and dispatcher
+    treat them as a closed vocabulary, and the value strings
+    land in the DB column verbatim.
+    """
+    assert ChannelEnum.TG == "tg"
+    assert ChannelEnum.WEBUI == "webui"
+    assert ChannelEnum.A2A == "a2a"
+    assert ChannelEnum.SCHEDULED == "scheduled"
+    # ``Channel`` is the back-compat alias (mirrors the old
+    # bus shape so adapter / agent modules can migrate
+    # independently).
+    assert Channel is ChannelEnum
+    # ``ALL_SOURCES`` is the closed set the Book validates
+    # against; the action_item and task books share the
+    # same constants.
+    assert ALL_SOURCES == frozenset({SOURCE_USER, SOURCE_PROACTIVE})
 
 
 # -- HookSignoffBook --------------------------------------------------
@@ -385,8 +472,6 @@ __all__ = [
     "SessionBook",
     "Task",
     "TaskBook",
-    "TaskPreset",
-    "TaskPresetBook",
     "TaskRun",
     "TaskRunBook",
     "TokenUsageBook",
