@@ -1,9 +1,11 @@
 """Composition-root bootstrap for new_bus.
 
-Provides the process-wide ``NewBus`` singleton that wires local SQLite
-and MAGIS database access into a single facade.  Workers and business
-modules call :func:`get_bus` — they never need to know database paths
-or URLs.
+Provides :func:`bootstrap_new_bus` — a pure function that wires local
+SQLite and MAGIS database access into a single :class:`NewBus` facade.
+All paths are passed explicitly; no environment variable reads, no
+auto-discovery.  The composition root (:mod:`magi.startup.runtime`)
+calls this after resolving identity and database paths, then passes
+the resulting ``NewBus`` to workers via constructor injection.
 
 All Job/Book imports are **lazy** (inside ``_bootstrap_with_dirs``) so
 that merely importing this module does not register ORM tables.  This
@@ -24,14 +26,14 @@ class NewBus:
     """Public, domain-partitioned BUS facade.
 
     Holds both local SQLite and MAGIS database access internally.
-    Workers and business modules access domain services directly
-    without knowing which database backs them::
+    Constructed by :func:`bootstrap_new_bus` in the composition root;
+    workers receive a ready-to-use ``NewBus`` via constructor injection.
 
-        from magi.new_bus import get_bus
+    Usage::
 
-        bus = get_bus()
+        bus = bootstrap_new_bus(state_dir="...", magis_url="...")
         job = bus.tool_jobs.claim(worker_id="w1")
-        magic = bus.magic.get(magic_id=1)
+        magic = bus.magic.get(magic_id=1)  # None when MAGIS absent
 
     When MAGIS is not configured, all magis-related fields are
     ``None``.
@@ -126,64 +128,26 @@ class NewBus:
 
 
 # ---------------------------------------------------------------------------
-# singleton
+# public bootstrap entry point
 # ---------------------------------------------------------------------------
 
-_bus: NewBus | None = None
-_injected_magis_url: str | None = None
 
+def bootstrap_new_bus(
+    *,
+    state_dir: str,
+    magis_url: str | None = None,
+) -> NewBus:
+    """Explicitly bootstrap a ``NewBus`` with resolved paths.
 
-def set_magis_url(url: str | None) -> None:
-    """Inject a MAGIS database URL for the next :func:`get_bus` call.
+    Called by the composition root (e.g. :mod:`magi.startup.runtime`)
+    after identity + database paths have been resolved.  Does NOT
+    read environment variables or call auto-discovery — all paths
+    are passed explicitly (plan §10).
 
-    Call **before** the first :func:`get_bus`.  Used by tests and the
-    CLI Profile to supply a per-MAGIS SQLite path instead of relying
-    on the K8s ``MAGIS_DATABASE_URL`` environment variable.
+    Returns a ready-to-use ``NewBus``.  The caller is responsible for
+    passing it to workers via constructor injection.
     """
-    global _injected_magis_url
-    _injected_magis_url = url
-
-
-def _discover_magis_url() -> str | None:
-    """Discover the MAGIS database URL.
-
-    1. Explicitly injected URL (tests / CLI Profile).
-    2. ``MAGIS_DATABASE_URL`` env var (K8s Profile).
-    """
-    if _injected_magis_url is not None:
-        return _injected_magis_url
-    return os.environ.get("MAGIS_DATABASE_URL")
-
-
-def get_bus() -> NewBus:
-    """Return the process-wide ``NewBus`` singleton.
-
-    Auto-discovers the local SQLite path (via
-    :func:`magi.startup.paths.resolve_state_dir`) and the MAGIS database URL
-    (via ``MAGIS_DATABASE_URL`` or :func:`set_magis_url`).
-
-    This is the **only** entry point that modules outside
-    ``magi.new_bus`` should use.  Workers receive a ready-to-use
-    ``NewBus`` without ever knowing where the databases live.
-    """
-    global _bus
-    if _bus is not None:
-        return _bus
-    _bus = _bootstrap()
-    return _bus
-
-
-def _bootstrap() -> NewBus:
-    """Wire the full BUS with both databases.
-
-    Internal — callers use :func:`get_bus`.  Tests that need a
-    different state directory can call :func:`_bootstrap_with_dirs`.
-    """
-    # Plan §6 — startup.paths is the composition-root path resolver.
-    from magi.startup.paths import resolve_state_dir as _state_dir
-    state = str(_state_dir())
-
-    return _bootstrap_with_dirs(state_dir=state)
+    return _bootstrap_with_dirs(state_dir=state_dir, magis_url=magis_url)
 
 
 def _bootstrap_with_dirs(
@@ -246,7 +210,7 @@ def _bootstrap_with_dirs(
     # ---- wire factories ----------------------------------------------------
     local_factory = build_local_factory(state_dir)
 
-    url = magis_url or _discover_magis_url()
+    url = magis_url or os.environ.get("MAGIS_DATABASE_URL")
     magis_factory = build_magis_factory(url) if url else None
 
     # ---- local books -------------------------------------------------------

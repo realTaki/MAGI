@@ -1,14 +1,14 @@
 """new_bus — 全新的消息总线模块。
 
 与旧 ``magi.bus`` 并行、独立。 提供自己的 ORM 基类、EngineFactory、
-Books（读侧 CRUD）、Jobs（写侧 publish/claim/submit_result），以及
-自动发现双数据库（local SQLite + MAGIS PG）的统一门面 ``NewBus``。
+Books（读侧 CRUD）、Guild（写侧 publish/claim/submit_result），以及
+通过 :func:`bootstrap_new_bus` 构造的统一门面 ``NewBus``。
 
-Worker 入口::
+``NewBus`` 由组合根（:mod:`magi.startup.runtime`）显式构造并传入 worker::
 
-    from magi.new_bus import get_bus
+    from magi.new_bus import bootstrap_new_bus
 
-    bus = get_bus()
+    bus = bootstrap_new_bus(state_dir="/path/to/memories", magis_url="...")
     job = bus.tool_jobs.claim(worker_id="w1")
     magic = bus.magic.get(magic_id=1)
 
@@ -18,14 +18,13 @@ Worker 入口::
     from magi.new_bus.guild import RunToolJob, runToolJobBoard
 """
 
-from magi.new_bus.bootstrap import NewBus, get_bus, set_magis_url
+from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
 __all__ = [
     "NewBus",
-    "get_bus",
-    "set_magis_url",
+    "bootstrap_new_bus",
     "Base",
     "utcnow_naive",
     "EngineFactory",

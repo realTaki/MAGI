@@ -4,7 +4,8 @@ The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
 1. Bootstraps identity via :func:`magi.startup.bootstrap.bootstrap_magi`.
-2. Builds the public :class:`~magi.bus.Bus` facade.
+2. Builds both :class:`~magi.bus.Bus` (old) and
+   :class:`~magi.new_bus.NewBus` (new) facades side-by-side.
 3. Brings up durable workers (provider / agent / tool / delivery).
 4. Brings up channels (currently: telegram).
 5. Serves the private runtime HTTP API on a fixed internal port.
@@ -71,12 +72,12 @@ async def run_magi(config: StartupConfig) -> None:
     """
     startup = bootstrap_magi(config)
 
-    bus = _build_bus(startup)
+    old_bus, new_bus = _build_buses(startup)
     workers = _build_workers()
-    channels = _build_channels(startup)
+    channels = _build_channels(startup, new_bus)
 
-    async with _runtime_lifespan(workers, channels):
-        _serve_runtime_api(startup)
+    async with _runtime_lifespan(workers, channels, new_bus):
+        _serve_runtime_api(startup, new_bus)
 
 
 # ----------------------------------------------------------------------
@@ -84,27 +85,42 @@ async def run_magi(config: StartupConfig) -> None:
 # ----------------------------------------------------------------------
 
 
-def _build_bus(startup: StartupContext) -> object:
-    """Construct the public BUS facade for this process.
+def _build_buses(startup: StartupContext) -> tuple[object, "NewBus"]:
+    """Construct both old and new BUS facades for this process.
 
     The path + DSN come from :class:`StartupContext` and are passed
     through explicitly (plan §10 — no env mutation at runtime).
+
+    Old bus: unchanged, still the active bus for existing workers.
+    New bus: wired from the same paths, available for gradual migration.
     """
     from magi.bus import bootstrap as bus_bootstrap
     from magi.bus.db.magis.engine import set_injected_magis_engine
     from magi.bus.db.magis.local_engine import build as build_local_engine
 
-    # Pass the resolved path + engines into the bus so the resolver
-    # does not need to re-read process environment.
-    state_dir = startup.workspace_dir / "memories"
-    magis_engine = build_local_engine(startup.workspace_dir.parent.parent / "MAGI_Societies" / "genesis")
-    set_injected_magis_engine(magis_engine)
+    from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 
-    return bus_bootstrap(
+    # --- shared paths (both buses point at the same databases) ---
+    state_dir = str(startup.workspace_dir / "memories")
+
+    # --- old bus (existing, unchanged) ---
+    magis_engine = build_local_engine(
+        startup.workspace_dir.parent.parent / "MAGI_Societies" / "genesis"
+    )
+    set_injected_magis_engine(magis_engine)
+    old_bus = bus_bootstrap(
         initialise_local=True,
-        state_dir=str(state_dir),
+        state_dir=state_dir,
         magis_engine=magis_engine,
     )
+
+    # --- new bus (explicit, no global injection, no env reads) ---
+    new_bus = bootstrap_new_bus(
+        state_dir=state_dir,
+        magis_url=startup.magis_database_url,
+    )
+
+    return old_bus, new_bus
 
 
 # ----------------------------------------------------------------------
@@ -118,12 +134,19 @@ def _build_workers() -> "WorkerHandles":
 
 
 @asynccontextmanager
-async def _runtime_lifespan(workers: "WorkerHandles", channels: list[str]):
+async def _runtime_lifespan(
+    workers: "WorkerHandles",
+    channels: list[str],
+    new_bus: "NewBus | None" = None,
+):
     """Start / stop the durable worker pool + message channels.
 
     Provider worker goes first (so it can drain orphans from a previous
     crash); delivery worker goes last (so it sees everything produced by
     the rest).
+
+    ``new_bus`` is accepted for future worker migration — existing
+    workers still use the old bus global singleton internally.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
@@ -236,19 +259,36 @@ def is_channel_running(name: str) -> bool:
 # ----------------------------------------------------------------------
 
 
-def _build_channels(_startup: StartupContext) -> list[str]:
+def _build_channels(
+    _startup: StartupContext,
+    new_bus: "NewBus | None" = None,
+) -> list[str]:
     """Resolve enabled message channels from BUS settings.
 
     Channels state lives in ``settings.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.
+
+    Prefers ``new_bus`` when available; falls back to the old bus
+    global singleton for backward compatibility.
     """
+    import json
+
+    # Try new_bus first (explicitly wired, no global lookup).
+    if new_bus is not None:
+        try:
+            raw = new_bus.settings.get("channels.enabled")
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [c for c in parsed if isinstance(c, str)]
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Fall back to old bus singleton (e.g. worker_lifespan path).
     try:
         from magi.bus import get_bus
 
-        bus = get_bus()
-        import json
-
-        raw = bus.settings.get("channels.enabled")
+        raw = get_bus().settings.get("channels.enabled")
         if not raw:
             return []
         parsed = json.loads(raw)
@@ -264,7 +304,10 @@ def _build_channels(_startup: StartupContext) -> list[str]:
 # ----------------------------------------------------------------------
 
 
-def _serve_runtime_api(_startup: StartupContext) -> None:
+def _serve_runtime_api(
+    _startup: StartupContext,
+    new_bus: "NewBus | None" = None,
+) -> None:
     """Run uvicorn with the private Runtime FastAPI app.
 
     Per plan §21 — host + port are hardcoded; reload is decided by the
@@ -273,7 +316,7 @@ def _serve_runtime_api(_startup: StartupContext) -> None:
     host = _RUNTIME_HOST  # internal host only; not externally exposed
     port = _RUNTIME_PORT
     reload = _reload_enabled()
-    log_level = _log_level()
+    log_level = _log_level(new_bus)
     reload_dirs = _reload_dirs() if reload else None
 
     uvicorn.run(
@@ -297,8 +340,22 @@ def _reload_enabled() -> bool:
     return os.environ.get("MAGI_DEV_RELOAD") == "1"
 
 
-def _log_level() -> str:
-    """Read DB-driven log level if present, fall back to default."""
+def _log_level(new_bus: "NewBus | None" = None) -> str:
+    """Read DB-driven log level if present, fall back to default.
+
+    Prefers ``new_bus`` when available; falls back to the old bus
+    global singleton for backward compatibility.
+    """
+    # Try new_bus first (explicitly wired, no global lookup).
+    if new_bus is not None:
+        try:
+            raw = new_bus.settings.get("system.log_level")
+            if raw and raw in {"debug", "info", "warning", "error"}:
+                return raw
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Fall back to old bus singleton.
     try:
         from magi.bus import get_bus
 
