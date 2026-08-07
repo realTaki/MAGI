@@ -31,6 +31,7 @@ from magi.startup.paths import (
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
+from magi.startup.process import is_alive, read_pid
 
 logger = logging.getLogger("magi.startup.local")
 
@@ -172,8 +173,8 @@ def start_magi(
     """
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
     if pid_path.exists():
-        existing = _read_pid(pid_path)
-        if existing is not None and _is_alive(existing):
+        existing = read_pid(pid_path)
+        if existing is not None and is_alive(existing):
             print(
                 f"MAGI {config.magi_name!r} is already running (pid={existing})",
                 file=sys.stderr,
@@ -241,11 +242,11 @@ def start_magi(
 def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
     """Send SIGTERM (or SIGKILL with ``force=True``) to the subprocess."""
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
-    pid = _read_pid(pid_path)
+    pid = read_pid(pid_path)
     if pid is None:
         print(f"MAGI {config.magi_name!r}: no PID file", file=sys.stderr)
         return 1
-    if not _is_alive(pid):
+    if not is_alive(pid):
         print(f"MAGI {config.magi_name!r}: already dead (pid={pid})")
         pid_path.unlink(missing_ok=True)
         return 0
@@ -257,10 +258,10 @@ def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
 
     deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:
-        if not _is_alive(pid):
+        if not is_alive(pid):
             break
         time.sleep(STOP_POLL_INTERVAL_S)
-    if _is_alive(pid) and not force:
+    if is_alive(pid) and not force:
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -291,8 +292,8 @@ def status_magi(*, config: StartupConfig) -> LocalSlotStatus:
     """Return the current status of one MAGI's local slot."""
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
     log_stdout, log_stderr = resolve_runtime_log_paths(config.workspace_dir)
-    pid = _read_pid(pid_path)
-    alive = bool(pid and _is_alive(pid))
+    pid = read_pid(pid_path)
+    alive = bool(pid and is_alive(pid))
     return LocalSlotStatus(
         magi_name=config.magi_name,
         pid=pid,
@@ -347,27 +348,6 @@ def _build_subprocess_argv(config: StartupConfig) -> list[str]:
     if config.magi_id:
         argv.extend(["--magi-id", str(config.magi_id)])
     return argv
-
-
-def _read_pid(pid_path: Path) -> int | None:
-    if not pid_path.exists():
-        return None
-    try:
-        raw = pid_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
 
 
 def _wait_healthy() -> bool:

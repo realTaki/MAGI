@@ -198,6 +198,21 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
+    def get_by_name(self, *, name: str) -> ToolDefinition | None:
+        """One definition by tool name, or ``None`` when unknown.
+
+        ``schema_hash`` on the returned DTO is always ``""`` — the
+        column doesn't persist it. Callers that need the fingerprint
+        recompute it from the semantic fields, which round-trip
+        exactly through :meth:`_apply_definition` / :meth:`_row_to_dto`
+        (see :func:`magi.tools.worker._schema_hash`).
+        """
+        with self._session() as s:
+            row = s.scalar(
+                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
+            )
+            return self._row_to_dto(row) if row else None
+
     def list_schemas(
         self,
         *,

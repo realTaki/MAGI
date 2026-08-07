@@ -45,11 +45,11 @@ from magi.new_bus.library.local.sessionBook import (
     SessionBook,
 )
 from magi.new_bus.library.local.settingBook import Setting, SettingBook
-from magi.new_bus.library.local.taskBook import (
+from magi.new_bus.library.local.tasksBook import (
+    Channel,
+    ChannelEnum,
     Task,
     TaskBook,
-    TaskPreset,
-    TaskPresetBook,
     TaskRun,
     TaskRunBook,
 )
@@ -69,6 +69,8 @@ __all__ = [
     "ALL_KINDS",
     "ALL_PRIORITIES",
     "ALL_SOURCES",
+    "Channel",
+    "ChannelEnum",
     "PRIORITY_HIGH",
     "PRIORITY_NORMAL",
     "SOURCE_PROACTIVE",
@@ -99,8 +101,6 @@ __all__ = [
     "SOURCE_SYSTEM",
     "Task",
     "TaskBook",
-    "TaskPreset",
-    "TaskPresetBook",
     "TaskRun",
     "TaskRunBook",
     "TokenUsage",

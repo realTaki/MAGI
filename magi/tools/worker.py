@@ -252,16 +252,23 @@ class ToolsWorker:
 
         # 2. schema_hash check — did this specific tool's schema
         #    change between enqueue and claim?
+        #
+        #    The Book hands back a ``ToolDefinition`` with the same
+        #    semantic fields the publish path hashed, so we re-run
+        #    :func:`_schema_hash` on it directly. ``schema_hash`` is
+        #    not a stored column — recomputing is the contract.
         if job.schema_hash:
-            row = self.bus.tool_definitions_book.get_by_name(name=job.tool_name)
-            if row is None:
+            definition = self.bus.tool_definitions_book.get_by_name(
+                name=job.tool_name,
+            )
+            if definition is None:
                 self._submit_failure(
                     job,
                     content=f"unknown tool: {job.tool_name!r}",
                     error_code=_ERROR_CODES["unknown"],
                 )
                 return
-            current_hash = _hash_from_row(row, job.tool_name)
+            current_hash = _schema_hash(definition)
             if current_hash != job.schema_hash:
                 self._submit_failure(
                     job,
@@ -393,45 +400,3 @@ def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
         run_id=job.run_id,
         tool_call_id=job.tool_call_id,
     )
-
-
-def _hash_from_row(row: Any, tool_name: str) -> str:
-    """Recompute schema_hash for a stored row.
-
-    The persistent row only stores ``spec_json`` /
-    ``allowed_roles_json``, not the full ``ToolDefinition``. We
-    rebuild a minimal one and hash it — same canonical JSON shape
-    as :func:`_schema_hash` for the fields we care about.
-
-    ``allowed_roles`` is read from the row (not defaulted to ``()``)
-    — pre-fix the recomputed hash silently dropped role info, which
-    meant any claim on a role-gated tool failed the schema_hash
-    check. The publish path now writes the roles to the row, so we
-    must read them back here for the hashes to round-trip.
-    ``implementation_version`` isn't stored yet; left as ``None``
-    (matches every builtin today).
-    """
-    try:
-        input_schema = json.loads(row.spec_json) if row.spec_json else {}
-    except json.JSONDecodeError:
-        return ""
-    allowed_roles: tuple[str, ...] = ()
-    if row.allowed_roles_json:
-        try:
-            parsed = json.loads(row.allowed_roles_json)
-            if isinstance(parsed, list):
-                allowed_roles = tuple(
-                    str(r) for r in parsed if isinstance(r, str)
-                )
-        except json.JSONDecodeError:
-            pass
-    d = ToolDefinition(
-        name=row.name,
-        source=row.source,
-        description=row.description or "",
-        input_schema=input_schema,
-        allowed_roles=allowed_roles,
-        enabled=bool(row.enabled),
-        implementation_version=None,
-    )
-    return _schema_hash(d)

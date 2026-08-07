@@ -61,9 +61,14 @@ class NewBus:
     set_setting_notify_board: object  # setSettingNotifyBoard
 
     # -- local: tasks_book (Books + Notify board) ---------------------------------
+    #
+    # ``tasks_book`` owns BOTH user-created tasks
+    # (``Task.source == SOURCE_USER``) and preset templates
+    # (``Task.source == SOURCE_PROACTIVE``); the old separate
+    # ``task_presets_book`` field has been folded into this
+    # single Book (parallel to the ``action_items`` refactor).
 
     tasks_book: object  # TaskBook
-    task_presets_book: object  # TaskPresetBook
     task_runs_book: object  # TaskRunBook
     schedule_task_notify_board: object  # scheduleTaskNotifyBoard
 
@@ -181,7 +186,6 @@ def _bootstrap_with_dirs(
         SessionBook,
         SettingBook,
         TaskBook,
-        TaskPresetBook,
         TaskRunBook,
         TokenUsageBook,
         ToolCatalogStateBook,
@@ -231,7 +235,6 @@ def _bootstrap_with_dirs(
     contact_notes_book = ContactNoteBook(local_factory)
     settings_book = SettingBook(local_factory)
     tasks_book = TaskBook(local_factory)
-    task_presets_book = TaskPresetBook(local_factory)
     task_runs_book = TaskRunBook(local_factory)
     tool_definitions_book = ToolDefinitionBook(local_factory)
     tool_catalog_book = ToolCatalogStateBook(local_factory)
@@ -299,7 +302,6 @@ def _bootstrap_with_dirs(
         set_config_notify_board=set_config_notify_board,
         set_setting_notify_board=set_setting_notify_board,
         tasks_book=tasks_book,
-        task_presets_book=task_presets_book,
         task_runs_book=task_runs_book,
         schedule_task_notify_board=schedule_task_notify_board,
         tool_definitions_book=tool_definitions_book,

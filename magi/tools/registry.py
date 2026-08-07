@@ -80,7 +80,7 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.shell.kill import BashKillTool
     from magi.tools.tasks.add_action_item import AddActionItemTool
     from magi.tools.tasks.complete_action_item import CompleteActionItemTool
-    from magi.tools.tasks.list_action_item import ListActionItemTool
+    from magi.tools.tasks.list_action_items import ListActionItemsTool
     from magi.tools.filesystem.edit_file import EditFileTool
     from magi.tools.filesystem.list_files import ListFilesTool
     from magi.tools.comms.message_magi import MessageMagiTool
@@ -147,7 +147,7 @@ def _build_tools() -> list["Tool"]:
         # second-layer defence.
         AddActionItemTool(),
         CompleteActionItemTool(),
-        ListActionItemTool(),
+        ListActionItemsTool(),
         # MCP server management — admin-only.
         # LLM-side CRUD lives in :mod:`magi.mcp.manage`;
         # the registry imports them from the MCP package
