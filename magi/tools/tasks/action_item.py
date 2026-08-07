@@ -193,7 +193,7 @@ class AddActionItemTool(Tool):
         "required": ["title"],
     }
 
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     async def run(
         self,
@@ -300,7 +300,7 @@ class CompleteActionItemTool(Tool):
         "required": ["item_id"],
     }
 
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     async def run(
         self,
@@ -361,7 +361,7 @@ class ListActionItemTool(Tool):
         },
     }
 
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     async def run(
         self,

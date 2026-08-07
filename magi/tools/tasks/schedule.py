@@ -56,36 +56,25 @@ logger = logging.getLogger("magi.tools.tasks.schedule")
 _NAME_MAX = 120
 _PROMPT_MAX = 8000
 
-# ``admin`` and ``assigned`` may create a task. ``contact``
-# and ``guest`` get ``is_error=True`` (the in-run check
-# below enforces this — the registry's role-based
-# ``ALLOWED_ROLES`` filter only sees the role enum, not
-# the separate ``admin`` boolean, so we widen
-# ``ALLOWED_ROLES`` to an empty frozenset and lean on the
-# in-run check). Mirrors the API's
-# ``_enforce_creator_can_create(admin, role)`` helper.
-_ROLE_MAY_CREATE = frozenset()  # all roles visible; in-run gate enforces the real rule
+# ``admin`` and ``assigned`` may create a task. ``guest``
+# (and any operator without a MAGIS admin row) gets
+# ``is_error=True`` — enforced centrally by
+# :meth:`Tool.gate` which checks the role enum against
+# ``ALLOWED_ROLES`` and, when ``"admin"`` is in the set,
+# consults :attr:`ctx.bus.magis_admins_book` for a
+# per-MAGIS admin row. Mirrors the API's
+# ``_enforce_creator_can_create`` helper.
 
 
 class ScheduleTaskTool(Tool):
     name = "schedule_task"
 
-    # Visible to anyone; the in-run re-check below
-    # (``_ROLE_MAY_CREATE``) is the real gate. We can't
-    # filter on the registry's ``ALLOWED_ROLES`` because
-    # that field is keyed on the ``role`` enum only —
-    # the separate ``admin`` boolean (WebUI sign-in
-    # rights, which moved out of the role enum in 2024)
-    # is not plumbed through to the registry. Widening
-    # the menu filter and leaning on the in-run check is
-    # the same defense-in-depth shape the rest of the
-    # codebase uses for this category of tool: the model
-    # learns the tool exists, the run-time guard rejects
-    # non-authors with ``is_error=True``.
-    ALLOWED_ROLES = frozenset({"assigned"})
-    # In-run author gate: ``admin=True OR role='assigned'``.
-    # Mirrors the API's
-    # ``_enforce_creator_can_create(admin, role)`` helper.
+    # ``admin`` is the virtual role resolved from the MAGIS
+    # admin rows (see :class:`Tool.gate`) — not a value
+    # the contact ``role`` enum ever carries. Tools
+    # declaring this whitelist therefore admit both
+    # ``role='assigned'`` operators and MAGIS admins.
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create or update a recurring scheduled task. Requires "
         "admin or assigned-contact scope (i.e. the calling "
@@ -329,38 +318,9 @@ class ScheduleTaskTool(Tool):
                 is_error=True,
             )
 
-        # ── Admin / assigned gate ──────────────────────────────────────
-        # Verify the calling operator. We pull role
-        # from the DB (not ``ctx.uid``-trust) so
-        # a mis-wired caller can't punch above its
-        # authority.
-        bus = ctx.bus
-        contact = bus.contacts_book.get(ctx.uid)
-        if contact is None:
-            return ToolResult(content="caller not found", is_error=True)
-        # Author gate: ``admin=True`` (WebUI operator)
-        # OR ``role='assigned'`` (the served user).
-        # Mirrors ``magi.channels.api.tasks.
-        # _enforce_creator_can_create`` so the API
-        # and the LLM-side tool agree on who can
-        # author a scheduled task. Re-read from the DB
-        # (not ``ctx.uid``-trust) so a mis-wired caller
-        # can't punch above its authority.
-        if not (bool(contact.role == "assigned")):
-            return ToolResult(
-                content=(
-                    f"schedule_task requires admin or "
-                    f"assigned-contact scope; "
-                    f"role={contact.role!r} "
-                    f"is not permitted."
-                ),
-                is_error=True,
-            )
-        operator_id = contact.id
-        # Session closed — now safe to open nested ones
-        # (the dispatcher adapter's ``with open_session()``
-        # would otherwise deadlock against SQLite's
-        # ``BEGIN IMMEDIATE`` reservation).
+        # Role gate: ``ALLOWED_ROLES = {"admin", "assigned"}``
+        # is enforced by the worker via ``Tool.gate(ctx)``
+        # before ``run()`` is called — no manual re-check here.
 
         # D.28: stamp the operator's bound IM id on the new
         # session row as a breadcrumb. Resolved via the
@@ -368,6 +328,8 @@ class ScheduleTaskTool(Tool):
         # (the dispatcher opens its own SQLite session
         # — nested inside an outer txn would deadlock).
         # Empty string when the operator has no TG binding.
+        operator_id = int(ctx.uid)
+        bus = ctx.bus
         task_session_delivery_address = (
             bus.dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
         )

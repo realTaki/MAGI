@@ -59,7 +59,7 @@ class EditFileTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     description = (
         "Replace an exact substring in a file. The ``old_str`` "

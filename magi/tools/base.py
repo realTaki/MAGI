@@ -135,6 +135,17 @@ class Tool(ABC):
     #: every operator can invoke the tool regardless of role.
     #: Setting a non-empty set causes :meth:`gate` to refuse
     #: callers whose role isn't in the set.
+    #:
+    #: ``"admin"`` is a *virtual* role: it never appears in
+    #: :attr:`Contact.role` (the role enum is just
+    #: ``assigned`` / ``guest``), but :meth:`gate` treats it
+    #: as a synonym for "the caller is an admin of at least
+    #: one MAGIS per :class:`~magi.new_bus.library.magis.magisBook.MagisAdminBook`".
+    #: That lets tools declare ``ALLOWED_ROLES = {"admin",
+    #: "assigned"}`` without carrying a parallel ``admin``
+    #: boolean on the contact row. A user can be both
+    #: ``role='assigned'`` and a MAGIS admin — both branches
+    #: pass independently.
     ALLOWED_ROLES: frozenset[str] = frozenset()
 
     @abstractmethod
@@ -165,12 +176,32 @@ class Tool(ABC):
         The worker turns a non-``None`` return into
         ``RunToolResult(is_error=True, ...)``.
 
-        Default implementation: looks up the caller's role
-        via :attr:`ctx.bus.contacts_book` and checks it
-        against :attr:`ALLOWED_ROLES`. Re-resolving on
-        every call (no caching on the context) means a role
-        flip in the database takes effect on the very next
-        tool call without a process restart.
+        Default implementation builds the caller's
+        **effective role-tag set**:
+
+        - ``ctx.bus.contacts_book.get(contact_id=...)`` →
+          the MAGI-local role (``assigned`` / ``guest`` /
+          ``contact``) — lives on ``Contact.role``.
+        - ``ctx.bus.magis_admins_book.is_admin_for(uid=...)``
+          → ``True`` iff the caller has at least one row in
+          the ``magis_admins`` table. Admin is a **MAGIS-level**
+          concept; it never appears as a value on
+          ``Contact.role`` (the role enum is just
+          ``assigned`` / ``guest``). A user can be both
+          ``assigned`` here and ``admin`` in some MAGIS —
+          the two flags are orthogonal.
+
+        The caller passes when their effective role-tag set
+        intersects :attr:`ALLOWED_ROLES`. So a tool with
+        ``ALLOWED_ROLES = frozenset({"admin", "assigned"})``
+        admits both the served user and any MAGIS admin;
+        a tool with ``ALLOWED_ROLES = frozenset({"admin"})``
+        admits only MAGIS admins.
+
+        Re-resolving on every call (no caching on the
+        context) means a role or admin flip in the database
+        takes effect on the very next tool call without a
+        process restart.
 
         Override for tools that need additional checks on
         top of the role (e.g. ``UpdateContactNoteTool`` adds
@@ -203,13 +234,21 @@ class Tool(ABC):
                 "the caller side has not migrated to new_bus"
             )
 
+        # Build effective role-tag set: local Contact.role
+        # ∪ { "admin" } when the caller has any MAGIS admin row.
         contact = ctx.bus.contacts_book.get(contact_id=ct_id)
         if contact is None:
             return f"contact {ct_id!r} not found"
-        if contact.role not in self.ALLOWED_ROLES:
+        effective: set[str] = {contact.role}
+        admins_book = getattr(ctx.bus, "magis_admins_book", None)
+        if admins_book is not None and admins_book.is_admin_for(uid=ct_id):
+            effective.add("admin")
+
+        if effective.isdisjoint(self.ALLOWED_ROLES):
             return (
-                f"role {contact.role!r} is not permitted for this "
-                f"tool (allowed: {', '.join(sorted(self.ALLOWED_ROLES))})"
+                f"role(s) {sorted(effective)!r} is not permitted for "
+                f"tool {self.name!r} "
+                f"(allowed: {', '.join(sorted(self.ALLOWED_ROLES))})"
             )
         return None
 

@@ -47,12 +47,13 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from magi.new_bus.library.local import ToolDefinition
+from magi.new_bus.guild.runToolJob import RunToolResult
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
 
 if TYPE_CHECKING:
     from magi.new_bus import NewBus
-    from magi.new_bus.guild.runToolJob import RunToolJob, RunToolResult
+    from magi.new_bus.guild.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.tools.worker")
 

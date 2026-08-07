@@ -57,7 +57,7 @@ class BashRunTool(Tool):
     # callers never see these tools in the LLM's menu.
     # ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     def _build_description(self) -> str:
         """OS-specific description block.

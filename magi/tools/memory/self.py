@@ -89,7 +89,7 @@ class AddMemoryTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Persist a new fact into MAGI's mid-term memory. "
         "Use when the operator says '记住 X' / '记下 Y' / "
@@ -179,7 +179,7 @@ class UpdateMemoryTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Patch an existing memory row by id. Use when the operator "
         "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
@@ -242,7 +242,7 @@ class CompleteMemoryTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Mark an ongoing memory row as done. The row stays in the "
         "table for the audit trail but is no longer rendered in the "
@@ -294,7 +294,7 @@ class DeleteMemoryTool(Tool):
     # non-eligible callers never see these tools in the
     # LLM's menu. ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a memory row by id. Idempotent — deleting a "
         "non-existent id returns success. Use when the operator "

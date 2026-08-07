@@ -57,7 +57,7 @@ class AddContactTool(Tool):
     """Create a new contact."""
 
     name = "add_contact"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create a new contact (person) in the directory. "
         "Name is required. display_name, telegram_id, and "
@@ -121,7 +121,7 @@ class UpdateDailyNoteTool(Tool):
     """
 
     name = "update_daily_note"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Append a delta to today's daily note for the current "
         "operator (or the uid you pass). One row per "
@@ -196,7 +196,7 @@ class AddContactNoteTool(Tool):
     """
 
     name = "add_contact_note"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Add a new note about an existing contact (by uid). "
         "Each call creates one row in contact_notes — keep "
@@ -235,7 +235,7 @@ class UpdateContactNoteTool(Tool):
     """Edit an existing note by id."""
 
     name = "update_contact_note"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Update an existing contact note by id. Use when the "
         "operator says '改一下那条 / 把 ... 改成 ...'. The note_id "
@@ -273,7 +273,7 @@ class DeleteContactNoteTool(Tool):
     """Remove a contact note by id. Idempotent."""
 
     name = "delete_contact_note"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a contact note by id. Idempotent — deleting a "
         "non-existent id is a no-op success. Use when the "
@@ -302,7 +302,7 @@ class SearchContactsTool(Tool):
     """Search contacts by name or by note content."""
 
     name = "search_contacts"
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Search the contact directory by name or by note text. "
         "Returns the matching contacts and a sample of their "

@@ -33,7 +33,7 @@ class BashOutputTool(Tool):
     # callers never see these tools in the LLM's menu.
     # ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     description = (
         "Retrieve new output from a background bash shell. "

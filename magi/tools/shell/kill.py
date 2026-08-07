@@ -32,7 +32,7 @@ class BashKillTool(Tool):
     # callers never see these tools in the LLM's menu.
     # ``MCPTool`` is intentionally permissive
     # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"assigned"})
+    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     description = (
         "Terminate a background bash shell by id. "
