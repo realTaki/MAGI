@@ -1,32 +1,24 @@
-"""Shared base for Anthropic-API-compatible chat completions.
+"""Anthropic-API 兼容 chat completions 的公共基类。
 
-Both :class:`magi.providers.claude_code.ClaudeProvider`
-(Anthropic's first-party API) and
-:class:`magi.providers.minimax.MinimaxProvider`
-(Minimax's Anthropic-compatible endpoints) subclass
-this. The two vendors speak the same wire format
-(Anthropic Messages API) — the only differences are
-the base URL, the default model, and the error-label
-string the operator sees in logs. The base class
-centralises:
+:class:`magi.providers.claude_code.ClaudeProvider`（Anthropic 自家 API）
+和 :class:`magi.providers.minimax.MinimaxProvider`（Minimax 的中国/海外
+节点）都继承本类。两个厂商 wire 协议一致（Anthropic Messages API），
+差异只有 base_url / 默认模型 / 错误标签。本基类统一处理：
 
-  - the SDK client construction (with timeout)
-  - the ``messages.create`` call
-  - the error mapping (auth / rate-limit / network /
-    context-length / generic 4xx-5xx)
-  - the response walking (text / thinking / tool_use
-    extraction; everything else captured in
-    ``raw_blocks``)
+- SDK 客户端构造（带 timeout）
+- ``messages.create`` 调用
+- 错误映射（auth / rate-limit / network / context-length / 4xx-5xx）
+- 响应拆解（text / thinking / tool_use 提取；其它进 raw_blocks）
 
-Subclasses just override three class attributes
-(``_BASE_URL``, ``_DEFAULT_MODEL``, ``_ERROR_LABEL``)
-and that's the whole "vendor" surface.
+子类只需声明三个类属性（``_BASE_URL`` / ``_DEFAULT_MODEL`` /
+``_ERROR_LABEL``）就够了。
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import anthropic
@@ -38,30 +30,19 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.provider import (
-    ChatMessage,
-    ChatResult,
-    LLMStreamEvent,
-    LLMProvider,
-)
+from magi.providers.base import LLMProvider, LLMStreamEvent
 
 logger = logging.getLogger("magi.agent.llm.anthropic")
 
-# Cap on a single reply. 1024 is enough for most chat
-# turns and well under the 8K cap most
-# Anthropic-compatible APIs advertise. The Chat /
-# Channel layer can ask for more if a specific use
-# case needs it.
 _MAX_TOKENS_DEFAULT = 1024
 
 
 def _is_context_length_error(message: str) -> bool:
-    """Heuristic — the SDK puts the upstream error text
-    into the exception message. Most providers phrase
-    context-length overflow as "prompt is too long"
-    or "context length exceeded". Keep this loose;
-    false positives just fall through to the generic
-    LLMError.
+    """启发式判断 SDK 异常消息是否提示上下文超限。
+
+    SDK 把上游错误文本塞进 exception message；多数厂商用
+    "prompt is too long" / "context length exceeded" 等措辞。
+    误判只回退到通用 LLMError，影响有限。
     """
     m = message.lower()
     return (
@@ -73,38 +54,14 @@ def _is_context_length_error(message: str) -> bool:
 
 
 class AnthropicProvider(LLMProvider):
-    """Abstract base for Anthropic-API-compatible vendors.
+    """Anthropic-API 兼容厂商的抽象基类。"""
 
-    Subclasses must define three class attributes:
-
-    - ``_BASE_URL``: the upstream API root (no trailing
-      slash; the SDK appends ``/v1/messages`` itself).
-    - ``_DEFAULT_MODEL``: the model used when the
-      caller doesn't pass ``model=``.
-    - ``_ERROR_LABEL``: the string shown in error
-      messages (e.g. ``"claude"`` / ``"minimax"``) so
-      an operator looking at logs can tell which
-      vendor failed without grepping the URL.
-
-    Subclasses do **not** need to override ``chat`` or
-    ``default_model`` — the shared base implementation
-    handles both. The subclass only fixes the
-    per-vendor config.
-    """
-
-    # --- subclass-overridable config -------------------------
-
-    _BASE_URL: str = ""            # set in subclass
-    _DEFAULT_MODEL: str = ""       # set in subclass
-    _ERROR_LABEL: str = "anthropic"  # set in subclass
-
-    # --- end subclass-overridable config ---------------------
+    _BASE_URL: str = ""
+    _DEFAULT_MODEL: str = ""
+    _ERROR_LABEL: str = "anthropic"
 
     def __init__(self, api_key: str, model: str | None = None) -> None:
         if not self._BASE_URL:
-            # Defensive — a subclass forgot to set the
-            # base URL. Explode here so a typo at the
-            # call site is easier to debug.
             raise LLMError(
                 f"{type(self).__name__} must declare _BASE_URL"
             )
@@ -112,11 +69,6 @@ class AnthropicProvider(LLMProvider):
         self._client = anthropic.Anthropic(
             api_key=api_key,
             base_url=self._BASE_URL,
-            # Keep timeouts short — the agent loop is
-            # the one waiting on this call. If the
-            # upstream is slow, the caller (TG bot)
-            # gets a clear timeout instead of a hung
-            # event loop.
             timeout=30.0,
         )
 
@@ -126,26 +78,11 @@ class AnthropicProvider(LLMProvider):
     async def chat(
         self,
         system: str | None,
-        messages: list[ChatMessage],
+        messages: list[dict],
         max_tokens: int = _MAX_TOKENS_DEFAULT,
         tools: list[dict] | None = None,
-    ) -> ChatResult:
-        # Translate the runtime's flat message list
-        # into the SDK's expected shape. ``content`` is
-        # a string for plain text turns; when
-        # ``content_blocks`` is set (D.16: tool_result
-        # echoes or assistant raw-block replays) we
-        # pass the structured form so the SDK
-        # preserves the block types.
-        sdk_messages: list[dict[str, Any]] = []
-        for m in messages:
-            if m.content_blocks:
-                sdk_messages.append({
-                    "role": m.role,
-                    "content": m.content_blocks,
-                })
-            else:
-                sdk_messages.append({"role": m.role, "content": m.content})
+    ) -> dict[str, Any]:
+        sdk_messages = _to_sdk_messages(messages)
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -153,26 +90,12 @@ class AnthropicProvider(LLMProvider):
         }
         if system:
             kwargs["system"] = system
-        # ``tools`` is the Anthropic
-        # ``[{name, description, input_schema}]`` list.
-        # ``None`` / empty means "model can't call any
-        # tools" — which is also the default when the
-        # agent decides to register zero tools. We
-        # don't pass ``tool_choice``; the model decides
-        # whether to use a tool on its own.
         if tools:
             kwargs["tools"] = tools
 
-        # Short alias so the error blocks below don't
-        # repeat the (potentially long) _ERROR_LABEL
-        # attribute lookup.
         label = self._ERROR_LABEL
 
         try:
-            # The SDK's ``messages.create`` is sync.
-            # Wrap in to_thread so the FastAPI event
-            # loop stays free for other requests while
-            # the upstream thinks.
             response = await asyncio.to_thread(
                 self._client.messages.create, **kwargs
             )
@@ -187,176 +110,275 @@ class AnthropicProvider(LLMProvider):
         except anthropic.APIConnectionError as e:
             raise LLMNetworkError(f"{label} connection error: {e}") from e
         except anthropic.BadRequestError as e:
-            # 400 covers invalid model name, malformed
-            # body, and context-length overflow.
-            # Inspect the message to split out the
-            # context-length case so the caller can
-            # react (trim history) rather than treating
-            # it as a generic 400.
             if _is_context_length_error(str(e)):
                 raise LLMContextLengthError(
                     f"{label} context overflow: {e}"
                 ) from e
             raise LLMError(f"{label} bad request: {e}") from e
         except anthropic.APIStatusError as e:
-            # Other 4xx / 5xx — treat as transient
-            # network-ish.
             raise LLMNetworkError(
                 f"{label} status {e.status_code}: {e}"
             ) from e
 
-        # Walk content blocks. All Anthropic-API-
-        # compatible vendors carry the same response
-        # shape: an ordered list of blocks with a
-        # ``type`` discriminator. We extract:
-        # - ``text``       → user-facing reply
-        # - ``thinking``   → chain-of-thought
-        #                    (audit-only, never sent to
-        #                    the user)
-        # - ``tool_use``   → agent loop dispatches each
-        #                    one to the registered tool
-        #                    and feeds the result back
-        #                    as the next ``user`` turn
-        # - everything else → captured in
-        #                    ``raw_blocks`` for future
-        #                    replay / audit, ignored
-        #                    for the immediate reply
-        text_parts: list[str] = []
-        thinking_parts: list[str] = []
-        raw_blocks: list[dict[str, Any]] = []
-        tool_uses: list[dict[str, Any]] = []
-        for block in response.content:
-            # Pydantic models in the SDK expose
-            # ``model_dump`` since 0.30. Fall back to
-            # ``__dict__`` if the installed version is
-            # older (defensive — the lock pins 0.113 but
-            # tests might run on a different env).
-            if hasattr(block, "model_dump"):
-                raw = block.model_dump()
-            elif hasattr(block, "dict"):
-                raw = block.dict()
-            else:
-                raw = {"type": getattr(block, "type", "unknown")}
-            raw_blocks.append(raw)
-
-            btype = getattr(block, "type", None)
-            if btype == "text":
-                text_parts.append(getattr(block, "text", ""))
-            elif btype == "thinking":
-                thinking_parts.append(getattr(block, "thinking", ""))
-            elif btype == "tool_use":
-                # The SDK gives us a Pydantic model with
-                # ``id``, ``name``, ``input`` attrs.
-                # Flatten to plain dicts so the rest of
-                # the runtime never has to import
-                # anthropic types.
-                tool_uses.append({
-                    "id": getattr(block, "id", ""),
-                    "name": getattr(block, "name", ""),
-                    "input": dict(getattr(block, "input", {}) or {}),
-                })
-
-        usage_obj = getattr(response, "usage", None)
-        if usage_obj is not None and hasattr(usage_obj, "model_dump"):
-            usage = usage_obj.model_dump()
-        elif usage_obj is not None and hasattr(usage_obj, "dict"):
-            usage = usage_obj.dict()
-        else:
-            usage = None
-
-        text = "\n".join(p for p in text_parts if p).strip()
-        thinking = "\n".join(p for p in thinking_parts if p).strip() or None
-
-        return ChatResult(
-            text=text or "(empty reply)",
-            thinking=thinking,
-            model=getattr(response, "model", self.model),
-            usage=usage,
-            raw_blocks=raw_blocks,
-            stop_reason=getattr(response, "stop_reason", None),
-            tool_uses=tool_uses,
-        )
+        return _response_to_dict(response, self.model)
 
     async def stream(
         self,
         system: str | None,
-        messages: list[ChatMessage],
+        messages: list[dict],
         *,
         max_tokens: int = _MAX_TOKENS_DEFAULT,
         tools: list[dict] | None = None,
-        on_event,
-    ) -> ChatResult:
-        """Use the Anthropic SDK stream without blocking the actor loop."""
-        sdk_messages = [
-            {"role": message.role, "content": message.content_blocks or message.content}
-            for message in messages
-        ]
-        kwargs: dict[str, Any] = {"model": self.model, "max_tokens": max_tokens, "messages": sdk_messages}
+    ) -> AsyncIterator[LLMStreamEvent]:
+        """Native Anthropic SDK stream — yields per-delta events.
+
+        Aggregate state (final model + usage + tool_uses) is emitted
+        as a final ``usage.updated`` (with model field piggy-backed
+        in the payload) so the consumer can rebuild the final dict
+        without a second SDK call.
+        """
+        sdk_messages = _to_sdk_messages(messages)
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "messages": sdk_messages,
+        }
         if system:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
+
         loop = asyncio.get_running_loop()
 
-        def _emit(kind: str, payload: dict[str, Any]) -> None:
-            future = asyncio.run_coroutine_threadsafe(
-                on_event(LLMStreamEvent(kind, payload)), loop
-            )
-            future.result()
+        # Per-tool-call buffer (Anthropic streams arguments as
+        # incremental JSON fragments; we accumulate per-id and emit
+        # one final usage.updated with the tool_use snapshot).
+        tool_buffers: dict[str, dict[str, Any]] = {}
+        text_parts: list[str] = []
+        thinking_parts: list[str] = []
+        usage_dict: dict[str, Any] | None = None
+        model_name = self.model
+        stop_reason: str | None = None
+        raw_blocks: list[dict[str, Any]] = []
 
-        def _read() -> Any:
+        def _emit(kind: str, payload: dict[str, Any]) -> None:
+            asyncio.run_coroutine_threadsafe(
+                _yield(LLMStreamEvent(kind, payload)), loop,
+            ).result()
+
+        # Bridge: the SDK stream is sync (driven from a worker thread);
+        # we collect deltas into thread-local buffers and let the async
+        # iterator emit them via run_coroutine_threadsafe.
+        def _read() -> None:
+            nonlocal usage_dict, model_name, stop_reason
             with self._client.messages.stream(**kwargs) as stream:
                 for event in stream:
-                    if getattr(event, "type", "") != "content_block_delta":
-                        continue
-                    delta = getattr(event, "delta", None)
-                    delta_type = getattr(delta, "type", "")
-                    if delta_type == "text_delta":
-                        _emit("text.delta", {"text": getattr(delta, "text", "")})
-                    elif delta_type in {"input_json_delta", "json_delta"}:
-                        _emit("tool_arguments.delta", {"partial_json": getattr(delta, "partial_json", "")})
-                return stream.get_final_message()
+                    etype = getattr(event, "type", "")
+                    if etype == "content_block_start":
+                        block = getattr(event, "content_block", None)
+                        btype = getattr(block, "type", None)
+                        if btype == "tool_use":
+                            tool_id = getattr(block, "id", "")
+                            tool_buffers[tool_id] = {
+                                "id": tool_id,
+                                "name": getattr(block, "name", ""),
+                                "input_json": "",
+                                "input": {},
+                            }
+                    elif etype == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        dtype = getattr(delta, "type", "")
+                        if dtype == "text_delta":
+                            chunk = getattr(delta, "text", "")
+                            text_parts.append(chunk)
+                            _emit("text.delta", {"text": chunk})
+                        elif dtype == "thinking_delta":
+                            thinking_parts.append(getattr(delta, "thinking", ""))
+                        elif dtype in {"input_json_delta", "json_delta"}:
+                            tid = getattr(event, "index", None)
+                            partial = getattr(delta, "partial_json", "")
+                            # Map slot index → tool_id lazily. We don't
+                            # have the id here, so the consumer rebinds
+                            # via the final usage payload.
+                            for slot in tool_buffers.values():
+                                if slot.get("_slot") == tid:
+                                    slot["input_json"] += partial
+                                    break
+                            else:
+                                # New slot
+                                key = f"slot-{tid}"
+                                tool_buffers[key] = {
+                                    "id": "",
+                                    "name": "",
+                                    "input_json": partial,
+                                    "input": {},
+                                    "_slot": tid,
+                                }
+                    elif etype == "content_block_stop":
+                        pass
+                    elif etype == "message_delta":
+                        stop_reason = getattr(
+                            getattr(event, "delta", None), "stop_reason", None,
+                        ) or stop_reason
+                    elif etype == "message_start":
+                        msg = getattr(event, "message", None)
+                        if msg is not None:
+                            model_name = getattr(msg, "model", model_name) or model_name
+                            u = getattr(msg, "usage", None)
+                            if u is not None:
+                                usage_dict = _dump(u)
+                    elif etype == "message_stop":
+                        pass
+
+                final = stream.get_final_message()
+                # Backfill model + usage from final message.
+                model_name = getattr(final, "model", model_name) or model_name
+                u = getattr(final, "usage", None)
+                if u is not None:
+                    usage_dict = _dump(u)
+                stop_reason = getattr(final, "stop_reason", None) or stop_reason
+                raw_blocks.extend(_collect_raw_blocks(final))
 
         try:
-            response = await asyncio.to_thread(_read)
+            await asyncio.to_thread(_read)
         except anthropic.AuthenticationError as exc:
             raise LLMAuthError(f"{self._ERROR_LABEL} auth failed: {exc}") from exc
         except anthropic.RateLimitError as exc:
             raise LLMRateLimitError(f"{self._ERROR_LABEL} rate limited: {exc}") from exc
         except (anthropic.APITimeoutError, anthropic.APIConnectionError) as exc:
             raise LLMNetworkError(f"{self._ERROR_LABEL} stream failed: {exc}") from exc
-        return _response_to_result(response, self.model)
+
+        # Parse accumulated tool args.
+        import json as _json
+
+        tool_uses: list[dict[str, Any]] = []
+        for slot in tool_buffers.values():
+            args_raw = slot.get("input_json") or ""
+            parsed: Any = {}
+            if args_raw:
+                try:
+                    parsed = _json.loads(args_raw)
+                except _json.JSONDecodeError:
+                    parsed = {}
+            tool_uses.append({
+                "id": slot.get("id") or "",
+                "name": slot.get("name") or "",
+                "input": parsed if isinstance(parsed, dict) else {},
+            })
+
+        text = "".join(text_parts).strip() or "(empty reply)"
+        thinking = "\n".join(p for p in thinking_parts if p).strip() or None
+        # Single trailing usage.updated carrying everything the
+        # consumer needs to rebuild the final dict.
+        yield LLMStreamEvent("usage.updated", {
+            "model": model_name,
+            "stop_reason": stop_reason,
+            "usage": usage_dict or {},
+            "tool_uses": tool_uses,
+            "text": text,
+            "thinking": thinking,
+            "raw_blocks": raw_blocks,
+        })
+
+    # Compatibility alias — some callers historically used
+    # ``AnthropicProvider._response_to_result``.  The implementation
+    # now lives at module scope as :func:`_response_to_dict`.
+    @staticmethod
+    def _response_to_result(response: Any, default_model: str) -> dict[str, Any]:
+        return _response_to_dict(response, default_model)
 
 
-def _response_to_result(response: Any, default_model: str) -> ChatResult:
-    """Convert a streamed final SDK response to the regular provider result."""
+# ---------------------------------------------------------------------------
+# helpers (module-scope so subclasses and tests can reuse)
+# ---------------------------------------------------------------------------
+
+
+def _to_sdk_messages(messages: list[dict]) -> list[dict[str, Any]]:
+    """Translate the runtime's flat message list into the SDK's shape.
+
+    Messages carry an optional ``content_blocks`` field for the cases
+    where plain text isn't enough (tool_result echoes, assistant
+    raw-block replays). When present we pass the structured form so
+    the SDK preserves the block types.
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        blocks = m.get("content_blocks")
+        if blocks:
+            out.append({"role": role, "content": list(blocks)})
+        else:
+            out.append({"role": role, "content": m.get("content") or ""})
+    return out
+
+
+def _dump(obj: Any) -> dict[str, Any] | None:
+    """Best-effort Pydantic → dict; tolerate older SDKs that lack model_dump."""
+    if obj is None:
+        return None
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    if hasattr(obj, "dict"):
+        try:
+            return obj.dict()
+        except Exception:
+            pass
+    if hasattr(obj, "__dict__"):
+        return dict(obj.__dict__)
+    return None
+
+
+def _response_to_dict(response: Any, default_model: str) -> dict[str, Any]:
+    """Translate a non-streaming SDK response into the canonical dict.
+
+    Returns ``{text, thinking, tool_uses, raw_blocks, model, usage,
+    stop_reason}``. ``text`` is never empty: if the model produced
+    only thinking blocks, it falls back to ``"(empty reply)"``.
+    """
     text_parts: list[str] = []
     thinking_parts: list[str] = []
     raw_blocks: list[dict[str, Any]] = []
     tool_uses: list[dict[str, Any]] = []
-    for block in response.content:
-        if hasattr(block, "model_dump"):
-            raw = block.model_dump()
-        elif hasattr(block, "dict"):
-            raw = block.dict()
-        else:
-            raw = {"type": getattr(block, "type", "unknown")}
-        raw_blocks.append(raw)
-        block_type = getattr(block, "type", None)
-        if block_type == "text":
-            text_parts.append(getattr(block, "text", ""))
-        elif block_type == "thinking":
-            thinking_parts.append(getattr(block, "thinking", ""))
-        elif block_type == "tool_use":
-            tool_uses.append({"id": getattr(block, "id", ""), "name": getattr(block, "name", ""), "input": dict(getattr(block, "input", {}) or {})})
-    usage_obj = getattr(response, "usage", None)
-    usage = usage_obj.model_dump() if hasattr(usage_obj, "model_dump") else (usage_obj.dict() if hasattr(usage_obj, "dict") else None)
-    return ChatResult(
-        text="\n".join(part for part in text_parts if part).strip() or "(empty reply)",
-        thinking="\n".join(part for part in thinking_parts if part).strip() or None,
-        model=getattr(response, "model", default_model),
-        usage=usage,
-        raw_blocks=raw_blocks,
-        stop_reason=getattr(response, "stop_reason", None),
-        tool_uses=tool_uses,
-    )
+    for block in getattr(response, "content", []) or []:
+        dumped = _dump(block) or {"type": getattr(block, "type", "unknown")}
+        raw_blocks.append(dumped)
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            text_parts.append(getattr(block, "text", "") or "")
+        elif btype == "thinking":
+            thinking_parts.append(getattr(block, "thinking", "") or "")
+        elif btype == "tool_use":
+            tool_uses.append({
+                "id": getattr(block, "id", "") or "",
+                "name": getattr(block, "name", "") or "",
+                "input": dict(getattr(block, "input", {}) or {}),
+            })
+
+    usage = _dump(getattr(response, "usage", None))
+    text = "\n".join(p for p in text_parts if p).strip()
+    thinking = "\n".join(p for p in thinking_parts if p).strip() or None
+
+    return {
+        "text": text or "(empty reply)",
+        "thinking": thinking,
+        "tool_uses": tool_uses,
+        "raw_blocks": raw_blocks,
+        "model": getattr(response, "model", default_model) or default_model,
+        "usage": usage,
+        "stop_reason": getattr(response, "stop_reason", None),
+    }
+
+
+def _collect_raw_blocks(response: Any) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    for block in getattr(response, "content", []) or []:
+        dumped = _dump(block) or {"type": getattr(block, "type", "unknown")}
+        blocks.append(dumped)
+    return blocks

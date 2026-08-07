@@ -1,43 +1,27 @@
-"""OpenAI chat-completions provider.
+"""OpenAI chat-completions provider。
 
-Implements :class:`magi.providers.provider.LLMProvider` against
-the official OpenAI Chat Completions wire format. Subclasses
-:mod:`magi.providers.anthropic` does **not** fit here because
-the request/response shapes differ:
+直接继承 :class:`LLMProvider`，不复用 :mod:`anthropic`，因为 OpenAI
+的请求 / 响应形状不一致：
 
-  - system prompt lives at the front of the ``messages`` list
-    (``role: system``) rather than as a top-level ``system``
-    field.
-  - tool definitions are wrapped in
-    ``{type: "function", function: {name, description, parameters}}``
-    instead of the flat Anthropic ``{name, description, input_schema}``
-    list.
-  - tool calls are returned inside the assistant message as
-    ``tool_calls`` (parallel-capable) and the corresponding
-    tool results are returned in subsequent ``role: tool``
-    messages bound by ``tool_call_id`` — not as
-    ``content_blocks`` on a user turn.
+- system prompt 落在 ``messages`` 列表头（``role: system``），不是
+  顶层 ``system`` 字段。
+- tool 定义套 ``{type: "function", function: {name, description,
+  parameters}}``，不是 Anthropic 的扁平 ``{name, description,
+  input_schema}``。
+- tool call 在 assistant message 内的 ``tool_calls`` 数组里；tool
+  结果用 ``role: tool`` + ``tool_call_id`` 绑定。
 
-The class bridges those shapes so the agent loop, durable
-worker, tool registry, and audit rows keep using the
-provider-neutral :class:`ChatMessage` /
-:class:`ChatResult` contract from
-:mod:`magi.providers.provider`. Wire-format conversion and
-error mapping live here only; callers see an ``LLMProvider``.
+本文件把上述 4 处翻译全部包掉，对外保持 ``LLMProvider`` 接口。
 
-The official OpenAI endpoint is used; the SDK defaults are
-adequate. The MAGI configuration still only carries
-``provider`` / ``api_key`` / ``model`` (per the factory), so
-this module intentionally does not accept a ``base_url`` —
-adding one would be a schema-level change and isn't part
-of the v0 scope.
+Wire-format 转换和错误映射只在这里；调用方看到的就是 dict 形态的
+``LLMProvider.chat()`` 返回值。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 import openai
@@ -59,33 +43,14 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.provider import (
-    ChatMessage,
-    ChatResult,
-    LLMProvider,
-    LLMStreamEvent,
-)
+from magi.providers.base import LLMProvider, LLMStreamEvent
 
 logger = logging.getLogger("magi.agent.llm.openai")
 
-# Cap on a single reply. Matches the Anthropic adapter so the
-# agent loop treats both providers symmetrically. Channels that
-# need more can pass ``max_tokens`` explicitly.
 _MAX_TOKENS_DEFAULT = 1024
-
-# Default model when the operator hasn't picked one in the
-# MAGIC row. Picked from the current OpenAI general-availability
-# line; operators are free to override per-runtime.
 _DEFAULT_MODEL = "gpt-4o-mini"
-
-# Provider id surfaced to audit / hooks. Lowercase, hyphenated,
-# matches the rest of :mod:`magi.providers.factory`.
 _PROVIDER_NAME = "openai"
 
-# Substrings the OpenAI SDK / upstream put into
-# ``BadRequestError`` when the input blows past the model's
-# context window. Mirrors the Anthropic heuristic in
-# :mod:`magi.providers.anthropic`.
 _CONTEXT_LENGTH_MARKERS = (
     "context length",
     "context_length",
@@ -102,25 +67,19 @@ def _is_context_length_error(message: str) -> bool:
 
 
 def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-    """Translate MAGI tool schemas into OpenAI function schemas.
-
-    The agent loop + tool catalog already emit
-    ``[{name, description, input_schema}]`` (Anthropic shape).
-    OpenAI expects each entry wrapped in
-    ``{type: "function", function: {name, description, parameters}}``.
-    """
+    """Translate MAGI tool schemas into OpenAI function schemas."""
     if not tools:
         return None
     converted: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict):
-            raise LLMError(f"OpenAI provider received non-dict tool: {tool!r}")
+            raise LLMError(f"openai provider received non-dict tool: {tool!r}")
         if tool.get("type") == "function" and isinstance(tool.get("function"), dict):
             converted.append(tool)
             continue
         name = tool.get("name")
         if not name:
-            raise LLMError("OpenAI provider received a tool without a name")
+            raise LLMError("openai provider received a tool without a name")
         converted.append(
             {
                 "type": "function",
@@ -136,42 +95,23 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] |
 
 def _convert_messages(
     system: str | None,
-    messages: list[ChatMessage],
+    messages: list[dict],
 ) -> list[dict[str, Any]]:
-    """Translate MAGI ``ChatMessage`` history to OpenAI messages.
-
-    Mapping:
-
-    - system prompt → first message with ``role: system``.
-    - plain user/assistant text → ``{role, content}``.
-    - assistant ``content_blocks`` (the prior turn's
-      ``raw_blocks``) → assistant message with
-      ``tool_calls`` reconstructed from the original
-      ``tool_use`` blocks. The original OpenAI ``id`` is
-      preserved so the next round of tool results bind to
-      the same call.
-    - user ``content_blocks`` containing ``tool_result``
-      blocks → one ``role: tool`` message per result, each
-      carrying the matching ``tool_call_id``. If a user
-      turn also had a non-empty ``content`` it is sent as
-      a sibling text message so the model sees both.
-    """
+    """Translate MAGI ``list[dict]`` history to OpenAI messages."""
     out: list[dict[str, Any]] = []
     if system:
         out.append({"role": "system", "content": system})
 
     for message in messages:
-        if message.role == "assistant":
-            if message.content_blocks:
-                # Replay path — the prior turn's raw_blocks
-                # round-trip back to the model. Pull tool_use
-                # blocks out as parallel tool_calls; carry
-                # text/thinking into the same message so
-                # OpenAI sees the same shape it originally
-                # produced.
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if role == "assistant":
+            blocks = message.get("content_blocks")
+            if blocks:
                 text_parts: list[str] = []
                 tool_calls: list[dict[str, Any]] = []
-                for block in message.content_blocks:
+                for block in blocks:
                     if not isinstance(block, dict):
                         continue
                     btype = block.get("type")
@@ -200,22 +140,16 @@ def _convert_messages(
                     assistant_msg["tool_calls"] = tool_calls
                 out.append(assistant_msg)
             else:
-                out.append({"role": "assistant", "content": message.content or ""})
+                out.append({"role": "assistant", "content": message.get("content") or ""})
             continue
 
         # user role
-        if message.content_blocks:
-            # Tool results — each ``tool_result`` block becomes
-            # its own ``role: tool`` message so OpenAI can
-            # bind the id. We emit any accompanying text as
-            # a separate user message immediately after.
-            for block in message.content_blocks:
+        blocks = message.get("content_blocks")
+        if blocks:
+            for block in blocks:
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") != "tool_result":
-                    # Unknown block type from a future
-                    # transport — keep it in the transcript
-                    # so audit rows still match.
                     out.append({"role": "user", "content": json.dumps(block, ensure_ascii=False)})
                     continue
                 content = block.get("content", "")
@@ -227,24 +161,15 @@ def _convert_messages(
                     "content": content,
                 }
                 out.append(tool_msg)
-            if message.content:
-                out.append({"role": "user", "content": message.content})
+            if message.get("content"):
+                out.append({"role": "user", "content": message.get("content")})
         else:
-            out.append({"role": "user", "content": message.content or ""})
+            out.append({"role": "user", "content": message.get("content") or ""})
 
     return out
 
 
 def _convert_usage(usage_obj: Any) -> dict[str, Any] | None:
-    """Normalise OpenAI usage into MAGI's ``{input_tokens, output_tokens, ...}`` shape.
-
-    Falls back to a defensive attr walk because some SDK
-    builds expose Pydantic v1 models (``__dict__``) and
-    others expose v2 (``model_dump``). The MAGI contract
-    reads ``input_tokens`` / ``output_tokens``; everything
-    else (cached tokens, reasoning tokens) is retained so
-    audit rows can still see them.
-    """
     if usage_obj is None:
         return None
     if hasattr(usage_obj, "model_dump"):
@@ -277,14 +202,6 @@ def _convert_usage(usage_obj: Any) -> dict[str, Any] | None:
 
 
 def _normalize_finish_reason(reason: Any) -> str | None:
-    """Map OpenAI's ``finish_reason`` to the values MAGI's agent loop branches on.
-
-    The provider contract only branches on ``"end_turn"``
-    (terminal text reply) and ``"tool_use"`` (assistant
-    emitted tool_calls). Everything else falls through to
-    a best-effort label so audit rows still record what
-    upstream said.
-    """
     if reason is None:
         return None
     value = str(reason).strip().lower()
@@ -302,20 +219,11 @@ def _normalize_finish_reason(reason: Any) -> str | None:
 
 
 def _extract_text(message: Any) -> str:
-    """Pull plain text out of an OpenAI message or chunk delta.
-
-    Some SDK versions return ``content`` as ``None`` when the
-    model only emitted tool calls; treat that as the empty
-    string so downstream code doesn't special-case ``None``.
-    """
     content = getattr(message, "content", None)
     if content is None:
         return ""
     if isinstance(content, str):
         return content
-    # Some compatible endpoints return a list of content
-    # parts. Concatenate any text-shaped entries so the
-    # runtime never sees the list type.
     parts: list[str] = []
     for part in content:
         if isinstance(part, dict):
@@ -334,17 +242,8 @@ def _extract_tool_calls(message: Any) -> list[Any]:
 
 
 def _arguments_from_tool_call(call: Any) -> Any:
-    """Decode OpenAI's JSON-stringified arguments.
-
-    Some SDK builds return ``arguments`` as a Pydantic
-    model; some return a raw string. The wire format
-    mandates a JSON string, so the latter is the common
-    case. Return whatever object (dict or string) is on
-    hand and let the caller decide.
-    """
     fn = getattr(call, "function", None)
-    args = getattr(fn, "arguments", None) if fn is not None else None
-    return args
+    return getattr(fn, "arguments", None) if fn is not None else None
 
 
 def _parse_arguments(arguments: Any, *, call_id: str) -> dict[str, Any]:
@@ -356,10 +255,6 @@ def _parse_arguments(arguments: Any, *, call_id: str) -> dict[str, Any]:
         try:
             decoded = json.loads(arguments)
         except json.JSONDecodeError as exc:
-            # Defensive: upstream occasionally returns truncated
-            # JSON for partial tool calls. Don't 500 the agent
-            # loop; surface an empty input so the loop can
-            # continue and the tool will run with no args.
             logger.warning(
                 "openai provider: tool_call %s had non-JSON arguments (%s); using empty dict",
                 call_id, exc,
@@ -369,63 +264,6 @@ def _parse_arguments(arguments: Any, *, call_id: str) -> dict[str, Any]:
             return decoded
         return {"value": decoded}
     return {"value": arguments}
-
-
-def _build_result(
-    *,
-    message: Any,
-    raw_response: Any,
-) -> ChatResult:
-    """Translate a single OpenAI message into a :class:`ChatResult`."""
-    text = _extract_text(message)
-    thinking: str | None = None
-    reasoning_details = getattr(message, "reasoning_details", None)
-    if reasoning_details:
-        parts: list[str] = []
-        for detail in reasoning_details:
-            if isinstance(detail, dict):
-                text_part = detail.get("text")
-                if text_part:
-                    parts.append(str(text_part))
-            else:
-                text_part = getattr(detail, "text", None)
-                if text_part:
-                    parts.append(str(text_part))
-        if parts:
-            thinking = "\n".join(parts)
-
-    tool_uses: list[dict[str, Any]] = []
-    raw_blocks: list[dict[str, Any]] = []
-    for call in _extract_tool_calls(message):
-        call_id = str(getattr(call, "id", "") or "")
-        fn = getattr(call, "function", None)
-        name = str(getattr(fn, "name", "") or "") if fn is not None else ""
-        arguments = _arguments_from_tool_call(call)
-        parsed = _parse_arguments(arguments, call_id=call_id)
-        tool_uses.append({"id": call_id, "name": name, "input": parsed})
-        raw_blocks.append(
-            {
-                "type": "tool_use",
-                "id": call_id,
-                "name": name,
-                "input": parsed,
-            }
-        )
-
-    if text:
-        raw_blocks.insert(0, {"type": "text", "text": text})
-    if thinking:
-        raw_blocks.append({"type": "thinking", "thinking": thinking})
-
-    return ChatResult(
-        text=text or "(empty reply)",
-        thinking=thinking,
-        model=getattr(raw_response, "model", "") or "",
-        usage=_convert_usage(getattr(raw_response, "usage", None)),
-        raw_blocks=raw_blocks,
-        stop_reason=_normalize_finish_reason(getattr(raw_response, "choices", [None])[0].finish_reason if getattr(raw_response, "choices", None) else None) if raw_response is not None else None,
-        tool_uses=tool_uses,
-    )
 
 
 def _wrap_exception(exc: openai.OpenAIError) -> LLMError:
@@ -446,17 +284,7 @@ def _wrap_exception(exc: openai.OpenAIError) -> LLMError:
 
 
 class OpenAIProvider(LLMProvider):
-    """Provider that talks to the official OpenAI chat-completions endpoint.
-
-    The constructor signature mirrors
-    :meth:`magi.providers.anthropic.AnthropicProvider.__init__`
-    so the factory can instantiate both with the same
-    ``api_key=`` / ``model=`` kwargs it already collects
-    from the MAGIC row. Extra keyword plumbing (organisation
-    id, proxy endpoints) is intentionally **not** exposed:
-    the configuration model only carries provider, API key,
-    and model name today.
-    """
+    """官方 OpenAI chat-completions endpoint。"""
 
     name = _PROVIDER_NAME
 
@@ -464,9 +292,6 @@ class OpenAIProvider(LLMProvider):
         super().__init__(api_key, model)
         self._client = AsyncOpenAI(
             api_key=api_key,
-            # 30s matches the Anthropic adapter — the agent
-            # loop is the one waiting on this call, so a
-            # hung upstream should fail fast.
             timeout=30.0,
         )
 
@@ -476,10 +301,10 @@ class OpenAIProvider(LLMProvider):
     async def chat(
         self,
         system: str | None,
-        messages: list[ChatMessage],
+        messages: list[dict],
         max_tokens: int = _MAX_TOKENS_DEFAULT,
         tools: list[dict] | None = None,
-    ) -> ChatResult:
+    ) -> dict[str, Any]:
         sdk_messages = _convert_messages(system, messages)
         sdk_tools = _convert_tools(tools)
         params: dict[str, Any] = {
@@ -498,25 +323,18 @@ class OpenAIProvider(LLMProvider):
         if not getattr(response, "choices", None):
             raise LLMError("openai provider: response carried no choices")
         message = response.choices[0].message
-        return _build_result(message=message, raw_response=response)
+        return _message_to_dict(message=message, raw_response=response)
 
     async def stream(
         self,
         system: str | None,
-        messages: list[ChatMessage],
+        messages: list[dict],
         *,
         max_tokens: int = _MAX_TOKENS_DEFAULT,
         tools: list[dict] | None = None,
-        on_event: Callable[[LLMStreamEvent], Any],
-    ) -> ChatResult:
-        """Stream chat-completions deltas, mirroring the Anthropic adapter.
-
-        Emits provider-neutral events for text and tool-call
-        argument deltas, and the final usage update. The
-        returned :class:`ChatResult` has the same shape as
-        :meth:`chat` so callers never need to know whether
-        they got a streamed or non-streamed reply.
-        """
+    ) -> AsyncIterator[LLMStreamEvent]:
+        """Stream chat-completions deltas; emit one final ``usage.updated``
+        carrying everything needed to rebuild the final dict."""
         sdk_messages = _convert_messages(system, messages)
         sdk_tools = _convert_tools(tools)
         params: dict[str, Any] = {
@@ -529,7 +347,6 @@ class OpenAIProvider(LLMProvider):
         if sdk_tools:
             params["tools"] = sdk_tools
 
-        # Local aggregation state.
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         tool_call_buffers: dict[int, dict[str, Any]] = {}
@@ -552,7 +369,7 @@ class OpenAIProvider(LLMProvider):
                     delta_text = _extract_text(delta)
                     if delta_text:
                         text_parts.append(delta_text)
-                        await on_event(LLMStreamEvent("text.delta", {"text": delta_text}))
+                        yield LLMStreamEvent("text.delta", {"text": delta_text})
                     reasoning_details = getattr(delta, "reasoning_details", None)
                     if reasoning_details:
                         for detail in reasoning_details:
@@ -580,24 +397,16 @@ class OpenAIProvider(LLMProvider):
                             new_args = getattr(fn, "arguments", None)
                             if new_args:
                                 slot["arguments"] += str(new_args)
-                                await on_event(
-                                    LLMStreamEvent(
-                                        "tool_arguments.delta",
-                                        {
-                                            "partial_json": str(new_args),
-                                            "id": slot["id"],
-                                            "name": slot["name"],
-                                        },
-                                    )
+                                yield LLMStreamEvent(
+                                    "tool_arguments.delta",
+                                    {
+                                        "partial_json": str(new_args),
+                                        "id": slot["id"],
+                                        "name": slot["name"],
+                                    },
                                 )
         except openai.OpenAIError as exc:
             raise _wrap_exception(exc) from exc
-
-        # Emit the final usage once it has arrived. The
-        # chunk's ``usage`` field is the canonical source.
-        if final_usage is not None:
-            payload = _convert_usage(final_usage) or {}
-            await on_event(LLMStreamEvent("usage.updated", dict(payload)))
 
         text = "".join(text_parts)
         thinking = "\n".join(p for p in thinking_parts if p).strip() or None
@@ -620,15 +429,74 @@ class OpenAIProvider(LLMProvider):
         if thinking:
             raw_blocks.append({"type": "thinking", "thinking": thinking})
 
-        return ChatResult(
-            text=text or "(empty reply)",
-            thinking=thinking,
-            model=model_name or self.model,
-            usage=_convert_usage(final_usage),
-            raw_blocks=raw_blocks,
-            stop_reason=_normalize_finish_reason(finish_reason),
-            tool_uses=tool_uses,
+        yield LLMStreamEvent("usage.updated", {
+            "model": model_name or self.model,
+            "stop_reason": _normalize_finish_reason(finish_reason),
+            "usage": _convert_usage(final_usage) or {},
+            "tool_uses": tool_uses,
+            "text": text or "(empty reply)",
+            "thinking": thinking,
+            "raw_blocks": raw_blocks,
+        })
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _message_to_dict(*, message: Any, raw_response: Any) -> dict[str, Any]:
+    """Translate one OpenAI assistant message into the canonical dict."""
+    text = _extract_text(message)
+    thinking: str | None = None
+    reasoning_details = getattr(message, "reasoning_details", None)
+    if reasoning_details:
+        parts: list[str] = []
+        for detail in reasoning_details:
+            if isinstance(detail, dict):
+                text_part = detail.get("text")
+                if text_part:
+                    parts.append(str(text_part))
+            else:
+                text_part = getattr(detail, "text", None)
+                if text_part:
+                    parts.append(str(text_part))
+        if parts:
+            thinking = "\n".join(parts)
+
+    tool_uses: list[dict[str, Any]] = []
+    raw_blocks: list[dict[str, Any]] = []
+    for call in _extract_tool_calls(message):
+        call_id = str(getattr(call, "id", "") or "")
+        fn = getattr(call, "function", None)
+        name = str(getattr(fn, "name", "") or "") if fn is not None else ""
+        arguments = _arguments_from_tool_call(call)
+        parsed = _parse_arguments(arguments, call_id=call_id)
+        tool_uses.append({"id": call_id, "name": name, "input": parsed})
+        raw_blocks.append(
+            {"type": "tool_use", "id": call_id, "name": name, "input": parsed}
         )
+
+    if text:
+        raw_blocks.insert(0, {"type": "text", "text": text})
+    if thinking:
+        raw_blocks.append({"type": "thinking", "thinking": thinking})
+
+    finish_reason: Any = None
+    if raw_response is not None:
+        choices = getattr(raw_response, "choices", None)
+        if choices:
+            finish_reason = getattr(choices[0], "finish_reason", None)
+
+    return {
+        "text": text or "(empty reply)",
+        "thinking": thinking,
+        "tool_uses": tool_uses,
+        "raw_blocks": raw_blocks,
+        "model": getattr(raw_response, "model", "") or "",
+        "usage": _convert_usage(getattr(raw_response, "usage", None)),
+        "stop_reason": _normalize_finish_reason(finish_reason),
+    }
 
 
 __all__ = ["OpenAIProvider"]
