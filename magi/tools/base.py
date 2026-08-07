@@ -1,4 +1,3 @@
-
 """Tool base class.
 
 A :class:`Tool` is a callable the LLM can ask the agent
@@ -15,6 +14,8 @@ The protocol is intentionally tiny:
   - ``input_schema`` — JSON Schema dict (Anthropic wants
                       it; we don't validate it ourselves —
                       the model emits the input)
+  - ``gate(ctx)``   — in-run authorization (default: role
+                      check via ``ctx.bus.contacts_book``)
   - ``run(ctx, **kwargs)`` — actually execute
 
 Execution-facing DTOs — :class:`ToolContext` (what the
@@ -29,7 +30,7 @@ the Books that publish them. Job-side DTOs (``RunToolJob`` /
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
-``registry.get_tools()`` is the lazy-import entry point so
+``registry.get_tool()`` is the lazy-import entry point so
 test isolation works (a test can monkeypatch one tool
 without importing the whole batch).
 """
@@ -66,7 +67,13 @@ class ToolContext:
     ``bus`` is the new_bus facade the worker is attached to.
     Tools that need to read/write persistent state reach for
     ``ctx.bus.<book>.X(...)`` instead of holding their own
-    reference. ``None`` for tests / boot probes — tools that
+    reference. Role gating is handled centrally by
+    :meth:`Tool.gate` (reads ``ctx.bus.contacts_book``); tools
+    don't carry caller-role fields on the context — they let
+    ``gate()`` re-resolve fresh on every call so role flips
+    take effect without a process restart.
+
+    ``bus`` is ``None`` for tests / boot probes — tools that
     require bus access should fail closed when ``ctx.bus``
     is missing.
     """
@@ -99,9 +106,10 @@ class Tool(ABC):
     """One callable the LLM can request.
 
     Subclass and set ``name`` / ``description`` /
-    ``input_schema`` as class attributes, then implement
-    ``run``. The agent loop fetches all registered tools
-    once per chat and passes their schemas to the LLM.
+    ``input_schema`` / ``ALLOWED_ROLES`` as class attributes,
+    then implement :meth:`run`. Override :meth:`gate` when
+    the default role check isn't enough (e.g. contact-ownership
+    on top of role).
     """
 
     #: The name the LLM uses to invoke this tool. Must
@@ -121,21 +129,12 @@ class Tool(ABC):
     #: upstream before the request even leaves).
     input_schema: dict[str, Any] = {}
 
-    #: Roles permitted to see this tool in their tool menu.
+    #: Roles permitted to invoke this tool.
     #:
     #: Empty set (the default) means "no role-based gating" —
-    #: every operator sees the tool regardless of role.
-    #: Setting a non-empty set causes
-    #: :meth:`is_allowed_for_role` to filter the tool out of
-    #: the menu for any operator whose role isn't in the set,
-    #: so the model never learns the tool exists when it
-    #: can't be invoked.
-    #:
-    #: Role-gated tools should still defensively re-check
-    #: inside :meth:`run` (the registry filter assumes the
-    #: call site passes ``caller_role`` through — a future
-    #: caller that bypasses :func:`registry.get_tools` could
-    #: otherwise expose the tool to anyone).
+    #: every operator can invoke the tool regardless of role.
+    #: Setting a non-empty set causes :meth:`gate` to refuse
+    #: callers whose role isn't in the set.
     ALLOWED_ROLES: frozenset[str] = frozenset()
 
     @abstractmethod
@@ -149,7 +148,7 @@ class Tool(ABC):
         ``kwargs`` are the fields declared in
         ``input_schema``. Tools should:
           - validate ``kwargs`` themselves (raise
-            ``ValueError`` on bad input; the loop catches
+            ``ValueError`` on bad input; the worker catches
             and returns ``is_error=True`` to the LLM)
           - return a :class:`ToolResult`
           - never raise to surface "expected failure" —
@@ -157,54 +156,62 @@ class Tool(ABC):
             the loop's bookkeeping is uniform
         """
 
-    def is_allowed_for_role(
-        self,
-        role: str | None,
-        admin: bool = False,
-    ) -> bool:
-        """Whether the caller should see this tool in the menu.
+    def gate(self, ctx: ToolContext) -> str | None:
+        """Runtime authorization check — called by the worker
+        before :meth:`run`.
 
-        ``role=None`` means "caller didn't supply a role" —
-        typically a test or a boot-time probe. v0 defaults
-        to permissive (the caller sees the tool), matching
-        the historic behaviour of :func:`registry.get_tools`
-        before role filtering landed. The production path
-        in :class:`magi.agent.worker.AgentWorker` always
-        passes an explicit ``caller_role`` (resolved from
-        the operator's ``Contact.role``), so an unfiltered
-        ``None`` call from production would itself be a bug
-        — and the right fix for that bug is to wire the
-        caller_role through, not to add a layer of refusal
-        that hides the tool from legitimate test code.
+        Returns ``None`` when the caller is permitted, or an
+        error message string when the caller should be denied.
+        The worker turns a non-``None`` return into
+        ``RunToolResult(is_error=True, ...)``.
 
-        ``admin=True`` is a separate opt-in that grants
-        access to operators who are WebUI-signed-in but
-        aren't on the served user's role list. After the
-        2024 role/admin split, ``admin`` lives on its own
-        boolean column (``Contact.admin``); ``role='admin'``
-        is no longer reachable from the enum. Tools that
-        previously keyed ``ALLOWED_ROLES`` on
-        ``{"admin", "assigned"}`` now use an empty
-        ``ALLOWED_ROLES`` and rely on the in-run gate.
+        Default implementation: looks up the caller's role
+        via :attr:`ctx.bus.contacts_book` and checks it
+        against :attr:`ALLOWED_ROLES`. Re-resolving on
+        every call (no caching on the context) means a role
+        flip in the database takes effect on the very next
+        tool call without a process restart.
+
+        Override for tools that need additional checks on
+        top of the role (e.g. ``UpdateContactNoteTool`` adds
+        "can only edit your own contact"). Always call
+        ``super().gate(ctx)`` first inside the override so
+        the role check stays in one place.
         """
-        if admin:
-            # WebUI operator — bypasses the role-enum
-            # filter. Matches the API's
-            # ``_enforce_creator_can_create`` semantic.
-            return True
         if not self.ALLOWED_ROLES:
-            # No restrictions declared: any caller, including
-            # the ``role=None`` test / boot path, sees the tool.
-            return True
-        if role is None:
-            # ``ALLOWED_ROLES`` is set but we don't know who
-            # the caller is — show the tool rather than
-            # hiding it from probe / test contexts. Real
-            # gate enforcement comes from the explicit
-            # ``caller_role`` plumbing; this branch only
-            # kicks in when that plumbing is missing.
-            return True
-        return role in self.ALLOWED_ROLES
+            return None  # no gate configured — every caller passes
+
+        try:
+            ct_id = int(ctx.uid)
+        except (TypeError, ValueError):
+            return f"uid {ctx.uid!r} is not a valid id"
+        if ct_id == 0:
+            # The chat / TG handlers always set a real id;
+            # ``0`` is the loop's placeholder for "no caller
+            # resolved yet". Refuse rather than silently
+            # letting an unset-context caller through.
+            return (
+                "tool requires a known uid (got 0); "
+                "caller did not authenticate through a "
+                "cookie / TG binding."
+            )
+        if ctx.bus is None:
+            # Old-bus ToolContext (MCP-side callers until
+            # MCP migrates) — no role resolution is possible.
+            return (
+                "role check unavailable: tool context has no bus; "
+                "the caller side has not migrated to new_bus"
+            )
+
+        contact = ctx.bus.contacts_book.get(contact_id=ct_id)
+        if contact is None:
+            return f"contact {ct_id!r} not found"
+        if contact.role not in self.ALLOWED_ROLES:
+            return (
+                f"role {contact.role!r} is not permitted for this "
+                f"tool (allowed: {', '.join(sorted(self.ALLOWED_ROLES))})"
+            )
+        return None
 
     def to_anthropic_schema(self) -> dict[str, Any]:
         """Render this tool's metadata into the dict shape
@@ -219,59 +226,3 @@ class Tool(ABC):
             "description": self.description,
             "input_schema": self.input_schema,
         }
-
-
-def caller_role_denied_reason(
-    ctx: "ToolContext",
-    allowed_roles: "frozenset[str] | set[str]",
-) -> str | None:
-    """Return an error message if ``ctx``'s caller isn't in
-    ``allowed_roles``; ``None`` if the caller is permitted.
-
-    Used inside a tool's :meth:`Tool.run` as the second-
-    layer defence — the registry's role filter at
-    :func:`magi.tools.registry.get_tool` is the
-    first gate and strips this tool out of the LLM's
-    menu for any caller whose role isn't in
-    ``allowed_roles``. The check here ensures a caller
-    that bypasses the registry (test code, a future
-    entry point that forgets the filter) still fails
-    closed with a friendly ``is_error=True``.
-
-    Resolves the caller's role via ``ctx.bus.contacts_book`` —
-    the bus is supplied per-call by the worker. The
-    ``getattr`` fallback handles callers that still hold an
-    old-bus :class:`ToolContext` (no ``bus`` attribute);
-    they get a friendly "no bus" message until they migrate.
-    """
-    try:
-        ct_id = int(ctx.uid)
-    except (TypeError, ValueError):
-        return f"uid {ctx.uid!r} is not a valid id"
-    if ct_id == 0:
-        # The chat / TG handlers always set a real id;
-        # ``0`` is the loop's placeholder for "no caller
-        # resolved yet". Refuse rather than silently
-        # letting an unset-context caller through.
-        return (
-            "tool requires a known uid (got 0); "
-            "caller did not authenticate through a "
-            "cookie / TG binding."
-        )
-    bus = getattr(ctx, "bus", None)
-    if bus is None:
-        # Old-bus ToolContext (MCP-side callers until MCP
-        # migrates) — no role resolution is possible.
-        return (
-            "role check unavailable: tool context has no bus; "
-            "the caller side has not migrated to new_bus"
-        )
-    role = bus.contacts_book.role_for(ct_id)
-    if role is None:
-        return f"contact {ct_id!r} not found"
-    if role not in allowed_roles:
-        return (
-            f"role {role!r} is not permitted for this "
-            f"tool (allowed: {', '.join(sorted(allowed_roles))})"
-        )
-    return None

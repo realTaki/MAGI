@@ -58,7 +58,6 @@ from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
-    caller_role_denied_reason,
 )
 
 logger = logging.getLogger("magi.tools.tasks.action_item")
@@ -67,8 +66,10 @@ logger = logging.getLogger("magi.tools.tasks.action_item")
 # only ``admin`` and ``assigned`` operators may operate
 # on their own action items. ``contact`` and ``guest``
 # have no MAGI-node session and aren't expected to chat
-# via the dashboard.
-_ALLOWED_ROLES = frozenset({"assigned"})
+# Role gating is centralised in :meth:`Tool.gate`; tools
+# declare their role whitelist via :attr:`Tool.ALLOWED_ROLES`
+# on the class — no per-module `_ALLOWED_ROLES` / `_gate()`
+# helpers.
 
 # Stable kind prefix for LLM-driven action items. Each row
 # gets a unique per-row suffix (``_<8-hex>``) so multiple
@@ -83,21 +84,6 @@ _LLM_ACTION_ITEM_KIND_PREFIX = "llm_action_item"
 
 def _new_llm_action_item_kind() -> str:
     return f"{_LLM_ACTION_ITEM_KIND_PREFIX}_{uuid.uuid4().hex[:8]}"
-
-
-def _gate(ctx: ToolContext) -> str | None:
-    """Thin wrapper around
-    :func:`magi.tools.base.caller_role_denied_reason`
-    — kept as a free function so the call sites in
-    each tool class read the same (``denied = _gate(ctx)``)
-    without needing ``self.ALLOWED_ROLES`` everywhere.
-
-    Single source of truth for the in-run gate lives in
-    :func:`caller_role_denied_reason` so a future change
-    to the check (e.g. adding a rate-limit) lives in one
-    place.
-    """
-    return caller_role_denied_reason(ctx, _ALLOWED_ROLES)
 
 
 def _err(msg: str) -> ToolResult:
@@ -214,9 +200,6 @@ class AddActionItemTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        denied = _gate(ctx)
-        if denied is not None:
-            return _err(denied)
         title = (kwargs.get("title") or "").strip()
         if not title:
             return _err("title is required and must be non-empty")
@@ -324,9 +307,6 @@ class CompleteActionItemTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        denied = _gate(ctx)
-        if denied is not None:
-            return _err(denied)
         raw_id = kwargs.get("item_id")
         try:
             item_id = int(raw_id)
@@ -388,10 +368,6 @@ class ListActionItemTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        denied = _gate(ctx)
-        if denied is not None:
-            return _err(denied)
-
         ct_id = int(ctx.uid)
         include_completed = bool(kwargs.get("include_completed"))
 

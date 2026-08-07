@@ -39,23 +39,16 @@ from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
-    caller_role_denied_reason,
 )
 
 
 logger = logging.getLogger("magi.tools.memory.self")
 
-_WRITE_ROLES = frozenset({"admin", "assigned"})
 
-
-def _gate(ctx: ToolContext) -> str | None:
-    """Authorise the caller against the role whitelist for memory writes.
-
-    The bus owns the role re-resolution on every call (no cache on
-    ``ctx``); an admin-promoting-an-operator change takes effect on
-    the next LLM call without a process restart.
-    """
-    return caller_role_denied_reason(ctx, _WRITE_ROLES)
+# Role gating is centralised in :meth:`Tool.gate`. Each tool
+# declares its role whitelist via :attr:`Tool.ALLOWED_ROLES`
+# on the class — the worker resolves and enforces it once
+# before dispatching to ``run()``.
 
 
 def _err(msg: str) -> ToolResult:
@@ -151,10 +144,6 @@ class AddMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
-
         try:
             bus = ctx.bus
             view = bus.memory_book.add(
@@ -217,10 +206,6 @@ class UpdateMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
-
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
@@ -280,10 +265,6 @@ class CompleteMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
-
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
@@ -335,10 +316,6 @@ class DeleteMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
-
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")

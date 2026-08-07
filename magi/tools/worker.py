@@ -254,7 +254,6 @@ class ToolsWorker:
 
     async def _execute(self, job: "RunToolJob") -> None:
         ctx_data = dict(job.payload.get("context") or {})
-        caller_role = ctx_data.get("caller_role")
 
         # 1. Catalog revision check — did the menu move between
         #    the agent's LLM call and our claim?
@@ -297,24 +296,23 @@ class ToolsWorker:
                 )
                 return
 
-        # 3. Menu-level role filter + executable lookup. The
-        #    publish-time GATE is the authoritative permission
-        #    check; this is just defense in depth (a future
-        #    caller that bypasses the gate still fails closed).
-        tool = get_tool(job.tool_name, caller_role=caller_role)
+        # 3. Look up the tool by name. Role gating happens in
+        #    ``tool.gate(ctx)`` below — registry dispatch is
+        #    no longer role-aware (the menu filter lives on
+        #    the agent side via the catalog, not here).
+        tool = get_tool(job.tool_name)
         if tool is None:
             self._submit_failure(
                 job,
-                content=f"unknown or unauthorized tool: {job.tool_name!r}",
+                content=f"unknown tool: {job.tool_name!r}",
                 error_code=_ERROR_CODES["unknown"],
             )
             return
 
         # 4. Build execution context and run the runtime gate.
-        #    ``check_gate`` uses ``ctx.bus.contacts_book`` to
-        #    resolve the caller's role + admin flag, so we
-        #    don't need to pass ``caller_role`` / ``admin``
-        #    through the context.
+        #    ``Tool.gate`` re-resolves the caller's role from
+        #    ``ctx.bus.contacts_book`` on every call, so we
+        #    don't carry a stale role on the context.
         ctx = ToolContext(
             workspace=str(ctx_data.get("workspace") or ""),
             uid=int(ctx_data.get("uid") or 0),
@@ -322,7 +320,7 @@ class ToolsWorker:
             session_id=str(ctx_data.get("session_id") or ""),
             bus=self.bus,
         )
-        denied = tool.check_gate(ctx)
+        denied = tool.gate(ctx)
         if denied:
             self._submit_failure(
                 job,

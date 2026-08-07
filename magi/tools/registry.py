@@ -166,32 +166,30 @@ def _build_tools() -> list["Tool"]:
     ]
 
 
-def get_tool(
-    name: str,
-    caller_role: str | None = None,
-    caller_admin: bool = False,
-) -> "Tool | None":
+def get_tool(name: str) -> "Tool | None":
     """Look up a single tool by name for dispatch.
 
-    Returns ``None`` if no such tool is registered, or if
-    the tool is gated by ``ALLOWED_ROLES`` and the caller
-    doesn't match — the worker turns that into an
-    ``is_error=true`` tool_result for the LLM.
+    Returns ``None`` if no such tool isn't registered —
+    the worker turns that into an ``is_error=true``
+    tool_result for the LLM.
 
-    Role-gated lookup honors ``caller_role`` / ``caller_admin``
-    the same way the old :func:`get_tools` filter did. The
-    cache is initialized lazily here (was previously
-    initialized inside :func:`get_tools`).
+    Role gating lives on :meth:`Tool.gate`, not here.
+    This function is a name → instance lookup; the worker
+    calls ``tool.gate(ctx)`` after lookup to enforce
+    authorization. Keeping dispatch and authorization
+    separate means a future caller that bypasses the
+    gate (test code, an admin console) still works as
+    long as it calls ``gate`` itself.
     """
     global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
     for t in _tools_cache:
         if t.name == name:
-            return t if t.is_allowed_for_role(caller_role, admin=caller_admin) else None
+            return t
     for t in (_mcp_tools_cache or []):
         if t.name == name:
-            return t if t.is_allowed_for_role(caller_role, admin=caller_admin) else None
+            return t
     return None
 
 
