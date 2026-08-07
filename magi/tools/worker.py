@@ -205,7 +205,7 @@ class ToolsWorker:
                 id=0,  # SQLite assigns; ignored on insert
                 name=d.name,
                 spec_json=json.dumps(d.input_schema, ensure_ascii=False),
-                spec_dict=d.input_schema,
+                spec_dict=json.dumps(d.input_schema, ensure_ascii=False),
                 revision=0,  # overwritten below
                 enabled=1 if d.enabled else 0,
                 description=d.description,
