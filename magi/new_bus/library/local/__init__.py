@@ -4,7 +4,16 @@ Each module maps to one (or a small group of) SQLite tables.
 File names match the Book classes: ``<domain>Book.py``.
 """
 
-from magi.new_bus.library.local.actionItemBook import ActionItem, ActionItemBook
+from magi.new_bus.library.local.actionItemBook import (
+    ALL_PRIORITIES,
+    ALL_SOURCES,
+    PRIORITY_HIGH,
+    PRIORITY_NORMAL,
+    SOURCE_PROACTIVE,
+    SOURCE_USER,
+    ActionItem,
+    ActionItemBook,
+)
 from magi.new_bus.library.local.contactBook import (
     ALL_ROLES,
     Contact,
@@ -59,6 +68,12 @@ __all__ = [
     "ActionItem",
     "ActionItemBook",
     "ALL_KINDS",
+    "ALL_PRIORITIES",
+    "ALL_SOURCES",
+    "PRIORITY_HIGH",
+    "PRIORITY_NORMAL",
+    "SOURCE_PROACTIVE",
+    "SOURCE_USER",
     "ALL_ROLES",
     "Contact",
     "ContactBook",

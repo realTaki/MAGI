@@ -181,12 +181,76 @@ def test_mcp_server_book(factory):
 
 
 def test_action_item_book(factory, contact_id):
+    """Basic add → mark_done round-trip on the new schema.
+
+    Schema note: the book was refactored from ``body``/``status``
+    to ``description``/``completed_at`` — the open/done state
+    lives on ``completed_at is None`` vs ``is not None``.
+    """
     book = ActionItemBook(factory)
-    item = book.add(uid=contact_id, kind="alert", title="x", body="y")
+    item = book.add(uid=contact_id, kind="alert", title="x", description="y")
     assert isinstance(item, ActionItem)
-    assert item.status == "open"
+    assert item.completed_at is None  # "open" == not yet completed
     book.mark_done(item_id=item.id)
-    assert book.get(item_id=item.id).status == "done"
+    refreshed = book.get(item_id=item.id)
+    assert refreshed is not None
+    assert refreshed.completed_at is not None  # "done" == completed_at stamped
+
+
+def test_action_item_book_complete_for_owner(factory, contact_id):
+    """Owner-scoped completion — the path ``complete_action_item``
+    tool hits. Covers note capture, idempotency (second call does
+    NOT overwrite the first ``completed_at`` / ``completion_note``),
+    and strict per-contact privacy (wrong owner → ``None``,
+    row untouched).
+    """
+    from magi.new_bus.library.local.contactBook import ContactBook
+
+    book = ActionItemBook(factory)
+    other_id = ContactBook(factory).add(name="Other").id
+    item = book.add(uid=contact_id, kind="alert", title="x", description="y")
+
+    # Wrong owner → None, row stays open.
+    denied = book.complete_for_owner(
+        action_item_id=item.id,
+        owner_uid=other_id,
+        note="hax",
+    )
+    assert denied is None
+    assert book.get(item_id=item.id).completed_at is None
+
+    # Right owner → completed, note captured, completed_by_uid stamped.
+    completed = book.complete_for_owner(
+        action_item_id=item.id,
+        owner_uid=contact_id,
+        note="done!",
+    )
+    assert completed is not None
+    assert completed.id == item.id
+    assert completed.completed_at is not None
+    assert completed.completed_by_uid == contact_id
+    assert completed.completion_note == "done!"
+    first_completed_at = completed.completed_at
+
+    # Idempotent re-call: first writer wins on both
+    # ``completed_at`` and ``completion_note`` — the row is
+    # already done, no second stamp.
+    again = book.complete_for_owner(
+        action_item_id=item.id,
+        owner_uid=contact_id,
+        note="updated note that must NOT overwrite",
+    )
+    assert again is not None
+    assert again.completed_at == first_completed_at
+    assert again.completion_note == "done!"
+
+    # Non-existent row → None (no exception).
+    missing = book.complete_for_owner(
+        action_item_id=99999,
+        owner_uid=contact_id,
+        note=None,
+    )
+    assert missing is None
 
 
 # -- TokenUsageBook ----------------------------------------------------
