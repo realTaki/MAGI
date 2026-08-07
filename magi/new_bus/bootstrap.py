@@ -14,9 +14,7 @@ avoids ``extend_existing`` conflicts with the old bus at import time.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 from magi.new_bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
@@ -210,8 +208,10 @@ def _bootstrap_with_dirs(
     # ---- wire factories ----------------------------------------------------
     local_factory = build_local_factory(state_dir)
 
-    url = magis_url or os.environ.get("MAGIS_DATABASE_URL")
-    magis_factory = build_magis_factory(url) if url else None
+    # Pure pass-through: caller is the composition root and owns path
+    # resolution.  No env reads — ``magis_url=None`` simply means
+    # "no MAGIS database configured" (test / single-MAGIS scenarios).
+    magis_factory = build_magis_factory(magis_url) if magis_url else None
 
     # ---- local books -------------------------------------------------------
     sessions = SessionBook(local_factory)
