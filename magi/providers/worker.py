@@ -184,11 +184,35 @@ class ProvidersWorker:
     # ----- config change -------------------------------------------------
 
     async def _handle_config_job(self, job: ChangeProviderConfigJob) -> None:
-        """Rebuild the cached provider client on a config-change job."""
-        logger.info(
-            "providers worker: changeProviderConfig received, rebuilding client"
-        )
-        self._rebuild_provider()
+        """Apply a config-change job to the cached provider.
+
+        ``provider`` / ``api_key`` change the SDK client (vendor,
+        base_url, auth) and require a full rebuild via
+        :meth:`_rebuild_provider`. ``model`` is only a per-call
+        parameter on the SDK — the SDK clients (Anthropic / OpenAI)
+        read it from ``self.model`` at every call, so a model-only
+        change can be propagated in place via :meth:`_update_model`,
+        skipping the cost of tearing down the HTTP connection pool.
+        """
+        if job.provider is not None or job.api_key is not None:
+            logger.info(
+                "providers worker: changeProviderConfig (provider/auth) — rebuilding client"
+            )
+            self._rebuild_provider()
+        elif job.model is not None and self._provider is not None:
+            # Pure model change: the SDK client is unaffected.
+            self._update_model(job.model)
+        else:
+            # Either model came in without a cached provider (try
+            # to bootstrap from the freshly-written settings_book),
+            # or no fields are set at all. Rebuild either way —
+            # it's cheap and matches the previously-missing-then-
+            # fixed state.
+            logger.info(
+                "providers worker: changeProviderConfig (bootstrap / no-op) — rebuilding client"
+            )
+            self._rebuild_provider()
+
         if self._provider is not None:
             result = ChangeProviderConfigResult(job_id=job.job_id, success=True)
         else:
@@ -208,6 +232,12 @@ class ProvidersWorker:
 
     def _rebuild_provider(self) -> None:
         """(Re)build the cached :class:`LLMProvider` from current config.
+
+        Only invoked when the incoming config-change job touches
+        ``provider`` or ``api_key`` — both seal the SDK client
+        (vendor, base_url, auth).  A ``model``-only change is
+        fast-pathed through :meth:`_update_model` because the SDK
+        clients only read ``model`` per call.
 
         Never raises: a missing / invalid config logs once and leaves
         ``self._provider = None`` so the next claimed job settles
@@ -239,6 +269,29 @@ class ProvidersWorker:
                 "providers worker: cached LLM client (%s)",
                 type(provider).__name__,
             )
+
+    def _update_model(self, model: str) -> None:
+        """Swap ``provider.model`` on the cached provider in place.
+
+        The SDK clients (Anthropic / OpenAI) only read ``model`` per
+        call, so a model change does not require destroying the
+        client — that would tear down the HTTP connection pool
+        for what's effectively a string swap.
+
+        The caller is expected to have already verified
+        ``self._provider is not None``; the assert exists so a
+        future refactor that breaks that invariant fails loudly
+        instead of silently AttributeError-ing.
+        """
+        assert self._provider is not None, (
+            "_update_model requires a cached provider; "
+            "caller must guard before calling"
+        )
+        self._provider.model = model
+        logger.info(
+            "providers worker: updated cached model to %r (no rebuild)",
+            model,
+        )
 
     # ----- provider-options publishing ----------------------------------
 

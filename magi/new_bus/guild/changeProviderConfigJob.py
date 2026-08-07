@@ -139,7 +139,13 @@ class changeProviderConfigJobBoard(
 
     def _write_to_settings(self, job: ChangeProviderConfigJob) -> None:
         """Upsert provider config into ``settings_book``."""
+        # ``publish()`` already guards ``self._settings_book`` being
+        # non-None; the explicit early-return here narrows the type
+        # for the ``.set`` calls below (Pylance otherwise sees
+        # ``sb`` as ``SettingBook | None`` and flags unknown attr).
         sb = self._settings_book
+        if sb is None:
+            return
         if job.provider is not None:
             sb.set(key=PROVIDER_NAME_KEY, value=job.provider)
         if job.api_key is not None:
