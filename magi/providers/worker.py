@@ -395,6 +395,27 @@ class ProvidersWorker:
         Returns a dict with the complete result plus ``stream_key``
         so the caller can read incremental text from
         ``bus.stream_hub.get(stream_key)``.
+
+        Fallback semantics
+        ------------------
+
+        If the provider stream yields *no* ``usage.updated`` terminal
+        event (e.g. an SDK bug returns an empty stream, or the iterator
+        is closed before the trailing payload), we transparently fall
+        back to a non-streaming ``provider.chat()``. The caller is
+        billed for exactly one request — the failed stream attempt is
+        not separately charged — and the resulting dict carries no
+        ``stream_key`` because no incremental text was ever published.
+
+        Two caveats worth noting in the audit log:
+
+        - No timeout protection on this fallback today. The SDK call
+          uses its own ``timeout=30s`` (see provider base classes),
+          which bounds the wait but doesn't surface a distinct error
+          envelope for the fallback path.
+        - Callers relying on ``stream_key`` for live UX *will not see
+          anything* in that case. If that becomes a problem, swap the
+          fallback for a hard error instead.
         """
         import uuid as _uuid
 
@@ -421,6 +442,11 @@ class ProvidersWorker:
             self.bus.stream_hub.close(stream_key)
 
         if terminal is None:
+            logger.warning(
+                "providers worker: stream yielded no usage.updated for stream_key=%s; "
+                "falling back to non-streaming chat()",
+                stream_key,
+            )
             return await provider.chat(
                 system=system,
                 messages=messages,

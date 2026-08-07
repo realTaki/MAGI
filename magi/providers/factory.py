@@ -47,7 +47,7 @@ from magi.providers.openai import OpenAIProvider
 if TYPE_CHECKING:
     from magi.new_bus import NewBus
 
-logger = logging.getLogger("magi.agent.llm.factory")
+logger = logging.getLogger("magi.providers.factory")
 
 # ── known provider ids (module-private; for error messages) ───────────────
 

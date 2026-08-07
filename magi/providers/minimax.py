@@ -52,10 +52,12 @@ class MinimaxProvider(AnthropicProvider):
     """Minimax chat provider — single class, two regions.
 
     The factory instantiates one of two flavours by
-    setting ``_BASE_URL`` on the class after
-    construction. We support that by exposing
-    :func:`for_region` which returns a properly
-    configured subclass instance.
+    passing ``base_url=`` to the constructor (see
+    :meth:`AnthropicProvider.__init__`). We don't
+    subclass further (one per region) because the
+    per-region diff is just the URL — anything else
+    worth per-region override can land in
+    :meth:`for_region` later.
     """
 
     _BASE_URL = _BASE_URLS["minimax-cn"]
@@ -76,10 +78,13 @@ class MinimaxProvider(AnthropicProvider):
         as a synonym for ``minimax-cn`` (handled by
         the factory before calling here).
 
-        We don't subclass further (one per region)
-        because the per-region diff is just the URL —
-        anything else worth per-region override can
-        land in this method later.
+        The base class accepts an explicit
+        ``base_url=`` kwarg, so we route through it
+        instead of manufacturing a fresh subclass per
+        call (which is what the previous
+        implementation did and which made every
+        ``get_provider`` invocation allocate a new
+        class object — a tiny but real waste).
         """
         if region not in _BASE_URLS:
             from magi.providers.errors import LLMError
@@ -87,13 +92,4 @@ class MinimaxProvider(AnthropicProvider):
                 f"Unknown minimax region: {region!r}. "
                 f"Known: {list(_BASE_URLS.keys())}"
             )
-        # Build an instance via the regular __init__,
-        # then patch the URL on the client. The base
-        # class builds the SDK client from
-        # ``self._BASE_URL`` in __init__, so we
-        # override the class attribute on a fresh
-        # subclass for the duration of the instance.
-        class _RegionMinimax(MinimaxProvider):
-            pass
-        _RegionMinimax._BASE_URL = _BASE_URLS[region]
-        return _RegionMinimax(api_key=api_key, model=model)
+        return cls(api_key=api_key, model=model, base_url=_BASE_URLS[region])

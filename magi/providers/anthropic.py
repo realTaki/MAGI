@@ -17,12 +17,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
 import anthropic
 
+from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import (
     LLMContextLengthError,
     LLMError,
@@ -30,27 +32,33 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.providers._utils import is_context_length_error, safe_dump
 
-logger = logging.getLogger("magi.agent.llm.anthropic")
+logger = logging.getLogger("magi.providers.anthropic")
 
 _MAX_TOKENS_DEFAULT = 1024
 
 
-def _is_context_length_error(message: str) -> bool:
-    """启发式判断 SDK 异常消息是否提示上下文超限。
+def _wrap_anthropic_error(exc: anthropic.APIError, label: str) -> LLMError:
+    """Translate an Anthropic SDK exception into the typed :class:`LLMError`.
 
-    SDK 把上游错误文本塞进 exception message；多数厂商用
-    "prompt is too long" / "context length exceeded" 等措辞。
-    误判只回退到通用 LLMError，影响有限。
+    Shared by both :meth:`chat` and :meth:`stream` so the two paths
+    produce identical error envelopes (the worker maps ``type(exc).__name__``
+    to the operator-facing ``error_code``).
     """
-    m = message.lower()
-    return (
-        "context length" in m
-        or "prompt is too long" in m
-        or "maximum context" in m
-        or "context_length" in m
-    )
+    if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
+        return LLMAuthError(f"{label} auth/permission failed: {exc}")
+    if isinstance(exc, anthropic.RateLimitError):
+        return LLMRateLimitError(f"{label} rate limited: {exc}")
+    if isinstance(exc, (anthropic.APITimeoutError, anthropic.APIConnectionError)):
+        return LLMNetworkError(f"{label} network error: {exc}")
+    if isinstance(exc, anthropic.BadRequestError):
+        if is_context_length_error(str(exc)):
+            return LLMContextLengthError(f"{label} context overflow: {exc}")
+        return LLMError(f"{label} bad request: {exc}")
+    if isinstance(exc, anthropic.APIStatusError):
+        return LLMNetworkError(f"{label} status {getattr(exc, 'status_code', '?')}: {exc}")
+    return LLMError(f"{label} error: {exc}")
 
 
 class AnthropicProvider(LLMProvider):
@@ -60,15 +68,25 @@ class AnthropicProvider(LLMProvider):
     _DEFAULT_MODEL: str = ""
     _ERROR_LABEL: str = "anthropic"
 
-    def __init__(self, api_key: str, model: str | None = None) -> None:
-        if not self._BASE_URL:
+    def __init__(
+        self,
+        api_key: str,
+        model: str | None = None,
+        *,
+        base_url: str | None = None,
+    ) -> None:
+        # ``base_url`` is an explicit override hook so subclasses (e.g.
+        # Minimax) don't need to manufacture a fresh subclass per
+        # region — they can pass the URL directly. Kept keyword-only.
+        url = base_url or self._BASE_URL
+        if not url:
             raise LLMError(
-                f"{type(self).__name__} must declare _BASE_URL"
+                f"{type(self).__name__} must declare _BASE_URL or pass base_url"
             )
         super().__init__(api_key, model)
         self._client = anthropic.Anthropic(
             api_key=api_key,
-            base_url=self._BASE_URL,
+            base_url=url,
             timeout=30.0,
         )
 
@@ -94,31 +112,12 @@ class AnthropicProvider(LLMProvider):
             kwargs["tools"] = tools
 
         label = self._ERROR_LABEL
-
         try:
             response = await asyncio.to_thread(
-                self._client.messages.create, **kwargs
+                self._client.messages.create, **kwargs,
             )
-        except anthropic.AuthenticationError as e:
-            raise LLMAuthError(f"{label} auth failed: {e}") from e
-        except anthropic.PermissionDeniedError as e:
-            raise LLMAuthError(f"{label} permission denied: {e}") from e
-        except anthropic.RateLimitError as e:
-            raise LLMRateLimitError(f"{label} rate limited: {e}") from e
-        except anthropic.APITimeoutError as e:
-            raise LLMNetworkError(f"{label} timeout: {e}") from e
-        except anthropic.APIConnectionError as e:
-            raise LLMNetworkError(f"{label} connection error: {e}") from e
-        except anthropic.BadRequestError as e:
-            if _is_context_length_error(str(e)):
-                raise LLMContextLengthError(
-                    f"{label} context overflow: {e}"
-                ) from e
-            raise LLMError(f"{label} bad request: {e}") from e
-        except anthropic.APIStatusError as e:
-            raise LLMNetworkError(
-                f"{label} status {e.status_code}: {e}"
-            ) from e
+        except anthropic.APIError as exc:
+            raise _wrap_anthropic_error(exc, label) from exc
 
         return _response_to_dict(response, self.model)
 
@@ -136,6 +135,13 @@ class AnthropicProvider(LLMProvider):
         as a final ``usage.updated`` (with model field piggy-backed
         in the payload) so the consumer can rebuild the final dict
         without a second SDK call.
+
+        Thread→async bridge: the SDK stream is sync and must be
+        consumed from a worker thread (``asyncio.to_thread``). The
+        reader thread hands events to a ``threading.Event``-flavoured
+        ``asyncio.Queue`` via :func:`asyncio.run_coroutine_threadsafe`,
+        and the main async iterator drains that queue. This keeps
+        deltas arriving in order while never blocking the event loop.
         """
         sdk_messages = _to_sdk_messages(messages)
         kwargs: dict[str, Any] = {
@@ -149,11 +155,21 @@ class AnthropicProvider(LLMProvider):
             kwargs["tools"] = tools
 
         loop = asyncio.get_running_loop()
+        event_queue: asyncio.Queue[LLMStreamEvent] = asyncio.Queue()
 
-        # Per-tool-call buffer (Anthropic streams arguments as
-        # incremental JSON fragments; we accumulate per-id and emit
-        # one final usage.updated with the tool_use snapshot).
-        tool_buffers: dict[str, dict[str, Any]] = {}
+        async def _yield(event: LLMStreamEvent) -> None:
+            await event_queue.put(event)
+
+        def _emit(kind: str, payload: dict[str, Any]) -> None:
+            asyncio.run_coroutine_threadsafe(
+                _yield(LLMStreamEvent(kind, payload)), loop,
+            ).result()
+
+        # Tool-call buffers keyed by the slot index Anthropic assigns
+        # in ``content_block_start`` — the SDK's ``input_json_delta``
+        # events don't carry the tool id, only the index, so the
+        # index is the only stable handle across a parallel call burst.
+        tool_buffers_by_slot: dict[int, dict[str, Any]] = {}
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         usage_dict: dict[str, Any] | None = None
@@ -161,14 +177,6 @@ class AnthropicProvider(LLMProvider):
         stop_reason: str | None = None
         raw_blocks: list[dict[str, Any]] = []
 
-        def _emit(kind: str, payload: dict[str, Any]) -> None:
-            asyncio.run_coroutine_threadsafe(
-                _yield(LLMStreamEvent(kind, payload)), loop,
-            ).result()
-
-        # Bridge: the SDK stream is sync (driven from a worker thread);
-        # we collect deltas into thread-local buffers and let the async
-        # iterator emit them via run_coroutine_threadsafe.
         def _read() -> None:
             nonlocal usage_dict, model_name, stop_reason
             with self._client.messages.stream(**kwargs) as stream:
@@ -178,9 +186,11 @@ class AnthropicProvider(LLMProvider):
                         block = getattr(event, "content_block", None)
                         btype = getattr(block, "type", None)
                         if btype == "tool_use":
-                            tool_id = getattr(block, "id", "")
-                            tool_buffers[tool_id] = {
-                                "id": tool_id,
+                            slot_idx = getattr(event, "index", None)
+                            if not isinstance(slot_idx, int):
+                                slot_idx = len(tool_buffers_by_slot)
+                            tool_buffers_by_slot[slot_idx] = {
+                                "id": getattr(block, "id", ""),
                                 "name": getattr(block, "name", ""),
                                 "input_json": "",
                                 "input": {},
@@ -190,29 +200,29 @@ class AnthropicProvider(LLMProvider):
                         dtype = getattr(delta, "type", "")
                         if dtype == "text_delta":
                             chunk = getattr(delta, "text", "")
-                            text_parts.append(chunk)
-                            _emit("text.delta", {"text": chunk})
+                            if chunk:
+                                text_parts.append(chunk)
+                                _emit("text.delta", {"text": chunk})
                         elif dtype == "thinking_delta":
-                            thinking_parts.append(getattr(delta, "thinking", ""))
+                            thinking_parts.append(getattr(delta, "thinking", "") or "")
                         elif dtype in {"input_json_delta", "json_delta"}:
-                            tid = getattr(event, "index", None)
-                            partial = getattr(delta, "partial_json", "")
-                            # Map slot index → tool_id lazily. We don't
-                            # have the id here, so the consumer rebinds
-                            # via the final usage payload.
-                            for slot in tool_buffers.values():
-                                if slot.get("_slot") == tid:
-                                    slot["input_json"] += partial
-                                    break
+                            slot_idx = getattr(event, "index", None)
+                            partial = getattr(delta, "partial_json", "") or ""
+                            slot = tool_buffers_by_slot.get(slot_idx) if isinstance(slot_idx, int) else None
+                            if slot is not None:
+                                slot["input_json"] += partial
                             else:
-                                # New slot
-                                key = f"slot-{tid}"
-                                tool_buffers[key] = {
+                                # Delta arrived before / without a
+                                # matching ``content_block_start`` —
+                                # extremely rare but tolerated: stash
+                                # under a synthetic slot so the
+                                # arguments aren't lost.
+                                key = slot_idx if isinstance(slot_idx, int) else len(tool_buffers_by_slot)
+                                tool_buffers_by_slot[key] = {
                                     "id": "",
                                     "name": "",
                                     "input_json": partial,
                                     "input": {},
-                                    "_slot": tid,
                                 }
                     elif etype == "content_block_stop":
                         pass
@@ -226,7 +236,7 @@ class AnthropicProvider(LLMProvider):
                             model_name = getattr(msg, "model", model_name) or model_name
                             u = getattr(msg, "usage", None)
                             if u is not None:
-                                usage_dict = _dump(u)
+                                usage_dict = safe_dump(u)
                     elif etype == "message_stop":
                         pass
 
@@ -235,30 +245,25 @@ class AnthropicProvider(LLMProvider):
                 model_name = getattr(final, "model", model_name) or model_name
                 u = getattr(final, "usage", None)
                 if u is not None:
-                    usage_dict = _dump(u)
+                    usage_dict = safe_dump(u)
                 stop_reason = getattr(final, "stop_reason", None) or stop_reason
                 raw_blocks.extend(_collect_raw_blocks(final))
 
         try:
             await asyncio.to_thread(_read)
-        except anthropic.AuthenticationError as exc:
-            raise LLMAuthError(f"{self._ERROR_LABEL} auth failed: {exc}") from exc
-        except anthropic.RateLimitError as exc:
-            raise LLMRateLimitError(f"{self._ERROR_LABEL} rate limited: {exc}") from exc
-        except (anthropic.APITimeoutError, anthropic.APIConnectionError) as exc:
-            raise LLMNetworkError(f"{self._ERROR_LABEL} stream failed: {exc}") from exc
+        except anthropic.APIError as exc:
+            raise _wrap_anthropic_error(exc, self._ERROR_LABEL) from exc
 
         # Parse accumulated tool args.
-        import json as _json
-
         tool_uses: list[dict[str, Any]] = []
-        for slot in tool_buffers.values():
+        for slot_idx in sorted(tool_buffers_by_slot):
+            slot = tool_buffers_by_slot[slot_idx]
             args_raw = slot.get("input_json") or ""
             parsed: Any = {}
             if args_raw:
                 try:
-                    parsed = _json.loads(args_raw)
-                except _json.JSONDecodeError:
+                    parsed = json.loads(args_raw)
+                except json.JSONDecodeError:
                     parsed = {}
             tool_uses.append({
                 "id": slot.get("id") or "",
@@ -266,8 +271,12 @@ class AnthropicProvider(LLMProvider):
                 "input": parsed if isinstance(parsed, dict) else {},
             })
 
+        # Deltas concatenate without separator (SDK guarantees they
+        # already carry whatever spacing the model intended). The
+        # non-streaming ``_response_to_dict`` joins full text *blocks*
+        # with a newline — different unit, different rule.
         text = "".join(text_parts).strip() or "(empty reply)"
-        thinking = "\n".join(p for p in thinking_parts if p).strip() or None
+        thinking = "".join(p for p in thinking_parts if p).strip() or None
         # Single trailing usage.updated carrying everything the
         # consumer needs to rebuild the final dict.
         yield LLMStreamEvent("usage.updated", {
@@ -279,6 +288,15 @@ class AnthropicProvider(LLMProvider):
             "thinking": thinking,
             "raw_blocks": raw_blocks,
         })
+
+        # Drain anything the SDK emitted after we built the terminal
+        # payload (e.g. trailing text deltas). The queue is bounded by
+        # the SDK stream lifetime so this loop is cheap.
+        while not event_queue.empty():
+            trailing = event_queue.get_nowait()
+            if trailing.kind == "usage.updated":
+                continue  # we already emitted ours above
+            yield trailing
 
     # Compatibility alias — some callers historically used
     # ``AnthropicProvider._response_to_result``.  The implementation
@@ -316,38 +334,23 @@ def _to_sdk_messages(messages: list[dict]) -> list[dict[str, Any]]:
     return out
 
 
-def _dump(obj: Any) -> dict[str, Any] | None:
-    """Best-effort Pydantic → dict; tolerate older SDKs that lack model_dump."""
-    if obj is None:
-        return None
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            pass
-    if hasattr(obj, "dict"):
-        try:
-            return obj.dict()
-        except Exception:
-            pass
-    if hasattr(obj, "__dict__"):
-        return dict(obj.__dict__)
-    return None
-
-
 def _response_to_dict(response: Any, default_model: str) -> dict[str, Any]:
     """Translate a non-streaming SDK response into the canonical dict.
 
     Returns ``{text, thinking, tool_uses, raw_blocks, model, usage,
     stop_reason}``. ``text`` is never empty: if the model produced
     only thinking blocks, it falls back to ``"(empty reply)"``.
+
+    Multiple text *blocks* (not deltas) are joined with a newline —
+    each block is a distinct paragraph in the SDK output, so a
+    separator is appropriate.
     """
     text_parts: list[str] = []
     thinking_parts: list[str] = []
     raw_blocks: list[dict[str, Any]] = []
     tool_uses: list[dict[str, Any]] = []
     for block in getattr(response, "content", []) or []:
-        dumped = _dump(block) or {"type": getattr(block, "type", "unknown")}
+        dumped = safe_dump(block) or {"type": getattr(block, "type", "unknown")}
         raw_blocks.append(dumped)
         btype = getattr(block, "type", None)
         if btype == "text":
@@ -361,7 +364,7 @@ def _response_to_dict(response: Any, default_model: str) -> dict[str, Any]:
                 "input": dict(getattr(block, "input", {}) or {}),
             })
 
-    usage = _dump(getattr(response, "usage", None))
+    usage = safe_dump(getattr(response, "usage", None))
     text = "\n".join(p for p in text_parts if p).strip()
     thinking = "\n".join(p for p in thinking_parts if p).strip() or None
 
@@ -379,6 +382,6 @@ def _response_to_dict(response: Any, default_model: str) -> dict[str, Any]:
 def _collect_raw_blocks(response: Any) -> list[dict[str, Any]]:
     blocks: list[dict[str, Any]] = []
     for block in getattr(response, "content", []) or []:
-        dumped = _dump(block) or {"type": getattr(block, "type", "unknown")}
+        dumped = safe_dump(block) or {"type": getattr(block, "type", "unknown")}
         blocks.append(dumped)
     return blocks

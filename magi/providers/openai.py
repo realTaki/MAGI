@@ -44,26 +44,13 @@ from magi.providers.errors import (
     LLMRateLimitError,
 )
 from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.providers._utils import is_context_length_error, safe_dump
 
-logger = logging.getLogger("magi.agent.llm.openai")
+logger = logging.getLogger("magi.providers.openai")
 
 _MAX_TOKENS_DEFAULT = 1024
 _DEFAULT_MODEL = "gpt-4o-mini"
 _PROVIDER_NAME = "openai"
-
-_CONTEXT_LENGTH_MARKERS = (
-    "context length",
-    "context_length",
-    "maximum context",
-    "prompt is too long",
-    "reduce the length",
-    "tokens must be reduced",
-)
-
-
-def _is_context_length_error(message: str) -> bool:
-    m = message.lower()
-    return any(marker in m for marker in _CONTEXT_LENGTH_MARKERS)
 
 
 def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
@@ -170,19 +157,13 @@ def _convert_messages(
 
 
 def _convert_usage(usage_obj: Any) -> dict[str, Any] | None:
-    if usage_obj is None:
-        return None
-    if hasattr(usage_obj, "model_dump"):
-        try:
-            raw = usage_obj.model_dump()
-        except Exception:
-            raw = None
-    elif hasattr(usage_obj, "to_dict"):
-        raw = usage_obj.to_dict()
-    elif hasattr(usage_obj, "__dict__"):
-        raw = dict(usage_obj.__dict__)
-    else:
-        raw = None
+    """Translate an OpenAI usage object into the canonical token envelope.
+
+    Renames ``prompt_tokens``/``completion_tokens``/``total_tokens`` to
+    the wire-format keys the rest of the runtime reads; preserves any
+    extra metadata (``prompt_tokens_details`` etc.) verbatim.
+    """
+    raw = safe_dump(usage_obj)
     if raw is None:
         return None
     out: dict[str, Any] = {}
@@ -275,7 +256,7 @@ def _wrap_exception(exc: openai.OpenAIError) -> LLMError:
     if isinstance(exc, (APITimeoutError, APIConnectionError)):
         return LLMNetworkError(f"{label} network error: {exc}")
     if isinstance(exc, BadRequestError):
-        if _is_context_length_error(str(exc)):
+        if is_context_length_error(str(exc)):
             return LLMContextLengthError(f"{label} context overflow: {exc}")
         return LLMError(f"{label} bad request: {exc}")
     if isinstance(exc, APIStatusError):
@@ -409,7 +390,10 @@ class OpenAIProvider(LLMProvider):
             raise _wrap_exception(exc) from exc
 
         text = "".join(text_parts)
-        thinking = "\n".join(p for p in thinking_parts if p).strip() or None
+        # Thinking deltas arrive as discrete reasoning chunks; concatenate
+        # without separator (mirrors text.delta handling — deltas don't
+        # carry inter-chunk spacing).
+        thinking = "".join(p for p in thinking_parts if p).strip() or None
         tool_uses: list[dict[str, Any]] = []
         raw_blocks: list[dict[str, Any]] = []
         for slot_index in sorted(tool_call_buffers):
