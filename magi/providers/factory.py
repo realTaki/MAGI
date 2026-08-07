@@ -1,169 +1,130 @@
-"""Provider factory — turn the seeded adam ``Magi``'s
-``provider``/``api_key``/``model`` into a ready-to-call
-``LLMProvider``.
+"""LLM provider factory — 从 ``bus.settings_book`` 读凭据并构造 provider。
 
-Four providers ship in v0:
+抽象接口 (:class:`LLMProvider` / :class:`LLMStreamEvent` /
+:class:`StreamEventKind`) 在 :mod:`magi.providers.base`。本模块只
+负责"凭据 → SDK client"这一步，**唯一**知道这件事的地方。
 
-  - :class:`magi.providers.claude_code.ClaudeProvider` —
-    Anthropic's first-party Claude API.
-  - :class:`magi.providers.minimax.MinimaxProvider` —
-    Minimax's two regions (China + Global), via the
-    Anthropic-compatible endpoints.
-  - :class:`magi.providers.openai.OpenAIProvider` —
-    OpenAI's official chat-completions endpoint.
+凭据来源是 ``bus.settings_book``（key 见
+:mod:`magi.new_bus.guild.changeProviderConfigJob`）。WebUI / API
+channel 通过 ``changeProviderConfigJobBoard.publish()``（self-contained
+write，会自动落 settings_book）或直接 ``settings_book.set()`` 写入。
 
-The Claude and Minimax providers subclass
-:class:`magi.providers.anthropic.AnthropicProvider`,
-which centralises the SDK call, error mapping, and
-response walking. OpenAI is on a different wire format,
-so it subclasses :class:`LLMProvider` directly. The
-factory's job is just to pick the right class +
-per-vendor config.
+已知厂商（v0）:
 
-The factory is the **single source of truth** for the
-MAGI runtime's LLM credentials. Every chat turn, task
-fire, and compaction pass reads the adam ``Magi`` row
-through this factory — callers never thread provider
-name + key + model through their own signatures. If the
-MAGIC hasn't been configured yet, :func:`get_provider`
-raises :class:`LLMNotConfiguredError` so the chat
-handler can return the operator a clear "set them in
-智能体管理" 503.
+- ``claude``         — Anthropic 自家 API（first-party）
+- ``minimax-cn``     — Minimax 国内节点（Anthropic 兼容）
+- ``minimax-global`` — Minimax 海外节点（Anthropic 兼容）
+- ``openai``         — OpenAI 官方 chat-completions
 
-Adding a new provider:
+``minimax``（不带 region 后缀）是 ``minimax-cn`` 的历史别名。
 
-1. Create ``magi/providers/<name>.py`` subclassing
-   :class:`AnthropicProvider` (or
-   :class:`LLMProvider` for a non-Anthropic wire
-   format).
-2. Add a branch in :func:`get_provider` below.
-3. Add the new id to :func:`known_providers` so the
-   dashboard can populate the provider dropdown.
-4. Add a row to :func:`provider_options_for_ui` so the
-   operator sees a friendly label.
+添加新厂商
+==========
 
-The factory is the single source of truth for "which
-provider names are accepted". Validation runs in two
-places: the API endpoint that accepts user input (so
-the operator sees a 400 on a typo) and here (defensive
-— the API might be bypassed by a direct DB write).
+1. 在 :mod:`magi.providers` 下新增一个 Python 文件，继承
+   :class:`~magi.providers.base.LLMProvider`（或 :class:`LLMProvider`，
+   若 wire 协议不是 Anthropic 兼容）。
+2. 在本文件 :func:`_build_provider` 加分支。
+3. ``_KNOWN_PROVIDERS`` 列表里加 id（私有，供工厂内部错误消息用）。
 """
 
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
+from magi.new_bus.guild.changeProviderConfigJob import (
+    PROVIDER_API_KEY_KEY,
+    PROVIDER_MODEL_KEY,
+    PROVIDER_NAME_KEY,
+)
+from magi.providers.base import LLMProvider
 from magi.providers.claude_code import ClaudeProvider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.minimax import MinimaxProvider
 from magi.providers.openai import OpenAIProvider
-from magi.providers.provider import LLMProvider
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
 
 logger = logging.getLogger("magi.agent.llm.factory")
 
+# ── known provider ids (module-private; for error messages) ───────────────
 
-def known_providers() -> list[str]:
-    """Provider ids the UI can offer in dropdowns.
-
-    v0 ships the Anthropic-API-compatible family:
-    Claude (Anthropic's first-party API) and the two
-    Minimax regions, plus OpenAI. Order matches the
-    dropdown: Claude first for international deployers,
-    then the two Minimax regions for Asia-Pacific
-    deployers, then OpenAI. ``"minimax"`` (bare alias) is
-    intentionally NOT listed here — operators pick a
-    region explicitly so there's no ambiguity.
-    :func:`get_provider` still accepts ``"minimax"`` for
-    backward compat with any pre-v0 MAGIC rows.
-    """
-    return ["claude", "minimax-global", "minimax-cn", "openai"]
+_KNOWN_PROVIDERS: list[str] = [
+    "claude",
+    "minimax-global",
+    "minimax-cn",
+    "openai",
+]
 
 
-def get_provider(model: str | None = None) -> LLMProvider:
-    """Resolve the MAGI runtime's LLM provider from the
-    direct MAGIS database and instantiate it.
+# ── factory: 从 settings_book 读凭据并实例化 provider ──────────────────────
 
-    The factory opens its own short-lived ORM session,
-    resolves the runtime MAGI by ``MAGI_RUNTIME_ID`` (or the direct MAGIS's
-    ADAM for the initial node),
-    and uses that row's ``provider`` / ``api_key`` /
-    ``model`` columns to build the provider.
+
+def get_provider(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
+    """从 ``bus.settings_book`` 读凭据并实例化 provider。
 
     Parameters
     ----------
+    bus
+        组合根注入的 :class:`NewBus`。凭据来源唯一是
+        ``settings_book``（key 形如 ``provider.name`` /
+        ``provider.api_key`` / ``provider.model``）。
     model
-        Optional per-call override. ``None`` means "use
-        the model stored on the MAGIC row" (the
-        operator's pick at PATCH time).
+        可选覆盖。``None`` 表示用配置里的默认模型。
 
     Raises
     ------
     LLMNotConfiguredError
-        The runtime MAGI's ``provider`` / ``api_key`` is
-        unset. The chat / TG handler maps this to a
-        503 ``magi.llm_credentials_required``.
+        provider 或 api_key 未设置。
     LLMError
-        The configured provider id is not in
-        :func:`known_providers` (typo, stale value).
+        provider 不在已知列表里。
     """
-    from magi.bus import get_bus
-
-    config = get_bus().magic.provider_configuration()
-    if config is None:
-        logger.warning("get_provider: no runtime MAGI with provider+api_key configured")
-        raise LLMNotConfiguredError(
-            "MAGI runtime has no LLM provider / API key configured; set it in MAGI management"
-        )
-    provider_name = config.provider
-    api_key = config.api_key
-    effective_model = model if model is not None else config.model
+    provider_name = bus.settings_book.get(key=PROVIDER_NAME_KEY)
+    api_key = bus.settings_book.get(key=PROVIDER_API_KEY_KEY)
+    effective_model = model or bus.settings_book.get(key=PROVIDER_MODEL_KEY)
 
     if not provider_name:
-        raise LLMError("provider name is required")
+        raise LLMNotConfiguredError(
+            "no LLM provider configured; set provider.name in settings"
+        )
     if not api_key:
-        raise LLMError("api_key is required")
-
-    name = provider_name.strip().lower()
-    if name == "minimax" or name == "minimax-cn":
-        return MinimaxProvider.for_region("minimax-cn", api_key=api_key, model=effective_model)
-    if name == "minimax-global":
-        return MinimaxProvider.for_region("minimax-global", api_key=api_key, model=effective_model)
-    if name == "claude":
-        return ClaudeProvider(api_key=api_key, model=effective_model)
-    if name == "openai":
-        return OpenAIProvider(api_key=api_key, model=effective_model)
-
-    raise LLMError(
-        f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(known_providers())}"
+        raise LLMNotConfiguredError(
+            "no API key configured; set provider.api_key in settings"
+        )
+    return _build_provider(
+        provider_name=provider_name,
+        api_key=api_key,
+        model=effective_model,
     )
 
 
-def provider_options_for_ui() -> list[dict[str, str]]:
-    """The dropdown entries for the provider picker.
-    Each row has ``value`` (the id we store) and
-    ``label`` (what the operator sees). New providers
-    just add a row here.
+def _build_provider(
+    *,
+    provider_name: str,
+    api_key: str,
+    model: str | None = None,
+) -> LLMProvider:
+    """Construct the concrete provider from raw credentials."""
+    name = provider_name.strip().lower()
+    if name in ("minimax", "minimax-cn"):
+        return MinimaxProvider.for_region(
+            "minimax-cn", api_key=api_key, model=model,
+        )
+    if name == "minimax-global":
+        return MinimaxProvider.for_region(
+            "minimax-global", api_key=api_key, model=model,
+        )
+    if name == "claude":
+        return ClaudeProvider(api_key=api_key, model=model)
+    if name == "openai":
+        return OpenAIProvider(api_key=api_key, model=model)
 
-    v0 ships the Anthropic-API-compatible family
-    (Claude + the two Minimax regions) plus OpenAI. The
-    factory and the picker stay in sync via
-    :func:`known_providers`.
-    """
-    return [
-        {"value": "claude", "label": "Anthropic (Claude)"},
-        {"value": "minimax-global", "label": "Minimax (Global)"},
-        {"value": "minimax-cn", "label": "Minimax (China)"},
-        {"value": "openai", "label": "OpenAI"},
-    ]
+    raise LLMError(
+        f"Unknown LLM provider: {provider_name!r}. "
+        f"Known: {', '.join(_KNOWN_PROVIDERS)}"
+    )
 
 
-def is_known_provider(name: str) -> bool:
-    return name.strip().lower() in {n.lower() for n in known_providers()}
-
-
-__all__ = [
-    "get_provider",
-    "known_providers",
-    "provider_options_for_ui",
-    "is_known_provider",
-]
+__all__ = ["get_provider"]

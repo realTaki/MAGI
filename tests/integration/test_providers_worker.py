@@ -24,7 +24,8 @@ from magi.bus.db.magis.engine import init_magis_public_db
 from magi.bus.db.models.queue import LLMAttempt
 from magi.bus.db.engine import open_session
 from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.provider import ChatMessage, ChatResult, LLMProvider
+from magi.providers.base import LLMProvider
+from magi.providers.factory import ChatMessage, ChatResult
 from magi.providers.worker import (
     ProvidersWorker,
     start_provider_worker,

@@ -34,14 +34,9 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.factory import (
-    get_provider,
-    is_known_provider,
-    known_providers,
-    provider_options_for_ui,
-)
+from magi.providers.base import LLMStreamEvent
+from magi.providers.factory import get_provider
 from magi.providers.openai import OpenAIProvider
-from magi.providers.provider import ChatMessage, LLMStreamEvent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -812,21 +807,6 @@ async def test_stream_wraps_openai_error(mock_openai):
 # ---------------------------------------------------------------------------
 # Factory wiring
 # ---------------------------------------------------------------------------
-
-
-def test_known_providers_includes_openai():
-    assert "openai" in known_providers()
-
-
-def test_is_known_provider_accepts_openai():
-    assert is_known_provider("openai")
-    assert is_known_provider("OPENAI")
-
-
-def test_provider_options_for_ui_has_openai_row():
-    rows = provider_options_for_ui()
-    openai_rows = [row for row in rows if row["value"] == "openai"]
-    assert openai_rows and openai_rows[0]["label"] == "OpenAI"
 
 
 def test_get_provider_returns_OpenAIProvider_when_configured(monkeypatch):

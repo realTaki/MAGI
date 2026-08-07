@@ -38,7 +38,7 @@ Re-exported here:
 Everything else lives in the appropriate submodule:
 
 - :class:`LLMProvider` / :class:`LLMStreamEvent` →
-  :mod:`magi.providers.provider`
+  :mod:`magi.providers.factory`
 - :class:`AnthropicProvider` →
   :mod:`magi.providers.anthropic`
 - error classes (``LLMError`` / ``LLMAuthError`` / ...) →
