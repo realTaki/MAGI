@@ -37,7 +37,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult, require_bus
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.update_daily_note")
 

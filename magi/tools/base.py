@@ -40,7 +40,7 @@ from __future__ import annotations
 import functools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Concatenate, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 if TYPE_CHECKING:
     from magi.new_bus import NewBus
@@ -100,72 +100,7 @@ class ToolResult:
     is_error: bool = False
 
 
-__all__ = ["Tool", "ToolContext", "ToolResult", "require_bus"]
-
-
-# -- require_bus decorator -------------------------------------------------
-#
-# Opt-in guard for tools that touch ``ctx.bus.<book>``.
-#
-# Not every tool needs a bus — filesystem read/write, shell
-# bash, list_files etc. only need ``ctx.workspace`` and run
-# cleanly with ``bus=None`` in tests and boot probes. We
-# shouldn't blanket-gate every tool because that would
-# mislead readers into thinking all tools depend on the bus.
-
-_P = ParamSpec("_P")
-_ToolT = TypeVar("_ToolT", bound="Tool")
-
-
-def require_bus(
-    method: Callable[
-        Concatenate[_ToolT, ToolContext, _P], Awaitable[ToolResult]
-    ],
-) -> Callable[
-    Concatenate[_ToolT, ToolContext, _P], Awaitable[ToolResult]
-]:
-    """Decorate a :meth:`Tool.run` to fail closed when
-    ``ctx.bus`` is missing.
-
-    Usage::
-
-        class AddActionItemTool(Tool):
-            @require_bus
-            async def run(self, ctx, **kwargs):
-                ...
-
-    The decorator is OPT-IN. Tools that don't touch the
-    bus (filesystem ops, shell tools, etc.) leave
-    ``run`` undecorated and run with ``bus=None`` in tests.
-
-    Type-checker note: ``_ToolT`` is bound to :class:`Tool`
-    but is *not* pinned to :class:`Tool` — the decorator
-    carries the **subclass** through, so a method defined
-    as ``async def run(self: AddActionItemTool, ctx, ...)``
-    keeps ``self`` typed as ``AddActionItemTool`` after
-    decoration. Pinning ``self: Tool`` here would force
-    every subclass to type-erasure its own type back to
-    :class:`Tool`, defeating ``Self``-style inference.
-    """
-
-    @functools.wraps(method)
-    async def wrapper(
-        self: _ToolT,
-        ctx: ToolContext,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> ToolResult:
-        if ctx.bus is None:
-            return ToolResult(
-                content=(
-                    "tool context has no bus; the caller side "
-                    "has not migrated to new_bus"
-                ),
-                is_error=True,
-            )
-        return await method(self, ctx, *args, **kwargs)
-
-    return wrapper
+__all__ = ["Tool", "ToolContext", "ToolResult"]
 
 
 class Tool(ABC):
@@ -179,12 +114,18 @@ class Tool(ABC):
 
     Tools that touch the bus (``ctx.bus.<book>.X(...)``)
     should decorate their :meth:`run` with
-    :func:`require_bus` to opt into the
-    ``ctx.bus is None`` failure-closed path. Tools that
-    only need ``ctx.workspace`` (filesystem, shell, the
-    memory ops that don't go through new_bus) **don't**
+    :meth:`Tool.require_bus` (a ``@staticmethod`` living
+    on this base class) to opt into the ``ctx.bus is
+    None`` failure-closed path. Tools that only need
+    ``ctx.workspace`` (filesystem, shell, etc.) **don't**
     decorate — they keep running with ``bus=None`` in
     tests and boot probes.
+
+    Keeping the decorator on the base class means tool
+    files don't grow a new ``from magi.tools.base import
+    ..., require_bus`` line — :class:`Tool` is already
+    imported by every concrete tool, so
+    ``@Tool.require_bus`` just works.
     """
 
     #: The name the LLM uses to invoke this tool. Must
@@ -222,6 +163,52 @@ class Tool(ABC):
     #: ``role='assigned'`` and a MAGIS admin — both branches
     #: pass independently.
     ALLOWED_ROLES: frozenset[str] = frozenset()
+
+    @staticmethod
+    def require_bus(
+        method: Callable[..., Awaitable[ToolResult]],
+    ) -> Callable[..., Awaitable[ToolResult]]:
+        """Decorate :meth:`run` to fail closed when
+        ``ctx.bus`` is missing.
+
+        Usage::
+
+            class AddActionItemTool(Tool):
+                @Tool.require_bus
+                async def run(self, ctx, **kwargs):
+                    ...
+
+        Lives on :class:`Tool` so concrete tool files
+        don't grow a new import line — ``@Tool.require_bus``
+        is enough. Opt-in: tools that don't touch the bus
+        (filesystem ops, shell tools) leave ``run``
+        undecorated and run with ``bus=None`` in tests.
+
+        Type-checker note: the wrapper's signature is
+        ``(self, ctx, **kwargs)``, matching :meth:`Tool.run`
+        shape so Liskov holds. The wrapper is an
+        ``async def``; the abstract base's inferred return
+        is also ``Coroutine[..., ..., ToolResult]``, so
+        letting inference do the talking on the wrapper
+        side keeps both ends of the override aligned.
+        """
+        @functools.wraps(method)
+        async def wrapper(
+            self: Any,
+            ctx: ToolContext,
+            **kwargs: Any,
+        ) -> ToolResult:
+            if ctx.bus is None:
+                return ToolResult(
+                    content=(
+                        "tool context has no bus; the caller "
+                        "side has not migrated to new_bus"
+                    ),
+                    is_error=True,
+                )
+            return await method(self, ctx, **kwargs)
+
+        return wrapper
 
     @abstractmethod
     async def run(

@@ -23,7 +23,7 @@ import json
 import logging
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult, require_bus
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact")
 

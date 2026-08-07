@@ -26,7 +26,7 @@ import logging
 from typing import Any
 
 from magi.new_bus.library.local.memoryBook import ALL_KINDS, SOURCE_EVA
-from magi.tools.base import Tool, ToolContext, ToolResult, require_bus
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_memory")
 
@@ -94,7 +94,7 @@ class AddMemoryTool(Tool):
         "required": ["kind", "subject", "body"],
     }
 
-    @require_bus
+    @Tool.require_bus
     async def run(
         self,
         ctx: ToolContext,
