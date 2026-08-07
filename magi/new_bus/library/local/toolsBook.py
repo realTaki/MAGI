@@ -263,24 +263,23 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
                description: str | None = None, source: str = "manual",
                spec_dict: str | None = None,
                allowed_roles_json: str | None = None) -> ToolDefinitionRow:
+        desired = ToolDefinitionRow(
+            id=0,  # placeholder — helper reads only the data fields
+            name=name, spec_json=spec_json, revision=revision,
+            description=description, source=source, spec_dict=spec_dict,
+            allowed_roles_json=allowed_roles_json,
+        )
         with self._factory.session() as s:
-            row = s.scalar(
+            existing = s.scalar(
                 select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
             )
-            if row is None:
-                row = _ToolDefinitionRow(
-                    name=name, spec_json=spec_json, revision=revision,
-                    description=description, source=source, spec_dict=spec_dict,
-                    allowed_roles_json=allowed_roles_json,
-                )
+            if existing is None:
+                row = _ToolDefinitionRow(name=name)
+                _apply_definition(row, desired, update_source=True)
                 s.add(row)
             else:
-                row.spec_json = spec_json
-                row.revision = revision
-                row.description = description
-                row.source = source
-                row.spec_dict = spec_dict
-                row.allowed_roles_json = allowed_roles_json
+                row = existing
+                _apply_definition(row, desired, update_source=True)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
@@ -342,28 +341,48 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinitionRow]):
                 ).all()
                 existing = {r.name: r for r in rows}
             for d in definitions:
-                row = existing.get(d.name)
-                if row is None:
-                    s.add(_ToolDefinitionRow(
-                        name=d.name, spec_json=d.spec_json,
-                        spec_dict=d.spec_dict, revision=d.revision,
-                        enabled=d.enabled, description=d.description,
-                        source=d.source,
-                        allowed_roles_json=d.allowed_roles_json,
-                    ))
+                target = existing.get(d.name)
+                if target is None:
+                    row = _ToolDefinitionRow(name=d.name)
+                    _apply_definition(row, d, update_source=True)
+                    s.add(row)
                 else:
-                    row.spec_json = d.spec_json
-                    row.spec_dict = d.spec_dict
-                    row.revision = d.revision
-                    row.enabled = d.enabled
-                    row.description = d.description
-                    row.allowed_roles_json = d.allowed_roles_json
-                    # source is the foreign key for "who owns
-                    # this row"; don't change it on upsert.
+                    _apply_definition(target, d, update_source=False)
             s.commit()
 
 
 # -- internal helpers ------------------------------------------------------
+
+
+def _apply_definition(
+    target: _ToolDefinitionRow,
+    source: ToolDefinitionRow,
+    *,
+    update_source: bool,
+) -> None:
+    """Copy fields from a :class:`ToolDefinitionRow` DTO onto an ORM row.
+
+    Shared by single-row :meth:`ToolDefinitionBook.upsert` and bulk
+    :meth:`ToolDefinitionBook.upsert_many` — the two paths diverge
+    only on ``source``: single-row upsert overwrites it (the caller
+    is free to migrate a tool from one catalog to another), bulk
+    upsert treats it as the ownership foreign key and preserves
+    the existing value when updating an already-present row.
+
+    Callers construct ``target`` themselves — a bare
+    :class:`_ToolDefinitionRow` for create, the looked-up row for
+    update — and pass ``update_source=True`` on create paths so
+    ``source`` lands on the new row (its column default of
+    ``"manual"`` is just a placeholder).
+    """
+    target.spec_json = source.spec_json
+    target.spec_dict = source.spec_dict
+    target.revision = source.revision
+    target.enabled = source.enabled
+    target.description = source.description
+    target.allowed_roles_json = source.allowed_roles_json
+    if update_source:
+        target.source = source.source
 
 
 def _parse_allowed_roles(json_str: str | None) -> tuple[str, ...]:

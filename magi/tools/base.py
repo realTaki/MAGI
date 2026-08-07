@@ -38,7 +38,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
 
 
 # -- execution I/O DTOs ---------------------------------------------------
@@ -59,12 +62,20 @@ class ToolContext:
     ``MAGI_WORKSPACE_DIR``) is part of the tool context, because
     it's the boundary tools operate against (``safe_resolve``
     etc.).
+
+    ``bus`` is the new_bus facade the worker is attached to.
+    Tools that need to read/write persistent state reach for
+    ``ctx.bus.<book>.X(...)`` instead of holding their own
+    reference. ``None`` for tests / boot probes — tools that
+    require bus access should fail closed when ``ctx.bus``
+    is missing.
     """
 
     workspace: str
     uid: int
     channel: str
     session_id: str = ""
+    bus: "NewBus | None" = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,7 +230,7 @@ def caller_role_denied_reason(
 
     Used inside a tool's :meth:`Tool.run` as the second-
     layer defence — the registry's role filter at
-    :func:`magi.tools.registry.get_tools` is the
+    :func:`magi.tools.registry.get_tool` is the
     first gate and strips this tool out of the LLM's
     menu for any caller whose role isn't in
     ``allowed_roles``. The check here ensures a caller
@@ -227,14 +238,11 @@ def caller_role_denied_reason(
     entry point that forgets the filter) still fails
     closed with a friendly ``is_error=True``.
 
-    Resolves the caller's role via a fresh Contact
-    lookup each call so role flips (``assigned`` →
-    ``contact`` mid-conversation) take effect on the
-    very next tool call without a process restart.
-
-    The SQLAlchemy / Contact imports are local — the
-    agent loop imports this module without paying for
-    the DB stack at module load.
+    Resolves the caller's role via ``ctx.bus.contacts_book`` —
+    the bus is supplied per-call by the worker. The
+    ``getattr`` fallback handles callers that still hold an
+    old-bus :class:`ToolContext` (no ``bus`` attribute);
+    they get a friendly "no bus" message until they migrate.
     """
     try:
         ct_id = int(ctx.uid)
@@ -250,7 +258,15 @@ def caller_role_denied_reason(
             "caller did not authenticate through a "
             "cookie / TG binding."
         )
-    role = get_bus().contacts.role_for(ct_id)
+    bus = getattr(ctx, "bus", None)
+    if bus is None:
+        # Old-bus ToolContext (MCP-side callers until MCP
+        # migrates) — no role resolution is possible.
+        return (
+            "role check unavailable: tool context has no bus; "
+            "the caller side has not migrated to new_bus"
+        )
+    role = bus.contacts_book.role_for(ct_id)
     if role is None:
         return f"contact {ct_id!r} not found"
     if role not in allowed_roles:

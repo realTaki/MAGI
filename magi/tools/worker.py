@@ -321,6 +321,13 @@ class ToolsWorker:
                     uid=int(ctx_data.get("uid") or 0),
                     channel=str(ctx_data.get("channel") or ""),
                     session_id=str(ctx_data.get("session_id") or ""),
+                    # Pass the worker's bus so tools that need
+                    # persistent-state access can reach their
+                    # books via ``ctx.bus.<book>``. Old-bus
+                    # callers (MCP until migrated) construct
+                    # contexts without ``bus`` — tools that
+                    # touch ``ctx.bus`` should fail closed.
+                    bus=self.bus,
                 ),
                 **dict(job.payload.get("arguments") or {}),
             )
