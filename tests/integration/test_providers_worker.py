@@ -448,6 +448,156 @@ async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
         await stop_provider_worker()
 
 
+@pytest.mark.asyncio
+async def test_worker_updates_model_in_place_when_only_model_changes(bus: NewBus):
+    """Provider / api_key trigger a rebuild; a model-only change does not.
+
+    The SDK clients (Anthropic / OpenAI) only read ``model`` per call,
+    so a model change is effectively a string swap on the cached
+    provider — there is no reason to tear down the SDK client
+    (and its HTTP connection pool) just to flip a model id.
+
+    The worker must:
+
+    1. Apply the new model to the cached provider in place.
+    2. Skip ``get_provider`` entirely (no rebuild).
+    3. Subsequent ``CallLLMJob`` calls observe the new model.
+    """
+    import magi.providers
+    import magi.providers.factory as _factory
+
+    class ModelReportingProvider(FakeProvider):
+        """Fake whose reply + response.model reflect the live ``self.model``."""
+
+        async def chat(
+            self,
+            *,
+            system: str | None,
+            messages: list[dict],
+            max_tokens: int,
+            tools: list[dict] | None = None,
+        ) -> dict[str, Any]:
+            self.call_count += 1
+            text = f"model={self.model}"
+            return {
+                "text": text,
+                "thinking": None,
+                "tool_uses": [],
+                "raw_blocks": [],
+                "model": self.model,
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "stop_reason": "end_turn",
+            }
+
+    calls = {"n": 0}
+
+    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
+        calls["n"] += 1
+        return ModelReportingProvider()
+
+    _factory.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    _seed_provider_config(bus, model="fake-model-1")
+
+    worker = await start_provider_worker(bus)
+    try:
+        # 1. First job warms the cache with the initial model.
+        r1 = await _wait_for_result(bus, _enqueue_simple(bus, content="first"))
+        assert r1 is not None and r1.success is True, r1
+        assert r1.response["text"] == "model=fake-model-1"
+        assert calls["n"] == 1
+        assert worker._provider is not None
+        assert worker._provider.model == "fake-model-1"
+
+        # 2. Publish a model-only ChangeProviderConfigJob — ``provider``
+        #    and ``api_key`` are both None, so the worker must NOT
+        #    rebuild the SDK client.
+        bus.change_provider_config_job_board.publish(
+            ChangeProviderConfigJob(model="fake-model-2")
+        )
+
+        # 3. Wait for the worker to drain the config job and swap
+        #    ``provider.model`` in place.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            cached = getattr(worker, "_provider", None)
+            if cached is not None and cached.model == "fake-model-2":
+                break
+            await asyncio.sleep(0.05)
+        else:  # pragma: no cover — explicit failure path
+            pytest.fail("model was not updated in place on cached provider")
+
+        # 4. Next LLM job must observe the new model without rebuild.
+        r2 = await _wait_for_result(bus, _enqueue_simple(bus, content="second"))
+        assert r2 is not None and r2.success is True, r2
+        assert r2.response["text"] == "model=fake-model-2", (
+            f"model-only change should propagate in place; got {r2.response['text']!r}"
+        )
+
+        # 5. get_provider must NOT be called again — model-only skips rebuild.
+        assert calls["n"] == 1, (
+            f"model-only change should not rebuild; got {calls['n']} get_provider calls"
+        )
+    finally:
+        await stop_provider_worker()
+
+
+@pytest.mark.asyncio
+async def test_worker_rebuilds_when_provider_field_changes(bus: NewBus):
+    """Switching provider must rebuild the SDK client (different base_url / SDK).
+
+    Counterpart to the model-only fast path: any non-None
+    ``provider`` or ``api_key`` field should fall back to the
+    full rebuild, even if ``model`` is also set in the same job.
+    """
+    import magi.providers
+    import magi.providers.factory as _factory
+
+    calls = {"n": 0}
+
+    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
+        calls["n"] += 1
+        return FakeProvider(reply=f"call#{calls['n']}")
+
+    _factory.get_provider = _fake_get
+    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    _seed_provider_config(bus)
+
+    await start_provider_worker(bus)
+    try:
+        # Baseline: first job warms the cache.
+        r1 = await _wait_for_result(bus, _enqueue_simple(bus, content="first"))
+        assert r1 is not None and r1.success is True
+        assert r1.response["text"] == "call#1"
+        assert calls["n"] == 1
+
+        # Switch provider — model field is also set, but the
+        # presence of ``provider`` is enough to force a rebuild.
+        bus.change_provider_config_job_board.publish(
+            ChangeProviderConfigJob(
+                provider="openai", api_key="sk-test", model="fake-model-1",
+            )
+        )
+
+        # Wait for the new provider to take effect.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            r2 = await _wait_for_result(
+                bus, _enqueue_simple(bus, content="second"),
+            )
+            if r2 is not None and r2.response["text"] == "call#2":
+                break
+        else:  # pragma: no cover
+            pytest.fail("provider change did not rebuild the SDK client")
+
+        # Two get_provider calls: initial build + rebuild.
+        assert calls["n"] == 2, (
+            f"provider change should rebuild; got {calls['n']} get_provider calls"
+        )
+    finally:
+        await stop_provider_worker()
+
+
 # ---------------------------------------------------------------------------
 # providers.options publish
 # ---------------------------------------------------------------------------

@@ -82,6 +82,14 @@ class _ChangeProviderConfigRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
+    # Field-level columns the worker reads to decide between a
+    # full SDK rebuild (``provider`` / ``api_key`` set) and a
+    # in-place ``provider.model`` swap (only ``model`` set).
+    # All three are nullable so an incomplete change (``None``)
+    # is preserved end-to-end.
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    api_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # 保留 payload 字段以兼容已有数据；新 publish 不再写入
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -120,12 +128,18 @@ class changeProviderConfigJobBoard(
         if self._settings_book is not None:
             self._write_to_settings(job)
 
-        # 2. 创建 job 行。
+        # 2. 创建 job 行。Field-level columns let the worker decide
+        #    between a full SDK rebuild (provider / api_key set) and
+        #    an in-place model swap (only model set); the legacy
+        #    ``payload`` is kept for audit only.
         job_id = job.job_id or new_job_id()
         with self._factory.session() as s:
             row = _ChangeProviderConfigRow(
                 job_id=job_id,
                 status="pending",
+                provider=job.provider,
+                api_key=job.api_key,
+                model=job.model,
                 payload={
                     "provider": job.provider,
                     "api_key_last4": (job.api_key or "")[-4:] or None,

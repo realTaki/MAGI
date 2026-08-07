@@ -21,7 +21,6 @@ import json
 import logging
 from typing import Any
 
-from magi.bus import get_bus
 from magi.tools.base import (
     Tool,
     ToolContext,

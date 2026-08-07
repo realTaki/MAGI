@@ -60,7 +60,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus import get_bus
 from magi.bus.jobs.protocols.session import SearchHit, SearchUnavailable
 from magi.tools.base import Tool, ToolContext, ToolResult
 

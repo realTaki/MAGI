@@ -46,7 +46,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.bus import get_bus
 from magi.bus.jobs.protocols.channels import ChannelEnum as Channel
 from magi.bus.jobs.protocols.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult

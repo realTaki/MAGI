@@ -54,7 +54,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from magi.bus import get_bus
 from magi.tools.base import (
     Tool,
     ToolContext,
