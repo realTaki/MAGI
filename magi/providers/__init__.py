@@ -1,15 +1,15 @@
 """LLM provider layer — abstracts the upstream chat API.
 
-The runtime speaks one interface (``LLMProvider``) regardless of
-which vendor actually serves the request. v0 ships four
-concrete implementations:
+The runtime speaks one interface (:class:`LLMProvider`) regardless of
+which vendor actually serves the request. v0 ships four concrete
+implementations:
 
-  - :class:`magi.providers.claude_code.ClaudeProvider` — Anthropic's
-    first-party API.
-  - :class:`magi.providers.minimax.MinimaxProvider` — Minimax's
-    two regions (China + Global).
-  - :class:`magi.providers.openai.OpenAIProvider` — OpenAI's
-    official chat-completions endpoint.
+- :class:`magi.providers.claude_code.ClaudeProvider` — Anthropic's
+  first-party API.
+- :class:`magi.providers.minimax.MinimaxProvider` — Minimax's two
+  regions (China + Global).
+- :class:`magi.providers.openai.OpenAIProvider` — OpenAI's official
+  chat-completions endpoint.
 
 The Claude + Minimax pair subclass
 :class:`magi.providers.anthropic.AnthropicProvider`, which
@@ -19,51 +19,53 @@ OpenAI is on a different wire format and subclasses
 :mod:`magi.providers.factory` is the single source of truth for
 which provider id maps to which class.
 
-Public surface re-exported here so callers don't need to know
-which submodule a class lives in::
+Public surface
+==============
 
-    from magi.providers import (
-        LLMProvider, ChatMessage, ChatResult,
-        LLMError, LLMAuthError, LLMNetworkError,
-        get_provider,
-    )
+This package is a **pure implementation** — it is consumed only by
+:class:`~magi.providers.worker.ProvidersWorker` and the internal
+submodules themselves. External modules interact with providers
+exclusively through the new_bus job boards.
+
+Re-exported here:
+
+- :func:`get_provider` — kept solely so tests can monkey-patch via
+  ``magi.providers.get_provider = fake``. Internal callers (the
+  worker) reach the factory directly via
+  :mod:`magi.providers.factory`; the re-export is a back-compat
+  seam, not a recommended import path.
+
+Everything else lives in the appropriate submodule:
+
+- :class:`LLMProvider` / :class:`LLMStreamEvent` →
+  :mod:`magi.providers.provider`
+- :class:`AnthropicProvider` →
+  :mod:`magi.providers.anthropic`
+- error classes (``LLMError`` / ``LLMAuthError`` / ...) →
+  :mod:`magi.providers.errors`
+
+Intentionally NOT exported here (intentional decoupling — "each
+package does its own thing"):
+
+- **error classes** — providers' internal taxonomy for mapping
+  SDK exceptions to ``CallLLMResult.error_code`` strings. External
+  code reads ``error_code`` directly and never catches the
+  exception classes.
+- ``LLMProvider`` / ``LLMStreamEvent`` — concrete providers and
+  the worker import them from the submodule directly; no value in
+  re-exporting.
+- ``ChatMessage`` / ``ChatResult`` — deleted; wire format is plain
+  ``list[dict]``.
+- ``known_providers`` / ``is_known_provider`` — kept module-private
+  inside :mod:`magi.providers.factory`; the worker publishes the
+  list to ``bus.settings[providers.options]`` at startup for WebUI.
+- ``provider_options_for_ui` — deleted; same reason.
+- ``enqueue_llm_job`` — deleted; callers do
+  ``bus.llm_job_board.publish(CallLLMJob(...))``.
+- token estimators — moved to :mod:`magi.agent.tokens` since they
+  serve the agent layer's compaction concern, not LLM calling.
 """
 
-from magi.bus.jobs.protocols.llm_jobs import LLMJob, LLMJobKind, LLMJobResult
-from magi.providers.errors import (
-    LLMAuthError,
-    LLMContextLengthError,
-    LLMError,
-    LLMNetworkError,
-    LLMNotConfiguredError,
-    LLMRateLimitError,
-)
-from magi.providers.factory import get_provider, is_known_provider, known_providers
-from magi.providers.provider import (
-    ChatMessage,
-    ChatResult,
-    LLMProvider,
-    LLMStreamEvent,
-)
-from magi.providers.tokens import estimate_messages_tokens, estimate_string_tokens
+from magi.providers.factory import get_provider
 
-__all__ = [
-    "LLMProvider",
-    "ChatMessage",
-    "ChatResult",
-    "LLMStreamEvent",
-    "LLMError",
-    "LLMAuthError",
-    "LLMRateLimitError",
-    "LLMNetworkError",
-    "LLMContextLengthError",
-    "LLMNotConfiguredError",
-    "get_provider",
-    "is_known_provider",
-    "known_providers",
-    "LLMJob",
-    "LLMJobKind",
-    "LLMJobResult",
-    "estimate_messages_tokens",
-    "estimate_string_tokens",
-]
+__all__ = ["get_provider"]

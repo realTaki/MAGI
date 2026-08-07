@@ -246,7 +246,9 @@ def _bootstrap_with_dirs(
     a2a_job_board = sendA2AJobBoard(local_factory)
     chat_job_board = chatJobBoard(local_factory)
     control_job_board = controlJobBoard(local_factory)
-    change_provider_config_job_board = changeProviderConfigJobBoard(local_factory)
+    change_provider_config_job_board = changeProviderConfigJobBoard(
+        local_factory, settings_book=settings_book
+    )
 
     # ---- local notify boards ------------------------------------------------
     set_config_notify_board = setConfigNotifyBoard(local_factory)
