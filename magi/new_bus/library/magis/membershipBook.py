@@ -1,9 +1,30 @@
-"""MagisMembershipBook + MagisRoleBook — ``magis_memberships`` + ``magis_roles``.
+"""MagisMembershipBook + MagisRoleBook — register MAGIs under a MAGIS.
 
-Schema mirrors the old bus's tables.  Each ``MAGIS`` has at least
-two reserved roles (``ADAM`` and ``EVA``) created by
-:meth:`ensure_default_roles` (a caller-side helper, not a Book method
-— Books are pure CRUD).
+Two tables, both scoped to one parent ``MAGIS``:
+
+- ``magis_memberships`` — one row per MAGI instance.  A row binds
+  ``(magis_id, role_id)`` and the row's own ``id`` *is* the per-MAGI
+  identity (no separate ``magic`` table — see FK note below).
+- ``magis_roles``     — the role vocabulary a parent MAGIS offers.
+  ``MagisRoleBook.add`` creates the reserved roles (``ADAM``,
+  ``EVA``); custom roles are also allowed.
+
+Schema mirrors the old bus's tables.  Per-MAGI runtime config
+(display ``name``, ``instruction``, LLM ``provider`` / ``api_key``)
+does NOT live here — it lives in the LOCAL :class:`SettingBook`
+under the ``SettingBook.KNOWN_KEYS`` keys.  This Book only tracks
+the per-MAGI identity + role binding.
+
+FKs that target a per-MAGI identity (``magis.adam_id``,
+``eva_runtimes.magic_id``) all point at ``magis_memberships.id``.
+
+Query keys
+----------
+
+- ``magis_id`` — identifies a MAGIS (used for ``list_for_magis``).
+- ``magi_id``  — identifies a single MAGI under a MAGIS (this is
+  what the old ``magic.id`` semantic became; we drop the ``c`` to
+  match the singular ``MAGI``).
 """
 
 from __future__ import annotations
@@ -51,7 +72,6 @@ class MagisRole:
 class MagisMembership:
     id: int
     magis_id: int
-    magic_id: int
     role_id: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -89,9 +109,6 @@ class _MagisMembershipRow(Base):
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    magic_id: Mapped[int] = mapped_column(
-        ForeignKey("magic.id", ondelete="CASCADE"), nullable=False, index=True
-    )
     role_id: Mapped[int] = mapped_column(
         ForeignKey("magis_roles.id", ondelete="RESTRICT"), nullable=False
     )
@@ -100,10 +117,6 @@ class _MagisMembershipRow(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
-
-    __table_args__ = (
-        UniqueConstraint("magic_id", name="uq_magis_memberships_magic"),
     )
 
 
@@ -157,23 +170,22 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
     dto_cls = MagisMembership
 
-    def get(self, *, membership_id: int) -> MagisMembership | None:
-        with self._factory.session() as s:
-            row = s.scalar(
-                select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.id == membership_id)
-            )
-            return self._row_to_dto(row) if row else None
+    def get(self, *, magi_id: int) -> MagisMembership | None:
+        """Look up a single MAGI under any MAGIS by its per-MAGI identity.
 
-    def find_for_magic(self, *, magic_id: int) -> MagisMembership | None:
+        ``magi_id`` is the ``magis_memberships.id`` (the row's own
+        PK, which is what used to be ``magic.id`` before the
+        ``magic`` table was retired).
+        """
         with self._factory.session() as s:
             row = s.scalar(
                 select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.magic_id == magic_id)
+                .where(_MagisMembershipRow.id == magi_id)
             )
             return self._row_to_dto(row) if row else None
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisMembership]:
+        """All MAGIs registered under a given parent MAGIS."""
         with self._factory.session() as s:
             rows = s.scalars(
                 select(_MagisMembershipRow)
@@ -181,21 +193,27 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, magis_id: int, magic_id: int, role_id: int) -> MagisMembership:
+    def add(self, *, magis_id: int, role_id: int) -> MagisMembership:
+        """Register a new MAGI under ``magis_id`` with ``role_id``.
+
+        The MAGI's own identity is assigned by the DB and comes back
+        as ``dto.id`` — keep that id for later lookup and for use as
+        a FK target from elsewhere (``magis.adam_id``,
+        ``eva_runtimes.magic_id``).
+        """
         with self._factory.session() as s:
-            row = _MagisMembershipRow(
-                magis_id=magis_id, magic_id=magic_id, role_id=role_id
-            )
+            row = _MagisMembershipRow(magis_id=magis_id, role_id=role_id)
             s.add(row)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def remove(self, *, magic_id: int) -> bool:
+    def remove(self, *, magi_id: int) -> bool:
+        """Unregister a MAGI by its per-MAGI identity."""
         with self._factory.session() as s:
             row = s.scalar(
                 select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.magic_id == magic_id)
+                .where(_MagisMembershipRow.id == magi_id)
             )
             if row is None:
                 return False

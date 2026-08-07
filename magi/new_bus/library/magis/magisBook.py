@@ -1,6 +1,39 @@
-"""MagisBook + MagisAdminBook — the ``magis`` tree + ``magis_admins`` rows.
+"""MagisBook + MagisAdminBook — the MAGIS tree + which contacts admin which MAGIS.
 
-Schema mirrors the old bus's ``magis`` + ``magis_admins`` tables.
+Two tables — together they track the MAGIS registry as a forest:
+
+- ``magis``       — one row per MAGIS node.  ``parent_id`` is a
+  self-FK (``magis.id``) forming the tree; the root row has
+  ``parent_id IS NULL``.  Each MAGIS carries a unique ``name`` and
+  a default ``instruction``.  ``magis.adam_id`` is a FK pointing at
+  one specific MAGI under this MAGIS — see "ADAM pointer" below.
+- ``magis_admins``— which external contacts (``uid`` → ``contacts.id``)
+  may administer a given MAGIS.  Used by
+  :meth:`magi.tools.base.Tool.gate` to fold the MAGIS-level admin
+  tag into per-tool role checks.
+
+Schema mirrors the old bus's tables.
+
+ADAM pointer
+------------
+
+``magis.adam_id`` is the FK from a MAGIS to its ADAM MAGI's
+identity.  After the (now-removed) ``magic`` table went away, this
+FK targets ``magis_memberships.id`` — a row's own ``id`` is the
+per-MAGI identity (the parent MAGIS lives in the same row's
+``magis_id``).  See :class:`MagisMembershipBook`.  The ADAM's
+display name / instruction / LLM credentials do not live here —
+they live in the LOCAL :class:`SettingBook` under
+:attr:`SettingBook.KNOWN_KEYS`.
+
+Query keys
+----------
+
+- ``magis_id``  — identifies a MAGIS node in the tree.
+- ``uid``       — identifies a contact (admin lookups).
+- The per-MAGI id (formally the ``magis_memberships.id`` of the
+  ADAM, when used as the ``adam_id`` pointer) is called ``magi_id``
+  at API boundaries — see :class:`MagisMembershipBook`.
 """
 
 from __future__ import annotations
@@ -49,7 +82,7 @@ class _MagisRow(Base):
         ForeignKey("magis.id", ondelete="RESTRICT"), nullable=True
     )
     adam_id: Mapped[int | None] = mapped_column(
-        ForeignKey("magic.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("magis_memberships.id", ondelete="SET NULL"), nullable=True
     )
     instruction: Mapped[str] = mapped_column(default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -155,6 +188,26 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
                 .where(_MagisAdminRow.uid == uid)
             ).all()
             return [self._row_to_dto(r) for r in rows]
+
+    def is_admin_for(self, *, uid: int) -> bool:
+        """True iff ``uid`` is an admin of any MAGIS node.
+
+        Used by :meth:`magi.tools.base.Tool.gate` to fold the
+        MAGIS-level admin tag into the per-MAGI role gate —
+        a user with ``role='assigned'`` here **and** an admin
+        row in ``magis_admins`` satisfies any tool whose
+        ``ALLOWED_ROLES`` contains either tag. Tools that
+        genuinely require ``admin`` put ``"admin"`` in
+        ``ALLOWED_ROLES``; tools open to operators put
+        ``"assigned"``. Per-MAGI ``role`` + MAGIS ``admin``
+        are orthogonal — see :class:`Contact` docstring.
+        """
+        with self._factory.session() as s:
+            return s.scalar(
+                select(_MagisAdminRow.id)
+                .where(_MagisAdminRow.uid == uid)
+                .limit(1)
+            ) is not None
 
     def add(self, *, uid: int, magis_id: int) -> MagisAdmin:
         with self._factory.session() as s:

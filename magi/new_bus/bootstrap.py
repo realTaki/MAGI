@@ -37,7 +37,7 @@ class NewBus:
 
         bus = bootstrap_new_bus(state_dir="...", magis_url="...")
         job = bus.tool_job_board.claim(worker_id="w1")
-        magic_book = bus.magic_book.get(magic_id=1)  # None when MAGIS absent
+        adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
 
     When MAGIS is not configured, all magis_book-related fields are
     ``None``.
@@ -117,7 +117,6 @@ class NewBus:
 
     # -- magis_book: society tree (all Optional — None when MAGIS DB absent) ------
 
-    magic_book: object | None = None  # MagicBook | None
     magis_book: object | None = None  # MagisBook | None
     magis_admins_book: object | None = None  # MagisAdminBook | None
     memberships_book: object | None = None  # MagisMembershipBook | None
@@ -193,7 +192,6 @@ def _bootstrap_with_dirs(
         ControlRuntimeBook,
         ControlSecretBook,
         EvaRuntimeBook,
-        MagicBook,
         MagisAdminBook,
         MagisBook,
         MagisMembershipBook,
@@ -268,7 +266,6 @@ def _bootstrap_with_dirs(
 
     # ---- magis_book books -------------------------------------------------------
     if magis_factory is not None:
-        magic_book = MagicBook(magis_factory)
         magis_book = MagisBook(magis_factory)
         magis_admins_book = MagisAdminBook(magis_factory)
         memberships_book = MagisMembershipBook(magis_factory)
@@ -280,7 +277,6 @@ def _bootstrap_with_dirs(
         workspace_archives_book = WorkspaceArchiveBook(magis_factory)
         auth_credentials_book = AuthCredentialBook(magis_factory)
     else:
-        magic_book = None
         magis_book = None
         magis_admins_book = None
         memberships_book = None
@@ -323,7 +319,6 @@ def _bootstrap_with_dirs(
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,
         stream_hub=stream_hub,
-        magic_book=magic_book,
         magis_book=magis_book,
         magis_admins_book=magis_admins_book,
         memberships_book=memberships_book,

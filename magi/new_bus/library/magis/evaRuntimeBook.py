@@ -1,6 +1,11 @@
 """EvaRuntimeBook — desired/observed state for EVA Kubernetes Deployments.
 
-Schema mirrors the old bus's ``eva_runtimes`` table.
+Schema mirrors the old bus's ``eva_runtimes`` table.  ``magic_id`` here
+is the per-MAGI identity and is a FK to ``magis_memberships.id`` —
+NOT to the now-removed ``magic`` table.  The old ``magic`` row used
+to also carry display ``name`` / ``instruction`` / ``provider`` /
+``api_key``; those moved to the LOCAL :class:`SettingBook` (see
+:attr:`SettingBook.KNOWN_KEYS`) and are no longer columns here.
 """
 
 from __future__ import annotations
@@ -41,7 +46,8 @@ class _EvaRuntimeRow(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     magic_id: Mapped[int] = mapped_column(
-        ForeignKey("magic.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("magis_memberships.id", ondelete="CASCADE"),
+        nullable=False, index=True,
     )
     deployment_name: Mapped[str] = mapped_column(String(120), nullable=False)
     desired_state: Mapped[str] = mapped_column(

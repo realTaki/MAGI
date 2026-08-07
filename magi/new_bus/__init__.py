@@ -10,7 +10,7 @@ Books（读侧 CRUD）、Guild（写侧 publish/claim/submit_result），以及
 
     bus = bootstrap_new_bus(state_dir="/path/to/memories", magis_url="...")
     job = bus.tool_job_board.claim(worker_id="w1")
-    magic_book = bus.magic_book.get(magic_id=1)
+    adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
 
 需要具体的 DTO / Book / Job 类型时，直接从子模块导入：:
 

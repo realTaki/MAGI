@@ -3,12 +3,15 @@
 Each module maps to one (or a small group of) PG tables in the
 ``magis.db`` connection:
 
-- ``magic``              — individual MAGI agents
 - ``magis`` + ``magis_admins`` — MAGI Society tree + admins
 - ``magis_memberships`` + ``magis_roles`` — memberships & roles
 - ``eva_runtimes``       — K8s runtime registry
 - ``auth_credentials``   — per-UID login credentials
 - ``control_*``          — control-plane registry (state, ports, archive, secrets)
+
+Per-MAGI fields that used to live on the old ``magic`` table
+(``name``, ``instruction``, ``provider``, ``api_key``) now live in the
+LOCAL :class:`SettingBook` — see :attr:`SettingBook.KNOWN_KEYS`.
 """
 
 from magi.new_bus.library.magis.authCredentialBook import (
@@ -30,7 +33,6 @@ from magi.new_bus.library.magis.control import (
     WorkspaceArchiveBook,
 )
 from magi.new_bus.library.magis.evaRuntimeBook import EvaRuntime, EvaRuntimeBook
-from magi.new_bus.library.magis.magicBook import Magic, MagicBook
 from magi.new_bus.library.magis.magisBook import (
     Magis,
     MagisAdmin,
@@ -57,8 +59,6 @@ __all__ = [
     "DEFAULT_ROLE_INSTRUCTIONS",
     "EvaRuntime",
     "EvaRuntimeBook",
-    "Magic",
-    "MagicBook",
     "Magis",
     "MagisAdmin",
     "MagisAdminBook",

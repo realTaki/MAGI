@@ -3,6 +3,18 @@
 Each row is a (key, value) string pair. Used for runtime-configurable
 system settings. The schema mirrors the old bus's
 ``magi.bus.db.models.local.setting.Setting`` table.
+
+The ``settings`` table also holds per-MAGI fields that used to live on
+the old ``magic`` row in the MAGIS schema — display ``name``,
+``instruction``, LLM ``provider`` and ``api_key``.  Because each MAGI
+only mutates its own state after bootstrap, that state belongs in the
+LOCAL SQLite that the MAGI carries — not in the central MAGIS
+PG/SQLite — and is keyed directly by name.
+
+For the full inventory of keys the codebase actually uses, see
+:attr:`SettingBook.KNOWN_KEYS`.  The book itself doesn't enforce the
+list — callers may add arbitrary keys — but new code should add to
+that tuple instead of inventing keys out of band.
 """
 
 from __future__ import annotations
@@ -51,9 +63,24 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     """Key/value store backed by the ``settings`` table.
 
     Provides basic CRUD over arbitrary keys.  Callers are responsible
-    for the key vocabulary (``system.timezone``, etc.); this book
-    does not enforce any schema.
+    for the key vocabulary; this book does not enforce any schema.
     """
+
+    #: Canonical inventory of every key the codebase reads or writes
+    #: through this book, grouped by purpose.  New keys should be
+    #: added here so the vocabulary stays in one place.  Per-MAGI
+    #: fields moved here from the (now-removed) ``magic`` row in the
+    #: MAGIS schema.
+    KNOWN_KEYS: tuple[str, ...] = (
+        # Per-MAGI runtime fields (formerly on the ``magic`` table).
+        "name",
+        "instruction",
+        "provider",
+        "api_key",
+        # System-level knobs.
+        "system.timezone",
+        "tool_max_iterations",
+    )
 
     model_cls = _SettingRow
     dto_cls = Setting
@@ -95,4 +122,4 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             return [self._row_to_dto(r) for r in rows]
 
 
-__all__ = ["Setting", "SettingBook", "_SettingRow"]
+__all__ = ["Setting", "SettingBook", "_SettingRow"]  # noqa: E501
