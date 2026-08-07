@@ -276,7 +276,7 @@ class ScheduleTaskTool(Tool):
         if target_channel == Channel.WEBUI:
             delivery_to = None
         elif target_channel == Channel.TG:
-            delivery_to = get_bus().session.resolve_delivery_address_for_session(
+            delivery_to = ctx.bus.session_book.resolve_delivery_address_for_session(
                 ctx.session_id
             )
         else:
@@ -288,7 +288,7 @@ class ScheduleTaskTool(Tool):
         # shape at tool-call time. We translate at this
         # boundary so the WebUI API + LLM tool + raw SQL all
         # see the same row shape.
-        bus = get_bus()
+        bus = ctx.bus
         run_at_iso: str | None = None
         if frequency == "once":
             try:
@@ -334,8 +334,8 @@ class ScheduleTaskTool(Tool):
         # from the DB (not ``ctx.uid``-trust) so
         # a mis-wired caller can't punch above its
         # authority.
-        bus = get_bus()
-        contact = bus.contacts.get(ctx.uid)
+        bus = ctx.bus
+        contact = bus.contacts_book.get(ctx.uid)
         if contact is None:
             return ToolResult(content="caller not found", is_error=True)
         # Author gate: ``admin=True`` (WebUI operator)
@@ -373,7 +373,7 @@ class ScheduleTaskTool(Tool):
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
-        bus = get_bus()
+        bus = ctx.bus
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
         resolved_tz = bus.settings.system_timezone()
@@ -382,7 +382,7 @@ class ScheduleTaskTool(Tool):
         # ``upsert_by_name`` body preserves the existing
         # ``session_id`` for update-paths (continuity across
         # prompt edits).
-        new_session_id_str = bus.session.create_task_session(
+        new_session_id_str = bus.session_book.create_task_session(
             uid=operator_id,
             title=f"[定时] {name}",
             delivery_address=task_session_delivery_address,

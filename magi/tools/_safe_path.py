@@ -23,6 +23,7 @@ plus a containment check.
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 # Maximum length of the user-supplied path string. The
@@ -64,18 +65,22 @@ def safe_resolve(
     candidate = (workspace_path / requested).resolve()
     workspace_resolved = workspace_path.resolve()
 
-    # ``is_relative_to`` is the official containment check;
-    # ``relative_to`` raises ``ValueError`` if not contained,
-    # but ``is_relative_to`` returns a bool we can branch on.
-    try:
-        candidate.relative_to(workspace_resolved)
-    except ValueError:
+    # ``is_relative_to`` is the official containment check
+    # (Python 3.9+); returns a bool directly.
+    if not candidate.is_relative_to(workspace_resolved):
         raise ValueError(f"path escapes workspace: {requested!r}")
 
     if must_be_file:
-        if not candidate.exists():
+        # Single ``stat()`` call instead of separate
+        # ``exists()`` + ``is_dir()`` (two syscalls +
+        # TOCTOU window).  Symlink-based escapes are a
+        # known residual risk accepted for v0 (see module
+        # docstring).
+        try:
+            st = candidate.stat()
+        except FileNotFoundError:
             raise ValueError(f"path does not exist: {requested!r}")
-        if candidate.is_dir():
+        if stat.S_ISDIR(st.st_mode):
             raise ValueError(f"path is a directory, not a file: {requested!r}")
 
     return candidate

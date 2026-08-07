@@ -182,7 +182,7 @@ class SearchSessionsTool(Tool):
         uid = ctx.uid
 
         try:
-            hits, total = get_bus().session.search(
+            hits, total = ctx.bus.session_book.search(
                 q, limit=limit,
             )
         except SearchUnavailable as e:
@@ -273,7 +273,7 @@ def _format_hit_block(hit, context_n: int, uid: int) -> str:
     covers the cross-contact case.
     """
     # Locate the hit in either the active or archive list.
-    session = get_bus().session.get(
+    session = ctx.bus.session_book.get(
         uid, hit.session_id,
     )
     if session is None:

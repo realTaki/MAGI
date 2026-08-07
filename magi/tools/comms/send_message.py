@@ -129,8 +129,8 @@ class SendMessageTool(Tool):
             len(text), ctx.session_id, ctx.channel,
         )
         try:
-            bus = get_bus()
-            session = bus.session.get(ctx.uid, ctx.session_id)
+            bus = ctx.bus
+            session = bus.session_book.get(ctx.uid, ctx.session_id)
             if session is None:
                 raise KeyError(f"unknown session {ctx.session_id!r}")
             bus.delivery.enqueue(

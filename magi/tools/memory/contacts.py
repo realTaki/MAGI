@@ -33,35 +33,10 @@ logger = logging.getLogger("magi.tools.memory.contacts")
 # Tool author gate. After the 2024 role/admin split,
 # ``role='admin'`` is no longer a reachable value — the
 # ``admin`` boolean carries WebUI access rights instead.
-# An operator contact typically has ``role='assigned'`` and
-# ``admin=True`` (the served user who also runs the
-# console); a pure WebUI-only operator can also have that
-# shape. The gate accepts ``admin=True OR role='assigned'``
-# — the registry's role filter can't see the admin bool
-# so we widen the role-only filter to ``{'assigned'}`` and
-# re-check the admin bool in ``_gate``. ``guest`` (no
-# admin) is rejected here even though the registry allows
-# it (defense in depth).
-_WRITE_ROLES = frozenset({"assigned"})
-
-
-def _gate(ctx: ToolContext) -> str | None:
-    """Author check: ``admin=True`` OR ``role='assigned'``.
-
-    Mirrors :func:`magi.channels.api.tasks._enforce_creator_can_create`
-    so the LLM-side tool and the API-side task gate agree
-    on who can drive write operations. ``role='guest'``
-    alone (no admin) is rejected; ``role='assigned'`` alone
-    is accepted (the served user can manage their own
-    contact directory); ``admin=True`` overrides role.
-    """
-    if ctx.admin:
-        return None
-    if ctx.caller_role == "assigned":
-        return None
-    return get_bus().auth.caller_role_check(
-        ctx.uid, allowed=tuple(_WRITE_ROLES)
-    )
+# The gate (``admin=True OR role='assigned'``) is now
+# centralized in :meth:`Tool.check_gate`, which reads
+# ``ctx.bus.contacts_book`` to resolve both the role and
+# the admin flag.  Per-tool ``_gate()`` helpers are gone.
 
 
 def _err(msg: str) -> ToolResult:
@@ -103,15 +78,12 @@ class AddContactTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
             return _err("name is required (non-empty string)")
         try:
-            bus = get_bus()
-            view = bus.contacts.create_contact(
+            bus = ctx.bus
+            view = bus.contacts_book.create_contact(
                 name=name,
                 display_name=kwargs.get("display_name"),
                 role=kwargs.get("role") or "guest",
@@ -182,9 +154,6 @@ class UpdateDailyNoteTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
             return _err("body_delta is required (non-empty string)")
@@ -206,8 +175,8 @@ class UpdateDailyNoteTool(Tool):
                 return _err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
         try:
-            bus = get_bus()
-            view = bus.contacts.upsert_daily_note(
+            bus = ctx.bus
+            view = bus.contacts_book.upsert_daily_note(
                 int(contact_id), body_delta, note_date=note_date
             )
         except ValueError as e:
@@ -245,9 +214,6 @@ class AddContactNoteTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         uid = kwargs.get("uid")
         note = kwargs.get("note")
         if not isinstance(uid, int):
@@ -255,8 +221,8 @@ class AddContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return _err("note is required (non-empty string)")
         try:
-            bus = get_bus()
-            view = bus.contacts.add_note(uid, note)
+            bus = ctx.bus
+            view = bus.contacts_book.add_note(uid, note)
         except ValueError as e:
             return _err(str(e))
         return _ok(view.to_dict())
@@ -286,9 +252,6 @@ class UpdateContactNoteTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         note_id = kwargs.get("note_id")
         note = kwargs.get("note")
         if not isinstance(note_id, int):
@@ -296,8 +259,8 @@ class UpdateContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return _err("note is required (non-empty string)")
         try:
-            bus = get_bus()
-            view = bus.contacts.update_note(note_id, note)
+            bus = ctx.bus
+            view = bus.contacts_book.update_note(note_id, note)
         except LookupError as e:
             return _err(str(e))
         return _ok(view.to_dict())
@@ -325,13 +288,10 @@ class DeleteContactNoteTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
             return _err(f"note_id must be int, got {type(note_id).__name__}")
-        existed = get_bus().contacts.delete_note(note_id)
+        existed = ctx.bus.contacts_book.delete_note(note_id)
         return _ok({"note_id": note_id, "existed": existed})
 
 
@@ -366,15 +326,12 @@ class SearchContactsTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        gate = _gate(ctx)
-        if gate is not None:
-            return _err(gate)
         query = kwargs.get("query")
         limit = kwargs.get("limit") or 20
         if not isinstance(query, str) or not query.strip():
             return _err("query is required (non-empty string)")
-        bus = get_bus()
-        views = bus.contacts.search(query, limit=limit)
+        bus = ctx.bus
+        views = bus.contacts_book.search(query, limit=limit)
         return _ok({
             "query": query,
             "count": len(views),

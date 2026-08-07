@@ -310,25 +310,34 @@ class ToolsWorker:
             )
             return
 
-        # 4. Execute. The worker MUST NOT raise to surface
+        # 4. Build execution context and run the runtime gate.
+        #    ``check_gate`` uses ``ctx.bus.contacts_book`` to
+        #    resolve the caller's role + admin flag, so we
+        #    don't need to pass ``caller_role`` / ``admin``
+        #    through the context.
+        ctx = ToolContext(
+            workspace=str(ctx_data.get("workspace") or ""),
+            uid=int(ctx_data.get("uid") or 0),
+            channel=str(ctx_data.get("channel") or ""),
+            session_id=str(ctx_data.get("session_id") or ""),
+            bus=self.bus,
+        )
+        denied = tool.check_gate(ctx)
+        if denied:
+            self._submit_failure(
+                job,
+                content=denied,
+                error_code="tool.unauthorized",
+            )
+            return
+
+        # 5. Execute. The worker MUST NOT raise to surface
         #    "expected failure" — Tool.run() returns ToolResult
         #    with is_error=True in that case. Real bugs raise;
         #    we catch and translate.
         try:
             result = await tool.run(
-                ToolContext(
-                    workspace=str(ctx_data.get("workspace") or ""),
-                    uid=int(ctx_data.get("uid") or 0),
-                    channel=str(ctx_data.get("channel") or ""),
-                    session_id=str(ctx_data.get("session_id") or ""),
-                    # Pass the worker's bus so tools that need
-                    # persistent-state access can reach their
-                    # books via ``ctx.bus.<book>``. Old-bus
-                    # callers (MCP until migrated) construct
-                    # contexts without ``bus`` — tools that
-                    # touch ``ctx.bus`` should fail closed.
-                    bus=self.bus,
-                ),
+                ctx,
                 **dict(job.payload.get("arguments") or {}),
             )
         except Exception as exc:

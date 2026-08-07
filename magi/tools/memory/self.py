@@ -39,6 +39,7 @@ from magi.tools.base import (
     Tool,
     ToolContext,
     ToolResult,
+    caller_role_denied_reason,
 )
 
 
@@ -54,9 +55,7 @@ def _gate(ctx: ToolContext) -> str | None:
     ``ctx``); an admin-promoting-an-operator change takes effect on
     the next LLM call without a process restart.
     """
-    return get_bus().auth.caller_role_check(
-        ctx.uid, allowed=tuple(_WRITE_ROLES)
-    )
+    return caller_role_denied_reason(ctx, _WRITE_ROLES)
 
 
 def _err(msg: str) -> ToolResult:
@@ -157,8 +156,8 @@ class AddMemoryTool(Tool):
             return _err(gate)
 
         try:
-            bus = get_bus()
-            view = bus.memory.add(
+            bus = ctx.bus
+            view = bus.memory_book.add(
                 int(ctx.uid),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
@@ -226,8 +225,8 @@ class UpdateMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            bus = get_bus()
-            view = bus.memory.update(
+            bus = ctx.bus
+            view = bus.memory_book.update(
                 memory_id,
                 subject=kwargs.get("subject"),
                 body=kwargs.get("body"),
@@ -289,8 +288,8 @@ class CompleteMemoryTool(Tool):
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
         try:
-            bus = get_bus()
-            view = bus.memory.complete(memory_id)
+            bus = ctx.bus
+            view = bus.memory_book.complete(memory_id)
         except LookupError as e:
             return _err(str(e))
         return _ok(view.to_dict())
@@ -343,7 +342,7 @@ class DeleteMemoryTool(Tool):
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return _err(f"memory_id must be int, got {type(memory_id).__name__}")
-        existed = get_bus().memory.delete(memory_id)
+        existed = ctx.bus.memory_book.delete(memory_id)
         return _ok({"memory_id": memory_id, "existed": existed})
 
 

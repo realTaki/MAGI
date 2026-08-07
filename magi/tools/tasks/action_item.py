@@ -261,7 +261,7 @@ class AddActionItemTool(Tool):
                         f"(YYYY-MM-DD), got {raw!r}"
                     )
 
-        item = get_bus().action_item.create_llm(
+        item = ctx.bus.action_items_book.create_llm(
             uid=int(ctx.uid), kind=_new_llm_action_item_kind(), title=title,
             description=description, target_url=target_url, priority=priority, due_date=due_date,
         )
@@ -337,7 +337,7 @@ class CompleteActionItemTool(Tool):
             return _err(f"note is too long ({len(note)} > 500)")
 
         ct_id = int(ctx.uid)
-        row = get_bus().action_item.complete_for_owner(
+        row = ctx.bus.action_items_book.complete_for_owner(
             action_item_id=item_id, owner_uid=ct_id, note=note,
         )
         if row is None:
@@ -395,7 +395,7 @@ class ListActionItemTool(Tool):
         ct_id = int(ctx.uid)
         include_completed = bool(kwargs.get("include_completed"))
 
-        rows = get_bus().action_item.list_llm_for_owner(
+        rows = ctx.bus.action_items_book.list_llm_for_owner(
             owner_uid=ct_id, include_completed=include_completed,
         )
         return _ok({
