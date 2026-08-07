@@ -52,7 +52,7 @@ from magi.bus.jobs.protocols.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-logger = logging.getLogger("magi.tools.schedule_task")
+logger = logging.getLogger("magi.tools.tasks.schedule")
 
 _NAME_MAX = 120
 _PROMPT_MAX = 8000

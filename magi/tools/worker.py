@@ -1,78 +1,162 @@
-"""Durable tool-effect consumer owned by :mod:`magi.tools`.
+"""Durable tool-effect consumer — new_bus 上唯一的工具执行点。
 
-The worker never imports channel implementations or the agent loop.  It
-claims a persisted job, performs the external/local effect outside a database
-transaction, then emits a durable ``tool.result`` inbox event for the agent.
+孪生结构对齐 :class:`~magi.providers.worker.ProvidersWorker`：
+
+- **只依赖 new_bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
+- **构造靠注入**。Composition root 显式构造并传进来。
+- **启动时 publish builtin tool catalog** 到
+  ``bus.tool_definitions_book``（带 schema_hash），写一次就够了，
+  代码改动才需要重发。
+- **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 session，
+  全走 :class:`RunToolJob` → :class:`RunToolResult`。
+
+GATE（enqueue 时由调用方校验角色）已在 publish 之前完成；
+worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
+老 schema 后调用），不再重做角色门控（那一步属于 publish 时刻的
+权限检查）。
+
+执行流程
+========
+
+::
+
+    start()
+      └─ _publish_builtin_catalog()     # 一次性把 builtin tools 写进 Book
+      └─ spawn _run() task
+    _run() loop
+      └─ bus.tool_job_board.claim()
+      └─ _execute(claim)               # catalog 校验 + 执行 + submit_result
+                                          BaseJobBoard 自带 attempts ≥
+                                          MAX_ATTEMPTS → exhausted result
+
+入队 helper
+===========
+
+调用方直接 ``bus.tool_job_board.publish(RunToolJob(...))``。本模块
+不提供 helper —— 与 providers 模式一致。
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import uuid
 from contextlib import suppress
-from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from magi.bus import ToolClaim, ToolContext, ToolDefinition, get_bus
+from magi.new_bus.library.local import ToolDefinition
+from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
+    from magi.new_bus.guild.runToolJob import RunToolJob, RunToolResult
 
 logger = logging.getLogger("magi.tools.worker")
 
+#: Stable short codes for operator-facing error envelopes.
+#: Mirrors :mod:`magi.providers.worker` conventions so the agent
+#: layer (when it migrates) can treat tool and LLM failures with
+#: the same retry logic.
+_ERROR_CODES = {
+    "catalog_stale": "tool.catalog_stale",
+    "unknown": "tool.unknown",
+    "crashed": "tool.crashed",
+}
 
-def _seed_tools() -> None:
-    """Publish the executable registry as an atomic BUS catalog snapshot.
 
-    Loads both built-in tools and MCP-discovered tools, then publishes
-    them into the durable Tool Catalog.  The Agent reads from that catalog
-    and never knows whether a schema came from built-in code or MCP.
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _schema_hash(definition: "ToolDefinition") -> str:
+    """sha256 of canonical JSON over the LLM-visible fields.
+
+    The hash is what the worker compares against the
+    ``schema_hash`` on a claimed :class:`RunToolJob`; a mismatch
+    means the agent's menu was stale when it enqueued the call.
     """
-    try:
-        from magi.tools.registry import bootstrap_mcp_tools, get_tools_grouped
-
-        bus = get_bus()
-        # Ensure MCP tools are loaded before we snapshot the grouped list.
-        bootstrap_mcp_tools()
-        builtin, mcp = get_tools_grouped()
-        for source, tools in (("builtin", builtin), ("mcp", mcp)):
-            snapshot = bus.tool_catalog.get_snapshot()
-            published = bus.tool_catalog.replace_snapshot(
-                source=source,
-                expected_previous_revision=snapshot.revision,
-                definitions=[
-                    ToolDefinition(
-                        name=tool.name,
-                        source=source,
-                        description=tool.description,
-                        input_schema=dict(tool.input_schema),
-                        allowed_roles=tuple(sorted(tool.ALLOWED_ROLES)),
-                        implementation_version=None,
-                    )
-                    for tool in tools
-                ],
-            )
-            logger.info("tool catalog published source=%s revision=%d tools=%d", source, published.revision, len(published.definitions) if hasattr(published, "definitions") else len(tools))
-    except Exception:
-        logger.exception("tool catalog publish failed — agent may see stale schemas")
+    return hashlib.sha256(
+        _canonical_json({
+            "name": definition.name,
+            "source": definition.source,
+            "description": definition.description,
+            "input_schema": definition.input_schema,
+            "allowed_roles": list(definition.allowed_roles),
+            "implementation_version": definition.implementation_version,
+        }).encode()
+    ).hexdigest()
 
 
-class ToolWorker:
-    """Single durable tool consumer for one MAGI process."""
+def _build_builtin_definitions() -> list["ToolDefinition"]:
+    """One :class:`ToolDefinition` per registered builtin tool.
 
-    def __init__(self, *, poll_seconds: float = 0.25) -> None:
-        self.bus = get_bus()
+    Built-in source = ``"builtin"``. MCP tools land in a separate
+    Book owned by the MCP worker (not yet built); they're not
+    published by this worker.
+    """
+    # Lazy import: registry defers tool class imports so test
+    # isolation works. _build_tools() constructs one of each.
+    from magi.tools.registry import _build_tools
+
+    definitions: list[ToolDefinition] = []
+    for tool in _build_tools():
+        d = ToolDefinition(
+            name=tool.name,
+            source="builtin",
+            description=tool.description,
+            input_schema=dict(tool.input_schema),
+            allowed_roles=tuple(sorted(tool.ALLOWED_ROLES)),
+            enabled=True,
+            implementation_version=None,
+        )
+        # Inline the hash so the worker doesn't have to recompute
+        # on every claim.
+        d = ToolDefinition(
+            name=d.name, source=d.source, description=d.description,
+            input_schema=d.input_schema, allowed_roles=d.allowed_roles,
+            enabled=d.enabled, implementation_version=d.implementation_version,
+            schema_hash=_schema_hash(d),
+        )
+        definitions.append(d)
+    return definitions
+
+
+class ToolsWorker:
+    """Consumer that owns every tool execution in a MAGI process.
+
+    Receives a fully-wired :class:`NewBus` via constructor injection.
+    Publishes the builtin tool catalog at ``start()``, then drains
+    :class:`RunToolJob` claims forever.
+    """
+
+    def __init__(
+        self,
+        bus: "NewBus",
+        *,
+        poll_seconds: float = 0.25,
+    ) -> None:
+        self.bus = bus
         self.worker_id = f"tools-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
 
     async def start(self) -> None:
-        if self._task is None:
-            self._stopping = False
-            # Publish the durable catalog before the poll loop starts. The
-            # replacement is idempotent — code
-            # changes that add/modify tools are reflected on restart.
-            _seed_tools()
-            self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
+        if self._task is not None:
+            return
+
+        # 1. Publish the builtin tool catalog. Idempotent — code
+        #    changes that add/modify tools are reflected on every
+        #    restart. Failure here is logged and swallowed; an
+        #    empty catalog just means the agent can't call tools
+        #    this session.
+        await asyncio.to_thread(self._publish_builtin_catalog)
+
+        self._stopping = False
+        self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
 
     async def stop(self) -> None:
         self._stopping = True
@@ -84,75 +168,202 @@ class ToolWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
-            claim = self.bus.tool_jobs.claim_next(self.worker_id)
-            if claim is None:
+            try:
+                job = await asyncio.to_thread(
+                    self.bus.tool_job_board.claim, worker_id=self.worker_id,
+                )
+            except Exception:
+                logger.exception("tools worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
                 continue
-            await self._execute(claim)
+            if job is None:
+                await asyncio.sleep(self.poll_seconds)
+                continue
+            await self._execute(job)
 
-    async def _execute(self, claim: ToolClaim) -> None:
-        context_data = dict(claim.payload.get("context") or {})
-        if claim.schema_hash:
-            definition = self.bus.tool_catalog.get_definition(claim.tool_name, source=claim.source)
-            if (
-                definition is None
-                or not definition.enabled
-                or definition.schema_hash != claim.schema_hash
-                or definition.revision < (claim.catalog_revision or 0)
-            ):
-                self.bus.tool_jobs.complete(
-                    claim,
-                    content=f"tool {claim.tool_name!r} is no longer available for this catalog snapshot",
-                    is_error=True,
-                )
-                self.bus.tool_jobs.retry(claim.job_id)
-                return
-        tool = get_tool(claim.tool_name, caller_role=context_data.get("caller_role"))
-        if tool is None:
-            self.bus.tool_jobs.complete(
-                claim, content=f"unknown or unauthorized tool: {claim.tool_name!r}", is_error=True
+    # ----- catalog publish ----------------------------------------------
+
+    def _publish_builtin_catalog(self) -> None:
+        """Replace the builtin source's snapshot in tool_definitions_book.
+
+        ``source='builtin'`` rows are written atomically (single
+        transaction inside :meth:`ToolDefinitionBook.upsert_many`).
+        ``source != 'builtin'`` rows (future MCP) are left alone.
+
+        The catalog revision is bumped on every publish so the
+        next claim can detect stale-schema calls.
+        """
+        from magi.new_bus.library.local import (
+            ToolCatalogState,
+            ToolDefinitionRow,
+        )
+
+        definitions = _build_builtin_definitions()
+        rows: list[ToolDefinitionRow] = []
+        for d in definitions:
+            rows.append(ToolDefinitionRow(
+                id=0,  # SQLite assigns; ignored on insert
+                name=d.name,
+                spec_json=json.dumps(d.input_schema, ensure_ascii=False),
+                spec_dict=d.input_schema,
+                revision=0,  # overwritten below
+                enabled=1 if d.enabled else 0,
+                description=d.description,
+                source=d.source,
+            ))
+        self.bus.tool_definitions_book.upsert_many(definitions=rows)
+
+        # Bump revision + recompute snapshot_hash.
+        # snapshot_hash = sha256(canonical_json of (source, name,
+        # schema_hash, enabled, revision) for every enabled row).
+        state = self.bus.tool_catalog_book.get()
+        next_revision = (state.revision + 1) if state else 1
+        enabled_rows = self.bus.tool_definitions_book.list_enabled()
+        # Re-fetch the schema_hash we computed at definition time —
+        # the row only stores spec_json; we keep a parallel dict
+        # to recompute. (Hashing is cheap; <1ms for the menu.)
+        hash_by_name: dict[str, str] = {d.name: d.schema_hash for d in definitions}
+        hash_input = sorted(
+            (
+                r.source, r.name, hash_by_name.get(r.name, ""),
+                r.enabled, next_revision,
             )
-            self.bus.tool_jobs.retry(claim.job_id)
+            for r in enabled_rows
+        )
+        snapshot_hash = hashlib.sha256(
+            _canonical_json(hash_input).encode()
+        ).hexdigest()
+        self.bus.tool_catalog_book.replace_snapshot(
+            revision=next_revision, snapshot_hash=snapshot_hash,
+        )
+        logger.info(
+            "tools worker: published %d builtin tool(s) "
+            "(catalog revision=%d)",
+            len(rows), next_revision,
+        )
+
+    # ----- per-job execution --------------------------------------------
+
+    async def _execute(self, job: "RunToolJob") -> None:
+        ctx_data = dict(job.payload.get("context") or {})
+        caller_role = ctx_data.get("caller_role")
+
+        # 1. Catalog revision check — did the menu move between
+        #    the agent's LLM call and our claim?
+        if job.catalog_revision:
+            state = self.bus.tool_catalog_book.get()
+            current_revision = state.revision if state else 0
+            if current_revision > job.catalog_revision:
+                self._submit_failure(
+                    job,
+                    content=(
+                        f"tool {job.tool_name!r}: catalog moved "
+                        f"forward (claimed at r{job.catalog_revision}, "
+                        f"current r{current_revision})"
+                    ),
+                    error_code=_ERROR_CODES["catalog_stale"],
+                )
+                return
+
+        # 2. schema_hash check — did this specific tool's schema
+        #    change between enqueue and claim?
+        if job.schema_hash:
+            row = self.bus.tool_definitions_book.get_by_name(name=job.tool_name)
+            if row is None:
+                self._submit_failure(
+                    job,
+                    content=f"unknown tool: {job.tool_name!r}",
+                    error_code=_ERROR_CODES["unknown"],
+                )
+                return
+            current_hash = _hash_from_row(row, job.tool_name)
+            if current_hash != job.schema_hash:
+                self._submit_failure(
+                    job,
+                    content=(
+                        f"tool {job.tool_name!r}: schema changed since "
+                        f"agent enqueued (claimed hash {job.schema_hash[:8]}, "
+                        f"current {current_hash[:8]})"
+                    ),
+                    error_code=_ERROR_CODES["catalog_stale"],
+                )
+                return
+
+        # 3. Menu-level role filter + executable lookup. The
+        #    publish-time GATE is the authoritative permission
+        #    check; this is just defense in depth (a future
+        #    caller that bypasses the gate still fails closed).
+        tool = get_tool(job.tool_name, caller_role=caller_role)
+        if tool is None:
+            self._submit_failure(
+                job,
+                content=f"unknown or unauthorized tool: {job.tool_name!r}",
+                error_code=_ERROR_CODES["unknown"],
+            )
             return
 
-        # GATE — fired eagerly at enqueue time (bus.store.enqueue_tool_job
-        # + the agent commit path that called it). The worker never
-        # re-evaluates the gate; a DENY means the row was never queued.
+        # 4. Execute. The worker MUST NOT raise to surface
+        #    "expected failure" — Tool.run() returns ToolResult
+        #    with is_error=True in that case. Real bugs raise;
+        #    we catch and translate.
         try:
             result = await tool.run(
                 ToolContext(
-                    workspace=str(context_data.get("workspace") or ""),
-                    uid=int(context_data.get("uid") or 0),
-                    channel=str(context_data.get("channel") or ""),
-                    session_id=str(context_data.get("session_id") or ""),
+                    workspace=str(ctx_data.get("workspace") or ""),
+                    uid=int(ctx_data.get("uid") or 0),
+                    channel=str(ctx_data.get("channel") or ""),
+                    session_id=str(ctx_data.get("session_id") or ""),
                 ),
-                **dict(claim.payload.get("arguments") or {}),
+                **dict(job.payload.get("arguments") or {}),
             )
-            content = result.content[:8000]
-            is_error = result.is_error
-        except Exception as exc:  # tools report errors back to the actor
-            logger.exception("tool job %s failed", claim.job_id)
-            content = f"tool {claim.tool_name!r} crashed: {exc}"[:8000]
-            is_error = True
-        # Complete the job.  The bus.store.complete_tool_job fires
-        # the TOOL_RESULT_RECEIVED signoff row automatically -- the
-        # worker does not construct any hook context.
-        self.bus.tool_jobs.complete(
-            claim,
-            content=content,
-            is_error=is_error,
+        except Exception as exc:
+            logger.exception("tool job %s crashed", job.job_id)
+            self._submit_failure(
+                job,
+                content=f"tool {job.tool_name!r} crashed: {exc}"[:8000],
+                error_code=_ERROR_CODES["crashed"],
+            )
+            return
+
+        # 5. Submit the result. BaseJobBoard handles attempts ≥
+        #    MAX_ATTEMPTS automatically; we don't call retry()
+        #    ourselves (unlike the old bus worker).
+        self.bus.tool_job_board.submit_result(
+            key=job.job_id,
+            result=_to_result(job, result),
         )
-        if is_error:
-            self.bus.tool_jobs.retry(claim.job_id)
+
+    def _submit_failure(
+        self,
+        job: "RunToolJob",
+        *,
+        content: str,
+        error_code: str,
+    ) -> None:
+        self.bus.tool_job_board.submit_result(
+            key=job.job_id,
+            result=RunToolResult(
+                job_id=job.job_id,
+                success=False,
+                content=content[:8000],
+                is_error=True,
+                error=content,
+                error_code=error_code,
+                run_id=job.run_id,
+                tool_call_id=job.tool_call_id,
+            ),
+        )
 
 
-_worker: ToolWorker | None = None
+# -- module-level singleton (composition root drives the lifecycle) -----
+
+_worker: ToolsWorker | None = None
 
 
-async def start_tool_worker() -> ToolWorker:
+async def start_tool_worker(bus: "NewBus") -> ToolsWorker:
     global _worker
     if _worker is None:
-        _worker = ToolWorker()
+        _worker = ToolsWorker(bus=bus)
         await _worker.start()
     return _worker
 
@@ -162,3 +373,50 @@ async def stop_tool_worker() -> None:
     if _worker is not None:
         await _worker.stop()
         _worker = None
+
+
+# -- helpers --------------------------------------------------------------
+
+
+def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
+    """Map :class:`ToolResult` → :class:`RunToolResult`.
+
+    ``content`` is truncated to 8 KB to fit the column.
+    """
+    from magi.new_bus.guild.runToolJob import RunToolResult
+
+    return RunToolResult(
+        job_id=job.job_id,
+        success=not result.is_error,
+        content=result.content[:8000],
+        is_error=result.is_error,
+        run_id=job.run_id,
+        tool_call_id=job.tool_call_id,
+    )
+
+
+def _hash_from_row(row: Any, tool_name: str) -> str:
+    """Recompute schema_hash for a stored row.
+
+    The persistent row only stores ``spec_json``, not the full
+    ``ToolDefinition``. We rebuild a minimal ``ToolDefinition``
+    (with empty allowed_roles / no implementation_version) and
+    hash it — same canonical JSON shape as
+    :func:`_schema_hash` for the fields we care about, modulo
+    the few optional ones (allowed_roles defaults to (), which
+    matches the registered builtin tools' default).
+    """
+    try:
+        input_schema = json.loads(row.spec_json) if row.spec_json else {}
+    except json.JSONDecodeError:
+        return ""
+    d = ToolDefinition(
+        name=row.name,
+        source=row.source,
+        description=row.description or "",
+        input_schema=input_schema,
+        allowed_roles=(),
+        enabled=bool(row.enabled),
+        implementation_version=None,
+    )
+    return _schema_hash(d)

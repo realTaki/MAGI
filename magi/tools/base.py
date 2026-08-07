@@ -17,9 +17,15 @@ The protocol is intentionally tiny:
                       the model emits the input)
   - ``run(ctx, **kwargs)`` — actually execute
 
-``ToolContext`` and ``ToolResult`` moved to :mod:`magi.types`
-so agent, tools, and other packages can all import them
-without pulling in the tools package.
+Execution-facing DTOs — :class:`ToolContext` (what the
+worker hands the tool) and :class:`ToolResult` (what the
+tool returns) — live in this module because they're part
+of the ``Tool`` abstraction itself, not a bus concept.
+LLM-contract DTOs (``ToolDefinition`` / ``ToolCatalogSnapshot``)
+live in :mod:`magi.new_bus.library.local.toolsBook` next to
+the Books that publish them. Job-side DTOs (``RunToolJob`` /
+``RunToolResult``) live in
+:mod:`magi.new_bus.guild.runToolJob`.
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
@@ -31,11 +37,51 @@ without importing the whole batch).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
-# Re-export BUS contracts so implementations keep their historical import
-# path without taking a direct dependency on ``magi.db``.
-from magi.bus.jobs.protocols.tools import ToolContext, ToolResult  # noqa: F401
+
+# -- execution I/O DTOs ---------------------------------------------------
+#
+# These describe the contract between the worker (caller) and the
+# executable Tool class. They are NOT bus concepts — they live here
+# with the Tool abstraction they describe.
+
+
+@dataclass(frozen=True, slots=True)
+class ToolContext:
+    """JSON-safe execution context supplied to a tool worker.
+
+    The runtime's ``state_dir`` is owned by new_bus and **not**
+    exposed here — tools that need persistent state call the
+    bus books rather than handling paths themselves. Only the
+    user-facing ``workspace`` (resolved from
+    ``MAGI_WORKSPACE_DIR``) is part of the tool context, because
+    it's the boundary tools operate against (``safe_resolve``
+    etc.).
+    """
+
+    workspace: str
+    uid: int
+    channel: str
+    session_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ToolResult:
+    """A provider-valid result emitted by a tool worker.
+
+    Tools should never raise to surface "expected failure" —
+    wrap the failure in :class:`ToolResult` with ``is_error=True``
+    so the worker's bookkeeping stays uniform. Real bugs raise;
+    the worker catches and translates them.
+    """
+
+    content: str
+    is_error: bool = False
+
+
+__all__ = ["Tool", "ToolContext", "ToolResult"]
 
 
 class Tool(ABC):

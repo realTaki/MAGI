@@ -62,7 +62,7 @@ from magi.tools.base import (
     caller_role_denied_reason,
 )
 
-logger = logging.getLogger("magi.tools.action_item")
+logger = logging.getLogger("magi.tools.tasks.action_item")
 
 # Same gate as the WebUI API and as ``ScheduleTaskTool``:
 # only ``admin`` and ``assigned`` operators may operate

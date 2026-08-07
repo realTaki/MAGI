@@ -56,32 +56,30 @@ def _build_tools() -> list["Tool"]:
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
     """
-    from magi.tools.bash import (
-        BashKillTool,
-        BashOutputTool,
-        BashRunTool,
-    )
-    from magi.tools.action_item import (
+    from magi.tools.shell.run import BashRunTool
+    from magi.tools.shell.output import BashOutputTool
+    from magi.tools.shell.kill import BashKillTool
+    from magi.tools.tasks.action_item import (
         AddActionItemTool,
         CompleteActionItemTool,
         ListActionItemTool,
     )
-    from magi.tools.edit_file import EditFileTool
-    from magi.tools.list_files import ListFilesTool
-    from magi.tools.message_magi import MessageMagiTool
+    from magi.tools.filesystem.edit_file import EditFileTool
+    from magi.tools.filesystem.list_files import ListFilesTool
+    from magi.tools.comms.message_magi import MessageMagiTool
     from magi.mcp.manage import (
         AddMcpServerTool,
         DeleteMcpServerTool,
         ListMcpServersTool,
         UpdateMcpServerTool,
     )
-    from magi.tools.read_file import ReadFileTool
-    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.filesystem.read_file import ReadFileTool
+    from magi.tools.tasks.schedule import ScheduleTaskTool
     from magi.skills.loader_tool import SkillLoaderTool
-    from magi.tools.search_sessions import SearchSessionsTool
-    from magi.tools.send_message import SendMessageTool
-    from magi.tools.write_file import WriteFileTool
-    from magi.tools.memory_contacts import (
+    from magi.tools.memory.sessions import SearchSessionsTool
+    from magi.tools.comms.send_message import SendMessageTool
+    from magi.tools.filesystem.write_file import WriteFileTool
+    from magi.tools.memory.contacts import (
         AddContactNoteTool,
         AddContactTool,
         DeleteContactNoteTool,
@@ -89,7 +87,7 @@ def _build_tools() -> list["Tool"]:
         UpdateContactNoteTool,
         UpdateDailyNoteTool,
     )
-    from magi.tools.memory_self import (
+    from magi.tools.memory.self import (
         AddMemoryTool,
         CompleteMemoryTool,
         DeleteMemoryTool,

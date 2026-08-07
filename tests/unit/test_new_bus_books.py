@@ -35,7 +35,7 @@ from magi.new_bus.library.local import (
     TokenUsageBook,
     ToolCatalogState,
     ToolCatalogStateBook,
-    ToolDefinition,
+    ToolDefinitionRow,
     ToolDefinitionBook,
 )
 
@@ -220,7 +220,7 @@ def test_tool_catalog_bump(factory):
 def test_tool_definition_upsert(factory):
     book = ToolDefinitionBook(factory)
     t = book.upsert(name="echo", spec_json='{"x":1}', description="echoes")
-    assert isinstance(t, ToolDefinition)
+    assert isinstance(t, ToolDefinitionRow)
     assert t.name == "echo"
     # upsert again
     t2 = book.upsert(name="echo", spec_json='{"x":2}', description="echoes v2")
@@ -294,6 +294,6 @@ __all__ = [
     "TokenUsageBook",
     "ToolCatalogState",
     "ToolCatalogStateBook",
-    "ToolDefinition",
+    "ToolDefinitionRow",
     "ToolDefinitionBook",
 ]

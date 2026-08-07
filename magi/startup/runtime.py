@@ -163,15 +163,18 @@ async def _runtime_lifespan(
             logger.warning("telegram bootstrap skipped: %s", exc)
 
     await start_provider_worker(bus=new_bus)
+    # Tools worker also lives on new_bus now (migrated from the old
+    # bus in the same pass). It publishes the builtin tool catalog
+    # at start() so it's ready before the agent's first tool call.
+    await start_tool_worker(bus=new_bus)
     await start_agent_worker()
-    await start_tool_worker()
     await start_delivery_worker()
     try:
         yield
     finally:
         await stop_delivery_worker()
-        await stop_tool_worker()
         await stop_agent_worker()
+        await stop_tool_worker()
         await stop_provider_worker()
         if "telegram" in channels:
             try:
@@ -214,15 +217,18 @@ async def worker_lifespan():
     new_bus = bootstrap_new_bus(state_dir=state_dir)
 
     await start_provider_worker(bus=new_bus)
+    # Tools worker on new_bus too — see _runtime_lifespan for
+    # the rationale on the order (publish builtin catalog before
+    # the agent might enqueue).
+    await start_tool_worker(bus=new_bus)
     await start_agent_worker()
-    await start_tool_worker()
     await start_delivery_worker()
     try:
         yield
     finally:
         await stop_delivery_worker()
-        await stop_tool_worker()
         await stop_agent_worker()
+        await stop_tool_worker()
         await stop_provider_worker()
 
 

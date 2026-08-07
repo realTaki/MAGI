@@ -229,7 +229,7 @@ async def test_schedule_task_tool_once_writes_run_at_row(
     ``ChatSession`` allocation don't read apscheduler
     state).
     """
-    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.tasks.schedule import ScheduleTaskTool
     from magi.tools.base import ToolContext
 
     # Seed a target operator + bind the cookie identity
@@ -272,7 +272,7 @@ async def test_schedule_task_tool_once_rejects_bad_run_at(
     the LLM gets a precise message back, not a server-side
     traceback."""
     from magi.channels.tasks.scheduler import start_scheduler
-    from magi.tools.schedule_task import ScheduleTaskTool
+    from magi.tools.tasks.schedule import ScheduleTaskTool
     from magi.tools.base import ToolContext
 
     start_scheduler()

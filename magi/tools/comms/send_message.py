@@ -46,7 +46,7 @@ from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.send_message")
+logger = logging.getLogger("magi.tools.comms.send_message")
 
 
 _MAX_TEXT_LEN = 4000  # matches common IM client caps (TG 4096, Slack 40k, ...)

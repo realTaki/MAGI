@@ -24,11 +24,9 @@ from pathlib import Path
 import pytest
 
 from magi.tools.base import ToolContext, ToolResult
-from magi.tools.bash import (
-    BashKillTool,
-    BashOutputTool,
-    BashRunTool,
-)
+from magi.tools.shell.run import BashRunTool
+from magi.tools.shell.output import BashOutputTool
+from magi.tools.shell.kill import BashKillTool
 
 # -- fixtures --------------------------------------------------------------
 
@@ -239,7 +237,7 @@ def test_run_background_full_lifecycle(workspace_ctx):
         assert "line-1" not in again.content
 
         # 5. Kill the (still-running) background shell.
-        from magi.tools.bash import _BackgroundShellManager
+        from magi.tools.shell._manager import _BackgroundShellManager
         await kill_tool.run(workspace_ctx, bash_id=bid)
         # The id is gone from the registry.
         assert _BackgroundShellManager.get(bid) is None
@@ -326,7 +324,7 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
     Same single-loop dance as
     :func:`test_run_background_full_lifecycle`."""
     async def _kill_flow() -> None:
-        from magi.tools.bash import _BackgroundShellManager
+        from magi.tools.shell._manager import _BackgroundShellManager
         run_tool = BashRunTool()
         kill_tool = BashKillTool()
 
