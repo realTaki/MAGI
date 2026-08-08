@@ -28,6 +28,12 @@ from magi.new_bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigResult,
     changeProviderConfigJobBoard,
 )
+from magi.new_bus.guild.mcpServerChangedJob import (
+    McpServerChangedJob,
+    McpServerChangedResult,
+    VALID_KINDS as _MCP_CHANGED_KINDS,
+    mcpServerChangedJobBoard,
+)
 from magi.new_bus.guild.seedPresetTasksJob import (
     SeedPresetTasksJob,
     SeedPresetTasksResult,
@@ -54,6 +60,8 @@ __all__ = [
     "RunAgentJob", "RunAgentResult", "runAgentJobBoard",
     "SendA2AJob", "SendA2AResult", "sendA2AJobBoard",
     "ChangeProviderConfigJob", "ChangeProviderConfigResult", "changeProviderConfigJobBoard",
+    "McpServerChangedJob", "McpServerChangedResult", "mcpServerChangedJobBoard",
+    "_MCP_CHANGED_KINDS",
     "SeedPresetTasksJob", "SeedPresetTasksResult", "seedPresetTasksJobBoard",
     # 单向 (Notify)
     "SetConfigNotify", "setConfigNotifyBoard",

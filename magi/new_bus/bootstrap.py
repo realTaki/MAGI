@@ -85,6 +85,7 @@ class NewBus:
     tool_definitions_book: object  # ToolDefinitionBook
     tool_catalog_book: object  # ToolCatalogStateBook
     mcp_servers_book: object  # McpServerBook
+    mcp_server_changed_job_board: object  # mcpServerChangedJobBoard
     tool_job_board: object  # runToolJobBoard
 
     # -- local: agent (Job boards) -------------------------------------------
@@ -239,6 +240,7 @@ def _bootstrap_with_dirs(
         contactNotifyBoard,
         controlJobBoard,
         deliveryJobBoard,
+        mcpServerChangedJobBoard,
         rememberNotifyBoard,
         runAgentJobBoard,
         runToolJobBoard,
@@ -330,6 +332,7 @@ def _bootstrap_with_dirs(
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
+    mcp_server_changed_job_board = mcpServerChangedJobBoard(local_factory)
     seed_preset_tasks_job_board = seedPresetTasksJobBoard(local_factory)
 
     # ---- local notify boards ------------------------------------------------
@@ -379,6 +382,7 @@ def _bootstrap_with_dirs(
         tool_definitions_book=tool_definitions_book,
         tool_catalog_book=tool_catalog_book,
         mcp_servers_book=mcp_servers_book,
+        mcp_server_changed_job_board=mcp_server_changed_job_board,
         tool_job_board=tool_job_board,
         agent_job_board=agent_job_board,
         chat_job_board=chat_job_board,
