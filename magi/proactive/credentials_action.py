@@ -1,0 +1,106 @@
+"""Credentials nudge: spec + idempotent insert.
+
+The single source of truth for the "set your LLM provider + API key"
+action item every admin sees.  Used by both
+:meth:`~magi.proactive.worker.ProactiveWorker._bootstrap` (Worker
+start-up) and :func:`~magi.channels.api.onboarding.complete_onboarding`
+(onboarding wizard synchronous path).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from magi.new_bus.library.local.actionItemBook import SOURCE_PROACTIVE
+
+logger = logging.getLogger("magi.proactive.credentials_action")
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialsNudgeSpec:
+    """Static content for the credentials nudge.
+
+    Frozen so the wizard, the dashboard renderer, and
+    tests can introspect the spec without surprise
+    mutations.  The stable ``title`` field is the
+    idempotency key — callers use it to skip already-open
+    / already-completed rows.
+    """
+
+    title: str
+    description: str
+    target_url: str
+
+
+# The one and only nudge. Stable ``title`` so the
+# idempotency check (and any future partial unique
+# index) match by exact string — callers and tests
+# shouldn't need to know the rest of the content.
+CREDENTIALS_NUDGE = CredentialsNudgeSpec(
+    title="设置你的 LLM provider 和 API key",
+    description=(
+        "切到「Contacts」,找到自己的档案,"
+        "把 Provider 和 API Key 填上。"
+    ),
+    target_url="/dashboard?tab=organization",
+)
+
+
+def ensure_for_admin(
+    *,
+    book: object,  # ActionItemBook (lazy to avoid import cycle)
+    admin_id: int,
+) -> bool:
+    """Idempotently insert the credentials nudge for one admin.
+
+    Returns ``True`` if a new row was created, ``False`` if
+    an open or already-completed nudge exists.
+    """
+    spec = CREDENTIALS_NUDGE
+    existing = [
+        row
+        for row in book.list_actions(
+            owner_uid=admin_id,
+            include_completed=False,
+            source=SOURCE_PROACTIVE,
+        )
+        if row.title == spec.title
+    ]
+    if existing:
+        logger.debug(
+            "credentials_nudge: open nudge already exists for admin=%s; skipping",
+            admin_id,
+        )
+        return False
+    # 额外检查：是否已完成
+    completed = [
+        row
+        for row in book.list_actions(
+            owner_uid=admin_id,
+            include_completed=True,
+            source=SOURCE_PROACTIVE,
+        )
+        if row.title == spec.title and row.completed_at is not None
+    ]
+    if completed:
+        return False
+    book.add(
+        uid=admin_id,
+        title=spec.title,
+        description=spec.description,
+        target_url=spec.target_url,
+        source=SOURCE_PROACTIVE,
+    )
+    logger.info(
+        "credentials_nudge: inserted for admin=%s (title=%r)",
+        admin_id, spec.title,
+    )
+    return True
+
+
+__all__ = [
+    "CredentialsNudgeSpec",
+    "CREDENTIALS_NUDGE",
+    "ensure_for_admin",
+]
