@@ -48,10 +48,9 @@ class ToolOut(BaseModel):
     :attr:`magi.tools.base.Tool.ALLOWED_ROLES`, sorted
     alphabetically so the dashboard renders a stable order.
     Empty list means the tool has no role restriction
-    (``is_allowed_for_role(None) is True`` and the LLM sees it
-    regardless of caller). Today every built-in declares a
-    non-empty set; MCP tools come back unrestricted because
-    ``MCPTool.is_allowed_for_role`` always returns True.
+    (``Tool.gate()`` returns ``None`` and the LLM sees it
+    regardless of caller). MCP tools come back unrestricted
+    because they inherit the default empty ``ALLOWED_ROLES``.
     """
 
     name: str

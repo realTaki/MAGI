@@ -292,7 +292,7 @@ def _role_allowed(
     caller_role: str | None,
     caller_admin: bool,
 ) -> bool:
-    """Mirror of :meth:`Tool.is_allowed_for_role`."""
+    """Mirror of :meth:`Tool.gate` (role + admin check)."""
     if caller_admin:
         return True
     if not allowed_roles:

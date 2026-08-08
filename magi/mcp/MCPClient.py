@@ -42,6 +42,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from magi.tools.base import Tool, ToolContext, ToolResult
+
 if TYPE_CHECKING:
     from mcp import ClientSession
 
@@ -120,9 +122,8 @@ def _defaults(settings_book: Any) -> MCPTimeoutConfig:
 # ────────────────────────────────────────────────────────────────── #
 
 
-class MCPTool:
-    """One tool surface from an MCP server, wrapped to look like
-    our :class:`Tool`.
+class MCPTool(Tool):
+    """One tool surface from an MCP server, wrapped in the :class:`Tool` protocol.
 
     Holds a reference to the server's long-lived ``ClientSession``;
     every ``run`` round-trips through ``session.call_tool``. The
@@ -135,6 +136,13 @@ class MCPTool:
     ``github__create_issue`` so two servers offering the same
     unqualified tool name (e.g. both expose ``search``) don't
     shadow each other in the LLM's tool menu.
+
+    MCP tools are intentionally unrestricted by role
+    (``ALLOWED_ROLES`` left as the default empty frozenset, so
+    :meth:`Tool.gate` returns ``None``). The MCP server operator
+    decides which tools to expose; tightening comes later via
+    per-tool ``allowed_roles`` frontmatter on the server config
+    side.
     """
 
     def __init__(
@@ -151,42 +159,18 @@ class MCPTool:
         # so the registry cache is stable.
         self.name = f"{server_name}__{server_tool_name}"
         self._server_tool_name = server_tool_name
-        self._description = description or "(no description provided by MCP server)"
+        self.description = description or "(no description provided by MCP server)"
         self._parameters = parameters
         # Anthropic-shaped JSON Schema. The MCP ``inputSchema``
         # is already (close enough to) JSON Schema, so we hand
-        # it through verbatim. The agent loop reads ``input_schema``
-        # (snake_case); alias both names.
+        # it through verbatim.
         self.input_schema: dict[str, Any] = (
             parameters if parameters else {"type": "object", "properties": {}}
         )
         self._session = session
         self._execute_timeout = execute_timeout
 
-    @property
-    def description(self) -> str:
-        return self._description
-
-    def to_anthropic_schema(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self._description,
-            "input_schema": self.input_schema,
-        }
-
-    def is_allowed_for_role(self, _role: str | None) -> bool:
-        """MCP tools are intentionally unrestricted by role.
-
-        The MCP server is configured by the operator and they
-        decide which tools to expose — a server like
-        ``github__create_issue`` carrying admin-only side
-        effects is the operator's call, not ours. v0
-        surfaces every MCP tool to every operator; tightening
-        this comes later (likely via per-tool ``allowed_roles``
-        frontmatter on the server config side)."""
-        return True
-
-    async def run(self, _ctx: Any, **kwargs: Any) -> Any:
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         """Forward the call to the MCP server.
 
         ``ctx`` is the project-local :class:`ToolContext`. The
@@ -200,21 +184,19 @@ class MCPTool:
                 )
         except TimeoutError:
             server = self.name.split("__", 1)[0]
-            return _mcp_tool_result(
-                success=False,
-                content="",
-                error=(
+            return ToolResult(
+                content=(
                     f"MCP tool '{self._server_tool_name}' (server {server!r}) "
                     f"timed out after {self._execute_timeout}s. The remote "
                     f"server may be slow or unresponsive — retry later or "
                     f"check the server's logs."
                 ),
+                is_error=True,
             )
         except Exception as e:
-            return _mcp_tool_result(
-                success=False,
-                content="",
-                error=f"MCP tool '{self._server_tool_name}' failed: {e}",
+            return ToolResult(
+                content=f"MCP tool '{self._server_tool_name}' failed: {e}",
+                is_error=True,
             )
 
         # MCP results are a list of content items (text / image / …).
@@ -234,34 +216,10 @@ class MCPTool:
         content_str = "\n".join(text_parts)
         is_error = bool(getattr(result, "isError", False))
 
-        return _mcp_tool_result(
-            success=not is_error,
+        return ToolResult(
             content=content_str,
-            error=None if not is_error else "MCP tool returned isError=true",
+            is_error=is_error,
         )
-
-
-# The agent loop reads ``ToolResult`` from
-# :mod:`magi.tools.base`, which we don't import at the
-# top to dodge a circular path (mcp_loader → base → registry →
-# mcp_loader on some setups). We provide a thin factory that
-# produces whatever the local ``ToolResult`` looks like.
-def _mcp_tool_result(*, success: bool, content: str, error: str | None) -> Any:
-    """Build a :class:`ToolResult` from MCP success/error bits.
-
-    ``success=True`` ⟹ ``is_error=False`` and ``error=None``
-    (the agent loop never sees the error field). Otherwise
-    we surface the error in ``content`` (LLMs read it like a
-    regular tool output) and flip ``is_error=True`` so the
-    loop can count failures for its bound.
-    """
-    from magi.bus import ToolResult
-    if success:
-        return ToolResult(content=content, is_error=False)
-    return ToolResult(
-        content=content or (error or ""),
-        is_error=True,
-    )
 
 
 def _safe_obj(obj: Any) -> Any:

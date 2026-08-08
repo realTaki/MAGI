@@ -278,9 +278,8 @@ class McpServerToolsOut(BaseModel):
 def _summarize_tool_for_server(tool) -> McpServerToolOut:
     """Render one :class:`MCPTool` to the per-server wire
     shape. Strips the ``<server>__`` prefix and the
-    allowed-roles gate (every MCP tool returns True from
-    ``is_allowed_for_role`` today, so the field carries no
-    signal)."""
+    allowed-roles gate (MCP tools inherit the default empty
+    ``ALLOWED_ROLES``, so the field carries no signal)."""
     schema = tool.to_anthropic_schema()
     full_name = schema.get("name", "")
     # ``MCPTool.name`` is ``f"{server_name}__{server_tool_name}"``.
