@@ -1,10 +1,8 @@
-# TODO: migrate to new_bus — currently failing under the
-# tools/new_bus migration (see magi/startup/runtime.py and
-# magi/new_bus). Re-baseline this test file when the agent
-# loop moves to bus.tool_job_board + the new ToolWorker.
-"""Unit tests for the scheduled-task channel boundary."""
+"""Unit tests for TaskChannel — rebased to RunTaskJob publish flow."""
 
 from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,30 +15,35 @@ def test_task_channel_has_the_internal_scheduled_identifier() -> None:
 
 
 @pytest.mark.asyncio
-async def test_task_channel_dispatches_to_the_task_runner(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from magi.channels.tasks import runner
+async def test_task_channel_dispatches_publishes_run_task_job(monkeypatch):
+    """TaskChannel.dispatch publishes a RunTaskJob through new_bus."""
+    from magi.channels import set_current_new_bus
 
-    received: dict[str, object] = {}
+    mock_bus = MagicMock()
+    mock_bus.run_task_job_board.publish = MagicMock(return_value="jid_42")
+    set_current_new_bus(mock_bus)
 
-    async def fake_execute_task(
-        task_id: str,
-        *,
-        manual: bool = False,
-        pre_created_run_id: str | None = None,
-    ) -> None:
-        received.update(
-            task_id=task_id,
-            manual=manual,
-            pre_created_run_id=pre_created_run_id,
+    try:
+        await TaskChannel.dispatch(
+            "task_abc", manual=True,
         )
+    finally:
+        set_current_new_bus(None)
 
-    monkeypatch.setattr(runner, "execute_task", fake_execute_task)
-    await TaskChannel.dispatch("/state", "task-1", manual=True, pre_created_run_id="run-1")
+    mock_bus.run_task_job_board.publish.assert_called_once()
+    call_args = mock_bus.run_task_job_board.publish.call_args
+    job = call_args[0][0]
+    assert job.task_id == "task_abc"
+    assert job.manual is True
 
-    assert received == {
-        "task_id": "task-1",
-        "manual": True,
-        "pre_created_run_id": "run-1",
-    }
+
+@pytest.mark.asyncio
+async def test_task_channel_dispatch_noops_without_new_bus():
+    """When new_bus is not set, dispatch should log and return without error."""
+    from magi.channels import set_current_new_bus
+
+    # Ensure no bus is set
+    set_current_new_bus(None)
+
+    # Should not raise — just logs warning
+    await TaskChannel.dispatch("task_missing", manual=False)

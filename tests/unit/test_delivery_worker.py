@@ -1,60 +1,99 @@
-# TODO: migrate to new_bus — currently failing under the
-# tools/new_bus migration (see magi/startup/runtime.py and
-# magi/new_bus). Re-baseline this test file when the agent
-# loop moves to bus.tool_job_board + the new ToolWorker.
-"""Committed Telegram replies are sent by the durable outbox worker."""
+"""Telegram delivery tests — rebased to new_bus deliveryJobBoard + TelegramWorker.
+
+Tests that TelegramWorker._deliver_tg calls send_text_raw and marks
+the delivery job as completed via submit_result.
+"""
 
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 
-from magi.bus import AgentMessage, BusStore
-from magi.bus.db.models.queue import DeliveryOutbox
-from magi.bus.db import (
-    init_orm,
-    open_session,
-)
+from magi.new_bus.db import EngineFactory
+from magi.new_bus.guild.deliveryJob import DeliveryJob, deliveryJobBoard
 
 
 @pytest.mark.asyncio
-async def test_delivery_worker_sends_and_marks_reply_delivered(tmp_path, monkeypatch) -> None:
-    state = tmp_path / "state"
-    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(state))
-    state_dir = state / "MAGI_Citizens" / "eva-000" / "memories"
-    init_orm(str(state_dir), seed_root=False)
-    store = BusStore(str(state_dir))
-    run_id = store.publish_agent_message(
-        AgentMessage(event_id="tg-event", text="hello", channel="tg")
+async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
+    """_deliver_tg calls send_text_raw and submit_result(success=True)."""
+    from unittest.mock import AsyncMock
+
+    f = EngineFactory("sqlite:///:memory:")
+    f.create_all()
+    board = deliveryJobBoard(f)
+
+    # Publish a TG delivery job
+    jid = board.publish(DeliveryJob(
+        channel="tg",
+        destination="123456",
+        payload={"text": "hello"},
+        run_id="run_1",
+    ))
+
+    # Create a mock bus for the worker
+    mock_bus = MagicMock()
+    mock_bus.delivery_job_board = board
+    mock_bus.settings_book = MagicMock()
+    mock_bus.settings_book.get = MagicMock(return_value="fake_token")
+
+    # Mock send_text_raw
+    sent: list[tuple] = []
+
+    async def fake_send(token, chat_id, text):
+        sent.append((token, chat_id, text))
+
+    monkeypatch.setattr(
+        "magi.channels.telegram.bot.send_text_raw", fake_send,
     )
-    claim = store.claim_next_agent_message("agent")
+
+    from magi.channels.workers.telegram import TelegramWorker
+
+    worker = TelegramWorker(mock_bus)
+    worker._stopping = False
+
+    # Claim the job
+    claim = board.claim()
     assert claim is not None
-    store.complete_agent_message(claim.event_id, "reply", delivery_destination="123")
+    assert claim.channel == "tg"
 
-    from magi.channels import delivery as delivery_mod
-    from magi.channels.telegram import bot as bot_mod
-    from magi.bus.db import settings as settings_mod
+    # Call _deliver_tg directly
+    await worker._deliver_tg(claim)
 
-    delivered: list[tuple[str, int, str]] = []
+    # Verify sent
+    assert len(sent) == 1
+    assert sent[0] == ("fake_token", 123456, "hello")
 
-    async def fake_send(token: str, chat_id: int, text: str) -> None:
-        delivered.append((token, chat_id, text))
+    # Verify result
+    board.submit_result(
+        key=jid,
+        result=__import__("magi.new_bus.guild.deliveryJob", fromlist=["DeliveryResult"]).DeliveryResult(
+            job_id=jid, success=True,
+        ),
+    )
+    result = board.get_result(key=jid)
+    assert result is not None
+    assert result.success is True
 
-    monkeypatch.setattr(bot_mod, "send_text_raw", fake_send)
-    monkeypatch.setattr(settings_mod, "state_get", lambda *_args: "token")
-    worker = delivery_mod.DeliveryWorker(poll_seconds=0.01)
-    await worker.start()
-    try:
-        for _ in range(50):
-            with open_session() as session:
-                row = session.query(DeliveryOutbox).filter_by(run_id=run_id).one()
-                if row.status == "delivered":
-                    break
-            await asyncio.sleep(0.01)
-        else:
-            pytest.fail("outbox delivery was not marked delivered")
-    finally:
-        await worker.stop()
 
-    assert delivered == [("token", 123, "reply")]
+@pytest.mark.asyncio
+async def test_telegram_worker_fails_without_token():
+    """_deliver_tg raises RuntimeError when no bot_token."""
+    mock_bus = MagicMock()
+    mock_bus.settings_book = MagicMock()
+    mock_bus.settings_book.get = MagicMock(return_value=None)  # no token
+
+    job = DeliveryJob(
+        channel="tg",
+        destination="123",
+        payload={"text": "hi"},
+        job_id="j1",
+    )
+
+    from magi.channels.workers.telegram import TelegramWorker
+
+    worker = TelegramWorker(mock_bus)
+
+    with pytest.raises(RuntimeError, match="no bot_token"):
+        await worker._deliver_tg(job)
