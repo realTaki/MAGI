@@ -29,8 +29,13 @@ sees.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
+import time
+from contextlib import suppress
 from dataclasses import dataclass, field
+
+logger = logging.getLogger("magi.tools.shell._manager")
 
 # Cap on a foreground command. Mirrors the reference
 # implementation's ``max: 600`` — a deployer who wants
@@ -44,6 +49,30 @@ _FOREGROUND_TIMEOUT_DEFAULT = 120
 # ``BashKillTool`` (the "not found" branch surfaces a
 # list of available ids).
 _BASH_ID_LEN = 8
+
+# Per-shell stdout cap. A background ``npm run dev`` left
+# alone for hours would otherwise pin every line it ever
+# wrote in memory — the LLM only ever reads forward, so
+# holding the full history buys nothing. When the cap is
+# hit the oldest lines are dropped and counted; the count
+# is surfaced to the LLM so "my output has a hole" is
+# visible rather than silent.
+_MAX_BUFFERED_LINES = 5000
+
+# Retention for shells that reached a terminal state. They
+# can't be evicted on completion — the LLM polls
+# ``bash_output`` *after* a command finishes, and that's the
+# whole point of the background mode. So they're kept for a
+# grace window, then reaped. Both bounds apply: whichever
+# trips first wins.
+_COMPLETED_TTL_SECONDS = 300
+_MAX_COMPLETED_RETAINED = 32
+
+# Terminal statuses — a shell in one of these has no live
+# subprocess behind it and is eligible for reaping.
+_TERMINAL_STATUSES = frozenset(
+    {"completed", "failed", "terminated", "error"}
+)
 
 
 @dataclass
@@ -62,9 +91,33 @@ class _BackgroundShell:
     last_read_index: int = 0
     status: str = "running"  # running / completed / failed / terminated / error
     exit_code: int | None = None
+    #: When the shell reached a terminal status — drives the
+    #: reaper's TTL. ``None`` while still running.
+    ended_at: float | None = None
+    #: How many lines fell off the front of the buffer because
+    #: of :data:`_MAX_BUFFERED_LINES`. Surfaced to the LLM so a
+    #: gap in the output is explicit.
+    dropped_lines: int = 0
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in _TERMINAL_STATUSES
 
     def add_output(self, line: str) -> None:
         self.output_lines.append(line)
+        # Trim from the front once the cap is exceeded. We append
+        # one line at a time so ``overflow`` is normally 1, but the
+        # arithmetic is written generally so a future batched
+        # append doesn't silently corrupt the read cursor.
+        overflow = len(self.output_lines) - _MAX_BUFFERED_LINES
+        if overflow > 0:
+            del self.output_lines[:overflow]
+            self.dropped_lines += overflow
+            # Shift the cursor by the same amount so "new since
+            # last poll" still means the same thing. Clamping at 0
+            # is the case where the dropped lines were never read —
+            # ``dropped_lines`` is what tells the LLM about those.
+            self.last_read_index = max(0, self.last_read_index - overflow)
 
     def get_new_output(self, filter_pattern: str | None = None) -> list[str]:
         """Return lines accumulated since the last
@@ -87,8 +140,15 @@ class _BackgroundShell:
         if not is_alive:
             self.status = "completed" if exit_code == 0 else "failed"
             self.exit_code = exit_code
+            self.ended_at = time.monotonic()
         else:
             self.status = "running"
+
+    def mark_error(self, message: str) -> None:
+        """Terminal 'the monitor itself broke' transition."""
+        self.status = "error"
+        self.ended_at = time.monotonic()
+        self.add_output(message)
 
     async def terminate(self) -> None:
         if self.process.returncode is None:
@@ -98,8 +158,12 @@ class _BackgroundShell:
             except asyncio.TimeoutError:
                 # Process refused SIGTERM — SIGKILL it.
                 self.process.kill()
+                # Reap so the OS doesn't keep a zombie around.
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self.process.wait(), timeout=2)
         self.status = "terminated"
         self.exit_code = self.process.returncode
+        self.ended_at = time.monotonic()
 
 
 class _BackgroundShellManager:
@@ -131,7 +195,56 @@ class _BackgroundShellManager:
             start_time=start_time,
         )
         cls._shells[bash_id] = shell
+        # Reap on the only growth path. A background sweep would
+        # need a timer task that outlives every tool call and has
+        # to be torn down on shutdown; reaping here costs one
+        # cheap pass over a dict that is bounded by construction.
+        cls._reap_terminal()
         return shell
+
+    @classmethod
+    def _reap_terminal(cls) -> None:
+        """Drop terminal shells past the retention window.
+
+        Two bounds, whichever trips first:
+
+        * age — a shell that ended more than
+          :data:`_COMPLETED_TTL_SECONDS` ago is gone. The LLM
+          gets a grace window to poll a finished command, not
+          forever.
+        * count — at most :data:`_MAX_COMPLETED_RETAINED` terminal
+          shells survive, oldest evicted first. This is the
+          backstop for a burst that all finishes inside the TTL.
+
+        Running shells are never touched: they own a live
+        subprocess and a monitor task.
+        """
+        terminal = [
+            (s.ended_at or 0.0, bid)
+            for bid, s in cls._shells.items()
+            if s.is_terminal
+        ]
+        if not terminal:
+            return
+        now = time.monotonic()
+        doomed = {
+            bid for ended, bid in terminal
+            if now - ended > _COMPLETED_TTL_SECONDS
+        }
+        survivors = sorted(
+            (t for t in terminal if t[1] not in doomed),
+            key=lambda t: t[0],
+        )
+        excess = len(survivors) - _MAX_COMPLETED_RETAINED
+        if excess > 0:
+            doomed.update(bid for _, bid in survivors[:excess])
+        for bid in doomed:
+            cls._shells.pop(bid, None)
+        if doomed:
+            logger.debug(
+                "background-shell registry: reaped %d terminal "
+                "shell(s)", len(doomed),
+            )
 
     @classmethod
     def get(cls, bash_id: str) -> _BackgroundShell | None:
@@ -190,10 +303,7 @@ class _BackgroundShellManager:
                 shell.update_status(is_alive=False, exit_code=returncode)
             except Exception as e:
                 if bash_id in cls._shells:
-                    cls._shells[bash_id].status = "error"
-                    cls._shells[bash_id].add_output(
-                        f"monitor error: {e}"
-                    )
+                    cls._shells[bash_id].mark_error(f"monitor error: {e}")
             finally:
                 # Always drop the monitor task handle so a
                 # future ``terminate`` doesn't try to
@@ -215,3 +325,47 @@ class _BackgroundShellManager:
         await shell.terminate()
         cls._shells.pop(bash_id, None)
         return shell
+
+    @classmethod
+    async def shutdown(cls) -> int:
+        """Tear down every live background shell. Returns the count.
+
+        Called from :meth:`magi.tools.worker.ToolsWorker.stop` so a
+        MAGI shutdown doesn't strand the subprocesses it spawned.
+        Without this the ``bash(run_in_background=True)`` children
+        outlive the process that owns them — nothing else on the box
+        knows their pids, so they leak until the container dies — and
+        their monitor tasks get garbage-collected mid-``await``,
+        which is what produces the ``Task was destroyed but it is
+        pending`` / ``Event loop is closed`` noise on exit.
+
+        Best-effort per shell: one subprocess refusing to die must
+        not block the rest of the teardown.
+        """
+        bash_ids = list(cls._shells)
+        killed = 0
+        for bash_id in bash_ids:
+            try:
+                await cls.terminate(bash_id)
+                killed += 1
+            except ValueError:
+                # Raced with the monitor's own reap — already gone.
+                continue
+            except Exception:
+                logger.exception(
+                    "background-shell shutdown: failed to "
+                    "terminate %s", bash_id,
+                )
+        # Anything left is a shell whose terminate() raised; drop the
+        # bookkeeping regardless so a restarted worker starts clean.
+        for task in cls._monitor_tasks.values():
+            if not task.done():
+                task.cancel()
+        cls._monitor_tasks.clear()
+        cls._shells.clear()
+        if killed:
+            logger.info(
+                "background-shell shutdown: terminated %d shell(s)",
+                killed,
+            )
+        return killed

@@ -336,6 +336,185 @@ def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
 
     asyncio.run(_already_exited())
 
+# -- lifecycle: retention, buffer cap, shutdown ---------------------------
+
+@pytest.fixture
+def clean_registry():
+    """Isolate the process-global shell registry per test.
+
+    ``_BackgroundShellManager`` is a class-level singleton, so a test
+    that inspects eviction counts would otherwise see shells left
+    behind by whatever ran before it.
+    """
+    from magi.tools.shell._manager import _BackgroundShellManager as M
+
+    M._shells.clear()
+    M._monitor_tasks.clear()
+    yield M
+    M._shells.clear()
+    M._monitor_tasks.clear()
+
+def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
+    """Completed shells don't accumulate forever.
+
+    They can't be dropped the moment they finish — polling a
+    *finished* background command is the whole point of the mode — so
+    they're retained and then reaped. This guards the count bound;
+    without it every background command ever run stays resident with
+    its full output buffer for the life of the process.
+    """
+    from magi.tools.shell import _manager as m
+
+    M = clean_registry
+
+    async def _burst() -> None:
+        overshoot = m._MAX_COMPLETED_RETAINED + 8
+        for i in range(overshoot):
+            proc = await asyncio.create_subprocess_shell(
+                "echo hi",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            M.add(
+                bash_id=f"burst{i:03d}", command="echo hi",
+                process=proc, start_time=0.0,
+            )
+            await M.start_monitor(bash_id=f"burst{i:03d}")
+        # Let every monitor observe EOF and mark its shell terminal.
+        for _ in range(60):
+            if all(s.is_terminal for s in M._shells.values()):
+                break
+            await asyncio.sleep(0.05)
+
+        assert all(s.is_terminal for s in M._shells.values())
+        # add() is the reap trigger; the bound is on terminal shells.
+        proc = await asyncio.create_subprocess_shell(
+            "sleep 5",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        M.add(
+            bash_id="trigger", command="sleep 5",
+            process=proc, start_time=0.0,
+        )
+        terminal = [s for s in M._shells.values() if s.is_terminal]
+        assert len(terminal) <= m._MAX_COMPLETED_RETAINED
+        # The live one is never reaped.
+        assert M.get("trigger") is not None
+        await M.shutdown()
+
+    asyncio.run(_burst())
+
+def test_terminal_shells_are_reaped_by_age(workspace_ctx, clean_registry):
+    """The TTL bound: a shell that ended long ago is dropped even
+    when the count bound is nowhere near."""
+    from magi.tools.shell import _manager as m
+
+    M = clean_registry
+
+    async def _aged() -> None:
+        proc = await asyncio.create_subprocess_shell(
+            "echo hi",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        M.add(bash_id="old01", command="echo hi", process=proc, start_time=0.0)
+        await M.start_monitor(bash_id="old01")
+        for _ in range(40):
+            if M.get("old01") and M.get("old01").is_terminal:
+                break
+            await asyncio.sleep(0.05)
+
+        # Backdate past the TTL rather than sleeping it out.
+        M.get("old01").ended_at -= m._COMPLETED_TTL_SECONDS + 1
+
+        proc2 = await asyncio.create_subprocess_shell(
+            "sleep 5",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        M.add(bash_id="fresh", command="sleep 5", process=proc2, start_time=0.0)
+        assert M.get("old01") is None, "expired shell should be reaped"
+        assert M.get("fresh") is not None
+        await M.shutdown()
+
+    asyncio.run(_aged())
+
+def test_output_buffer_is_bounded_and_reports_drops(workspace_ctx, clean_registry):
+    """A chatty process can't pin unbounded memory, and the LLM is
+    told when output was dropped.
+
+    A silent hole would read as "the process printed nothing there",
+    which is worse than a smaller window — hence ``dropped=N`` in the
+    status line.
+    """
+    from magi.tools.shell import _manager as m
+
+    M = clean_registry
+
+    async def _chatty() -> None:
+        overshoot = m._MAX_BUFFERED_LINES + 500
+        proc = await asyncio.create_subprocess_shell(
+            f"for i in $(seq 1 {overshoot}); do echo line-$i; done; sleep 5",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        shell = M.add(
+            bash_id="chatty", command="seq", process=proc, start_time=0.0,
+        )
+        await M.start_monitor(bash_id="chatty")
+        for _ in range(120):
+            if shell.dropped_lines:
+                break
+            await asyncio.sleep(0.05)
+
+        assert len(shell.output_lines) <= m._MAX_BUFFERED_LINES
+        assert shell.dropped_lines > 0
+
+        result = await BashOutputTool().run(workspace_ctx, bash_id="chatty")
+        assert f"dropped={shell.dropped_lines}" in result.content
+        # The read cursor survives the trim: a second poll must not
+        # replay lines the first one already returned.
+        again = await BashOutputTool().run(workspace_ctx, bash_id="chatty")
+        first_line = again.content.split("\n", 1)[0]
+        assert not first_line.startswith("line-") or first_line == "(no new output)"
+        await M.shutdown()
+
+    asyncio.run(_chatty())
+
+def test_shutdown_terminates_live_background_shells(workspace_ctx, clean_registry):
+    """``shutdown_background_shells`` is what keeps a MAGI exit from
+    stranding its children.
+
+    Nothing else knows these pids, so a missed teardown leaks the
+    process until the container dies.
+    """
+    from magi.tools.shell import shutdown_background_shells
+
+    M = clean_registry
+
+    async def _shutdown() -> None:
+        proc = await asyncio.create_subprocess_shell(
+            "sleep 30",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        M.add(bash_id="longrun", command="sleep 30", process=proc, start_time=0.0)
+        await M.start_monitor(bash_id="longrun")
+        await asyncio.sleep(0.1)
+        assert proc.returncode is None
+
+        killed = await shutdown_background_shells()
+
+        assert killed == 1
+        assert proc.returncode is not None, "subprocess outlived shutdown"
+        assert M._shells == {}
+        assert M._monitor_tasks == {}
+        # Idempotent — the composition root may call stop() twice.
+        assert await shutdown_background_shells() == 0
+
+    asyncio.run(_shutdown())
+
 # -- BashOutputTool: error paths ------------------------------------------
 
 def test_output_missing_bash_id_returns_error(workspace_ctx):

@@ -74,6 +74,33 @@ _ERROR_CODES = {
 _DEFAULT_CONCURRENCY = 2
 
 
+def _env_concurrency() -> int:
+    """Read ``MAGI_TOOL_CONCURRENCY``, falling back to the default.
+
+    Unset, empty, non-numeric, or < 1 all collapse to
+    :data:`_DEFAULT_CONCURRENCY` — a misconfigured env var must not
+    take the tool path down.
+    """
+    raw = os.environ.get("MAGI_TOOL_CONCURRENCY")
+    if not raw:
+        return _DEFAULT_CONCURRENCY
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "MAGI_TOOL_CONCURRENCY=%r is not an integer; using %d",
+            raw, _DEFAULT_CONCURRENCY,
+        )
+        return _DEFAULT_CONCURRENCY
+    if value < 1:
+        logger.warning(
+            "MAGI_TOOL_CONCURRENCY=%d is below 1; using %d",
+            value, _DEFAULT_CONCURRENCY,
+        )
+        return _DEFAULT_CONCURRENCY
+    return value
+
+
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -156,7 +183,14 @@ class ToolsWorker:
     ) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
-        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
+        # Env is read *here*, not in :func:`start_tool_worker`, so
+        # every construction path honours it — a direct
+        # ``ToolsWorker(bus)`` (tests, an alternate entry point) got
+        # the hard-coded default when the read lived in the factory.
+        # Mirrors :class:`~magi.providers.worker.ProvidersWorker`.
+        if concurrency is None:
+            concurrency = _env_concurrency()
+        self.concurrency = max(1, concurrency)
         self._slots = asyncio.Semaphore(self.concurrency)
         self._task: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
@@ -191,6 +225,22 @@ class ToolsWorker:
         if self._inflight:
             await asyncio.gather(*self._inflight, return_exceptions=True)
             self._inflight.clear()
+
+        # Background shells are process-local state owned by the
+        # bash tools, and this worker is the only thing that
+        # outlives an individual tool call — so it's the only place
+        # that can tear them down. Without this the subprocesses
+        # spawned by ``bash(run_in_background=True)`` survive MAGI's
+        # shutdown as orphans. Best-effort: a stuck child must not
+        # block the rest of the shutdown chain.
+        try:
+            from magi.tools.shell import shutdown_background_shells
+
+            await shutdown_background_shells()
+        except Exception:
+            logger.exception(
+                "tools worker: background-shell shutdown failed"
+            )
 
     async def _run(self) -> None:
         while not self._stopping:
@@ -417,15 +467,13 @@ async def start_tool_worker(
     *,
     concurrency: int | None = None,
 ) -> ToolsWorker:
+    """Start the process-local tools worker.
+
+    ``concurrency`` overrides ``MAGI_TOOL_CONCURRENCY``; leave it
+    ``None`` to let :class:`ToolsWorker` resolve the env var itself.
+    """
     global _worker
     if _worker is None:
-        if concurrency is None:
-            try:
-                concurrency = int(os.environ.get("MAGI_TOOL_CONCURRENCY", ""))
-            except (TypeError, ValueError):
-                concurrency = _DEFAULT_CONCURRENCY
-        if concurrency is None or concurrency < 1:
-            concurrency = _DEFAULT_CONCURRENCY
         _worker = ToolsWorker(bus=bus, concurrency=concurrency)
         await _worker.start()
     return _worker
