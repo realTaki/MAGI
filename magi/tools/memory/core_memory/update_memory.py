@@ -14,8 +14,8 @@ shared.
 Bus plumbing: this tool talks to new_bus
 (:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants for ``subject``,
-``body`` and ``importance`` (non-empty + length caps,
-``importance`` 1..5) and surfaces any violation as
+``body`` and ``priority`` (non-empty + length caps,
+``priority`` 1..5) and surfaces any violation as
 :class:`ValueError` that we translate to
 ``ToolResult.err`` here. Authorization ("does the caller
 own this row?") lives at the tool layer.
@@ -48,7 +48,7 @@ class UpdateMemoryTool(Tool):
     description = (
         "Patch an existing memory row by id. Use when the operator "
         "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
-        "Mutable: subject, body, importance. Immutable: kind, "
+        "Mutable: subject, body, priority. Immutable: kind, "
         "uid (delete + re-add if you really need to change "
         "those)."
     )
@@ -61,7 +61,7 @@ class UpdateMemoryTool(Tool):
             },
             "subject": {"type": "string"},
             "body": {"type": "string"},
-            "importance": {"type": "integer", "minimum": 1, "maximum": 5},
+            "priority": {"type": "integer", "minimum": 1, "maximum": 5},
         },
         "required": ["memory_id"],
     }
@@ -95,7 +95,7 @@ class UpdateMemoryTool(Tool):
                 memory_id=memory_id,
                 subject=kwargs.get("subject"),
                 body=kwargs.get("body"),
-                importance=kwargs.get("importance"),
+                priority=kwargs.get("priority"),
             )
         except LookupError as e:
             return ToolResult.err(str(e))

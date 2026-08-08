@@ -123,7 +123,7 @@ class ContactsService:
         with open_session(self._state_dir) as session:
             rows = session.scalars(
                 select(Contact)
-                .where(Contact.admin.is_(True), Contact.separated_at.is_(None))
+                .where(Contact.admin.is_(True))
                 .order_by(Contact.id)
             ).all()
             return [_contact_view(row) for row in rows]
@@ -146,7 +146,6 @@ class ContactsService:
                 .where(
                     Contact.role == "assigned",
                     Contact.telegram_id.is_not(None),
-                    Contact.separated_at.is_(None),
                 )
                 .order_by(Contact.id)
             ).all()
@@ -318,7 +317,7 @@ class ContactsService:
         from magi.bus.db import open_session
         with open_session(self._state_dir) as session:
             contact = session.get(Contact, uid)
-            if contact is None or contact.separated_at is not None:
+            if contact is None:
                 return None
             prior = session.scalar(select(Contact).where(Contact.telegram_id == telegram_id))
             if prior is not None and prior.id != contact.id:
@@ -357,7 +356,7 @@ class ContactsService:
         with open_session(self._state_dir) as session:
             existing = session.scalar(
                 select(Contact)
-                .where(Contact.admin.is_(True), Contact.separated_at.is_(None))
+                .where(Contact.admin.is_(True))
                 .order_by(Contact.id)
             )
             if existing is None:
@@ -395,7 +394,7 @@ class ContactsService:
         with open_session(self._state_dir) as session:
             existing_admins = session.scalars(
                 select(Contact).where(
-                    Contact.admin.is_(True), Contact.separated_at.is_(None),
+                    Contact.admin.is_(True),
                 )
             ).all()
             new_id_set = {tg_id for tg_id, _ in telegram_ids_with_names}

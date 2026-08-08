@@ -21,15 +21,12 @@ gate when added.
 Bus plumbing: this tool talks to new_bus
 (:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants (kind membership
-in :data:`ALL_KINDS`, source membership in
-:data:`ALL_MEMORY_SOURCES`, subject non-empty + ≤200
-chars, body non-empty + ≤8 KB, importance 1..5) and
+in :data:`ALL_KINDS`, subject non-empty + ≤200
+chars, body non-empty + ≤8 KB, priority 1..5) and
 surfaces any violation as ``ValueError`` that we
-translate to ``ToolResult.err`` here. ``source`` is
-decided by the caller (default ``'eva'``); the LLM
-chat path leaves it unset. The old bus service at
-:mod:`magi.bus.jobs.services.memory.MemoryService` is
-no longer imported here.
+translate to ``ToolResult.err`` here. The old bus
+service at :mod:`magi.bus.jobs.services.memory.MemoryService`
+is no longer imported here.
 """
 
 from __future__ import annotations
@@ -39,7 +36,6 @@ from typing import Any
 
 from magi.new_bus.library.local.memoryBook import (
     ALL_KINDS,
-    SOURCE_EVA,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult
 
@@ -66,8 +62,8 @@ class AddMemoryTool(Tool):
         "'把 ... 记录下来' — or when the LLM judges a "
         "fact worth remembering across conversations "
         "(company policy, contract deadline, ongoing "
-        "project). kinds: 'important' (long-arc facts), "
-        "'ongoing' (work in flight, has a completion). "
+        "project). kinds: 'fact' (long-arc facts), "
+        "'quick_note' (work in flight, has a completion). "
         "Person records are NOT written here — use the "
         "contacts tools for people."
     )
@@ -77,7 +73,7 @@ class AddMemoryTool(Tool):
             "kind": {
                 "type": "string",
                 "enum": sorted(ALL_KINDS),
-                "description": "important | ongoing",
+                "description": "fact | quick_note",
             },
             "subject": {
                 "type": "string",
@@ -95,13 +91,13 @@ class AddMemoryTool(Tool):
                     "when it has more context."
                 ),
             },
-            "importance": {
+            "priority": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 5,
                 "description": (
-                    "1 (low) .. 5 (critical). 'important' rows "
-                    "default to 4-5; 'ongoing' rows default to "
+                    "1 (low) .. 5 (critical). 'fact' rows "
+                    "default to 4-5; 'quick_note' rows default to "
                     "2-3 so the operator can deprioritise."
                 ),
             },
@@ -119,8 +115,8 @@ class AddMemoryTool(Tool):
         # :meth:`MemoryBook.add` arguments. The Book
         # owns the write invariants (subject non-empty
         # + ≤200 chars, body non-empty + ≤8 KB,
-        # ``kind`` / ``source`` enum membership,
-        # ``importance`` 1..5) so we don't re-check
+        # ``kind`` enum membership,
+        # ``priority`` 1..5) so we don't re-check
         # them here. A violation raises ``ValueError``,
         # which the worker catches and surfaces as
         # ``is_error=True`` to the LLM.
@@ -135,8 +131,7 @@ class AddMemoryTool(Tool):
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
-                importance=kwargs.get("importance", 3),
-                source=SOURCE_EVA,
+                priority=kwargs.get("priority", 3),
             )
         except ValueError as e:
             return ToolResult.err(f"add_memory failed: {e}")

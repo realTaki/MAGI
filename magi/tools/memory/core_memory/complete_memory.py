@@ -30,7 +30,7 @@ logger = logging.getLogger("magi.tools.memory.complete_memory")
 
 
 class CompleteMemoryTool(Tool):
-    """Mark an ``ongoing`` row as done."""
+    """Mark a ``quick_note`` row as done."""
 
     name = "complete_memory"
 
@@ -44,7 +44,7 @@ class CompleteMemoryTool(Tool):
     # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Mark an ongoing memory row as done. The row stays in the "
+        "Mark a quick_note memory row as done. The row stays in the "
         "table for the audit trail but is no longer rendered in the "
         "system-prompt block. Use when the operator says "
         "'完成了' / '搞定了' / 'the project shipped'."
@@ -54,7 +54,7 @@ class CompleteMemoryTool(Tool):
         "properties": {
             "memory_id": {
                 "type": "integer",
-                "description": "id of the ongoing row to mark done.",
+                "description": "id of the quick_note row to mark done.",
             },
         },
         "required": ["memory_id"],

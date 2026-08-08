@@ -74,7 +74,6 @@ class ContactOut(BaseModel):
     # be ``role='assigned'`` (the person MAGI serves) AND
     # ``admin=True`` (the operator) at the same time.
     admin: bool = False
-    separated_at: str | None = None
     telegram_id: int | None = None
     notes: str = ""
     notes_count: int = 0
@@ -128,7 +127,6 @@ class ContactUpdate(BaseModel):
     # to revoke admin).
     admin: Optional[bool] = None
     telegram_id: Optional[int] = None
-    separated: Optional[bool] = None
 
 
 def _serialize(
@@ -152,7 +150,6 @@ def _serialize(
         display_name=view.display_name,
         role=view.role,
         admin=view.admin,
-        separated_at=view.last_seen_at if view.separated else None,
         telegram_id=view.telegram_id,
         notes=view.notes,
         notes_count=notes_count,
@@ -218,8 +215,6 @@ def _single_login_methods(
 def list_contacts(
     _admin: AdminGate,
     with_notes: bool = False,
-    separated: bool = False,
-    include_separated: bool = False,
     role: str | None = None,
     admin: Optional[bool] = None,
     page: int = 1,
@@ -231,7 +226,7 @@ def list_contacts(
     with non-empty notes (LLM-recorded directory).
 
     Without ``with_notes`` → Admin CRUD view with optional
-    role / separated filters + pagination.
+    role filter + pagination.
     """
     if page < 1:
         page = 1
@@ -278,8 +273,7 @@ def list_contacts(
         )
 
     rows, total = bus.list_paginated(
-        role=role, admin=admin, separated=separated,
-        include_separated=include_separated, page=page, page_size=page_size,
+        role=role, admin=admin, page=page, page_size=page_size,
     )
     login_methods = _bulk_login_methods(bus, rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -490,10 +484,6 @@ def update_contact(
             )
         new_telegram_id = new_tg
 
-    new_separated: Optional[bool] = None
-    if "separated" in payload.model_fields_set:
-        new_separated = payload.separated
-
     view = bus.update_contact(
         contact_id,
         name=new_name,
@@ -501,7 +491,6 @@ def update_contact(
         role=new_role,
         admin=new_admin,
         telegram_id=new_telegram_id,
-        separated=new_separated,
     )
     if view is None:
         raise MagiHTTPException(
