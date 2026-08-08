@@ -16,16 +16,15 @@ It does **not**:
 - Create Kubernetes resources (use :mod:`magi.startup.kubernetes`).
 - Manage the WebUI (use :mod:`magi.startup.webui`).
 - Read or mutate environment variables at runtime.
-- Allow runtime-side port / host / reload configuration (plan §21).
+- Allow runtime-side port / host configuration (plan §21).
 
-Per plan §21, ``reload`` is hardcoded by deployment role:
+Per plan §21, ``reload`` is decided by a single explicit env knob:
 
-- Production (``PRODUCTION`` env / image) — reload off
-- Development (``DEVELOPMENT`` env / image) — reload on
+- Unset (production default) — reload off
+- ``MAGI_DEV_RELOAD=1`` (set only by the development entry point) — reload on
 
-We default to production; the development role can override by setting
-``MAGI_DEV_RELOAD=1`` (an explicit knob used only by the development
-entry point).
+Operators cannot flip reload via the standard CLI. See
+:func:`_reload_enabled` for the implementation.
 """
 
 from __future__ import annotations
@@ -371,11 +370,11 @@ def _serve_runtime_api(
 
 
 def _reload_enabled() -> bool:
-    """Production: hardcoded off. Development role: hardcoded on.
+    """Reload toggle — opt-in via the development entry point.
 
-    The distinction is encoded in :envvar:`MAGI_DEV_RELOAD` set by the
-    development entry point — operators cannot flip it via the
-    standard CLI.
+    Returns ``True`` only when :envvar:`MAGI_DEV_RELOAD` is explicitly
+    set to ``"1"`` by the development entry point. Production / operator
+    shells cannot flip reload via this knob.
     """
     return os.environ.get("MAGI_DEV_RELOAD") == "1"
 

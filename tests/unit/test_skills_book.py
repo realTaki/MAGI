@@ -410,6 +410,106 @@ def test_read_body_marks_truncation(two_roots, build_book):
 
 
 # ──────────────────────────────────────────────────────────────────────── #
+# Hot-reload (on-disk fingerprint)
+# ──────────────────────────────────────────────────────────────────────── #
+
+
+def test_hot_reload_picks_up_newly_added_skill_dir(two_roots, build_book):
+    """Adding a brand-new skill directory after construction is
+    visible on the next ``list()`` / ``get()`` / ``exists()`` call —
+    no restart."""
+    bundle_root, _ = two_roots
+    book = build_book()
+    assert book.get("late") is None
+
+    _write_skill(bundle_root, "late", description="latecomer")
+    assert {m.name for m in book.list()} == {"late"}
+    meta = book.get("late")
+    assert meta is not None
+    assert meta.description == "latecomer"
+    assert book.exists("late") is True
+
+
+def test_hot_reload_picks_up_removed_skill_dir(two_roots, build_book):
+    """Removing a skill directory (or its SKILL.md) makes the skill
+    disappear from the registry on the next read."""
+    bundle_root, _ = two_roots
+    _write_skill(bundle_root, "doomed", description="will be removed")
+    book = build_book()
+    assert book.exists("doomed") is True
+
+    import shutil
+    shutil.rmtree(bundle_root / "doomed")
+
+    assert book.exists("doomed") is False
+    assert book.get("doomed") is None
+    assert {m.name for m in book.list()} == set()
+
+
+def test_hot_reload_picks_up_edited_skill_md(two_roots, build_book):
+    """Editing ``SKILL.md`` (description change) is reflected on the
+    next ``get()``."""
+    bundle_root, _ = two_roots
+    _write_skill(bundle_root, "editable", description="v1")
+    book = build_book()
+    assert book.get("editable").description == "v1"
+
+    # Rewrite the SKILL.md with a new description. ``write_text`` is
+    # atomic via tmp+rename on most platforms and definitely bumps
+    # mtime — fingerprint catches it.
+    import time
+    time.sleep(0.01)  # ensure mtime delta on coarse-resolution FS
+    skill_path = bundle_root / "editable" / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: editable\ndescription: v2\n---\n\nnew body\n",
+        encoding="utf-8",
+    )
+
+    assert book.get("editable").description == "v2"
+    # ``read_body`` reads fresh from disk; new body is visible.
+    body = book.read_body("editable")
+    assert "new body" in body.content
+
+
+def test_hot_reload_picks_up_operator_override_of_bundle(two_roots, build_book):
+    """Adding an operator-side skill with the same name as a bundle
+    skill silently overrides the bundle entry — no restart."""
+    bundle_root, operator_root = two_roots
+    _write_skill(bundle_root, "shared", description="from bundle")
+    book = build_book()
+    assert book.get("shared").description == "from bundle"
+
+    _write_skill(operator_root, "shared", description="from operator")
+    assert book.get("shared").description == "from operator"
+
+
+def test_hot_reload_is_idempotent_when_nothing_changed(
+    two_roots, build_book,
+):
+    """A read that triggers no change is a no-op — same registry
+    object is returned (no churn). Implementation detail: the fast
+    path skips the re-scan."""
+    bundle_root, _ = two_roots
+    _write_skill(bundle_root, "stable", description="unchanged")
+    book = build_book()
+    meta_before = book.get("stable")
+    meta_after = book.get("stable")
+    assert meta_before is meta_after  # dataclass frozen → same instance
+
+
+def test_hot_reload_handles_skills_subdir_added_late(two_roots, build_book):
+    """Operator root created AFTER the book is built (the common
+    fresh-deploy case where ensure_workspace ran but skills/ was
+    empty) is picked up when files land later."""
+    _, operator_root = two_roots
+    book = build_book()
+    assert {m.name for m in book.list()} == set()
+
+    _write_skill(operator_root, "first", description="operator's first")
+    assert {m.name for m in book.list()} == {"first"}
+
+
+# ──────────────────────────────────────────────────────────────────────── #
 # Default factory
 # ──────────────────────────────────────────────────────────────────────── #
 

@@ -151,11 +151,20 @@ def _submit_success(
     bus: "NewBus", job: "SeedPresetTasksJob",
     *, inserted: int, skipped: int,
 ) -> None:
-    result = SeedPresetTasksResult(
-        job_id=job.job_id, success=True,
-        inserted=inserted, skipped=skipped,
-    )
-    bus.seed_preset_tasks_job_board.submit_result(key=job.job_id, result=result)
+    try:
+        result = SeedPresetTasksResult(
+            job_id=job.job_id, success=True,
+            inserted=inserted, skipped=skipped,
+        )
+        bus.seed_preset_tasks_job_board.submit_result(key=job.job_id, result=result)
+    except Exception:
+        # Mirror _submit_failure: a result-submission error must not
+        # propagate out of the Worker — the preset rows are already
+        # committed, and the lease will time out + base will mark the
+        # row exhausted if we lose the result write.
+        logger.exception(
+            "preset_tasks: failed to submit seed success for %s", job.job_id,
+        )
 
 
 def _submit_failure(
