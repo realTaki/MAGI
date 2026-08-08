@@ -100,8 +100,8 @@ def build_system_prompt(
       2. **Instructions** — the MAGI's personal instruction plus every
          MAGIS and role instruction from its memberships.
       3. **Long-term memory** — :func:`format_memory_block`
-         renders the calling User's ``important`` +
-         ``ongoing in-flight`` rows. ``completed`` ongoing
+         renders the calling User's ``fact`` +
+         ``quick_note in-flight`` rows. ``completed`` quick_note
          rows are filtered out (per the store's
          ``include_completed=False`` default) so the prompt
          reflects the LLM's working set, not the audit

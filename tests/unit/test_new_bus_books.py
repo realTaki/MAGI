@@ -88,7 +88,7 @@ def test_setting_book_list_and_delete(factory):
 
 def test_memory_book_add_and_get(factory, contact_id):
     book = MemoryBook(factory)
-    m = book.add(uid=contact_id, kind="important", subject="alice", body="likes cats")
+    m = book.add(uid=contact_id, kind="fact", subject="alice", body="likes cats")
     assert isinstance(m, Memory)
     assert m.uid == contact_id
     assert m.body == "likes cats"
@@ -101,8 +101,8 @@ def test_memory_book_list_by_owner(factory, contact_id):
     book = MemoryBook(factory)
     cbook = ContactBook(factory)
     other_id = cbook.add(name="Other").id
-    book.add(uid=contact_id, kind="important", subject="a", body="x")
-    book.add(uid=other_id, kind="important", subject="b", body="y")
+    book.add(uid=contact_id, kind="fact", subject="a", body="x")
+    book.add(uid=other_id, kind="fact", subject="b", body="y")
     assert len(book.list_by_owner(uid=contact_id)) == 1
     assert len(book.list_by_owner(uid=other_id)) == 1
 
@@ -114,7 +114,7 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     Pins the invariants the core-memory tools depend on:
 
       * ``add`` returns the created DTO
-      * ``update`` only accepts ``subject``/``body``/``importance``
+      * ``update`` only accepts ``subject``/``body``/``priority``
       * ``complete`` is idempotent — second call leaves
         ``completed_at`` untouched
       * timestamps on the DTO are ISO-8601 ``Z`` strings
@@ -125,10 +125,10 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     book = MemoryBook(factory)
     created = book.add(
         uid=contact_id,
-        kind="ongoing",
+        kind="quick_note",
         subject="ship the deal",
         body="waiting on legal",
-        importance=3,
+        priority=3,
     )
     assert isinstance(created, Memory)
     assert created.completed_at is None
@@ -137,11 +137,11 @@ def test_memory_book_full_lifecycle(factory, contact_id):
         memory_id=created.id,
         subject="ship the deal (closed)",
         body="signed by both parties",
-        importance=4,
+        priority=4,
     )
     assert updated.subject == "ship the deal (closed)"
     assert updated.body == "signed by both parties"
-    assert updated.importance == 4
+    assert updated.priority == 4
     assert updated.id == created.id
 
     completed = book.complete(memory_id=created.id)
@@ -172,7 +172,7 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     assert book.delete(memory_id=99999) is False
     # Real row still works.
     m = book.add(
-        uid=contact_id, kind="important",
+        uid=contact_id, kind="fact",
         subject="x", body="y",
     )
     assert book.delete(memory_id=m.id) is True
@@ -191,24 +191,24 @@ def test_memory_book_add_invariants(factory, contact_id):
 
     # Empty / whitespace-only subject is rejected.
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.add(uid=contact_id, kind="important", subject="", body="x")
+        book.add(uid=contact_id, kind="fact", subject="", body="x")
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.add(uid=contact_id, kind="important", subject="   ", body="x")
+        book.add(uid=contact_id, kind="fact", subject="   ", body="x")
 
     # Subject over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="subject length"):
-        book.add(uid=contact_id, kind="important", subject="x" * 201, body="y")
+        book.add(uid=contact_id, kind="fact", subject="x" * 201, body="y")
 
     # Empty body is rejected.
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.add(uid=contact_id, kind="important", subject="ok", body="")
+        book.add(uid=contact_id, kind="fact", subject="ok", body="")
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.add(uid=contact_id, kind="important", subject="ok", body="   ")
+        book.add(uid=contact_id, kind="fact", subject="ok", body="   ")
 
     # Body over 8 KiB is rejected.
     with pytest.raises(ValueError, match="body length"):
         book.add(
-            uid=contact_id, kind="important",
+            uid=contact_id, kind="fact",
             subject="ok", body="x" * (8 * 1024 + 1),
         )
 
@@ -218,30 +218,22 @@ def test_memory_book_add_invariants(factory, contact_id):
             uid=contact_id, kind="weird", subject="ok", body="ok",
         )
 
-    # ``source`` must be in ALL_MEMORY_SOURCES (manual /
-    # eva / system).
-    with pytest.raises(ValueError, match="source must be one of"):
+    # ``priority`` outside 1..5 is rejected.
+    with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="important",
-            subject="ok", body="ok", source="proactive",
+            uid=contact_id, kind="fact",
+            subject="ok", body="ok", priority=0,
         )
-
-    # ``importance`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="importance must be 1..5"):
+    with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="important",
-            subject="ok", body="ok", importance=0,
-        )
-    with pytest.raises(ValueError, match="importance must be 1..5"):
-        book.add(
-            uid=contact_id, kind="important",
-            subject="ok", body="ok", importance=6,
+            uid=contact_id, kind="fact",
+            subject="ok", body="ok", priority=6,
         )
     # Non-int is rejected.
-    with pytest.raises(ValueError, match="importance must be 1..5"):
+    with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="important",
-            subject="ok", body="ok", importance="3",
+            uid=contact_id, kind="fact",
+            subject="ok", body="ok", priority="3",
         )
 
 
@@ -252,8 +244,8 @@ def test_memory_book_update_invariants(factory, contact_id):
 
     book = MemoryBook(factory)
     row = book.add(
-        uid=contact_id, kind="important",
-        subject="ok", body="ok", importance=3,
+        uid=contact_id, kind="fact",
+        subject="ok", body="ok", priority=3,
     )
 
     # Empty subject via update is rejected.
@@ -272,9 +264,9 @@ def test_memory_book_update_invariants(factory, contact_id):
     with pytest.raises(ValueError, match="body length"):
         book.update(memory_id=row.id, body="x" * (8 * 1024 + 1))
 
-    # ``importance`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="importance must be 1..5"):
-        book.update(memory_id=row.id, importance=7)
+    # ``priority`` outside 1..5 is rejected.
+    with pytest.raises(ValueError, match="priority must be 1..5"):
+        book.update(memory_id=row.id, priority=7)
 
     # Missing row → LookupError.
     with pytest.raises(LookupError, match="memory row"):
@@ -302,14 +294,14 @@ def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
     field round-trips through unchanged."""
     book = MemoryBook(factory)
     row = book.add(
-        uid=contact_id, kind="ongoing",
-        subject="orig", body="orig body", importance=2,
+        uid=contact_id, kind="quick_note",
+        subject="orig", body="orig body", priority=2,
     )
-    after = book.update(memory_id=row.id, importance=5)
+    after = book.update(memory_id=row.id, priority=5)
     assert after.subject == "orig"
     assert after.body == "orig body"
-    assert after.importance == 5
-    assert after.kind == "ongoing"  # immutable
+    assert after.priority == 5
+    assert after.kind == "quick_note"  # immutable
 
 
 # -- ContactBook + ContactNoteBook --------------------------------------

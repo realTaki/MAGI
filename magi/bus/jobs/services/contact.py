@@ -20,8 +20,8 @@ def _iso(value: datetime | None) -> str | None:
 def _contact_view(row) -> ContactView:
     return ContactView(
         id=int(row.id), name=str(row.name), display_name=row.display_name, role=row.role,
-        notes=str(row.notes), source=str(row.source), telegram_id=row.telegram_id,
-        separated=row.separated_at is not None, admin=bool(row.admin),
+        notes=str(row.notes), telegram_id=row.telegram_id,
+        admin=bool(row.admin),
         last_seen_at=_iso(row.last_seen_at) or "", created_at=_iso(row.created_at) or "",
         updated_at=_iso(row.updated_at) or "",
     )
@@ -29,7 +29,7 @@ def _contact_view(row) -> ContactView:
 
 def _note_view(row) -> NoteView:
     return NoteView(
-        id=int(row.id), contact_id=int(row.contact_id), note=str(row.note), source=str(row.source),
+        id=int(row.id), contact_id=int(row.contact_id), note=str(row.note),
         kind=str(row.kind), note_date=_iso(row.note_date), created_at=_iso(row.created_at) or "",
         updated_at=_iso(row.updated_at) or "",
     )
@@ -85,8 +85,6 @@ class ContactsService:
 
         Returns the contact's row id (whatever the resolution path).
         """
-        from magi.bus.db.models.local.contact import SOURCE_SYSTEM
-
         marker = f"magi.control_operator_id={operator_id}"
         from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
@@ -96,7 +94,7 @@ class ContactsService:
                 contact = session.scalar(select(Contact).where(Contact.telegram_id == telegram_id))
             if contact is None:
                 contact = session.scalar(
-                    select(Contact).where(Contact.source == SOURCE_SYSTEM, Contact.notes == marker)
+                    select(Contact).where(Contact.notes == marker)
                 )
             if contact is None:
                 contact = Contact(
@@ -105,7 +103,6 @@ class ContactsService:
                     role="assigned" if is_assigned else "guest",
                     admin=is_admin,
                     telegram_id=telegram_id,
-                    source=SOURCE_SYSTEM,
                     notes=marker,
                 )
                 session.add(contact)
@@ -183,7 +180,7 @@ class ContactsService:
 
     def create_contact(
         self, *, name: str, display_name: str | None = None, role: str = "guest",
-        telegram_id: int | None = None, notes: str = "", source: str = "eva",
+        telegram_id: int | None = None, notes: str = "",
     ) -> ContactView:
         from magi.bus.db.models.local.contact import Contact
         from magi.bus.db import open_session
@@ -198,14 +195,14 @@ class ContactsService:
             row = Contact(
                 name=normalized_name, display_name=(display_name or "").strip() or None,
                 role=role.strip() or "guest", telegram_id=telegram_id, notes=notes.strip(),
-                source=source, last_seen_at=utcnow_naive(),
+                last_seen_at=utcnow_naive(),
             )
             session.add(row)
             session.commit()
             session.refresh(row)
             return _contact_view(row)
 
-    def add_note(self, contact_id: int, note: str, *, source: str = "eva") -> NoteView:
+    def add_note(self, contact_id: int, note: str) -> NoteView:
         from magi.bus.db.models.local.contact import Contact, ContactNote
         from magi.bus.db import open_session
         from magi.bus.db.base import utcnow_naive
@@ -217,7 +214,7 @@ class ContactsService:
             contact = session.get(Contact, contact_id)
             if contact is None:
                 raise ValueError(f"contact {contact_id!r} not found")
-            row = ContactNote(contact_id=contact_id, note=content, source=source)
+            row = ContactNote(contact_id=contact_id, note=content)
             session.add(row)
             contact.last_seen_at = utcnow_naive()
             session.commit()
@@ -276,7 +273,7 @@ class ContactsService:
             ))
             if row is None:
                 row = ContactNote(
-                    contact_id=contact_id, note=content, source="eva", kind="daily", note_date=note_date,
+                    contact_id=contact_id, note=content, kind="daily", note_date=note_date,
                 )
                 session.add(row)
             else:
@@ -416,7 +413,6 @@ class ContactsService:
                         role="assigned",
                         telegram_id=tg_id,
                         notes="",
-                        source="manual",
                         admin=True,
                     )
                     session.add(contact)

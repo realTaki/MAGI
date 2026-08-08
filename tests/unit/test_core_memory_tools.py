@@ -105,16 +105,16 @@ async def test_add_memory_creates_row_and_returns_dto(
 ) -> None:
     tool = AddMemoryTool()
     result = await tool.run(
-        ctx, kind="important", subject="contract", body="due 2026-09-30",
+        ctx, kind="fact", subject="contract", body="due 2026-09-30",
     )
     assert isinstance(result, ToolResult)
     assert result.is_error is False
     payload = json.loads(result.content)
     assert payload["created"]["uid"] == contact_id
-    assert payload["created"]["kind"] == "important"
+    assert payload["created"]["kind"] == "fact"
     assert payload["created"]["subject"] == "contract"
     assert payload["created"]["body"] == "due 2026-09-30"
-    assert payload["created"]["importance"] == 3  # default
+    assert payload["created"]["priority"] == 3  # default
     assert payload["created"]["source"] == "eva"
 
     # The Book actually persisted the row.
@@ -128,7 +128,7 @@ async def test_add_memory_missing_required_field(
     ctx: ToolContext,
 ) -> None:
     tool = AddMemoryTool()
-    result = await tool.run(ctx, kind="important", subject="x")
+    result = await tool.run(ctx, kind="fact", subject="x")
     assert result.is_error is True
     assert "add_memory requires fields" in result.content
     assert "body" in result.content
@@ -139,14 +139,14 @@ async def test_add_memory_book_value_error_becomes_tool_error(
     ctx: ToolContext,
 ) -> None:
     """The Book raises ``ValueError`` on invariant
-    violation (subject empty, importance out of range,
+    violation (subject empty, priority out of range,
     unknown kind/source) — the tool must translate
     that to ``ToolResult.err`` so the LLM sees a
     caller-fixable prompt, not a tool.crashed."""
     tool = AddMemoryTool()
     # Empty subject.
     bad_subject = await tool.run(
-        ctx, kind="important", subject="   ", body="ok",
+        ctx, kind="fact", subject="   ", body="ok",
     )
     assert bad_subject.is_error is True
     assert "subject" in bad_subject.content
@@ -157,11 +157,11 @@ async def test_add_memory_book_value_error_becomes_tool_error(
     assert bad_kind.is_error is True
     assert "kind" in bad_kind.content
     # Importance out of range.
-    bad_imp = await tool.run(
-        ctx, kind="important", subject="ok", body="ok", importance=99,
+    bad_pri = await tool.run(
+        ctx, kind="fact", subject="ok", body="ok", priority=99,
     )
-    assert bad_imp.is_error is True
-    assert "importance" in bad_imp.content
+    assert bad_pri.is_error is True
+    assert "priority" in bad_pri.content
 
 
 @pytest.mark.asyncio
@@ -174,7 +174,7 @@ async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
     )
     tool = AddMemoryTool()
     result = await tool.run(
-        ctx_no_bus, kind="important", subject="x", body="y",
+        ctx_no_bus, kind="fact", subject="x", body="y",
     )
     assert result.is_error is True
     assert "no bus" in result.content
@@ -188,7 +188,7 @@ async def test_complete_memory_marks_row_done(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="ongoing",
+        uid=contact_id, kind="quick_note",
         subject="ship", body="in flight",
     )
     tool = CompleteMemoryTool()
@@ -232,7 +232,7 @@ async def test_complete_memory_blocks_cross_contact(
     # belongs to a different contact.
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="ongoing",
+        uid=other_id, kind="quick_note",
         subject="not yours", body="private",
     )
     tool = CompleteMemoryTool()
@@ -264,7 +264,7 @@ async def test_delete_memory_removes_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="important",
+        uid=contact_id, kind="fact",
         subject="x", body="y",
     )
     tool = DeleteMemoryTool()
@@ -295,7 +295,7 @@ async def test_delete_memory_blocks_cross_contact(
 ) -> None:
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="important",
+        uid=other_id, kind="fact",
         subject="not yours", body="private",
     )
     tool = DeleteMemoryTool()
@@ -324,27 +324,27 @@ async def test_update_memory_patches_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="ongoing",
-        subject="orig", body="orig body", importance=2,
+        uid=contact_id, kind="quick_note",
+        subject="orig", body="orig body", priority=2,
     )
     tool = UpdateMemoryTool()
     result = await tool.run(
         ctx, memory_id=row.id,
-        subject="new", importance=5,
+        subject="new", priority=5,
     )
     assert result.is_error is False
     payload = json.loads(result.content)
     assert payload["memory"]["id"] == row.id
     assert payload["memory"]["subject"] == "new"
-    assert payload["memory"]["importance"] == 5
+    assert payload["memory"]["priority"] == 5
     # Untouched fields stay.
     assert payload["memory"]["body"] == "orig body"
-    assert payload["memory"]["kind"] == "ongoing"
+    assert payload["memory"]["kind"] == "quick_note"
 
     refreshed = bus.memory_book.get(memory_id=row.id)
     assert refreshed is not None
     assert refreshed.subject == "new"
-    assert refreshed.importance == 5
+    assert refreshed.priority == 5
 
 
 @pytest.mark.asyncio
@@ -353,8 +353,8 @@ async def test_update_memory_rejects_cross_contact(
 ) -> None:
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="important",
-        subject="orig", body="private", importance=3,
+        uid=other_id, kind="fact",
+        subject="orig", body="private", priority=3,
     )
     tool = UpdateMemoryTool()
     result = await tool.run(
@@ -373,12 +373,12 @@ async def test_update_memory_rejects_cross_contact(
 async def test_update_memory_translates_value_error(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    """Book-side invariants (subject empty, importance
+    """Book-side invariants (subject empty, priority
     out of range, body over the cap) must surface as
     LLM-facing ``ToolResult.err`` rather than crashing."""
     row = bus.memory_book.add(
-        uid=contact_id, kind="important",
-        subject="ok", body="ok", importance=3,
+        uid=contact_id, kind="fact",
+        subject="ok", body="ok", priority=3,
     )
     tool = UpdateMemoryTool()
 
@@ -390,11 +390,11 @@ async def test_update_memory_translates_value_error(
     assert "subject" in bad_subj.content
 
     # Importance out of range.
-    bad_imp = await tool.run(
-        ctx, memory_id=row.id, importance=9,
+    bad_pri = await tool.run(
+        ctx, memory_id=row.id, priority=9,
     )
-    assert bad_imp.is_error is True
-    assert "importance" in bad_imp.content
+    assert bad_pri.is_error is True
+    assert "priority" in bad_pri.content
 
     # Body over the cap.
     too_big = await tool.run(

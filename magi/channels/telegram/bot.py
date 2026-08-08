@@ -444,7 +444,7 @@ def _auto_create_stranger_contact(tgid: str, display_name: str | None,
         from magi.bus import get_bus
         contacts = get_bus().contacts
         if contacts.find_by_telegram_id(cid_int) is None:
-            contacts.create_contact(name=name, display_name=display_name, role="guest", telegram_id=cid_int, source="system")
+            contacts.create_contact(name=name, display_name=display_name, role="guest", telegram_id=cid_int)
     except Exception:
         logger.exception(
             "telegram: auto-create stranger contact failed",

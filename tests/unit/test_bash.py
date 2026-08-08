@@ -168,18 +168,32 @@ def test_run_background_returns_bash_id(workspace_ctx):
     """A short backgrounded command returns a bash_id
     immediately. The LLM gets the id, then polls via
     BashOutputTool.
+
+    Start and tear down inside one ``asyncio.run`` block: a
+    subprocess is bound to the loop that spawned it, so abandoning
+    one here would leave a ``Process`` in the process-global registry
+    whose loop is already closed. Whoever later drops that reference
+    (the reaper, or another test's fixture) triggers
+    ``BaseSubprocessTransport.__del__`` against a dead loop.
     """
-    tool = BashRunTool()
-    result = _run(
-        tool, workspace_ctx,
-        command="sleep 0.05; echo finished",
-        run_in_background=True,
-    )
-    assert not result.is_error
-    # bash_id is a short hex string in the result body.
-    assert "Bash ID:" in result.content
-    import re
-    assert re.search(r"Bash ID:\s*\w+", result.content) is not None
+    async def _start_and_reap() -> None:
+        from magi.tools.shell._manager import shutdown_background_shells
+
+        tool = BashRunTool()
+        result = await tool.run(
+            workspace_ctx,
+            command="sleep 0.05; echo finished",
+            run_in_background=True,
+        )
+        assert not result.is_error
+        # bash_id is a short hex string in the result body.
+        assert "Bash ID:" in result.content
+        import re
+        assert re.search(r"Bash ID:\s*\w+", result.content) is not None
+
+        await shutdown_background_shells()
+
+    asyncio.run(_start_and_reap())
 
 def test_run_background_full_lifecycle(workspace_ctx):
     """End-to-end: start a long-ish background process,

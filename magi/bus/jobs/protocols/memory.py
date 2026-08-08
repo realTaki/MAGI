@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-KIND_IMPORTANT = "important"
-KIND_ONGOING = "ongoing"
-ALL_KINDS = frozenset({KIND_IMPORTANT, KIND_ONGOING})
-SOURCE_MANUAL = "manual"
-SOURCE_EVA = "eva"
-SOURCE_SYSTEM = "system"
+KIND_FACT = "fact"
+KIND_QUICK_NOTE = "quick_note"
+ALL_KINDS = frozenset({KIND_FACT, KIND_QUICK_NOTE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,8 +16,7 @@ class MemoryView:
     kind: str
     subject: str
     body: str
-    importance: int
-    source: str
+    priority: int
     completed_at: str | None
     created_at: str
     updated_at: str
@@ -28,7 +24,7 @@ class MemoryView:
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id, "uid": self.uid, "kind": self.kind, "subject": self.subject,
-            "body": self.body, "importance": self.importance, "source": self.source,
+            "body": self.body, "priority": self.priority,
             "completed_at": self.completed_at, "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

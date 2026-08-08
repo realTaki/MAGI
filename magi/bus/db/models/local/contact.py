@@ -5,7 +5,7 @@ This is the **unified** contact table that replaces three
 pre-refactor tables:
 
   - ``contacts`` — was the user directory (name, role,
-    provider, api_key, telegram_id, separated_at).
+    provider, api_key, telegram_id).
   - ``contact_entries`` — was the per-MAGI contact
     directory (owner_id, person_id FK pairs + notes +
     source + last_seen_at). Now folded into ``contacts``:
@@ -49,10 +49,6 @@ console).
 ``telegram_id`` is the bound TG chat id (NULL until the
 /start binding flow). Unique across non-NULL values.
 
-``separated_at`` is the soft-delete flag — NULL means
-active, a timestamp means the contact was marked as
-separated (formerly "已离职").
-
 LLM credentials live on the ``magis`` table
 (:func:`magi.providers.factory.get_provider` resolves them
 at runtime), not on ``contacts``. Token usage is still
@@ -75,12 +71,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-
-
-# Sources — mirrors :mod:`magi.agent.memory.self.models`.
-SOURCE_MANUAL = "manual"
-SOURCE_EVA = "eva"
-SOURCE_SYSTEM = "system"
 
 
 class Contact(Base):
@@ -137,18 +127,10 @@ class Contact(Base):
     # (enforced by the unique index in migrations).
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
-    # Soft-delete. NULL = active.
-    separated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
     # Deprecated — use ``contact_notes`` table instead.
     # Kept for backward compat.  Tools write to
     # ``contact_notes``, not here.
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
-
-    # Where the notes came from.
-    source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SOURCE_MANUAL
-    )
 
     # Last time MAGI recorded something about this person.
     last_seen_at: Mapped[datetime] = mapped_column(
@@ -196,9 +178,6 @@ class ContactNote(Base):
         nullable=False,
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SOURCE_EVA,
-    )
     # Memory kind. Permanent rows are individual facts; daily
     # rows are the running log the agent loop appends to.
     kind: Mapped[str] = mapped_column(

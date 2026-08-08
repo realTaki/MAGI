@@ -5,7 +5,7 @@ Scope: every ``MemoryEntry`` row owned by the calling
 admin (``MemoryEntry.uid == admin_uid``).
 The pane renders the operator's view of "what the LLM
 knows" — both kinds, in-flight + completed, ordered by
-importance DESC then updated_at DESC (the same ordering
+priority DESC then updated_at DESC (the same ordering
 the system-prompt formatter uses, so what the LLM sees
 and what the operator sees stay in sync).
 
@@ -21,11 +21,11 @@ What the operator gets here:
 
   - **Subject** (the row's title; rendered as the table
     cell's primary text).
-  - **Kind** (``important`` / ``ongoing``) — distinct from
-    contacts; ``ongoing`` rows have a completion state
+  - **Kind** (``fact`` / ``quick_note``) — distinct from
+    contacts; ``quick_note`` rows have a completion state
     that the UI shows as a small "已完成 · YYYY-MM-DD"
     suffix on the row.
-  - **Importance** (1-5) — the same score the LLM uses
+  - **Priority** (1-5) — the same score the LLM uses
     to prioritise the system-prompt block.
   - **Updated at** — when the LLM last touched the row.
   - **Body preview** (200 chars) — the markdown body in
@@ -35,7 +35,7 @@ What the operator gets here:
     ones.
 
 The endpoint intentionally does NOT pre-filter completed
-``ongoing`` rows like the system-prompt formatter does —
+``quick_note`` rows like the system-prompt formatter does —
 the operator view is the audit trail; the formatter view
 is the LLM's working set. Different purposes, different
 filtering.
@@ -71,15 +71,14 @@ _MAX_ROWS = 200
 class MemoryOut(BaseModel):
     id: int
     # ``kind`` is exposed verbatim — the UI renders a
-    # localised badge ("重要" / "进行中") via i18n keys.
+    # localised badge ("事实" / "快速笔记") via i18n keys.
     kind: str
     subject: str
     body: str
-    importance: int
-    source: str
-    # ``completed_at`` is null for important rows (they
-    # never expire) and for in-flight ongoing rows; set
-    # for completed ongoing rows. The UI uses this to
+    priority: int
+    # ``completed_at`` is null for fact rows (they
+    # never expire) and for in-flight quick_note rows; set
+    # for completed quick_note rows. The UI uses this to
     # render the "已完成 · YYYY-MM-DD" suffix.
     completed_at: str | None = None
     created_at: str
@@ -100,8 +99,7 @@ def _serialize(row) -> MemoryOut:
         kind=row.kind,
         subject=row.subject,
         body=row.body,
-        importance=row.importance,
-        source=row.source,
+        priority=row.priority,
         completed_at=row.completed_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -127,10 +125,10 @@ def list_memory(
     guessing.
 
     Ordering mirrors the system-prompt formatter
-    (``importance DESC, updated_at DESC``) so what the LLM
+    (``priority DESC, updated_at DESC``) so what the LLM
     sees in its working block lines up with what the
-    operator sees in the dashboard. Both ``important``
-    and ``ongoing`` kinds are included regardless of
+    operator sees in the dashboard. Both ``fact``
+    and ``quick_note`` kinds are included regardless of
     completion state — the operator view is the audit
     trail.
     """

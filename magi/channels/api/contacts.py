@@ -78,7 +78,6 @@ class ContactOut(BaseModel):
     telegram_id: int | None = None
     notes: str = ""
     notes_count: int = 0
-    source: str = ""
     last_seen_at: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -157,7 +156,6 @@ def _serialize(
         telegram_id=view.telegram_id,
         notes=view.notes,
         notes_count=notes_count,
-        source=view.source,
         last_seen_at=view.last_seen_at,
         created_at=view.created_at,
         updated_at=view.updated_at,
@@ -370,7 +368,6 @@ class NoteOut(BaseModel):
     id: int
     contact_id: int
     note: str
-    source: str
     created_at: str
     updated_at: str
 
@@ -385,7 +382,6 @@ def _note_view_out(view: NoteView) -> NoteOut:
         id=view.id,
         contact_id=view.contact_id,
         note=view.note,
-        source=view.source,
         created_at=view.created_at,
         updated_at=view.updated_at,
     )

@@ -28,7 +28,6 @@ export type ContactRow = {
   id: number;
   name: string;
   display_name: string | null;
-  separated_at: string | null;
   role: "assigned" | "guest";
   admin: boolean;
   telegram_id: number | null;

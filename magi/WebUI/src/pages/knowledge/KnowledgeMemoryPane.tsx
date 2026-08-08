@@ -22,7 +22,7 @@ function formatDateOnly(iso: string): string {
 export function KnowledgeMemoryPane() {
   type MemoryRow = {
     id: number; kind: string; subject: string; body: string;
-    importance: number; source: string; completed_at: string | null;
+    priority: number; source: string; completed_at: string | null;
     created_at: string; updated_at: string;
   };
   type MemoryListResponse = { items: MemoryRow[]; total: number };
@@ -51,7 +51,7 @@ export function KnowledgeMemoryPane() {
             <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnSubject")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnKind")}</th>
-              <th className="py-2 pr-4 font-medium w-20">{t("settings.knowledgeMemoryColumnImportance")}</th>
+              <th className="py-2 pr-4 font-medium w-20">{t("settings.knowledgeMemoryColumnPriority")}</th>
               <th className="py-2 pr-4 font-medium whitespace-nowrap">{t("settings.knowledgeMemoryColumnUpdated")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnBody")}</th>
             </tr></thead>
@@ -63,11 +63,11 @@ export function KnowledgeMemoryPane() {
                   <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
                     {t("settings.knowledgeMemoryCompleted")} · {formatDateOnly(m.completed_at)}</span>
                 ) : (
-                  <span className={`inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 ${m.kind === "important" ? "bg-sky-pale/40 text-ink-soft border-sky-light/40" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
-                    {m.kind === "important" ? t("settings.knowledgeMemoryKindImportant") : t("settings.knowledgeMemoryKindOngoing")}</span>
+                  <span className={`inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 ${m.kind === "fact" ? "bg-sky-pale/40 text-ink-soft border-sky-light/40" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                    {m.kind === "fact" ? t("settings.knowledgeMemoryKindFact") : t("settings.knowledgeMemoryKindQuickNote")}</span>
                 )}</td>
                 <td className="py-2 pr-4 text-xs text-ink-soft whitespace-nowrap">
-                  <span aria-label={`${m.importance}/5`}>{"●".repeat(m.importance)}<span className="text-ink-soft/40">{"○".repeat(5 - m.importance)}</span></span></td>
+                  <span aria-label={`${m.priority}/5`}>{"●".repeat(m.priority)}<span className="text-ink-soft/40">{"○".repeat(5 - m.priority)}</span></span></td>
                 <td className="py-2 pr-4 text-ink-soft text-xs whitespace-nowrap">{formatDateOnly(m.updated_at)}</td>
                 <td className="py-2 pr-4 text-ink-soft text-xs max-w-md" title={m.body}>{truncateMemoryBody(m.body)}</td>
               </tr>

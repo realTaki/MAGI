@@ -73,8 +73,6 @@ def bind_telegram(
     contact = get_bus().contacts.get(payload.uid)
     if contact is None:
         raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.uid} not found")
-    if contact.separated:
-        raise MagiHTTPException(status_code=409, code="conflict.contact_separated", detail="restore the separated contact before binding Telegram")
     get_bus().contacts.bind_telegram(payload.uid, telegram_id_int)
 
     return TGBindResponse(

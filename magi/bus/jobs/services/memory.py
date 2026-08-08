@@ -16,8 +16,8 @@ from sqlalchemy import select
 
 from magi.bus.jobs.protocols.memory import (
     ALL_KINDS,
-    KIND_IMPORTANT,
-    KIND_ONGOING,
+    KIND_FACT,
+    KIND_QUICK_NOTE,
     MemoryView,
 )
 
@@ -33,7 +33,7 @@ def _iso(value: datetime | None) -> str | None:
 def _view(row) -> MemoryView:
     return MemoryView(
         id=int(row.id), uid=int(row.uid), kind=str(row.kind), subject=str(row.subject), body=str(row.body),
-        importance=int(row.importance), source=str(row.source), completed_at=_iso(row.completed_at),
+        priority=int(row.priority), completed_at=_iso(row.completed_at),
         created_at=_iso(row.created_at) or "", updated_at=_iso(row.updated_at) or "",
     )
 
@@ -54,9 +54,9 @@ class MemoryService:
             if kind is not None:
                 stmt = stmt.where(MemoryEntry.kind == kind)
             if not include_completed:
-                stmt = stmt.where((MemoryEntry.kind != KIND_ONGOING) | MemoryEntry.completed_at.is_(None))
+                stmt = stmt.where((MemoryEntry.kind != KIND_QUICK_NOTE) | MemoryEntry.completed_at.is_(None))
             rows = session.scalars(
-                stmt.order_by(MemoryEntry.importance.desc(), MemoryEntry.updated_at.desc()).limit(limit)
+                stmt.order_by(MemoryEntry.priority.desc(), MemoryEntry.updated_at.desc()).limit(limit)
             ).all()
             return [_view(row) for row in rows]
 
@@ -71,7 +71,7 @@ class MemoryService:
             return _view(row) if row is not None else None
 
     def add(
-        self, uid: int, *, kind: str, subject: str, body: str, importance: int = 3, source: str = "eva",
+        self, uid: int, *, kind: str, subject: str, body: str, priority: int = 3,
     ) -> MemoryView:
         from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
@@ -84,7 +84,7 @@ class MemoryService:
         with open_session(self._state_dir) as session:
             row = MemoryEntry(
                 uid=uid, kind=kind, subject=subject, body=body,
-                importance=max(1, min(5, int(importance))), source=source,
+                priority=max(1, min(5, int(priority))),
             )
             session.add(row)
             session.commit()
@@ -93,7 +93,7 @@ class MemoryService:
 
     def update(
         self, memory_id: int, *, subject: str | None = None, body: str | None = None,
-        importance: int | None = None,
+        priority: int | None = None,
     ) -> MemoryView:
         from magi.bus.db.models.local.memory import MemoryEntry
         from magi.bus.db import open_session
@@ -109,8 +109,8 @@ class MemoryService:
                 row.body = body.strip()[: 8 * 1024]
                 if not row.body:
                     raise ValueError("body is required")
-            if importance is not None:
-                row.importance = max(1, min(5, int(importance)))
+            if priority is not None:
+                row.priority = max(1, min(5, int(priority)))
             session.commit()
             session.refresh(row)
             return _view(row)
@@ -146,8 +146,8 @@ class MemoryService:
 # the contract is the same across deploys and the formatter is a pure
 # function with no I/O dependency.
 _KIND_HEADERS: dict[str, str] = {
-    KIND_IMPORTANT: "重要的事",
-    KIND_ONGOING: "正在进行",
+    KIND_FACT: "事实",
+    KIND_QUICK_NOTE: "快速笔记",
 }
 
 # Soft cap on the rendered block. ~4 KB ≈ 1k tokens — fits the LLM's
@@ -157,9 +157,9 @@ _MAX_RENDER_BYTES = 4 * 1024
 
 def _row_to_bullet(row: MemoryView) -> str:
     """One bullet per row, with a per-kind prefix."""
-    if row.kind == KIND_IMPORTANT:
+    if row.kind == KIND_FACT:
         prefix = f"**{row.subject}**"
-    elif row.kind == KIND_ONGOING:
+    elif row.kind == KIND_QUICK_NOTE:
         prefix = f"**{row.subject}** (in flight)"
     else:
         prefix = f"**{row.subject}** [{row.kind}]"
@@ -180,7 +180,7 @@ def format_memory_block(rows: Iterable[MemoryView]) -> str:
     if not rows:
         return ""
 
-    by_kind: dict[str, list[MemoryView]] = {KIND_IMPORTANT: [], KIND_ONGOING: []}
+    by_kind: dict[str, list[MemoryView]] = {KIND_FACT: [], KIND_QUICK_NOTE: []}
     for r in rows:
         by_kind.setdefault(r.kind, []).append(r)
 
@@ -192,7 +192,7 @@ def format_memory_block(rows: Iterable[MemoryView]) -> str:
         "Update via the memory tools; do not invent or repeat rows here.",
         "",
     ]
-    for kind in (KIND_IMPORTANT, KIND_ONGOING):
+    for kind in (KIND_FACT, KIND_QUICK_NOTE):
         items = by_kind.get(kind, [])
         if not items:
             continue

@@ -22,22 +22,15 @@ from magi.new_bus.library.local.contactBook import (
     ContactNoteBook,
     ROLE_ASSIGNED,
     ROLE_GUEST,
-    SOURCE_EVA,
-    SOURCE_MANUAL,
-    SOURCE_SYSTEM,
 )
 from magi.new_bus.library.local.hookSignoffBook import HookSignoff, HookSignoffBook
 from magi.new_bus.library.local.mcpServerBook import McpServer, McpServerBook
 from magi.new_bus.library.local.memoryBook import (
     ALL_KINDS,
-    ALL_SOURCES as ALL_MEMORY_SOURCES,
-    KIND_IMPORTANT,
-    KIND_ONGOING,
+    KIND_FACT,
+    KIND_QUICK_NOTE,
     Memory,
     MemoryBook,
-    SOURCE_EVA,
-    SOURCE_MANUAL,
-    SOURCE_SYSTEM,
 )
 from magi.new_bus.library.local.sessionBook import (
     Message,
@@ -83,9 +76,8 @@ __all__ = [
     "ContactNoteBook",
     "HookSignoff",
     "HookSignoffBook",
-    "KIND_IMPORTANT",
-    "KIND_ONGOING",
-    "ALL_MEMORY_SOURCES",
+    "KIND_FACT",
+    "KIND_QUICK_NOTE",
     "McpServer",
     "McpServerBook",
     "Memory",
@@ -98,9 +90,6 @@ __all__ = [
     "SessionBook",
     "Setting",
     "SettingBook",
-    "SOURCE_EVA",
-    "SOURCE_MANUAL",
-    "SOURCE_SYSTEM",
     "Task",
     "TaskBook",
     "TaskRun",
