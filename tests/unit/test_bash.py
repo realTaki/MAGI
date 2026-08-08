@@ -489,7 +489,7 @@ def test_shutdown_terminates_live_background_shells(workspace_ctx, clean_registr
     Nothing else knows these pids, so a missed teardown leaks the
     process until the container dies.
     """
-    from magi.tools.shell import shutdown_background_shells
+    from magi.tools.shell._manager import shutdown_background_shells
 
     M = clean_registry
 

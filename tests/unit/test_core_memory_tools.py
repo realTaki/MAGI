@@ -20,12 +20,6 @@ from typing import Any
 
 import pytest
 
-# Importing the inner modules through their submodule
-# path bypasses ``magi.new_bus.__init__`` so we don't
-# pull in whatever WIP the user has staged there
-# (e.g. an in-flight singleton refactor that doesn't
-# yet expose the canonical symbols). The actual code
-# under test is identical.
 from magi.new_bus.db.engine import EngineFactory
 from magi.new_bus.library.local.contactBook import ContactBook
 from magi.new_bus.library.local.memoryBook import MemoryBook

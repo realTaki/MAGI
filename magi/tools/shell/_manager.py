@@ -164,6 +164,29 @@ class _BackgroundShell:
         self.status = "terminated"
         self.exit_code = self.process.returncode
         self.ended_at = time.monotonic()
+        self._close_transport()
+
+    def _close_transport(self) -> None:
+        """Release the subprocess transport eagerly.
+
+        ``process.wait()`` reaps the child but leaves the stdout pipe
+        transport open — the monitor read from ``process.stdout``, so
+        a protocol still holds it. It would normally be released when
+        the ``Process`` is garbage-collected, but on the shutdown path
+        that happens *after* the event loop is closed, and
+        ``BaseSubprocessTransport.__del__`` then calls ``call_soon``
+        on a dead loop. That surfaces as a stack trace on every MAGI
+        exit that had background shells.
+
+        ``_transport`` is private on :class:`asyncio.subprocess.Process`
+        with no public equivalent; guarded so a CPython change can only
+        cost us the tidy-up, never the shutdown.
+        """
+        transport = getattr(self.process, "_transport", None)
+        if transport is None:
+            return
+        with suppress(Exception):
+            transport.close()
 
 
 class _BackgroundShellManager:
@@ -301,6 +324,13 @@ class _BackgroundShellManager:
                 except Exception:
                     returncode = -1
                 shell.update_status(is_alive=False, exit_code=returncode)
+                # Same reasoning as the kill path: release the
+                # transport now rather than leaving it for a GC that
+                # may land after the loop is gone. A naturally
+                # completed shell lingers in the registry until the
+                # reaper takes it, so this is the only point where we
+                # know its pipes are finished with.
+                shell._close_transport()
             except Exception as e:
                 if bash_id in cls._shells:
                     cls._shells[bash_id].mark_error(f"monitor error: {e}")
@@ -317,11 +347,19 @@ class _BackgroundShellManager:
         shell = cls.get(bash_id)
         if shell is None:
             raise ValueError(f"Shell not found: {bash_id}")
-        # Stop the monitor first so it doesn't race
-        # with our own process.wait() / process.terminate().
+        # Stop the monitor first so it doesn't race with our own
+        # process.wait() / process.terminate(). ``cancel()`` only
+        # *requests* cancellation — the coroutine keeps running until
+        # its next await point, so we must await it to actually be
+        # sure it's done. Skipping the await leaves a pending task
+        # holding the subprocess transport; it then gets collected
+        # after the loop closes, which is where the
+        # ``Event loop is closed`` noise on shutdown comes from.
         monitor = cls._monitor_tasks.pop(bash_id, None)
         if monitor is not None and not monitor.done():
             monitor.cancel()
+            with suppress(asyncio.CancelledError):
+                await monitor
         await shell.terminate()
         cls._shells.pop(bash_id, None)
         return shell
@@ -361,6 +399,8 @@ class _BackgroundShellManager:
         for task in cls._monitor_tasks.values():
             if not task.done():
                 task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
         cls._monitor_tasks.clear()
         cls._shells.clear()
         if killed:
