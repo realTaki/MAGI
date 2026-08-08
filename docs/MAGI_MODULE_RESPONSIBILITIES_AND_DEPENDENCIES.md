@@ -24,7 +24,7 @@ MAGI 的模块边界遵循以下规则：
 5. `magi.plugins` 严格只依赖 `magi.bus`，不能把 Agent、Tools、Channels 或 Connectors 当作插件 SDK。
 6. `magi.tools` 是最底层的工具运行时与能力层，定义统一合同、目录、执行器注册表和唯一的 ToolWorker；核心 built-in tools 只保留原子化、通用能力。
 7. `magi.mcp` 与 `magi.connectors` 都是 Tools 的上层适配实现，依赖并实现 `magi.tools` 定义的 `ToolProvider` / `ToolExecutor` 合同：MCP 适配标准 MCP Server；Connectors 为具体产品提供一组专用工具。
-8. MCP 和 Connectors 不拥有独立 Worker，也不消费 BUS Tool Job；由 Composition Root 将其适配器实例注册到 Tools，ToolWorker 在运行时通过注册表调用它们。
+8. MCP 拥有独立的 `McpWorker`，负责管理 MCP Server 连接的生命周期、消费 `mcpServerChangedJobBoard` 变更通知，并作为 `McpServerBook` 的唯一写者。Connectors 不拥有独立 Worker。MCP 和 Connectors 不消费 BUS Tool Job；由 Composition Root 将适配器实例注册到 Tools，ToolWorker 在运行时通过注册表调用它们。
 9. `magi.channels.tasks` 是 BUS 上的通用任务调度 Worker。API、Tools 和 Proactive 只向 BUS 发布任务管理命令；Tasks 消费命令、登记调度，并在到期时通过 BUS 唤起 Agent。
 10. `magi.channels.tasks` 不包含任何预设任务或主动策略；`magi.proactive` 才负责定义系统级任务与心跳，以增强 Agent 的主动性。
 11. WebUI 前端只依赖 `magi.channels.api` 提供的 HTTP、WebSocket 或流式接口。
@@ -105,7 +105,7 @@ agent / plugins ─────┘
 | `magi.proactive` | 定义系统级任务和心跳，通过 BUS 登记调度，增强 Agent 主动性 | `magi.bus`、`magi.prompts` | 开发者定义的主动策略 |
 | `magi.agent` | 推理循环、上下文构建、LLM 调用 | `magi.bus`、`magi.prompts` | Runtime 中的 Agent Worker |
 | `magi.tools` | 定义统一工具合同、Catalog 同步、Executor Registry 和唯一 ToolWorker；承载原子化通用 built-in tools 以及通过 BUS 管理任务的工具 | `magi.bus` | Agent Tool Jobs、核心 built-in tools、已注册适配器 |
-| `magi.mcp` | 实现 Tools 合同，将 MCP Server 的发现与执行能力注册为适配器；无独立 Worker | `magi.tools` | MCP Server 配置与连接 |
+| `magi.mcp` | 实现 Tools 合同，将 MCP Server 的发现与执行能力注册为适配器；拥有独立 McpWorker 管理连接生命周期和配置变更 | `magi.tools`、`magi.new_bus` | MCP Server 配置与连接 |
 | `magi.connectors` | 实现 Tools 合同，按产品组织一组专用工具；无独立 Worker | `magi.tools` | 产品专用 API、SDK、CLI 或本地自动化接口 |
 | `magi.plugins` | 插件发现、生命周期和插件能力登记 | `magi.bus` | 外部或内置插件 |
 | `magi.bus` | 命令、事件、查询、队列、事务和一致性协议 | `magi.db` | 所有 BUS 消费者 |
@@ -234,28 +234,30 @@ Tools 是工具体系的底座，不等于所有工具实现都必须放在 `mag
 
 #### 负责
 
-- 读取 MCP Server 配置。
+- 读取 MCP Server 配置（通过 `McpServerBook`）。
 - 管理 MCP 连接、会话和重连。
 - 从 MCP Server 发现工具。
 - 将 MCP 工具描述转换为 `magi.tools` 的统一 Tool Descriptor。
 - 将 Tools 发来的执行请求转换为 MCP 调用并返回规范化结果。
+- 运行独立的 `McpWorker`：启动时引导连接所有 enabled server，运行时消费 `mcpServerChangedJobBoard` 变更通知。
+- 作为 `McpServerBook` 的唯一写者，在同一个 handler 中完成配置写入与连接重载。
 
 #### 不负责
 
-- 不直接向 BUS 注册工具或写入工具结果。
-- 不直接访问数据库。
-- 不拥有独立 ToolWorker，也不从 BUS 领取 Tool Job。
-- 不自行实现权限、重试、幂等或结果持久化；这些属于 Tools 运行时。
+- 不直接向 BUS 注册工具或写入工具结果（通过 `register_tools` 注入 registry）。
+- 不拥有独立的 Tool Job Worker，不从 BUS 领取 Tool Job；ToolWorker 通过 registry 调用 MCP 工具实例。
 - 不被 `magi.tools` 反向导入。
 - 不参与 Agent 上下文和推理。
+- MCP 管理工具（add/list/update/delete）位于 `magi.tools.mcp`，作为 builtin tools 注册，不属于 `magi.mcp` 包。
 
 #### 依赖
 
 ```text
 magi.mcp → magi.tools → magi.bus → magi.db
+magi.mcp → magi.new_bus (McpServerBook + mcpServerChangedJobBoard)
 ```
 
-其中只有相邻模块之间存在直接代码依赖。运行时由 ToolWorker 通过 Tools 的 Executor Registry 调用已注册的 MCP Adapter；该实例由 Composition Root 注入，因此不会形成 Tools 对 MCP 的源码依赖。
+其中只有相邻模块之间存在直接代码依赖。运行时由 ToolWorker 通过 Tools 的 Executor Registry 调用已注册的 MCP Adapter；该实例由 McpWorker 注入，因此不会形成 Tools 对 MCP 的源码依赖。McpWorker 是 `McpServerBook` 的唯一写者，manage tools 只 publish Job 不直写 Book。
 
 ### 5.6 `magi.connectors`
 
@@ -595,16 +597,29 @@ Agent 从 BUS 读取 Tool Catalog，因此不需要调用 Tools 模块获得工�
 ```mermaid
 sequenceDiagram
     participant MS as MCP Server
-    participant MCP as MCP Adapter
+    participant MW as McpWorker
+    participant MCP as MCP Adapter (MCPTool)
     participant TOOLS as ToolWorker / Registry
     participant BUS as BUS
 
-    MS-->>MCP: 工具列表
-    MCP->>TOOLS: 注册标准 Tool Descriptor
+    MW->>MS: list_tools (并行连接所有 enabled server)
+    MS-->>MW: 工具列表
+    MW->>MCP: 构建 MCPTool 包装器
+    MW->>TOOLS: register_tools("mcp", discovered_tools)
     TOOLS->>BUS: 同步 Tool Catalog
+
+    Note over MW,BUS: 运行时变更: manage tools publish Job
+
+    MW->>BUS: claim McpServerChangedJob
+    MW->>MW: write Book + 重连/断开 MCP Server
+    MW->>TOOLS: re-inject tools
+    TOOLS->>BUS: 重发布 Tool Catalog
+
+    Note over TOOLS,BUS: 工具执行: ToolWorker 通过 registry 调用
+
     BUS-->>TOOLS: 分配工具执行请求
-    TOOLS->>MCP: 调用 MCP Adapter
-    MCP->>MS: MCP Tool Call
+    TOOLS->>MCP: 调用 MCPTool.run()
+    MCP->>MS: MCP Tool Call (session.call_tool)
     MS-->>MCP: MCP Result
     MCP-->>TOOLS: 标准执行结果
     TOOLS->>BUS: 写入 Tool Result

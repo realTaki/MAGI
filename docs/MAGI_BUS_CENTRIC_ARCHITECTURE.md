@@ -108,10 +108,11 @@ Proactive publishes scheduling commands to BUS; it does not import
 `magi.__main__` is the composition root. It creates the runtime through
 `bus.bootstrap()`, starts workers/adapters, instantiates MCP and Connector
 executors, registers those instances with the Tools registry, and supplies
-environment-specific configuration. MCP and Connectors do not own independent
-job workers: ToolWorker is the sole consumer of Tool Jobs. A domain module must
-not initialise a database itself or import another domain merely to obtain a
-runtime capability.
+environment-specific configuration. The `McpWorker` is an independent worker
+that manages MCP server connections and consumes the `mcpServerChangedJobBoard`;
+Connectors do not own independent job workers. ToolWorker remains the sole
+consumer of Tool Jobs. A domain module must not initialise a database itself or
+import another domain merely to obtain a runtime capability.
 
 ### 3.2 Forbidden dependencies
 
@@ -204,7 +205,7 @@ repositories; expanding it into a catch-all application API is not the goal.
 | `magi.prompts` | reusable prompt templates and prompt content resources | runtime state, persistence or cross-module coordination |
 | `magi.agent` | reasoning, context, one provider step, AgentWorker | direct DB access, Tool execution, channel delivery |
 | `magi.tools` | Tool contracts, executable registry, catalog synchronisation and the sole ToolWorker | provider-specific loading in the core, Agent schema authority, direct DB/channel access |
-| `magi.mcp` | MCP configuration, connections, discovery and ToolExecutor/ToolProvider adapters | an independent Tool Job worker, direct BUS/DB access or reverse dependency from Tools |
+| `magi.mcp` | MCP configuration, connections, discovery, ToolExecutor/ToolProvider adapters, and the McpWorker that owns every MCP connection and consumes the mcpServerChangedJobBoard | direct old-bus access, an independent Tool Job worker, direct DB access, or reverse dependency from Tools |
 | `magi.channels` | protocol ingress, delivery workers and adapters | Agent orchestration, Tool execution, DB access |
 | `magi.channels.api` | HTTP/SSE backend used by the WebUI frontend | direct Agent/Tool/DB access |
 | `magi.channels.tasks` | generic scheduler Worker consuming BUS commands and publishing due Agent inputs | preset tasks, proactive policy or direct DB/Agent access |
@@ -417,31 +418,41 @@ transcript state through BUS.
 The database Tool Catalog is the only Agent schema source:
 
 ```text
-MCP discovery -> MCP adapter ----------------\
-product discovery -> Connector adapter -------+-> Tools registry -> BUS snapshot
-built-in / Skill discovery ------------------/                    -> Local SQLite
-Agent                                                        <- BUS list_schemas
+McpWorker bootstrap -> MCP adapter (MCPTool) ----------\
+product discovery -> Connector adapter -----------------+-> Tools registry -> BUS snapshot
+built-in / Skill discovery (incl. MCP manage tools) ---/                    -> Local SQLite
+Agent                                                              <- BUS list_schemas
 BUS Tool Job -> ToolWorker -> executable registry -> registered executor instance
 ```
 
-`magi.mcp` and `magi.connectors` adapt external capabilities into
-`ToolProvider` and `ToolExecutor` contracts owned by `magi.tools`. They
-import those contracts; Tools does not import either concrete adapter module.
-The composition root instantiates the adapters and registers their instances
-with the Tools registry; Tools then synchronises catalog state through BUS.
+`magi.mcp` adapts external MCP server capabilities into `ToolProvider` and
+`ToolExecutor` contracts owned by `magi.tools`. The `McpWorker` is the sole
+owner of MCP connections: it bootstraps from `McpServerBook`, discovers tools,
+injects them into the registry via `register_tools("mcp", ...)`, and consumes
+the `mcpServerChangedJobBoard` for runtime configuration changes.
+
+`magi.connectors` adapt product-specific capabilities through the same
+contracts. Both import the contracts from Tools; Tools does not import either
+concrete adapter module.
+
+The composition root instantiates the workers and starts them in order:
+Provider → Tool → MCP → Agent → Delivery → Proactive. The MCP worker
+starts after Tools (catalog ready) and before Agent (tool menu complete).
 
 The three directions are intentionally different:
 
 ```text
-code imports:       MCP / Connectors -> Tools -> BUS
-composition:        __main__ -> Tools + MCP + Connectors
+code imports:       MCP / Connectors -> Tools -> BUS (new_bus for MCP)
+composition:        __main__ -> Tools + MCP + Connectors + Workers
 runtime invocation: BUS Tool Job -> ToolWorker -> registry -> adapter instance
+runtime MCP change: manage tools -> publish Job -> McpWorker claim -> re-inject
 ```
 
-MCP and Connectors have no independent Tool Job workers. ToolWorker owns job
-claiming, policy, timeout, retry, idempotency and result persistence, while an
-adapter owns only provider-specific discovery and execution. Runtime invocation
-of an injected object does not reverse the source-code dependency.
+McpWorker is not a Tool Job worker — it does not claim tool execution jobs.
+ToolWorker owns job claiming, policy, timeout, retry, idempotency and result
+persistence, while each adapter owns only provider-specific discovery and
+execution. Runtime invocation of an injected object does not reverse the
+source-code dependency.
 
 A definition includes name, source, description, JSON schema, allowed roles,
 enabled state, implementation version, schema hash, and revision. Snapshot
