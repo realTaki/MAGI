@@ -163,7 +163,7 @@ def _patch_worker_build(monkeypatch, connections: list[_StubConnection]) -> None
     for stub in connections:
         queue.setdefault(stub.name, []).append(stub)
 
-    def _factory(self: McpWorker, server: Any, timeouts: Any) -> _StubConnection:
+    def _factory(self: McpWorker, server: Any) -> _StubConnection:
         pending = queue.get(server.name, [])
         if not pending:
             raise AssertionError(

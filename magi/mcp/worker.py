@@ -193,7 +193,7 @@ class McpWorker:
         connected: dict[str, MCPServerConnection] = {}
 
         async def _connect_one(server: Any) -> tuple[str, MCPServerConnection | None]:
-            conn = self._build_connection(server, timeouts)
+            conn = self._build_connection(server)
             ok = await conn.connect(timeouts)
             return (server.name, conn if ok else None)
 
@@ -303,7 +303,7 @@ class McpWorker:
             return
 
         timeouts = self._timeouts_from_bus()
-        conn = self._build_connection(row, timeouts)
+        conn = self._build_connection(row)
         if await conn.connect(timeouts):
             self._connections[name] = conn
         self._reinject_tools()
@@ -323,7 +323,7 @@ class McpWorker:
             return
 
         timeouts = self._timeouts_from_bus()
-        conn = self._build_connection(server, timeouts)
+        conn = self._build_connection(server)
         if await conn.connect(timeouts):
             self._connections[server.name] = conn
         self._reinject_tools()
@@ -386,22 +386,18 @@ class McpWorker:
     def _build_connection(
         self,
         server: Any,
-        timeouts: MCPTimeoutConfig,
     ) -> MCPServerConnection:
         """Wrap a DTO row in a fresh :class:`MCPServerConnection`.
 
-        *timeouts* is accepted to match the test patch surface and
-        to keep room for future per-server timeouts that come from
-        the bus (today the row's own ``connect_timeout`` /
-        ``execute_timeout`` / ``sse_read_timeout`` win; the
-        :class:`MCPServerConnection` falls back to *timeouts* when
-        the row leaves a slot blank). Imported lazily so the
-        registry / startup code paths that import
-        :class:`McpWorker` don't drag the ``mcp`` SDK at import time.
+        The row's own ``connect_timeout`` / ``execute_timeout`` /
+        ``sse_read_timeout`` are passed through directly; at connect
+        time the :class:`MCPServerConnection` falls back to the
+        global defaults for any slot the row leaves blank.
+
+        Imported lazily so the registry / startup code paths that
+        import :class:`McpWorker` don't drag the ``mcp`` SDK at
+        import time.
         """
-        # Silence ARG002 while keeping the parameter — tests
-        # monkeypatch this method and rely on the two-arg shape.
-        del timeouts
         from magi.mcp.MCPClient import MCPServerConnection
 
         return MCPServerConnection(

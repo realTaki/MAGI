@@ -1,91 +1,123 @@
-"""chatJobBoard — 聊天消息作业。
+"""chatJobBoard — durable agent turn queue.
 
-public:  ChatJob (入参), ChatJobResult (出参) — 平级 dataclass
-internal: _ChatJobRow (ORM) — 数据库实现细节
+Backed by the ``agent_inbox`` table.  A publish inserts a new row;
+a claim picks up the oldest pending row, updates its ``status`` and
+lease fields, and returns the job snapshot.  Submitting the result
+moves the row's ``status`` to ``completed``/``failed``.
 """
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobBoard
+from magi.new_bus.guild.base import BaseJobBoard, new_job_id
 
-# -- public dataclasses ----------------------------------------------------
+
+# =========================================================================
+# chatJobBoard — durable agent turn queue (agent_inbox table)
+# =========================================================================
+
 
 @dataclass(frozen=True, slots=True)
 class ChatJob:
-    """publisher 发布 / worker 认领。"""
-    text: str
-    conversation_id: str
-    channel: str = ""
-    metadata: dict | None = None
-    job_id: str = ""
+    """Snapshot of a turn request (publisher input)."""
+
+    event_id: str = ""
+    run_id: str = ""
+    conversation_id: str | None = None
+    correlation_id: str | None = None
+    kind: str = "chat"
+    payload: dict[str, Any] | None = None
+    inbox_event_id: str | None = None
+    available_at: datetime | None = None
+    received_seq: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class ChatJobResult:
-    """worker 提交 / publisher 轮询。"""
-    job_id: str
-    success: bool
-    reply: str | None = None
-    error: str | None = None
+    """Final state of a turn."""
+
+    event_id: str = ""
+    success: bool = False
+    status: str = "failed"
+    result: dict[str, Any] | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
 
 
-# -- internal ORM ----------------------------------------------------------
-
-class _ChatJobRow(Base):
-    __tablename__ = "chat_jobs"
+class _AgentInboxRow(Base):
+    __tablename__ = "agent_inbox"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
-    # 请求
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    conversation_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    channel: Mapped[str] = mapped_column(String(32), default="")
-    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
-    # 租约
+    event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    inbox_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow_naive
+    )
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    # 结果
-    reply: Mapped[str | None] = mapped_column(Text, nullable=True)
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # 时间
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow_naive
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
 
-# -- Queue -----------------------------------------------------------------
+class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
+    """Queue (write + claim + submit_result) for agent turns."""
 
-class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
-    job_model = _ChatJobRow
+    job_model = _AgentInboxRow
     job_cls = ChatJob
     result_cls = ChatJobResult
+    natural_key_attr = "event_id"
+
+    def _insert_pending(self, session, job: ChatJob, **kwargs) -> _AgentInboxRow:
+        event_id = job.event_id or new_job_id()
+        row = _AgentInboxRow(
+            event_id=event_id,
+            run_id=job.run_id,
+            conversation_id=job.conversation_id,
+            correlation_id=job.correlation_id,
+            inbox_event_id=job.inbox_event_id,
+            kind=job.kind or "chat",
+            payload=job.payload,
+            received_seq=job.received_seq,
+            status="pending",
+        )
+        session.add(row)
+        session.flush()
+        return row
 
     def publish(self, job: ChatJob) -> str:
-        """发布聊天作业，返回 job_id。"""
+        """发布 agent turn 请求，返回 event_id。"""
         with self._session() as s:
-            row = _ChatJobRow(
-                job_id=uuid.uuid4().hex,
-                status="pending",
-                text=job.text,
-                conversation_id=job.conversation_id,
-                channel=job.channel,
-                metadata_json=job.metadata,
-            )
-            s.add(row)
-            s.flush()
+            row = self._insert_pending(s, job)
             s.commit()
-            return row.job_id
+            return row.event_id
+
+
+__all__ = [
+    "ChatJob",
+    "ChatJobResult",
+    "chatJobBoard",
+    "_AgentInboxRow",
+]

@@ -86,7 +86,7 @@ class NewBus:
 
     # -- local: agent (Job board) ---------------------------------------------
 
-    agent_job_board: object  # runAgentJobBoard
+    agent_job_board: object  # chatJobBoard
 
     # -- local: LLM (Job board) ----------------------------------------------
 
@@ -227,7 +227,7 @@ def _bootstrap_with_dirs(
         changeProviderConfigJobBoard,
         deliveryJobBoard,
         mcpServerChangedJobBoard,
-        runAgentJobBoard,
+        chatJobBoard,
         runToolJobBoard,
         seedPresetTasksJobBoard,
         sendA2AJobBoard,
@@ -304,7 +304,7 @@ def _bootstrap_with_dirs(
     stream_hub = StreamHub()
 
     # ---- local job boards ---------------------------------------------------
-    agent_job_board = runAgentJobBoard(local_factory)
+    agent_job_board = chatJobBoard(local_factory)
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
     delivery_job_board = deliveryJobBoard(local_factory)

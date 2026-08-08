@@ -522,7 +522,13 @@ right after the Tools worker, reads enabled rows from
 ``bus.mcp_servers_book``, opens every connection in parallel, and
 re-injects the discovered tools via
 :func:`magi.tools.registry.register_tools` under source
-``"mcp"`` (manage tools under ``"mcp_manage"``). The Tools
+``"mcp"``. The four MCP manage tools
+(``add_mcp_server`` / ``list_mcp_servers`` /
+``update_mcp_server`` / ``delete_mcp_server``) live under
+:mod:`magi.tools.mcp` and are registered as builtins —
+they publish to the ``mcpServerChangedJobBoard``, and the
+McpWorker applies the write + reconnects as the sole writer
+of :class:`McpServerBook`. The Tools
 worker's existing ``on_tools_changed`` listener takes care of
 republishing the catalog.
 
@@ -671,12 +677,15 @@ MCP Server → McpWorker.connect → magi.mcp.MCPServerConnection → MCPTool
   → MCP Server → BUS (tool result)
 ```
 
-The McpWorker is the sole owner of MCP connections; the loader
-no longer carries a module-level connection cache. WebUI / LLM
-manage tools still write to the ``mcp_servers`` table (via the
-old bus ``McpService``) and the worker picks the changes up at
-next startup — runtime change-job publishing is scheduled for a
-follow-up migration.
+The McpWorker is the sole owner of MCP connections and the sole
+writer to ``McpServerBook``; the loader no longer carries a
+module-level connection cache. The LLM manage tools (under
+``magi.tools.mcp``) publish ``McpServerChangedJob`` to the
+``mcpServerChangedJobBoard`` and await the Worker's result —
+they do not write the Book directly. The WebUI API endpoints
+(``magi.channels.api.mcp_servers``) still write through the old
+bus ``McpService`` until they are migrated to new_bus
+(TODO: mcp-worker integration).
 
 ### Scheduled task
 

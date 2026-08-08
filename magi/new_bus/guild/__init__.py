@@ -1,7 +1,7 @@
 """new_bus.guild — 仅写。继承 BaseJobBoard，override publish 即可。
 
 Job 命名（publish → claim → submit_result）：动词打头
-（runAgentJobBoard / sendA2AJobBoard / callLLMJobBoard / ...）。
+（chatJob / sendA2AJobBoard / callLLMJobBoard / ...）。
 Book 命名：名词结尾（memoryBook / contactBook / ...）。
 """
 
@@ -29,7 +29,7 @@ from magi.new_bus.guild.mcpServerChangedJob import (
     McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
-from magi.new_bus.guild.runAgentJob import RunAgentJob, RunAgentResult, runAgentJobBoard
+from magi.new_bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
 from magi.new_bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
 from magi.new_bus.guild.seedPresetTasksJob import (
     SeedPresetTasksJob,
@@ -46,7 +46,7 @@ __all__ = [
     "CallLLMJob", "CallLLMResult", "callLLMJobBoard",
     "RunToolJob", "RunToolResult", "runToolJobBoard",
     "DeliveryJob", "DeliveryResult", "deliveryJobBoard",
-    "RunAgentJob", "RunAgentResult", "runAgentJobBoard",
+    "ChatJob", "ChatJobResult", "chatJobBoard",
     "SendA2AJob", "SendA2AResult", "sendA2AJobBoard",
     "ChangeProviderConfigJob", "ChangeProviderConfigResult", "changeProviderConfigJobBoard",
     "McpServerChangedJob", "McpServerChangedResult", "mcpServerChangedJobBoard",

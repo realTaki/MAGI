@@ -79,8 +79,10 @@ logger = logging.getLogger("magi.channels.tasks.runner")
 _DEFAULT_FAILURE_THRESHOLD = 5
 
 # Wall-clock budget on a single fire (seconds). Past this we
-# give up the call and record a timeout; mirrors the
-# 300-second running-task SLA documented in ``docs/proactive-architecture.md``.
+# give up the call and record a timeout. The scheduler side
+# matches it: :attr:`magi.channels.tasks.scheduler.TaskScheduler.misfire_grace_seconds`
+# defaults to 300 so apscheduler doesn't drop a fire that
+# races the runner timeout.
 _RUN_TIMEOUT_SECONDS = 300
 
 # Cap on per-run reply we keep in the ``reply_excerpt`` column

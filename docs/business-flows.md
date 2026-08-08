@@ -10,9 +10,12 @@
 **入口**: `magi.agent.worker.AgentWorker` → `magi.agent.step.run_agent_step()`
 
 ```
-1. MCP 懒重载 (maybe_reload_mcp_tools)
-   └─ 仅当 mcp_servers 表 MAX(updated_at) 变化时才重建子进程
-   └─ 失败吞掉，保留现有缓存
+1. MCP 工具已由 McpWorker 在启动时引导注入到 registry，运行时通过
+   mcpServerChangedJobBoard 异步处理变更。Agent Loop 不再主动轮询
+   mcp_servers 表 — 工具目录始终与 Worker 状态同步。
+   └─ McpWorker 启动时: 并行连接所有 enabled server → register_tools("mcp", ...)
+   └─ 运行时变更: manage tools publish Job → McpWorker claim → 重连 → re-inject
+   └─ ToolsWorker.on_tools_changed 自动检测 → re-publish catalog
 
 2. 凭证校验 (get_provider, _validate_credentials 已被删除)
    └─ get_provider() 在 magi/providers/factory.py 内自己读当前 MAGI 行
@@ -356,30 +359,37 @@ format_contact_block:
 - add_contact 必须是 upsert 语义（累积更新，不创建重复行）
 - contact block 渲染必须用真实 display_name，绝不显示原始 person_id
 
-## 11. MCP 工具加载
+## 11. MCP 工具加载与变更
 
-**入口**: `magi/tools/mcp_loader.py` + `loop.py::maybe_reload_mcp_tools()`
+**入口**: `magi.mcp.worker.McpWorker` + `magi.tools.mcp.*` (manage tools)
 
 ```
-启动时:
-  bootstrap_mcp_tools()
-    → 读 mcp_servers 表 (仅 enabled=True)
-    → 每个 server 启动子进程
-    → 加载 tools → 注册到 tool registry
-    → 缓存 updated_at 时间戳
+启动时 (McpWorker.start):
+  _bootstrap_connections()
+    → bus.mcp_servers_book.list_enabled()  (仅 enabled=True)
+    → 并行连接每个 server (MCPServerConnection.connect)
+    → 聚合发现工具 → register_tools("mcp", discovered_tools)
+    → on_tools_changed → ToolsWorker 自动重发布 catalog
 
-运行时 (每轮对话):
-  maybe_reload_mcp_tools()
-    → SELECT MAX(updated_at) FROM mcp_servers
-    → 变化则重新 bootstrap
-    → 无变化则一次廉价查询，不重建
+运行时 (McpWorker._run):
+  claim mcpServerChangedJobBoard
+    → kind="added"/"updated": write Book + 重连 server
+    → kind="toggled": flip enabled flag + 重连/断开
+    → kind="deleted": delete Book row + 断开连接
+    → re-inject tools → ToolsWorker 自动重发布 catalog
+
+manage tools 路径 (magi.tools.mcp.*):
+  add/update/delete_mcp_server → publish McpServerChangedJob
+    → wait_for_result() → 等待 McpWorker 处理完成
+    → 返回结果给 LLM
 ```
 
 **不可改的守卫**:
 
-- 仅加载 `enabled=True` 的 server
-- 运行时重载失败不崩溃 — 保留现有缓存
-- MCP 工具通过 registry 统一注册，不在 loop 中特殊处理
+- 仅连接 `enabled=True` 的 server
+- 单个 server 连接失败不阻塞其他 server 的引导
+- 连接失败保留错误日志，后续收到 "updated" Job 时可重试
+- MCP 工具通过 registry.register_tools 注入，ToolsWorker.on_tools_changed 自动检测并重发布 catalog
 
 ## 12. 压缩 (Compaction)
 
