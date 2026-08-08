@@ -1,7 +1,10 @@
-"""Preset task seeding — handle SeedPresetTasksJob via new_bus TaskBook.
+"""Preset task seeding — handle SeedPresetTasksJob.
 
-Reads preset templates from ``tasks_book``, builds per-user Task rows,
-and inserts them with idempotency (``uid + name`` check).
+Reads bundled YAML presets from
+:meth:`~magi.new_bus.library.file.promptBook.PromptBook.task_presets`,
+converts each into a Task row with ``source=SOURCE_PROACTIVE``, and
+inserts idempotently (skip when a task with the same name + uid
+already exists).
 """
 
 from __future__ import annotations
@@ -10,131 +13,131 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksResult
-from magi.new_bus.library.local.tasksBook import SOURCE_USER
-from magi.proactive.task_presets import (
-    ContactSnapshot,
-    TaskPresetSnapshot,
-    plan_presets_for_contact,
+from magi.new_bus.library.local.tasksBook import (
+    SOURCE_PROACTIVE,
+    preset_to_cron,
+    validate_run_at,
 )
 
 if TYPE_CHECKING:
     from magi.new_bus import NewBus
-    from magi.new_bus.guild.seedPresetTasksJob import (
-        SeedPresetTasksJob,
-    )
+    from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksJob
 
 logger = logging.getLogger("magi.proactive.preset_tasks")
 
 
 async def handle_seed_job(bus: "NewBus", job: "SeedPresetTasksJob") -> None:
-    """Claim + execute a SeedPresetTasksJob using new_bus Books."""
+    """Claim + execute a SeedPresetTasksJob.
+
+    从 prompt_book.task_presets() 读 YAML 预设，逐个转为
+    per-user Task 行插入 tasks_book（SOURCE_PROACTIVE）。
+    """
     try:
         contact = bus.contacts_book.get(contact_id=job.contact_id)
         if contact is None:
             _submit_failure(bus, job, f"contact {job.contact_id} not found")
             return
 
-        contact_snapshot = ContactSnapshot(
-            id=contact.id,
-            name=contact.name,
-            display_name=contact.display_name,
-            role=contact.role,
-        )
+        if contact.role != "assigned":
+            _submit_success(bus, job, inserted=0, skipped=0)
+            return
 
-        # Read proactive (preset) templates visible to this contact.
-        preset_tasks = bus.tasks_book.list_proactive_tasks(uid=job.contact_id)
-        preset_snapshots = [
-            TaskPresetSnapshot(
-                id=str(t.id),
-                key=str(t.key or ""),
-                name=str(t.name),
-                prompt=str(t.prompt),
-                cron=t.cron,
-                run_at=t.run_at,
-                target_channel=str(t.target_channel),
-                enabled=t.enabled,
-            )
-            for t in preset_tasks
-        ]
+        presets = _load_presets(bus)
+        if not presets:
+            _submit_success(bus, job, inserted=0, skipped=0)
+            return
 
-        # Resolve system timezone for the forensic breadcrumb.
+        contact_label = (
+            contact.display_name
+            or contact.name
+            or f"contact {contact.id}"
+        ).strip()
         tz = _read_system_timezone(bus)
 
-        plan = plan_presets_for_contact(
-            contact_snapshot,
-            preset_snapshots,
-            system_timezone=tz,
-        )
-
         inserted = 0
-        skipped = len(plan.skipped)
-        for seed in plan.seeds:
-            # Idempotency: Task.name is UNIQUE, so a row with the
-            # same name + same uid means it was already seeded.
-            existing = bus.tasks_book.get_by_name(name=seed.name)
+        skipped = 0
+        for preset in sorted(presets.values(), key=lambda p: p.get("key", "")):
+            if not preset.get("enabled", True):
+                continue
+
+            # 构建 cron / run_at
+            frequency = str(preset.get("frequency") or "")
+            if frequency == "once":
+                raw_run_at = preset.get("run_at")
+                if not raw_run_at:
+                    skipped += 1
+                    continue
+                try:
+                    run_at_iso = validate_run_at(raw_run_at)
+                except ValueError:
+                    skipped += 1
+                    continue
+                cron_val = ""
+                run_at_val = run_at_iso
+            else:
+                try:
+                    cron_val = preset_to_cron(
+                        frequency,
+                        hour=int(preset.get("hour") or 0),
+                        minute=int(preset.get("minute") or 0),
+                        day_of_week=preset.get("day_of_week"),
+                        day_of_month=preset.get("day_of_month"),
+                    )
+                except (ValueError, TypeError):
+                    skipped += 1
+                    continue
+                run_at_val = None
+
+            task_name = f"{preset.get('name', '')} ({contact_label})"
+
+            # 幂等：已存在同名的 Task 且属于同一 contact
+            existing = bus.tasks_book.get_by_name(name=task_name)
             if existing is not None and existing.uid == job.contact_id:
                 skipped += 1
                 continue
 
             try:
                 kwargs: dict = dict(
-                    name=seed.name,
-                    prompt=seed.prompt,
-                    target_channel=seed.target_channel,
+                    name=task_name,
+                    prompt=str(preset.get("prompt") or ""),
+                    target_channel=str(preset.get("channel") or "webui"),
                     uid=job.contact_id,
-                    tz=seed.tz,
-                    delivery_to=seed.delivery_to,
-                    source=SOURCE_USER,
+                    tz=tz,
+                    source=SOURCE_PROACTIVE,
+                    enabled=1,
                 )
-                if seed.cron:
-                    kwargs["cron"] = seed.cron
+                if cron_val:
+                    kwargs["cron"] = cron_val
                 else:
-                    kwargs["run_at"] = seed.run_at
+                    kwargs["run_at"] = run_at_val
                 bus.tasks_book.add(**kwargs)
                 inserted += 1
-            except ValueError as exc:
-                logger.warning(
-                    "preset_tasks: seed skipped for contact=%d preset=%s: %s",
-                    job.contact_id, seed.preset_key, exc,
-                )
+            except ValueError:
                 skipped += 1
 
-        result = SeedPresetTasksResult(
-            job_id=job.job_id,
-            success=True,
-            inserted=inserted,
-            skipped=skipped,
-        )
-        bus.seed_preset_tasks_job_board.submit_result(
-            key=job.job_id, result=result,
-        )
+        _submit_success(bus, job, inserted=inserted, skipped=skipped)
 
     except Exception as exc:
         logger.exception("preset_tasks: seed job %s failed", job.job_id)
         _submit_failure(bus, job, str(exc))
 
 
-def _submit_failure(
-    bus: "NewBus", job: "SeedPresetTasksJob", error: str,
-) -> None:
+# --- helpers -----------------------------------------------------------------
+
+
+def _load_presets(bus: "NewBus") -> dict:
+    """Read bundled preset templates from prompt_book."""
+    prompt_book = getattr(bus, "prompt_book", None)
+    if prompt_book is None:
+        return {}
     try:
-        result = SeedPresetTasksResult(
-            job_id=job.job_id,
-            success=False,
-            error=error[:8000],
-        )
-        bus.seed_preset_tasks_job_board.submit_result(
-            key=job.job_id, result=result,
-        )
+        return prompt_book.task_presets()
     except Exception:
-        logger.exception(
-            "preset_tasks: failed to submit seed failure for %s",
-            job.job_id,
-        )
+        logger.warning("preset_tasks: failed to read presets from prompt_book")
+        return {}
 
 
 def _read_system_timezone(bus: "NewBus") -> str:
-    """Read ``system.timezone`` from settings_book, default UTC."""
     try:
         raw = bus.settings_book.get("system.timezone")
         if raw and isinstance(raw, str) and raw.strip():
@@ -142,3 +145,30 @@ def _read_system_timezone(bus: "NewBus") -> str:
     except Exception:
         pass
     return "UTC"
+
+
+def _submit_success(
+    bus: "NewBus", job: "SeedPresetTasksJob",
+    *, inserted: int, skipped: int,
+) -> None:
+    result = SeedPresetTasksResult(
+        job_id=job.job_id, success=True,
+        inserted=inserted, skipped=skipped,
+    )
+    bus.seed_preset_tasks_job_board.submit_result(key=job.job_id, result=result)
+
+
+def _submit_failure(
+    bus: "NewBus", job: "SeedPresetTasksJob", error: str,
+) -> None:
+    try:
+        result = SeedPresetTasksResult(
+            job_id=job.job_id, success=False, error=error[:8000],
+        )
+        bus.seed_preset_tasks_job_board.submit_result(
+            key=job.job_id, result=result,
+        )
+    except Exception:
+        logger.exception(
+            "preset_tasks: failed to submit seed failure for %s", job.job_id,
+        )
