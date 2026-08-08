@@ -43,7 +43,7 @@ from magi.new_bus.db.base import Base, utcnow_naive
 #   * ``SOURCE_PROACTIVE`` — the system discovered /
 #     scheduled this row without an operator in the loop.
 #     Covers: proactive policies (e.g. the onboarding
-#     credentials nudge in ``magi.proactive.credentials_nudge``),
+#     credentials nudge in ``magi.proactive.worker``),
 #     cron-triggered agents, system-defined nudges.
 #
 # Dashboards and future filters group rows by this tag.
@@ -202,7 +202,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     # write is a policy concern (proactive decides which
     # specific rows to de-dupe on, usually by ``title``), not
     # a Book primitive — the only caller, the credentials
-    # nudge in :mod:`magi.proactive.credentials_nudge`,
+    # nudge in :mod:`magi.proactive.worker`,
     # composes the check via :meth:`list_actions` with
     # ``source=SOURCE_PROACTIVE`` and a client-side title
     # match. The Book stays query-neutral.

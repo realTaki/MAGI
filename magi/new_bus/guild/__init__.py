@@ -28,6 +28,11 @@ from magi.new_bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigResult,
     changeProviderConfigJobBoard,
 )
+from magi.new_bus.guild.seedPresetTasksJob import (
+    SeedPresetTasksJob,
+    SeedPresetTasksResult,
+    seedPresetTasksJobBoard,
+)
 
 # 单向 (publish 直接落库)
 from magi.new_bus.guild.setConfigNotify import SetConfigNotify, setConfigNotifyBoard
@@ -49,6 +54,7 @@ __all__ = [
     "RunAgentJob", "RunAgentResult", "runAgentJobBoard",
     "SendA2AJob", "SendA2AResult", "sendA2AJobBoard",
     "ChangeProviderConfigJob", "ChangeProviderConfigResult", "changeProviderConfigJobBoard",
+    "SeedPresetTasksJob", "SeedPresetTasksResult", "seedPresetTasksJobBoard",
     # 单向 (Notify)
     "SetConfigNotify", "setConfigNotifyBoard",
     "SetSettingNotify", "setSettingNotifyBoard",

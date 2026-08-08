@@ -115,6 +115,10 @@ class NewBus:
 
     stream_hub: object  # StreamHub
 
+    # -- local: proactive (Job board) ---------------------------------------
+
+    seed_preset_tasks_job_board: object  # seedPresetTasksJobBoard
+
     # -- local: misc (Books) -------------------------------------------------
 
     token_usage_book: object  # TokenUsageBook
@@ -239,6 +243,7 @@ def _bootstrap_with_dirs(
         runAgentJobBoard,
         runToolJobBoard,
         scheduleTaskNotifyBoard,
+        seedPresetTasksJobBoard,
         sendA2AJobBoard,
         setConfigNotifyBoard,
         setSettingNotifyBoard,
@@ -325,6 +330,7 @@ def _bootstrap_with_dirs(
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
+    seed_preset_tasks_job_board = seedPresetTasksJobBoard(local_factory)
 
     # ---- local notify boards ------------------------------------------------
     set_config_notify_board = setConfigNotifyBoard(local_factory)
@@ -381,6 +387,7 @@ def _bootstrap_with_dirs(
         a2a_job_board=a2a_job_board,
         control_job_board=control_job_board,
         change_provider_config_job_board=change_provider_config_job_board,
+        seed_preset_tasks_job_board=seed_preset_tasks_job_board,
         save_contact_notify_board=save_contact_notify_board,
         save_memory_notify_board=save_memory_notify_board,
         token_usage_book=token_usage_book,

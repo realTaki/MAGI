@@ -338,12 +338,27 @@ def create_contact(
     # Wrapped in try/except so a preset-seeding failure
     # doesn't roll back the contact creation — the
     # contact row is more valuable than the preset rows.
-    # The operator can re-trigger by editing the contact
-    # (role stays assigned; an explicit
-    # assigned→assigned PATCH below would also re-run
-    # the helper, but the per-preset existence check
-    # would short-circuit since the rows are already
-    # there).
+    #
+    # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob
+    # 到 new_bus.seed_preset_tasks_job_board，由 ProactiveWorker
+    # 异步消费。当前同步调用 seed_presets_for_contact 的方式
+    # 将在 Worker 就绪并验证稳定后移除。
+    #
+    # 改后（需要解决 new_bus 实例的获取 — Request 注入或
+    # composition-root 已构造好的 singleton）：
+    #   from magi.new_bus.bootstrap import get_new_bus
+    #   from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+    #
+    #   if view.role == "assigned":
+    #       try:
+    #           get_new_bus().seed_preset_tasks_job_board.publish(
+    #               SeedPresetTasksJob(
+    #                   contact_id=view.id,
+    #                   trigger="contact_created",
+    #               ),
+    #           )
+    #       except Exception as exc:
+    #           logger.warning(...)
     if view.role == "assigned":
         try:
             bus.seed_presets_for_contact(view.id)
@@ -506,6 +521,11 @@ def update_contact(
     # helper's per-(uid, preset_id) existence check
     # short-circuits when rows already exist, so a
     # double-seed is a no-op rather than a duplicate.
+    #
+    # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob 到
+    # new_bus.seed_preset_tasks_job_board，由 ProactiveWorker
+    # 异步消费。trigger 标记 "contact_promoted"。当前同步
+    # 调用将在 Worker 就绪 + 验证稳定后移除。
     if newly_assigned:
         try:
             bus.seed_presets_for_contact(view.id)

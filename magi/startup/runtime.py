@@ -76,7 +76,10 @@ async def run_magi(config: StartupConfig) -> None:
     workers = _build_workers()
     channels = _build_channels(startup, new_bus)
 
-    async with _runtime_lifespan(workers, channels, new_bus):
+    async with _runtime_lifespan(
+        workers, channels, new_bus,
+        magi_id=_to_magi_id(startup.magi_id),
+    ):
         _serve_runtime_api(startup, new_bus)
 
 
@@ -124,6 +127,14 @@ def _build_buses(startup: StartupContext) -> tuple[object, "NewBus"]:
     return old_bus, new_bus
 
 
+def _to_magi_id(raw: str) -> int | None:
+    """Parse the magi_id string from StartupContext into an int."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 # ----------------------------------------------------------------------
 # Workers
 # ----------------------------------------------------------------------
@@ -139,19 +150,24 @@ async def _runtime_lifespan(
     workers: "WorkerHandles",
     channels: list[str],
     new_bus: "NewBus | None" = None,
+    *,
+    magi_id: int | None = None,
 ):
     """Start / stop the durable worker pool + message channels.
 
     Provider worker goes first (so it can drain orphans from a previous
-    crash); delivery worker goes last (so it sees everything produced by
-    the rest).
+    crash); proactive worker goes last (so everything else is ready).
 
     ``new_bus`` is required for :func:`start_provider_worker` — the
     provider worker has been migrated to new_bus; the rest of the
     workers still use the old bus global singleton internally.
+
+    ``magi_id`` is passed through to the proactive worker for
+    Adam-dependent bootstrap checks.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
+    from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
@@ -170,9 +186,13 @@ async def _runtime_lifespan(
     await start_tool_worker(bus=new_bus)
     await start_agent_worker()
     await start_delivery_worker()
+    # Proactive worker runs LAST — all other subsystems must be
+    # ready before it evaluates Adam status and seeds presets.
+    await start_proactive_worker(bus=new_bus, magi_id=magi_id)
     try:
         yield
     finally:
+        await stop_proactive_worker()
         await stop_delivery_worker()
         await stop_agent_worker()
         await stop_tool_worker()
@@ -206,6 +226,7 @@ async def worker_lifespan():
         start_delivery_worker,
         stop_delivery_worker,
     )
+    from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import (
         start_provider_worker,
         stop_provider_worker,
@@ -224,9 +245,12 @@ async def worker_lifespan():
     await start_tool_worker(bus=new_bus)
     await start_agent_worker()
     await start_delivery_worker()
+    # WebUI context: no specific MAGI, so no Adam check.
+    await start_proactive_worker(bus=new_bus, magi_id=None)
     try:
         yield
     finally:
+        await stop_proactive_worker()
         await stop_delivery_worker()
         await stop_agent_worker()
         await stop_tool_worker()

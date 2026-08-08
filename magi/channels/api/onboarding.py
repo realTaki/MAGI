@@ -394,8 +394,22 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     #    idempotent — re-running (e.g. retry after failure,
     #    second wizard pass after /restart) is a no-op for any
     #    admin that already has an open row. Policy lives in
-    #    :mod:`magi.proactive.credentials_nudge`; the Book is
+    #    :mod:`magi.proactive.worker`; the Book is
     #    pure CRUD and only sees the resulting ``add()``.
+    #
+    # TODO(proactive-refactor): credentials nudge 的 idempotent
+    # 插入现在同时由 :class:`magi.proactive.worker.ProactiveWorker`
+    # 在启动时对 Adam MAGI 的 admin 执行（同源函数
+    # ``ensure_for_admin``），所以本路径的同步调用理论上是
+    # 冗余的。当前仍保留同步插入作为"当下 session 立刻看到
+    # 提醒"的兜底，避免依赖 Worker 在 wizard 完成后下次轮询
+    # 才写到表。下一步评估两种简化方案：
+    #   A) 改为发布一个 CredentialsNudgeJob 让 Worker 处理
+    #      （统一异步路径，引入新 Job 类型）；
+    #   B) 完全依赖 Worker 的 _bootstrap 钩子（要求 wizard
+    #      完成时 Worker 已就绪，依赖当前启动顺序：proactive
+    #      最后拉起，应当已经就绪）。
+    # 选定后删除这里的同步调用。
     try:
         admins = bus.contacts.list_admins()
         inserted = sum(
