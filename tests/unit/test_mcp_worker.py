@@ -1,21 +1,26 @@
 """Unit tests for :class:`~magi.mcp.worker.McpWorker`.
 
-The worker composes the new_bus Book + Job Board with the loader
-primitives; the tests stub out the ``MCPServerConnection.connect``
-side of things so no real MCP subprocess / SSE / streamable-HTTP
+The worker is the sole writer to :class:`McpServerBook` and
+owns every MCP server connection in one MAGI process. The
+tests stub out the ``MCPServerConnection.connect`` side of
+things so no real MCP subprocess / SSE / streamable-HTTP
 traffic happens in CI. The behaviour under test:
 
-- bootstrap connects every enabled row in parallel and re-injects
-  tools via :func:`magi.tools.registry.register_tools`;
-- bootstrap registers the four CRUD tools under source
-  ``"mcp_manage"`` even when zero rows exist;
+- bootstrap connects every enabled row in parallel and
+  re-injects the discovered tools via
+  :func:`magi.tools.registry.register_tools`;
 - a failed ``connect()`` at bootstrap is logged and skipped
   (other servers still come up);
-- a change job with kind ``deleted`` / ``updated`` /
-  ``toggled`` / ``added`` reaches the right helper and the
-  job's :class:`McpServerChangedResult` is submitted;
+- a change job with ``kind="added"`` / ``"updated"`` causes
+  the Worker to write the Book (upsert) and reconnect;
+- a change job with ``kind="deleted"`` causes the Worker to
+  delete the Book row and tear down the connection;
+- a change job with ``kind="toggled"`` causes the Worker to
+  flip ``enabled`` and (re)connect / disconnect;
+- the MCP CRUD tools (``add_mcp_server`` / ...) are registered
+  via the builtin tools path, **not** by the worker;
 - an unknown kind records an error in the result instead of
-  leaving the job in ``processing``;
+  leaking the job as ``processing``;
 - ``stop()`` cancels the claim loop, tears down every
   connection, and clears the ``"mcp"`` source.
 """
@@ -44,8 +49,14 @@ from magi.new_bus.library.local import (
     McpServerBook,
     SettingBook,
 )
+from magi.new_bus.library.local.mcpServerBook import McpServer
 from magi.new_bus.library.local.toolsBook import ToolDefinitionBook
 from magi.tools import registry as tool_registry
+from magi.tools.mcp.add_mcp_server import AddMcpServerTool
+from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
+from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
+from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
+
 
 # -- helpers -------------------------------------------------------------
 
@@ -67,10 +78,6 @@ class _StubConnection:
         self.tools: list[Any] = [
             _StubTool(server_name=name, tool_name=t) for t in tool_names
         ]
-        # The worker's `_reinject_tools` iterates ``conn.tools`` and
-        # registers each via `register_tools`. Those wrappers only
-        # need ``name`` and ``description`` to flow through the
-        # registry.
 
 
 class _StubTool:
@@ -133,16 +140,19 @@ def bus(tmp_path):
 @pytest.fixture(autouse=True)
 def _reset_tool_registry():
     """The tools registry is process-global; clear between tests
-    so injected tools don't leak across cases."""
+    so injected tools don't leak across cases. Both the
+    injected source map and the builtin cache must drop —
+    a previous test could have primed ``get_tool`` with a
+    stale builtin list.
+    """
     yield
     tool_registry._injected.clear()
+    tool_registry._tools_cache = None
 
 
 def _patch_worker_build(monkeypatch, connections: list[_StubConnection]) -> None:
     """Replace ``McpWorker._build_connection`` so it returns our
-    pre-built stubs instead of touching the loader. The stub's
-    ``connect`` is a fresh ``AsyncMock(return_value=True)`` per
-    test, set up in the caller via the connection itself.
+    pre-built stubs instead of touching the loader.
 
     The worker calls ``_build_connection`` once per bootstrap
     row, and once per change-job reload. Each call gets the
@@ -165,12 +175,35 @@ def _patch_worker_build(monkeypatch, connections: list[_StubConnection]) -> None
     monkeypatch.setattr(McpWorker, "_build_connection", _factory)
 
 
+def _dto(
+    name: str,
+    *,
+    connection_type: str = "stdio",
+    command: str | None = "mcp-stub",
+    url: str | None = None,
+    enabled: bool = True,
+    args: tuple[str, ...] = (),
+    env: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> McpServer:
+    """Build a minimal :class:`McpServer` DTO for change jobs."""
+    return McpServer(
+        id=0,
+        name=name,
+        connection_type=connection_type,
+        command=command,
+        args=args,
+        url=url,
+        env=dict(env or {}),
+        headers=dict(headers or {}),
+        enabled=enabled,
+    )
+
+
 # -- bootstrap ----------------------------------------------------------
 
 
-def test_bootstrap_registers_manage_tools_and_reinjects_managed_tools(
-    bus, monkeypatch
-):
+def test_bootstrap_connects_enabled_rows_and_reinjects_tools(bus, monkeypatch):
     bus.mcp_servers_book.upsert(
         name="gmail", connection_type="stdio", command="mcp-gmail"
     )
@@ -180,31 +213,22 @@ def test_bootstrap_registers_manage_tools_and_reinjects_managed_tools(
     worker = McpWorker(bus=bus)
     asyncio.run(worker.start())
     try:
-        # Manage tools always present, regardless of rows.
-        manage = tool_registry._injected.get("mcp_manage") or []
-        manage_names = {t.name for t in manage}
-        assert {"add_mcp_server", "list_mcp_servers", "update_mcp_server",
-                "delete_mcp_server"} <= manage_names
         # Discovered tools under "mcp".
         discovered = tool_registry._injected.get("mcp") or []
         discovered_names = {t.name for t in discovered}
         assert discovered_names == {"gmail__search", "gmail__send"}
+        # ``"mcp_manage"`` is NOT injected — the CRUD tools
+        # are builtins, not under the worker's responsibility.
+        assert "mcp_manage" not in tool_registry._injected
     finally:
         asyncio.run(worker.stop())
 
 
-def test_bootstrap_with_no_servers_registers_only_manage_tools(bus, monkeypatch):
+def test_bootstrap_with_no_servers_registers_empty_mcp(bus):
     worker = McpWorker(bus=bus)
     asyncio.run(worker.start())
     try:
         assert tool_registry._injected.get("mcp") == []
-        manage = tool_registry._injected.get("mcp_manage") or []
-        assert {t.name for t in manage} == {
-            "add_mcp_server",
-            "list_mcp_servers",
-            "update_mcp_server",
-            "delete_mcp_server",
-        }
     finally:
         asyncio.run(worker.stop())
 
@@ -237,11 +261,157 @@ def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
         asyncio.run(worker.stop())
 
 
-# -- per-change handling ------------------------------------------------
+def test_manage_tools_are_builtin_not_injected():
+    """The CRUD tools live in :mod:`magi.tools.mcp` and are
+    registered by the standard builtin tools path — the
+    worker doesn't import or inject them. Verify they're
+    reachable through ``get_tool`` without any injection.
+    """
+    # Force the builtin cache to rebuild with the four MCP tools.
+    tool_registry._tools_cache = None
+    builtins = {t.name for t in tool_registry.get_tool.__globals__["_build_tools"]()}
+    assert {"add_mcp_server", "list_mcp_servers",
+            "update_mcp_server", "delete_mcp_server"} <= builtins
+    # And they're instantiable.
+    assert AddMcpServerTool().name == "add_mcp_server"
+    assert ListMcpServersTool().name == "list_mcp_servers"
+    assert UpdateMcpServerTool().name == "update_mcp_server"
+    assert DeleteMcpServerTool().name == "delete_mcp_server"
+
+
+# -- per-change handling (worker is sole writer) ------------------------
 
 
 @pytest.mark.asyncio
-async def test_handle_change_deleted_removes_connection(bus, monkeypatch):
+async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
+    """``kind="added"``: Worker upserts Book + connects."""
+    gmail = _StubConnection("gmail", tool_names=["search"])
+    _patch_worker_build(monkeypatch, [gmail])
+
+    worker = McpWorker(bus=bus)
+    await worker.start()
+    # Bootstrap had no rows — Book is empty.
+    assert bus.mcp_servers_book.get_by_name(name="gmail") is None
+
+    job_id = bus.mcp_server_changed_job_board.publish(
+        McpServerChangedJob(
+            kind="added", server_name="gmail",
+            server=_dto("gmail", command="mcp-gmail"),
+        )
+    )
+    claimed = await asyncio.to_thread(
+        bus.mcp_server_changed_job_board.claim
+    )
+    assert claimed is not None
+    await worker._handle_change(claimed)
+
+    # Worker wrote the row.
+    row = bus.mcp_servers_book.get_by_name(name="gmail")
+    assert row is not None
+    assert row.command == "mcp-gmail"
+    # Worker connected (and disconnected old; here there was
+    # no old, so just connected).
+    assert "gmail" in worker.connections_view()
+
+    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    assert result is not None
+    assert result.success is True
+
+    with suppress(Exception):
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_handle_change_updated_reloads_server(bus, monkeypatch):
+    """``kind="updated"``: Worker upserts Book + reconnects."""
+    old = _StubConnection("gmail", tool_names=["search"])
+    new = _StubConnection("gmail", tool_names=["search", "send"])
+    _patch_worker_build(monkeypatch, [old, new])
+
+    worker = McpWorker(bus=bus)
+    await worker.start()
+
+    job_id = bus.mcp_server_changed_job_board.publish(
+        McpServerChangedJob(
+            kind="updated", server_name="gmail",
+            server=_dto("gmail", connection_type="streamable_http",
+                        command=None, url="https://mcp.example.com"),
+        )
+    )
+    claimed = await asyncio.to_thread(
+        bus.mcp_server_changed_job_board.claim
+    )
+    await worker._handle_change(claimed)
+
+    # Both connection stubs were used (old disconnect, new
+    # connect). The current entry is the new stub.
+    current = worker.connections_view()["gmail"]
+    assert current is new
+    # Book row reflects the new transport — the Worker is the
+    # writer, so the row that the Job Board just submitted
+    # is the only one we should see.
+    row = bus.mcp_servers_book.get_by_name(name="gmail")
+    assert row is not None
+    assert row.connection_type == "streamable_http"
+    assert row.url == "https://mcp.example.com"
+    discovered = {t.name for t in (tool_registry._injected.get("mcp") or [])}
+    assert discovered == {"gmail__search", "gmail__send"}
+
+    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    assert result is not None
+    assert result.success is True
+
+    with suppress(Exception):
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_handle_change_deleted_removes_book_row_and_connection(
+    bus, monkeypatch
+):
+    """``kind="deleted"``: Worker deletes Book + disconnects."""
+    bus.mcp_servers_book.upsert(
+        name="gmail", connection_type="stdio", command="mcp-gmail"
+    )
+    gmail = _StubConnection("gmail", tool_names=["search"])
+    _patch_worker_build(monkeypatch, [gmail])
+
+    worker = McpWorker(bus=bus)
+    await worker.start()
+    assert "gmail" in worker.connections_view()
+    assert bus.mcp_servers_book.get_by_name(name="gmail") is not None
+
+    job_id = bus.mcp_server_changed_job_board.publish(
+        McpServerChangedJob(kind="deleted", server_name="gmail")
+    )
+    claimed = await asyncio.to_thread(
+        bus.mcp_server_changed_job_board.claim
+    )
+    assert claimed is not None
+    await worker._handle_change(claimed)
+
+    assert "gmail" not in worker.connections_view()
+    gmail.disconnect.assert_awaited_once()
+    # Worker is the sole writer — it deletes the row.
+    assert bus.mcp_servers_book.get_by_name(name="gmail") is None
+    assert tool_registry._injected.get("mcp") == []
+
+    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    assert result is not None
+    assert result.success is True
+
+    with suppress(Exception):
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_handle_change_toggled_disables_and_disconnects(
+    bus, monkeypatch
+):
+    """``kind="toggled"``: Worker flips ``enabled`` to False,
+    then the reload path drops the live connection (the row is
+    still in the Book, but ``enabled=False`` so the connection
+    shouldn't re-form)."""
     bus.mcp_servers_book.upsert(
         name="gmail", connection_type="stdio", command="mcp-gmail"
     )
@@ -253,57 +423,65 @@ async def test_handle_change_deleted_removes_connection(bus, monkeypatch):
     assert "gmail" in worker.connections_view()
 
     job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(kind="deleted", server_name="gmail")
+        McpServerChangedJob(
+            kind="toggled", server_name="gmail",
+            new_enabled=False,
+        )
     )
     claimed = await asyncio.to_thread(
         bus.mcp_server_changed_job_board.claim
     )
-    assert claimed is not None
     await worker._handle_change(claimed)
+
+    # Worker updated the Book and dropped the connection.
+    row = bus.mcp_servers_book.get_by_name(name="gmail")
+    assert row is not None
+    assert row.enabled is False
+    assert "gmail" not in worker.connections_view()
+
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
     assert result.success is True
-    assert "gmail" not in worker.connections_view()
-    gmail.disconnect.assert_awaited_once()
-    assert tool_registry._injected.get("mcp") == []
 
     with suppress(Exception):
         await worker.stop()
 
 
 @pytest.mark.asyncio
-async def test_handle_change_updated_reloads_server(bus, monkeypatch):
+async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
+    """``kind="toggled"`` with ``new_enabled=True``: Worker
+    flips the flag and (re)connects."""
     bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
+        name="gmail", connection_type="stdio", command="mcp-gmail",
+        enabled=False,
     )
-    old = _StubConnection("gmail", tool_names=["search"])
-    new = _StubConnection("gmail", tool_names=["search", "send"])
-    _patch_worker_build(monkeypatch, [old, new])
+    # No bootstrap connection — enabled=False at startup.
+    new = _StubConnection("gmail", tool_names=["search"])
+    _patch_worker_build(monkeypatch, [new])
 
     worker = McpWorker(bus=bus)
     await worker.start()
-    # Mutate the row to "force" a different reload outcome.
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="streamable_http",
-        url="https://mcp.example.com",
-    )
+    assert "gmail" not in worker.connections_view()
 
     job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(kind="updated", server_name="gmail")
+        McpServerChangedJob(
+            kind="toggled", server_name="gmail",
+            new_enabled=True,
+        )
     )
     claimed = await asyncio.to_thread(
         bus.mcp_server_changed_job_board.claim
     )
     await worker._handle_change(claimed)
+
+    row = bus.mcp_servers_book.get_by_name(name="gmail")
+    assert row is not None
+    assert row.enabled is True
+    assert "gmail" in worker.connections_view()
+
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
     assert result.success is True
-    # Both connection stubs were used (old disconnect, new
-    # connect). The current entry is the new stub.
-    current = worker.connections_view()["gmail"]
-    assert current is new
-    discovered = {t.name for t in (tool_registry._injected.get("mcp") or [])}
-    assert discovered == {"gmail__search", "gmail__send"}
 
     with suppress(Exception):
         await worker.stop()
@@ -341,6 +519,8 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
     object.__setattr__(leaked, "kind", "rotated")
     object.__setattr__(leaked, "server_name", "gmail")
     object.__setattr__(leaked, "job_id", "job-bypass-1")
+    object.__setattr__(leaked, "server", None)
+    object.__setattr__(leaked, "new_enabled", None)
 
     worker = McpWorker(bus=bus)
     await worker.start()

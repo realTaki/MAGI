@@ -16,12 +16,22 @@ worker composes.
 
 ::
 
-    McpWorker
+    McpWorker (sole writer)
       ├─ reads from bus.mcp_servers_book   (new_bus McpServerBook)
-      ├─ writes McpServerChangedJob        (new_bus Job Board)
-      └─ injects tools into
+      ├─ writes McpServerChangedJob        (new_bus Job Board, payload
+      │                                     carries the full DTO)
+      └─ injects discovered tools into
          magi.tools.registry.register_tools("mcp", ...)
          → on_tools_changed listener → ToolsWorker re-publishes catalog
+
+The four CRUD tools (``add_mcp_server`` /
+``list_mcp_servers`` / ``update_mcp_server`` /
+``delete_mcp_server``) live in :mod:`magi.tools.mcp` and are
+registered as builtins by :mod:`magi.tools.registry`. They publish
+to ``bus.mcp_server_changed_job_board`` and wait for the worker
+to apply the change; the worker is the **only** writer to the
+Book so the LLM's view of the world and the live connections
+stay in sync.
 
 Module layout
 -------------
@@ -30,8 +40,8 @@ Module layout
   :class:`MCPTool` / :class:`MCPTimeoutConfig` (the small set of
   primitives the worker composes). The previous module-level
   ``_connections`` cache, ``load_mcp_tools_async`` /
-  ``load_mcp_tools_blocking``, ``list_tools_for_server``,
-  ``cleanup_mcp_connections`` and ``active_connections`` were
+  ``load_mcp_tools_blocking``, ``list_tools_for_server`,
+  ``cleanup_mcp_connections` and ``active_connections` were
   removed — the worker is the only connection owner now, and
   the WebUI detail page reads the Book directly when it needs
   metadata.
@@ -39,22 +49,15 @@ Module layout
   :func:`start_mcp_worker` / :func:`stop_mcp_worker` lifecycle
   helpers. Started by :mod:`magi.startup.runtime` immediately
   after :class:`~magi.tools.worker.ToolsWorker`.
-- :mod:`magi.mcp.manage` — LLM-callable CRUD tools
-  (``add_mcp_server`` / ``list_mcp_servers`` /
-  ``update_mcp_server`` / ``delete_mcp_server``). Admin-only;
-  the LLM uses these to help the operator configure servers.
 - :mod:`magi.mcp.sharing` — *future*. MAGIS-level sharing of
   MCP server configs. Defining point only today; the table /
   API / LLM tools land in a follow-up PR.
 
-The data path that the WebUI / LLM manage tools still write to
-is the old bus ``mcp_servers`` table (see
-``magi/bus/jobs/services/mcp.py``). The worker reads via
-``bus.mcp_servers_book``, which points at the same physical
-SQLite table through a parallel new_bus ORM (see
-``magi/new_bus/library/local/mcpServerBook.py``). They share
-the row storage; the new_bus Book owns the new write path that
-the API / manage tools will migrate onto in a follow-up.
+The data path that the WebUI / LLM manage tools write to is
+the new_bus ``McpServerBook`` (via ``McpServerChangedJob``);
+the Worker is the sole writer. The WebUI / ``McpService``-backed
+read paths still resolve through the same physical SQLite
+table (see ``magi/new_bus/library/local/mcpServerBook.py``).
 """
 
 from __future__ import annotations
@@ -63,12 +66,6 @@ from magi.mcp.loader import (
     MCPTimeoutConfig,
     MCPServerConnection,
     MCPTool,
-)
-from magi.mcp.manage import (
-    AddMcpServerTool,
-    DeleteMcpServerTool,
-    ListMcpServersTool,
-    UpdateMcpServerTool,
 )
 from magi.mcp.worker import McpWorker, start_mcp_worker, stop_mcp_worker
 
@@ -81,9 +78,4 @@ __all__ = [
     "McpWorker",
     "start_mcp_worker",
     "stop_mcp_worker",
-    # LLM manage tools
-    "AddMcpServerTool",
-    "ListMcpServersTool",
-    "UpdateMcpServerTool",
-    "DeleteMcpServerTool",
 ]

@@ -283,26 +283,26 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         self,
         *,
         server_id: int,
-        connection_type: str | None = None,
-        command: str | None = None,
-        args: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        url: str | None = None,
-        headers: dict[str, str] | None = None,
-        enabled: bool | None = None,
-        connect_timeout: float | None = None,
-        execute_timeout: float | None = None,
-        sse_read_timeout: float | None = None,
+        connection_type: str | None = _UNSET,
+        command: str | None = _UNSET,
+        args: list[str] | None = _UNSET,
+        env: dict[str, str] | None = _UNSET,
+        url: str | None = _UNSET,
+        headers: dict[str, str] | None = _UNSET,
+        enabled: bool | None = _UNSET,
+        connect_timeout: float | None = _UNSET,
+        execute_timeout: float | None = _UNSET,
+        sse_read_timeout: float | None = _UNSET,
     ) -> None:
         """In-place update of a row by numeric id.
 
-        ``None`` means "set the column to NULL / empty" (used to
-        clear transport-specific fields when switching types).
-        The :meth:`upsert` wrapper is the primary entry point.
+        Every column defaults to :data:`_UNSET` ("leave alone").
+        Pass ``None`` to clear the column (transport-type
+        switches rely on this to drop a stale ``command`` /
+        ``url`` etc.); pass a value to overwrite.
 
-        Use :data:`_UNSET` as the sentinel value to leave a
-        column alone — useful for partial updates that only
-        touch a handful of fields without nuking unrelated ones.
+        The :meth:`upsert` wrapper is the primary entry point
+        for full-row rewrites.
         """
         with self._session() as s:
             row = s.scalar(
