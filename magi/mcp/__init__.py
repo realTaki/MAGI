@@ -36,7 +36,7 @@ stay in sync.
 Module layout
 -------------
 
-- :mod:`magi.mcp.loader` — :class:`MCPServerConnection` /
+- :mod:`magi.mcp.MCPClient` — :class:`MCPServerConnection` /
   :class:`MCPTool` / :class:`MCPTimeoutConfig` (the small set of
   primitives the worker composes). The previous module-level
   ``_connections`` cache, ``load_mcp_tools_async`` /
@@ -62,15 +62,15 @@ table (see ``magi/new_bus/library/local/mcpServerBook.py``).
 
 from __future__ import annotations
 
-from magi.mcp.loader import (
-    MCPTimeoutConfig,
+from magi.mcp.MCPClient import (
     MCPServerConnection,
+    MCPTimeoutConfig,
     MCPTool,
 )
 from magi.mcp.worker import McpWorker, start_mcp_worker, stop_mcp_worker
 
 __all__ = [
-    # Loader primitives
+    # Client primitives
     "MCPTimeoutConfig",
     "MCPServerConnection",
     "MCPTool",

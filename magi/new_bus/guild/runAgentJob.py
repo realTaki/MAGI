@@ -15,18 +15,13 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     DateTime,
-    ForeignKey,
-    Index,
     Integer,
     String,
-    Text,
-    select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.guild.base import BaseJobBoard, new_job_id
-
 
 # -- public dataclasses --------------------------------------------------
 

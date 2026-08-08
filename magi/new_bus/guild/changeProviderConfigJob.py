@@ -118,7 +118,7 @@ class changeProviderConfigJobBoard(
     job_cls = ChangeProviderConfigJob
     result_cls = ChangeProviderConfigResult
 
-    def __init__(self, factory, *, settings_book: "SettingBook | None" = None):
+    def __init__(self, factory, *, settings_book: SettingBook | None = None):
         super().__init__(factory)
         self._settings_book = settings_book
 

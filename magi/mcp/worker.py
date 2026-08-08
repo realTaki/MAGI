@@ -74,7 +74,7 @@ from magi.new_bus.guild import (
 from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
-    from magi.mcp.loader import MCPServerConnection, MCPTimeoutConfig
+    from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
     from magi.new_bus import NewBus
     from magi.new_bus.library.local.mcpServerBook import McpServer
 
@@ -82,7 +82,7 @@ logger = logging.getLogger("magi.mcp.worker")
 
 #: Default per-server timeouts when the operator hasn't set
 #: ``mcp.*_timeout`` in the settings book. Mirrors the values
-#: the previous ``magi.mcp.loader`` defaults used.
+#: the ``MCPTimeoutConfig`` defaults.
 _DEFAULT_CONNECT_TIMEOUT = 10.0
 _DEFAULT_EXECUTE_TIMEOUT = 60.0
 _DEFAULT_SSE_READ_TIMEOUT = 120.0
@@ -308,7 +308,7 @@ class McpWorker:
             self._connections[name] = conn
         self._reinject_tools()
 
-    async def _reload_server_from_dto(self, server: "McpServer") -> None:
+    async def _reload_server_from_dto(self, server: McpServer) -> None:
         """Reload a server using the DTO carried by the Job.
 
         Skips the DB read — the Worker just wrote this exact DTO
@@ -341,7 +341,7 @@ class McpWorker:
 
     # -- Book write helpers (sole writer) --------------------------------
 
-    def _write_server(self, server: "McpServer") -> None:
+    def _write_server(self, server: McpServer) -> None:
         """Upsert *server* into :class:`McpServerBook`.
 
         Translates the :class:`McpServer` DTO back into the
@@ -402,7 +402,7 @@ class McpWorker:
         # Silence ARG002 while keeping the parameter — tests
         # monkeypatch this method and rely on the two-arg shape.
         del timeouts
-        from magi.mcp.loader import MCPServerConnection
+        from magi.mcp.MCPClient import MCPServerConnection
 
         return MCPServerConnection(
             name=server.name,
@@ -423,7 +423,7 @@ class McpWorker:
         ``None`` on read error or unset value; the connection
         falls back to the loader's defaults.
         """
-        from magi.mcp.loader import MCPTimeoutConfig
+        from magi.mcp.MCPClient import MCPTimeoutConfig
 
         def _read(key: str, default: float) -> float:
             try:

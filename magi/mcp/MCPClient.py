@@ -40,12 +40,12 @@ import logging
 import os
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Any, Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-logger = logging.getLogger("magi.mcp.loader")
+logger = logging.getLogger("magi.mcp.MCPClient")
 
 ConnectionType = Literal["stdio", "sse", "streamable_http"]
 
@@ -74,7 +74,7 @@ class MCPTimeoutConfig:
 # -- timeout helpers -----------------------------------------------------
 #
 # These live in the loader because the worker (and the rest of the
-# subsystem) reaches for them through ``magi.mcp.loader``. They
+# subsystem) reaches for them through ``magi.mcp.MCPClient``. They
 # no longer reach into the old bus ``get_bus().settings`` — the
 # worker passes a :class:`~magi.new_bus.NewBus` and reads through
 # ``bus.settings_book`` directly.
@@ -144,7 +144,7 @@ class MCPTool:
         server_tool_name: str,
         description: str,
         parameters: dict[str, Any],
-        session: "ClientSession",
+        session: ClientSession,
         execute_timeout: float,
     ) -> None:
         # ``name`` is what the LLM invokes; built once in __init__
@@ -313,7 +313,7 @@ class MCPServerConnection:
     execute_timeout: float | None = None
     sse_read_timeout: float | None = None
     # Mutable state populated by ``connect``.
-    session: "ClientSession | None" = None
+    session: ClientSession | None = None
     exit_stack: AsyncExitStack | None = None
     tools: list[MCPTool] = field(default_factory=list)
 

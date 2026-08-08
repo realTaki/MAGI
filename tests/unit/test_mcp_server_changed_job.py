@@ -3,7 +3,8 @@
 Exercises the publish → claim → submit_result round-trip on a
 fresh in-memory SQLite, plus the validation contract the
 :class:`~magi.mcp.worker.McpWorker` relies on (unknown kinds,
-empty server name, duplicate publish semantics).
+empty server name, payload requirements by kind, duplicate
+publish semantics).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from magi.new_bus.guild import (
     McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
+from magi.new_bus.library.local.mcpServerBook import McpServer
 
 
 @pytest.fixture
@@ -30,6 +32,14 @@ def board(factory):
     return mcpServerChangedJobBoard(factory)
 
 
+def _gmail_dto() -> McpServer:
+    """Minimal :class:`McpServer` DTO for ``added`` / ``updated`` jobs."""
+    return McpServer(
+        id=0, name="gmail", connection_type="stdio",
+        command="mcp-gmail", env={}, headers={}, enabled=True,
+    )
+
+
 # -- input validation ---------------------------------------------------
 
 
@@ -40,7 +50,22 @@ def test_job_validation_rejects_unknown_kind():
 
 def test_job_validation_rejects_blank_server_name():
     with pytest.raises(ValueError, match="server_name is required"):
-        McpServerChangedJob(kind="added", server_name="")
+        McpServerChangedJob(kind="deleted", server_name="")
+
+
+def test_job_validation_requires_server_payload_for_added():
+    with pytest.raises(ValueError, match="requires a McpServer payload"):
+        McpServerChangedJob(kind="added", server_name="gmail")
+
+
+def test_job_validation_requires_server_payload_for_updated():
+    with pytest.raises(ValueError, match="requires a McpServer payload"):
+        McpServerChangedJob(kind="updated", server_name="gmail")
+
+
+def test_job_validation_requires_new_enabled_for_toggled():
+    with pytest.raises(ValueError, match="requires new_enabled"):
+        McpServerChangedJob(kind="toggled", server_name="gmail")
 
 
 # -- round-trip ---------------------------------------------------------
@@ -48,7 +73,9 @@ def test_job_validation_rejects_blank_server_name():
 
 def test_publish_assigns_job_id_and_persists(board, factory):
     job_id = board.publish(
-        McpServerChangedJob(kind="added", server_name="gmail")
+        McpServerChangedJob(
+            kind="added", server_name="gmail", server=_gmail_dto()
+        )
     )
     assert isinstance(job_id, str) and job_id
     # The row landed in the table.
@@ -66,13 +93,18 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     assert row.status == "pending"
     assert row.kind == "added"
     assert row.server_name == "gmail"
+    # Payload survives the publish round-trip.
+    assert row.server_payload is not None
+    assert row.server_payload["name"] == "gmail"
+    assert row.server_payload["command"] == "mcp-gmail"
 
 
 def test_publish_respects_caller_supplied_job_id(board):
     custom = "job-abc-123"
     job_id = board.publish(
         McpServerChangedJob(
-            kind="updated", server_name="gmail", job_id=custom
+            kind="updated", server_name="gmail",
+            server=_gmail_dto(), job_id=custom,
         )
     )
     assert job_id == custom
@@ -84,12 +116,15 @@ def test_claim_returns_none_when_empty(board):
 
 def test_claim_then_submit_result_round_trip(board):
     job_id = board.publish(
-        McpServerChangedJob(kind="toggled", server_name="gmail")
+        McpServerChangedJob(
+            kind="toggled", server_name="gmail", new_enabled=False,
+        )
     )
     claimed = board.claim()
     assert claimed is not None
     assert claimed.kind == "toggled"
     assert claimed.server_name == "gmail"
+    assert claimed.new_enabled is False
     assert claimed.job_id == job_id
 
     board.submit_result(
@@ -102,6 +137,24 @@ def test_claim_then_submit_result_round_trip(board):
     assert result is not None
     assert result.success is True
     assert result.error is None
+
+
+def test_claim_round_trips_added_payload_into_dto(board):
+    """``claim()`` materialises ``server_payload`` back into a
+    :class:`McpServer` so the Worker sees a fully populated DTO."""
+    job_id = board.publish(
+        McpServerChangedJob(
+            kind="added", server_name="gmail", server=_gmail_dto()
+        )
+    )
+    claimed = board.claim()
+    assert claimed is not None
+    assert claimed.server is not None
+    assert claimed.server.name == "gmail"
+    assert claimed.server.command == "mcp-gmail"
+    assert claimed.server.connection_type == "stdio"
+    assert claimed.server.enabled is True
+    assert claimed.job_id == job_id
 
 
 def test_submit_result_records_error(board):

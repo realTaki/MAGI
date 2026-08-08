@@ -35,19 +35,19 @@ logger = logging.getLogger("magi.tools.registry")
 #: Single-shot cache of builtin :class:`Tool` instances — the
 #: dispatch backend. Populated lazily on the first
 #: :func:`get_tool` call.
-_tools_cache: list["Tool"] | None = None
+_tools_cache: list[Tool] | None = None
 
 #: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``).
 #: Each call to :func:`register_tools` replaces the entire slot for
 #: that source.
-_injected: dict[str, list["Tool"]] = {}
+_injected: dict[str, list[Tool]] = {}
 
 #: Change listeners — fired after :func:`register_tools`.
 #: The worker uses this to republish the tool catalog.
 _listeners: list[Callable[[], None]] = []
 
 
-def _build_tools() -> list["Tool"]:
+def _build_tools() -> list[Tool]:
     """Construct one instance of every builtin tool.
 
     Importing inside the function (not at module top)
@@ -62,21 +62,16 @@ def _build_tools() -> list["Tool"]:
     worker itself only injects the *discovered* tools under
     source ``"mcp"``; the CRUD tools are registered here.
     """
-    from magi.tools.shell.run import BashRunTool
-    from magi.tools.shell.output import BashOutputTool
-    from magi.tools.shell.kill import BashKillTool
-    from magi.tools.tasks.add_action_item import AddActionItemTool
-    from magi.tools.tasks.complete_action_item import CompleteActionItemTool
-    from magi.tools.tasks.list_action_items import ListActionItemsTool
+    from magi.tools.comms.message_magi import MessageMagiTool
+    from magi.tools.comms.send_message import SendMessageTool
     from magi.tools.filesystem.edit_file import EditFileTool
     from magi.tools.filesystem.list_files import ListFilesTool
-    from magi.tools.comms.message_magi import MessageMagiTool
     from magi.tools.filesystem.read_file import ReadFileTool
-    from magi.tools.tasks.schedule import ScheduleTaskTool
-    from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
-    from magi.tools.comms.send_message import SendMessageTool
     from magi.tools.filesystem.write_file import WriteFileTool
-    from magi.tools.skills.load_skill import LoadSkillTool
+    from magi.tools.mcp.add_mcp_server import AddMcpServerTool
+    from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
+    from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
+    from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
     from magi.tools.memory.contacts.add_contact import AddContactTool
     from magi.tools.memory.contacts.add_contact_note import AddContactNoteTool
     from magi.tools.memory.contacts.delete_contact_note import DeleteContactNoteTool
@@ -87,10 +82,15 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
     from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
     from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
-    from magi.tools.mcp.add_mcp_server import AddMcpServerTool
-    from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
-    from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
-    from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
+    from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
+    from magi.tools.shell.kill import BashKillTool
+    from magi.tools.shell.output import BashOutputTool
+    from magi.tools.shell.run import BashRunTool
+    from magi.tools.skills.load_skill import LoadSkillTool
+    from magi.tools.tasks.add_action_item import AddActionItemTool
+    from magi.tools.tasks.complete_action_item import CompleteActionItemTool
+    from magi.tools.tasks.list_action_items import ListActionItemsTool
+    from magi.tools.tasks.schedule import ScheduleTaskTool
 
     return [
         ReadFileTool(),
@@ -143,7 +143,7 @@ def _build_tools() -> list["Tool"]:
 # -- public API -----------------------------------------------------------
 
 
-def get_tool(name: str) -> "Tool | None":
+def get_tool(name: str) -> Tool | None:
     """Look up a single tool by name for dispatch.
 
     Searches builtin tools first, then injected sources.
@@ -165,7 +165,7 @@ def get_tool(name: str) -> "Tool | None":
     return None
 
 
-def register_tools(source: str, tools: list["Tool"]) -> None:
+def register_tools(source: str, tools: list[Tool]) -> None:
     """Register (or replace) tools from an external source.
 
     *source* is a stable identifier like ``"mcp"`` or
@@ -196,7 +196,7 @@ def on_tools_changed(callback: Callable[[], None]) -> None:
     _listeners.append(callback)
 
 
-def list_injected() -> dict[str, list["Tool"]]:
+def list_injected() -> dict[str, list[Tool]]:
     """Return a shallow copy of the current injected-tool map.
 
     The worker calls this to build :class:`ToolDefinition`

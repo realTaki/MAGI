@@ -57,7 +57,6 @@ from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
 from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
 from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
 
-
 # -- helpers -------------------------------------------------------------
 
 
@@ -324,12 +323,21 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
 @pytest.mark.asyncio
 async def test_handle_change_updated_reloads_server(bus, monkeypatch):
     """``kind="updated"``: Worker upserts Book + reconnects."""
+    # Pre-seed so bootstrap consumes one stub. Without a
+    # row at startup the worker's bootstrap skips the
+    # connect call, and the queue's first entry would be
+    # handed to the reload path — making the "old vs new"
+    # assertion below meaningless.
+    bus.mcp_servers_book.upsert(
+        name="gmail", connection_type="stdio", command="mcp-gmail"
+    )
     old = _StubConnection("gmail", tool_names=["search"])
     new = _StubConnection("gmail", tool_names=["search", "send"])
     _patch_worker_build(monkeypatch, [old, new])
 
     worker = McpWorker(bus=bus)
     await worker.start()
+    assert worker.connections_view()["gmail"] is old
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(

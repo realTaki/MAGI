@@ -2,8 +2,8 @@
 """ORM table ``mcp_servers`` — operator-configured MCP server rows.
 
 Each row is one Model-Context-Protocol server the operator
-opted to surface. The ``MCP loader``
-(:mod:`magi.mcp.loader`) reads these rows on
+opted to surface. The ``MCP Client``
+(:mod:`magi.mcp.MCPClient`) reads these rows on
 demand and turns each into a :class:`MCPServerConnection`.
 
 Why env / headers live as JSON columns

@@ -81,7 +81,7 @@ class McpServerChangedJob:
 
     kind: str
     server_name: str
-    server: "McpServer | None" = None
+    server: McpServer | None = None
     new_enabled: bool | None = None
     job_id: str = ""
 
@@ -148,7 +148,7 @@ class _McpServerChangedRow(Base):
 # -- payload helpers -----------------------------------------------------
 
 
-def _dump_server(server: "McpServer") -> dict[str, Any]:
+def _dump_server(server: McpServer) -> dict[str, Any]:
     """Serialise a :class:`McpServer` DTO to a JSON-safe dict.
 
     Includes every DTO field (including the auto-increment ``id``
@@ -174,7 +174,7 @@ def _dump_server(server: "McpServer") -> dict[str, Any]:
     }
 
 
-def _load_server(payload: dict[str, Any]) -> "McpServer":
+def _load_server(payload: dict[str, Any]) -> McpServer:
     """Inverse of :func:`_dump_server`."""
     from magi.new_bus.library.local.mcpServerBook import McpServer
 

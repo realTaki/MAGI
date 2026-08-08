@@ -309,7 +309,7 @@ def list_mcp_server_tools(
     """List the live tools exposed by a single MCP server.
 
     Goes through the loader's
-    :func:`magi.mcp.loader.list_tools_for_server`
+    :func:`magi.mcp.MCPClient.list_tools_for_server`
     — which prefers the active subprocess connection
     (fast) and falls back to a one-shot connect → list →
     disconnect (slow) when the operator opens the detail
