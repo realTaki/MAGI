@@ -33,12 +33,11 @@ class NoteView:
     note: str
     kind: str
     note_date: str | None
-    created_at: str
     updated_at: str
 
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id, "contact_id": self.contact_id, "note": self.note,
             "kind": self.kind, "note_date": self.note_date,
-            "created_at": self.created_at, "updated_at": self.updated_at,
+            "updated_at": self.updated_at,
         }

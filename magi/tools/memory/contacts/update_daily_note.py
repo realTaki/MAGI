@@ -16,8 +16,8 @@ only when the operator toggles ``system.show_daily_note_prompt``):
   context). Don't record trivial external facts.
 - Append only — never delete or rewrite prior deltas. The
   upsert appends with a newline separator; concurrent
-  writes hit the partial unique index ``ux_contact_notes_daily``
-  and serialize on the row update.
+  writes hit a unique-on-``(contact_id, kind, note_date)``
+  index and serialize on the row update.
 
 Tool author gate. ``role`` only carries ``assigned`` /
 ``guest`` — there is no ``role='admin'`` value. Admin is
@@ -28,11 +28,19 @@ a MAGIS-level concept, resolved at runtime via
 admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+— the Book owns the upsert + daily-append logic,
+length cap, and ``note_date`` defaulting. Returns the
+DTO so the LLM sees the post-write row. The old bus
+service at
+:mod:`magi.bus.jobs.services.contact.upsert_daily_note`
+is no longer imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -48,13 +56,13 @@ class UpdateDailyNoteTool(Tool):
     name = "update_daily_note"
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Append a delta to today's daily note for the current "
-        "operator (or the uid you pass). One row per "
-        "(uid, day). Use when something meaningful happened — "
-        "task finished, email sent, user shared a preference, "
-        "project context changed. Don't write trivial external "
-        "facts. The morning / night report reads today's row "
-        "verbatim."
+        "Append a delta to today's daily note for the "
+        "current operator (or the uid you pass). One row "
+        "per (uid, day). Use when something meaningful "
+        "happened — task finished, email sent, user "
+        "shared a preference, project context changed. "
+        "Don't write trivial external facts. The morning "
+        "/ night report reads today's row verbatim."
     )
     input_schema = {
         "type": "object",
@@ -62,38 +70,39 @@ class UpdateDailyNoteTool(Tool):
             "body_delta": {
                 "type": "string",
                 "description": (
-                    "One short fact to append. <=8 KB. The tool "
-                    "strips whitespace and clamps to the per-row "
-                    "32 KB cap."
+                    "One short fact to append. ≤8 KB; the "
+                    "Book strips whitespace and clamps to "
+                    "the per-row 32 KB cap."
                 ),
             },
             "note_date": {
                 "type": "string",
                 "description": (
-                    "YYYY-MM-DD; defaults to today UTC. Pass "
-                    "explicit only for back-filling a missed day."
+                    "YYYY-MM-DD; defaults to today UTC. "
+                    "Pass explicit only for back-filling a "
+                    "missed day."
                 ),
             },
         },
         "required": ["body_delta"],
     }
 
+    @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
-            return ToolResult(
-                content="body_delta is required (non-empty string)",
-                is_error=True,
+            return ToolResult.err(
+                "body_delta is required (non-empty string)"
             )
-        # Default to the operator's own uid — the LLM never
-        # specifies a different uid here (no override on
-        # input_schema). Future cross-contact notes should go
-        # through a separate ``update_daily_note_for`` shape.
+        # Default to the operator's own uid — the LLM
+        # never specifies a different uid here (no
+        # override on input_schema). Future cross-contact
+        # notes should go through a separate
+        # ``update_daily_note_for`` shape.
         contact_id = ctx.uid
         if contact_id is None or contact_id == 0:
-            return ToolResult(
-                content="no uid on the calling context",
-                is_error=True,
+            return ToolResult.err(
+                "no uid on the calling context"
             )
 
         note_date: datetime | None = None
@@ -102,19 +111,26 @@ class UpdateDailyNoteTool(Tool):
             try:
                 note_date = datetime.strptime(raw_date, "%Y-%m-%d")
             except ValueError:
-                return ToolResult(
-                    content=f"note_date must be YYYY-MM-DD, got {raw_date!r}",
-                    is_error=True,
+                return ToolResult.err(
+                    f"note_date must be YYYY-MM-DD, got {raw_date!r}"
                 )
 
         try:
-            bus = ctx.bus
-            view = bus.contacts_book.upsert_daily_note(
-                int(contact_id), body_delta, note_date=note_date
+            row = ctx.bus.contact_notes_book.upsert_daily_note(
+                contact_id=int(contact_id),
+                body_delta=body_delta,
+                note_date=note_date,
             )
         except ValueError as e:
-            return ToolResult(content=str(e), is_error=True)
-        body = json.dumps(view.to_dict(), indent=2, ensure_ascii=False)
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+            # ``contact_notes_book.upsert_daily_note`` owns
+            # the non-empty-after-strip invariant and the
+            # length caps. Translate to a clean LLM-facing
+            # error rather than letting it bubble to the
+            # worker's "tool.crashed" envelope.
+            return ToolResult.err(str(e))
+
+        logger.info(
+            "update_daily_note: contact=%s appended to row=%s",
+            contact_id, row.id,
+        )
+        return ToolResult.ok({"updated": row.to_dict()})

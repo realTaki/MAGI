@@ -14,11 +14,18 @@ a MAGIS-level concept, resolved at runtime via
 admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+— the Book owns write invariants (non-empty note,
+≤8 KB clamp) and exposes ``add(...)`` plus
+``to_dict`` on the returned DTO. The old bus service at
+:mod:`magi.bus.jobs.services.contact.add_note` is no
+longer imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -34,39 +41,64 @@ class AddContactNoteTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Add a new note about an existing contact (by uid). "
-        "Each call creates one row in contact_notes — keep "
-        "each note to one fact. To update or delete an "
-        "existing note, use update_contact_note / "
+        "Each call creates one row in contact_notes — "
+        "keep each note to one fact (≤8 KB). To update or "
+        "delete an existing note, use update_contact_note / "
         "delete_contact_note with the note_id."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "uid": {"type": "integer", "description": "Contact uid (required)."},
-            "note": {"type": "string", "description": "One short fact (<=8 KB)."},
+            "uid": {
+                "type": "integer",
+                "description": "Contact uid (required).",
+            },
+            "note": {
+                "type": "string",
+                "description": (
+                    "One short fact. ≤8 KB; the Book "
+                    "clamps whitespace and rejects empty."
+                ),
+            },
         },
         "required": ["uid", "note"],
     }
 
+    @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         uid = kwargs.get("uid")
         note = kwargs.get("note")
         if not isinstance(uid, int):
-            return ToolResult(
-                content=f"uid must be int, got {type(uid).__name__}",
-                is_error=True,
+            return ToolResult.err(
+                f"uid must be int, got {type(uid).__name__}"
             )
         if not isinstance(note, str) or not note.strip():
-            return ToolResult(
-                content="note is required (non-empty string)",
-                is_error=True,
+            return ToolResult.err(
+                "note is required (non-empty string)"
             )
+
+        # Pre-check the parent contact resolves — the FK
+        # violation would otherwise surface as a SQLAlchemy
+        # error caught at the outer worker layer (which
+        # reads as "tool.crashed"). We translate to a clean
+        # ``is_error=True`` here so the LLM sees a
+        # caller-fixable "uid N not found" message.
+        contact = ctx.bus.contacts_book.get(contact_id=uid)
+        if contact is None:
+            return ToolResult.err(f"contact {uid!r} not found")
+
         try:
-            bus = ctx.bus
-            view = bus.contacts_book.add_note(uid, note)
+            row = ctx.bus.contact_notes_book.add(
+                contact_id=uid, note=note,
+            )
         except ValueError as e:
-            return ToolResult(content=str(e), is_error=True)
-        body = json.dumps(view.to_dict(), indent=2, ensure_ascii=False)
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+            # ``contact_notes_book.add`` owns the
+            # non-empty-after-strip and length-cap
+            # invariants. Translate to LLM-facing error.
+            return ToolResult.err(str(e))
+
+        logger.info(
+            "add_contact_note: note=%s appended to contact=%s",
+            row.id, uid,
+        )
+        return ToolResult.ok({"created": row.to_dict()})

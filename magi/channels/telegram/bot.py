@@ -320,7 +320,7 @@ async def _on_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
     #                    ask your admin to invite you").
     bound = _find_contact_by_telegram_id(tgid)
     if bound is not None:
-        contact_id, contact_role, contact_name, contact_separated, contact_admin = bound
+        contact_id, contact_role, contact_name, contact_admin = bound
         # After the 2024 role/admin split, ``admin`` is a
         # boolean (WebUI sign-in) rather than a role value.
         # Dispatch accepts the caller if EITHER:
@@ -359,7 +359,6 @@ async def _on_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
             contact_id,
             contact_name,
             display_name,
-            contact_separated,
             contact_role,
         )
         return
@@ -384,7 +383,7 @@ async def _on_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
     # gate and route through the agent loop.
     bound = _auto_create_stranger_contact(tgid, display_name)
     if bound is not None:
-        contact_id, contact_role, _, _, _, _, _ = bound
+        contact_id, contact_role, _, _ = bound
         logger.info(
             "telegram: auto-created stranger contact on first message",
             extra={
@@ -412,7 +411,7 @@ async def _on_message(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def _auto_create_stranger_contact(tgid: str, display_name: str | None,
-) -> tuple[int, str, str, bool, str | None, str | None] | None:
+) -> tuple[int, str, str, bool] | None:
     """Create a Contact row for an unknown tgid on first message.
 
     Idempotent on the unique ``telegram_id`` constraint — if
@@ -456,11 +455,11 @@ def _auto_create_stranger_contact(tgid: str, display_name: str | None,
 
 
 def _find_contact_by_telegram_id(tgid: str
-) -> tuple[int, str, str, bool, bool] | None:
+) -> tuple[int, str, str, bool] | None:
     """Resolve a TG tgid to its bound contact.
 
     Single ORM read on ``Contact.telegram_id``; returns
-    ``(uid, role, name, separated, admin)``
+    ``(uid, role, name, admin)``
     on hit, ``None`` when no row has the tgid bound.
     The dispatch in :func:`_on_message` uses ``admin`` (WebUI
     sign-in bit) and ``role`` (the served-by relationship)
@@ -482,12 +481,11 @@ def _find_contact_by_telegram_id(tgid: str
     except (TypeError, ValueError):
         return None
 
-    def _fields(e) -> tuple[int, str, str, bool, bool]:
+    def _fields(e) -> tuple[int, str, str, bool]:
         return (
             e.id,
             e.role,
             e.name,
-            e.separated,
             e.admin,
         )
 
@@ -509,7 +507,6 @@ async def _handle_contact_message(update: Update,
     uid: int,
     contact_name: str,
     _display_name: str | None,
-    contact_separated: bool,
     contact_role: str,
 ) -> None:
     """Route a message from a bound contact into the durable agent inbox.
@@ -517,9 +514,6 @@ async def _handle_contact_message(update: Update,
     LLM credentials are resolved from the runtime MAGI row in its direct
     MAGIS database rather than the Contact row — the MAGI owns the
     credentials, not the person.
-
-    A separated contact gets a polite "you're 离职"
-    reply and no LLM call.
 
     Session lifecycle (D.10): TG now persists chat history
     the same way WebUI does — the BUS session service writes
@@ -540,15 +534,6 @@ async def _handle_contact_message(update: Update,
 
     # LLM credentials remain local to the agent. Telegram only publishes a
     # durable input and never receives provider credentials.
-
-    if contact_separated:
-        # Separated contacts can't chat with their EVA —
-        # the org marked them as 离职, so the agent is
-        # paused. Admin can restore via the dashboard.
-        await update.effective_message.reply_text(
-            _replies()["separated_contact"].format(contact_name=contact_name),
-        )
-        return
 
     text = update.effective_message.text or ""
     if not text.strip():

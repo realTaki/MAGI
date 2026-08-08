@@ -32,8 +32,8 @@ Columns / defaults
   Avoids timezone-aware datetime round-trips through SQLite
   (which has no native tz support).
 - ``enabled`` is an ``Integer`` 0/1 (not Boolean) for
-  consistency with the rest of the schema (``chat_messages.archived``,
-  ``contacts.separated_at``).
+  consistency with the rest of the schema (  ``chat_messages.archived``,
+  ``notifications.read``).
 
 Cross-table FKs
 ---------------

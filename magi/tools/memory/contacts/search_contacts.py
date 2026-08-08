@@ -13,11 +13,18 @@ a MAGIS-level concept, resolved at runtime via
 admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contacts_book``
+for the contact-side join (name + note match,
+``last_seen_at`` ordering) and ``ctx.bus.contact_notes_book``
+for the per-contact note sample. The old bus service at
+:mod:`magi.bus.jobs.services.contact.search` is no longer
+imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -32,46 +39,80 @@ class SearchContactsTool(Tool):
     name = "search_contacts"
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Search the contact directory by name or by note text. "
-        "Returns the matching contacts and a sample of their "
-        "notes. Use when the operator says '查一下 Lily / 谁在财务部'."
+        "Search the contact directory by name or by note "
+        "text. Returns the matching contacts and a sample "
+        "of their notes. Use when the operator says "
+        "'查一下 Lily / 谁在财务部'."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search string (matches name or note text, case-insensitive substring).",
+                "description": (
+                    "Search string (matches name or note "
+                    "text, case-insensitive substring)."
+                ),
             },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100,
-                "description": "Max contacts to return. Default 20.",
+                "default": 20,
+                "description": (
+                    "Max contacts to return. Default 20."
+                ),
+            },
+            "notes_per_contact": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 5,
+                "description": (
+                    "Max notes to attach per contact in the "
+                    "response. Default 5 (newest first). "
+                    "Set to 0 to skip notes entirely."
+                ),
             },
         },
         "required": ["query"],
     }
 
+    @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         query = kwargs.get("query")
-        limit = kwargs.get("limit") or 20
         if not isinstance(query, str) or not query.strip():
-            return ToolResult(
-                content="query is required (non-empty string)",
-                is_error=True,
+            return ToolResult.err(
+                "query is required (non-empty string)"
             )
-        bus = ctx.bus
-        views = bus.contacts_book.search(query, limit=limit)
-        body = json.dumps(
-            {
-                "query": query,
-                "count": len(views),
-                "contacts": [v.to_dict() for v in views],
-            },
-            indent=2,
-            ensure_ascii=False,
+        limit = int(kwargs.get("limit") or 20)
+        notes_per_contact = int(kwargs.get("notes_per_contact") or 5)
+
+        contacts = ctx.bus.contacts_book.search(
+            query=query, limit=limit,
         )
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+
+        results: list[dict] = []
+        for contact in contacts:
+            entry: dict = contact.to_dict()
+            if notes_per_contact > 0:
+                # Slice in-place to bound the response —
+                # ``list_for_contact`` returns the full
+                # corpus sorted newest-first, so a prefix
+                # is the same "sample" the old bus's
+                # ``ContactView`` returned.
+                notes = ctx.bus.contact_notes_book.list_for_contact(
+                    contact_id=contact.id,
+                )[:notes_per_contact]
+                entry["notes"] = [n.to_dict() for n in notes]
+            results.append(entry)
+
+        logger.info(
+            "search_contacts: query=%r limit=%s returned=%s",
+            query, limit, len(results),
+        )
+        return ToolResult.ok({
+            "query": query,
+            "count": len(results),
+            "contacts": results,
+        })

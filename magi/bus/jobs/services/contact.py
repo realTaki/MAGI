@@ -30,7 +30,7 @@ def _contact_view(row) -> ContactView:
 def _note_view(row) -> NoteView:
     return NoteView(
         id=int(row.id), contact_id=int(row.contact_id), note=str(row.note),
-        kind=str(row.kind), note_date=_iso(row.note_date), created_at=_iso(row.created_at) or "",
+        kind=str(row.kind), note_date=_iso(row.note_date),
         updated_at=_iso(row.updated_at) or "",
     )
 
@@ -158,7 +158,7 @@ class ContactsService:
             rows = session.scalars(
                 select(ContactNote)
                 .where(ContactNote.contact_id == uid)
-                .order_by(ContactNote.created_at.desc())
+                .order_by(ContactNote.id.desc())
             ).all()
             return [_note_view(row) for row in rows]
 

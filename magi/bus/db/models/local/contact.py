@@ -193,9 +193,6 @@ class ContactNote(Base):
     note_date: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False,
-    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False,
     )

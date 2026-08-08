@@ -2,9 +2,11 @@
 directory.
 
 Notes about an existing contact are recorded separately
-via :mod:`magi.tools.memory.add_contact_note`; this tool
-only takes an initial ``notes`` field as a convenience for
-"create + first observation" flows.
+via :mod:`magi.tools.memory.contacts.add_contact_note`; this
+tool accepts an optional ``notes`` argument as a convenience
+for "create + first observation" flows and forwards it to
+:mod:`magi.tools.memory.contacts.add_contact_note` so both
+paths land on the same ``contact_notes`` row shape.
 
 Tool author gate. ``role`` only carries ``assigned`` /
 ``guest`` — there is no ``role='admin'`` value. Admin is
@@ -15,11 +17,19 @@ a MAGIS-level concept, resolved at runtime via
 admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contacts_book``
+and ``ctx.bus.contact_notes_book`` — the Books own
+write invariants (name uniqueness, length caps,
+empty-content rejection) and expose ``add(...)`` plus
+``to_dict`` on the returned DTO. The old bus service at
+:mod:`magi.bus.jobs.services.contact` is no longer
+imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -35,42 +45,116 @@ class AddContactTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create a new contact (person) in the directory. "
-        "Name is required. display_name, telegram_id, and "
-        "notes (initial note) are optional. "
+        "Name is required. display_name, telegram_id, "
+        "role ('assigned' default / 'guest'), and "
+        "notes (initial note, optional) are optional. "
         "To add notes about an existing contact, use "
         "add_contact_note instead."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "Contact name (required, unique)."},
-            "display_name": {"type": "string", "description": "Display name (optional)."},
-            "telegram_id": {"type": "integer", "description": "Telegram user id (optional)."},
-            "notes": {"type": "string", "description": "Initial note (optional)."},
-            "role": {"type": "string", "description": "assigned/guest. Default 'guest'."},
+            "name": {
+                "type": "string",
+                "description": (
+                    "Contact name (required, ≤120 chars, "
+                    "unique across the directory)."
+                ),
+            },
+            "display_name": {
+                "type": "string",
+                "description": "Display name (optional).",
+            },
+            "telegram_id": {
+                "type": "integer",
+                "description": "Telegram user id (optional).",
+            },
+            "role": {
+                "type": "string",
+                "enum": ["assigned", "guest"],
+                "default": "guest",
+                "description": (
+                    "MAGI-local role tag. ``assigned`` "
+                    "marks the operator this MAGI serves; "
+                    "``guest`` (default) marks everyone else. "
+                    "Admin lives on the separate MAGIS table, "
+                    "not here."
+                ),
+            },
+            "notes": {
+                "type": "string",
+                "description": (
+                    "Initial note (optional, ≤8 KB). Forwarded "
+                    "to add_contact_note after the contact row "
+                    "is created — same shape as a permanent "
+                    "fact, just bundled for convenience."
+                ),
+            },
         },
         "required": ["name"],
     }
 
+    @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
-            return ToolResult(
-                content="name is required (non-empty string)",
-                is_error=True,
-            )
+            return ToolResult.err("name is required (non-empty string)")
+        role = kwargs.get("role") or "guest"
         try:
-            bus = ctx.bus
-            view = bus.contacts_book.create_contact(
+            contact = ctx.bus.contacts_book.add(
                 name=name,
                 display_name=kwargs.get("display_name"),
-                role=kwargs.get("role") or "guest",
+                role=role,
                 telegram_id=kwargs.get("telegram_id"),
-                notes=kwargs.get("notes") or "",
             )
         except ValueError as e:
-            return ToolResult(content=str(e), is_error=True)
-        body = json.dumps(view.to_dict(), indent=2, ensure_ascii=False)
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+            # ``contacts_book.add`` owns write invariants
+            # (non-empty name, name uniqueness, role enum
+            # membership). Translate to a clean LLM-facing
+            # error rather than letting it bubble to the
+            # worker's "tool.crashed" envelope (which would
+            # imply a programming error rather than a
+            # caller-fixable validation).
+            return ToolResult.err(str(e))
+
+        initial_note = kwargs.get("notes")
+        if initial_note and str(initial_note).strip():
+            # Forwarded to a second Book so the contact row
+            # and its first note live on the same schema
+            # they would have had via a follow-up
+            # ``add_contact_note`` call. We collapse both
+            # outcomes into one ``{"created": ...,
+            # "initial_note": ...}`` payload so the LLM
+            # doesn't have to thread two tool results.
+            try:
+                note = ctx.bus.contact_notes_book.add(
+                    contact_id=contact.id, note=str(initial_note),
+                )
+            except ValueError as e:
+                # Contact row was created — surface the
+                # note-validation failure but keep the
+                # partial-success contact in the payload so
+                # the LLM can decide whether to retry the
+                # note write.
+                logger.warning(
+                    "add_contact: contact %s created but "
+                    "initial note rejected: %s",
+                    contact.id, e,
+                )
+                return ToolResult.ok({
+                    "created": contact.to_dict(),
+                    "initial_note": None,
+                    "initial_note_error": str(e),
+                })
+            logger.info(
+                "add_contact: contact=%s created with "
+                "initial note=%s",
+                contact.id, note.id,
+            )
+            return ToolResult.ok({
+                "created": contact.to_dict(),
+                "initial_note": note.to_dict(),
+            })
+
+        logger.info("add_contact: contact=%s created", contact.id)
+        return ToolResult.ok({"created": contact.to_dict()})
