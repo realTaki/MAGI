@@ -283,6 +283,59 @@ def test_run_background_filter_narrows_output(workspace_ctx):
 
     asyncio.run(_filter_flow())
 
+def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
+    """A short command that exits before the monitor's first
+    read must still surface every line.
+
+    Regression guard. The drain loop used to be gated on
+    ``while process.returncode is None``, which conflates two
+    non-atomic events: the kernel closing stdout, and Python's
+    subprocess machinery setting ``returncode``. If the process
+    exits before the monitor task gets its first slice of the
+    event loop, that condition is already false on entry and the
+    loop exits without ever reading the pipe — the shell reports
+    "completed" with *zero* output even though the kernel still
+    had every line buffered.
+
+    Reproduced 60/60 with the old condition, 0/60 with EOF
+    gating, so this is not a flake-prone timing assertion: we
+    deliberately wait for the process to die *before* starting
+    the monitor, which pins the race open instead of hoping to
+    hit it.
+    """
+    async def _already_exited() -> None:
+        from magi.tools.shell._manager import _BackgroundShellManager
+
+        process = await asyncio.create_subprocess_shell(
+            "echo a; echo b; echo c",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=str(workspace_ctx.workspace),
+        )
+        shell = _BackgroundShellManager.add(
+            bash_id="exited01",
+            command="echo a; echo b; echo c",
+            process=process,
+            start_time=0.0,
+        )
+        # Let the process run to completion with nobody
+        # draining — stdout stays buffered in the pipe.
+        while process.returncode is None:
+            await asyncio.sleep(0.02)
+
+        # Only now attach the monitor. A returncode-gated loop
+        # reads nothing here; an EOF-gated loop drains the pipe.
+        await _BackgroundShellManager.start_monitor(bash_id="exited01")
+        await asyncio.sleep(0.2)
+
+        assert shell.output_lines == ["a", "b", "c"]
+        assert shell.status == "completed"
+        assert shell.exit_code == 0
+
+        _BackgroundShellManager._shells.pop("exited01", None)
+
+    asyncio.run(_already_exited())
+
 # -- BashOutputTool: error paths ------------------------------------------
 
 def test_output_missing_bash_id_returns_error(workspace_ctx):
@@ -372,19 +425,22 @@ def test_run_initial_cwd_is_workspace(workspace_ctx):
 # -- registry integration ------------------------------------------------
 
 def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
-    """Sanity: all three tools are registered. The
-    tool names show up in the LLM's tool list, in
-    the order registered. ``MAGI_WORKSPACE_DIR`` must be
-    set so the registry's tool-construction path
-    can build the SQLAlchemy engine (the LLM tools
-    gate on roles which require a DB lookup).
+    """Sanity: all three tools are dispatchable by name.
+
+    The registry owns only the *dispatch* half (name →
+    ``Tool`` instance); the agent-visible menu lives in the
+    new_bus tools Book and is read via
+    ``tool_catalog.list_schemas``. So this asserts through
+    :func:`get_tool`, not a schema listing.
+
+    ``MAGI_WORKSPACE_DIR`` must be set so the registry's
+    tool-construction path can build the SQLAlchemy engine
+    (the LLM tools gate on roles, which requires a DB lookup).
     """
     monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
-    # The registry builds each tool on first call;
-    # the role-gate tools open a session lazily so
-    # the engine only needs to be importable here.
-    from magi.tools.registry import get_tool_schemas
-    names = [t["name"] for t in get_tool_schemas()]
-    assert "bash" in names
-    assert "bash_output" in names
-    assert "bash_kill" in names
+    from magi.tools.registry import get_tool
+
+    for name in ("bash", "bash_output", "bash_kill"):
+        tool = get_tool(name)
+        assert tool is not None, f"{name} not registered"
+        assert tool.name == name

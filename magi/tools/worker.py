@@ -42,7 +42,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import uuid
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -140,7 +139,6 @@ class ToolsWorker:
         poll_seconds: float = 0.25,
     ) -> None:
         self.bus = bus
-        self.worker_id = f"tools-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
@@ -171,7 +169,7 @@ class ToolsWorker:
         while not self._stopping:
             try:
                 job = await asyncio.to_thread(
-                    self.bus.tool_job_board.claim, worker_id=self.worker_id,
+                    self.bus.tool_job_board.claim,
                 )
             except Exception:
                 logger.exception("tools worker: claim failed")

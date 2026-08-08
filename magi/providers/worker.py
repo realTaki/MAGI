@@ -98,7 +98,6 @@ class ProvidersWorker:
         concurrency: int | None = None,
     ) -> None:
         self.bus = bus
-        self.worker_id = f"provider-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
         if concurrency is None:
             try:
@@ -159,7 +158,6 @@ class ProvidersWorker:
             #    bus), but this is the future hook.
             cfg_job = await asyncio.to_thread(
                 self.bus.change_provider_config_job_board.claim,
-                worker_id=self.worker_id,
             )
             if cfg_job is not None:
                 await self._handle_config_job(cfg_job)
@@ -167,7 +165,7 @@ class ProvidersWorker:
 
             # 2. Claim one LLM job.
             job = await asyncio.to_thread(
-                self.bus.llm_job_board.claim, worker_id=self.worker_id,
+                self.bus.llm_job_board.claim,
             )
             if job is None:
                 await asyncio.sleep(self.poll_seconds)

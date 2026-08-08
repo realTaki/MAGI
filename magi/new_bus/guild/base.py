@@ -64,9 +64,9 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
 
     # -- 异步队列 ----------------------------------------------------------
 
-    def claim(self, *, worker_id: str) -> JobT | None:
+    def claim(self) -> JobT | None:
         with self._session() as s:
-            row = self._claim(s, worker_id=worker_id)
+            row = self._claim(s)
             s.commit()
             return _row_to_job(row, self.job_cls) if row else None
 
@@ -83,7 +83,7 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
 
     # -- 内部 --------------------------------------------------------------
 
-    def _claim(self, session: Session, *, worker_id: str) -> RowT | None:
+    def _claim(self, session: Session) -> RowT | None:
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
         while True:
@@ -97,7 +97,6 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
                 continue
             is_reclaim = candidate.status == "processing"
             candidate.status = "processing"
-            candidate.leased_by = worker_id
             candidate.leased_until = lease_until
             candidate.attempts += 1
             if not is_reclaim and hasattr(candidate, "started_at"):
@@ -207,9 +206,8 @@ def _make_exhausted_result(row, result_cls, natural_key_attr: str):
         natural_key_attr: key_val,
         "success": False,
     }
-    if hasattr(row, "attempts") and hasattr(row, "leased_by"):
+    if hasattr(row, "attempts"):
         kwargs["error"] = (
-            f"job exhausted after {row.attempts} attempt(s), "
-            f"last leased by {row.leased_by}"
+            f"job exhausted after {row.attempts} attempt(s)"
         )
     return result_cls(**kwargs)
