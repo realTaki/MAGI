@@ -1,4 +1,3 @@
-
 """``search_sessions`` tool — full-text search across the
 operator's chat history, with N-turn context around each hit.
 
@@ -54,13 +53,34 @@ LLM gets a clear hint instead of misleading neighbours.
 Output cap: the same 8 KB ceiling the other tools use —
 a runaway context_n on a huge session can't blow up the
 next LLM call.
+
+Bus plumbing
+------------
+
+Lives on the new_bus: the FTS5 query goes through
+:class:`magi.new_bus.library.local.sessionBook.MessageBook.search`,
+the surrounding-context slice goes through
+:meth:`MessageBook.list_for_session` (one fetch, with
+``include_archived=True`` so we can tell an archived hit
+from an active one by the ``archived`` flag), and the
+session header + cross-contact defence go through
+:meth:`SessionBook.get_for_owner`. That single helper
+returns ``None`` when the session doesn't belong to the
+caller, so this tool and the future ``/api/chat/search``
+HTTP endpoint share one place to enforce per-contact
+scoping — the new_bus's :meth:`SessionBook.get` only
+accepts ``session_id`` (the old bus's loader validated
+``uid`` itself), so the check has to live somewhere.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.jobs.protocols.session import SearchHit, SearchUnavailable
+from magi.new_bus.library.local.sessionBook import (
+    SearchHit,
+    SearchUnavailable,
+)
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 _MAX_HITS = 20
@@ -183,8 +203,8 @@ class SearchSessionsTool(Tool):
         uid = ctx.uid
 
         try:
-            hits, total = ctx.bus.session_book.search(
-                q, limit=limit,
+            hits, total = ctx.bus.messages_book.search(
+                uid=uid, q=q, limit=limit,
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_sessions: {e}", is_error=True)
@@ -223,7 +243,8 @@ class SearchSessionsTool(Tool):
         for i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
                 hit, context_n,
-                ctx.uid,
+                ctx.bus,
+                uid,
             )
             block_bytes = len(block.encode("utf-8"))
             if bytes_used + block_bytes > _MAX_OUTPUT_BYTES:
@@ -253,44 +274,73 @@ class SearchSessionsTool(Tool):
         return ToolResult(content=header + body + footer)
 
 
-def _format_hit_block(hit, context_n: int, uid: int) -> str:
+def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
-    The hit may land on an active or archived message. For
-    active messages we slice the Session.messages list
-    around the hit's index. For archived hits there's no
-    sensible "neighbour" (auto-compaction removed the
-    adjacent turns by design), so we annotate ``(archived)``
-    and return just the snippet — the LLM gets a clear
-    hint instead of misleading neighbours.
+    The hit may land on an active or archived message. The
+    new_bus keeps both in the same ``chat_messages`` table
+    with an ``archived`` flag (the old bus split them into
+    ``Session.messages`` / ``Session.archive`` lists — that
+    distinction has been folded into the row), so one
+    :meth:`MessageBook.list_for_session` call (with
+    ``include_archived=True``) gives us everything we need
+    to render either kind of block.
 
-    ``hit.delivery_address`` is the row's Telegram chat identifier
-    (per-channel delivery address; carried on the row
-    since D.18). The BUS session lookup is
-    scoped by ``ctx.uid`` (the search call
-    already resolved every hit to this contact) — the
-    store's defence-in-depth check on ``uid``
-    covers the cross-contact case.
+    For archived hits there's no clean "neighbour" (auto-
+    compaction rolled the adjacent turns out by design), so
+    we annotate ``(archived)`` and return just the snippet —
+    the LLM gets a clear hint instead of misleading
+    neighbours. For active hits we slice the **active
+    subset** of the message list around the hit's index in
+    that subset (NOT the combined list — archived rows are
+    not "around" an active conversation by definition).
+
+    Defence-in-depth: the FTS query is already scoped by
+    ``s.uid = :uid``, but the session lookup goes through
+    :meth:`SessionBook.get_for_owner` (the new_bus's
+    :meth:`SessionBook.get` only accepts ``session_id``).
+    That helper returns ``None`` when the hit's session
+    doesn't belong to the caller — closing the gap so this
+    tool and the future ``/api/chat/search`` HTTP endpoint
+    share one place to enforce per-contact scoping.
     """
-    # Locate the hit in either the active or archive list.
-    session = ctx.bus.session_book.get(
-        uid, hit.session_id,
+    session = bus.sessions_book.get_for_owner(
+        uid=uid, session_id=hit.session_id,
     )
     if session is None:
-        # Race: hit was deleted between FTS5 hit and read.
+        # Race: hit row was deleted between FTS5 hit and
+        # read, or the search joined to a session that
+        # somehow doesn't belong to the caller. Defend
+        # rather than leak the row's metadata.
         return (
             f"[hit] session={hit.session_id}, ts={hit.ts}, "
             f"role={hit.role}, channel={hit.channel}, "
-            f"delivery_address={hit.delivery_address} — session no longer exists"
+            f"delivery_address={hit.delivery_address} — "
+            f"session no longer accessible to caller"
         )
 
-    # Try active first.
-    hit_idx = _index_of_message_id(session.messages, hit.message_id)
-    is_archived = False
+    # One fetch covers both branches: active hits and
+    # archived hits (the latter is detected via
+    # ``m.archived == 1``). The list is sorted by row id,
+    # which is monotonic per session (auto-compaction only
+    # flips the flag — never reorders rows).
+    messages = bus.messages_book.list_for_session(
+        session_id=hit.session_id, include_archived=True,
+    )
+
+    # Find hit's combined index first, then split into
+    # active vs archive branches.
+    hit_idx = _index_of_message_id(messages, hit.message_id)
     if hit_idx is None:
-        hit_idx = _index_of_message_id(session.archive, hit.message_id)
-        is_archived = hit_idx is not None
+        # Race: row was deleted between FTS5 hit and read.
+        return (
+            f"[hit] session={hit.session_id}, ts={hit.ts}, "
+            f"role={hit.role}, channel={hit.channel}, "
+            f"delivery_address={hit.delivery_address} — "
+            f"hit message no longer in session"
+        )
+    is_archived = messages[hit_idx].archived == 1
 
     header = (
         f"[hit] session={session.session_id}, "
@@ -304,16 +354,27 @@ def _format_hit_block(hit, context_n: int, uid: int) -> str:
         # asked for snippet-only.
         return f"{header}\nsnippet: {hit.snippet}"
 
-    # Active hit: slice the active messages list around it.
-    lo = max(0, hit_idx - context_n)
-    hi = min(len(session.messages), hit_idx + context_n + 1)
-    context_msgs = session.messages[lo:hi]
+    # Active hit: slice the active subset of the messages
+    # list around the hit. Archived rows were rolled out
+    # by auto-compaction and don't form a coherent
+    # "around the hit" neighbourhood; we want the
+    # conversation flow that the user actually saw.
+    active_msgs = [m for m in messages if m.archived == 0]
+    active_idx = _index_of_message_id(active_msgs, hit.message_id)
+    if active_idx is None:
+        # Hit row's archived flag flipped between the
+        # combined read and now — race with compaction.
+        return f"{header}\nsnippet: {hit.snippet}"
+
+    lo = max(0, active_idx - context_n)
+    hi = min(len(active_msgs), active_idx + context_n + 1)
+    context_msgs = active_msgs[lo:hi]
     context_lines = []
     for j, m in enumerate(context_msgs):
         actual_idx = lo + j
-        marker = "  >>" if actual_idx == hit_idx else "    "
+        marker = "  >>" if actual_idx == active_idx else "    "
         text = m.text
-        if actual_idx == hit_idx:
+        if actual_idx == active_idx:
             # Re-attach the snippet's <mark> highlighting
             # so the LLM sees where in the message the hit
             # landed.
@@ -322,7 +383,7 @@ def _format_hit_block(hit, context_n: int, uid: int) -> str:
             f"{marker} [{m.role} @ {m.ts}] {text}"
         )
     context = "\n".join(context_lines)
-    return f"{header}\n--- context (idx {hit_idx}) ---\n{context}"
+    return f"{header}\n--- context (idx {active_idx}) ---\n{context}"
 
 
 def _index_of_message_id(messages, message_id: str) -> int | None:

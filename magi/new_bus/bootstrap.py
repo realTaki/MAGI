@@ -246,6 +246,21 @@ def _bootstrap_with_dirs(
     # ---- local books -------------------------------------------------------
     sessions_book = SessionBook(local_factory)
     messages_book = MessageBook(local_factory)
+    # Idempotent: creates every new_bus ORM table on the local SQLite
+    # file (``chat_sessions`` / ``chat_messages`` / etc.). In a
+    # mixed-bus deployment the old bus's alembic migration 0001 has
+    # already created these tables, so this is a no-op; in a
+    # new_bus-only bootstrap (or a fresh test state dir) it lays
+    # them down so the FTS triggers below have something to attach
+    # to.
+    local_factory.create_all()
+    # Install the FTS5 virtual table + sync triggers (idempotent —
+    # every statement uses ``IF NOT EXISTS``). The old bus's alembic
+    # migration 0001 also creates these; whichever path ran first
+    # wins and the other is a no-op. Calling here means tests that
+    # build a fresh SQLite file via ``EngineFactory.create_all`` get
+    # a working search index too.
+    messages_book.ensure_fts()
     memory_book = MemoryBook(local_factory)
     contacts_book = ContactBook(local_factory)
     contact_notes_book = ContactNoteBook(local_factory)

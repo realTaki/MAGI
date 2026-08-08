@@ -4,7 +4,20 @@ Two tables:
 - ``chat_sessions``  — one row per chat session (Crockford ULID primary key)
 - ``chat_messages``  — one row per persisted transcript message
 
-Schema mirrors the old bus's ``chat_sessions`` + ``chat_messages`` tables.
+Plus a SQLite-only ``chat_messages_fts`` virtual table (FTS5,
+``trigram`` tokeniser) with three triggers that keep it in lockstep
+with ``chat_messages.id`` / ``chat_messages.text``. The triggers are
+the same ones alembic migration 0001 lays down for the old bus; we
+re-install them here so a new_bus-only deployment (or a test that
+constructs a fresh SQLite file via ``EngineFactory.create_all``) gets
+a working full-text index out of the box. ``ensure_fts`` is idempotent
+— ``CREATE ... IF NOT EXISTS`` makes it safe to run repeatedly, and
+safe to coexist with the old bus's migration (the old bus ran alembic
+0001 first; the new_bus's bootstrap second; the second run is a no-op).
+
+Schema mirrors the old bus's ``chat_sessions`` + ``chat_messages``
+tables; the row shapes are identical, so the FTS5 index is shared
+across both code paths transparently.
 """
 
 from __future__ import annotations
@@ -22,6 +35,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     select,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,6 +71,41 @@ class Message:
     content_blocks: list[dict[str, Any]] | None = None
     run_id: str | None = None
     llm_attempt_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SearchHit:
+    """One row of chat-history FTS5 search output.
+
+    Carries the snippet (with literal ``<mark>...</mark>`` tags
+    already inserted by ``snippet(chat_messages_fts, ...)``) and
+    the bm25 score (lower = better). ``session_id`` / ``message_id``
+    let the caller resolve the hit back to its
+    :class:`Message` / :class:`Session` row.
+    """
+
+    session_id: str
+    message_id: str
+    role: str
+    ts: str
+    snippet: str
+    score: float
+    channel: str
+    title: str | None = None
+    delivery_address: str | None = None
+
+
+class SearchUnavailable(RuntimeError):
+    """SQLite in this deployment was built without the FTS table.
+
+    The FTS5 virtual table is a side artefact of
+    :func:`install_session_fts_schema` (or alembic migration 0001 in
+    the old bus). When neither has been run — typically because the
+    SQLite build lacks FTS5, or because the bootstrap ran before the
+    FTS installer — ``MessageBook.search`` raises this instead of
+    returning empty results, so callers can surface a 503 rather than
+    a silently-empty search box.
+    """
 
 
 # -- internal ORM --------------------------------------------------------
@@ -122,6 +171,35 @@ class SessionBook(BaseBook[_SessionRow, Session]):
                 select(_SessionRow).where(_SessionRow.session_id == session_id)
             )
             return self._row_to_dto(row) if row else None
+
+    def get_for_owner(self, *, uid: int, session_id: str) -> Session | None:
+        """``get`` with cross-contact defence-in-depth.
+
+        The old bus's :meth:`SessionService.get` accepted ``(uid,
+        session_id)`` and silently dropped rows that didn't match
+        the caller's uid; the new_bus's :meth:`get` accepts
+        ``session_id`` only, which would let a caller guess another
+        operator's ``session_id`` and pull its header back. The
+        FTS5 search path is already scoped by ``WHERE s.uid = :uid``
+        inside the JOIN, so a tool that only goes through
+        :meth:`MessageBook.search` is safe — but the moment any
+        caller resolves a hit back through ``sessions_book.get``
+        (e.g. to render a context slice, or for the future
+        ``/api/chat/search`` HTTP endpoint), they need the uid
+        check to live somewhere.
+
+        This method is the single home for that check: returns the
+        session **only** if ``uid`` owns it, otherwise ``None``.
+        Both the LLM tool and the HTTP API route through here, so
+        the cross-contact defence lives in one place rather than
+        being re-implemented (and forgotten) at every call site.
+        """
+        session = self.get(session_id=session_id)
+        if session is None:
+            return None
+        if session.uid != uid:
+            return None
+        return session
 
     def list_for_owner(self, *, uid: int) -> list[Session]:
         with self._session() as s:
@@ -208,12 +286,159 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             row.archived = 1
             s.commit()
 
+    # -- full-text search ------------------------------------------------
+
+    def ensure_fts(self) -> None:
+        """Install the FTS5 virtual table + sync triggers if missing.
+
+        Idempotent: every statement uses ``IF NOT EXISTS``. Safe to
+        call from bootstrap on every process start; the second-and-
+        later invocations are no-ops.
+
+        Only does anything on a SQLite engine — the FTS5 module is
+        SQLite-specific, so on the MAGIS PostgreSQL factory this is
+        a no-op (PG would need a different index strategy; out of
+        scope for this migration).
+        """
+        install_session_fts_schema(self._factory.engine)
+
+    def search(
+        self,
+        *,
+        uid: int,
+        q: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[SearchHit], int]:
+        """Full-text search across ``chat_messages`` rows owned by ``uid``.
+
+        Scoping: ``WHERE s.uid = :uid`` is part of the join, not a
+        post-filter — so the bm25 ranking is computed on the
+        contact's own corpus, never on someone else's. ``q`` is
+        whitespace-tokenised into quoted ``"<token>"`` substrings,
+        mirroring the old bus's sanitiser. The MATCH expression uses
+        the trigram tokeniser built into the FTS5 schema (3+ char
+        CJK runs work without explicit segmentation).
+
+        Returns ``(hits, total)``; ``total`` is the total matching
+        rows across the caller's corpus, not the page size, so the
+        caller can render "N match(es) total".
+
+        Raises :class:`SearchUnavailable` if the FTS table is
+        absent (SQLite built without FTS5, or ``ensure_fts`` not yet
+        run). Lets the caller surface a 503 rather than a silent
+        empty box.
+        """
+        if not q or not q.strip():
+            return [], 0
+        match = " ".join(
+            f'"{token.replace(chr(34), "").strip()}"'
+            for token in q.split()
+            if token.replace(chr(34), "").strip()
+        )
+        if not match:
+            return [], 0
+
+        base = (
+            "FROM chat_messages_fts "
+            "JOIN chat_messages m ON m.id = chat_messages_fts.rowid "
+            "JOIN chat_sessions s ON s.session_id = m.session_id "
+            "WHERE chat_messages_fts MATCH :match AND s.uid = :uid"
+        )
+        with self._session() as s:
+            available = s.execute(
+                text(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type='table' AND name='chat_messages_fts'"
+                )
+            ).first()
+            if available is None:
+                raise SearchUnavailable(
+                    "Full-text search is not available in this SQLite build"
+                )
+            total = s.execute(
+                text("SELECT COUNT(*) " + base),
+                {"match": match, "uid": uid},
+            ).scalar_one()
+            rows = s.execute(
+                text(
+                    "SELECT m.session_id, m.message_id, m.role, m.ts, "
+                    "s.title, s.channel, s.delivery_address, "
+                    "snippet(chat_messages_fts, 0, '<mark>', '</mark>', "
+                    "'…', 16) AS snippet, "
+                    "bm25(chat_messages_fts) AS score "
+                    + base
+                    + " ORDER BY score LIMIT :limit OFFSET :offset"
+                ),
+                {"match": match, "uid": uid, "limit": limit, "offset": offset},
+            ).fetchall()
+
+        return [
+            SearchHit(
+                session_id=row.session_id,
+                message_id=row.message_id,
+                role=row.role,
+                ts=row.ts,
+                snippet=row.snippet,
+                score=float(row.score),
+                channel=row.channel,
+                title=row.title,
+                delivery_address=row.delivery_address,
+            )
+            for row in rows
+        ], total
+
+
+# -- FTS5 schema installer ----------------------------------------------
+
+
+_FTS5_DDL = (
+    # The FTS5 virtual table mirrors chat_messages.text as an
+    # external-content index; rowid pinned to chat_messages.id so
+    # the triggers below can address rows by id.
+    "CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts USING fts5("
+    "text, content='chat_messages', content_rowid='id', "
+    "tokenize='trigram')",
+    # Sync triggers — same pattern as alembic migration 0001.
+    "CREATE TRIGGER IF NOT EXISTS chat_messages_ai AFTER INSERT ON chat_messages BEGIN "
+    "INSERT INTO chat_messages_fts(rowid, text) VALUES (new.id, new.text); "
+    "END",
+    "CREATE TRIGGER IF NOT EXISTS chat_messages_ad AFTER DELETE ON chat_messages BEGIN "
+    "INSERT INTO chat_messages_fts(chat_messages_fts, rowid, text) "
+    "VALUES ('delete', old.id, old.text); "
+    "END",
+    "CREATE TRIGGER IF NOT EXISTS chat_messages_au AFTER UPDATE ON chat_messages BEGIN "
+    "INSERT INTO chat_messages_fts(chat_messages_fts, rowid, text) "
+    "VALUES ('delete', old.id, old.text); "
+    "INSERT INTO chat_messages_fts(rowid, text) VALUES (new.id, new.text); "
+    "END",
+)
+
+
+def install_session_fts_schema(engine) -> None:
+    """Install the FTS5 schema on a SQLite engine.
+
+    No-op on non-SQLite engines (PG would need a different index
+    strategy). Safe to call repeatedly — every statement uses
+    ``IF NOT EXISTS``. The bootstrap calls this once after wiring
+    the local factory; tests that build a fresh SQLite file call it
+    after ``create_all``.
+    """
+    if not engine.dialect.name.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        for stmt in _FTS5_DDL:
+            conn.exec_driver_sql(stmt)
+
 
 __all__ = [
     "Session",
     "Message",
+    "SearchHit",
+    "SearchUnavailable",
     "SessionBook",
     "MessageBook",
+    "install_session_fts_schema",
     "_SessionRow",
     "_MessageRow",
 ]

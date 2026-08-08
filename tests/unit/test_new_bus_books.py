@@ -754,6 +754,19 @@ def test_task_book_upsert_by_name(factory, contact_id):
     """
     book = TaskBook(factory)
 
+    # ``session_id`` is a FK to ``chat_sessions.session_id``;
+    # seed the row first so the task insert doesn't trip
+    # SQLite's FK guard.
+    from magi.new_bus.library.local.sessionBook import SessionBook
+    SessionBook(factory).add(
+        session_id="01ABC",
+        delivery_address="webui:dashboard",
+        uid=contact_id,
+        channel="webui",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+
     # First call: insert.
     task_id_1, is_update_1 = book.upsert_by_name(
         name="daily-brief",
