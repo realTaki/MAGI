@@ -233,6 +233,10 @@ async def worker_lifespan():
     state_dir = str(resolve_workspace_dir() / "memories")
     new_bus = bootstrap_new_bus(state_dir=state_dir)
 
+    # Set process-global new_bus for migration interim (TaskSchedulerBridge etc.)
+    import magi.channels
+    magi.channels.set_current_new_bus(new_bus)
+
     # Channel Workers — webui + any other enabled channels
     channel_workers = await start_channel_workers(
         new_bus, enabled={"webui"},
