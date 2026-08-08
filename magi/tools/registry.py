@@ -37,9 +37,9 @@ logger = logging.getLogger("magi.tools.registry")
 #: :func:`get_tool` call.
 _tools_cache: list["Tool"] | None = None
 
-#: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``,
-#: ``"skills"``). Each call to :func:`register_tools` replaces
-#: the entire slot for that source.
+#: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``).
+#: Each call to :func:`register_tools` replaces the entire slot for
+#: that source.
 _injected: dict[str, list["Tool"]] = {}
 
 #: Change listeners — fired after :func:`register_tools`.
@@ -55,9 +55,8 @@ def _build_tools() -> list["Tool"]:
     tool without dragging in the rest.
 
     Tools from external subsystems (MCP manage tools,
-    SkillLoaderTool, MCP-discovered tools) are NOT
-    included here — they are injected at runtime via
-    :func:`register_tools`.
+    MCP-discovered tools) are NOT included here — they
+    are injected at runtime via :func:`register_tools`.
     """
     from magi.tools.shell.run import BashRunTool
     from magi.tools.shell.output import BashOutputTool
@@ -73,6 +72,7 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
     from magi.tools.comms.send_message import SendMessageTool
     from magi.tools.filesystem.write_file import WriteFileTool
+    from magi.tools.skills.load_skill import LoadSkillTool
     from magi.tools.memory.contacts.add_contact import AddContactTool
     from magi.tools.memory.contacts.add_contact_note import AddContactNoteTool
     from magi.tools.memory.contacts.delete_contact_note import DeleteContactNoteTool
@@ -100,6 +100,10 @@ def _build_tools() -> list["Tool"]:
         BashRunTool(),
         BashOutputTool(),
         BashKillTool(),
+        # Skills — fetch the full markdown body of a
+        # registered skill (the system prompt only shows
+        # the one-line description; this loads the body).
+        LoadSkillTool(),
         # Memory management — LLM-driven, not auto.
         AddMemoryTool(),
         UpdateMemoryTool(),
@@ -118,8 +122,7 @@ def _build_tools() -> list["Tool"]:
         ListActionItemsTool(),
         # MCP server management tools (AddMcpServer,
         # ListMcpServers, UpdateMcpServer, DeleteMcpServer)
-        # and SkillLoaderTool are NOT builtin — they are
-        # injected at runtime by their respective subsystems
+        # are NOT builtin — they are injected at runtime
         # via :func:`register_tools`.
     ]
 
