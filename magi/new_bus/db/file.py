@@ -630,22 +630,35 @@ class FileShelf:
         if any(part == ".." for part in p.parts):
             raise PathError(f"name must not contain '..' segments, got {name!r}")
 
-        # Auto-detect: try each suffix in priority order.
-        for suffix in _READ_SUFFIXES:
-            candidate = self._root / f"{name}{suffix}"
-            if candidate.is_file():
-                return candidate
-
         # If the name already has a recognised extension, try exact match
-        # (supports callers that prefer "soul.md" style).
+        # first (supports callers that prefer "soul.md" / "icon.png"
+        # style).  Avoids ambiguity when an extension is explicitly present.
         if p.suffix and p.suffix.lstrip(".") in self._formats:
             candidate = self._root / name
             if candidate.is_file():
                 return candidate
 
+        # Auto-detect: try each canonical suffix in priority order,
+        # then sweep any custom-registered extension that wasn't in
+        # the canonical list (e.g. .png, .webp from a binary Format).
+        tried: list[str] = []
+        for suffix in _READ_SUFFIXES:
+            tried.append(suffix)
+            candidate = self._root / f"{name}{suffix}"
+            if candidate.is_file():
+                return candidate
+        for ext in self._formats:
+            if ext in _READ_SUFFIXES:
+                continue
+            suffix = "." + ext
+            tried.append(suffix)
+            candidate = self._root / f"{name}{suffix}"
+            if candidate.is_file():
+                return candidate
+
         raise FileNotFoundError(
             f"FileShelf: {name!r} not found in {self._root} "
-            f"(tried suffixes: {', '.join(_READ_SUFFIXES)})"
+            f"(tried suffixes: {', '.join(tried)})"
         )
 
     def _format_for(self, resolved: Path) -> Format:
