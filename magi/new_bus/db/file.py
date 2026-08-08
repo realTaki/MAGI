@@ -1,8 +1,8 @@
-"""FileStore — directory-scoped structured file I/O with hot-reload caching.
+"""FileShelf — directory-scoped structured file I/O with hot-reload caching.
 
-``FileStore`` is the file-system counterpart to
+``FileShelf`` is the file-system counterpart to
 :class:`~magi.new_bus.db.engine.EngineFactory`: EngineFactory wraps a
-SQLAlchemy ``Engine``, FileStore wraps a local directory.  Both serve
+SQLAlchemy ``Engine``, FileShelf wraps a local directory.  Both serve
 as backends for *Books* (see :mod:`magi.new_bus.library.file`).
 
 Each supported extension (``.md``, ``.yaml``, ``.yml``, ``.json``,
@@ -35,7 +35,7 @@ from typing import Any, Final
 
 logger = logging.getLogger("magi.new_bus.db.file")
 
-# Suffix search order for auto-detection in :meth:`FileStore.read`.
+# Suffix search order for auto-detection in :meth:`FileShelf.read`.
 # ``.md`` first (most common for prompts), then YAML variants,
 # then JSON, then plain text.
 _READ_SUFFIXES: Final[tuple[str, ...]] = (".md", ".yaml", ".yml", ".json", ".txt")
@@ -49,7 +49,7 @@ _READ_SUFFIXES: Final[tuple[str, ...]] = (".md", ".yaml", ".yml", ".json", ".txt
 class Format(ABC):
     """A file-format binding: one extension → load/dump codec.
 
-    Subclass and register in :class:`FileStore`'s *formats* tuple
+    Subclass and register in :class:`FileShelf`'s *formats* tuple
     to add a new on-disk format without touching the store itself.
     """
 
@@ -64,7 +64,7 @@ class Format(ABC):
     def dump(self, value: Any) -> str:
         """Encode an in-memory object into on-disk text."""
 
-    #: If ``True``, :class:`FileStore` strips the raw bytes before
+    #: If ``True``, :class:`FileShelf` strips the raw bytes before
     #: calling :meth:`load`.  Markdown wants leading/trailing
     #: whitespace stripped; YAML and JSON are already canonical.
     strip_on_read: bool = False
@@ -134,15 +134,15 @@ DEFAULT_FORMATS: Final[tuple[Format, ...]] = (
 # =========================================================================
 
 
-class FileStoreError(Exception):
-    """Base for every error :class:`FileStore` raises."""
+class FileShelfError(Exception):
+    """Base for every error :class:`FileShelf` raises."""
 
 
-class FormatError(FileStoreError):
+class FormatError(FileShelfError):
     """Raised when a file's extension has no registered :class:`Format`."""
 
 
-class PathError(FileStoreError):
+class PathError(FileShelfError):
     """Raised when a *name* is absolute or contains ``..`` traversal."""
 
 
@@ -161,11 +161,11 @@ class _Entry:
 
 
 # =========================================================================
-# FileStore
+# FileShelf
 # =========================================================================
 
 
-class FileStore:
+class FileShelf:
     """Directory-backed, format-aware read/write service.
 
     Parallel to :class:`~magi.new_bus.db.engine.EngineFactory` for
@@ -183,7 +183,7 @@ class FileStore:
 
     Construction::
 
-        store = FileStore(Path("/var/magi/prompts"))
+        store = FileShelf(Path("/var/magi/prompts"))
         soul = store.read_text("soul")           # → str  (auto-detects .md)
         replies = store.read("bot_replies")       # → dict (auto-detects .yaml)
 
@@ -251,7 +251,7 @@ class FileStore:
             st = resolved.stat()
         except OSError as exc:
             raise FileNotFoundError(
-                f"FileStore: {name!r} ({resolved}) not readable: {exc}"
+                f"FileShelf: {name!r} ({resolved}) not readable: {exc}"
             ) from exc
         version = (st.st_mtime_ns, st.st_size)
 
@@ -268,7 +268,7 @@ class FileStore:
                 text = resolved.read_text(encoding="utf-8")
             except OSError as exc:
                 raise FileNotFoundError(
-                    f"FileStore: {name!r} vanished mid-read: {exc}"
+                    f"FileShelf: {name!r} vanished mid-read: {exc}"
                 ) from exc
             if fmt.strip_on_read:
                 text = text.strip()
@@ -279,7 +279,7 @@ class FileStore:
             self._versions[resolved] = version
 
         logger.debug(
-            "FileStore reloaded %s (mtime_ns=%d size=%d)",
+            "FileShelf reloaded %s (mtime_ns=%d size=%d)",
             resolved.name, version[0], version[1],
         )
         return value
@@ -293,7 +293,7 @@ class FileStore:
         value = self.read(name)
         if not isinstance(value, str):
             raise TypeError(
-                f"FileStore: {name!r} decoded into {type(value).__name__}, not str"
+                f"FileShelf: {name!r} decoded into {type(value).__name__}, not str"
             )
         return value
 
@@ -344,7 +344,7 @@ class FileStore:
             self._cache.pop(name, None)
             self._versions.pop(resolved, None)
 
-        logger.debug("FileStore wrote %s (%d bytes)", resolved, len(text))
+        logger.debug("FileShelf wrote %s (%d bytes)", resolved, len(text))
         return resolved
 
     def write_structured(
@@ -473,7 +473,7 @@ class FileStore:
                 return candidate
 
         raise FileNotFoundError(
-            f"FileStore: {name!r} not found in {self._root} "
+            f"FileShelf: {name!r} not found in {self._root} "
             f"(tried suffixes: {', '.join(_READ_SUFFIXES)})"
         )
 
@@ -491,8 +491,8 @@ class FileStore:
 
 __all__ = [
     "DEFAULT_FORMATS",
-    "FileStore",
-    "FileStoreError",
+    "FileShelf",
+    "FileShelfError",
     "Format",
     "FormatError",
     "JsonFormat",
