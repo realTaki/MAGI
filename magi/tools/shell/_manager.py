@@ -369,3 +369,25 @@ class _BackgroundShellManager:
                 killed,
             )
         return killed
+
+
+# -- public seam ---------------------------------------------------------
+
+
+async def shutdown_background_shells() -> int:
+    """Terminate every live background shell. Returns the count.
+
+    The one name in this module intended for callers outside
+    :mod:`magi.tools.shell` — :class:`~magi.tools.worker.ToolsWorker`
+    calls it on stop. Follows the same convention as
+    :func:`magi.tools._safe_path.safe_resolve`: a private module
+    exporting a public function, rather than the package ``__init__``
+    growing code (every sibling ``magi/tools/*/__init__.py`` is
+    docs-only).
+
+    Idempotent — a second call is a no-op returning ``0``.
+    """
+    return await _BackgroundShellManager.shutdown()
+
+
+__all__ = ["shutdown_background_shells"]

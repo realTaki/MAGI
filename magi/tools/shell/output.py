@@ -9,14 +9,11 @@ tailing a specific log line in a busy process).
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.shell._manager import _BackgroundShellManager
 
-
-logger = logging.getLogger("magi.tools.shell.output")
 
 
 class BashOutputTool(Tool):
@@ -103,7 +100,15 @@ class BashOutputTool(Tool):
             if shell.exit_code is not None
             else ""
         )
-        suffix = f"[status] {shell.status}{exit_str}"
+        # A chatty process can overrun the per-shell buffer. Say so
+        # explicitly — a silent hole in the output would read as
+        # "the process printed nothing there".
+        dropped_str = (
+            f" dropped={shell.dropped_lines}"
+            if shell.dropped_lines
+            else ""
+        )
+        suffix = f"[status] {shell.status}{exit_str}{dropped_str}"
 
         if not stdout:
             return ToolResult(

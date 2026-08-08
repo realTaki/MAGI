@@ -11,14 +11,11 @@ a false ``is_error``.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.shell._manager import _BackgroundShellManager
 
-
-logger = logging.getLogger("magi.tools.shell.kill")
 
 
 class BashKillTool(Tool):
