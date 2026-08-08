@@ -2,7 +2,7 @@
 
 与旧 ``magi.bus`` 并行、独立。 提供自己的 ORM 基类、EngineFactory、
 Books（读侧 CRUD）、Guild（写侧 publish/claim/submit_result）、
-FileStore（文件 I/O + 热重载），以及
+FileShelf（文件 I/O + 热重载），以及
 通过 :func:`bootstrap_new_bus` 构造的统一门面 ``NewBus``。
 
 ``NewBus`` 由组合根（:mod:`magi.startup.runtime`）显式构造并传入 worker::
@@ -24,7 +24,7 @@ FileStore（文件 I/O + 热重载），以及
 from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 from magi.new_bus.db.base import Base, utcnow_naive
 from magi.new_bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
-from magi.new_bus.db.file import FileStore
+from magi.new_bus.db.file import FileShelf
 
 __all__ = [
     "NewBus",
@@ -32,7 +32,7 @@ __all__ = [
     "Base",
     "utcnow_naive",
     "EngineFactory",
-    "FileStore",
+    "FileShelf",
     "build_local_factory",
     "build_magis_factory",
 ]
