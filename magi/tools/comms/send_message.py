@@ -13,10 +13,9 @@ Cross-channel delivery (D.28)
 -----------------------------
 
 The push target is determined by the **session's channel**
-(``chat_sessions.channel``) and dispatched via
-``dispatcher.send_to_session(session_id, text)``. The tool
-never reads the per-channel IM id itself — that's the
-adapter's job.
+(``chat_sessions.channel``) and dispatched via the channel-
+owned delivery worker. The tool never reads the per-channel
+IM id itself — that's the adapter's job.
 
   - WebUI session (``channel="webui"``) — the dispatcher
     appends the message directly to the chat session store
@@ -37,6 +36,19 @@ task with ``target_channel="tg"`` can deliver to Telegram;
 another with ``target_channel="webui"`` delivers to the
 WebUI chat scroll. The LLM calls ``send_message`` the
 same way regardless.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via
+``ctx.bus.sessions_book`` (cross-contact-safe session
+lookup via :meth:`SessionBook.get_for_owner`) and
+``ctx.bus.delivery_job_board`` (publish a
+:class:`magi.new_bus.guild.deliveryJob.DeliveryJob` to
+the durable ``delivery_outbox`` queue — the channel-owned
+DeliveryWorker performs the actual protocol I/O after the
+agent transition has committed). The old bus services at
+:mod:`magi.bus.jobs.services.session` and
+:mod:`magi.bus.jobs.services.delivery` are no longer
+imported here.
 """
 
 from __future__ import annotations
@@ -44,6 +56,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from magi.new_bus.guild.deliveryJob import DeliveryJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.comms.send_message")
@@ -131,13 +144,22 @@ class SendMessageTool(Tool):
         )
         try:
             bus = ctx.bus
-            session = bus.session_book.get(ctx.uid, ctx.session_id)
+            # ``get_for_owner`` is the cross-contact-safe lookup:
+            # returns ``None`` when the session doesn't belong to
+            # ``ctx.uid`` even if a future caller ever forgets the
+            # gate layer, defence-in-depth over the bare ``get``.
+            session = bus.sessions_book.get_for_owner(
+                uid=int(ctx.uid),
+                session_id=ctx.session_id,
+            )
             if session is None:
                 raise KeyError(f"unknown session {ctx.session_id!r}")
-            bus.delivery.enqueue(
-                channel=session.channel,
-                destination=session.delivery_address or None,
-                payload={"text": text, "session_id": session.session_id, "uid": session.uid},
+            bus.delivery_job_board.publish(
+                DeliveryJob(
+                    channel=session.channel,
+                    destination=session.delivery_address or None,
+                    payload={"text": text, "session_id": session.session_id, "uid": session.uid},
+                )
             )
             logger.info("send_message: queued for session=%s", ctx.session_id)
         except KeyError as e:

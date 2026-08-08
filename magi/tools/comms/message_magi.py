@@ -10,9 +10,11 @@ from magi.tools.base import Tool, ToolContext, ToolResult
 class MessageMagiTool(Tool):
     """Ask another MAGI a question or send it a one-way message.
 
-    The AgentWorker persists this effect with the transition; it must never be
-    executed by ToolWorker, otherwise an A2A write could escape the actor's
-    transactional outbox.
+    The AgentWorker persists this effect with the transition by
+    publishing a :class:`magi.new_bus.guild.sendA2AJob.SendA2AJob`
+    onto ``bus.a2a_job_board`` (``a2a_invocations`` table). It must
+    never be executed by ToolWorker, otherwise an A2A write could
+    escape the actor's transactional outbox.
     """
 
     name = "message_magi"

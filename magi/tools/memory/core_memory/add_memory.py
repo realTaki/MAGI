@@ -3,11 +3,11 @@ mid-term memory.
 
 The LLM calls this when the operator asks to remember
 something ("记住 X" / "记下 Y" / "the contract is due on
-9/30"). The body is markdown; the LLM is responsible for
-the prose.
+9/30"). The body is markdown; the LLM is responsible
+for the prose.
 
 Person records are NOT writable here — they live in
-:mod:`magi.bus.jobs.services.contact` and have their own
+:mod:`magi.tools.memory.contacts` and have their own
 tool set (the LLM-managed directory of people the MAGI
 knows about).
 
@@ -17,15 +17,30 @@ Admin gate: same as the API — only ``admin`` and
 write tool. Reads (no read tool yet — the system-prompt
 block is the read path for v0) would carry the same
 gate when added.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+— the Book owns the write invariants (kind membership
+in :data:`ALL_KINDS`, source membership in
+:data:`ALL_MEMORY_SOURCES`, subject non-empty + ≤200
+chars, body non-empty + ≤8 KB, importance 1..5) and
+surfaces any violation as ``ValueError`` that we
+translate to ``ToolResult.err`` here. ``source`` is
+decided by the caller (default ``'eva'``); the LLM
+chat path leaves it unset. The old bus service at
+:mod:`magi.bus.jobs.services.memory.MemoryService` is
+no longer imported here.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from magi.new_bus.library.local.memoryBook import ALL_KINDS, SOURCE_EVA
+from magi.new_bus.library.local.memoryBook import (
+    ALL_KINDS,
+    SOURCE_EVA,
+)
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_memory")
@@ -100,22 +115,33 @@ class AddMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        # Shape translation — kwargs → typed
+        # :meth:`MemoryBook.add` arguments. The Book
+        # owns the write invariants (subject non-empty
+        # + ≤200 chars, body non-empty + ≤8 KB,
+        # ``kind`` / ``source`` enum membership,
+        # ``importance`` 1..5) so we don't re-check
+        # them here. A violation raises ``ValueError``,
+        # which the worker catches and surfaces as
+        # ``is_error=True`` to the LLM.
+        missing = [k for k in ("kind", "subject", "body") if not kwargs.get(k)]
+        if missing:
+            return ToolResult.err(
+                f"add_memory requires fields: {', '.join(missing)}"
+            )
         try:
-            bus = ctx.bus
-            view = bus.memory_book.add(
-                int(ctx.uid),
+            view = ctx.bus.memory_book.add(
+                uid=int(ctx.uid),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
                 importance=kwargs.get("importance", 3),
                 source=SOURCE_EVA,
             )
-        except (ValueError, KeyError) as e:
-            return ToolResult(
-                content=f"add_memory failed: {e}",
-                is_error=True,
-            )
-        body = json.dumps(view.to_dict(), indent=2, ensure_ascii=False)
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+        except ValueError as e:
+            return ToolResult.err(f"add_memory failed: {e}")
+        logger.info(
+            "add_memory: row %s created for contact=%s kind=%r subject=%r",
+            view.id, ctx.uid, view.kind, view.subject,
+        )
+        return ToolResult.ok({"created": view.to_dict()})

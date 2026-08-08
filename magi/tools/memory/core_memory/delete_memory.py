@@ -1,13 +1,20 @@
 """``delete_memory`` tool — remove a memory row.
 
-Idempotent — deleting a non-existent id is a successful
-no-op. The LLM can retry without seeing a false
-``is_error``.
+Strict per-contact privacy: a tool call from operator A
+never sees operator B's rows, even if the LLM asks for
+an id it doesn't own — the row is missing rather than
+shared.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+— the Book is a pure data delete and returns whether
+the row existed. Authorization ("does the caller own
+this row?") lives here at the tool layer so we don't
+leak existence across contacts.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -17,7 +24,7 @@ logger = logging.getLogger("magi.tools.memory.delete_memory")
 
 
 class DeleteMemoryTool(Tool):
-    """Remove a memory row."""
+    """Remove a memory row owned by the calling operator."""
 
     name = "delete_memory"
 
@@ -32,8 +39,9 @@ class DeleteMemoryTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a memory row by id. Idempotent — deleting a "
-        "non-existent id returns success. Use when the operator "
-        "says '忘了 X' / '那条记错了删掉'."
+        "non-existent or non-owned id returns success without "
+        "leaking existence. Use when the operator says '忘了 X' / "
+        "'那条记错了删掉'."
     )
     input_schema = {
         "type": "object",
@@ -54,19 +62,27 @@ class DeleteMemoryTool(Tool):
     ) -> ToolResult:
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
-            return ToolResult(
-                content=(
-                    f"memory_id must be int, "
-                    f"got {type(memory_id).__name__}"
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"memory_id must be int, got {type(memory_id).__name__}"
             )
-        existed = ctx.bus.memory_book.delete(memory_id)
-        body = json.dumps(
-            {"memory_id": memory_id, "existed": existed},
-            indent=2,
-            ensure_ascii=False,
+        ct_id = int(ctx.uid)
+        # Strict per-contact privacy — auth lives at the
+        # tool layer, not in the Book. ``MemoryBook.delete``
+        # is a pure data delete; we ``get`` + check
+        # ``row.uid == caller`` before any delete fires so
+        # cross-contact delete attempts return a generic
+        # ``not found / not owned`` without revealing
+        # existence. Same TOCTOU comment as the action-item
+        # / complete-memory tools.
+        existing = ctx.bus.memory_book.get(memory_id=memory_id)
+        if existing is None or existing.uid != ct_id:
+            return ToolResult.err(
+                f"memory {memory_id} not found or "
+                f"not owned by the calling operator"
+            )
+        existed = ctx.bus.memory_book.delete(memory_id=memory_id)
+        logger.info(
+            "delete_memory: row %s deleted by %s (existed=%s)",
+            memory_id, ct_id, existed,
         )
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+        return ToolResult.ok({"memory_id": memory_id, "existed": existed})

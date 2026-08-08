@@ -4,11 +4,23 @@ done.
 Sets ``completed_at`` to the current UTC. The row stays
 in the table for the audit trail but drops out of the
 system-prompt formatter.
+
+Strict per-contact privacy: a tool call from operator A
+never sees operator B's rows, even if the LLM asks for
+an id it doesn't own — the row is missing rather than
+shared.
+
+Bus plumbing: this tool talks to new_bus
+(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+— the Book is a pure data write and surfaces a
+:class:`LookupError` for missing rows. Authorization
+("does the caller own this row?") lives here at the
+tool layer so we don't need to duplicate it in every
+caller of the Book.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -56,19 +68,29 @@ class CompleteMemoryTool(Tool):
     ) -> ToolResult:
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
-            return ToolResult(
-                content=(
-                    f"memory_id must be int, "
-                    f"got {type(memory_id).__name__}"
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"memory_id must be int, got {type(memory_id).__name__}"
+            )
+        ct_id = int(ctx.uid)
+        # Strict per-contact privacy — auth lives at the
+        # tool layer, not in the Book. ``MemoryBook.complete``
+        # is a pure data write; we ``get`` + check
+        # ``row.uid == caller`` before any write fires.
+        # The TOCTOU window is acceptable for the
+        # single-writer chat tool (same comment as
+        # ``complete_action_item``).
+        existing = ctx.bus.memory_book.get(memory_id=memory_id)
+        if existing is None or existing.uid != ct_id:
+            return ToolResult.err(
+                f"memory {memory_id} not found or "
+                f"not owned by the calling operator"
             )
         try:
-            bus = ctx.bus
-            view = bus.memory_book.complete(memory_id)
+            view = ctx.bus.memory_book.complete(memory_id=memory_id)
         except LookupError as e:
-            return ToolResult(content=str(e), is_error=True)
-        body = json.dumps(view.to_dict(), indent=2, ensure_ascii=False)
-        if len(body) > 4 * 1024:
-            body = body[: 4 * 1024] + "\n…(truncated)"
-        return ToolResult(content=body, is_error=False)
+            return ToolResult.err(str(e))
+        logger.info(
+            "complete_memory: row %s completed by %s",
+            memory_id, ct_id,
+        )
+        return ToolResult.ok({"memory": view.to_dict()})

@@ -234,7 +234,7 @@ class ToolsWorker:
         # shutdown as orphans. Best-effort: a stuck child must not
         # block the rest of the shutdown chain.
         try:
-            from magi.tools.shell import shutdown_background_shells
+            from magi.tools.shell._manager import shutdown_background_shells
 
             await shutdown_background_shells()
         except Exception:
