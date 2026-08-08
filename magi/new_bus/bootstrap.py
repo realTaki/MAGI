@@ -277,11 +277,11 @@ def _bootstrap_with_dirs(
     # ---- prompt book (file-backed, not ORM) --------------------------------
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
     if _prompts_dir is not None:
-        from magi.new_bus.db.file import FileStore
+        from magi.new_bus.db.file import FileShelf
         from magi.new_bus.library.file.promptBook import PromptBook
 
-        prompt_store = FileStore(_prompts_dir)
-        prompt_book = PromptBook(prompt_store)
+        prompt_shelf = FileShelf(_prompts_dir)
+        prompt_book = PromptBook(prompt_shelf)
 
         # Seed SOUL.md into the workspace if missing.  The convention is
         # ``state_dir = <workspace>/memories``, so workspace is one level up.

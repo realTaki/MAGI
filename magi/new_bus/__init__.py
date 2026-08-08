@@ -19,20 +19,14 @@ FileShelf（文件 I/O + 热重载），以及
     from magi.new_bus.library.local import SessionBook
     from magi.new_bus.library.file import PromptBook
     from magi.new_bus.guild import RunToolJob, runToolJobBoard
+
+底层设施（``Base`` / ``utcnow_naive`` / ``EngineFactory`` / ``FileShelf``）
+同理，从 :mod:`magi.new_bus.db` 导入。
 """
 
 from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
-from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
-from magi.new_bus.db.file import FileShelf
 
 __all__ = [
     "NewBus",
     "bootstrap_new_bus",
-    "Base",
-    "utcnow_naive",
-    "EngineFactory",
-    "FileShelf",
-    "build_local_factory",
-    "build_magis_factory",
 ]
