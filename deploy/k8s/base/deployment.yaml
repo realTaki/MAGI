@@ -44,8 +44,10 @@ spec:
           # RPC authentication is enabled.
           env:
             # The PVC is mounted at /workspace; every runtime needs this
-            # to resolve its state_dir (workspace/memories/magi.db).
-            - name: MAGI_WORKSPACE_DIR
+            # to resolve its workspace_dir (workspace/MAGI_Citizens/<name>).
+            # Explicit even though K8s mode defaults to / — keeps the path
+            # mapping between the inner-mount and the PVC obvious.
+            - name: HOST_WORKSPACE_DIR
               value: /workspace
             # The initial MAGI has the deterministic first registry ID. Every
             # runtime must know its ID so it can reject proxy requests meant
