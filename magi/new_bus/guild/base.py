@@ -82,26 +82,13 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
             return self._get_result(s, key=key)
 
     def release(self, *, key: str) -> None:
-        """.. deprecated:: 2026-08-08
+        """Release a claimed job back to *pending*.
 
-        Per design §2.6 ("lease：renew，而不是 release 自旋") this
-        primitive is **forbidden** for steering hand-off — sequential
-        workers would re-claim the same row and multi-worker setups
-        cannot share an in-memory ``_active_sessions`` set. New callers
-        must use :meth:`renew_lease` for long operations and the
-        steering path uses :meth:`chatJobBoard.claim_for_conversation`
-        instead of claim-then-release.
-
-        Kept only as a safety valve for the migration period
-        (Phase 0–3); Phase 4 will remove it.
+        Used by AgentWorker when ``_run()`` claims a ChatJob for a
+        session that already has an active in-flight run.  The job
+        is released so ``_process()`` can reclaim it as steering
+        via ``claim_for_conversation``.
         """
-        import warnings
-
-        warnings.warn(
-            "BaseJobBoard.release() is deprecated; see design §2.6",
-            DeprecationWarning,
-            stacklevel=2,
-        )
         with self._session() as s:
             row = s.scalar(
                 select(self.job_model).where(
@@ -116,101 +103,6 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
                 row.leased_until = None
                 row.attempts = max(0, row.attempts - 1)  # 不消耗重试次数
             s.commit()
-
-    def renew_lease(
-        self,
-        *,
-        key: str,
-        owner: str,
-        extend_seconds: int | None = None,
-    ) -> bool:
-        """[claude, 2026-08-08] CAS 续租。
-
-        续约成功返回 ``True``；返回 ``False`` 表示 ownership 已被回收
-        （行不存在 / ``leased_by`` 已变 / 状态不再是 ``processing``），
-        worker 必须**立即停止**对这一行做任何写入，并放弃本轮结果。
-
-        为什么需要它（设计 §2.6）：Agent 长操作（LLM 120s / tool 300s）
-        可超过默认 60s lease。renew 心跳失败 = 别的 worker 已经 reclaim
-        = 同一 job 可能有第二个 owner；继续 ``submit_result`` 会覆盖对方
-        正在写入的状态，所以失败必须放弃。
-
-        续约是 additive（``leased_until`` 只增不减），避免时钟漂移
-        导致续约后 lease 反而缩短。
-        """
-        import warnings
-
-        warnings.warn(
-            "BaseJobBoard.renew_lease is part of the new turn-state machine; "
-            "older callers should not rely on it yet.",
-            stacklevel=2,
-        )
-        extend = timedelta(seconds=extend_seconds or self._lease_seconds)
-        now = utcnow_naive()
-        with self._session() as s:
-            row = s.scalar(
-                select(self.job_model).where(
-                    getattr(self.job_model, self.natural_key_attr) == key,
-                    self.job_model.leased_by == owner,
-                    self.job_model.status == "processing",
-                )
-            )
-            if row is None:
-                return False
-            current = row.leased_until
-            # additive: 续约后 lease 至少比当前 leased_until 更长
-            new_until = max(
-                now + extend,
-                current + extend if current is not None else now,
-            )
-            row.leased_until = new_until
-            s.commit()
-            return True
-
-    def cancel(
-        self,
-        *,
-        key: str,
-        owner: str,
-    ) -> bool:
-        """[claude, 2026-08-08] Ownership-aware cancel。
-
-        与 ``renew_lease`` 的语义对称：只影响 ``leased_by == owner``
-        的行；其他 worker 持有的同名 row 不受影响。
-
-        实现：把 ``leased_until`` 缩到 now()，让 worker 在下次
-        ``renew_lease`` 之前感知到自己已失去 ownership。**status
-        保持 ``processing``**——任务并没有真正完成，让 lease
-        reclaim 自然接管（status 走 ``processing → pending`` →
-        别的 worker 的新一轮 claim）。这是设计 §2.6 明确禁止的
-        "粗暴改 status=cancelled" 的替代：保留 status 语义
-        单一所有权、cancel 只是 lease 提前过期信号。
-
-        不影响调用者对 cancelled 终态的判定——终态由 AgentTurnStore
-        的 ``commit_terminal_cancelled()`` 落库（见 agentTurnBook
-        设计 §2.2）。
-        """
-        import warnings
-
-        warnings.warn(
-            "BaseJobBoard.cancel is part of the new turn-state machine; "
-            "older callers should not rely on it yet.",
-            stacklevel=2,
-        )
-        now = utcnow_naive()
-        with self._session() as s:
-            row = s.scalar(
-                select(self.job_model).where(
-                    getattr(self.job_model, self.natural_key_attr) == key,
-                    self.job_model.leased_by == owner,
-                    self.job_model.status == "processing",
-                )
-            )
-            if row is None:
-                return False
-            row.leased_until = now  # 立即过期
-            s.commit()
-            return True
 
     async def wait_for_result(
         self,

@@ -27,7 +27,6 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Literal, Optional
 
-from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import (
     ForeignKey,
     Index,
@@ -674,6 +673,57 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 f"got {source!r}"
             )
 
+    # -- v2.0: worker-facing methods -------------------------------------
+
+    def record_run_start(
+        self, *, task_id: str, trigger: str,
+        run_id: str | None = None,
+    ) -> TaskRun:
+        """Insert a task_runs row, write task.last_run_at.
+
+        trigger ∈ closed set:
+          'cron_tick' | 'run_at_consume' | 'manual_run' |
+          'api_manual_run' | 'schedule_task_tool'
+        """
+        run_id = run_id or uuid.uuid4().hex
+        started_at = utcnow_naive().isoformat()
+        with self._session() as s:
+            run_row = _TaskRunRow(
+                id=run_id, task_id=task_id, trigger=trigger,
+                started_at=started_at, status="running",
+            )
+            s.add(run_row)
+            task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
+            if task is not None:
+                task.last_run_at = started_at
+            s.commit()
+            return self._row_to_dto(run_row)
+
+    def mark_run_at_consumed(self, *, task_id: str) -> None:
+        """One-shot run_at: set enabled=0 after successful fire."""
+        with self._session() as s:
+            task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
+            if task is None:
+                return
+            task.enabled = 0
+            s.commit()
+
+    def list_all_enabled_for_workers(self) -> list[Task]:
+        """Per-user scan across all uids — workers only path.
+
+        The uid-scoped list_enabled(uid) is preserved for user-facing UI;
+        this primitive scans every user's enabled USER tasks for the cron
+        poll loop.
+        """
+        with self._session() as s:
+            rows = s.scalars(
+                select(_TaskRow).where(
+                    _TaskRow.enabled == 1,
+                    _TaskRow.source == SOURCE_USER,
+                )
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
+
 
 class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
@@ -717,6 +767,28 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             row.latency_ms = latency_ms
             s.commit()
 
+    def reap_stale(self, *, older_than_seconds: int = 300) -> int:
+        """Flip stuck 'running' rows to 'failed'. Returns count.
+
+        Used by TaskWorker on startup for crash recovery.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+        ).isoformat()
+        with self._session() as s:
+            rows = s.scalars(
+                select(_TaskRunRow).where(
+                    _TaskRunRow.status == "running",
+                    _TaskRunRow.started_at < cutoff,
+                )
+            ).all()
+            for row in rows:
+                row.status = "failed"
+                row.error = "abandoned by previous worker"
+                row.finished_at = utcnow_naive().isoformat()
+            s.commit()
+            return len(rows)
+
 
 # -- schedule helpers ----------------------------------------------------
 #
@@ -739,17 +811,14 @@ CronFrequency = Literal["hourly", "daily", "weekly", "monthly", "once"]
 def validate_cron(expr: str) -> None:
     """Raise ``ValueError`` if ``expr`` isn't valid 5-field cron.
 
-    Side effect: import-time ``apscheduler`` is loaded the first
-    time this is called — that's the scheduler's setup cost
-    the project pays anyway when the ``TaskScheduler`` is
-    constructed, so we don't try to amortise it here.
+    Uses ``croniter`` for validation — no apscheduler dependency.
     """
     if not isinstance(expr, str) or not expr.strip():
         raise ValueError("cron expression must be a non-empty string")
-    # The trigger's ``__init__`` validates; ``from_crontab``
-    # accepts the standard 5-field form AND the @-prefix
-    # shortcuts — we accept those too.
-    CronTrigger.from_crontab(expr.strip())
+    # croniter validates during construction
+    from croniter import croniter
+
+    croniter(expr.strip())
 
 
 def next_fire(expr: str, tz: str = "UTC") -> Optional[datetime]:
@@ -761,39 +830,42 @@ def next_fire(expr: str, tz: str = "UTC") -> Optional[datetime]:
     preview a fire time without round-tripping through
     the API).
     """
+    from croniter import croniter
+
     try:
-        CronTrigger.from_crontab(expr, timezone=tz)
-    except (ValueError, ZoneInfoNotFoundError):
+        croniter(expr)  # validate
+    except (ValueError, KeyError):
         return None
     try:
         zone = ZoneInfo(tz)
     except ZoneInfoNotFoundError:
         zone = ZoneInfo("UTC")
-    return CronTrigger.from_crontab(expr, timezone=tz).get_next_fire_time(
-        None,
-        datetime.now(timezone.utc).astimezone(zone),
-    )
+    now = datetime.now(timezone.utc).astimezone(zone)
+    # croniter.get_next returns naive datetime in the expression's implied tz
+    return croniter(expr, now).get_next(datetime)
 
 
 def humanize_cron(expr: str) -> str:
     """Render a one-line English phrase for ``expr``.
 
-    v0 only — covers the common cases the operator will
-    reach for (``* * * * *``, ``0 9 * * *``, ``*/5 * * * *``,
-    weekday/weekend blocks). For complex expressions fall
-    back to the raw string so we never invent a misleading
-    hint.
+    Covers the common cases (``* * * * *``, ``0 9 * * *``, ``*/5 * * * *``,
+    weekday/weekend blocks). For complex expressions falls back to raw string.
+
+    Uses ``croniter`` for validation; field parsing is manual (croniter
+    doesn't expose structured fields like apscheduler's ``CronTrigger.fields``).
     """
+    from croniter import croniter
+
     try:
-        trigger = CronTrigger.from_crontab(expr)
-    except ValueError:
+        croniter(expr)  # validate
+    except (ValueError, KeyError):
         return expr or "(empty)"
-    fields = {f.name: str(f) for f in trigger.fields}
-    minute = fields.get("minute", "*")
-    hour = fields.get("hour", "*")
-    dow = fields.get("day_of_week", "*")
-    dom = fields.get("day", "*")
-    month = fields.get("month", "*")
+
+    # Parse the 5-field cron string manually
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return expr
+    minute, hour, dom, month, dow = parts
 
     all_star = all(v in ("*", None) for v in (minute, hour, dom, month, dow))
     if all_star:

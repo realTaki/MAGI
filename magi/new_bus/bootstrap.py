@@ -84,21 +84,9 @@ class NewBus:
     mcp_server_changed_job_board: object  # mcpServerChangedJobBoard
     tool_job_board: object  # runToolJobBoard
 
-    # -- local: agent (Job board + turn store) -----------------------------
+    # -- local: agent (Job board) ---------------------------------------------
 
     agent_job_board: object  # chatJobBoard
-    agent_turn_store: object  # AgentTurnStore — persistent turn state machine
-
-    # -- local: v3 channel-side boards (§24.2) ------------------------------
-    # Additive over the v2.0 ``delivery_job_board`` / ``a2a_job_board``
-    # above. Coexist for now (no consumer yet); the v3 AgentWorker rebuild
-    # will switch over. ``channel_delivery_jobs`` table is new
-    # (``ChannelDeliveryBoard.channel == Literal["tg"]`` only — §24.3).
-
-    channel_delivery_board: object  # ChannelDeliveryBoard (v3 outbound queue)
-    a2a_request_job_board: object  # A2AJobBoard (v3 peer-MAGI queue)
-    scheduled_task_book: object  # ScheduledTaskBook (v3 task defs)
-    scheduled_task_store: object  # ScheduledTaskStore (v3 task runs)
 
     # -- local: LLM (Job board) ----------------------------------------------
 
@@ -333,36 +321,6 @@ def _bootstrap_with_dirs(
     seed_preset_tasks_job_board = seedPresetTasksJobBoard(local_factory)
     run_task_job_board = runTaskJobBoard(local_factory)
 
-    # ---- local turn state machine (设计 §2.2 / §3.1) -----------------------
-    # AgentTurnStore holds references to chat_board + delivery_board so it
-    # can atomically complete the ChatJobResult and publish delivery
-    # outbox in commit_terminal. Wiring here is the composition root;
-    # AgentWorker only ever sees bus.agent_turn_store.
-    from magi.new_bus.library.local.agentTurnBook import AgentTurnStore
-
-    agent_turn_store = AgentTurnStore(
-        local_factory,
-        chat_board=agent_job_board,
-        delivery_board=delivery_job_board,
-    )
-
-    # ---- v3 channel-side boards (§24.2) -----------------------------------
-    # Additive over the v2.0 boards above. No v3 consumer yet (AgentWorker
-    # rebuild is a separate workstream); wiring here so the v3 schema
-    # lands in the same SQLite file as the v2 tables and can be flipped
-    # on by the next composition-root cutover.
-    from magi.new_bus.guild.channelDeliveryJob import ChannelDeliveryBoard
-    from magi.new_bus.guild.a2aJob import A2AJobBoard
-    from magi.new_bus.library.local.scheduledTaskBook import (
-        ScheduledTaskBook,
-        ScheduledTaskStore,
-    )
-
-    channel_delivery_board = ChannelDeliveryBoard(local_factory)
-    a2a_request_job_board = A2AJobBoard(local_factory)
-    scheduled_task_book = ScheduledTaskBook(local_factory)
-    scheduled_task_store = ScheduledTaskStore(local_factory)
-
     # ---- magis_book books -------------------------------------------------------
     if magis_factory is not None:
         magis_book = MagisBook(magis_factory)
@@ -403,11 +361,6 @@ def _bootstrap_with_dirs(
         mcp_server_changed_job_board=mcp_server_changed_job_board,
         tool_job_board=tool_job_board,
         agent_job_board=agent_job_board,
-        agent_turn_store=agent_turn_store,
-        channel_delivery_board=channel_delivery_board,
-        a2a_request_job_board=a2a_request_job_board,
-        scheduled_task_book=scheduled_task_book,
-        scheduled_task_store=scheduled_task_store,
         llm_job_board=llm_job_board,
         delivery_job_board=delivery_job_board,
         a2a_job_board=a2a_job_board,

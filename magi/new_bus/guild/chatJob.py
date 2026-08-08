@@ -119,8 +119,7 @@ class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
 
         设计 §2.5 + §5.2：AgentWorker 在 ``_gather_all`` 中每轮轮询调用，
         认领同 conversation 的 pending ChatJob 作为 steering。steering
-        与根 job 共享 conversation lease（由 :class:`AgentTurnStore` 持有），
-        本方法只取消息、不动 turn 状态。
+        只取消息、不动 conversation 状态（lease 由 AgentWorker 自身管理）。
 
         为什么不用 ``SELECT ... FOR UPDATE SKIP LOCKED``（旧实现）：
 
