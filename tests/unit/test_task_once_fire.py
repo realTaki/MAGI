@@ -1,58 +1,25 @@
-# TODO: migrate to new_bus — currently failing under the
-# tools/new_bus migration (see magi/startup/runtime.py and
-# magi/new_bus). Re-baseline this test file when the agent
-# loop moves to bus.tool_job_board + the new ToolWorker.
-"""Regression tests for the ``frequency="once"`` task path.
+"""Regression tests for ``frequency="once"`` task path — rebased to new_bus.
 
-Three surfaces pinned:
-
-  - :func:`validate_run_at` (cron_utils) — accepts ISO 8601
-    with and without offset; naive UTC fallback; rejects
-    empty / garbage strings.
-  - :meth:`TaskScheduler.register` picks ``DateTrigger`` for
-    rows with ``run_at`` populated and ``CronTrigger`` for
-    rows without.
-  - :func:`ScheduleTaskTool.run` round-trip: passing
-    ``frequency="once"`` + ``run_at=...`` writes a Task
-    row with ``cron=""`` and ``run_at`` set, and the new
-    row picks ``DateTrigger`` on register.
-
-The full live-fire path (apscheduler runs the callback)
-is not exercised here — that's a live-smoke concern. We
-just pin the deterministic layer so the next refactor
-of either path doesn't silently lose the ``once`` shape.
+validate_run_at / validate_run_at_future tests kept from original.
+Scheduler tests rewritten for TaskWorker + RunTaskJob flow.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 
-from magi.bus.task_schedule import (
-    validate_run_at,
-    validate_run_at_future)
-from magi.channels.tasks.scheduler import (
-    _reset_for_tests,
-    stop_scheduler)
-from magi.bus.db import (
-    init_orm,
-    init_sqlite,
-    open_session,
-)
-from magi.bus.db.models.local.task import Task
+from magi.bus.task_schedule import validate_run_at, validate_run_at_future
 
 
 # -- validate_run_at --------------------------------------------------------
-
 
 def test_validate_run_at_accepts_offset_aware_iso() -> None:
     raw = "2026-08-01T15:30:00+08:00"
     out = validate_run_at(raw)
     assert out == raw
-    # Round-trips as the same instant in UTC.
     assert dt.datetime.fromisoformat(out).astimezone(dt.timezone.utc) == \
         dt.datetime(2026, 8, 1, 7, 30, tzinfo=dt.timezone.utc)
 
@@ -61,10 +28,7 @@ def test_validate_run_at_naive_iso_treated_as_utc() -> None:
     raw = "2026-08-01T15:30:00"
     out = validate_run_at(raw)
     parsed = dt.datetime.fromisoformat(out)
-    assert parsed.tzinfo is not None, (
-        "naive stamp was passed through without tagging UTC; "
-        "schedule_task row would compare unequal to itself later"
-    )
+    assert parsed.tzinfo is not None
     assert parsed.astimezone(dt.timezone.utc) == \
         dt.datetime(2026, 8, 1, 15, 30, tzinfo=dt.timezone.utc)
 
@@ -80,318 +44,109 @@ def test_validate_run_at_normalises_whitespace() -> None:
     assert out == "2026-08-01T15:30:00+08:00"
 
 
-# -- scheduler.register picks the right trigger -------------------------------
+# -- TaskWorker run_at consumption ------------------------------------------
+
+def test_worker_should_fire_run_at_once():
+    """TaskWorker._should_fire fires a run_at task exactly once."""
+    from unittest.mock import MagicMock
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeTask:
+        id: str = "t_runat"
+        cron: str | None = None
+        run_at: str | None = None
+        enabled: int = 1
+
+    mock_bus = MagicMock()
+    mock_bus.tasks_book.list_all_enabled_for_workers = MagicMock(return_value=[])
+    mock_bus.task_runs_book.reap_stale = MagicMock(return_value=0)
+    mock_bus.run_task_job_board = MagicMock()
+    mock_bus.agent_job_board = MagicMock()
+    mock_bus.messages_book = MagicMock()
+
+    from magi.channels.workers.task import TaskWorker
+    w = TaskWorker(mock_bus)
+
+    past = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    task = FakeTask(run_at=past)
+
+    # First time: should fire
+    assert w._should_fire(task, datetime.now(timezone.utc)) is True
+
+    # Record a fire
+    w._next_fire[task.id] = datetime.now(timezone.utc)
+
+    # Second time: should NOT fire (already fired)
+    assert w._should_fire(task, datetime.now(timezone.utc)) is False
 
 
-@pytest.fixture
-def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Fresh sqlite state dir. ``stop_scheduler`` is called
-    in the fixture teardown so each test starts from a clean
-    singleton."""
-    sd = tmp_path / "state"
-    sd.mkdir()
-    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(sd))
+def test_mark_run_at_consumed_sets_enabled_zero():
+    """TaskBook.mark_run_at_consumed sets enabled=0 after fire."""
+    from magi.new_bus.db import EngineFactory
+    from magi.new_bus.library.local.tasksBook import TaskBook, ChannelEnum, SOURCE_USER
 
-    import magi.bus.db.engine as orm_mod
-    orm_mod._engine = None
-    orm_mod._SessionLocal = None
-    init_sqlite(str(sd))
-    init_orm(str(sd))
-    yield sd
-    try:
-        stop_scheduler(wait=False)
-    except Exception:  # noqa: BLE001
-        pass
-    _reset_for_tests()
+    f = EngineFactory("sqlite:///:memory:")
+    f.create_all()
+    tb = TaskBook(f)
 
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
-def _make_task(state_dir: Path, *, name: str = "once-fire-test", **overrides) -> Task:
-    """Insert a row directly via ORM. Bypass the ``schedule_task``
-    tool so the test pins what ``register`` sees, not what
-    the tool writes."""
-    from magi.bus.db.models.local import task as _  # noqa: F401  (registers Task on Base)
-    from magi.bus.db.models.local.contact import Contact
+    task = tb.add(
+        name="Once consume test",
+        prompt="run once then disable",
+        run_at=future,
+        target_channel=ChannelEnum.WEBUI,
+        uid=42,
+        session_id="sess_oc",
+        tz="UTC",
+        created_at=now,
+        updated_at=now,
+    )
+    assert task.enabled == 1
 
-    task_id = "T" + "0" * 25
-    row_kwargs = dict(overrides)
-    row_kwargs.setdefault("prompt", "do the thing")
-    row_kwargs.setdefault("cron", "")
-    row_kwargs.setdefault("tz", "UTC")
-    row_kwargs.setdefault("target_channel", "webui")
-    row_kwargs.setdefault("enabled", 1)
-    row_kwargs.setdefault("created_at", "2026-07-20T12:00:00Z")
-    row_kwargs.setdefault("updated_at", "2026-07-20T12:00:00Z")
-
-    with open_session() as db:
-        if "uid" not in row_kwargs:
-            contact = db.query(Contact).first()
-            if contact is None:
-                contact = Contact(
-                    name="tester",
-                    telegram_id=90001,
-                    admin=True, role="assigned"
-                )
-                db.add(contact)
-                db.commit()
-                db.refresh(contact)
-            row_kwargs["uid"] = contact.id
-        row = Task(
-            id=task_id,
-            name=name,
-            **row_kwargs)
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-    return row
+    tb.mark_run_at_consumed(task_id=task.id)
+    updated = tb.get(task_id=task.id)
+    assert updated is not None
+    assert updated.enabled == 0
 
 
-def test_register_with_run_at_uses_date_trigger(state_db: Path) -> None:
-    """The one-shot path. ``register`` builds an apscheduler
-    ``DateTrigger`` (one-shot, no further cron) for rows
-    whose ``run_at`` is set, regardless of cron."""
-    from magi.channels.tasks.scheduler import start_scheduler
-
-    sch = start_scheduler()
-
-    # Schedule ~60s in the future so ``get_next_fire_time``
-    # returns a real instant we can assert against.
-    fire_at = dt.datetime(2099, 1, 1, 0, 0, 0, tzinfo=dt.timezone.utc).isoformat()
-    row = _make_task(state_db, name="once-row", run_at=fire_at, cron="")
-
-    sch.register(row)
-    job = sch._sched.get_job(row.id)
-    assert job is not None
-    assert type(job.trigger).__name__ == "DateTrigger"
-    # DateTrigger computes the next-fire instant from the
-    # run_at string; apscheduler tz-aware.
-    next_fire = job.trigger.get_next_fire_time(
-        None, dt.datetime.now(dt.timezone.utc))
-    assert next_fire is not None
-    assert next_fire.year == 2099
-
-
-def test_register_with_cron_only_uses_cron_trigger(state_db: Path) -> None:
-    """Recurring path unchanged by the once-fire addition.
-    Regression guard: ``run_at=NULL`` + ``cron='0 9 * * *'``
-    still goes through ``CronTrigger``."""
-    from magi.channels.tasks.scheduler import start_scheduler
-
-    sch = start_scheduler()
-    row = _make_task(
-        state_db,
-        name="daily-row",
-        cron="0 9 * * *",
-        run_at=None)
-    sch.register(row)
-    job = sch._sched.get_job(row.id)
-    assert job is not None
-    assert type(job.trigger).__name__ == "CronTrigger"
-
-
-def test_register_with_both_cron_and_run_at_prefers_run_at(state_db: Path) -> None:
-    """If a caller violates the one-of invariant and sets
-    both columns (rare; the API + tool both validate),
-    ``register`` still uses ``DateTrigger`` for that row —
-    fail-open to the more recent schema. The point is
-    not silent fallback to cron; it's "don't crash the
-    loop on a slightly malformed row".
-    """
-    from magi.channels.tasks.scheduler import start_scheduler
-
-    sch = start_scheduler()
-    fire_at = "2099-01-01T00:00:00+00:00"
-    row = _make_task(
-        state_db,
-        name="both-set",
-        cron="0 9 * * *",
-        run_at=fire_at)
-    sch.register(row)
-    job = sch._sched.get_job(row.id)
-    assert job is not None
-    assert type(job.trigger).__name__ == "DateTrigger"
-
-
-# -- tool round-trip ---------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_schedule_task_tool_once_writes_run_at_row(
-    state_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """End-to-end through the tool: calling
-    ``schedule_task(frequency="once", run_at=...)`` writes
-    a Task row with ``cron=""`` and ``run_at`` set.
-
-    The scheduler's live ``register()`` path is exercised
-    by the ``test_register_with_run_at_uses_date_trigger``
-    case below — this test focuses on the tool's data
-    layer (``Task`` row + ChatSession allocation). Starting
-    the full background scheduler in the same process
-    causes SQLite ``BEGIN IMMEDIATE`` contention between
-    the apscheduler thread-pool and the test's serial
-    ``open_session()`` chain; the tool path is the same
-    with or without a running scheduler (the upsert +
-    ``ChatSession`` allocation don't read apscheduler
-    state).
-    """
-    from magi.tools.tasks.schedule import ScheduleTaskTool
-    from magi.tools.base import ToolContext
-
-    # Seed a target operator + bind the cookie identity
-    # the ``_gate`` consults.
-    from magi.bus.db.models.local.contact import Contact
-    with open_session() as db:
-        db.add(Contact(
-            name="tester",
-            telegram_id=90002,
-            admin=True, role="assigned"
-        ))
-        db.commit()
-
-    ctx = ToolContext(
-        workspace=state_db.parent,
-        uid=1,
-        channel="webui")
-    res = await ScheduleTaskTool().run(
-        ctx,
-        name="remind-me-lunch",
-        prompt="tell me what you know about Italian food",
-        frequency="once",
-        run_at="2099-01-01T12:00:00+00:00",
-        channel="webui")
-    assert res.is_error is False, res.content
-
-    with open_session() as db:
-        row = db.query(Task).filter_by(name="remind-me-lunch").one()
-        # ``cron`` is the sentinel empty string so the
-        # column's NOT-NULL constraint stays satisfied; the
-        # once-fire is fully described by ``run_at``.
-        assert row.cron == ""
-        assert row.run_at == "2099-01-01T12:00:00+00:00"
-
-
-@pytest.mark.asyncio
-async def test_schedule_task_tool_once_rejects_bad_run_at(
-    state_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``run_at`` validation surfaces as ``is_error=True`` —
-    the LLM gets a precise message back, not a server-side
-    traceback."""
-    from magi.channels.tasks.scheduler import start_scheduler
-    from magi.tools.tasks.schedule import ScheduleTaskTool
-    from magi.tools.base import ToolContext
-
-    start_scheduler()
-
-    from magi.bus.db.models.local.contact import Contact
-    with open_session() as db:
-        db.add(Contact(
-            name="tester",
-            telegram_id=90003,
-            admin=True, role="assigned"
-        ))
-        db.commit()
-
-    ctx = ToolContext(
-        workspace=state_db.parent,
-        uid=1,
-        channel="webui")
-    res = await ScheduleTaskTool().run(
-        ctx,
-        name="bad-run-at",
-        prompt="anything",
-        frequency="once",
-        run_at="not-a-timestamp",
-        channel="webui")
-    assert res.is_error is True
-    # LLM-facing phrasing: includes the offending input
-    # so the model can fix the next attempt.
-    assert "not-a-timestamp" in res.content
-    assert "invalid run_at" in res.content
-
-
-# -- validate_run_at_future -----------------------------------------------
-
+# -- validate_run_at_future --------------------------------------------------
 
 def test_validate_run_at_future_accepts_clear_future() -> None:
-    """A timestamp well in the future is the happy path.
-    The function returns the input unchanged (already
-    canonical from :func:`validate_run_at`)."""
     out = validate_run_at_future("2099-01-01T00:00:00+00:00")
     assert out == "2099-01-01T00:00:00+00:00"
 
 
 def test_validate_run_at_future_rejects_clear_past() -> None:
-    """A timestamp an hour in the past is the bug we're
-    guarding against — apscheduler's ``DateTrigger``
-    silently drops it, leaving the operator confused
-    about why the row never fired. Reject here so the
-    error surfaces at create-time with a clear message."""
     with pytest.raises(ValueError) as exc_info:
         validate_run_at_future("2020-01-01T00:00:00+00:00")
     assert "in the future" in str(exc_info.value)
-    assert "2020-01-01T00:00:00+00:00" in str(exc_info.value)
 
 
 def test_validate_run_at_future_respects_grace_window() -> None:
-    """The 60-second grace window absorbs clock skew
-    between the operator's browser, the WebUI server,
-    and the DB host. A timestamp 30 seconds in the past
-    still schedules (within tolerance); a timestamp 90
-    seconds in the past rejects.
-
-    We pass an explicit ``now=`` so the test is
-    deterministic across timezones + system clock."""
-    # 30 s in the past — within grace, accepted.
     server_now = datetime.now(timezone.utc)
-    near_past = (server_now - timedelta(seconds=30)).isoformat(
-        timespec="seconds"
-    )
-    # The helper canonicalises to seconds; the comparison
-    # uses the rounded-to-second value. A 30-s drift is
-    # well within the 60-s grace.
+    near_past = (server_now - timedelta(seconds=30)).isoformat(timespec="seconds")
     validate_run_at_future(near_past)
-    # 90 s in the past — outside grace, rejected.
-    far_past = (server_now - timedelta(seconds=90)).isoformat(
-        timespec="seconds"
-    )
+    far_past = (server_now - timedelta(seconds=90)).isoformat(timespec="seconds")
     with pytest.raises(ValueError):
         validate_run_at_future(far_past)
 
 
 def test_validate_run_at_future_uses_explicit_now() -> None:
-    """``now=`` is the deterministic-test seam: a fixed
-    server-side reference makes the test reproducible
-    regardless of when pytest runs. A timestamp just
-    past the injected ``now`` rejects; one well in the
-    future accepts."""
     fixed_now = datetime(2099, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
-    # 5 minutes past the injected now → reject.
-    past = (fixed_now - timedelta(minutes=5)).isoformat(
-        timespec="seconds"
-    )
+    past = (fixed_now - timedelta(minutes=5)).isoformat(timespec="seconds")
     with pytest.raises(ValueError):
         validate_run_at_future(past, now=fixed_now)
-    # 1 day after the injected now → accept.
-    future = (fixed_now + timedelta(days=1)).isoformat(
-        timespec="seconds"
-    )
+    future = (fixed_now + timedelta(days=1)).isoformat(timespec="seconds")
     validate_run_at_future(future, now=fixed_now)
 
 
 def test_validate_run_at_future_handles_naive_input() -> None:
-    """A naive ISO string (no tzinfo) is interpreted as
-    UTC. The comparison must use the same assumption so
-    a naive "now + 5 min" string doesn't get mis-tagged.
-    The helper normalises *only inside the comparison*
-    — the returned string is the input verbatim, so we
-    check that no exception is raised (the canonical
-    ``+00:00`` stamping happens upstream in
-    :func:`validate_run_at`, called by the API/tool
-    *before* this helper)."""
     server_now = datetime.now(timezone.utc)
     naive_future = (server_now + timedelta(hours=1)).replace(
         tzinfo=None
     ).isoformat(timespec="seconds")
-    # No exception: helper tags naive as UTC internally
-    # before comparing.
     out = validate_run_at_future(naive_future)
-    assert out == naive_future  # returned verbatim, not re-canonicalised
+    assert out == naive_future

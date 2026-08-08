@@ -325,7 +325,13 @@ def _bootstrap_with_dirs(
     if magis_factory is not None:
         magis_book = MagisBook(magis_factory)
         magis_admins_book = MagisAdminBook(magis_factory)
-        memberships_book = MagisMembershipBook(magis_factory)
+        # ``MagisMembershipBook.instruction_context`` reads the per-MAGI
+        # personal instruction from the local SettingBook (agent-worker-
+        # new-bus.md §6). Inject it so the Book owns the join, not the
+        # caller.
+        memberships_book = MagisMembershipBook(
+            magis_factory, settings_book=settings_book,
+        )
         roles_book = MagisRoleBook(magis_factory)
         eva_runtimes_book = EvaRuntimeBook(magis_factory)
         control_runtimes_book = ControlRuntimeBook(magis_factory)

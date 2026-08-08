@@ -170,6 +170,15 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
     dto_cls = MagisMembership
 
+    def __init__(self, factory, *, settings_book: "object | None" = None) -> None:
+        super().__init__(factory)
+        # Optional reference to the local SettingBook so
+        # :meth:`instruction_context` can read the per-MAGI personal
+        # instruction alongside the MAGIS memberships. Injected by
+        # the composition root; ``None`` means "personal instruction
+        # unavailable" (test / pre-bootstrap).
+        self._settings_book = settings_book
+
     def get(self, *, magi_id: int) -> MagisMembership | None:
         """Look up a single MAGI under any MAGIS by its per-MAGI identity.
 
@@ -220,6 +229,67 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             s.delete(row)
             s.commit()
             return True
+
+    # -- agent-worker-new-bus.md §6 helper --------------------------------
+
+    def instruction_context(self, *, magic_id: int) -> tuple[str, list[dict]]:
+        """Return ``(personal_instruction, memberships)`` for one MAGI.
+
+        Mirrors :meth:`magi.bus.jobs.services.magic.MagicService.instruction_context`.
+        ``personal_instruction`` is read from the LOCAL
+        ``SettingBook["instruction"]`` key (the per-MAGI field
+        formerly on the old ``magic`` row); ``memberships`` is a
+        list with one dict per membership row, each containing
+        ``magis_name``, ``team_instruction``, ``role_name``,
+        ``role_instruction``.
+
+        Used by :func:`magi.agent.instructions.runtime_instruction_block`
+        to assemble the agent's "Instructions" block (design §2.5).
+        """
+        personal = ""
+        if self._settings_book is not None:
+            try:
+                raw = self._settings_book.get(key="instruction")
+                if raw:
+                    personal = str(raw)
+            except Exception:
+                personal = ""
+
+        memberships: list[dict] = []
+        with self._session() as s:
+            # Single SELECT joining membership + role; the
+            # ``magis`` row's name + instruction come from a second
+            # hop on the same session (all three tables share the
+            # magis factory so they're in the same MetaData).
+            from magi.new_bus.library.magis.magisBook import _MagisRow
+
+            row = s.execute(
+                select(_MagisMembershipRow, _MagisRoleRow, _MagisRow)
+                .join(
+                    _MagisRoleRow,
+                    _MagisRoleRow.id == _MagisMembershipRow.role_id,
+                )
+                .join(
+                    _MagisRow,
+                    _MagisRow.id == _MagisMembershipRow.magis_id,
+                )
+                .where(_MagisMembershipRow.id == magic_id)
+                .order_by(_MagisMembershipRow.id)
+            ).first()
+            if row is not None:
+                _, role_row, magis_row = row
+                memberships.append({
+                    "magis_name": str(getattr(magis_row, "name", "") or ""),
+                    "team_instruction": str(
+                        getattr(magis_row, "instruction", "") or ""
+                    ),
+                    "role_name": str(getattr(role_row, "name", "") or ""),
+                    "role_instruction": str(
+                        getattr(role_row, "instruction", "") or ""
+                    ),
+                })
+
+        return personal, memberships
 
 
 __all__ = [

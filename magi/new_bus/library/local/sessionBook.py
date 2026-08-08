@@ -36,6 +36,7 @@ from sqlalchemy import (
     UniqueConstraint,
     select,
     text,
+    update,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -278,6 +279,51 @@ class SessionBook(BaseBook[_SessionRow, Session]):
                 return
             row.updated_at = updated_at
             s.commit()
+
+    def set_title_if_null(
+        self,
+        *,
+        uid: int,
+        session_id: str,
+        title: str,
+        bump_updated: bool = True,
+    ) -> "Session | None":
+        """[claude, 2026-08-08] CAS-style title set — only writes if currently NULL.
+
+        Required by :func:`magi.agent.auto_title.request_session_title`
+        new_bus path. Mirrors old
+        :meth:`magi.bus.jobs.services.session.SessionService.set_title_if_null`:
+        scope by ``(uid, session_id)`` (cross-contact defence), only set
+        when existing ``title`` is NULL, optionally bump ``updated_at``.
+
+        Returns the updated :class:`Session` on success (lost the race
+        to another writer that already set a title), or ``None`` when
+        no matching row was found.
+        """
+        from magi.new_bus.db.base import utcnow_naive
+
+        now = utcnow_naive().isoformat() + "Z"
+        with self._session() as s:
+            stmt = (
+                update(_SessionRow)
+                .where(
+                    _SessionRow.session_id == session_id,
+                    _SessionRow.uid == uid,
+                    _SessionRow.title.is_(None),
+                )
+                .values(title=title)
+            )
+            if bump_updated:
+                stmt = stmt.values(updated_at=now)
+            result = s.execute(stmt)
+            if result.rowcount == 0:
+                s.rollback()
+                return None
+            s.commit()
+            row = s.scalar(
+                select(_SessionRow).where(_SessionRow.session_id == session_id)
+            )
+            return self._row_to_dto(row) if row else None
 
 
 class MessageBook(BaseBook[_MessageRow, Message]):
