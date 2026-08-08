@@ -37,6 +37,7 @@ from magi.new_bus.guild.seedPresetTasksJob import (
     seedPresetTasksJobBoard,
 )
 from magi.new_bus.guild.sendA2AJob import SendA2AJob, SendA2AResult, sendA2AJobBoard
+from magi.new_bus.guild.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
 
 __all__ = [
     "BaseNotifyBoard",
@@ -52,4 +53,5 @@ __all__ = [
     "McpServerChangedJob", "McpServerChangedResult", "mcpServerChangedJobBoard",
     "_MCP_CHANGED_KINDS",
     "SeedPresetTasksJob", "SeedPresetTasksResult", "seedPresetTasksJobBoard",
+    "RunTaskJob", "RunTaskResult", "runTaskJobBoard",
 ]

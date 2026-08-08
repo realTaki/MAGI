@@ -65,8 +65,10 @@ Genesis 使用：
 启动前，控制面会把该 MAGI 的直接 Membership、角色、instructions 与 provider 配置投影到目标 MAGIS PostgreSQL；该投影通过受 HMAC 保护的控制请求写入数据库。运行容器只从数据库读取。修改这些组织配置后，重新启动该 MAGI 会刷新其运行时投影。
 
 K8s / k8s-dev 模式下 Pod 还设置 `MAGI_NAME`，参与 workspace 推导；
-不存在显式的 `MAGI_WORKSPACE_DIR`、`MAGI_RUNTIME_ID` 或
+不存在显式的 `MAGI_RUNTIME_ID` 或
 `MAGI_RUNTIME_SLUG`——这些都是统一启动重构前的旧启动契约。
+工作空间通过 `HOST_WORKSPACE_DIR` + `MAGI_NAME` 推导（K8s 下
+`HOST_WORKSPACE_DIR` 默认为 `/`，CLI 下默认为 `~/.magi`）。
 
 ## 启动顺序
 

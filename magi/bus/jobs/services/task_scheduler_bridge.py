@@ -1,38 +1,13 @@
-"""BUS-side bridge to the apscheduler-backed ``magi.channels.tasks.scheduler``.
+"""BUS-side bridge to task execution.
 
-This module is the **only** Python module under ``magi.bus`` that imports
-``magi.channels.tasks.scheduler`` (or ``magi.channels.tasks.channel``).
-Exposing the scheduler behind a BUS-side service keeps
-``magi.channels.api`` — and every other domain package — from holding a
-direct Python reference to the scheduler, which is required by
-``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §5.6 + §6.
-
-Why a bridge instead of an event queue
---------------------------------------
-The doc's intended flow is "API → BUS → Tasks Worker → BUS → AgentWorker".
-A full event-queue refactor (publish a ``task.scheduled`` event, have a
-worker consume it) would require a durable outbox and a worker loop.
-Minimal-by-default keeps the scheduler as an in-process warm cache of
-the BUS's task rows, but the *only* Python entry point is this bridge —
-so the boundary test's ``channels.api ⊥ channels.tasks`` rule stays
-enforceable.
-
-Contract surface
-----------------
-The bridge exposes three notify calls + one sync fallback:
-
-- :meth:`notify_scheduled` — a row was just created / updated; nudge the
-  warm cache. Best-effort; swallows "scheduler not running" because the
-  DB row is the source of truth and the scheduler rehydrates from DB on
-  next start.
-- :meth:`notify_unscheduled` — a row was deleted or disabled; remove
-  it from the warm cache. Same best-effort contract.
-- :meth:`request_manual_fire` — fire a task NOW via the scheduler
-  thread pool. **Re-raises** ``RuntimeError`` when the scheduler isn't
-  running, so the caller can fall back to the in-process sync path.
-- :meth:`fire_now_sync` — the in-process sync fallback for dev/test
-  mode where the scheduler isn't started. Wraps
-  ``TaskChannel.dispatch``.
+[plan amendment §11]: The old apscheduler-backed
+``magi.channels.tasks.scheduler`` has been deleted; TaskWorker now
+owns all scheduling. This bridge forwards ``request_manual_fire``
+and ``fire_now_sync`` to new_bus ``runTaskJobBoard``.
+``start`` / ``stop`` are no-ops (TaskWorker lifecycle is owned
+by the composition root). ``notify_scheduled`` / ``notify_unscheduled``
+are no-ops (TaskWorker rehydrates from DB on start and polls every
+15s — the warm-cache push model is obsolete).
 """
 
 from __future__ import annotations
@@ -41,7 +16,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.jobs.protocols.task import TaskFullView, TaskScheduleView
+from magi.bus.jobs.protocols.task import TaskFullView
 
 if TYPE_CHECKING:
     from magi.bus.jobs.services.task import TaskService
@@ -50,132 +25,78 @@ logger = logging.getLogger("magi.bus.jobs.services.task_scheduler_bridge")
 
 
 class TaskSchedulerBridge:
-    """BUS-side façade over the apscheduler-backed task scheduler.
+    """BUS-side façade over task execution (now via TaskWorker + new_bus).
 
-    Construction is cheap (no DB or scheduler work); the underlying
-    scheduler singleton is touched lazily on the first notify / fire
-    call. This keeps importing the bridge side-effect free and lets
-    tests construct a bridge without booting apscheduler.
+    Construction is cheap (no DB or scheduler work).
     """
 
     def __init__(self) -> None:
         pass
 
-    # -- warm-cache notifications ---------------------------------------
+    # -- warm-cache notifications (no-ops — TaskWorker polls DB) ---------
 
     def notify_scheduled(self, view: TaskFullView) -> None:
-        """Best-effort: register/update an enabled task in the scheduler.
-
-        On the "scheduler not running" path the DB row is authoritative;
-        the next scheduler start rehydrates from the BUS. We log + swallow
-        so a missing scheduler never fails the user-visible request.
-        """
-        schedule_view = TaskScheduleView(
-            id=view.id,
-            enabled=view.enabled,
-            cron=view.cron,
-            run_at=view.run_at,
-        )
-        try:
-            self._scheduler().register(schedule_view)
-        except RuntimeError:
-            logger.info(
-                "scheduler not running yet; task %s will activate on next start",
-                view.id,
-            )
-        except Exception as exc:  # noqa: BLE001 — boundary around a 3rd-party scheduler
-            logger.warning(
-                "scheduler.register(%s) failed (DB row is still authoritative): %s",
-                view.id, exc,
-            )
+        """No-op: TaskWorker polls tasks_book every 15s."""
+        pass
 
     def notify_unscheduled(self, task_id: str) -> None:
-        """Best-effort: remove ``task_id`` from the scheduler's warm cache."""
-        try:
-            self._scheduler().unregister(task_id)
-        except RuntimeError:
-            # Scheduler not running — the row is already gone from the DB,
-            # so there's nothing to remove from the cache. Silent OK.
-            pass
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("scheduler.unregister(%s) failed: %s", task_id, exc)
+        """No-op: TaskWorker polls tasks_book every 15s."""
+        pass
 
-    # -- manual fire -----------------------------------------------------
+    # -- manual fire (via new_bus RunTaskJob) ----------------------------
 
     def request_manual_fire(self, task_id: str, *, run_id: str) -> None:
-        """Ask the running scheduler to fire ``task_id`` immediately.
-
-        Raises ``RuntimeError`` (propagated from the scheduler singleton)
-        when the scheduler isn't running. Callers handle that with
-        :meth:`fire_now_sync`.
-        """
-        self._scheduler().submit_now(task_id, run_id=run_id)
+        """Publish a RunTaskJob to new_bus for TaskWorker to claim."""
+        self._publish_run_task_job(task_id, run_id=run_id)
 
     async def fire_now_sync(self, task_id: str, *, run_id: str) -> None:
-        """In-process sync fallback used when the scheduler isn't running.
-
-        Reaches ``TaskChannel.dispatch`` directly so the API can honour
-        ``POST /api/tasks/{id}/run`` even in dev / single-container /
-        pytest mode where the apscheduler thread was never started.
-        """
-        from magi.channels.tasks.channel import TaskChannel
-
-        await TaskChannel.dispatch(
-            task_id,
-            manual=True,
-            pre_created_run_id=run_id,
-        )
-
-    # -- sync helper for tests / dev callers -----------------------------
+        """Publish a RunTaskJob to new_bus (same as request_manual_fire)."""
+        self._publish_run_task_job(task_id, run_id=run_id)
 
     def fire_now_sync_threadsafe(
         self, task_id: str, *, run_id: str
     ) -> None:
-        """Run :meth:`fire_now_sync` on a fresh asyncio loop.
+        """Sync fallback: publish RunTaskJob through new_bus."""
+        self._publish_run_task_job(task_id, run_id=run_id)
 
-        Convenience for sync API endpoints that need the same dev-mode
-        fallback as the previous ``asyncio.run(TaskChannel.dispatch(...))``
-        path. Production (scheduler-up) goes through
-        :meth:`request_manual_fire` instead.
-        """
-        asyncio.run(self.fire_now_sync(task_id, run_id=run_id))
-
-    # -- lifecycle (Phase 5: keep __main__.py from reaching scheduler) --
+    # -- lifecycle (no-ops — TaskWorker is owned by composition root) ----
 
     def start(self) -> None:
-        """Start the apscheduler-backed task worker.
-
-        Phase 5 — keeps callers (``magi __main__.py`` and the
-        runtime's :func:`worker_lifespan`) from importing
-        ``magi.channels.tasks.scheduler`` directly.  This bridge
-        remains the single Python seam between the BUS and the
-        scheduler (per plan §5.5 / boundary-test rule).
-        """
-        from magi.channels.tasks.scheduler import start_scheduler
-
-        start_scheduler()
-        logger.info("task scheduler started via bridge")
+        """No-op: TaskWorker started by composition root."""
+        logger.debug("TaskSchedulerBridge.start: no-op (TaskWorker owns scheduling)")
 
     def stop(self) -> None:
-        """Stop the task worker if it's running; idempotent."""
-        from magi.channels.tasks.scheduler import stop_scheduler
-
-        stop_scheduler()
-        logger.info("task scheduler stopped via bridge")
+        """No-op: TaskWorker stopped by composition root."""
+        logger.debug("TaskSchedulerBridge.stop: no-op (TaskWorker owns scheduling)")
 
     # -- internal --------------------------------------------------------
 
-    def _scheduler(self):
-        """Lazily import the scheduler singleton.
+    def _publish_run_task_job(self, task_id: str, *, run_id: str) -> None:
+        """Publish a RunTaskJob through new_bus (if available)."""
+        try:
+            from magi.channels import get_current_new_bus
+            bus = get_current_new_bus()
+            if bus is None:
+                logger.warning(
+                    "TaskSchedulerBridge: new_bus not available; "
+                    "task %s not fired", task_id,
+                )
+                return
 
-        Importing lazily keeps this module side-effect free: a process
-        that boots ``TaskSchedulerBridge`` but never calls a notify / fire
-        method never touches apscheduler. The ``magi.__main__`` composition
-        root decides whether the scheduler is started; this bridge just
-        forwards.
-        """
-        from magi.channels.tasks.scheduler import get_scheduler
-        return get_scheduler()
+            from magi.new_bus.guild.runTaskJob import RunTaskJob
+            bus.run_task_job_board.publish(RunTaskJob(
+                task_id=task_id,
+                manual=True,
+                fired_by="api_manual_run",
+            ))
+            logger.info(
+                "TaskSchedulerBridge: published RunTaskJob for task %s", task_id,
+            )
+        except Exception:
+            logger.exception(
+                "TaskSchedulerBridge: failed to publish RunTaskJob for %s",
+                task_id,
+            )
 
 
 __all__ = ["TaskSchedulerBridge"]

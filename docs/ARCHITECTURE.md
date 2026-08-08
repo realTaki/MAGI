@@ -1204,9 +1204,10 @@ listed so a future change does not re-introduce them by reflex:
 `MAGI_WORKSPACE_DIR` is also gone: workspace is always derived from
 `HOST_WORKSPACE_DIR` + `MAGI_NAME`. The K8s vs CLI distinction lives
 in the auto-detection of `KUBERNETES_SERVICE_HOST` — Pods default the
-host root to `/` (PVC mount is the operator's choice); CLI defaults to
-`~/.magi`. Operators may always override with an explicit
-`HOST_WORKSPACE_DIR`.
+host root to `/` and never need to set `HOST_WORKSPACE_DIR` (PVC mounts
+the container root); CLI defaults to `~/.magi`. Operators may always
+override with an explicit `HOST_WORKSPACE_DIR` (e.g. for `k8s-dev` overlays
+where the workspace hostPath coexists with sub-mounts at `/app/magi`).
 
 ---
 
