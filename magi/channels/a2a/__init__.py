@@ -123,17 +123,54 @@ sessions — same pattern as ``channels/telegram/__init__.py``.
 
 from __future__ import annotations
 
-from magi.channels.a2a.adapter import A2AAdapter
-from magi.channels.dispatcher import register_adapter
+# ---------------------------------------------------------------------------
+# DISABLED — ``magi.channels.a2a`` is commented out. The package is
+# skeleton-only at this point (every adapter method raises
+# ``NotImplementedError`` — see the module docstring above), and the
+# new BUS has not yet integrated the peer-routing primitives
+# (per-target HTTP client cache, MAGIS-tree peer-list builder, HMAC
+# verification against ``MAGI_CONTROL_SECRET``) that real a2a
+# delivery needs. Until the runtime lands, the side-effect below
+# would silently register a half-implemented adapter into the
+# dispatcher and any ``send_to_uid(... Channel.A2A ...)`` call would
+# raise ``NotImplementedError`` at runtime — better to surface the
+# absence at registration time.
+#
+# Re-enable by: uncommenting the import + side-effect block and the
+# ``__all__`` list, then deleting this banner.
+#
+# Known partial fallout while disabled (submodules are not affected
+# by this comment-out — they still import / function on their own):
+#   - The dispatcher has no adapter for ``Channel.A2A``; callers
+#     using ``send_to_uid`` with ``Channel.A2A`` will get
+#     ``KeyError: no adapter registered for channel='a2a'`` instead
+#     of ``NotImplementedError``.
+#   - ``magi.channels.api.app`` still imports and mounts
+#     ``a2a_router`` (it imports directly from
+#     ``magi.channels.a2a.router``), so the ``/a2a/inbox``,
+#     ``/a2a/send/{magic_id}``, ``/a2a/peers`` HTTP endpoints stay
+#     reachable. Strip the include_router call in app.py too if a
+#     full shutdown is needed.
+#   - ``magi.channels.delivery._send`` still has an ``elif
+#     claim.channel == 'a2a'`` branch that lazy-imports
+#     ``send_a2a_delivery`` from ``magi.channels.a2a.transport``;
+#     that branch only fires when an a2a delivery claim is actually
+#     claimed, so it's dormant until traffic arrives.
+# ---------------------------------------------------------------------------
 
-# Side-effect: register the A2A adapter into the dispatcher.
-# Importing this package is enough to make
-# ``from magi.channels import dispatcher;
-#  dispatcher.send_to_uid(magic_id, Channel.A2A, text)``
-# route through the A2A adapter. The adapter itself raises
-# ``NotImplementedError`` until the runtime lands — see the
-# module docstring above for the design and deferred work.
-register_adapter(A2AAdapter())
+# from magi.channels.a2a.adapter import A2AAdapter
+# from magi.channels.dispatcher import register_adapter
+#
+# # Side-effect: register the A2A adapter into the dispatcher.
+# # Importing this package is enough to make
+# # ``from magi.channels import dispatcher;
+# #  dispatcher.send_to_uid(magic_id, Channel.A2A, text)``
+# # route through the A2A adapter. The adapter itself raises
+# # ``NotImplementedError`` until the runtime lands — see the
+# # module docstring above for the design and deferred work.
+# register_adapter(A2AAdapter())
+#
+#
+# __all__ = ["A2AAdapter"]
 
-
-__all__ = ["A2AAdapter"]
+__all__: list[str] = []
