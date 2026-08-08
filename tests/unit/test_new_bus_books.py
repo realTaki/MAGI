@@ -369,12 +369,111 @@ def test_session_and_message(factory):
 # -- McpServerBook ------------------------------------------------------
 
 
-def test_mcp_server_book(factory):
+def test_mcp_server_book_basic_add_and_list(factory):
+    """The minimal add → list round-trip the worker bootstraps on.
+
+    Pins the new schema (the flat ``mcp_servers`` columns the
+    worker reads via ``list_enabled()``).
+    """
     book = McpServerBook(factory)
-    s = book.add(name="gmail", transport="stdio", config={"cmd": "mcp-gmail"})
+    s = book.add(
+        name="gmail",
+        connection_type="stdio",
+        command="mcp-gmail",
+    )
     assert isinstance(s, McpServer)
     assert s.name == "gmail"
+    assert s.connection_type == "stdio"
+    assert s.command == "mcp-gmail"
     assert book.list_enabled()[0].name == "gmail"
+
+
+def test_mcp_server_book_upsert_and_delete_by_name(factory):
+    """``upsert`` covers both insert and update; ``delete_by_name``
+    is idempotent (returns ``False`` for unknown rows). The
+    worker relies on these primitives when a change job fires.
+    """
+    book = McpServerBook(factory)
+    inserted = book.upsert(
+        name="gmail",
+        connection_type="stdio",
+        command="mcp-gmail",
+        args=["--flag", "1"],
+        env={"TOKEN": "x"},
+    )
+    assert inserted.name == "gmail"
+    assert inserted.command == "mcp-gmail"
+    assert inserted.args == ("--flag", "1")
+    assert inserted.env == {"TOKEN": "x"}
+    assert book.get_by_name(name="gmail") is not None
+
+    # Update on the same name replaces command/args/env.
+    updated = book.upsert(
+        name="gmail",
+        connection_type="streamable_http",
+        url="https://mcp.example.com",
+    )
+    assert updated.connection_type == "streamable_http"
+    assert updated.url == "https://mcp.example.com"
+    assert updated.command is None
+    assert updated.args == ()
+    assert updated.env == {}
+
+    # delete_by_name returns True when the row existed.
+    assert book.delete_by_name(name="gmail") is True
+    assert book.delete_by_name(name="gmail") is False
+    assert book.get_by_name(name="gmail") is None
+
+
+def test_mcp_server_book_toggle(factory):
+    book = McpServerBook(factory)
+    book.upsert(
+        name="gmail", connection_type="stdio",
+        command="mcp-gmail",
+    )
+    flipped = book.toggle(name="gmail")
+    assert flipped is not None
+    assert flipped.enabled is False
+    flipped_again = book.toggle(name="gmail")
+    assert flipped_again is not None
+    assert flipped_again.enabled is True
+    # Unknown name → None.
+    assert book.toggle(name="missing") is None
+
+
+def test_mcp_server_book_validation(factory):
+    """``upsert`` mirrors the old bus ``McpService.upsert``
+    contract: ``connection_type`` must be one of three literals;
+    stdio requires a non-empty ``command``; the URL-based
+    transports require a non-empty ``url``.
+    """
+    book = McpServerBook(factory)
+    with pytest.raises(ValueError, match="connection_type must be one of"):
+        book.upsert(name="bad", connection_type="grpc", command="x")
+    with pytest.raises(ValueError, match="stdio servers require 'command'"):
+        book.upsert(name="bad", connection_type="stdio", command="")
+    with pytest.raises(ValueError, match="streamable_http servers require 'url'"):
+        book.upsert(name="bad", connection_type="streamable_http", url="")
+
+
+def test_mcp_server_book_dto_json_columns(factory):
+    """args_json / env_json / headers_json are deserialised into
+    typed Python objects on the way out. Round-trips preserve
+    ordering and string typing.
+    """
+    book = McpServerBook(factory)
+    book.upsert(
+        name="gmail", connection_type="streamable_http",
+        url="https://mcp.example.com",
+        args=["--flag=1", "positional"],
+        env={"TOKEN": "secret"},
+        headers={"X-Trace": "yes"},
+    )
+    row = book.get_by_name(name="gmail")
+    assert row is not None
+    assert row.args == ("--flag=1", "positional")
+    assert row.env == {"TOKEN": "secret"}
+    assert row.headers == {"X-Trace": "yes"}
 
 
 # -- ActionItemBook -----------------------------------------------------

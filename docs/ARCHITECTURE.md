@@ -509,13 +509,30 @@ Core Tools must not accumulate product-specific logic.
 
 ### `magi.mcp`
 
-**Owns:** MCP server configuration, connection/session management, tool
-discovery from MCP servers, translating MCP descriptors into Tools contracts.
+**Owns:** MCP server configuration, the durable :class:`McpWorker` that
+holds every MCP server connection, and the small loader primitives
+(``MCPServerConnection`` / ``MCPTool`` / ``MCPTimeoutConfig``) the
+worker composes. Configuration lives in the new_bus
+``McpServerBook`` (table `mcp_servers`); runtime change notifications
+flow through the new_bus ``mcpServerChangedJobBoard``.
 
-**Must not:** access BUS or DB directly, register tools directly on BUS, or
-be imported by Tools core.
+**Lifecycle:** the worker is constructed by the composition root
+(``magi.startup.runtime._runtime_lifespan`` / ``worker_lifespan``)
+right after the Tools worker, reads enabled rows from
+``bus.mcp_servers_book``, opens every connection in parallel, and
+re-injects the discovered tools via
+:func:`magi.tools.registry.register_tools` under source
+``"mcp"`` (manage tools under ``"mcp_manage"``). The Tools
+worker's existing ``on_tools_changed`` listener takes care of
+republishing the catalog.
 
-**Depends on:** `magi.tools` (extension contracts only).
+**Must not:** register tools directly outside of
+:func:`magi.tools.registry.register_tools`, hold module-level
+caches of connections, or be imported by Tools core.
+
+**Depends on:** `magi.tools` (extension contracts only),
+`magi.bus` (settings_book for timeouts),
+`magi.new_bus` (McpServerBook + mcpServerChangedJobBoard).
 
 ### `magi.connectors`
 
@@ -647,13 +664,19 @@ Agent reads the Tool Catalog from BUS, never imports the registry.
 ### MCP tool discovery and execution
 
 ```
-MCP Server → magi.mcp (tool list) → Tools (register descriptor)
-  → BUS (sync catalog)
-  → ToolWorker claims job → Tools → MCP adapter → MCP Server
-  → BUS (tool result)
+MCP Server → McpWorker.connect → magi.mcp.MCPServerConnection → MCPTool
+  → magi.tools.registry.register_tools("mcp", ...)
+  → on_tools_changed → ToolsWorker republishes catalog
+  → ToolWorker claims job → Tools → MCPTool → session.call_tool
+  → MCP Server → BUS (tool result)
 ```
 
-Agent only sees the normalised Tool Catalog and results.
+The McpWorker is the sole owner of MCP connections; the loader
+no longer carries a module-level connection cache. WebUI / LLM
+manage tools still write to the ``mcp_servers`` table (via the
+old bus ``McpService``) and the worker picks the changes up at
+next startup — runtime change-job publishing is scheduled for a
+follow-up migration.
 
 ### Scheduled task
 
