@@ -153,12 +153,13 @@ systemctl --user list-units 'magi-*'
   `magi runtime`，当前终端直接拥有 MAGI 进程。systemd 模式下每个 MAGI
   是独立 unit，独立崩溃、独立重启。
 - **与 K8s 一致的 `workspace/memories/magi.db`**：K8s Pod 的 SQLite
-  在 `<workspace>/memories/magi.db`（`MAGI_WORKSPACE_DIR` 指向的 PVC）；
-  本路径保持相同约定 `~/.magi/MAGI_Citizens/<slug>/workspace/memories/magi.db`。
+  在 `/MAGI_Citizens/<name>/memories/magi.db`（PVC 挂到容器根 `/`，代码不需知道）；
+  本路径保持相同约定 `~/.magi/MAGI_Citizens/<slug>/memories/magi.db`。
   `magi/startup/paths.py` 是唯一暴露这个布局的位置。
-- **路径解析由环境变量驱动**：K8s Pod 设置 `MAGI_WORKSPACE_DIR`；
-  本地进程设置 `HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`。
-  不存在硬编码的 `/workspace` 路径。
+- **路径解析由环境变量驱动**：K8s Pod **不传** `HOST_WORKSPACE_DIR`，由
+  `KUBERNETES_SERVICE_HOST` 自动检测 K8s 模式并默认到 `/`；本地进程设置
+  `HOST_WORKSPACE_DIR`（默认 `~/.magi`）+ `MAGI_NAME`。不存在硬编码的
+  `/workspace` 路径。
 - **不依赖 Docker / podman / k8s**：唯一外部依赖是 Python 3.12+。
 - **`magi cli start` 首次运行是幂等的**：第一次跑会初始化 SQLite
   schema 并生成 control secret；之后再跑直接启动 runtime。

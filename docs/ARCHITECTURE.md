@@ -1173,6 +1173,41 @@ The legacy `magi [runtime|webui|cli]` form is preserved as a thin shim
 that forwards to `magi.startup.cli`; it is **not** the canonical
 interface.
 
+## Explicit Non-Goals
+
+These are deliberately **not** part of the startup model. They are
+listed so a future change does not re-introduce them by reflex:
+
+- **No parallel Runtime / CLI / Kubernetes startup packages.** All three
+  share `magi.startup`. Local + Kubernetes only differ in the outer
+  resource layer (directories + subprocess vs PVC + Deployment + Service).
+- **No Kubernetes backend abstraction layer.** Local process management
+  (`magi.startup.local`) and K8s resource creation
+  (`magi.startup.kubernetes`) live side by side without a polymorphic
+  surface; the legacy `CLIProcessRuntimeBackend` is removed.
+- **No Profile system.** ADAM / EVA roles are runtime-time decisions read
+  from the MAGIS database, not boot-time env selectors.
+- **No local Orchestrator HTTP service** in CLI mode. Each MAGI is its
+  own OS process.
+- **No "one process / container running multiple MAGIs".** Each runtime
+  owns one MAGI.
+- **No Runtime auto-registration.** A `MAGI_ID` that does not exist in the
+  MAGIS database fails the boot; the Runtime never creates a new identity
+  on its own.
+- **No operator-configurable Runtime Host / Port / Reload.** Host and
+  Port are hardcoded by the runtime role; Reload is decided by the
+  development entry point, not the operator shell.
+- **No full WebUI product refactor inside this package.** The WebUI
+  product code stays where it is; `magi.startup.webui` only owns the
+  singleton lifecycle.
+
+`MAGI_WORKSPACE_DIR` is also gone: workspace is always derived from
+`HOST_WORKSPACE_DIR` + `MAGI_NAME`. The K8s vs CLI distinction lives
+in the auto-detection of `KUBERNETES_SERVICE_HOST` — Pods default the
+host root to `/` (PVC mount is the operator's choice); CLI defaults to
+`~/.magi`. Operators may always override with an explicit
+`HOST_WORKSPACE_DIR`.
+
 ---
 
 # Glossary

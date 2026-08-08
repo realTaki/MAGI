@@ -8,6 +8,8 @@
 >
 > **执行跟踪**：每个 Part 开始前请在本文件顶部加一行 `<!-- Agent X claiming Part Y -->`；完成时改成 `<!-- Agent X done Part Y at HH:MM -->`。
 
+<!-- Agent Taki (Claude) claiming full v3.0 implementation per §24.8 steps 1–4 (foundation → boards → workers → composition root). Tests (step 5) after the rest lands. Starting from scratch — no other agent in flight as of 2026-08-08 session. -->
+
 ---
 
 ## 1. 协作开发规则

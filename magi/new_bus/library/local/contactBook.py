@@ -338,6 +338,17 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             s.commit()
             return True
 
+    def read_daily_note(self, *, contact_id: int) -> ContactNote | None:
+        """Return today's daily-note row for *contact_id*, or ``None``."""
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        with self._session() as s:
+            row = s.scalar(select(_ContactNoteRow).where(
+                _ContactNoteRow.contact_id == contact_id,
+                _ContactNoteRow.kind == "daily",
+                _ContactNoteRow.note_date >= today,
+            ))
+            return self._row_to_dto(row) if row else None
+
     def upsert_daily_note(
         self, *, contact_id: int, body_delta: str,
         note_date: datetime | None = None,

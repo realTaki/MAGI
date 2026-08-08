@@ -281,14 +281,17 @@ EVA Bob    → eva-bob-magi-workspace PVC → /workspace
 
 ## 5. 持久化布局
 
-Kubernetes 中每个 MAGI 的 `/workspace` 由 PVC 提供（`MAGI_WORKSPACE_DIR=/workspace`）；非生产
-部署（`deploy/cli/` 单机 CLI、`deploy/k8s-dev/` kind dev）虽然
-底层是宿主目录，但应用看到的目录树与生产 PVC 完全一致：
+Kubernetes Pod **不传** `HOST_WORKSPACE_DIR`。Pod 启动时
+`magi.startup.paths` 通过 `KUBERNETES_SERVICE_HOST` 检测 K8s 模式，
+默认 `HOST_WORKSPACE_DIR=/`；PVC 挂载到容器根 `/`，workspace 推导为
+`/MAGI_Citizens/<name>`。非生产部署（`deploy/cli/` 单机 CLI、
+`deploy/k8s-dev/` kind dev）虽然底层是宿主目录，但应用看到的目录树与
+生产 PVC 完全一致：
 
 ```text
 # 生产 (K8s)
-PVC /workspace                                       per-MAGI 私有 (MAGI_WORKSPACE_DIR=/workspace)
-PVC /magis                                            直属 MAGIS 公共
+PVC /                                               per-MAGI 私有 (auto-default HOST_WORKSPACE_DIR=/)
+PVC /magis                                          直属 MAGIS 公共
 
 # CLI 单机 (deploy/cli/)
 ~/.magi/MAGI_Citizens/<slug>/workspace/             per-MAGI 私有

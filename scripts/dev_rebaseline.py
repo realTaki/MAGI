@@ -205,8 +205,8 @@ def cmd_reset(args: argparse.Namespace) -> int:
     ``alembic upgrade head`` to rebuild a fresh schema.
 
     ``alembic`` is invoked as a subprocess so we don't have to
-    reload the cached engine singleton in-process. ``MAGI_WORKSPACE_DIR``
-    is set to the workspace root so ``<workspace>/memories/``
+    reload the cached engine singleton in-process. ``HOST_WORKSPACE_DIR``
+    is set to the workspace root so ``<workspace>/MAGI_Citizens/<name>/memories/``
     resolves to the right state directory. ``PATH`` is inherited
     so the system ``.venv/bin/alembic`` is found.
     """
@@ -220,13 +220,19 @@ def cmd_reset(args: argparse.Namespace) -> int:
                 print(f"  rm {variant}")
 
     # Find and run alembic against the project root. We point
-    # ``MAGI_WORKSPACE_DIR`` at the parent of the state dir so
-    # ``<workspace>/memories/`` resolves to the right
-    # ``magi.db`` (the project's alembic env.py reads it).
+    # ``HOST_WORKSPACE_DIR`` at the parent of the per-MAGI state dir
+    # (the canonical layout is
+    # ``<HOST>/MAGI_Citizens/<MAGI_NAME>/memories/magi.db``) so
+    # ``resolve_state_dir()`` resolves to the right ``magi.db``
+    # (the project's alembic env.py reads it).
     state_dir = db_paths[0].parent
     print(f"\n[reset] alembic upgrade head (state_dir={state_dir})")
     env = os.environ.copy()
-    env["MAGI_WORKSPACE_DIR"] = str(state_dir.parent)
+    # state_dir is ``<HOST>/MAGI_Citizens/<name>/memories``; the
+    # host root is three levels up.
+    host_root = state_dir.parent.parent.parent
+    env["HOST_WORKSPACE_DIR"] = str(host_root)
+    env["MAGI_NAME"] = state_dir.parent.name
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "-c", "alembic.ini", "upgrade", "head"],
         cwd="/root/GitHub/MAGI",

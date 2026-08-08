@@ -59,8 +59,10 @@ deploy/
 - 一个 `magi-webui` 入口作为唯一浏览器界面。
 
 路径解析由环境变量驱动：
-- K8s 容器内：`MAGI_WORKSPACE_DIR` 指向 PVC 挂载点
-- CLI 进程：`HOST_WORKSPACE_DIR` + `MAGI_RUNTIME_ID` + `MAGI_NAME`
-
-不存在硬编码的 `/workspace` 路径。`magi/startup/paths.py` 是唯一暴露
-路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。
+- K8s Pod：不传 `HOST_WORKSPACE_DIR`。`magi.startup.paths` 通过
+  `KUBERNETES_SERVICE_HOST` 自动检测 K8s 模式，默认 `HOST_WORKSPACE_DIR=/`；
+  PVC 挂载到容器根 `/`，workspace 推导为 `/MAGI_Citizens/<name>`。
+  如需覆盖可显式传入。
+- CLI 进程：`HOST_WORKSPACE_DIR`（默认 `~/.magi`）+ `MAGI_NAME`。
+  不存在硬编码的 `/workspace` 路径。`magi/startup/paths.py` 是唯一暴露
+  路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。

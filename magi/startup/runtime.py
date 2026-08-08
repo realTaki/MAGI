@@ -165,55 +165,39 @@ async def _runtime_lifespan(
     Adam-dependent bootstrap checks.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
+    from magi.channels.workers import (
+        start_channel_workers,
+        stop_channel_workers,
+    )
     from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
-    if "telegram" in channels:
-        try:
-            from magi.channels.telegram.bot import start_bot
+    # Set process-global new_bus for migration interim
+    # (TaskChannel.dispatch, TaskSchedulerBridge read this)
+    import magi.channels
+    magi.channels.set_current_new_bus(new_bus)
 
-            start_bot()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("telegram bootstrap skipped: %s", exc)
+    # Channel Workers 集成 — 替代旧的 start_bot() / start_delivery_worker()
+    channel_workers = await start_channel_workers(
+        new_bus, enabled=set(channels),
+    )
 
     await start_provider_worker(bus=new_bus)
-    # Tools worker also lives on new_bus now (migrated from the old
-    # bus in the same pass). It publishes the builtin tool catalog
-    # at start() so it's ready before the agent's first tool call.
     await start_tool_worker(bus=new_bus)
-    # MCP worker starts immediately after the tools worker so the
-    # tools worker's `on_tools_changed` listener is wired before
-    # the MCP worker re-injects its discovered tools. Stop order
-    # is reversed in the `finally` so the tools worker still
-    # listens when the MCP worker clears its tool set on the
-    # way out.
     await start_mcp_worker(bus=new_bus)
-    # AgentWorker also lives on new_bus — same constructor-injection
-    # pattern as providers / tools workers (see magi.agent.worker).
     await start_agent_worker(bus=new_bus)
-    await start_delivery_worker()
-    # Proactive worker runs LAST — all other subsystems must be
-    # ready before it evaluates Adam status and seeds presets.
     await start_proactive_worker(bus=new_bus, magi_id=magi_id)
     try:
         yield
     finally:
         await stop_proactive_worker()
-        await stop_delivery_worker()
         await stop_agent_worker()
         await stop_mcp_worker()
         await stop_tool_worker()
         await stop_provider_worker()
-        if "telegram" in channels:
-            try:
-                from magi.channels.telegram.bot import stop_bot
-
-                stop_bot()
-            except Exception:  # noqa: BLE001
-                pass
+        await stop_channel_workers(channel_workers)
 
 
 class WorkerHandles:
@@ -232,9 +216,9 @@ async def worker_lifespan():
     provider worker (now on new_bus) has a bus to claim from.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels.delivery import (
-        start_delivery_worker,
-        stop_delivery_worker,
+    from magi.channels.workers import (
+        start_channel_workers,
+        stop_channel_workers,
     )
     from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
@@ -249,28 +233,25 @@ async def worker_lifespan():
     state_dir = str(resolve_workspace_dir() / "memories")
     new_bus = bootstrap_new_bus(state_dir=state_dir)
 
+    # Channel Workers — webui + any other enabled channels
+    channel_workers = await start_channel_workers(
+        new_bus, enabled={"webui"},
+    )
+
     await start_provider_worker(bus=new_bus)
-    # Tools worker on new_bus too — see _runtime_lifespan for
-    # the rationale on the order (publish builtin catalog before
-    # the agent might enqueue).
     await start_tool_worker(bus=new_bus)
-    # MCP worker on new_bus — same rationale as the runtime
-    # lifespan above (catalog listener wired before tool injection).
     await start_mcp_worker(bus=new_bus)
-    # AgentWorker is on new_bus — same constructor-injection pattern.
     await start_agent_worker(bus=new_bus)
-    await start_delivery_worker()
-    # WebUI context: no specific MAGI, so no Adam check.
     await start_proactive_worker(bus=new_bus, magi_id=None)
     try:
         yield
     finally:
         await stop_proactive_worker()
-        await stop_delivery_worker()
         await stop_agent_worker()
         await stop_mcp_worker()
         await stop_tool_worker()
         await stop_provider_worker()
+        await stop_channel_workers(channel_workers)
 
 
 # ----------------------------------------------------------------------
@@ -278,36 +259,52 @@ async def worker_lifespan():
 # ----------------------------------------------------------------------
 
 
-def start_channel(name: str) -> None:
-    """Bring one channel up — plan §20.1.
+# [plan amendment §11]: old start_channel/stop_channel/is_channel_running
+# deleted — Channel Workers now own their lifecycle via
+# magi.channels.workers module-level singletons. The WebUI
+# POST /api/channels toggle path now reads
+# `workers._registry[name].start(bus)` / `.stop()`.
+# Keeping stub wrappers for backward compat during migration.
 
-    Replaces :func:`magi.launcher.start_channel`.  Channel adapters stay
-    in :mod:`magi.channels.*`; this is the composition-root dispatcher.
-    """
+
+def start_channel(name: str) -> None:
+    """Deprecated — Channel Workers own lifecycle now."""
+    import warnings
+    warnings.warn(
+        "start_channel is deprecated; Channel Workers own lifecycle now",
+        DeprecationWarning, stacklevel=2,
+    )
     if name == "telegram":
         from magi.channels.telegram.bot import start_bot
-
         start_bot()
 
 
 def stop_channel(name: str) -> None:
-    """Bring one channel down — plan §20.1."""
+    """Deprecated — Channel Workers own lifecycle now."""
+    import warnings
+    warnings.warn(
+        "stop_channel is deprecated; Channel Workers own lifecycle now",
+        DeprecationWarning, stacklevel=2,
+    )
     if name == "telegram":
         from magi.channels.telegram.bot import stop_bot
-
         stop_bot()
 
 
 def is_channel_running(name: str) -> bool:
-    """Return ``True`` if the channel process is currently live.
-
-    Plan §20.1 — replaces :func:`magi.launcher.is_channel_running`.
-    """
+    """Deprecated — Channel Workers own lifecycle now."""
     if name == "telegram":
         from magi.channels.telegram.bot import is_running
-
         return is_running()
-    return name == "webui"
+    if name == "webui":
+        return True
+    try:
+        from magi.channels.workers import registered_channel_workers
+        workers = registered_channel_workers()
+        w = workers.get(name)
+        return w is not None and w._task is not None and not w._task.done()
+    except Exception:
+        return False
 
 
 # ----------------------------------------------------------------------
