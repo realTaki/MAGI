@@ -135,9 +135,14 @@ mounts:
 
 ```text
 host repository                                  → /app/magi   source hot reload
-HOST_WORKSPACE_DIR=/workspace/MAGI_Citizens/eva-000 (workspace PVC)
+workspace PVC (mounted at the container root /) → /MAGI_Citizens/<name>  (derived from HOST_WORKSPACE_DIR=/ + MAGI_NAME)
 MAGIS public workspace (PVC)                     → /magis
 ```
+
+`HOST_WORKSPACE_DIR` is not set in K8s Pods — the path resolver detects
+`KUBERNETES_SERVICE_HOST` and defaults the host root to `/`; the PVC
+mounts the container root, so the derived `MAGI_Citizens/<name>` lands
+on the volume.
 
 For an existing cluster or a production-style deployment, use the
 k8s production path:
@@ -193,9 +198,13 @@ and environment-specific configuration.
 Kubernetes is the current deployment target. It gives each MAGI a concrete
 execution boundary and lets the orchestrator manage isolated runtime resources
 without making ADAM a cluster administrator. Each MAGI keeps a private,
-single-replica SQLite workspace under `HOST_WORKSPACE_DIR/MAGI_Citizens/<MAGI_NAME>/`;
-each MAGIS has its own PostgreSQL database and public workspace PVC for
-organization facts and shared files. The four startup inputs
+single-replica SQLite workspace under
+`/MAGI_Citizens/<MAGI_NAME>/memories/magi.db` — the path resolver
+detects `KUBERNETES_SERVICE_HOST` and defaults `HOST_WORKSPACE_DIR`
+to `/`, the PVC mounts the container root, and `MAGI_Citizens/<name>`
+is derived from `MAGI_NAME`. Each MAGIS has its own PostgreSQL database
+and public workspace PVC for organization facts and shared files.
+The four startup inputs
 (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_DATABASE_URL`, `MAGI_ID`) are
 the only contract Runtime sees; workspace paths are derived, never
 configured. See [the storage boundary](docs/magi-magis-storage.md) and

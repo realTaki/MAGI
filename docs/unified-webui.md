@@ -73,8 +73,10 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
   `magi webui`，只使用运行时注册元数据和内部服务，不挂载 PVC 或 workspace。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
-  `HOST_WORKSPACE_DIR` 指向 PVC 挂载点（如 `/workspace`），`MAGI_NAME=eva-000`，
-  `MAGIS_DATABASE_URL` / `MAGI_ID` 由 Secret 注入。
+  **不传** `HOST_WORKSPACE_DIR`（由 `magi.startup.paths` 通过
+  `KUBERNETES_SERVICE_HOST` 自动检测 K8s 模式，默认到容器根 `/`，PVC
+  挂载点决定 `/MAGI_Citizens/<name>` 在宿主存储上的对应路径）。
+  `MAGI_NAME=eva-000`，`MAGIS_DATABASE_URL` / `MAGI_ID` 由 Secret 注入。
 - orchestrator（`magi.startup.kubernetes`）在启动新的 MAGI 时，同时创建同名的内部
   ClusterIP Service；停止时保留，删除 MAGI 时一并删除。
 - `deploy/k8s-dev/control-dev/`：kind 开发 overlay。仍使用 `magi:dev` 这个同一镜像标签，

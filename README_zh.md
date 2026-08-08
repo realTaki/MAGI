@@ -113,10 +113,14 @@ MAGI 是独立 OS 进程。
 开发节点。开发部署会挂载：
 
 ```text
-宿主仓库                                  → /app/magi     源码热加载
-HOST_WORKSPACE_DIR=/workspace/MAGI_Citizens/eva-000 (PVC，MAGI 私有工作区)
-MAGIS 公共工作区 PVC                       → /magis
+宿主仓库                                   → /app/magi     源码热加载
+workspace PVC（挂到容器根 /）              → /MAGI_Citizens/<name>  (由 HOST_WORKSPACE_DIR=/ + MAGI_NAME 推导)
+MAGIS 公共工作区 PVC                        → /magis
 ```
+
+K8s Pod **不传** `HOST_WORKSPACE_DIR`：路径解析器检测到
+`KUBERNETES_SERVICE_HOST` 后默认宿主根为 `/`；PVC 挂到容器根后，
+`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导并直接落到 PVC 上。
 
 已有 Kubernetes 集群或生产式部署可使用：
 
@@ -163,7 +167,9 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
 
 Kubernetes 是当前部署目标：它为每个 MAGI 提供明确的运行边界，也让 orchestrator
 能管理隔离资源，而不必让 ADAM 成为集群管理员。每个 MAGI 保留私有、单副本的 SQLite
-工作区，落在 `HOST_WORKSPACE_DIR/MAGI_Citizens/<MAGI_NAME>/`；每个 MAGIS 则有独立
+工作区，落在 `/MAGI_Citizens/<MAGI_NAME>/memories/magi.db`——K8s Pod **不传**
+`HOST_WORKSPACE_DIR`，路径解析器检测 `KUBERNETES_SERVICE_HOST` 自动默认宿主根为 `/`，
+PVC 挂到容器根，`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导；每个 MAGIS 则有独立
 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。启动契约只有四个变量
 （`HOST_WORKSPACE_DIR`、`MAGI_NAME`、`MAGIS_DATABASE_URL`、`MAGI_ID`），
 workspace 路径由它们推导，调用方不传入。精确边界见[存储设计](docs/magi-magis-storage.md)

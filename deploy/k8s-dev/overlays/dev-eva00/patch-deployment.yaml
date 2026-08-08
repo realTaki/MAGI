@@ -16,8 +16,13 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/entrypoint.sh"]
           env:
-            - name: HOST_WORKSPACE_DIR
-              value: /workspace
+            # k8s-dev: K8s mode is auto-detected via
+            # ``KUBERNETES_SERVICE_HOST``; ``HOST_WORKSPACE_DIR`` is
+            # intentionally NOT set so ``resolve_host_workspace()``
+            # defaults to ``/`` inside the Pod. The kind extraMounts
+            # in ``deploy/k8s-dev/kind.yaml`` and the hostPath volume
+            # entries below are what makes ``/MAGI_Citizens/<name>``
+            # resolve to the operator's ``~/.magi`` on the host.
             - name: MAGI_ORCHESTRATOR_URL
               value: http://magi-orchestrator:42100
             - name: MAGIS_DATABASE_URL

@@ -13,10 +13,12 @@
 
 ```text
 每个 MAGI
-  私有 PVC ────────────────> /workspace   (即 HOST_WORKSPACE_DIR)
+  私有 PVC ────────────────> 容器根 /   (Pod 不传 HOST_WORKSPACE_DIR;
+                                  magi.startup.paths 检测到
+                                  KUBERNETES_SERVICE_HOST 后默认到 /)
   私有 SQLite ─────────────> 记忆、会话、任务、本地设置
-  Final workspace path    ──> <HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>
-                                  (由 magi.startup.paths 推导,永不由调用方传入)
+  Final workspace path    ──> /MAGI_Citizens/<MAGI_NAME>/memories/magi.db
+                                  (由 magi.startup.paths 推导, 永不由调用方传入)
 
 每个 MAGIS
   PostgreSQL ──────────────> 组织树、MAGI、角色、直接归属、instructions、provider、运行状态
@@ -35,7 +37,7 @@ Kubernetes Secret
 | 数据 | 权威存储 | 挂载/访问者 | 说明 |
 |---|---|---|---|
 | 私人记忆、会话、任务、本地设置 | MAGI 私有 SQLite | 该 MAGI | 单副本 PVC，保留正常 POSIX 文件语义。 |
-| SOUL、私有 skills 与私人文件 | MAGI 私有 PVC `/workspace` | 该 MAGI | 不在 MAGI 之间共享。 |
+| SOUL、私有 skills 与私人文件 | MAGI 私有 PVC（容器根 `/`） | 该 MAGI | 不在 MAGI 之间共享。 |
 | MAGIS 树、MAGI、角色、直接 Membership | 直属 MAGIS PostgreSQL | 该 MAGIS 的直接成员与受限控制面 | 一个 MAGI 只能有一个直接 Membership。 |
 | 团队、角色、个人 instruction 与 provider 配置 | 直属 MAGIS PostgreSQL | 对应 MAGI 运行时 | 运行容器从数据库读取，不通过环境变量接收内容。 |
 | 团队共享文件 | MAGIS 公共 PVC `/magis` | 该 MAGIS 的直接成员 | Kubernetes volume mount 是访问边界。 |
@@ -53,10 +55,13 @@ Genesis 在部署时拥有一个 PostgreSQL Deployment、数据库 PVC、公共�
 配置投影至目标 MAGIS PostgreSQL，然后才创建该 MAGI 的 Deployment 和
 私有 PVC。
 
-Deployment 通过环境变量向容器传入 `HOST_WORKSPACE_DIR`、`MAGI_NAME`、
-`MAGIS_DATABASE_URL`、`MAGI_ID` 四个统一启动契约字段；不传 Host / Port
-/ Reload，也不传最终 workspace 路径。Runtime 通过 `magi.startup.bootstrap`
-加载自身身份,无需 PID / 容器名作为身份标识。
+Deployment 通过环境变量向容器传入 `MAGI_NAME`、`MAGIS_DATABASE_URL`、
+`MAGI_ID` 三个统一启动契约字段；K8s Pod **不传** `HOST_WORKSPACE_DIR`——
+它由 `magi.startup.paths` 通过 `KUBERNETES_SERVICE_HOST` 自动检测 K8s
+模式并默认到 `/`（PVC 挂载容器根，workspace 推导为
+`/MAGI_Citizens/<MAGI_NAME>`）。也不传 Host / Port / Reload 和最终
+workspace 路径。Runtime 通过 `magi.startup.bootstrap` 加载自身身份,
+无需 PID / 容器名作为身份标识。
 
 停止和删除是不同操作：
 

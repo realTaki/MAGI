@@ -1049,6 +1049,53 @@ lease 验证：
   影响：所有继承 BaseJobBoard 的 board 自动获得；与现有 release() 并存但 release 标 deprecated。
   需要对方回复：否（独占；预计本轮内完成）。
 
+- [claude, 2026-08-08] 已完成 Round 1 — BaseJobBoard.renew_lease() + cancel()
+  文件：magi/new_bus/guild/base.py
+  原因：§2.6 lease 原语。
+  影响：所有 BaseJobBoard 子类（chatJobBoard / runToolJobBoard /
+  callLLMJobBoard / sendA2AJobBoard / deliveryJobBoard 等）继承获得。
+  release() 标 deprecated（Phase 4 删）。
+  需要对方回复：否。已通过 import smoke test。
+
+- [claude, 2026-08-08] 已完成 Round 2 — chatJobBoard.claim_for_conversation()
+  文件：magi/new_bus/guild/chatJob.py
+  原因：§2.5 CAS-scoped claim（替代原 SKIP LOCKED 实现）。
+  影响：AgentWorker _gather_all 中调用。
+  需要对方回复：否。
+
+- [claude, 2026-08-08] 已完成 Round 3 — 新建 agentTurnBook.py
+  文件：magi/new_bus/library/local/agentTurnBook.py（新文件）
+  原因：§2.2 AgentTurn 持久化状态机 + 三类事务性方法。
+  影响：ORM 表 agent_turns；AgentTurnStore 三类 commit + cancel；
+  配合 chatJobBoard / deliveryJobBoard 实现 end-to-end atomic transition。
+  需要对方回复：否。
+
+- [claude, 2026-08-08] 已完成 Round 3.5 — bootstrap 装配 AgentTurnStore
+  文件：magi/new_bus/bootstrap.py
+  原因：composition root 显式注入。
+  影响：NewBus.agent_turn_store 字段；agent_turns 表自动创建（verified）。
+  需要对方回复：否。
+
+- [claude, 2026-08-08] 已完成 Round 4 — AgentWorker 重写
+  文件：magi/agent/worker.py
+  原因：§1-§5 / §8 Phase 1 step 4-8 全部落地。
+  影响：完整 _run / _process / _gather_all / _split_tools / _append_tool_result_user_message /
+  _build_llm_job / _system_prompt / _load_history / _tool_schemas / _maybe_title /
+  _record_token_usage / _resolve_delivery_address / _fallback_reply。零 magi.bus 依赖。
+  Module-level helpers (start_agent_worker / stop_agent_worker / submit_agent_message /
+  wait_for_agent_run) 全部接收 NewBus 参数。
+  Phase 1 显式不做（按 §9）：完整 compaction / 流式 / auto-title / A2A 真 worker /
+  system_prompt 块 2/4/5（这些 Books 适配在 Phase 2）。
+  需要对方回复：否。已通过 import smoke test（bootstrap 路径因 v3 scheduledTaskBook
+  缺 croniter 不能跑完整，但本轮四个文件独立 import 都干净）。
+
+- [claude, 2026-08-08] Round 5（next）— 关注 v3 scheduledTaskBook 的 croniter 依赖
+  文件：magi/new_bus/library/local/scheduledTaskBook.py（peer-edited）
+  原因：peer 加 v3 storage profile 时引入 croniter；环境未装导致 bootstrap 失败。
+  影响：block 任何走 bootstrap_new_bus 的测试。
+  需要对方回复：是（谁负责装依赖 / 是否要走 venv 锁定）。
+```
+
 - [claude, 2026-08-08] 正在规划 Round 2 — `chatJobBoard.claim_for_conversation()`
   文件：magi/new_bus/guild/chatJob.py
   原因：§2.5 steering 设计；§3.1 _run() 后续依赖。

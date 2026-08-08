@@ -3,12 +3,13 @@
 ## 两个持久化层
 
 每个 MAGI 有一个私有工作区和 SQLite。所有部署模式（K8s / k8s-dev / CLI）
-**使用同一份 `HOST_WORKSPACE_DIR` + `MAGI_NAME` 推导**——通过
-`magi.startup.paths` 统一计算，K8s Pod 与本地进程都遵循：
+**使用同一份推导**——通过 `magi.startup.paths` 统一计算，K8s Pod **不传**
+`HOST_WORKSPACE_DIR`（auto-detect 通过 `KUBERNETES_SERVICE_HOST` 默认到 `/`），
+本地进程显式 `HOST_WORKSPACE_DIR`（默认 `~/.magi`）：
 
 ```text
-# K8s / k8s-dev: HOST_WORKSPACE_DIR=/workspace（PVC 挂载点）+ MAGI_NAME=eva-000
-# Local / cli:    HOST_WORKSPACE_DIR=~/.magi + MAGI_NAME=eva-000
+# K8s / k8s-dev: 容器内 /MAGI_Citizens/<MAGI_NAME>/  ↔  宿主机 ~/.magi/MAGI_Citizens/<MAGI_NAME>/
+# Local / cli:    进程内 ~/.magi/MAGI_Citizens/<MAGI_NAME>/  ↔  直接是宿主机 ~/.magi/MAGI_Citizens/<MAGI_NAME>/
 <workspace> = <HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>/
 ├── memories/magi.db       # 私人记忆、会话、联系人、任务与本地设置
 ├── skills/
@@ -60,7 +61,7 @@ Genesis 使用：
 
 复制 `deploy/k8s/secrets/magis-genesis-db.example.yaml` 到不提交 Git 的位置，填入强随机密码后先 apply。`adam` overlay 会把数据库 URL 从该 Secret 注入初始节点；`deploy/k8s-dev/overlays/dev-eva00` overlay 生成仅供本地 kind 使用的开发 Secret。
 
-新 MAGIS 由受限的 orchestrator 创建同构资源。新 MAGI 由 orchestrator 只注入其直属 MAGIS 的 `MAGIS_DATABASE_URL` 与 `MAGI_ID`，并把 PVC 挂载根作为 `HOST_WORKSPACE_DIR`。它不接收 provider、API Key、角色、instruction 环境变量，也不接收最终的 workspace 路径。代码中该边界对应：`magi.db.engine`（私有 SQLite）与 `magi.db.magis`（公共 MAGIS PostgreSQL）。
+新 MAGIS 由受限的 orchestrator 创建同构资源。新 MAGI 由 orchestrator 只注入其直属 MAGIS 的 `MAGIS_DATABASE_URL` 与 `MAGI_ID`，**不注入** `HOST_WORKSPACE_DIR`（K8s Pod 内的路径解析由 `KUBERNETES_SERVICE_HOST` 自动检测并默认到容器根）。它不接收 provider、API Key、角色、instruction 环境变量，也不接收最终的 workspace 路径。代码中该边界对应：`magi.db.engine`（私有 SQLite）与 `magi.db.magis`（公共 MAGIS PostgreSQL）。
 
 启动前，控制面会把该 MAGI 的直接 Membership、角色、instructions 与 provider 配置投影到目标 MAGIS PostgreSQL；该投影通过受 HMAC 保护的控制请求写入数据库。运行容器只从数据库读取。修改这些组织配置后，重新启动该 MAGI 会刷新其运行时投影。
 

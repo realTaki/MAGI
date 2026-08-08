@@ -2,7 +2,8 @@
 
 > **状态**：此审计于 Phase 0 时完成，其中记录的多个问题已在后续 Phase 中修复。
 > 截至 2026-08-04：
-> - `/workspace` 硬编码已移除（K8s 通过 `HOST_WORKSPACE_DIR` env var 注入）
+> - `/workspace` 硬编码已移除（K8s 通过 `HOST_WORKSPACE_DIR` env var 注入，后续进一步
+>   简化为 auto-detect：Pod 不再传此变量，由 `KUBERNETES_SERVICE_HOST` 自动检测并默认到 `/`）
 > - `CLIProcessRuntimeBackend` 现以 subprocess spawn 形态回归 (Phase 4 commit)：
 >   每个 MAGI 一个独立 OS 进程，launcher 退出后被 reparent 到 init，与 K8s Pod
 >   对称。Supervisor / restart policy / orchestrator daemon 仍在 Phase 5。
@@ -59,11 +60,14 @@ uv run python -m magi --check                                                   
 ### 2.1 `/workspace` — **RESOLVED**
 
 The hardcoded `/workspace` constant in `magi/constants.py` has been removed.
-K8s Pods now set `HOST_WORKSPACE_DIR=/workspace` explicitly in the deployment
-manifest (`deploy/k8s/base/deployment.yaml`). CLI Profile processes derive
-their workspace from `HOST_WORKSPACE_DIR`. The `workspace_dir()` function in
-`magi/startup/paths.py` raises `RuntimeError` if neither env var is set —
-there is no silent fallback to `/workspace`.
+K8s Pods no longer set `HOST_WORKSPACE_DIR` at all — `magi.startup.paths`
+auto-detects the K8s mode via `KUBERNETES_SERVICE_HOST` and defaults
+`HOST_WORKSPACE_DIR=/` inside the Pod (the workspace PVC mount point
+determines where the derived `/MAGI_Citizens/<name>` lands on the host
+storage). CLI Profile processes still read `HOST_WORKSPACE_DIR` (default
+`~/.magi`). The `workspace_dir()` function in `magi/startup/paths.py` raises
+`RuntimeError` if neither env var is set in CLI mode — there is no
+silent fallback to `/workspace`.
 
 ### 2.2 `/magis` (one K8s manifest reference only)
 
