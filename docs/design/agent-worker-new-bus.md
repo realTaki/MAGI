@@ -2,11 +2,13 @@
 
 ## 状态
 
-**当前阶段**：骨架就位，stub 待填。
+**当前阶段**：骨架就位，核心设计待落地。
 
 `magi/agent/worker.py` 已完成第一轮重构（构造注入 `NewBus`、去掉 `magi.bus` 依赖），所有旧 `magi.bus` store 调用已替换为 `raise NotImplementedError(...)` 占位 stub。`magi/startup/runtime.py` 已改为 `start_agent_worker(bus=new_bus)`。其余 agent 子模块（`agent_context.py`、`system_prompt.py`、`compaction.py`、`auto_title.py` 等）仍走老 `magi.bus`，按"以后再修"策略暂不动。
 
-本设计书覆盖 `worker.py` 的下一步实现 + Phase 2 子模块迁移的边界。
+本设计书覆盖 `worker.py` 的下一步实现、必要的持久化状态机，以及后续
+Agent / Channel 迁移的边界。它是实现合同：文中的 DTO 字段和事务边界必须先
+落实，不能把示例中的字段当作当前代码已经提供的 API。
 
 ---
 
@@ -14,11 +16,12 @@
 
 ```
                           ┌──────────────┐
-   Channel (TG/API) ────→│ chat_job_board│  (ChatJob on chat_jobs)
+   Channel (TG/API) ────→│ agent_job_board│  (ChatJob on agent_inbox)
                           └──────┬───────┘
                                  │ claim / claim_for_conversation
                           ┌──────▼───────┐
                           │  AgentWorker  │
+                          │ AgentTurnStore│
                           │               │
                           │   _process()  │
                           │     │         │
@@ -48,27 +51,89 @@
                           └──────┬───────┘
                                  │ submit_result
                           ┌──────▼───────┐
-                          │ chat_job_board│  (ChatJobResult)
+                          │ agent_job_board│ (ChatJobResult)
                           └──────────────┘
 ```
 
 **AgentWorker 只依赖 `NewBus`**。所有外部操作（LLM 调用、工具执行、消息投递、同会话 steering）通过对应的 job board 进行。AgentWorker 自身作为协调者，负责：
 
-1. 从 `chat_job_board` 认领 `ChatJob`
+1. 从 `agent_job_board`（具体实现类为 `chatJobBoard`）认领 `ChatJob`
 2. 驱动 agent loop（上下文组装 → LLM 推理 → 结果分发）
-3. 提交 `ChatJobResult` 完成本轮
+3. 通过 `AgentTurnStore` 原子提交 transcript、后续 jobs / outbox、turn 状态，
+   最后提交 `ChatJobResult`
 
-**为什么选 `chat_job_board` 而不是 `agent_job_board`**：
+**命名约定**：公共 `NewBus` 字段叫 `agent_job_board`，其底层实现类叫
+`chatJobBoard`，表为既有的 `agent_inbox`。本文统一使用前者；不新建
+`chat_jobs` 表，也不再引入第二个 agent 输入 board。
 
-- `chat_jobs` schema 自带 `text / channel / conversation_id / reply / metadata`，与"channel 消息触发 agent turn"的语义最贴。
-- `agent_inbox`（`agent_job_board` 背后的表）的 schema 偏向 run 协调（`run_id / kind / payload / context_seq`），把 chat message 塞进 `payload` JSON 反而绕。
-- 两条 board 的 API 形态完全一致（都是 `BaseJobBoard` 子类），切换只改字段引用，不引入新概念。
+- `ChatJob` 的稳定 envelope 是 `event_id / run_id / conversation_id / kind / payload`。
+- `payload` 承载 channel 输入：`text`、`channel`、`uid`、`session_id`、
+  `caller_role` 与可选 `deadline_at`。不得使用不存在的 `metadata`、`channel`
+  或 `job_id` 字段。
+- `ChatJobResult` 以 `event_id` 为自然键；它只表达受理结果和错误信息，回复
+  正文由 committed transcript / delivery outbox 承载。
 
 ---
 
 ## 2. 核心数据结构
 
-### 2.1 RunContext
+### 2.1 先冻结 Job 合同
+
+以下是 Phase 1 直接使用的现有 DTO 形状；Channel 迁移必须按它发布，
+Worker 也必须按它读取：
+
+```python
+ChatJob(
+    event_id=source_idempotency_key,
+    run_id=stable_run_id,
+    conversation_id=conversation_id,
+    kind="channel.message.received",  # 或 "run.cancel"
+    payload={
+        "text": text,
+        "channel": channel,
+        "uid": uid,
+        "session_id": session_id,
+        "caller_role": caller_role,
+        "deadline_at": deadline_at_iso_or_none,
+    },
+)
+
+ChatJobResult(
+    event_id=job.event_id,
+    success=True,
+    status="completed",
+    result={"run_id": job.run_id},
+)
+```
+
+`RunToolJob` 的参数一律放在 `payload` 中，`SendA2AJob` 使用 `target` 和
+`request`，而不是尚不存在的 `arguments`、`target_magic_id`、`text` 或
+`job_id` 字段。若这些字段确有必要，应先单独变更 DTO / schema 并迁移测试，
+不能由 Worker 隐式假定。
+
+### 2.2 AgentTurn：持久化的协调状态
+
+`RunContext` 只是进程内缓存，不能作为恢复依据。Phase 1 必须新增
+`AgentTurnBook`（或同等的 `AgentTurnStore`），以 `run_id` 为主键保存：
+
+- `conversation_id`、根 `event_id`、`uid`、`session_id`、`channel`；
+- `phase`：`running_llm | waiting_effects | terminal | cancelled`；
+- `iteration`、序列化的消息尾部、最近 LLM job id、待处理 tool / A2A job ids；
+- `lease_owner`、`lease_until`、`cancel_requested_at`；
+- terminal result、错误码及已创建的 delivery outbox id。
+
+它提供三类事务性操作：
+
+1. `claim_root_and_acquire_turn()`：原子认领根 ChatJob 并取得会话 lease；
+2. `commit_waiting_effects()`：原子写 assistant transcript、turn continuation、
+   Tool/A2A jobs；
+3. `commit_terminal()`：原子写 assistant transcript、token usage、delivery outbox、
+   turn terminal state 和 ChatJobResult。
+
+LLM、工具、A2A、网络投递均在事务外执行；结果回到 Worker 后才调用上述提交。
+这样崩溃恢复是从持久化 phase 继续，而不是重新执行已经产生副作用的步骤。
+
+### 2.3 RunContext
 
 单次 `ChatJob` 引发的完整 agent run 的全部内存状态。一次 `_process()` 调用对应一个 `RunContext` 实例。
 
@@ -77,7 +142,9 @@
 class RunContext:
     """Single ChatJob → agent run. All mutable state lives here."""
 
-    # identity (from ChatJob.metadata)
+    # identity (from ChatJob.payload)
+    run_id: str
+    root_event_id: str
     uid: int | None
     session_id: str | None
     channel: str
@@ -99,114 +166,83 @@ class RunContext:
     final_reply: str = ""
     final_error: str | None = None
     cancelled: bool = False
+
+    # 尚未由下一次原子 transition 落盘的增量
+    pending_steering_event_ids: list[str] = field(default_factory=list)
+    pending_token_usage: dict | None = None
+    delivery_address: str | None = None
 ```
 
-**lifecycle**：由 `AgentWorker._run()` 在 claim 到 `ChatJob` 后构造，`_process()` 结束后销毁。
+**lifecycle**：由 `AgentWorker` 从已 lease 的 `AgentTurn` 重建；它在每次
+`commit_*()` 后可以丢弃并在重启时重建。内存对象绝不能是唯一的 continuation。
 
-**与上版对比**：不再持有 `steer_queue` / `steer_event`——steering 通过 `chat_job_board.claim_for_conversation(conversation_id)` 直接从 board 认领，board 自身是唯一的状态协调点。
+**与上版对比**：不再持有 `steer_queue` / `steer_event`；steering 消息仍在
+board 中，但“此 conversation 是否已有活动 turn”由 `AgentTurnBook` 这一
+持久化状态协调，而非本地集合。
 
-### 2.2 AgentWorker
+### 2.4 AgentWorker
 
 ```python
 class AgentWorker:
     bus: NewBus                       # 构造注入
+    turns: AgentTurnStore              # 与 NewBus 使用同一 local factory
+    workspace: str                     # composition root 显式注入
     poll_seconds: float = 0.25
 
     _task: asyncio.Task | None        # 主循环 task
     _stopping: bool                   # 退出信号
-    _active_sessions: set[tuple[int | None, str]]  # (uid, conv_id) 防重复 run
+    worker_id: str
 ```
 
-**与上版对比**：`_active: dict[str, RunContext]` 简化为 `_active_sessions: set[tuple[int | None, str]]`——只用 key 占位防重复，不再往 `RunContext` 内部塞队列 / event。
+单进程内可以缓存 `RunContext` 以减少重读，但正确性只依赖 `AgentTurnBook`。
+因此可横向扩展多个 Worker，且不会让同一 conversation 并发执行。
 
-### 2.3 chatJobBoard 扩展
+### 2.5 agent_job_board 扩展
 
 ```python
 # magi/new_bus/guild/chatJob.py
 
-class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
+class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
     # ... existing ...
 
     def claim_for_conversation(self, *, conversation_id: str) -> ChatJob | None:
         """Steering-scoped claim — 认领同会话的 pending ChatJob。
 
-        与 ``claim()`` 行为一致，但不退回最旧的全局 pending 行；
-        只在该 ``conversation_id`` 下查找。租约超时回收复用 ``BaseJobBoard``
-        的标准逻辑（attempts ≥ MAX_ATTEMPTS 自动失败）。
+        只认领 ``AgentTurnBook`` 标记为 active 的 conversation 的后续消息。
+        根消息的认领与 turn lease 获取必须走 ``AgentTurnStore`` 的同一事务，
+        不能靠先 ``claim()`` 再检查内存集合。
 
         用法：AgentWorker 在 ``_gather_all`` 中每轮轮询调用一次，认领到
         的 ChatJob 立即 ``submit_result(success=True)`` 标记为
         consumed，不再触发独立 run，文本作为 steering 拼入下一轮 prompt。
         """
-        with self._session() as s:
-            now = utcnow_naive()
-            lease_until = now + timedelta(seconds=self._lease_seconds)
-            row = s.scalar(
-                select(_ChatJobRow)
-                .where(
-                    _ChatJobRow.conversation_id == conversation_id,
-                    or_(
-                        _ChatJobRow.status == "pending",
-                        and_(
-                            _ChatJobRow.status == "processing",
-                            _ChatJobRow.leased_until < now,
-                        ),
-                    ),
-                )
-                .order_by(_ChatJobRow.created_at, _ChatJobRow.id)
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            if row is None:
-                return None
-            if row.status == "processing" and row.attempts >= MAX_ATTEMPTS:
-                exhausted = self._make_exhausted_result(row)
-                self._submit(s, key=self._key_of(row), result=exhausted)
-                s.flush()
-                return None
-            row.status = "processing"
-            row.leased_until = lease_until
-            row.attempts += 1
-            if row.started_at is None:
-                row.started_at = now
-            s.commit()
-            return _row_to_job(row, ChatJob)
+        # 实现使用 SQLite 可验证的 compare-and-set UPDATE（或 BEGIN IMMEDIATE），
+        # 而不是 ``SELECT ... FOR UPDATE SKIP LOCKED``；后者不是 SQLite 的并发
+        # 互斥语义。成功更新一行后才返回该 job。
+        ...
 ```
 
-### 2.4 BaseJobBoard 新增 `release()`
+### 2.6 lease：renew，而不是 release 自旋
 
-`_run` 在"已存在活跃 run"分支要把 claim 出来的 job 退回 pending。直接调私有 `_session()` 是反模式；统一给 `BaseJobBoard` 加公开方法：
+Agent 的长操作可超过默认 60 秒 lease（LLM 可等待 120 秒、工具可等待 300 秒）。
+因此需要 `renew_lease(key, owner)`，并在等待 LLM / tool / A2A 的期间定时续租。
+续租失败表示 worker 已失去 ownership，必须停止提交结果。
+
+不要采用“claim 到同会话 job 后 release 回 pending”的调度方式：顺序 worker 会无意义
+重复认领，多个 worker 又无法共享 `_active_sessions`。根 job 由
+`claim_root_and_acquire_turn()` 处理；活动 turn 的后续消息只由
+`claim_for_conversation()` 消费为 steering。
 
 ```python
 # magi/new_bus/guild/base.py
 
 class BaseJobBoard(...):
 
-    def release(self, *, key: str, decrement_attempts: bool = True) -> None:
-        """释放已 claim 的 job，退回 pending 给后续 claim 流程。
-
-        ``decrement_attempts=True`` 时把 attempts 减一（典型场景：
-        AgentWorker 主动放弃一个 claim 是因为决定改走另一条路径，
-        不应该消耗重试次数）；``False`` 时保留 attempts（典型：
-        外部系统要放弃这个 job）。
-        """
-        with self._session() as s:
-            row = s.scalar(
-                select(self.job_model).where(
-                    getattr(self.job_model, self.natural_key_attr) == key
-                )
-            )
-            if row is None:
-                return
-            row.status = "pending"
-            row.leased_by = None
-            row.leased_until = None
-            if decrement_attempts and row.attempts > 0:
-                row.attempts -= 1
-            s.commit()
+    def renew_lease(self, *, key: str, owner: str) -> bool: ...
 ```
 
-这把"退回 pending"语义正式化，tools / providers worker 也能复用（"我 claim 了但不想执行"是合法场景，比如：缓存命中、shut-down 收尾）。
+`cancel(key)` 也不能只是把 status 改为 cancelled：它必须是带版本/ownership
+检查的状态转换，避免一个已执行完成的 worker 在稍后以 `submit_result()` 覆盖取消。
 
 ---
 
@@ -217,74 +253,44 @@ class BaseJobBoard(...):
 ```python
 async def _run(self):
     while not self._stopping:
-        job = await asyncio.to_thread(self.bus.chat_job_board.claim)
-        if job is None:
+        claimed = await asyncio.to_thread(
+            self.turns.claim_root_and_acquire_turn, worker_id=self.worker_id,
+        )
+        if claimed is None:
             await asyncio.sleep(self.poll_seconds)
             continue
-
-        # 1. cancel kind — 不进 _process，直接完成
-        if (job.metadata or {}).get("kind") == "run.cancel":
-            self.bus.chat_job_board.submit_result(
-                key=job.job_id,
-                result=ChatJobResult(
-                    job_id=job.job_id, success=True,
-                ),
-            )
-            # 转发 cancel 到所有 in-flight run（见 §5.6）
-            self._broadcast_cancel(job.conversation_id)
+        job, turn = claimed
+        if job.kind == "run.cancel":
+            self.turns.request_cancel(run_id=job.run_id, event_id=job.event_id)
             continue
 
-        uid = (job.metadata or {}).get("uid")
-        session_key = (uid, job.conversation_id or "")
-
-        # 2. 同 (uid, conv) 已有活跃 run → 退回 pending，
-        #    由 _process 通过 claim_for_conversation 认领为 steering
-        if session_key in self._active_sessions:
-            self.bus.chat_job_board.release(key=job.job_id)
-            continue
-
-        self._active_sessions.add(session_key)
-        ctx = RunContext(
-            uid=uid,
-            session_id=(job.metadata or {}).get("session_id"),
-            channel=job.channel or "",
-            caller_role=(job.metadata or {}).get("caller_role"),
-            conversation_id=job.conversation_id or "",
-            session_key=session_key,
-            messages=[],
-            max_iterations=self._read_max_iterations(),
-        )
+        ctx = self._context_from_turn(turn, job.payload or {})
         try:
             await self._process(ctx)
         except Exception as exc:
             logger.exception("agent run failed conv=%s", ctx.conversation_id)
-            ctx.final_error = f"agent_crashed:{type(exc).__name__}"
-            ctx.final_reply = ctx.final_reply or self._fallback_reply()
-        finally:
-            self._active_sessions.discard(session_key)
-            self.bus.chat_job_board.submit_result(
-                key=job.job_id,
-                result=ChatJobResult(
-                    job_id=job.job_id,
-                    success=ctx.final_error is None,
-                    error_code=ctx.final_error,
-                ),
+            self.turns.commit_terminal_failure(
+                run_id=ctx.run_id,
+                event_id=ctx.root_event_id,
+                error_code=f"agent_crashed:{type(exc).__name__}",
             )
 ```
 
 **关键点**：
-- `cancel` kind 直接在 `_run` 完成，不进入 `_process`，避免 cancel 路径污染主 loop。
-- `_active_sessions` key 升级到 `(uid, conversation_id)`——一个 `(uid, conv)` 同一时刻最多一个 run。group chat 等"多 channel 同 conv"的边界情况见 §9。
-- 异常分支**必须**写 `ctx.final_error`，否则 `submit_result(success=True)` 会在出错时让 channel 端误以为成功。
+- 根 job 的 claim 和 conversation ownership 必须是一个持久化事务；同一 conversation
+  的新消息不会被普通 claim 误当作平行 run。
+- cancel 按 `run_id` 请求，落在持久化 turn 状态上，而不是按 conversation 广播。
+- 异常分支必须以 `commit_terminal_failure()` 关闭 turn 与 ChatJob；不能只改内存
+  `final_error`。
 - `ChatJobResult` **不承载回复文本**——`ChatJobResult` 只表示"这个 job 处理完毕"，回复统一由 `_publish_delivery()` 走 `delivery_job_board` 投递。steering 场景下多个 ChatJob 共享一条 reply，`ChatJobResult` 不能 1:1 绑定 reply（见 §4.7）。
-- `cancel` 不通过 `_process` 处理；通过 `_broadcast_cancel` 通知 in-flight run（§5.6）。
+- lease 由 background heartbeat 续期；失去 lease 的 Worker 不得继续写入。
 
 ### 3.2 `_process(ctx)` — agent loop
 
 ```
 ┌─ _load_history(ctx) ──────────────────┐
-│ 从 sessions_book + messages_book 加载   │
-│ 会话历史，追加本次 ChatJob.text         │
+│ 从 AgentTurn + sessions/messages 复原   │
+│ 已提交的消息；绝不只依赖进程内列表        │
 └────────────────────────────────────────┘
                    │
      ┌─────────────▼──────────────┐
@@ -298,8 +304,9 @@ async def _run(self):
      │  2. llm_job_board.publish()│
      │     → wait_for_result()    │
      │                            │
-     │  3. ctx.messages.append(   │
-     │       assistant message)   │
+│  3. commit_waiting_effects │
+│     原子提交 assistant     │
+│     transcript + 后续 jobs │
      │                            │
      │  4. if no tool_uses:       │
      │       _publish_delivery()  │
@@ -310,8 +317,7 @@ async def _run(self):
      │     ├─ message_magi → A2A  │
      │     └─ regular → Tool     │
      │                            │
-     │  6. publish tool + A2A     │
-     │     jobs                  │
+│  6. 等待已提交的 tool/A2A  │
      │                            │
      │  7. await _gather_all(     │  ← 内部并发：
      │       tool_results,        │    poll tool results
@@ -327,7 +333,7 @@ async def _run(self):
      │  → loop back               │
      └────────────────────────────┘
                    │ (max_iter exceeded / cancel)
-     _publish_delivery()
+     commit_terminal()
      ctx.final_reply = "已超过最大工具调用次数..." | ""
 ```
 
@@ -355,7 +361,10 @@ def _build_llm_job(self, ctx: RunContext) -> CallLLMJob:
     )
 ```
 
-**compaction**（后续补齐）：在 `_build_llm_job` 调用前，先通过 `maybe_compact()` 检查 `ctx.messages` 的 token 估计值，若超过阈值则走 `llm_job_board` 生成摘要并原地裁剪 `ctx.messages`。当前子模块 `compaction.py` 仍走老 `magi.bus`，本步骤暂跳过——意味着 Phase 1 长会话会 OOM，**Phase 1 验收清单必含该项**。
+**compaction**：完整摘要压缩可以在 Phase 2 迁移，但 Phase 1 不能无限累积消息。
+在调用 LLM 前必须执行可验证的硬上限（保留最近消息并记录
+`agent.context_limit_exceeded`，或先实现最小摘要）。因此 Phase 1 的验收是
+“超限可预测地降级”，不是“500 条消息不 OOM”。
 
 ### 4.2 System Prompt 组装 `_system_prompt`
 
@@ -419,21 +428,16 @@ async def _gather_all(
         # ── 1. 尝试 claim 同会话的 steering ──
         if ctx.conversation_id and len(steering_parts) < MAX_STEERING_PARTS:
             steer = await asyncio.to_thread(
-                self.bus.chat_job_board.claim_for_conversation,
+                self.bus.agent_job_board.claim_for_conversation,
                 conversation_id=ctx.conversation_id,
             )
             if steer is not None:
-                text = (steer.metadata or {}).get("text") or ""
+                text = (steer.payload or {}).get("text") or ""
                 if text:
                     steering_parts.append(text)
-                # 立即完成，标记为 consumed（不单独发 delivery）
-                self.bus.chat_job_board.submit_result(
-                    key=steer.job_id,
-                    result=ChatJobResult(
-                        job_id=steer.job_id,
-                        success=True,
-                    ),
-                )
+                # steering event_id 暂存到 ctx；与下一次 commit_waiting_effects()
+                # 同一事务标记 consumed，不能在此处单独提交。
+                ctx.pending_steering_event_ids.append(steer.event_id)
 
         # ── 2. 检查 tool 结果 ──
         for job_id, tool_id in list(pending_tools.items()):
@@ -559,13 +563,11 @@ def _split_tools(
             except (KeyError, TypeError, ValueError) as exc:
                 # 校验失败当普通 tool 投递，input 加 _validation_error
                 tool_jobs.append(RunToolJob(
-                    job_id="",  # assigned by publish
-                    run_id=ctx.session_key[1] or "",
+                    run_id=ctx.run_id,
                     tool_call_id=str(tu["id"]),
                     tool_name="message_magi",
-                    arguments={"_validation_error": str(exc)},
-                    payload={"context": {
-                        "workspace": "",
+                    payload={"arguments": {"_validation_error": str(exc)}, "context": {
+                        "workspace": self.workspace,
                         "uid": ctx.uid or 0,
                         "channel": ctx.channel,
                         "session_id": ctx.session_id or "",
@@ -573,29 +575,26 @@ def _split_tools(
                 ))
                 continue
             a2a_jobs.append(SendA2AJob(
-                job_id="",
-                run_id=ctx.session_key[1] or "",
+                run_id=ctx.run_id,
                 tool_call_id=str(tu["id"]),
-                target_magic_id=target_magic_id,
-                text=text,
+                target=str(target_magic_id),
                 expect_reply=bool(args.get("expect_reply", False)),
+                request={"text": text, "uid": ctx.uid, "session_id": ctx.session_id},
             ))
         else:
             tool_jobs.append(RunToolJob(
-                job_id="",
-                run_id=ctx.session_key[1] or "",
+                run_id=ctx.run_id,
                 tool_call_id=str(tu["id"]),
                 tool_name=name,
-                arguments=args,
-                payload={"context": {
-                    "workspace": "",  # 来自 startup.paths.resolve_workspace_dir()
+                payload={"arguments": args, "context": {
+                    "workspace": self.workspace,
                     "uid": ctx.uid or 0,
                     "channel": ctx.channel,
                     "session_id": ctx.session_id or "",
                 }},
                 catalog_revision=self.bus.tool_catalog_book.get().revision
                     if self.bus.tool_catalog_book.get() else 0,
-                schema_hash="",  # 由 tools worker 校验
+                schema_hash=self._tool_schema_hash(name),
             ))
 
     return _SplitJobs(tool_jobs=tool_jobs, a2a_jobs=a2a_jobs)
@@ -605,34 +604,32 @@ A2A 在 `_gather_all` 中作为独立 task 处理（每个 SendA2AJob publish �
 
 ### 4.7 投递 `_publish_delivery`
 
-回复文本走 `delivery_job_board`，**不写进 `ChatJobResult`**。理由：
+回复文本走 delivery outbox，**不写进 `ChatJobResult`**。理由：
 
 - **steering 场景下 N 个 ChatJob → 1 条 reply**：`ChatJobResult` 是 N:1 的关系中介，每个 job 都写自己的 result——但只有一条 reply。如果把 reply 塞进 `ChatJobResult`，steering job 的 publisher 要么拿到空 reply，要么拿到重复 reply。
 - **职责分离**：`ChatJobResult` 表达"job 是否处理成功"，`delivery_job_board` 承载"回复投递到哪个 channel"。AgentWorker 负责生产 reply，DeliveryWorker 负责投递——这和 providers/tools worker 的分层一致。
-- **Channel 端同步等待**：REST API channel 如果同步等 `get_result(key=job.job_id)`，拿回的是 `success/error_code`——它已经知道结果。具体 reply 内容通过 delivery 路径或 session 查询获取。
+- **Channel 端同步等待**：REST API channel 如果同步等 `get_result(key=job.event_id)`，拿回的是 `success/error_code`——它已经知道结果。具体 reply 内容通过 delivery 路径或 session 查询获取。
 
 ```python
-def _publish_delivery(self, ctx: RunContext) -> None:
-    """将回复发布到 delivery_job_board，由 DeliveryWorker 投递。
-
-    每个 agent run 最多调用一次（terminal 分支 / max_iter 耗尽 / cancel）。
-    steering ChatJob 不单独发 delivery。
-
-    destination 留 None——DeliveryWorker 在 claim 时会从
-    ``ctx.uid + ctx.session_id`` 反查 ``sessions_book.get_for_owner`` 拿
-    ``delivery_address``（旧 bus 的 ``_delivery_destination`` 同样的功能）。
-    前提是 DeliveryWorker 已经迁到 new_bus 并实现该反查路径。
-    """
-    self.bus.delivery_job_board.publish(DeliveryJob(
-        channel=ctx.channel,
-        payload={
-            "text": ctx.final_reply,
-            "session_id": ctx.session_id,
-            "uid": ctx.uid,
+def _commit_terminal_reply(self, ctx: RunContext) -> None:
+    """一次事务完成 terminal state，而不是逐个 Book / Board 写入。"""
+    self.turns.commit_terminal(
+        run_id=ctx.run_id,
+        event_id=ctx.root_event_id,
+        assistant_text=ctx.final_reply,
+        token_usage=ctx.pending_token_usage,
+        delivery={
+            "channel": ctx.channel,
+            "destination": ctx.delivery_address,
+            "payload": {"text": ctx.final_reply, "session_id": ctx.session_id,
+                        "uid": ctx.uid},
         },
-        destination=None,
-    ))
+    )
 ```
+
+该事务写 assistant transcript、delivery outbox、`AgentTurn.terminal` 与
+`ChatJobResult`。DeliveryWorker 随后消费 outbox；崩溃恢复只能重试未完成的
+delivery，不能重新推理或再次创建一条 assistant message。
 
 ### 4.8 标题生成 `_maybe_title`
 
@@ -703,30 +700,29 @@ def _read_llm_timeout_seconds(self) -> float:
 
 ### 5.1 设计原则：board 即协调点
 
-不需要进程内队列（`asyncio.Queue`）或 Event，`chat_job_board` 本身是持久化的状态协调点。AgentWorker 通过在 `_gather_all` 中主动 `claim_for_conversation` 来认领同会话的新消息。
+不需要进程内队列（`asyncio.Queue`）或 Event。`agent_job_board` 保存消息，
+`AgentTurnBook` 保存该会话当前由谁执行、执行到哪一步；二者共同构成可恢复的
+协调点。AgentWorker 只在自己持有该 turn lease 时，于 `_gather_all` 中认领
+同会话的 steering。
 
 ### 5.2 数据流
 
 ```
-Channel publishes ChatJob(conv_id="abc", text="再查一下")
+Channel publishes ChatJob(conversation_id="abc", payload.text="再查一下")
         │
         ▼
-AgentWorker._run()  calls claim()
+AgentTurnStore sees active turn for "abc"
         │
-        ├─ ("abc" in active_sessions?)  YES
+        └─ message remains pending (never claimed then released)
         │
-        ├─ bus.chat_job_board.release(job.job_id)
-        │   ← 退回 pending，attempts -1
-        └─ continue
-        │
-        │  (与此同时，_process("abc") 在 _gather_all 中运行)
+        │  (持有该 turn lease 的 _process("abc") 在 _gather_all 中运行)
         │
         ▼
-_gather_all() calls claim_for_conversation(conversation_id="abc")
+_gather_all() calls agent_job_board.claim_for_conversation(conversation_id="abc")
         │
-        ├─ 认领到 ChatJob(text="再查一下")
+        ├─ CAS 认领到 ChatJob(payload.text="再查一下")
         ├─ steering_parts.append("再查一下")
-        └─ submit_result(success=True)  ← consumed by steering
+        └─ 与下一次 `commit_waiting_effects()` 一并标记 consumed
         │
         ▼
 tool 完成后 → _append_tool_result_user_message(steering_text="再查一下")
@@ -740,7 +736,7 @@ tool 完成后 → _append_tool_result_user_message(steering_text="再查一下"
 
 1. LLM API 约束：`assistant(tool_use)` → `user(tool_result)` 必须严格配对，中间不能插入 steering 文本。
 2. `tool_result` 后的 user 消息末尾可以安全地追加 `{"type": "text", "text": steering}` content block。
-3. 如果 LLM 返回无 tool_use（terminal），不会进入 `_gather_all`，也就不存在 tool_result 注入点。此时 `_active_sessions` 中的记录会在 `_process` 结束后清除，用户的下一条消息会作为正常 ChatJob 在下一轮 `_run()` 中被 claim。
+3. 如果 LLM 返回无 tool_use（terminal），不会进入 `_gather_all`，也就不存在 tool_result 注入点。`commit_terminal()` 释放持久化 conversation lease；随后消息作为下一次 root turn 被认领。
 
 ### 5.4 多段 steering 的处理
 
@@ -752,30 +748,33 @@ tool 完成后 → _append_tool_result_user_message(steering_text="再查一下"
 |---|---|---|
 | RunContext 额外字段 | 2 (queue, event) | 0 |
 | 协调机制 | 进程内 in-memory | SQLite board（天然持久化） |
-| `_run()` 路由 | 注入到 context.queue | `release()` 退回 pending |
+| `_run()` 路由 | 注入到 context.queue | `AgentTurn` 持久化 ownership + scoped claim |
 | `_process()` 感知 | 被动 Event.set() 通知 | 主动 `claim_for_conversation` |
 | 代码量 | 多一个队列消费逻辑 | `claim_for_conversation` 复用现有 claim 模式 |
 | 语义 | "注入" | "认领"——符合 board 哲学 |
 | 崩溃恢复 | 队列丢失 | board 中 steering job 仍在 pending，下一个 run 继续认领 |
-| 多实例并发 | 队列不共享，丢消息 | SQLite 锁保证只有一个 worker 拿到 |
+| 多实例并发 | 队列不共享，丢消息 | CAS + conversation lease 保证单 owner |
 
 ### 5.6 Cancel 处理
 
-旧 bus 有 `AgentMessage.kind == "run.cancel"` 路径；新 bus 通过 `ChatJob.metadata.kind == "run.cancel"`。
+旧 bus 按 `run_id` 显式取消；新设计必须保持这个语义。取消 job 是
+`ChatJob(kind="run.cancel", run_id=<target>)`，不能借用 `conversation_id` 广播。
 
-- **claim 到 cancel**：`_run` 直接 `submit_result(success=True)`，**不进入 `_process`**。
-- **影响 in-flight run**：通过 `self._in_flight: dict[session_key, asyncio.Event]` 通知。`RunContext` 增加 `cancel_event`，`_process` 的循环开头检查；`_gather_all` 也检查以提前中断。
-- **in-flight tool / a2a**：cancel 触发后调用 `bus.tool_job_board.cancel(key=...)` 与 `bus.a2a_job_board.cancel(key=...)`（这两个 cancel 方法需要扩展 `BaseJobBoard`）；不依赖 worker 协作停止。
+- `request_cancel(run_id)` 以事务写入 `AgentTurn.cancel_requested_at`，并完成 cancel
+  job；不存在或已 terminal 的 run 返回明确结果。
+- Worker 在每次 publish、每个等待循环和每次 commit 前检查该标记；看到取消后不再
+  创建新 effects，调用 `commit_terminal_cancelled()`。
+- 已 claim 的 tool / A2A 不能被本地 `task.cancel()` 假装停止。需要 job board 的
+  durable cancel-request 状态，消费者协作检查；已完成的结果也不得覆盖 cancelled
+  terminal state。
 
 ```python
-def _broadcast_cancel(self, conversation_id: str) -> None:
-    """通知 in-flight run 中断。"""
-    for key, event in self._in_flight.items():
-        if key[1] == conversation_id:
-            event.set()
+def request_cancel(self, *, run_id: str) -> bool:
+    """持久化取消请求；返回是否成功转换了活动 turn。"""
+    return self.turns.request_cancel(run_id=run_id)
 ```
 
-`_in_flight` 在 `_process` 入口 `set`，出口 `discard`。
+进程内 Event 只可作为缩短轮询延迟的优化，不能承载取消真相。
 
 ---
 
@@ -783,15 +782,17 @@ def _broadcast_cancel(self, conversation_id: str) -> None:
 
 | 场景 | 处理 | settings 来源 |
 |---|---|---|
-| LLM job 超时 | `ctx.final_error = "llm_timeout"`，`_publish_delivery` | `system.llm_timeout_seconds` |
-| LLM job 返回 `success=False` | `ctx.final_error = result.error`，`_publish_delivery` | — |
+| LLM job 超时 | `commit_terminal_failure("llm_timeout")` 或按策略 retry | `system.llm_timeout_seconds` |
+| LLM job 返回 `success=False` | 持久化错误并结束或 retry | — |
 | Tool job 超时 | 超时 tool 标记为 `is_error=True, content="timed out"`，继续 loop | `system.tool_wait_seconds` |
 | Tool job 返回 `success=False` | `is_error=True` 的 tool_result，LLM 下一轮可见错误 | — |
-| Agent loop 超迭代上限 | `ctx.final_reply = "已超过最大工具调用次数..."`，`_publish_delivery` | `system.tool_max_iterations` |
-| Cancel | `_process` 立即 return，`ctx.cancelled = True`，`_publish_delivery(fallback)` | — |
-| 未知异常 (Exception) | `_run` 的 except 兜底，`ctx.final_error = "agent_crashed:<type>"`，`_publish_delivery(fallback)` | — |
+| Agent loop 超迭代上限 | `commit_terminal()` 写稳定提示和 outbox | `system.tool_max_iterations` |
+| Cancel | `commit_terminal_cancelled()`；默认不制造伪造 assistant reply | — |
+| 未知异常 (Exception) | `commit_terminal_failure("agent_crashed:<type>")` | — |
 
-**关键原则**：AgentWorker 自身不 crash。任何异常都兜底为 `ChatJobResult(success=False, error_code=...)` + `_publish_delivery(fallback)`。`_run` 的 `try/except` 必须写 `ctx.final_error`，否则 `submit_result(success=True)` 会让 channel 端误以为成功。回复统一由 `_publish_delivery` 走 `delivery_job_board`，不写入 `ChatJobResult`。
+**关键原则**：AgentWorker 不因单个 job 崩溃；所有失败经持久化 terminal
+transition 结束。对用户是否发送 fallback 必须是产品决策，不能把“写了
+`ChatJobResult(success=False)`”与“必然发送一条回复”混为一谈。
 
 ---
 
@@ -816,49 +817,50 @@ publish × M        │ ──── SendA2AJob ──→ │ claim → execute
                    │                     │       → submit_result
 _gather_all()      │ ←─ SendA2AResult ── │
 
-AgentWorker        │   chat_job_board    │  AgentWorker 自身
+AgentWorker        │   agent_job_board   │  AgentWorker 自身
 ───────────────────┤                     ├─────────────────
-release()          │ 退回 pending 给 steering
 claim_for_conversation()
                    │  ← 同会话新 ChatJob
 submit_result()    │ → ChatJobResult    │ 完成当前 job
 ```
 
-AgentWorker **不直接调用** `provider.chat()` / `tool.run()` / a2a runtime。所有跨 worker 通信通过 job board 的 publish → claim → submit_result 模式进行。
+AgentWorker **不直接调用** `provider.chat()` / `tool.run()` / a2a runtime。所有跨 worker 通信通过 job board 的 publish → claim → submit_result 模式进行。`DeliveryWorker` 和 `A2AWorker` 是端到端 cutover 的前置条件：前者必须消费新的 delivery outbox；后者尚未实现时，`message_magi` 必须受 feature gate 保护并产生结构化 unavailable 结果，不能永久等待。
 
 ---
 
 ## 8. 实现计划
 
-### Phase 1: 核心 loop（本次）
+### Phase 0：冻结合同与 cutover 前置条件
+
+1. 以当前 `ChatJob` / `ChatJobResult`、`RunToolJob`、`SendA2AJob` 为准，修正文档
+   与生产者；任何 DTO 扩展单独迁移并配套测试。
+2. 新增 `AgentTurnBook` / `AgentTurnStore`，定义 phase、conversation lease、
+   cancel request 和原子 transition。
+3. 给相关 job board 增加 ownership-aware `renew_lease()`；为 SQLite 实现 CAS claim，
+   不使用 `SKIP LOCKED` 作为互斥保证。
+4. 迁移或实现新的 DeliveryWorker；A2A worker 未就绪则显式 feature gate。
+
+### Phase 1：可恢复核心 loop
 
 **文件**：
 - `magi/agent/worker.py` — AgentWorker 重写
-- `magi/new_bus/guild/chatJob.py` — `claim_for_conversation`
-- `magi/new_bus/guild/base.py` — `BaseJobBoard.release()` + `cancel()`
+- `magi/new_bus/guild/chatJob.py` — scoped CAS claim
+- `magi/new_bus/guild/base.py` — lease renewal 与可验证的 cancel 状态转换
+- `magi/new_bus/library/local/agentTurnBook.py`（或等价 runtime store）— turn 状态与原子 transition
 
 **步骤**：
 
 1. ✅ 构造注入 `NewBus`、`start/stop` 生命周期（已完成）
-2. ⬜ `BaseJobBoard.release()` + `BaseJobBoard.cancel()`
-3. ⬜ `chatJobBoard.claim_for_conversation(conversation_id)`
-4. ⬜ `RunContext` dataclass + `AgentWorker._active_sessions: set[(uid, conv_id)]`
-5. ⬜ 实现 `_run()`：claim → cancel 分支 → active_sessions 检查 → release / 启动 _process → submit result（**except 必须写 final_error**）
-6. ⬜ 实现 `_process()` 主逻辑 + `RunContext.cancelled` 标志
-7. ⬜ 实现 `_gather_all()`（**A2A 独立 task，不与 tool 共享 pending**；steering 上限 16）
-8. ⬜ 实现 `_split_tools()`（`message_magi` → a2a_job_board，其余 → tool_job_board）
-9. ⬜ 实现 `_build_llm_job()` + `_system_prompt()`（**Phase 1 临时内联**，Phase 2 删）
-10. ⬜ 实现 `_publish_delivery()`（destination=None，依赖 DeliveryWorker 反查）
-11. ⬜ 实现 `_load_history()`（从 `sessions_book` + `messages_book`）
-12. ⬜ 实现 `_tool_schemas()`（从 `tool_definitions_book.list_schemas`）
-13. ⬜ 实现 `_append_tool_result_user_message()`
-14. ⬜ 实现 `_record_token_usage()`
-15. ⬜ 实现 settings 读取 helper（max_iterations / max_tokens / wait seconds / llm timeout）
-16. ⬜ 实现 `_maybe_title()`（Phase 1 仅日志；Phase 2 接回）
-17. ⬜ 实现 cancel 路径（`_broadcast_cancel` + `RunContext.cancel_event`）
-18. ⬜ 删除旧 placeholder DTO（`BusClaim`、`AgentMessage`、`RunResult`、`StreamEvent`、`A2AInvocationRequest`）
-19. ⬜ 删除旧 stub 方法（`_complete_agent_input`、`_fail_agent_message`、`_load_tool_continuation`、`_pending_steering_inputs`、`_enqueue_title_if_needed`）
-20. ⬜ **测试**：见 §10
+2. ⬜ 实现 `claim_root_and_acquire_turn()`、scoped steering claim、lease heartbeat。
+3. ⬜ 实现 `commit_waiting_effects()` 与 `commit_terminal()`，并让 transcript / outbox
+   与状态结果同一事务提交。
+4. ⬜ 实现 `_process()`、`_gather_all()` 和基于 `run_id` 的取消检查。
+5. ⬜ 实现 `_split_tools()`（`message_magi` → A2A；其余 → Tool），每个 effect 使用
+   稳定的 run / tool-call idempotency key。
+6. ⬜ 实现 `_build_llm_job()`、历史加载、tool schemas、硬 context 上限、token usage。
+7. ⬜ 使用真实 NewBus DeliveryWorker 完成无-tool 端到端路径；A2A 未就绪时明确拒绝。
+8. ⬜ 删除旧 placeholder DTO 与 stub 方法；记录受影响的 Agent 测试，**不在本
+   阶段运行或修补为“中间态通过”**。
 
 ### Phase 2: 子模块迁移
 
@@ -873,11 +875,20 @@ AgentWorker **不直接调用** `provider.chat()` / `tool.run()` / a2a runtime�
 | `instructions.py` | `get_bus().magic` → MAGIS Books | `_system_prompt` 块 2 |
 | `token_usage.py` | `get_bus().token_usage` → `token_usage_book` | `_record_token_usage` 可委托 |
 
-**额外**：`_system_prompt` 块 4/5 需要给 `ContactBook` 加 `get_by_uid` / `list_notes_for_uid` / `read_daily_note_for_uid`；`SettingsBook` 加 `compaction_policy()` / `show_daily_note()` / `show_daily_note_prompt()`；`MembershipBook` 加 `instruction_context(magic_id)`。这些是 Book 层适配，独立 PR。
+**额外**：`_system_prompt` 块 4/5 需要给 `ContactBook` 加 `get_by_uid` / `list_notes_for_uid` / `read_daily_note_for_uid`；`SettingsBook` 加 `compaction_policy()` / `show_daily_note()` / `show_daily_note_prompt()`；`MembershipBook` 加 `instruction_context(magic_id)`。这些是 Book 层适配，但与 Agent / Channel cutover 作为同一迁移交付，不以局部测试通过作为完成信号。
 
 ### Phase 3: Channel 端
 
-Channel (TG/API) 端 publish `ChatJob` 到 `chat_job_board` 替代旧的 `submit_agent_message`。Channel 端的迁移不在本设计书范围。
+Channel (TG/API/tasks/A2A ingress) 端按 §2.1 publish `ChatJob` 到
+`agent_job_board`，并改从 committed transcript / run status 读取结果。旧 Bus
+的输入与 delivery 路径在所有生产者、消费者均已迁移后删除；删除本身属于完整实施，
+随后才进入统一测试。
+
+### Phase 4：统一验证与清理
+
+仅当 Phase 0–3 全部完成、旧 Bus 的 Agent / Channel 路径已删除后，才集中更新并运行
+§10 的全部测试。不要在中间阶段为了让旧测试通过而恢复兼容层、保留双写，或把临时
+实现当作完成状态。
 
 ---
 
@@ -885,44 +896,169 @@ Channel (TG/API) 端 publish `ChatJob` 到 `chat_job_board` 替代旧的 `submit
 
 以下特性由后续步骤单独处理，**Phase 1 不实现**：
 
-- **Compaction**：Phase 1 跳过；意味着长会话在 tool loop 内会持续累积 messages，最终超出 LLM context window。**Phase 1 验收必须包含"长会话压测"以明确这个限制的触发点**。
+- **Compaction**：完整摘要压缩留待 Phase 2；Phase 1 必须已有硬 context 上限和
+  可观测的降级结果，不能接受无界内存或上下文溢出。
 - **流式输出**：`bus.stream_hub` 已就绪，但 AgentWorker 暂不消费流式（`streaming=False`）。用户体验上等同于老 bus 的非流式路径。
 - **Auto title**：Phase 1 仅日志；新会话首次对话无标题。
-- **Multi-conv 同 uid**：当前 `_active_sessions` key = `(uid, conv_id)`。**group chat 等"同一 conv_id 跨多个 channel 来源"的场景需要重新审视 key 形状**——可能应改成 `(uid, conv_id, channel)`。Phase 1 暂用 `(uid, conv_id)`，Phase 2 视业务反馈调整。
-- **`DeliveryWorker` 反查 `delivery_address`**：`_publish_delivery` 的 `destination=None` 假设 `DeliveryWorker` 已迁到 new_bus 并实现反查路径。**Phase 1 验收必须确认 DeliveryWorker 已就绪**。
-- **`chat_job_board` vs `agent_job_board` 命名一致性**：NewBus 上 `agent_job_board` 字段仍指向 `runAgentJobBoard`，文档选择 `chat_job_board` 作为 agent 的输入队列。**两个 board 的职责划分需要在 NewBus bootstrap 注释中显式声明**，避免后人混淆。
-- **A2A worker**：`bus.a2a_job_board` 已存在但 A2A worker 本体是否迁到 new_bus 不在本设计书范围。Phase 1 假设 A2A worker 已就绪；`_gather_all` 的 a2a task 路径会调用其 `get_result`。
+- **跨 channel conversation identity**：由 Channel 在发布时定义稳定 conversation id；是否将
+  channel 纳入 identity 是协议决定，不能在 Worker 内临时猜测。
+- **Delivery**：新 DeliveryWorker 是 Phase 0 前置条件，不是运行时假设。
+- **A2A**：没有新 A2A worker 时不得进入等待路径；必须 feature gate 或返回可见错误。
 
 ---
 
-## 10. 测试策略
+## 10. 最终统一测试策略
 
-Phase 1 至少需要以下测试：
+本节的测试**只在 Phase 0–3 全部实施完成后运行**。迁移过程中可以做
+`git diff --check`、静态导入检查或语法检查以发现明显错误，但这些不是功能验收，
+也不运行局部单元、集成或端到端测试。mock 单元测试不能替代真实 SQLite 的事务与
+lease 验证：
 
 1. **单元：单 ChatJob → 单轮 LLM → 无 tool → 投递**
    - mock `llm_job_board.get_result` 返回固定 CallLLMResult
-   - 断言：`_publish_delivery` 被调用一次；`chat_job_board.submit_result(success=True)` 被调用一次
+   - 断言：一次 terminal transition 同时写入 assistant transcript、outbox 和
+     `ChatJobResult(success=True)`
 
 2. **单元：单 ChatJob → LLM 返回 tool_use → tool 完成 → 第二轮 LLM → 投递**
    - mock tool_job_board publish + get_result
-   - 断言：第二轮 `_build_llm_job` 的 messages 包含 tool_result user message
+   - 断言：第二轮 `_build_llm_job` 的 messages 包含 ordered tool_result user message，
+     且重启后不会再次发布同一个 tool call
 
 3. **单元：steering 注入**
    - 第一轮 LLM 返回 tool_use，进入 `_gather_all`
    - 同时 publish 一条同 `conversation_id` 的 ChatJob
-   - 断言：第二轮 messages 末尾追加了 steering text；steering ChatJob 被 `submit_result(success=True)`
+   - 断言：第二轮 messages 末尾追加了 steering text；steering ChatJob 在同一次
+     transition 中被标记 consumed
 
 4. **单元：cancel 路径**
-   - `_run` claim 到 `kind=run.cancel`
-   - 断言：`submit_result(success=True)`；`broadcast_cancel` 被调用；`_process` 不进入
+   - 以 `run_id` 发布 `kind=run.cancel`
+   - 断言：活动 turn 持久化为 cancel-requested / cancelled；晚到的 Tool/A2A result
+     不能覆盖 terminal 状态
 
 5. **集成：内存 SQLite 真 board**
    - 用 `bootstrap_new_bus(state_dir=tmp_path)` 真起 board
    - publish 真实 ChatJob，跑 `_process`，断言 ORM 行状态正确
 
-6. **崩溃恢复**：模拟 worker crash（cancel task 不调 finally），重启后 lease 过期，新 worker claim 到旧 job
+6. **崩溃恢复与幂等**：在“LLM 返回后、effects 提交前”“effects 提交后、结果
+   提交前”“terminal commit 后、delivery 完成前”分别强制终止，重启后断言不重复
+   LLM / tool side effect、不遗漏 transcript、delivery 可重试。
 
-7. **性能 / 压力**：长会话（500 messages）不 OOM；100 条 steering 连发不爆 prompt（验证 `MAX_STEERING_PARTS`）；并发的同 conv 第二条正确进 steering 而不是新 run
+7. **租约与并发**：LLM / tool 等待超过默认 lease 时仍只有一个 owner；两个 Worker
+   并发争抢同一 conversation 时只有一个 root turn，第二条消息作为 steering。
+
+8. **边界与 e2e**：真实 NewBus + DeliveryWorker 跑通 WebUI / Telegram 的一个输入到
+   committed reply；A2A 未启用时 `message_magi` 返回稳定 unavailable 错误。
+
+---
+
+## 11. 多 Agent 协作开发约定
+
+本计划书由 user 分配给多个 Agent 在同一时间窗内并行实现。任何 Agent
+在动手前**必须**读完本节；执行期间违反任一条，等同于打断同事工作，
+需要回滚 + 道歉。
+
+### 11.1 不要触碰 git
+
+- **禁止**：`git commit` / `git push` / `git rebase` / `git reset` / `git stash` /
+  `git checkout -- <file>` / `git restore` / `git clean` / `git branch -D` 任意一项。
+- **理由**：多 Agent 在同一份代码上并发写，git 操作会丢别人写到一半的改动。
+  阶段性 commit 由 user 在确认全员对齐后统一执行。
+- **可以**：`git status` / `git diff` / `git log` —— 只读，用于核对"这块被人动过了吗"。
+- **冲突信号**：发现 `git status` 输出"别人改了我也要改的文件"时，先停下来读对方
+  的实现（见 §11.2），不要直接 `git checkout --` 把对方覆盖。
+
+### 11.2 看到别的 Agent 在做，先读、再判断、再决定
+
+发现实现冲突 / 重叠 / 风格不同时，按以下顺序处理：
+
+1. **先读对方写的代码 + 注释**。对方在 commit message / 代码注释 / 设计书
+   的 `§11.x` 同步块（见 §11.4）里会写明"我在做什么、为什么"。
+2. **评估是否更好**：对方思路如果更贴近本设计书、或者解决了你没想到的边界，
+   **保留对方的实现**，把自己的实现吸收进去（合并 / 替换局部变量名 / 让步风格）。
+3. **如果你坚持自己更对**：在文件里**先写一段注释**说明分歧点和你的理由，
+   让对方也能看到，再动代码。**不要**静默覆盖。
+4. **如果你觉得对方写得确实烂**：可以介入重写，但必须满足三件事——
+   - 在原文件留一段注释引用本节 §11.2，标明"原实现由 X 写入于 Y，原因 Z 被
+     重写为 W"，给原作者留出反应窗口。
+   - 在本设计书 §11.4 同步块写一行改动条目。
+   - 如果改动面较大（超过 30 行 / 跨多个文件），先停下来 ping user 仲裁，不要
+     单方面推平。
+
+### 11.3 写代码时给同事看的注释
+
+多 Agent 并行写代码，"对方能不能看懂"和"我能不能维护"同等重要。每条
+规则都要**用注释表达出来**，不只是 commit message：
+
+- **做什么**：`# [agent-name, YYYY-MM-DD] 用途：一句话`
+- **为什么这样写**：如果偏离设计书、或者做了 trade-off，必须解释。
+- **未完成项**：用 `# TODO(<agent-name>): ...` 标注，并**写明下一步**。
+  不能只写 "TODO" 一词。
+- **与别人交接的边界**：方法签名 / 模块边界 / 跨文件调用，写清"这是新接口，
+  下游需要 N 处的 M 改动"。
+
+注释风格参考本仓库已有约定：中文为主，技术名词用英文；不要无意义的
+"fix bug" / "improve"。
+
+### 11.4 设计书同步块
+
+本节是 **Agent 之间的实时协调面板**，禁止 user 之外的人修改格式。
+任何 Agent 写完代码 / 发现设计书需要补丁 / 想与同事握手，必须在本节
+追加一行，按时间倒序排列（最新在最上）。
+
+格式：
+
+```
+- [agent-name, YYYY-MM-DD HH:MM] <动作> <文件 / §引用>
+  原因：<一句话>
+  影响：<自己 / 同事 / user>
+  需要对方回复：<是 / 否 + 期望方式>
+```
+
+**示例**：
+
+```
+- [claude-A, 2026-08-08 14:30] 已完成 BaseJobBoard.release() / cancel()
+  文件：magi/new_bus/guild/base.py
+  原因：按 §2.4 设计
+  影响：tools / providers worker 后续可复用
+  需要对方回复：否（接口稳定，未锁定的 chatJobBoard.claim_for_conversation
+    还在 claude-B 写，预计 14:45 完成）
+
+- [claude-B, 2026-08-08 14:15] 正在写 chatJobBoard.claim_for_conversation
+  文件：magi/new_bus/guild/chatJob.py
+  原因：按 §2.5 设计
+  影响：claim_for_conversation 是 §3.1 _run() 的前置依赖
+  需要对方回复：否（接口草案中，预计 14:40 完成时回填签名）
+```
+
+### 11.5 抢占式声明（防重复造轮子）
+
+在准备写一个跨文件 / 跨模块的改动之前，**先在本节追加一行"正在写 X"**，
+作为软性声明。规则：
+
+- 声明后 30 分钟内没人反对 / 没出现完成行，默认独占。
+- 如果两个 Agent 同时声明同一个组件，**先到先得**（按本节时间戳）。
+  后到者改做集成测试 / 文档 / 上游 caller 适配。
+- 完成后把"正在写"改成"已完成"，并在同一条目里更新状态。
+
+### 11.6 找 user 仲裁的触发条件
+
+以下场景**必须**停下来 ping user，不要私下决定：
+
+- 设计书 §1-§10 的语义被推翻（例如发现某条规则在 new_bus 上做不到）。
+- 跨 PR 合并冲突（同文件同一区域被双方改了一半）。
+- §11.2 评估后**双方都坚持自己更对**——user 来定。
+- 测试出现"两个 Agent 的代码分别通过、合并后失败"——通常是状态机语义
+  没对齐，先停。
+
+### 11.7 收尾约定
+
+每个 Agent 在结束自己本次任务时，**最后**做这三件事：
+
+1. 把本节里的"正在写 X"改成"已完成 X"；如有分歧，写明未决项。
+2. 在自己改过的代码文件顶部留一段 1-3 行的"本次改动摘要"，便于 user
+   后续审查时快速定位。
+3. 不要 `git add` / 不要 `git commit`——user 会统一收尾。
 
 ---
 
@@ -930,9 +1066,10 @@ Phase 1 至少需要以下测试：
 
 | 模块 | 改动 |
 |---|---|
-| `magi/new_bus/guild/base.py` | 新增 `BaseJobBoard.release(key, decrement_attempts=True)`；新增 `BaseJobBoard.cancel(key)` |
-| `magi/new_bus/guild/chatJob.py` | 新增 `chatJobBoard.claim_for_conversation(conversation_id)` |
-| `magi/new_bus/bootstrap.py` | `NewBus` 字段注释中明确 `agent_job_board` vs `chat_job_board` 职责 |
+| `magi/new_bus/guild/base.py` | 新增 ownership-aware `renew_lease()` 与 cancel 状态转换 |
+| `magi/new_bus/guild/chatJob.py` | 新增 scoped CAS `claim_for_conversation(conversation_id)` |
+| `magi/new_bus/library/local/agentTurnBook.py` | 新增 turn state、conversation lease 和原子 transition |
+| `magi/new_bus/bootstrap.py` | 明确 `agent_job_board` 的底层 `chatJobBoard` 实现与实例装配 |
 | `magi/agent/worker.py` | 重写 AgentWorker（按本设计 §3、§4） |
 
 ---
@@ -941,16 +1078,15 @@ Phase 1 至少需要以下测试：
 
 | 旧 bus 用法 | new_bus 对应 |
 |---|---|
-| `BusStore.publish_agent_message(AgentMessage)` | `chat_job_board.publish(ChatJob)` |
-| `BusStore.claim_next_agent_message(worker_id)` | `chat_job_board.claim()` |
-| `BusStore.commit_agent_transition(event_id, ...)` | `chat_job_board.submit_result(key, ChatJobResult(...))` |
-| `BusStore.fail_agent_message(event_id, ...)` | `chat_job_board.submit_result(key, ChatJobResult(success=False, error_code=...))` |
-| `BusStore.complete_agent_input(event_id)` | 同上（submit_result 通用） |
-| `BusStore.load_tool_continuation(run_id)` | 删除（设计不再需要：tool 完成事件由 worker 自身在 `_gather_all` 中直接读到，不走 store） |
-| `BusStore.pending_steering_inputs(run_id)` | `chat_job_board.claim_for_conversation(conversation_id)` |
-| `BusStore.recover_expired_leases()` | `BaseJobBoard._claim` 自动处理 |
-| `BusStore.expire_a2a_invocations()` | `BaseJobBoard._claim` 自动处理 |
-| `BusStore.is_run_within_deadline(run_id)` | Phase 1 不实现 deadline；后续在 `ChatJob.metadata` 加 `deadline_at` |
+| `BusStore.publish_agent_message(AgentMessage)` | `agent_job_board.publish(ChatJob(payload=...))` |
+| `BusStore.claim_next_agent_message(worker_id)` | `AgentTurnStore.claim_root_and_acquire_turn()` |
+| `BusStore.commit_agent_transition(event_id, ...)` | `AgentTurnStore.commit_waiting_effects()` / `commit_terminal()` |
+| `BusStore.fail_agent_message(event_id, ...)` | `AgentTurnStore.commit_terminal_failure()` |
+| `BusStore.complete_agent_input(event_id)` | `commit_terminal()` 内原子完成 `ChatJobResult` |
+| `BusStore.load_tool_continuation(run_id)` | `AgentTurnBook` 持久化 phase、messages 与 pending effects |
+| `BusStore.pending_steering_inputs(run_id)` | `agent_job_board.claim_for_conversation(conversation_id)` |
+| `BusStore.recover_expired_leases()` | board / AgentTurn 的 lease reclaim + ownership 检查 |
+| `BusStore.is_run_within_deadline(run_id)` | `AgentTurnStore` 在每次 transition 前读取 payload 的 `deadline_at` |
 | `BusStore.enqueue_llm_job(...)` | `llm_job_board.publish(CallLLMJob(...))` |
 | `BusStore.load_llm_job_result(attempt_id, ...)` | `llm_job_board.get_result(key=attempt_id)` |
 | `BusStore.enqueue_tool_job(...)` | `tool_job_board.publish(RunToolJob(...))` |

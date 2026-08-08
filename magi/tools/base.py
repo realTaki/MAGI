@@ -62,9 +62,10 @@ class ToolContext:
     exposed here — tools that need persistent state call the
     bus books rather than handling paths themselves. Only the
     user-facing ``workspace`` (resolved from
-    ``MAGI_WORKSPACE_DIR``) is part of the tool context, because
-    it's the boundary tools operate against (``safe_resolve``
-    etc.).
+    ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` via
+    :func:`magi.startup.paths.resolve_workspace_dir`) is part of
+    the tool context, because it's the boundary tools operate
+    against (``safe_resolve`` etc.).
 
     ``bus`` is the new_bus facade the worker is attached to.
     Tools that need to read/write persistent state reach for

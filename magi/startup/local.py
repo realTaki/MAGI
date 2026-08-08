@@ -26,7 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from magi.startup.config import ConfigurationError, StartupConfig
+from magi.startup.config import (
+    ConfigurationError,
+    RUNTIME_PORT,
+    StartupConfig,
+)
 from magi.startup.paths import (
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
@@ -38,8 +42,9 @@ logger = logging.getLogger("magi.startup.local")
 
 # Plan §21 — the Runtime's internal port is hardcoded; this helper
 # supervises one Runtime subprocess and probes its health on the same
-# loopback port the Runtime binds to.  No operator knob.
-HEALTH_PROBE_PORT = 42069
+# loopback port the Runtime binds to.  No operator knob.  Must match
+# :data:`magi.startup.config.RUNTIME_PORT`.
+HEALTH_PROBE_PORT = RUNTIME_PORT
 HEALTH_POLL_TIMEOUT_S = 30.0
 HEALTH_POLL_INTERVAL_S = 0.5
 STOP_GRACE_S = 10.0

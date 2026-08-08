@@ -35,7 +35,29 @@ Layout (per refactor plan §7, §9):
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+
+# ------------------------------------------------------------------
+# deployment mode detection
+# ------------------------------------------------------------------
+
+# Standard Kubernetes env var that every K8s Pod gets injected by the
+# kubelet. Used here as the canonical "am I running inside a Pod?" probe.
+_K8S_ENV_MARKER = "KUBERNETES_SERVICE_HOST"
+
+
+def is_kubernetes_mode() -> bool:
+    """Return ``True`` if this process is running inside a Kubernetes Pod.
+
+    Detected via the standard ``KUBERNETES_SERVICE_HOST`` env var that the
+    kubelet injects into every Pod. Inside a Pod the operator's "host"
+    filesystem is the container's own root — K8s deployment owns the
+    PVC mount path; the MAGI process only needs to know that the host
+    root is ``/``.
+    """
+    return bool(os.environ.get(_K8S_ENV_MARKER))
 
 
 # ------------------------------------------------------------------
@@ -45,13 +67,24 @@ from pathlib import Path
 def resolve_host_workspace() -> Path:
     """Return the default host workspace directory.
 
-    Respects ``HOST_WORKSPACE_DIR`` env var; falls back to ``~/.magi``.
-    This is the *only* function that reads the environment.
+    Resolution order:
+
+    1. ``HOST_WORKSPACE_DIR`` env var, if set (always wins, in either
+       deployment mode).
+    2. K8s mode (no env var, ``KUBERNETES_SERVICE_HOST`` is set): ``/``.
+       From inside the container the "host" *is* the container — K8s
+       owns the PVC mount path and the operator chooses where to mount
+       the workspace data. MAGI derives its workspace from ``/``.
+    3. CLI mode: ``$XDG_DATA_HOME/magi`` if set, else ``~/.magi``.
+
+    This is the *only* function that reads the environment for host
+    workspace resolution.
     """
-    import os
     raw = os.environ.get("HOST_WORKSPACE_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
+    if is_kubernetes_mode():
+        return Path("/")
     xdg = os.environ.get("XDG_DATA_HOME")
     if xdg:
         return Path(xdg).expanduser().resolve() / "magi"
@@ -61,8 +94,9 @@ def resolve_host_workspace() -> Path:
 # Legacy launcher compatibility — plan §20.1 migrates the launcher
 # `state_dir()` / `workspace_dir()` zero-arg resolvers into the unified
 # :func:`resolve_state_dir` / :func:`resolve_workspace_dir` defined below.
-# These names read the same env vars the launcher did; semantics stay
-# identical until the legacy callers are retired.
+# These names read only ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME``; the
+# legacy ``MAGI_WORKSPACE_DIR`` override is gone (workspace is always
+# derived from HOST_WORKSPACE_DIR + MAGI_NAME per plan §5 / §6).
 
 
 # ------------------------------------------------------------------
@@ -245,72 +279,66 @@ def resolve_state_dir(
 ) -> Path:
     """Return the canonical state directory for BUS SQLite + migrations.
 
-    Plan §9 — ``magi.db`` lives directly under the MAGI workspace:
-    ``<host>/MAGI_Citizens/<name>/magi.db``.
+    Per plan §9 — the BUS SQLite file lives at
+    ``<workspace>/magi.db``; the state dir is the ``memories`` sibling:
+
+        ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>/memories``
 
     Two calling conventions are supported:
 
     - ``resolve_state_dir(host, name)`` — explicit, the canonical
       composition-root path (no env reads).
-    - ``resolve_state_dir()`` — launcher compatibility zero-arg form;
-      reads ``HOST_WORKSPACE_DIR`` / ``MAGI_NAME`` / ``MAGI_WORKSPACE_DIR``
-      exactly as the legacy :func:`magi.launcher.paths.state_dir` did.
+    - ``resolve_state_dir()`` — zero-arg, reads ``HOST_WORKSPACE_DIR`` /
+      ``MAGI_NAME`` (with K8s vs CLI default applied via
+      :func:`resolve_host_workspace`).
+
+    The legacy ``MAGI_WORKSPACE_DIR`` env var is gone — workspace is
+    always derived from host + name (plan §5 / §6). The legacy
+    ``/workspace`` segment between ``<name>`` and ``memories`` is also
+    gone; the on-disk layout now matches plan §9 exactly.
     """
-    import os
-
-    # Explicit args win — no env reads.
-    if host_workspace_dir is not None:
-        if magi_name:
-            return host_workspace_dir / "MAGI_Citizens" / magi_name / "workspace" / "memories"
-        return host_workspace_dir / "MAGI_Societies" / "genesis-01" / "launcher-state"
-
-    # Zero-arg launcher-compat branch.
-    data_root = os.environ.get("HOST_WORKSPACE_DIR")
-    if data_root:
-        runtime_slug = os.environ.get("MAGI_NAME")
-        if runtime_slug:
-            return (
-                Path(data_root).expanduser().resolve()
-                / "MAGI_Citizens"
-                / runtime_slug
-                / "workspace"
-                / "memories"
-            )
-        return Path(data_root).expanduser().resolve() / "MAGI_Societies" / "genesis-01" / "launcher-state"
-
-    # K8s profile — no HOST_WORKSPACE_DIR set.
-    raw_ws = os.environ.get("MAGI_WORKSPACE_DIR")
-    if raw_ws:
-        return Path(raw_ws) / "memories"
-    return Path.home() / ".magi" / "MAGI_Citizens" / (os.environ.get("MAGI_NAME", "eva-000")) / "workspace" / "memories"
+    workspace = _resolve_workspace_root(host_workspace_dir, magi_name)
+    return workspace / "memories"
 
 
-def resolve_workspace_dir() -> Path:
-    """Return the operator's persistent workspace root (zero-arg variant).
+def resolve_workspace_dir(
+    host_workspace_dir: Path | None = None,
+    magi_name: str | None = None,
+) -> Path:
+    """Return the canonical per-MAGI workspace root.
 
-    Mirror of the legacy :func:`magi.launcher.paths.workspace_dir` zero-arg
-    resolver.  Reads ``MAGI_WORKSPACE_DIR`` / ``HOST_WORKSPACE_DIR`` /
-    ``MAGI_NAME`` in priority order; raises if none are set.
+    Same calling conventions as :func:`resolve_state_dir` (explicit or
+    zero-arg).  Result:
+
+        ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>``
+
+    The legacy launcher returned an extra ``/workspace`` suffix here
+    too — that has been dropped to match the layout in plan §9.  The
+    zero-arg form raises if ``HOST_WORKSPACE_DIR`` is unset *and* K8s
+    detection fails (i.e. plain local CLI with no env at all) — the
+    default is ``~/.magi`` so this branch is only reachable when
+    someone has stripped the home directory; it's a programmer error.
     """
-    import os as _os
+    return _resolve_workspace_root(host_workspace_dir, magi_name)
 
-    raw = _os.environ.get("MAGI_WORKSPACE_DIR")
-    if raw:
-        return Path(raw).expanduser().resolve()
-    data_root = _os.environ.get("HOST_WORKSPACE_DIR")
-    if data_root:
-        runtime_slug = _os.environ.get("MAGI_NAME")
-        if runtime_slug:
-            return Path(data_root) / "MAGI_Citizens" / runtime_slug / "workspace"
-        return (
-            Path(data_root).expanduser().resolve()
-            / "MAGI_Societies"
-            / "genesis-01"
-            / "launcher-workspace"
-        )
-    raise RuntimeError(
-        "resolve_workspace_dir() needs MAGI_WORKSPACE_DIR or HOST_WORKSPACE_DIR"
-    )
+
+def _resolve_workspace_root(
+    host_workspace_dir: Path | None,
+    magi_name: str | None,
+) -> Path:
+    """Shared resolver used by :func:`resolve_workspace_dir` and
+    :func:`resolve_state_dir` — never reads environment when both
+    args are supplied."""
+    if host_workspace_dir is not None and magi_name is not None:
+        return host_workspace_dir / "MAGI_Citizens" / magi_name
+    # Zero-arg branch — env reads via the canonical helpers.
+    if host_workspace_dir is None:
+        host_workspace_dir = resolve_host_workspace()
+    if magi_name is None:
+        from magi.startup.config import DEFAULT_MAGI_NAME
+
+        magi_name = os.environ.get("MAGI_NAME", DEFAULT_MAGI_NAME)
+    return host_workspace_dir / "MAGI_Citizens" / magi_name
 
 
 def bootstrap_workspace(workspace: Path) -> dict[str, str]:
@@ -343,6 +371,8 @@ def resolve_soul_path(workspace_dir: Path) -> Path:
 # ------------------------------------------------------------------
 
 __all__ = [
+    # mode detection
+    "is_kubernetes_mode",
     # host
     "resolve_host_workspace",
     "resolve_state_dir",
