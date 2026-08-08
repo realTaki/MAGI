@@ -34,23 +34,18 @@ from magi.mcp.worker import (
     start_mcp_worker,
     stop_mcp_worker,
 )
+from magi.new_bus.bootstrap import NewBus
 from magi.new_bus.db import EngineFactory
 from magi.new_bus.guild import (
     McpServerChangedJob,
-    McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
 from magi.new_bus.library.local import (
     McpServerBook,
     SettingBook,
 )
-from magi.new_bus.library.local.toolsBook import (
-    ToolDefinition,
-    ToolDefinitionBook,
-)
+from magi.new_bus.library.local.toolsBook import ToolDefinitionBook
 from magi.tools import registry as tool_registry
-from magi.new_bus.bootstrap import NewBus
-
 
 # -- helpers -------------------------------------------------------------
 
@@ -108,25 +103,18 @@ def _build_new_bus(tmp_path) -> NewBus:
         contacts_book=None,  # type: ignore[arg-type]
         contact_notes_book=None,  # type: ignore[arg-type]
         settings_book=settings_book,
-        set_config_notify_board=None,  # type: ignore[arg-type]
-        set_setting_notify_board=None,  # type: ignore[arg-type]
         tasks_book=None,  # type: ignore[arg-type]
         task_runs_book=None,  # type: ignore[arg-type]
-        schedule_task_notify_board=None,  # type: ignore[arg-type]
         tool_definitions_book=tool_book,
         tool_catalog_book=None,  # type: ignore[arg-type]
         mcp_servers_book=mcp_book,
         mcp_server_changed_job_board=board,
         tool_job_board=None,  # type: ignore[arg-type]
         agent_job_board=None,  # type: ignore[arg-type]
-        chat_job_board=None,  # type: ignore[arg-type]
         llm_job_board=None,  # type: ignore[arg-type]
         delivery_job_board=None,  # type: ignore[arg-type]
         a2a_job_board=None,  # type: ignore[arg-type]
-        control_job_board=None,  # type: ignore[arg-type]
         change_provider_config_job_board=None,  # type: ignore[arg-type]
-        save_contact_notify_board=None,  # type: ignore[arg-type]
-        save_memory_notify_board=None,  # type: ignore[arg-type]
         token_usage_book=None,  # type: ignore[arg-type]
         action_items_book=None,  # type: ignore[arg-type]
         hook_signoffs_book=None,  # type: ignore[arg-type]
@@ -329,9 +317,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
     we drive the path by patching ``_handle_change``'s input
     DTO directly: the worker's branch logic is the only
     thing under test."""
-    from magi.new_bus.guild import McpServerChangedJob
     from magi.new_bus.guild.mcpServerChangedJob import _McpServerChangedRow
-    from sqlalchemy import select
 
     # Pre-seed a pending row carrying an unknown kind,
     # bypassing the DTO's ``__post_init__`` validation. This

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from magi.bus.jobs.protocols.mcp import McpServerConfig, McpServerView
 
 if TYPE_CHECKING:
-    from magi.mcp.loader import MCPTool
+    pass
 
 def _iso(value) -> str:
     return value.isoformat().replace("+00:00", "Z") if value else ""
@@ -78,30 +78,3 @@ class McpService:
         from magi.bus.db.models.local.mcp_server import McpServer
         from magi.bus.db import open_session
         with open_session(self._state_dir) as s: return s.scalar(select(McpServer.updated_at).order_by(McpServer.updated_at.desc()).limit(1))
-
-    def list_live_tools(self, name: str) -> "list[MCPTool] | None":
-        """BUS-side query for the live tool list of one MCP server.
-
-        Delegates to :func:`magi.mcp.loader.list_tools_for_server`,
-        which prefers the active in-process connection (cheap)
-        and falls back to a one-shot connect → list → disconnect
-        when the operator opens the detail before the next chat
-        turn has triggered ``maybe_reload_mcp_tools``.
-
-        Returns:
-          - ``None`` when the server name isn't in the table.
-          - ``[]`` when the row exists but the subprocess failed
-            to connect or returned no tools.
-          - ``list[MCPTool]`` on success.
-
-        Per ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md``
-        §5.5 + §6, the WebUI API (``magi.channels.api``) MUST NOT
-        import :mod:`magi.mcp` directly — MCP is a tools-adapter
-        that the BUS orchestrates. This method is the one Python
-        entry point for ``channels.api.mcp_servers``.
-        """
-        # Lazy import: keep the bus-side module side-effect free
-        # for callers that only need the persistence methods.
-        from magi.mcp.loader import list_tools_for_server
-
-        return list_tools_for_server(name)

@@ -5,15 +5,13 @@ API 侧 publish 到本 board；:class:`~magi.mcp.worker.McpWorker` 是唯一
 的 consumer，claim 后重连 / 断开 / 重新注入 tools 到 registry，并 submit
 :class:`McpServerChangedResult`。
 
-与 ``controlJobBoard`` / ``changeProviderConfigJobBoard`` 的区分
--------------------------------------------------------
+与 ``changeProviderConfigJobBoard`` 的区分
+------------------------------------------
 
-- ``controlJob`` 是 generic 的运行时信号 channel，多个 worker 都
-  可能 claim。
 - ``changeProviderConfigJob`` 专门服务 provider 配置变更，只有一个
   claimer（provider worker）。
 - ``mcpServerChangedJob`` 专门服务 MCP 服务器配置变更，只有一个
-  claimer（mcp worker），与上述两者正交。
+  claimer（mcp worker），与上述正交。
 
 设计要点
 ========

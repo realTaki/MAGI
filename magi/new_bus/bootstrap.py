@@ -38,7 +38,6 @@ class NewBus:
     Naming conventions
     ------------------
     - ``*_job_board``   — full round-trip (publish → claim → submit_result)
-    - ``*_notify_board`` — fire-and-forget (publish only, no result tracking)
     - plain nouns       — Book (CRUD without another worker involved)
 
     Usage::
@@ -62,13 +61,11 @@ class NewBus:
     contacts_book: object  # ContactBook
     contact_notes_book: object  # ContactNoteBook
 
-    # -- local: settings_book (Book + Notify boards) ------------------------------
+    # -- local: settings_book (Book) -----------------------------------------
 
     settings_book: object  # SettingBook
-    set_config_notify_board: object  # setConfigNotifyBoard
-    set_setting_notify_board: object  # setSettingNotifyBoard
 
-    # -- local: tasks_book (Books + Notify board) ---------------------------------
+    # -- local: tasks_book (Books) --------------------------------------------
     #
     # ``tasks_book`` owns BOTH user-created tasks
     # (``Task.source == SOURCE_USER``) and preset templates
@@ -78,7 +75,6 @@ class NewBus:
 
     tasks_book: object  # TaskBook
     task_runs_book: object  # TaskRunBook
-    schedule_task_notify_board: object  # scheduleTaskNotifyBoard
 
     # -- local: tools & MCP (Books + Job board) ------------------------------
 
@@ -88,10 +84,9 @@ class NewBus:
     mcp_server_changed_job_board: object  # mcpServerChangedJobBoard
     tool_job_board: object  # runToolJobBoard
 
-    # -- local: agent (Job boards) -------------------------------------------
+    # -- local: agent (Job board) ---------------------------------------------
 
     agent_job_board: object  # runAgentJobBoard
-    chat_job_board: object  # chatJobBoard
 
     # -- local: LLM (Job board) ----------------------------------------------
 
@@ -102,15 +97,9 @@ class NewBus:
     delivery_job_board: object  # deliveryJobBoard
     a2a_job_board: object  # sendA2AJobBoard
 
-    # -- local: control (Job boards) -----------------------------------------
+    # -- local: provider config (Job board) ----------------------------------
 
-    control_job_board: object  # controlJobBoard
     change_provider_config_job_board: object  # changeProviderConfigJobBoard
-
-    # -- local: contacts_book & memory_book (Notify boards) ----------------------------
-
-    save_contact_notify_board: object  # contactNotifyBoard
-    save_memory_notify_board: object  # rememberNotifyBoard
 
     # -- local: streaming ---------------------------------------------------
 
@@ -236,19 +225,12 @@ def _bootstrap_with_dirs(
     from magi.new_bus.guild import (
         callLLMJobBoard,
         changeProviderConfigJobBoard,
-        chatJobBoard,
-        contactNotifyBoard,
-        controlJobBoard,
         deliveryJobBoard,
         mcpServerChangedJobBoard,
-        rememberNotifyBoard,
         runAgentJobBoard,
         runToolJobBoard,
-        scheduleTaskNotifyBoard,
         seedPresetTasksJobBoard,
         sendA2AJobBoard,
-        setConfigNotifyBoard,
-        setSettingNotifyBoard,
     )
     from magi.new_bus.db.file import FileShelf
     from magi.new_bus.library.file.promptBook import PromptBook
@@ -327,20 +309,11 @@ def _bootstrap_with_dirs(
     llm_job_board = callLLMJobBoard(local_factory)
     delivery_job_board = deliveryJobBoard(local_factory)
     a2a_job_board = sendA2AJobBoard(local_factory)
-    chat_job_board = chatJobBoard(local_factory)
-    control_job_board = controlJobBoard(local_factory)
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
     mcp_server_changed_job_board = mcpServerChangedJobBoard(local_factory)
     seed_preset_tasks_job_board = seedPresetTasksJobBoard(local_factory)
-
-    # ---- local notify boards ------------------------------------------------
-    set_config_notify_board = setConfigNotifyBoard(local_factory)
-    set_setting_notify_board = setSettingNotifyBoard(local_factory)
-    schedule_task_notify_board = scheduleTaskNotifyBoard(local_factory)
-    save_contact_notify_board = contactNotifyBoard(local_factory)
-    save_memory_notify_board = rememberNotifyBoard(local_factory)
 
     # ---- magis_book books -------------------------------------------------------
     if magis_factory is not None:
@@ -374,26 +347,19 @@ def _bootstrap_with_dirs(
         contacts_book=contacts_book,
         contact_notes_book=contact_notes_book,
         settings_book=settings_book,
-        set_config_notify_board=set_config_notify_board,
-        set_setting_notify_board=set_setting_notify_board,
         tasks_book=tasks_book,
         task_runs_book=task_runs_book,
-        schedule_task_notify_board=schedule_task_notify_board,
         tool_definitions_book=tool_definitions_book,
         tool_catalog_book=tool_catalog_book,
         mcp_servers_book=mcp_servers_book,
         mcp_server_changed_job_board=mcp_server_changed_job_board,
         tool_job_board=tool_job_board,
         agent_job_board=agent_job_board,
-        chat_job_board=chat_job_board,
         llm_job_board=llm_job_board,
         delivery_job_board=delivery_job_board,
         a2a_job_board=a2a_job_board,
-        control_job_board=control_job_board,
         change_provider_config_job_board=change_provider_config_job_board,
         seed_preset_tasks_job_board=seed_preset_tasks_job_board,
-        save_contact_notify_board=save_contact_notify_board,
-        save_memory_notify_board=save_memory_notify_board,
         token_usage_book=token_usage_book,
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,

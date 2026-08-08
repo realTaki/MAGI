@@ -10,9 +10,8 @@ board；:class:`ProvidersWorker` 是唯一的 consumer，claim 后重建
 设计要点
 ========
 
-- **与 ``controlJobBoard`` 区分**：``controlJob`` 是 generic 的
-  运行时信号 channel，多个 worker 都可能 claim；本 board 专门
-  服务 provider 配置变更，只有一个 claimer（provider worker）。
+- **本 board 专门服务 provider 配置变更**：只有 ``ProvidersWorker``
+  一个 claimer，claim 后重建缓存的 SDK client 并 submit 结果。
 
 - **self-contained write**：``publish()`` 同时完成"落 settings_book"
   + "创建 job 行"两步。调用方只需要构造一次

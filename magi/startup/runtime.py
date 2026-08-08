@@ -166,6 +166,7 @@ async def _runtime_lifespan(
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels.delivery import start_delivery_worker, stop_delivery_worker
+    from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
@@ -183,7 +184,16 @@ async def _runtime_lifespan(
     # bus in the same pass). It publishes the builtin tool catalog
     # at start() so it's ready before the agent's first tool call.
     await start_tool_worker(bus=new_bus)
-    await start_agent_worker()
+    # MCP worker starts immediately after the tools worker so the
+    # tools worker's `on_tools_changed` listener is wired before
+    # the MCP worker re-injects its discovered tools. Stop order
+    # is reversed in the `finally` so the tools worker still
+    # listens when the MCP worker clears its tool set on the
+    # way out.
+    await start_mcp_worker(bus=new_bus)
+    # AgentWorker also lives on new_bus — same constructor-injection
+    # pattern as providers / tools workers (see magi.agent.worker).
+    await start_agent_worker(bus=new_bus)
     await start_delivery_worker()
     # Proactive worker runs LAST — all other subsystems must be
     # ready before it evaluates Adam status and seeds presets.
@@ -194,6 +204,7 @@ async def _runtime_lifespan(
         await stop_proactive_worker()
         await stop_delivery_worker()
         await stop_agent_worker()
+        await stop_mcp_worker()
         await stop_tool_worker()
         await stop_provider_worker()
         if "telegram" in channels:
@@ -225,6 +236,7 @@ async def worker_lifespan():
         start_delivery_worker,
         stop_delivery_worker,
     )
+    from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import (
         start_provider_worker,
@@ -242,7 +254,11 @@ async def worker_lifespan():
     # the rationale on the order (publish builtin catalog before
     # the agent might enqueue).
     await start_tool_worker(bus=new_bus)
-    await start_agent_worker()
+    # MCP worker on new_bus — same rationale as the runtime
+    # lifespan above (catalog listener wired before tool injection).
+    await start_mcp_worker(bus=new_bus)
+    # AgentWorker is on new_bus — same constructor-injection pattern.
+    await start_agent_worker(bus=new_bus)
     await start_delivery_worker()
     # WebUI context: no specific MAGI, so no Adam check.
     await start_proactive_worker(bus=new_bus, magi_id=None)
@@ -252,6 +268,7 @@ async def worker_lifespan():
         await stop_proactive_worker()
         await stop_delivery_worker()
         await stop_agent_worker()
+        await stop_mcp_worker()
         await stop_tool_worker()
         await stop_provider_worker()
 
