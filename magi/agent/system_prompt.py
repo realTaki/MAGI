@@ -132,10 +132,10 @@ def build_system_prompt(
     (one SELECT, capped at 50 rows), ``ContactStore.find_by_person``
     (single primary-key lookup), a one-row ``Contact``
     read for the chatter's display_name, and
-    ``get_skill_loader`` (filesystem scan). Each is
+    ``new_bus.skills_book.list()`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.skills import get_skill_metas
+    from magi.new_bus import get_new_bus
     from magi.prompts import load_skills_block_template
     from magi.bus import get_bus
 
@@ -205,7 +205,7 @@ def build_system_prompt(
             parts.append(daily_block)
 
     # Skills block — last so it caps the prompt.
-    skills = get_skill_metas()
+    skills = get_new_bus().skills_book.list()
     if skills:
         lines = ["", *load_skills_block_template().splitlines(), ""]
         for s in skills:

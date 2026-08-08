@@ -311,7 +311,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # Skills — read-only catalog of SKILL.md files in
     # workspace/skills/. Knowledge → Skills is the operator-
     # facing surface; the LLM-side equivalent is the
-    # ``load_skill`` tool (``magi.agent.skills.loader_tool``).
+    # ``load_skill`` tool (``magi.tools.skills.load_skill``).
     from magi.channels.api import skills
 
     app.include_router(skills.router, prefix="/api")

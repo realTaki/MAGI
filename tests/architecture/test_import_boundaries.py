@@ -64,7 +64,6 @@ RULES: list[tuple[str, list[str]]] = [
     ("magi.mcp", ["magi.bus.db"]),
     ("magi.connectors", ["magi.bus.db"]),
     ("magi.proactive", ["magi.bus.db"]),
-    ("magi.skills", ["magi.bus.db"]),
     # ``magi.channels.api`` is the WebUI backend. Per
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §6
     # (forbidden-deps table) + §5.6, the API MUST NOT depend on the
