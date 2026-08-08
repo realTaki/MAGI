@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from magi.new_bus.library.file.skillsBook import SkillBookError, SkillNotFound
+from magi.new_bus.library.file.skillsBook import SkillBookError
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 # Same name regex the book enforces at scan time. Anyone calling
@@ -108,12 +108,6 @@ class LoadSkillTool(Tool):
             )
         try:
             body = book.read_body(name)
-        except SkillNotFound as exc:
-            # Race: skill removed between the ``get`` and ``read_body``
-            # calls (only possible if someone reloads the registry
-            # mid-dispatch). Surface the same friendly message as a
-            # cold miss.
-            return ToolResult(content=str(exc))
         except SkillBookError as exc:
             return ToolResult(
                 content=f"failed to read skill body: {exc}",
