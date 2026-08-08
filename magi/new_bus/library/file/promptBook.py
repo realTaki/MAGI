@@ -7,6 +7,8 @@ provides typed accessors for every prompt file the runtime emits:
 - ``chat_titles.md``, ``compaction.md`` — sub-task system prompts
 - ``context/*.md`` — system-prompt block templates
 - ``bot_replies.yaml`` — Telegram bot reply templates
+- ``task_presets/*.yaml`` — bundled proactive task templates
+  (keyed by ``key`` field)
 
 Every accessor method triggers a hot-reload check (single ``stat()``
 per call), so editing a prompt file takes effect on the next LLM
@@ -17,6 +19,7 @@ Usage via ``NewBus``::
     bus = bootstrap_new_bus(...)
     soul = bus.prompt_book.soul()
     replies = bus.prompt_book.bot_replies()
+    presets = bus.prompt_book.task_presets()
 
 Standalone (early bootstrap / testing)::
 
@@ -33,9 +36,10 @@ from __future__ import annotations
 from typing import Any
 
 from magi.new_bus.db.file import FileShelf
+from magi.new_bus.library.file.base import BaseFileBook
 
 
-class PromptBook:
+class PromptBook(BaseFileBook):
     """Typed accessors for every bundled prompt file.
 
     Each method reads through :class:`FileShelf`, inheriting its
@@ -45,7 +49,7 @@ class PromptBook:
     """
 
     def __init__(self, shelf: FileShelf) -> None:
-        self._shelf = shelf
+        super().__init__(shelf)
 
     # -- persona ------------------------------------------------------------
 
@@ -133,11 +137,47 @@ class PromptBook:
             out[key] = value
         return out
 
-    # -- generic access (for future prompts not yet typed) ------------------
+    # -- task presets -------------------------------------------------------
 
-    def get(self, name: str) -> str:
-        """Read any markdown prompt by *name* (no extension)."""
-        return self._shelf.read_text(name)
+    def task_presets(self) -> dict[str, dict[str, Any]]:
+        """Bundled proactive task templates, keyed by ``preset.key``.
+
+        Reads every YAML file under ``task_presets/`` and merges their
+        top-level ``presets:`` lists into one ``{key: preset_dict}``
+        mapping.  Collisions (same ``key`` in multiple files) keep the
+        last file's entry — file order is the shelf's ``list()`` order
+        (sorted by stem).
+
+        Each preset dict carries the YAML schema used by
+        :mod:`magi.bus.jobs.services.task` / the bundled
+        ``defaults.yaml``: ``id``, ``key``, ``name``, ``description``,
+        ``prompt``, ``frequency``, ``hour``, ``minute``,
+        ``day_of_week``, ``day_of_month``, ``run_at``, ``channel``,
+        ``enabled``.
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for name in self._shelf.list("task_presets/*"):
+            data = self._shelf.read(name)
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"task preset file {name!r} must be a mapping; "
+                    f"got {type(data).__name__}"
+                )
+            presets_list = data.get("presets")
+            if not isinstance(presets_list, list):
+                raise ValueError(
+                    f"task preset file {name!r} missing 'presets' list"
+                )
+            for preset in presets_list:
+                if not isinstance(preset, dict) or "key" not in preset:
+                    raise ValueError(
+                        f"task preset file {name!r} contains entry "
+                        f"without 'key'"
+                    )
+                out[preset["key"]] = preset
+        return out
+
+    # -- generic access (for future prompts not yet typed) ------------------
 
     def get_structured(self, name: str) -> dict[str, Any] | list[Any]:
         """Read and decode any YAML/JSON prompt by *name*."""
@@ -149,7 +189,7 @@ class PromptBook:
         return data
 
     def list(self) -> list[str]:
-        """List all available prompt names."""
+        """List all available prompt names (delegates to :meth:`FileShelf.list`)."""
         return self._shelf.list()
 
     def exists(self, name: str) -> bool:
