@@ -34,7 +34,6 @@ from magi.new_bus.library.local.mcpServerBook import (
     serialize_mcp_server,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult
-
 from magi.tools.mcp.add_mcp_server import _build_server  # noqa: F401  (shared helper)
 
 
