@@ -86,9 +86,10 @@ def bootstrap(
 
     The container profile's state directory is derived from
     :func:`magi.startup.paths.resolve_state_dir` (which reads
-    ``MAGI_WORKSPACE_DIR``).  The Local Profile, which has its own
-    layout, reaches :func:`_bootstrap` directly with the layout's
-    ``state_dir``.
+    ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` — K8s mode defaults to
+    ``/``, CLI mode to ``~/.magi``).  The Local Profile, which has
+    its own layout, reaches :func:`_bootstrap` directly with the
+    layout's ``state_dir``.
 
     ``runtime_backend`` (Phase 2) overrides the backend selected by the
     ``MAGI_BACKEND`` env var — used by tests to inject a stub
@@ -212,8 +213,9 @@ def get_bus() -> Bus:
 
     The singleton is process-wide (like :func:`magi.bus.db.engine.get_engine`).
     Tests that need a different state directory should call
-    :func:`_bootstrap` directly or set ``MAGI_WORKSPACE_DIR`` before the first
-    call to :func:`get_bus`.
+    :func:`_bootstrap` directly or set ``HOST_WORKSPACE_DIR`` (and
+    optionally ``MAGI_NAME``) before the first call to
+    :func:`get_bus`.
     """
     global _bus
     if _bus is None:

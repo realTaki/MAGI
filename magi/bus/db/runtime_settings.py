@@ -322,8 +322,10 @@ __all__ = [
 #       to start the runtime.
 #
 # File path resolution:
-#     * K8s profile: ``$MAGI_WORKSPACE_DIR/runtime_settings.toml``
-#     * CLI profile: ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<slug>/workspace/runtime_settings.toml``
+#     * Both K8s and CLI profiles use ``HOST_WORKSPACE_DIR``:
+#         ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<slug>/runtime_settings.toml``
+#       K8s mode defaults ``HOST_WORKSPACE_DIR`` to ``/``; CLI mode
+#       defaults to ``~/.magi``. Operators may override either way.
 #     * The lookup is delegated to :func:`magi.startup.paths.resolve_workspace_dir`
 #       so a single env var is enough for either profile.
 #

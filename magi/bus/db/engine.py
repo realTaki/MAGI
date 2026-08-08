@@ -42,7 +42,8 @@ def require_state_dir() -> str:
     """Return the state directory path.
 
     Delegates to :func:`magi.startup.paths.resolve_state_dir`.  The K8s Pod
-    sets ``MAGI_WORKSPACE_DIR``; the Local Profile sets ``HOST_WORKSPACE_DIR``.
+    sets ``HOST_WORKSPACE_DIR`` (e.g. ``/workspace`` on a PVC mount);
+    the Local Profile defaults to ``~/.magi``.
     """
     from magi.startup.paths import resolve_state_dir as _state_dir
     return str(_state_dir())
@@ -354,7 +355,7 @@ def init_orm(state_dir: str | None = None, *, seed_root: bool = True) -> Engine:
         # If the cached engine points at a different directory,
         # dispose it so the next ``get_engine()`` rebuilds. The
         # cache check is by path (not by env var) so a re-entrant
-        # test that reuses ``MAGI_WORKSPACE_DIR`` hits the fast path.
+        # test that reuses ``HOST_WORKSPACE_DIR`` hits the fast path.
         try:
             bound_url = _engine.url.database
         except Exception:

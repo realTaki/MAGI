@@ -64,8 +64,10 @@ class ToolContext:
     to read or write persistent state call the public
     ``bus.<service>`` methods rather than handling the path
     themselves. Only the user-facing ``workspace`` (resolved from
-    ``MAGI_WORKSPACE_DIR``) is part of the tool context, because it
-    is the boundary tools operate against (``safe_resolve`` etc.).
+    ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` via
+    :func:`magi.startup.paths.resolve_workspace_dir`) is part of the
+    tool context, because it is the boundary tools operate against
+    (``safe_resolve`` etc.).
     """
 
     workspace: str
