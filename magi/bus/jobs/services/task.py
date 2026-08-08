@@ -221,7 +221,7 @@ class TaskService:
     ) -> tuple[str, bool]:
         """Upsert a task by name; returns ``(task_id, is_update)``.
 
-        The full upsert-by-name flow that ``magi.tools.schedule_task``
+        The full upsert-by-name flow that ``magi.tools.tasks.schedule``
         and the WebUI task API share, including the cron / run_at
         / delivery_to / session_id / tz fields.
         """

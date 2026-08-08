@@ -191,7 +191,7 @@ class BashRunTool(Tool):
 
     async def run(
         self,
-        _ctx: ToolContext,
+        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         command = (kwargs.get("command") or "").strip()
@@ -215,11 +215,11 @@ class BashRunTool(Tool):
             timeout = _FOREGROUND_TIMEOUT_MAX
 
         run_in_background = bool(kwargs.get("run_in_background"))
-        cwd = str(_ctx.workspace) if _ctx.workspace else None
+        cwd = str(ctx.workspace) if ctx.workspace else None
 
         try:
             if run_in_background:
-                return await self._run_background(command, cwd)
+                return await self._run_background(command, cwd, ctx)
             return await self._run_foreground(command, timeout, cwd)
         except Exception as e:
             logger.exception("bash tool: unexpected error")
@@ -234,6 +234,7 @@ class BashRunTool(Tool):
         self,
         command: str,
         cwd: str | None,
+        ctx: ToolContext,
     ) -> ToolResult:
         bash_id = uuid.uuid4().hex[:_BASH_ID_LEN]
         if self.is_windows:
@@ -254,14 +255,26 @@ class BashRunTool(Tool):
                 cwd=cwd,
             )
 
-        shell = _BackgroundShell(
+        # Owner identity: ``ctx.worker_id`` is the
+        # ``ToolsWorker.worker_id`` of this process — the only
+        # process that holds the live subprocess handle. A
+        # non-owner ``bash_output`` / ``bash_kill`` consults
+        # the row to know it isn't looking at its own work.
+        # ``uid`` rides on the row so a future per-operator
+        # audit / cleanup can attribute shells.
+        owner_worker_id = ctx.worker_id or ""
+        _BackgroundShellManager.add(
             bash_id=bash_id,
             command=command,
             process=process,
+            owner_worker_id=owner_worker_id,
             start_time=time.time(),
+            bus=ctx.bus,
+            uid=int(ctx.uid),
         )
-        _BackgroundShellManager.add(shell)
-        await _BackgroundShellManager.start_monitor(bash_id)
+        await _BackgroundShellManager.start_monitor(
+            bash_id=bash_id, bus=ctx.bus,
+        )
 
         return ToolResult(
             content=(

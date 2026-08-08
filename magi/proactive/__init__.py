@@ -13,5 +13,16 @@ task channel. ``contracts`` provides the stable boundary for future components.
 """
 
 from magi.proactive.contracts import ProactiveSignal, ProposedAction
+from magi.proactive.credentials_nudge import (
+    CREDENTIALS_NUDGE,
+    CredentialsNudgeSpec,
+    ensure_for_admin,
+)
 
-__all__ = ["ProactiveSignal", "ProposedAction"]
+__all__ = [
+    "ProactiveSignal",
+    "ProposedAction",
+    "CREDENTIALS_NUDGE",
+    "CredentialsNudgeSpec",
+    "ensure_for_admin",
+]

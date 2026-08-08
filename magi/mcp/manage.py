@@ -40,33 +40,20 @@ sits next to the rest of the MCP package.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from magi.bus import ToolContext, ToolResult, get_bus
-from magi.tools.base import (
-    Tool,
-    caller_role_denied_reason,
-)
+from magi.bus import get_bus
+from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.mcp.manage")
 
-# Only admins may create / delete MCP servers.
-_ALLOWED_ROLES = frozenset({"admin"})
-
-
-def _gate(ctx: ToolContext) -> str | None:
-    return caller_role_denied_reason(ctx, _ALLOWED_ROLES)
-
-
-def _err(msg: str) -> ToolResult:
-    return ToolResult(content=msg, is_error=True)
-
-
-def _ok(payload: Any) -> ToolResult:
-    body = json.dumps(payload, indent=2, ensure_ascii=False)
-    return ToolResult(content=body, is_error=False)
+# MCP server CRUD is admin-only. ``ALLOWED_ROLES`` lives on
+# each :class:`Tool` subclass and is enforced centrally by
+# :meth:`Tool.gate` — which checks the contact ``role``
+# against the whitelist and, when ``"admin"`` is in the
+# set, consults ``ctx.bus.magis_admins_book`` for a
+# per-MAGIS admin row. No per-module gate helper needed.
 
 
 def _serialize(r) -> dict[str, Any]:
@@ -92,6 +79,7 @@ class AddMcpServerTool(Tool):
     """Create a new MCP server. Requires name + connection_type."""
 
     name = "add_mcp_server"
+    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Add a new MCP (Model-Context-Protocol) server. "
         "The operator must provide at least ``name`` and "
@@ -167,25 +155,21 @@ class AddMcpServerTool(Tool):
     }
 
     async def run(self, context: ToolContext, **kwargs: Any) -> ToolResult:
-        denied = _gate(context)
-        if denied:
-            return _err(denied)
-
         name = (kwargs.get("name") or "").strip()
         if not name:
-            return _err("missing required field: name")
+            return ToolResult.err("missing required field: name")
 
         conn_type = (kwargs.get("connection_type") or "").strip().lower()
         if conn_type not in ("stdio", "sse", "streamable_http"):
-            return _err(
+            return ToolResult.err(
                 "connection_type must be one of: stdio, sse, streamable_http"
             )
 
         if conn_type == "stdio" and not kwargs.get("command"):
-            return _err("stdio servers require 'command'")
+            return ToolResult.err("stdio servers require 'command'")
 
         if conn_type != "stdio" and not kwargs.get("url"):
-            return _err(
+            return ToolResult.err(
                 f"{conn_type} servers require 'url'"
             )
 
@@ -195,10 +179,10 @@ class AddMcpServerTool(Tool):
 
         bus = get_bus()
         if any(server.name == name for server in bus.mcp.list()):
-            return _err(f"server '{name}' already exists")
+            return ToolResult.err(f"server '{name}' already exists")
         row = bus.mcp.upsert(name=name, connection_type=conn_type, command=kwargs.get("command"), args=kwargs.get("args"), url=kwargs.get("url"), enabled=enabled, env=kwargs.get("env"), headers=kwargs.get("headers"), connect_timeout=kwargs.get("connect_timeout"), execute_timeout=kwargs.get("execute_timeout"), sse_read_timeout=kwargs.get("sse_read_timeout"))
 
-        return _ok({
+        return ToolResult.ok({
             "status": "created",
             "server": _serialize(row),
             "hint": (
@@ -215,6 +199,7 @@ class ListMcpServersTool(Tool):
     """List all configured MCP servers (metadata only)."""
 
     name = "list_mcp_servers"
+    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "List all configured MCP servers with their metadata "
         "(name, type, enabled status, timeouts). Env vars "
@@ -223,16 +208,12 @@ class ListMcpServersTool(Tool):
     input_schema = {"type": "object", "properties": {}}
 
     async def run(self, context: ToolContext, **_kwargs: Any) -> ToolResult:
-        denied = _gate(context)
-        if denied:
-            return _err(denied)
-
         rows = get_bus().mcp.list()
 
         if not rows:
-            return _ok({"servers": [], "hint": "No MCP servers configured yet."})
+            return ToolResult.ok({"servers": [], "hint": "No MCP servers configured yet."})
 
-        return _ok({
+        return ToolResult.ok({
             "servers": [_serialize(r) for r in rows],
             "count": len(rows),
         })
@@ -246,6 +227,7 @@ class DeleteMcpServerTool(Tool):
     if the server doesn't exist."""
 
     name = "delete_mcp_server"
+    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Delete an MCP server by name. Removing a server also "
         "removes all tools it surfaced. If the server doesn't "
@@ -265,18 +247,14 @@ class DeleteMcpServerTool(Tool):
     }
 
     async def run(self, context: ToolContext, **kwargs: Any) -> ToolResult:
-        denied = _gate(context)
-        if denied:
-            return _err(denied)
-
         name = (kwargs.get("name") or "").strip()
         if not name:
-            return _err("missing required field: name")
+            return ToolResult.err("missing required field: name")
 
         if not get_bus().mcp.delete(name):
-            return _ok({"status": "not_found", "hint": f"No server named '{name}' — nothing to delete."})
+            return ToolResult.ok({"status": "not_found", "hint": f"No server named '{name}' — nothing to delete."})
 
-        return _ok({
+        return ToolResult.ok({
             "status": "deleted",
             "name": name,
             "hint": "Server removed. The tools it surfaced will disappear on the next chat turn.",
@@ -308,6 +286,7 @@ class UpdateMcpServerTool(Tool):
     """
 
     name = "update_mcp_server"
+    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Update an existing MCP server by name. The new "
         "state replaces the existing row entirely — "
@@ -393,17 +372,13 @@ class UpdateMcpServerTool(Tool):
     }
 
     async def run(self, context: ToolContext, **kwargs: Any) -> ToolResult:
-        denied = _gate(context)
-        if denied:
-            return _err(denied)
-
         name = (kwargs.get("name") or "").strip()
         if not name:
-            return _err("missing required field: name")
+            return ToolResult.err("missing required field: name")
 
         conn_type = (kwargs.get("connection_type") or "").strip().lower()
         if conn_type and conn_type not in ("stdio", "sse", "streamable_http"):
-            return _err(
+            return ToolResult.err(
                 "connection_type must be one of: stdio, sse, streamable_http"
             )
 
@@ -412,14 +387,14 @@ class UpdateMcpServerTool(Tool):
         # single field and leaving connection_type unset,
         # in which case we keep the existing transport.
         if conn_type == "stdio" and "command" in kwargs and not kwargs.get("command"):
-            return _err("stdio servers require 'command'")
+            return ToolResult.err("stdio servers require 'command'")
         if conn_type in ("sse", "streamable_http") and "url" in kwargs and not kwargs.get("url"):
-            return _err(f"{conn_type} servers require 'url'")
+            return ToolResult.err(f"{conn_type} servers require 'url'")
 
         bus = get_bus()
         current = bus.mcp.get_config(name)
         if current is None:
-                return _err(
+                return ToolResult.err(
                     f"server '{name}' does not exist. "
                     f"Create it with add_mcp_server first."
                 )
@@ -429,8 +404,8 @@ class UpdateMcpServerTool(Tool):
         try:
             row = bus.mcp.upsert(name=name, **values)
         except ValueError as exc:
-            return _err(str(exc))
-        return _ok({
+            return ToolResult.err(str(exc))
+        return ToolResult.ok({
             "status": "updated",
             "server": _serialize(row),
             "hint": (

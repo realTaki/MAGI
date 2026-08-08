@@ -39,6 +39,7 @@ from magi.bus import get_bus
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.api import control_store
+from magi.proactive import ensure_for_admin as ensure_credentials_nudge
 
 logger = logging.getLogger("magi.api.onboarding")
 
@@ -392,11 +393,16 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,
     #    second wizard pass after /restart) is a no-op for any
-    #    admin that already has an open row.
+    #    admin that already has an open row. Policy lives in
+    #    :mod:`magi.proactive.credentials_nudge`; the Book is
+    #    pure CRUD and only sees the resulting ``add()``.
     try:
         admins = bus.contacts.list_admins()
         inserted = sum(
-            bus.action_item.ensure_llm_credentials_item(owner_uid=admin.id)
+            ensure_credentials_nudge(
+                book=bus.action_items_book,
+                admin_id=admin.id,
+            )
             for admin in admins
         )
     except Exception:  # pragma: no cover — DB failure
