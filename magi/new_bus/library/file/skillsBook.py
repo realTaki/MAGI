@@ -399,12 +399,12 @@ class SkillsBook:
     Built on two :class:`~magi.new_bus.db.file.FileShelf` instances
     (bundle + operator). The shelves give us safe path resolution
     underneath; the registry itself is hot-reloaded on every public
-    read via :meth:`_ensure_fresh`.
+    read via :meth:`_fresh_registry`.
 
     Lookup contract:
 
       - :meth:`get` / :meth:`list` / :meth:`exists` / :meth:`read_body`
-        all call :meth:`_ensure_fresh` first, which re-scans if the
+        all call :meth:`_fresh_registry` first, which re-scans if the
         on-disk fingerprint (per-skill-dir tuple of name + mtime +
         size of SKILL.md) has changed. New / removed / edited
         skills become visible without a process restart.
@@ -431,7 +431,7 @@ class SkillsBook:
         self._bundle_fp: tuple = ()
         self._operator_fp: tuple = ()
         self._lock = threading.Lock()
-        self._ensure_fresh(force=True)
+        self._fresh_registry()  # populate registry + fingerprints at construction
 
     # ─── public surface ────────────────────────────────────────────────
 
@@ -441,24 +441,18 @@ class SkillsBook:
         Hot-reloads the registry first if the on-disk fingerprint of
         either root has changed since the last scan.
         """
-        self._ensure_fresh()
-        with self._lock:
-            return sorted(self._registry.values(), key=lambda s: s.name)
+        return sorted(self._fresh_registry().values(), key=lambda s: s.name)
 
     def get(self, name: str) -> Optional[SkillMeta]:
         """Return the :class:`SkillMeta` for *name*, or ``None``.
 
         Hot-reloads the registry first.
         """
-        self._ensure_fresh()
-        with self._lock:
-            return self._registry.get(name)
+        return self._fresh_registry().get(name)
 
     def exists(self, name: str) -> bool:
         """``True`` iff *name* is registered. Hot-reloads first."""
-        self._ensure_fresh()
-        with self._lock:
-            return name in self._registry
+        return name in self._fresh_registry()
 
     def read_body(self, name: str) -> SkillBody:
         """Read the full markdown body for *name*, ready for the LLM.
@@ -540,7 +534,7 @@ class SkillsBook:
         once (used by tests).
 
         Must be called with :attr:`_lock` held (see
-        :meth:`_ensure_fresh`). Two passes — bundle first (the
+        :meth:`_fresh_registry`). Two passes — bundle first (the
         defaults), then operator (overrides bundle entries with the
         same name; no warning, that is the normal customisation flow).
         """
@@ -554,28 +548,28 @@ class SkillsBook:
             len(self._registry), bundle_count, operator_count,
         )
 
-    def _ensure_fresh(self, *, force: bool = False) -> None:
-        """Re-scan if either root's on-disk fingerprint has changed.
+    def _fresh_registry(self) -> dict[str, SkillMeta]:
+        """Return the registry, re-scanning first if either root changed.
 
-        Called by every public read method. Catches: skill dir
-        added/removed, ``SKILL.md`` created/deleted, ``SKILL.md``
-        content edited.
+        Fingerprint compute + compare + optional re-scan + registry
+        read are all guarded by a single :attr:`_lock` acquisition so
+        callers see a consistent snapshot.  Public methods
+        (:meth:`list` / :meth:`get` / :meth:`exists`) delegate here.
 
-        Fingerprint cost: one ``stat()`` per skill dir (microseconds).
-        The fast path (no change) skips the full re-scan.
+        Fast path (no filesystem change): one ``stat()`` per skill
+        dir (microseconds) + lock acquire.  Slow path: full re-scan.
         """
         bundle_fp = self._root_fingerprint(self._bundle)
         operator_fp = self._root_fingerprint(self._operator)
         with self._lock:
             if (
-                not force
-                and self._bundle_fp == bundle_fp
-                and self._operator_fp == operator_fp
+                self._bundle_fp != bundle_fp
+                or self._operator_fp != operator_fp
             ):
-                return
-            self._scan()
-            self._bundle_fp = bundle_fp
-            self._operator_fp = operator_fp
+                self._scan()
+                self._bundle_fp = bundle_fp
+                self._operator_fp = operator_fp
+            return self._registry
 
     def _root_fingerprint(self, shelf: FileShelf) -> tuple:
         """Sorted tuple of ``(dir_name, mtime_ns, size)`` per SKILL.md.
