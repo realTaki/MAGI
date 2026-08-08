@@ -5,9 +5,10 @@
 - **只依赖 new_bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
 - **构造靠注入**。Composition root 显式构造并传进来，
   ``concurrency`` 由调用方注入（环境变量由 startup 模块读取后传入）。
-- **启动时 publish builtin tool catalog** 到
-  ``bus.tool_definitions_book``（带 schema_hash），写一次就够了，
-  代码改动才需要重发。
+- **启动时 publish full tool catalog** — builtin + 所有已注入的外部工具
+  (MCP, skills) 写到 ``bus.tool_definitions_book``。
+  外部子系统通过 :func:`magi.tools.registry.register_tools` 注入后，
+  worker 自动检测并重发布。
 - **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 session，
   全走 :class:`RunToolJob` → :class:`RunToolResult`。
 - **并发执行**。通过 ``asyncio.Semaphore`` 控制并发槽位，
@@ -24,13 +25,15 @@ worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
 ::
 
     start()
-      └─ _publish_builtin_catalog()     # 一次性把 builtin tools 写进 Book
+      └─ _publish_full_catalog()         # builtin + injected tools → Book
+      └─ on_tools_changed(_on_injected_tools_changed)  # 监听注入事件
       └─ spawn _run() task
     _run() loop
+      └─ if _catalog_dirty → _publish_full_catalog()  # 工具注入后自动刷新
       └─ bus.tool_job_board.claim()
-      └─ await _slots.acquire()         # 等待并发槽位
-      └─ create_task(_invoke_safe(job)) # fire-and-forget
-      └─ continue                       # 立即回到循环顶部 claim 下一个
+      └─ await _slots.acquire()
+      └─ create_task(_invoke_safe(job))  # fire-and-forget
+      └─ continue
 
 入队 helper
 ===========
@@ -98,22 +101,20 @@ def _schema_hash(definition: "ToolDefinition") -> str:
     ).hexdigest()
 
 
-def _build_builtin_definitions() -> list["ToolDefinition"]:
-    """One :class:`ToolDefinition` per registered builtin tool.
+def _build_definitions_from_tools(
+    tools: list["Tool"],
+    source: str,
+) -> list["ToolDefinition"]:
+    """Build :class:`ToolDefinition` rows from concrete tool instances.
 
-    Built-in source = ``"builtin"``. MCP tools land in a separate
-    Book owned by the MCP worker (not yet built); they're not
-    published by this worker.
+    Used by :meth:`ToolsWorker._publish_full_catalog` for both
+    builtin and injected sources.
     """
-    # Lazy import: registry defers tool class imports so test
-    # isolation works. _build_tools() constructs one of each.
-    from magi.tools.registry import _build_tools
-
     definitions: list[ToolDefinition] = []
-    for tool in _build_tools():
+    for tool in tools:
         d = ToolDefinition(
             name=tool.name,
-            source="builtin",
+            source=source,
             description=tool.description,
             input_schema=dict(tool.input_schema),
             allowed_roles=tuple(sorted(tool.ALLOWED_ROLES)),
@@ -166,18 +167,25 @@ class ToolsWorker:
         self._task: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
         self._stopping = False
+        #: Set by :meth:`_on_injected_tools_changed` when external
+        #: subsystems inject tools.  The claim loop checks this
+        #: before each claim and republishes the catalog.
+        self._catalog_dirty = asyncio.Event()
 
     async def start(self) -> None:
         if self._task is not None:
             return
 
-        # 1. Publish the builtin tool catalog. Idempotent — code
-        #    changes that add/modify tools are reflected on every
-        #    restart. Failure here is logged and swallowed; an
-        #    empty catalog just means the agent can't call tools
-        #    this session. Called synchronously (mirrors
-        #    ProvidersWorker._publish_provider_options).
-        self._publish_builtin_catalog()
+        # Subscribe to runtime tool injection so we can republish
+        # the catalog when MCP / skills register their tools.
+        from magi.tools.registry import on_tools_changed
+
+        on_tools_changed(self._on_injected_tools_changed)
+
+        # 1. Publish the full tool catalog (builtin + any
+        #    already-injected tools). Called synchronously
+        #    (mirrors ProvidersWorker._publish_provider_options).
+        self._publish_full_catalog()
 
         self._stopping = False
         self._inflight.clear()
@@ -216,6 +224,12 @@ class ToolsWorker:
 
     async def _run(self) -> None:
         while not self._stopping:
+            # Republish the catalog if external subsystems
+            # injected new tools since the last iteration.
+            if self._catalog_dirty.is_set():
+                self._publish_full_catalog()
+                self._catalog_dirty.clear()
+
             try:
                 job = await asyncio.to_thread(
                     self.bus.tool_job_board.claim,
@@ -260,31 +274,45 @@ class ToolsWorker:
 
     # ----- catalog publish ----------------------------------------------
 
-    def _publish_builtin_catalog(self) -> None:
-        """Replace the builtin source's snapshot in tool_definitions_book.
+    def _publish_full_catalog(self) -> None:
+        """Publish builtin + all injected tool definitions to the Book.
 
-        ``source='builtin'`` rows are written atomically (single
-        transaction inside :meth:`ToolDefinitionBook.upsert_many`).
-        ``source != 'builtin'`` rows (future MCP) are left alone.
-
-        The catalog revision is bumped on every publish so the
-        next claim can detect stale-schema calls.
+        Each source (``"builtin"``, ``"mcp"``, ``"skills"``, …)
+        is written in its own ``upsert_many`` call so rows from
+        one source never clobber another.  The catalog revision
+        is bumped once after all sources are written.
         """
-        definitions = _build_builtin_definitions()
+        from magi.tools.registry import _build_tools, list_injected
+
+        # 1. Builtin tools — always present.
+        builtin_defs = _build_definitions_from_tools(
+            _build_tools(), source="builtin",
+        )
         self.bus.tool_definitions_book.upsert_many(
-            definitions=definitions, source="builtin",
+            definitions=builtin_defs, source="builtin",
         )
 
-        # Bump revision + recompute snapshot_hash.
-        # snapshot_hash = sha256(canonical_json of (source, name,
-        # schema_hash, enabled, revision) for every enabled row).
+        # 2. Injected tools — one upsert per source.
+        total = len(builtin_defs)
+        for source, tools in list_injected().items():
+            defs = _build_definitions_from_tools(tools, source=source)
+            self.bus.tool_definitions_book.upsert_many(
+                definitions=defs, source=source,
+            )
+            total += len(defs)
+
+        # 3. Bump revision + recompute snapshot_hash across ALL
+        #    enabled rows (builtin + injected).
         state = self.bus.tool_catalog_book.get()
         next_revision = (state.revision + 1) if state else 1
         enabled_rows = self.bus.tool_definitions_book.list_enabled()
-        # Re-fetch the schema_hash we computed at definition time —
-        # the row only stores spec_json; we keep a parallel dict
-        # to recompute. (Hashing is cheap; <1ms for the menu.)
-        hash_by_name: dict[str, str] = {d.name: d.schema_hash for d in definitions}
+        # Build a hash map from the definitions we just computed.
+        hash_by_name: dict[str, str] = {}
+        for d in builtin_defs:
+            hash_by_name[d.name] = d.schema_hash
+        for source, tools in list_injected().items():
+            for d in _build_definitions_from_tools(tools, source=source):
+                hash_by_name[d.name] = d.schema_hash
         hash_input = sorted(
             (
                 r.source, r.name, hash_by_name.get(r.name, ""),
@@ -299,10 +327,28 @@ class ToolsWorker:
             revision=next_revision, snapshot_hash=snapshot_hash,
         )
         logger.info(
-            "tools worker: published %d builtin tool(s) "
-            "(catalog revision=%d)",
-            len(definitions), next_revision,
+            "tools worker: published %d tool(s) (catalog revision=%d)",
+            total, next_revision,
         )
+
+    def _on_injected_tools_changed(self) -> None:
+        """Registry listener — fires when an external subsystem
+        calls :func:`register_tools` or :func:`unregister_source`.
+
+        Thread-safe: :class:`asyncio.Event` is safe to
+        :meth:`~asyncio.Event.set` from any thread.  The claim
+        loop picks this up on its next iteration.
+        """
+        self._catalog_dirty.set()
+
+    def refresh_catalog(self) -> None:
+        """Force immediate republish of the full tool catalog.
+
+        External callers use this after injecting tools when
+        they need the new definitions visible before the claim
+        loop's next natural iteration (e.g. in tests).
+        """
+        self._publish_full_catalog()
 
     # ----- per-job execution --------------------------------------------
 

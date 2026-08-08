@@ -5,21 +5,18 @@ instances the tools worker dispatches to.
 This is **not** the agent-visible catalog. The catalog (what
 the LLM sees as its menu) lives in the new_bus
 :mod:`magi.new_bus.library.local.toolsBook` and is fed by
-worker startup via :func:`magi.tools.worker._publish_builtin_catalog`.
+the worker via :meth:`ToolsWorker._publish_full_catalog`.
 This module owns only the dispatch half: a cache of
-:class:`~magi.tools.base.Tool` instances, plus the MCP
-loader that appends to it. When :func:`get_tool` looks up a
-tool by name, it walks this cache — there is no
-``get_tools()`` / ``get_tool_schemas()`` here anymore, by
-design: agent-side menu reads go to the Book, not here.
+:class:`~magi.tools.base.Tool` instances.
 
-v0 hard-codes the builtin set here. When ``skill_loader``
-(D.17) lands, skills get appended to this list at runtime
-based on the deployer's config; the registry API stays the
-same so the worker doesn't have to grow with it.
+Builtin tools are hard-coded here. External subsystems (MCP,
+skills) inject additional tools at runtime through the public
+injection API.  The worker subscribes via
+:func:`on_tools_changed` and republishes the full catalog
+whenever injected tools change.
 
-Imports are lazy: each tool is imported on first call to
-:func:`_build_tools`, not at module load time. That's how
+Imports are lazy: each builtin tool is imported on first call
+to :func:`_build_tools`, not at module load time. That's how
 tests can patch one tool (``monkeypatch.setattr``) without
 triggering the rest of the registry's side-effects.
 """
@@ -27,6 +24,7 @@ triggering the rest of the registry's side-effects.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -34,46 +32,33 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.tools.registry")
 
-# Single-shot cache of builtin :class:`Tool` instances — the
-# dispatch backend. Populated lazily on the first
-# :func:`get_tool` / :func:`bootstrap_mcp_tools` call.
-# Lives for the process lifetime; tests that need a fresh
-# set either ``del magi.tools.registry._tools_cache`` or
-# restart the process.
+#: Single-shot cache of builtin :class:`Tool` instances — the
+#: dispatch backend. Populated lazily on the first
+#: :func:`get_tool` call.
 _tools_cache: list["Tool"] | None = None
 
-# MCP tools are loaded once at boot via
-# :func:`bootstrap_mcp_tools` and appended on top of
-# ``_tools_cache``. A separate slot keeps the two surfaces
-# (built-in tools / MCP-discovered tools) distinct so the
-# MCP connection isn't re-opened on a builtin reload. The
-# agent loop never reads this directly; :func:`get_tool`
-# walks builtin first, then MCP.
-_mcp_tools_cache: list["Tool"] | None = None
+#: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``,
+#: ``"skills"``). Each call to :func:`register_tools` replaces
+#: the entire slot for that source.
+_injected: dict[str, list["Tool"]] = {}
 
-# Stamp of the most recent successful MCP load —
-# specifically, the ``max(updated_at)`` observed across
-# the ``mcp_servers`` table at load time. Compared on
-# every chat turn by :func:`maybe_reload_mcp_tools`: a
-# mismatch means an operator edited (added / removed /
-# toggled / deleted) a server since the last load and
-# the cache is stale. ``None`` means "never loaded",
-# which forces a reload on the first chat turn.
-_mcp_loaded_at_db = None
+#: Change listeners — fired after :func:`register_tools` or
+#: :func:`unregister_source`. The worker uses this to republish
+#: the tool catalog.
+_listeners: list[Callable[[], None]] = []
 
 
 def _build_tools() -> list["Tool"]:
-    """Construct one instance of every v0 tool.
+    """Construct one instance of every builtin tool.
 
     Importing inside the function (not at module top)
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
 
-    Returned list is the dispatch order (builtin tools in
-    the order they appear here). MCP tools are appended
-    on top by :func:`bootstrap_mcp_tools`. Tool worker
-    claim paths consult :func:`get_tool`, which walks
-    builtin first then MCP.
+    Tools from external subsystems (MCP manage tools,
+    SkillLoaderTool, MCP-discovered tools) are NOT
+    included here — they are injected at runtime via
+    :func:`register_tools`.
     """
     from magi.tools.shell.run import BashRunTool
     from magi.tools.shell.output import BashOutputTool
@@ -84,15 +69,8 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.filesystem.edit_file import EditFileTool
     from magi.tools.filesystem.list_files import ListFilesTool
     from magi.tools.comms.message_magi import MessageMagiTool
-    from magi.mcp.manage import (
-        AddMcpServerTool,
-        DeleteMcpServerTool,
-        ListMcpServersTool,
-        UpdateMcpServerTool,
-    )
     from magi.tools.filesystem.read_file import ReadFileTool
     from magi.tools.tasks.schedule import ScheduleTaskTool
-    from magi.skills.loader_tool import SkillLoaderTool
     from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
     from magi.tools.comms.send_message import SendMessageTool
     from magi.tools.filesystem.write_file import WriteFileTool
@@ -116,7 +94,6 @@ def _build_tools() -> list["Tool"]:
         SendMessageTool(),
         MessageMagiTool(),
         ScheduleTaskTool(),
-        SkillLoaderTool(),
         # Shell execution — three tools the LLM uses
         # together: ``bash`` runs (foreground or
         # background), ``bash_output`` polls a
@@ -125,148 +102,110 @@ def _build_tools() -> list["Tool"]:
         BashOutputTool(),
         BashKillTool(),
         # Memory management — LLM-driven, not auto.
-        # The operator must say "记住 X" (or the LLM
-        # must judge the fact long-arc enough) for
-        # these to fire.
         AddMemoryTool(),
         UpdateMemoryTool(),
         CompleteMemoryTool(),
         DeleteMemoryTool(),
-        # Contact directory — what the MAGI knows
-        # about people. Operator-driven, not auto.
+        # Contact directory — what the MAGI knows about people.
         AddContactTool(),
         AddContactNoteTool(),
         UpdateContactNoteTool(),
         DeleteContactNoteTool(),
         SearchContactsTool(),
         UpdateDailyNoteTool(),
-        # Action item — per-contact, scoped to the
-        # caller. ALLOWED_ROLES = {admin, assigned}
-        # keeps these out of the menu for other roles;
-        # the in-run ``_gate`` on each tool is the
-        # second-layer defence.
+        # Action items — per-contact, scoped to the caller.
         AddActionItemTool(),
         CompleteActionItemTool(),
         ListActionItemsTool(),
-        # MCP server management — admin-only.
-        # LLM-side CRUD lives in :mod:`magi.mcp.manage`;
-        # the registry imports them from the MCP package
-        # (top-level ``mcp/`` subsystem, not under
-        # ``tools/``).
-        AddMcpServerTool(),
-        ListMcpServersTool(),
-        UpdateMcpServerTool(),
-        DeleteMcpServerTool(),
+        # MCP server management tools (AddMcpServer,
+        # ListMcpServers, UpdateMcpServer, DeleteMcpServer)
+        # and SkillLoaderTool are NOT builtin — they are
+        # injected at runtime by their respective subsystems
+        # via :func:`register_tools`.
     ]
+
+
+# -- public API -----------------------------------------------------------
 
 
 def get_tool(name: str) -> "Tool | None":
     """Look up a single tool by name for dispatch.
 
-    Returns ``None`` if no such tool isn't registered —
-    the worker turns that into an ``is_error=true``
-    tool_result for the LLM.
+    Searches builtin tools first, then injected sources.
+    Returns ``None`` if no such tool is registered.
 
     Role gating lives on :meth:`Tool.gate`, not here.
-    This function is a name → instance lookup; the worker
-    calls ``tool.gate(ctx)`` after lookup to enforce
-    authorization. Keeping dispatch and authorization
-    separate means a future caller that bypasses the
-    gate (test code, an admin console) still works as
-    long as it calls ``gate`` itself.
     """
     global _tools_cache
     if _tools_cache is None:
         _tools_cache = _build_tools()
+
     for t in _tools_cache:
         if t.name == name:
             return t
-    for t in (_mcp_tools_cache or []):
-        if t.name == name:
-            return t
+    for tools in _injected.values():
+        for t in tools:
+            if t.name == name:
+                return t
     return None
 
 
-def bootstrap_mcp_tools() -> list["Tool"]:
-    """One-shot MCP loader used by :mod:`magi.__main__` at startup.
+def register_tools(source: str, tools: list["Tool"]) -> None:
+    """Register (or replace) tools from an external source.
 
-    Sync from the caller's POV — it runs the asyncio
-    bootstrap in a private event loop and returns the
-    discovered tools (also cached so subsequent
-    :func:`get_tool` calls see them).
+    *source* is a stable identifier like ``"mcp"`` or
+    ``"skills"``.  Subsequent calls with the same *source*
+    replace the previous set.  Fires :func:`on_tools_changed`
+    listeners so the worker can republish the catalog.
 
-    The loader reads from the ``mcp_servers`` table — the
-    table is the only source of truth (the legacy
-    ``mcp.json`` flow is gone). The table is read every
-    time this function runs, including on a lazy reload
-    triggered by :func:`maybe_reload_mcp_tools`.
-
-    Errors degrade to "no MCP tools". The boot never fails
-    because MCP didn't make it through. See
-    ``load_mcp_tools_blocking`` for the loop mechanics.
+    External subsystems call this at init time (or whenever
+    their tool set changes — e.g. an MCP server is added or
+    removed).
     """
-    global _mcp_tools_cache, _mcp_loaded_at_db
-    from magi.mcp.loader import load_mcp_tools_blocking
-
-    tools = load_mcp_tools_blocking()
-    _mcp_tools_cache = list(tools)
-    # Stamp the cache with the table's max ``updated_at``
-    # so a subsequent :func:`maybe_reload_mcp_tools` can
-    # detect a stale cache without a monotonic-float
-    # comparison. ``None`` when the table is empty — the
-    # "did the table change?" check below handles that
-    # path explicitly.
-    try:
-        _mcp_loaded_at_db = get_bus().mcp.revision_stamp()
-    except Exception:
-        # Don't let a DB read failure poison the cache
-        # load. The next chat turn will retry the stamp
-        # read; until then the cache is fresh from the
-        # loader's POV.
-        _mcp_loaded_at_db = None
-    if tools:
-        logger.info("MCP bootstrap registered %d tool(s): %s",
-                    len(tools), ", ".join(t.name for t in tools))
-    return tools
+    _injected[source] = list(tools)
+    logger.info(
+        "tools registry: source %r registered %d tool(s)",
+        source, len(tools),
+    )
+    _fire_listeners()
 
 
-def maybe_reload_mcp_tools() -> list["Tool"] | None:
-    """Re-bootstrap the MCP cache if the table changed.
+def on_tools_changed(callback: Callable[[], None]) -> None:
+    """Register a listener that fires when injected tools change.
 
-    Called when the tool worker starts. Cheap when the table is
-    untouched — a single ``SELECT MAX(updated_at) FROM
-    mcp_servers`` query, no reconnect, no subprocess.
-
-    Returns the freshly-loaded list when a reload fired
-    (or an empty list when the table is empty after the
-    reload) so the caller can log "MCP reloaded with N
-    tools". Returns ``None`` when the cache was up to date
-    — no logging, no churn.
+    The worker uses this to detect new/removed tools and
+    republish the catalog.  Callbacks are synchronous and
+    should not block — the worker's listener just sets a flag
+    that the claim loop picks up on its next iteration.
     """
-    try:
-        latest = get_bus().mcp.revision_stamp()
-    except Exception:
-        # Missing table (pre-init) or DB hiccup — leave
-        # the cache alone. The next chat turn will try
-        # again, and the boot path (``init_orm``)
-        # guarantees the table exists before the first
-        # turn anyway.
-        return None
+    _listeners.append(callback)
 
-    latest_stamp = latest
 
-    if latest_stamp == _mcp_loaded_at_db:
-        # No row has been touched since the last load
-        # AND the cache is fresh. ``_mcp_tools_cache``
-        # might still be ``None`` if the last reload
-        # produced zero tools — that's fine, we treat
-        # the empty-table case as "no edit needed"
-        # too.
-        return None
+def list_injected() -> dict[str, list["Tool"]]:
+    """Return a shallow copy of the current injected-tool map.
 
-    # Either the table is now non-empty (was empty at
-    # last load) OR the latest ``updated_at`` has moved
-    # forward. Either way: reload. Bootstrap logs the
-    # new tool count; we just return the list so the
-    # caller can plumb a debug log.
-    return bootstrap_mcp_tools()
+    The worker calls this to build :class:`ToolDefinition`
+    rows for the catalog.
+    """
+    return dict(_injected)
+
+
+# -- internal -------------------------------------------------------------
+
+
+def _fire_listeners() -> None:
+    for cb in _listeners:
+        try:
+            cb()
+        except Exception:
+            logger.exception(
+                "tools registry: listener %r failed", cb,
+            )
+
+
+__all__ = [
+    "get_tool",
+    "register_tools",
+    "on_tools_changed",
+    "list_injected",
+]
