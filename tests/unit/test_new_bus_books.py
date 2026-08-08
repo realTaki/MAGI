@@ -107,6 +107,211 @@ def test_memory_book_list_by_owner(factory, contact_id):
     assert len(book.list_by_owner(uid=other_id)) == 1
 
 
+def test_memory_book_full_lifecycle(factory, contact_id):
+    """add → update → complete → get round-trip on
+    the new keyword-only contract.
+
+    Pins the invariants the core-memory tools depend on:
+
+      * ``add`` returns the created DTO
+      * ``update`` only accepts ``subject``/``body``/``importance``
+      * ``complete`` is idempotent — second call leaves
+        ``completed_at`` untouched
+      * timestamps on the DTO are ISO-8601 ``Z`` strings
+        (via :func:`to_iso`), matching the
+        ``api/memory.py`` wire contract
+    """
+    from datetime import datetime
+    book = MemoryBook(factory)
+    created = book.add(
+        uid=contact_id,
+        kind="ongoing",
+        subject="ship the deal",
+        body="waiting on legal",
+        importance=3,
+    )
+    assert isinstance(created, Memory)
+    assert created.completed_at is None
+
+    updated = book.update(
+        memory_id=created.id,
+        subject="ship the deal (closed)",
+        body="signed by both parties",
+        importance=4,
+    )
+    assert updated.subject == "ship the deal (closed)"
+    assert updated.body == "signed by both parties"
+    assert updated.importance == 4
+    assert updated.id == created.id
+
+    completed = book.complete(memory_id=created.id)
+    assert completed.completed_at is not None
+    first_completed_at = completed.completed_at
+    again = book.complete(memory_id=created.id)
+    assert again.completed_at == first_completed_at  # idempotent
+
+    fetched = book.get(memory_id=created.id)
+    assert fetched is not None
+    # ISO-Z wire shape.
+    assert isinstance(fetched.completed_at, str)
+    assert fetched.completed_at.endswith("Z")
+    # Round-trip the parsed value back to a string and
+    # confirm equality — guards against accidental
+    # format drift between the column default and the
+    # to_iso normalisation.
+    parsed = datetime.fromisoformat(fetched.completed_at.replace("Z", "+00:00"))
+    assert parsed.isoformat().startswith(first_completed_at[:16])
+
+
+def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
+    """``delete`` on a non-existent id is a successful
+    no-op (returns ``False``). Mirrors the contract the
+    ``delete_memory`` tool's caller depends on for
+    idempotent LLM retries."""
+    book = MemoryBook(factory)
+    assert book.delete(memory_id=99999) is False
+    # Real row still works.
+    m = book.add(
+        uid=contact_id, kind="important",
+        subject="x", body="y",
+    )
+    assert book.delete(memory_id=m.id) is True
+    assert book.get(memory_id=m.id) is None
+
+
+def test_memory_book_add_invariants(factory, contact_id):
+    """The Book owns write invariants so every caller
+    path (LLM-driven tool, dashboard API, future agent
+    loop) gets the same validation without each
+    re-implementing length checks. Each violation
+    raises :class:`ValueError`."""
+    import pytest
+
+    book = MemoryBook(factory)
+
+    # Empty / whitespace-only subject is rejected.
+    with pytest.raises(ValueError, match="subject must be a non-empty"):
+        book.add(uid=contact_id, kind="important", subject="", body="x")
+    with pytest.raises(ValueError, match="subject must be a non-empty"):
+        book.add(uid=contact_id, kind="important", subject="   ", body="x")
+
+    # Subject over the column cap (200 chars) is rejected.
+    with pytest.raises(ValueError, match="subject length"):
+        book.add(uid=contact_id, kind="important", subject="x" * 201, body="y")
+
+    # Empty body is rejected.
+    with pytest.raises(ValueError, match="body must be a non-empty"):
+        book.add(uid=contact_id, kind="important", subject="ok", body="")
+    with pytest.raises(ValueError, match="body must be a non-empty"):
+        book.add(uid=contact_id, kind="important", subject="ok", body="   ")
+
+    # Body over 8 KiB is rejected.
+    with pytest.raises(ValueError, match="body length"):
+        book.add(
+            uid=contact_id, kind="important",
+            subject="ok", body="x" * (8 * 1024 + 1),
+        )
+
+    # ``kind`` must be in ALL_KINDS.
+    with pytest.raises(ValueError, match="kind must be one of"):
+        book.add(
+            uid=contact_id, kind="weird", subject="ok", body="ok",
+        )
+
+    # ``source`` must be in ALL_MEMORY_SOURCES (manual /
+    # eva / system).
+    with pytest.raises(ValueError, match="source must be one of"):
+        book.add(
+            uid=contact_id, kind="important",
+            subject="ok", body="ok", source="proactive",
+        )
+
+    # ``importance`` outside 1..5 is rejected.
+    with pytest.raises(ValueError, match="importance must be 1..5"):
+        book.add(
+            uid=contact_id, kind="important",
+            subject="ok", body="ok", importance=0,
+        )
+    with pytest.raises(ValueError, match="importance must be 1..5"):
+        book.add(
+            uid=contact_id, kind="important",
+            subject="ok", body="ok", importance=6,
+        )
+    # Non-int is rejected.
+    with pytest.raises(ValueError, match="importance must be 1..5"):
+        book.add(
+            uid=contact_id, kind="important",
+            subject="ok", body="ok", importance="3",
+        )
+
+
+def test_memory_book_update_invariants(factory, contact_id):
+    """``update`` runs the same validators as ``add``
+    for each field that is touched."""
+    import pytest
+
+    book = MemoryBook(factory)
+    row = book.add(
+        uid=contact_id, kind="important",
+        subject="ok", body="ok", importance=3,
+    )
+
+    # Empty subject via update is rejected.
+    with pytest.raises(ValueError, match="subject must be a non-empty"):
+        book.update(memory_id=row.id, subject="   ")
+
+    # Subject over 200 chars is rejected.
+    with pytest.raises(ValueError, match="subject length"):
+        book.update(memory_id=row.id, subject="x" * 201)
+
+    # Empty body via update is rejected.
+    with pytest.raises(ValueError, match="body must be a non-empty"):
+        book.update(memory_id=row.id, body="   ")
+
+    # Body over 8 KiB is rejected.
+    with pytest.raises(ValueError, match="body length"):
+        book.update(memory_id=row.id, body="x" * (8 * 1024 + 1))
+
+    # ``importance`` outside 1..5 is rejected.
+    with pytest.raises(ValueError, match="importance must be 1..5"):
+        book.update(memory_id=row.id, importance=7)
+
+    # Missing row → LookupError.
+    with pytest.raises(LookupError, match="memory row"):
+        book.update(memory_id=99999, subject="x")
+
+
+def test_memory_book_complete_missing_id_raises_lookup(factory):
+    """``complete`` raises :class:`LookupError` for a
+    missing id (unlike the legacy ``mark_completed``
+    which silently no-ops). The ``complete_memory``
+    tool catches it via the ``get``+``uid`` pre-check,
+    so the LookupError is the second-line defence."""
+    import pytest
+    from magi.new_bus.db import EngineFactory
+    fresh = EngineFactory("sqlite:///:memory:")
+    fresh.create_all()
+    book = MemoryBook(fresh)
+    with pytest.raises(LookupError):
+        book.complete(memory_id=99999)
+
+
+def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
+    """A partial ``update`` must only touch the
+    fields the caller supplied — any untouched
+    field round-trips through unchanged."""
+    book = MemoryBook(factory)
+    row = book.add(
+        uid=contact_id, kind="ongoing",
+        subject="orig", body="orig body", importance=2,
+    )
+    after = book.update(memory_id=row.id, importance=5)
+    assert after.subject == "orig"
+    assert after.body == "orig body"
+    assert after.importance == 5
+    assert after.kind == "ongoing"  # immutable
+
+
 # -- ContactBook + ContactNoteBook --------------------------------------
 
 

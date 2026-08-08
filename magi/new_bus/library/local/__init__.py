@@ -85,6 +85,7 @@ __all__ = [
     "HookSignoffBook",
     "KIND_IMPORTANT",
     "KIND_ONGOING",
+    "ALL_MEMORY_SOURCES",
     "McpServer",
     "McpServerBook",
     "Memory",
