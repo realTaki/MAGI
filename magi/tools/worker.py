@@ -3,14 +3,15 @@
 孪生结构对齐 :class:`~magi.providers.worker.ProvidersWorker`：
 
 - **只依赖 new_bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
-- **构造靠注入**。Composition root 显式构造并传进来。
+- **构造靠注入**。Composition root 显式构造并传进来，
+  ``concurrency`` 由调用方注入（环境变量由 startup 模块读取后传入）。
 - **启动时 publish builtin tool catalog** 到
   ``bus.tool_definitions_book``（带 schema_hash），写一次就够了，
   代码改动才需要重发。
 - **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 session，
   全走 :class:`RunToolJob` → :class:`RunToolResult`。
 - **并发执行**。通过 ``asyncio.Semaphore`` 控制并发槽位，
-  ``MAGI_TOOL_CONCURRENCY`` 环境变量覆盖默认值 2。
+  默认值 2，通过 ``concurrency`` 构造参数覆盖。
 
 GATE（enqueue 时由调用方校验角色）已在 publish 之前完成；
 worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
@@ -44,7 +45,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -67,38 +67,12 @@ _ERROR_CODES = {
     "catalog_stale": "tool.catalog_stale",
     "unknown": "tool.unknown",
     "crashed": "tool.crashed",
+    "cancelled": "tool.cancelled",
 }
 
 #: Default concurrency — how many tool jobs may run simultaneously.
-#: Override with ``MAGI_TOOL_CONCURRENCY`` environment variable.
+#: Override by passing ``concurrency`` to the constructor.
 _DEFAULT_CONCURRENCY = 2
-
-
-def _env_concurrency() -> int:
-    """Read ``MAGI_TOOL_CONCURRENCY``, falling back to the default.
-
-    Unset, empty, non-numeric, or < 1 all collapse to
-    :data:`_DEFAULT_CONCURRENCY` — a misconfigured env var must not
-    take the tool path down.
-    """
-    raw = os.environ.get("MAGI_TOOL_CONCURRENCY")
-    if not raw:
-        return _DEFAULT_CONCURRENCY
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "MAGI_TOOL_CONCURRENCY=%r is not an integer; using %d",
-            raw, _DEFAULT_CONCURRENCY,
-        )
-        return _DEFAULT_CONCURRENCY
-    if value < 1:
-        logger.warning(
-            "MAGI_TOOL_CONCURRENCY=%d is below 1; using %d",
-            value, _DEFAULT_CONCURRENCY,
-        )
-        return _DEFAULT_CONCURRENCY
-    return value
 
 
 def _canonical_json(value: object) -> str:
@@ -167,11 +141,11 @@ class ToolsWorker:
 
     Concurrency is controlled by an :class:`asyncio.Semaphore` whose
     size defaults to :data:`_DEFAULT_CONCURRENCY` (2) and can be
-    overridden by the ``MAGI_TOOL_CONCURRENCY`` env var.  The claim
-    loop is fire-and-forget — it acquires a slot, spawns a child
-    :class:`asyncio.Task`, and immediately loops to claim the next
-    job.  The semaphore is the throttle; there is no fixed worker
-    pool or queue depth limit.
+    overridden via the ``concurrency`` constructor parameter. The
+    claim loop is fire-and-forget — it acquires a slot, spawns a
+    child :class:`asyncio.Task`, and immediately loops to claim the
+    next job.  The semaphore is the throttle; there is no fixed
+    worker pool or queue depth limit.
     """
 
     def __init__(
@@ -183,14 +157,11 @@ class ToolsWorker:
     ) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
-        # Env is read *here*, not in :func:`start_tool_worker`, so
-        # every construction path honours it — a direct
-        # ``ToolsWorker(bus)`` (tests, an alternate entry point) got
-        # the hard-coded default when the read lived in the factory.
-        # Mirrors :class:`~magi.providers.worker.ProvidersWorker`.
-        if concurrency is None:
-            concurrency = _env_concurrency()
-        self.concurrency = max(1, concurrency)
+        # Concurrency is constructor-injected only — no env var
+        # fallback. The startup module reads any env-configured
+        # override and passes it in. Mirrors
+        # :class:`~magi.providers.worker.ProvidersWorker`.
+        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
         self._slots = asyncio.Semaphore(self.concurrency)
         self._task: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
@@ -204,8 +175,9 @@ class ToolsWorker:
         #    changes that add/modify tools are reflected on every
         #    restart. Failure here is logged and swallowed; an
         #    empty catalog just means the agent can't call tools
-        #    this session.
-        await asyncio.to_thread(self._publish_builtin_catalog)
+        #    this session. Called synchronously (mirrors
+        #    ProvidersWorker._publish_provider_options).
+        self._publish_builtin_catalog()
 
         self._stopping = False
         self._inflight.clear()
@@ -270,10 +242,19 @@ class ToolsWorker:
         Even if :meth:`_execute` raises an unexpected exception
         (real bug, not a tool-level ``ToolResult(is_error=True)``),
         the slot is released so the worker doesn't deadlock.
+        On cancellation, a failure result is submitted before
+        re-raising so the caller doesn't wait forever.
         Mirrors :meth:`ProvidersWorker._invoke_safe`.
         """
         try:
             await self._execute(job)
+        except asyncio.CancelledError:
+            self._submit_failure(
+                job,
+                content="tools worker cancelled",
+                error_code=_ERROR_CODES["cancelled"],
+            )
+            raise
         finally:
             self._slots.release()
 
@@ -442,19 +423,29 @@ class ToolsWorker:
         content: str,
         error_code: str,
     ) -> None:
-        self.bus.tool_job_board.submit_result(
-            key=job.job_id,
-            result=RunToolResult(
-                job_id=job.job_id,
-                success=False,
-                content=content[:8000],
-                is_error=True,
-                error=content,
-                error_code=error_code,
-                run_id=job.run_id,
-                tool_call_id=job.tool_call_id,
-            ),
-        )
+        """Submit a failed :class:`RunToolResult`. Swallows submit
+        errors so the worker loop never crashes on a transient DB
+        blip.  Mirrors
+        :meth:`ProvidersWorker._safe_submit_failure`."""
+        try:
+            self.bus.tool_job_board.submit_result(
+                key=job.job_id,
+                result=RunToolResult(
+                    job_id=job.job_id,
+                    success=False,
+                    content=content[:8000],
+                    is_error=True,
+                    error=content,
+                    error_code=error_code,
+                    run_id=job.run_id,
+                    tool_call_id=job.tool_call_id,
+                ),
+            )
+        except Exception:
+            logger.exception(
+                "tools worker: failed to submit failure for %s",
+                job.job_id,
+            )
 
 
 # -- module-level singleton (composition root drives the lifecycle) -----
@@ -469,8 +460,9 @@ async def start_tool_worker(
 ) -> ToolsWorker:
     """Start the process-local tools worker.
 
-    ``concurrency`` overrides ``MAGI_TOOL_CONCURRENCY``; leave it
-    ``None`` to let :class:`ToolsWorker` resolve the env var itself.
+    ``concurrency`` overrides the default; leave it ``None`` to
+    use :data:`_DEFAULT_CONCURRENCY` (2). The startup module
+    (not this function) reads any env-configured override.
     """
     global _worker
     if _worker is None:

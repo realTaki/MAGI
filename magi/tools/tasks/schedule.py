@@ -53,7 +53,6 @@ from magi.new_bus.library.local.tasksBook import (
     preset_to_cron,
 )
 from magi.new_bus.library.local.tasksBook import ChannelEnum
-from magi.bus.jobs.protocols.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
