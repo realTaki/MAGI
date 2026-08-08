@@ -28,13 +28,13 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.new_bus.library.base import BaseBook
 from magi.new_bus.db.base import Base, utcnow_naive
-
+from magi.new_bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
 
@@ -86,7 +86,12 @@ class _McpServerRow(Base):
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # ``name`` is the operator-facing id and the old bus PK. It
+    # is unique but NOT a SQLAlchemy ``primary_key`` because
+    # SQLite refuses autoincrement on composite primary keys.
+    # The cross-ORM uniqueness contract lives in the
+    # ``UniqueConstraint`` below.
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
     connection_type: Mapped[str] = mapped_column(String(16), nullable=False)
 
     # STDIO
@@ -131,8 +136,36 @@ class _McpServerRow(Base):
         nullable=False,
     )
 
+    # ``name`` is unique per operator; this is the contract the
+    # old bus ORM enforces via PK. Without it the new bus would
+    # allow duplicate server names — the worker would pick one
+    # and silently drop the other.
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_mcp_servers_name"),
+        {"extend_existing": True},
+    )
+
 
 # -- helpers -------------------------------------------------------------
+
+
+class _UnsetType:
+    """Sentinel singleton — pass to :meth:`McpServerBook.update`
+    to leave a column alone. Distinct from ``None``, which now
+    means "set this column to NULL / empty"."""
+
+    _instance: _UnsetType | None = None
+
+    def __new__(cls) -> _UnsetType:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+
+_UNSET = _UnsetType()
 
 
 def _parse_json_dict(raw: str | None) -> dict[str, str]:
@@ -263,11 +296,13 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     ) -> None:
         """In-place update of a row by numeric id.
 
-        The API surface takes ``server_id`` (not ``name``) because
-        the new_bus schema carries the autoincrement PK alongside
-        ``name``. The :meth:`upsert` wrapper below is the
-        primary entry point — it looks the row up by name, then
-        forwards to ``update`` for the actual mutation.
+        ``None`` means "set the column to NULL / empty" (used to
+        clear transport-specific fields when switching types).
+        The :meth:`upsert` wrapper is the primary entry point.
+
+        Use :data:`_UNSET` as the sentinel value to leave a
+        column alone — useful for partial updates that only
+        touch a handful of fields without nuking unrelated ones.
         """
         with self._session() as s:
             row = s.scalar(
@@ -275,25 +310,25 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             )
             if row is None:
                 return
-            if connection_type is not None:
+            if connection_type is not _UNSET:
                 row.connection_type = connection_type
-            if command is not None:
+            if command is not _UNSET:
                 row.command = command
-            if args is not None:
-                row.args_json = json.dumps(args)
-            if env is not None:
-                row.env_json = json.dumps(env)
-            if url is not None:
+            if args is not _UNSET:
+                row.args_json = json.dumps(args or [])
+            if env is not _UNSET:
+                row.env_json = json.dumps(env or {})
+            if url is not _UNSET:
                 row.url = url
-            if headers is not None:
-                row.headers_json = json.dumps(headers)
-            if enabled is not None:
+            if headers is not _UNSET:
+                row.headers_json = json.dumps(headers or {})
+            if enabled is not _UNSET:
                 row.enabled = enabled
-            if connect_timeout is not None:
+            if connect_timeout is not _UNSET:
                 row.connect_timeout = connect_timeout
-            if execute_timeout is not None:
+            if execute_timeout is not _UNSET:
                 row.execute_timeout = execute_timeout
-            if sse_read_timeout is not None:
+            if sse_read_timeout is not _UNSET:
                 row.sse_read_timeout = sse_read_timeout
             s.commit()
 
@@ -348,6 +383,11 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         headers_dict = headers or {}
 
         existing = self.get_by_name(name=name)
+        # Switching transport types (stdio ↔ url-based) should
+        # clear the fields that don't apply to the new type.
+        # stdio needs command/args/env; url-based needs url/headers.
+        # ``None`` here means "caller did not pass this; clear it
+        # if it's now stale".
         if existing is None:
             return self.add(
                 name=name,
@@ -362,14 +402,25 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
                 execute_timeout=execute_timeout,
                 sse_read_timeout=sse_read_timeout,
             )
+        # When the transport type is changing, force-clear the
+        # fields that don't belong to the new type so a previous
+        # stdio ``command`` doesn't linger after switching to
+        # streamable_http (the worker keys tool discovery on
+        # ``connection_type``; stale fields would silently mask
+        # transport errors).
+        new_connection_type = (
+            connection_type
+            if connection_type is not None
+            else existing.connection_type
+        )
         self.update(
             server_id=existing.id,
             connection_type=connection_type,
-            command=command,
-            args=args_list,
-            env=env_dict,
-            url=url,
-            headers=headers_dict,
+            command=None if new_connection_type != "stdio" else command,
+            args=None if new_connection_type != "stdio" else args_list,
+            env=None if new_connection_type != "stdio" else env_dict,
+            url=None if new_connection_type == "stdio" else url,
+            headers=None if new_connection_type == "stdio" else headers_dict,
             enabled=enabled,
             connect_timeout=connect_timeout,
             execute_timeout=execute_timeout,
@@ -398,7 +449,23 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         if existing is None:
             return None
         new_enabled = not existing.enabled
-        self.update(server_id=existing.id, enabled=new_enabled)
+        # ``_UNSET`` keeps every other column alone — ``None``
+        # would now mean "clear this field", which would
+        # wipe the connection_type / command / url on a
+        # simple enable-flip.
+        self.update(
+            server_id=existing.id,
+            connection_type=_UNSET,
+            command=_UNSET,
+            args=_UNSET,
+            env=_UNSET,
+            url=_UNSET,
+            headers=_UNSET,
+            enabled=new_enabled,
+            connect_timeout=_UNSET,
+            execute_timeout=_UNSET,
+            sse_read_timeout=_UNSET,
+        )
         return self.get_by_name(name=name)
 
     # -- DTO mapping ----------------------------------------------------
@@ -451,4 +518,39 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         return McpServer(**kwargs)
 
 
-__all__ = ["McpServer", "McpServerBook", "_McpServerRow"]
+# -- public serialiser ---------------------------------------------------
+#
+# Lives next to the DTO so the wire shape evolves together
+# with the row schema. The LLM manage tools (see
+# :mod:`magi.tools.mcp`) import this directly; nothing in the
+# loader or the worker reaches for it.
+#
+# Privacy: ``env`` / ``headers`` carry API keys / tokens and
+# are intentionally **never** serialised — the operator can
+# inspect them in the WebUI; the LLM doesn't need them and
+# shouldn't see them.
+
+
+def serialize_mcp_server(server: McpServer) -> dict[str, Any]:
+    """Render a new_bus :class:`McpServer` DTO into a JSON-safe dict.
+
+    Field order is stable (the operator-facing identity fields
+    first, then connection details, then timeouts) so the LLM
+    sees the same shape every time. ``args`` is normalised to
+    a list (the DTO stores it as a tuple) so the wire shape
+    doesn't leak the internal ``tuple`` choice.
+    """
+    return {
+        "name": server.name,
+        "connection_type": server.connection_type,
+        "command": server.command,
+        "args": list(server.args),
+        "url": server.url,
+        "enabled": server.enabled,
+        "connect_timeout": server.connect_timeout,
+        "execute_timeout": server.execute_timeout,
+        "sse_read_timeout": server.sse_read_timeout,
+    }
+
+
+__all__ = ["McpServer", "McpServerBook", "_McpServerRow", "serialize_mcp_server"]

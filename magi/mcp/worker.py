@@ -78,9 +78,8 @@ from magi.new_bus.guild import (
 from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
+    from magi.mcp.loader import MCPServerConnection, MCPTimeoutConfig
     from magi.new_bus import NewBus
-    from magi.mcp.loader import MCPServerConnection
-    from magi.mcp.loader import MCPTimeoutConfig
 
 logger = logging.getLogger("magi.mcp.worker")
 
@@ -92,7 +91,7 @@ _DEFAULT_EXECUTE_TIMEOUT = 60.0
 _DEFAULT_SSE_READ_TIMEOUT = 120.0
 
 #: Module-level singleton — composition root drives the lifecycle.
-_worker: "McpWorker | None" = None
+_worker: McpWorker | None = None
 
 
 class McpWorker:
@@ -106,13 +105,13 @@ class McpWorker:
 
     def __init__(
         self,
-        bus: "NewBus",
+        bus: NewBus,
         *,
         poll_seconds: float = 0.25,
     ) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
-        self._connections: dict[str, "MCPServerConnection"] = {}
+        self._connections: dict[str, MCPServerConnection] = {}
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
 
@@ -193,9 +192,9 @@ class McpWorker:
             return
 
         timeouts = self._timeouts_from_bus()
-        connected: dict[str, "MCPServerConnection"] = {}
+        connected: dict[str, MCPServerConnection] = {}
 
-        async def _connect_one(server: Any) -> tuple[str, "MCPServerConnection | None"]:
+        async def _connect_one(server: Any) -> tuple[str, MCPServerConnection | None]:
             conn = self._build_connection(server, timeouts)
             ok = await conn.connect(timeouts)
             return (server.name, conn if ok else None)
@@ -307,14 +306,22 @@ class McpWorker:
     def _build_connection(
         self,
         server: Any,
-        timeouts: "MCPTimeoutConfig",
-    ) -> "MCPServerConnection":
+        timeouts: MCPTimeoutConfig,
+    ) -> MCPServerConnection:
         """Wrap a DTO row in a fresh :class:`MCPServerConnection`.
 
-        Imported lazily so the registry / startup code paths that
-        import :class:`McpWorker` don't drag the ``mcp`` SDK at
-        import time.
+        *timeouts* is accepted to match the test patch surface and
+        to keep room for future per-server timeouts that come from
+        the bus (today the row's own ``connect_timeout`` /
+        ``execute_timeout`` / ``sse_read_timeout`` win; the
+        :class:`MCPServerConnection` falls back to *timeouts* when
+        the row leaves a slot blank). Imported lazily so the
+        registry / startup code paths that import
+        :class:`McpWorker` don't drag the ``mcp`` SDK at import time.
         """
+        # Silence ARG002 while keeping the parameter — tests
+        # monkeypatch this method and rely on the two-arg shape.
+        del timeouts
         from magi.mcp.loader import MCPServerConnection
 
         return MCPServerConnection(
@@ -330,7 +337,7 @@ class McpWorker:
             sse_read_timeout=server.sse_read_timeout,
         )
 
-    def _timeouts_from_bus(self) -> "MCPTimeoutConfig":
+    def _timeouts_from_bus(self) -> MCPTimeoutConfig:
         """Read the three MCP timeouts from the settings book.
 
         ``None`` on read error or unset value; the connection
@@ -378,7 +385,7 @@ class McpWorker:
 
     # -- read-only view (for tests / future diagnostics) -----------------
 
-    def connections_view(self) -> dict[str, "MCPServerConnection"]:
+    def connections_view(self) -> dict[str, MCPServerConnection]:
         """Return a shallow copy of the current connection map.
 
         Tests use this to assert ``McpWorker`` state without
@@ -392,7 +399,7 @@ class McpWorker:
 # -- module-level singletons -----------------------------------------------
 
 
-async def start_mcp_worker(bus: "NewBus") -> McpWorker:
+async def start_mcp_worker(bus: NewBus) -> McpWorker:
     """Start the process-local MCP worker.
 
     The composition root passes the fully-wired
