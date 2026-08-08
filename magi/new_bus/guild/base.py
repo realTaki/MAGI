@@ -81,6 +81,41 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         with self._session() as s:
             return self._get_result(s, key=key)
 
+    async def wait_for_result(
+        self,
+        *,
+        key: str,
+        timeout: float = 5.0,
+        poll_interval: float = 0.05,
+    ) -> ResultT | None:
+        """Block until the worker submits a result for *key* or *timeout* elapses.
+
+        Useful for callers that need to confirm a write reached
+        the durable side before reporting success to the LLM /
+        API (e.g. :mod:`magi.tools.mcp` waits for
+        :class:`~magi.mcp.worker.McpWorker` to finish upserting
+        a row before returning). Returns ``None`` on timeout so
+        the caller can surface "the worker hasn't answered yet"
+        as a distinct failure mode from "the worker said no".
+
+        The DB read runs in a thread so the event loop stays
+        responsive while the Worker — which polls every
+        ~0.25s — catches up.
+        """
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            result = await loop.run_in_executor(
+                None, self.get_result, key=key,
+            )
+            if result is not None:
+                return result
+            if loop.time() >= deadline:
+                return None
+            await asyncio.sleep(poll_interval)
+
     # -- 内部 --------------------------------------------------------------
 
     def _claim(self, session: Session) -> RowT | None:

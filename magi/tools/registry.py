@@ -54,9 +54,13 @@ def _build_tools() -> list["Tool"]:
     keeps import-time cheap and lets a test replace one
     tool without dragging in the rest.
 
-    Tools from external subsystems (MCP manage tools,
-    MCP-discovered tools) are NOT included here — they
-    are injected at runtime via :func:`register_tools`.
+    MCP server management tools (``add_mcp_server`` /
+    ``list_mcp_servers`` / ``update_mcp_server`` /
+    ``delete_mcp_server``) ARE builtin — they're
+    administrative surface that should always be available
+    when an admin wants to configure MCP servers. The MCP
+    worker itself only injects the *discovered* tools under
+    source ``"mcp"``; the CRUD tools are registered here.
     """
     from magi.tools.shell.run import BashRunTool
     from magi.tools.shell.output import BashOutputTool
@@ -83,6 +87,10 @@ def _build_tools() -> list["Tool"]:
     from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
     from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
     from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
+    from magi.tools.mcp.add_mcp_server import AddMcpServerTool
+    from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
+    from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
+    from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
 
     return [
         ReadFileTool(),
@@ -120,10 +128,15 @@ def _build_tools() -> list["Tool"]:
         AddActionItemTool(),
         CompleteActionItemTool(),
         ListActionItemsTool(),
-        # MCP server management tools (AddMcpServer,
-        # ListMcpServers, UpdateMcpServer, DeleteMcpServer)
-        # are NOT builtin — they are injected at runtime
-        # via :func:`register_tools`.
+        # MCP server administration — builtins so an admin can
+        # always configure MCP from the LLM menu, regardless of
+        # whether any MCP rows exist yet. The discovered tools
+        # (under source ``"mcp"``) are injected separately by the
+        # MCP worker.
+        AddMcpServerTool(),
+        ListMcpServersTool(),
+        UpdateMcpServerTool(),
+        DeleteMcpServerTool(),
     ]
 
 
