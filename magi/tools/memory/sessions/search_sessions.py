@@ -57,20 +57,22 @@ next LLM call.
 Bus plumbing
 ------------
 
-Lives on the new_bus: the FTS5 query goes through
-:class:`magi.new_bus.library.local.sessionBook.MessageBook.search`,
-the surrounding-context slice goes through
-:meth:`MessageBook.list_for_session` (one fetch, with
-``include_archived=True`` so we can tell an archived hit
-from an active one by the ``archived`` flag), and the
-session header + cross-contact defence go through
-:meth:`SessionBook.get_for_owner`. That single helper
-returns ``None`` when the session doesn't belong to the
-caller, so this tool and the future ``/api/chat/search``
-HTTP endpoint share one place to enforce per-contact
-scoping — the new_bus's :meth:`SessionBook.get` only
-accepts ``session_id`` (the old bus's loader validated
-``uid`` itself), so the check has to live somewhere.
+All business logic lives on the new_bus; this tool is
+just the LLM-facing text formatter:
+
+- :meth:`MessageBook.search` — the FTS5 query (uid-scoped).
+- :meth:`SessionBook.get_for_owner` — single cross-contact
+  safety gate (returns ``None`` for sessions that don't
+  belong to the caller).
+- :meth:`MessageBook.resolve_hit` — closes the gap between
+  the FTS row and the rendered context slice (fetches the
+  session header, fetches the active+archived messages,
+  classifies archived vs active, slices ±N around the hit).
+
+Future ``/api/chat/search`` (frontend → HTTP API) will hit
+the same three Book methods and return JSON instead of
+text — no duplication of validation, scoping, or context
+slicing.
 """
 
 from __future__ import annotations
@@ -278,41 +280,22 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
-    The hit may land on an active or archived message. The
-    new_bus keeps both in the same ``chat_messages`` table
-    with an ``archived`` flag (the old bus split them into
-    ``Session.messages`` / ``Session.archive`` lists — that
-    distinction has been folded into the row), so one
-    :meth:`MessageBook.list_for_session` call (with
-    ``include_archived=True``) gives us everything we need
-    to render either kind of block.
-
-    For archived hits there's no clean "neighbour" (auto-
-    compaction rolled the adjacent turns out by design), so
-    we annotate ``(archived)`` and return just the snippet —
-    the LLM gets a clear hint instead of misleading
-    neighbours. For active hits we slice the **active
-    subset** of the message list around the hit's index in
-    that subset (NOT the combined list — archived rows are
-    not "around" an active conversation by definition).
-
-    Defence-in-depth: the FTS query is already scoped by
-    ``s.uid = :uid``, but the session lookup goes through
-    :meth:`SessionBook.get_for_owner` (the new_bus's
-    :meth:`SessionBook.get` only accepts ``session_id``).
-    That helper returns ``None`` when the hit's session
-    doesn't belong to the caller — closing the gap so this
-    tool and the future ``/api/chat/search`` HTTP endpoint
-    share one place to enforce per-contact scoping.
+    Pure formatting — all cross-contact validation, session
+    lookup, message fetch, active/archive classification,
+    and context slicing live in
+    :meth:`MessageBook.resolve_hit`. This function is just
+    the LLM-facing text renderer; the future
+    ``/api/chat/search`` HTTP endpoint will write a JSON
+    formatter over the same ``ResolvedHit`` envelope.
     """
-    session = bus.sessions_book.get_for_owner(
-        uid=uid, session_id=hit.session_id,
+    resolved = bus.messages_book.resolve_hit(
+        uid=uid, hit=hit, context_n=context_n,
+        sessions_book=bus.sessions_book,
     )
-    if session is None:
-        # Race: hit row was deleted between FTS5 hit and
-        # read, or the search joined to a session that
-        # somehow doesn't belong to the caller. Defend
-        # rather than leak the row's metadata.
+    if resolved is None:
+        # Hit's session doesn't belong to the caller (or
+        # the row was deleted between FTS and read). Emit
+        # a generic placeholder rather than leak metadata.
         return (
             f"[hit] session={hit.session_id}, ts={hit.ts}, "
             f"role={hit.role}, channel={hit.channel}, "
@@ -320,76 +303,27 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
             f"session no longer accessible to caller"
         )
 
-    # One fetch covers both branches: active hits and
-    # archived hits (the latter is detected via
-    # ``m.archived == 1``). The list is sorted by row id,
-    # which is monotonic per session (auto-compaction only
-    # flips the flag — never reorders rows).
-    messages = bus.messages_book.list_for_session(
-        session_id=hit.session_id, include_archived=True,
-    )
-
-    # Find hit's combined index first, then split into
-    # active vs archive branches.
-    hit_idx = _index_of_message_id(messages, hit.message_id)
-    if hit_idx is None:
-        # Race: row was deleted between FTS5 hit and read.
-        return (
-            f"[hit] session={hit.session_id}, ts={hit.ts}, "
-            f"role={hit.role}, channel={hit.channel}, "
-            f"delivery_address={hit.delivery_address} — "
-            f"hit message no longer in session"
-        )
-    is_archived = messages[hit_idx].archived == 1
-
     header = (
-        f"[hit] session={session.session_id}, "
-        f"title={session.title!r}, ts={hit.ts}, "
-        f"role={hit.role}, channel={hit.channel}, delivery_address={hit.delivery_address}"
-        + (" (archived)" if is_archived else "")
+        f"[hit] session={resolved.session.session_id}, "
+        f"title={resolved.session.title!r}, ts={hit.ts}, "
+        f"role={hit.role}, channel={hit.channel}, "
+        f"delivery_address={hit.delivery_address}"
+        + (" (archived)" if resolved.is_archived else "")
     )
 
-    if is_archived or context_n == 0:
-        # Either archived (no clean neighbour) or caller
-        # asked for snippet-only.
+    if not resolved.messages_with_hit:
+        # Either archived (no clean neighbour) or the caller
+        # asked for snippet-only (``context_n == 0``).
         return f"{header}\nsnippet: {hit.snippet}"
 
-    # Active hit: slice the active subset of the messages
-    # list around the hit. Archived rows were rolled out
-    # by auto-compaction and don't form a coherent
-    # "around the hit" neighbourhood; we want the
-    # conversation flow that the user actually saw.
-    active_msgs = [m for m in messages if m.archived == 0]
-    active_idx = _index_of_message_id(active_msgs, hit.message_id)
-    if active_idx is None:
-        # Hit row's archived flag flipped between the
-        # combined read and now — race with compaction.
-        return f"{header}\nsnippet: {hit.snippet}"
-
-    lo = max(0, active_idx - context_n)
-    hi = min(len(active_msgs), active_idx + context_n + 1)
-    context_msgs = active_msgs[lo:hi]
-    context_lines = []
-    for j, m in enumerate(context_msgs):
-        actual_idx = lo + j
-        marker = "  >>" if actual_idx == active_idx else "    "
-        text = m.text
-        if actual_idx == active_idx:
-            # Re-attach the snippet's <mark> highlighting
-            # so the LLM sees where in the message the hit
-            # landed.
-            text = hit.snippet
+    context_lines: list[str] = []
+    for j, m in enumerate(resolved.messages_with_hit):
+        marker = "  >>" if j == resolved.hit_position else "    "
+        text = m.text if j != resolved.hit_position else hit.snippet
         context_lines.append(
             f"{marker} [{m.role} @ {m.ts}] {text}"
         )
     context = "\n".join(context_lines)
-    return f"{header}\n--- context (idx {active_idx}) ---\n{context}"
-
-
-def _index_of_message_id(messages, message_id: str) -> int | None:
-    """Find ``message_id`` in the messages list. Returns the
-    index, or ``None`` if not present."""
-    for i, m in enumerate(messages):
-        if m.message_id == message_id:
-            return i
-    return None
+    return (
+        f"{header}\n--- context (idx {resolved.hit_position}) ---\n{context}"
+    )

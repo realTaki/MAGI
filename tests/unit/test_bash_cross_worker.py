@@ -94,6 +94,69 @@ def _bid(content: str) -> str:
     return re.search(r"Bash ID:\s*(\w+)", content).group(1)
 
 
+@pytest.fixture(autouse=True)
+def _set_workspace_env(monkeypatch, tmp_path):
+    """The ToolCatalog publish path runs every builtin tool's
+    constructor; :class:`SkillLoaderTool` reads
+    ``MAGI_WORKSPACE_DIR`` at construction time. Tests that
+    go through ``ToolsWorker.start`` need it set even when
+    the actual bash tests don't (they construct tools
+    individually)."""
+    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
+
+
+# -- cross-process simulation ---------------------------------------------
+#
+# In production, worker A and worker B live in two separate
+# Python processes; their ``_BackgroundShellManager._shells``
+# class-level dicts are independent — A's local entries are
+# invisible to B, and vice versa. Tests run everything in one
+# process, so to faithfully exercise the cross-worker paths we
+# have to swap out the class attribute around calls. This
+# context manager snapshots the dict, replaces it with a fresh
+# one, and restores on exit. Bash ids whose ``owner_worker_id``
+# matches ``as_worker_id`` are pre-seeded so the "I'm the owner"
+# branch can also be exercised if a test wants it.
+#
+# By default (``as_worker_id=None``) the swap leaves the dict
+# empty — simulating a sibling worker that has never seen any
+# bash_ids. That's the typical cross-worker shape.
+
+from contextlib import contextmanager
+from typing import Iterator
+
+
+@contextmanager
+def _as_sibling_worker(bus) -> Iterator[None]:
+    """Run a block as if it were a different worker process.
+
+    Swaps out ``_BackgroundShellManager._shells`` (and the
+    related class-level dicts) so the manager's "local"
+    lookup returns ``None`` for shells owned by anyone
+    other than the test's caller. The DB-backed path then
+    has to serve every read / kill, which is exactly the
+    production semantic.
+
+    The DB itself isn't touched — the shell row + line rows
+    stay where they are; only the in-process cache is
+    temporarily emptied.
+    """
+    from magi.tools.shell import _manager as mgr
+
+    saved_shells = mgr._BackgroundShellManager._shells
+    saved_monitors = mgr._BackgroundShellManager._monitor_tasks
+    saved_consumed = mgr._BackgroundShellManager._consumed_seq
+    mgr._BackgroundShellManager._shells = {}
+    mgr._BackgroundShellManager._monitor_tasks = {}
+    mgr._BackgroundShellManager._consumed_seq = {}
+    try:
+        yield
+    finally:
+        mgr._BackgroundShellManager._shells = saved_shells
+        mgr._BackgroundShellManager._monitor_tasks = saved_monitors
+        mgr._BackgroundShellManager._consumed_seq = saved_consumed
+
+
 # -- same-worker (sanity check that bus=None path is intact) --------------
 
 
@@ -163,8 +226,11 @@ def test_cross_worker_output_visible_to_sibling(worker_a_ctx, worker_b_ctx):
         # Let the monitor task drain + flush a batch.
         await asyncio.sleep(0.2)
 
-        # Read from worker B.
-        out = await out_tool.run(worker_b_ctx, bash_id=bid)
+        # Read from worker B. The sibling-worker swap makes
+        # this look up the DB row + line table instead of
+        # the in-memory buffer that worker A populated.
+        with _as_sibling_worker(worker_b_ctx.bus):
+            out = await out_tool.run(worker_b_ctx, bash_id=bid)
         assert not out.is_error
         assert "cross-line-1" in out.content
         assert "cross-line-2" in out.content
@@ -197,9 +263,10 @@ def test_cross_worker_filter_consumes_lines(worker_a_ctx, worker_b_ctx):
         await asyncio.sleep(0.2)
 
         # Worker B reads with an ``ERROR:`` filter.
-        filtered = await out_tool.run(
-            worker_b_ctx, bash_id=bid, filter_str="^ERROR:",
-        )
+        with _as_sibling_worker(worker_b_ctx.bus):
+            filtered = await out_tool.run(
+                worker_b_ctx, bash_id=bid, filter_str="^ERROR:",
+            )
         assert not filtered.is_error
         assert "ERROR: real" in filtered.content
         assert "INFO: noise-1" not in filtered.content
@@ -208,7 +275,8 @@ def test_cross_worker_filter_consumes_lines(worker_a_ctx, worker_b_ctx):
         # Follow-up without filter returns nothing — the
         # noise lines were consumed (cursor advanced past
         # them).
-        plain = await out_tool.run(worker_b_ctx, bash_id=bid)
+        with _as_sibling_worker(worker_b_ctx.bus):
+            plain = await out_tool.run(worker_b_ctx, bash_id=bid)
         assert not plain.is_error
         assert "INFO: noise-1" not in plain.content
         assert "INFO: noise-2" not in plain.content
@@ -243,8 +311,12 @@ def test_cross_worker_kill_ends_owner_process(worker_a_ctx, worker_b_ctx):
         # and start polling ``kill_requested``.
         await asyncio.sleep(0.15)
 
-        # Kill from worker B.
-        killed = await kill_tool.run(worker_b_ctx, bash_id=bid)
+        # Kill from worker B. The sibling-worker swap is
+        # critical here — without it, the manager would
+        # think B owns the subprocess and try to terminate
+        # it locally, which doesn't exist in B's process.
+        with _as_sibling_worker(worker_b_ctx.bus):
+            killed = await kill_tool.run(worker_b_ctx, bash_id=bid)
         assert not killed.is_error
         assert "Kill requested" in killed.content
         assert "tools-worker-aaaa" in killed.content
@@ -252,15 +324,20 @@ def test_cross_worker_kill_ends_owner_process(worker_a_ctx, worker_b_ctx):
         # Wait for the owner's monitor to react + finalize.
         # 1s is plenty for a single UPDATE round-trip +
         # SIGTERM.
+        out_content = ""
+        terminal = False
         for _ in range(20):
             await asyncio.sleep(0.05)
-            out = await out_tool.run(worker_b_ctx, bash_id=bid)
-            if "terminated" in out.content or "failed" in out.content:
+            with _as_sibling_worker(worker_b_ctx.bus):
+                out = await out_tool.run(worker_b_ctx, bash_id=bid)
+            out_content = out.content
+            if "terminated" in out_content or "failed" in out_content:
+                terminal = True
                 break
-        else:
+        if not terminal:
             pytest.fail(
                 f"shell didn't reach terminal status; "
-                f"last content: {out.content!r}"
+                f"last content: {out_content!r}"
             )
 
         # The shell's owner-row should now reflect
@@ -289,7 +366,8 @@ def test_cross_worker_kill_is_idempotent(worker_a_ctx, worker_b_ctx):
         await asyncio.sleep(0.2)
 
         # First kill (from B).
-        await kill_tool.run(worker_b_ctx, bash_id=bid)
+        with _as_sibling_worker(worker_b_ctx.bus):
+            await kill_tool.run(worker_b_ctx, bash_id=bid)
         # Wait for owner to finalize.
         for _ in range(20):
             await asyncio.sleep(0.05)
@@ -300,7 +378,8 @@ def test_cross_worker_kill_is_idempotent(worker_a_ctx, worker_b_ctx):
         # Second kill (from B) — row still exists; flag
         # flips again, monitor has already exited so this
         # is essentially a no-op.
-        again = await kill_tool.run(worker_b_ctx, bash_id=bid)
+        with _as_sibling_worker(worker_b_ctx.bus):
+            again = await kill_tool.run(worker_b_ctx, bash_id=bid)
         assert "idempotent" in again.content.lower() or \
             not again.is_error
 
@@ -358,13 +437,16 @@ def test_owner_restart_marks_running_shells_orphaned(
             self._stopping = False
 
         async def start(self) -> None:
-            # Mirror the real start() up to the reaper,
-            # then bail — we don't need the claim loop.
-            await asyncio.to_thread(self._publish_builtin_catalog)
+            # Run the reaper only — skip the catalog
+            # publish (it triggers tool construction,
+            # which reads ``MAGI_WORKSPACE_DIR`` and pulls
+            # in unrelated dependencies we don't want in
+            # this test). The reaper is the unit under
+            # test here.
             await asyncio.to_thread(self._reap_orphaned_shells)
             self._stopping = True
 
-    asyncio.run(_ProbeWorker(shared_bus).start())
+    asyncio.run(_ProbeWorker(shared_bus.bus).start())
 
     # Row should now be ``orphaned``.
     row = shared_bus.bus.background_shells_book.get(bash_id="deadbeef")
@@ -395,11 +477,10 @@ def test_owner_restart_does_not_touch_other_workers_shells(
             self._stopping = False
 
         async def start(self) -> None:
-            await asyncio.to_thread(self._publish_builtin_catalog)
             await asyncio.to_thread(self._reap_orphaned_shells)
             self._stopping = True
 
-    asyncio.run(_ProbeWorker(shared_bus).start())
+    asyncio.run(_ProbeWorker(shared_bus.bus).start())
 
     # Worker C's shell is untouched.
     row = shared_bus.bus.background_shells_book.get(bash_id="cafe1234")

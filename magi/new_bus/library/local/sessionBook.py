@@ -108,6 +108,47 @@ class SearchUnavailable(RuntimeError):
     """
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedHit:
+    """A search hit after cross-contact validation + context fetch.
+
+    Returned by :meth:`MessageBook.resolve_hit` — the single helper
+    that closes the gap between the FTS row (which only carries a
+    ``message_id``, a snippet, and a bm25 score) and the full picture
+    the renderer / API consumer needs.
+
+    ``session`` is the owning session header. Always already
+    uid-checked — if the hit pointed at another operator's session,
+    ``resolve_hit`` returns ``None`` instead of a partial envelope.
+
+    ``is_archived`` is True when the hit landed on a row that
+    auto-compaction rolled out (``chat_messages.archived == 1``).
+    Archived hits carry no clean neighbour, so ``messages_with_hit``
+    is empty and ``hit_position`` is ``-1`` — the caller emits the
+    snippet only (the LLM tool renders this as ``(archived) snippet:
+    ...``; the future ``/api/chat/search`` HTTP endpoint will mirror
+    the same shape).
+
+    ``messages_with_hit`` is the **active** subset of the session
+    messages, sliced ±``context_n`` around the hit. Length is
+    ``2 * context_n + 1`` in the middle of a long session, shorter
+    near session boundaries, and zero when ``is_archived`` or
+    ``context_n == 0``.
+
+    ``hit_position`` is the index of the hit inside
+    ``messages_with_hit``. The renderer re-attaches the snippet's
+    ``<mark>`` highlighting at this position (so the LLM sees where
+    in the message the FTS match landed, not just the surrounding
+    text).
+    """
+
+    session: Session
+    hit: SearchHit
+    is_archived: bool
+    messages_with_hit: list[Message]
+    hit_position: int
+
+
 # -- internal ORM --------------------------------------------------------
 
 
@@ -388,6 +429,121 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             for row in rows
         ], total
 
+    # -- hit resolution ---------------------------------------------------
+
+    def resolve_hit(
+        self,
+        *,
+        uid: int,
+        hit: SearchHit,
+        context_n: int,
+        sessions_book: "SessionBook",
+    ) -> ResolvedHit | None:
+        """Resolve a search hit to its full context.
+
+        This is the shared **business logic** every consumer of
+        search needs in common — the LLM tool and the future
+        ``/api/chat/search`` HTTP endpoint both need to:
+
+          1. Validate the hit's session belongs to ``uid`` (the
+             FTS query is already scoped by ``s.uid = :uid`` in
+             the JOIN, but a render-time defence-in-depth check
+             keeps the gap closed if a future caller ever
+             short-circuits the FTS layer).
+          2. Fetch the hit's surrounding messages (±``context_n``).
+          3. Distinguish archived hits (snippet-only, no
+             neighbour) from active hits (sliced context slice).
+
+        Centralising this in one Book method means the per-contact
+        safety check, the active-vs-archive classification, and
+        the context-window slicing all live in a single place
+        rather than being re-implemented (and possibly
+        forgotten) at every call site.
+
+        ``sessions_book`` is passed explicitly rather than held
+        on ``self`` because ``MessageBook`` doesn't otherwise
+        need a reference to its sibling — keeping the Book's
+        dependency surface minimal. Bootstrap wires both Books
+        off the same factory and the caller always has both
+        handy (via ``bus.messages_book`` / ``bus.sessions_book``).
+
+        Returns ``None`` when:
+          - the hit's session doesn't belong to ``uid`` (cross-
+            contact leak attempt; ``get_for_owner`` returned None)
+          - the hit row was deleted between FTS read and now
+            (race)
+
+        In both cases the caller emits a generic
+        "session no longer accessible" hint instead of leaking
+        the row's metadata.
+
+        For archived hits or ``context_n == 0``, returns a
+        ``ResolvedHit`` with ``is_archived=True`` (or
+        ``messages_with_hit=[]``) and ``hit_position=-1``.
+        """
+        if context_n < 0:
+            context_n = 0
+
+        session = sessions_book.get_for_owner(
+            uid=uid, session_id=hit.session_id,
+        )
+        if session is None:
+            return None
+
+        # One fetch covers both branches: active hits (the common
+        # case) and archived hits (rare — auto-compaction only
+        # flips the flag, never reorders rows). The combined list
+        # is sorted by row id which is monotonic per session.
+        messages = self.list_for_session(
+            session_id=hit.session_id, include_archived=True,
+        )
+
+        # Find the hit's combined-list index.
+        hit_idx: int | None = None
+        for i, m in enumerate(messages):
+            if m.message_id == hit.message_id:
+                hit_idx = i
+                break
+        if hit_idx is None:
+            return None
+
+        is_archived = messages[hit_idx].archived == 1
+        if is_archived or context_n == 0:
+            # Archived: no clean neighbour. ``context_n == 0``:
+            # caller asked for snippet-only by choice. Both branches
+            # render the same way (tool: ``(archived) snippet``;
+            # API: ``{ archived: true, snippet: ... }``).
+            return ResolvedHit(
+                session=session, hit=hit, is_archived=True,
+                messages_with_hit=[], hit_position=-1,
+            )
+
+        # Active: slice the **active subset** around the hit.
+        # Archived rows were rolled out by auto-compaction and
+        # don't form a coherent "around the hit" neighbourhood.
+        active_msgs = [m for m in messages if m.archived == 0]
+        active_idx: int | None = None
+        for i, m in enumerate(active_msgs):
+            if m.message_id == hit.message_id:
+                active_idx = i
+                break
+        if active_idx is None:
+            # Hit row's ``archived`` flag flipped between the
+            # combined read and now (race with compaction).
+            # Treat as archived for safety.
+            return ResolvedHit(
+                session=session, hit=hit, is_archived=True,
+                messages_with_hit=[], hit_position=-1,
+            )
+
+        lo = max(0, active_idx - context_n)
+        hi = min(len(active_msgs), active_idx + context_n + 1)
+        return ResolvedHit(
+            session=session, hit=hit, is_archived=False,
+            messages_with_hit=active_msgs[lo:hi],
+            hit_position=active_idx - lo,
+        )
+
 
 # -- FTS5 schema installer ----------------------------------------------
 
@@ -436,6 +592,7 @@ __all__ = [
     "Message",
     "SearchHit",
     "SearchUnavailable",
+    "ResolvedHit",
     "SessionBook",
     "MessageBook",
     "install_session_fts_schema",
