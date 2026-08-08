@@ -51,8 +51,6 @@ from sqlalchemy import select
 
 from magi.new_bus.library.local.tasksBook import (
     preset_to_cron,
-    validate_run_at,
-    validate_run_at_future,
 )
 from magi.new_bus.library.local.tasksBook import ChannelEnum
 from magi.bus.jobs.protocols.session import new_session_id
@@ -269,44 +267,33 @@ class ScheduleTaskTool(Tool):
 
         # Branch on ``once`` vs the cron-driven presets.
         # ``cron`` and ``run_at`` are mutually exclusive on a
-        # single Task row; the validator picks the active
-        # shape at tool-call time. We translate at this
-        # boundary so the WebUI API + LLM tool + raw SQL all
-        # see the same row shape.
+        # single Task row; we translate at this boundary so
+        # the WebUI API + LLM tool + raw SQL all see the
+        # same row shape. The Book owns the actual
+        # validation (ISO parse + future-check + cron
+        # expression check) — we just hand it the right
+        # field and let any ValueError bubble up to the
+        # outer ``ToolResult.err`` block below.
         bus = ctx.bus
-        run_at_iso: str | None = None
+        cron: str | None
+        run_at_iso: str | None
         if frequency == "once":
-            try:
-                run_at_iso = validate_run_at(
-                    kwargs.get("run_at") or ""
-                )
-                # Past-time run_at silently no-ops in
-                # apscheduler — reject here so the LLM
-                # can retry with a future timestamp
-                # rather than ship a dead task.
-                validate_run_at_future(run_at_iso)
-            except ValueError as exc:
-                return ToolResult(
-                    content=f"invalid run_at: {exc}",
-                    is_error=True,
-                )
-            cron = ""  # sentinel: cron-driven cols blank
+            cron = None
+            run_at_iso = kwargs.get("run_at") or None
             # Moment fields (hour/minute/day_of_*) are
             # silently ignored for ``once`` — surfacing a
             # hard error would force the LLM to scrub the
             # same fields it just sent; soft ignore keeps
             # the contract tolerant.
         else:
-            try:
-                cron = preset_to_cron(
-                    frequency,
-                    hour=int(kwargs.get("hour") or 0),
-                    minute=int(kwargs.get("minute") or 0),
-                    day_of_week=kwargs.get("day_of_week"),
-                    day_of_month=kwargs.get("day_of_month"),
-                )
-            except ValueError as exc:
-                return ToolResult(content=f"invalid preset: {exc}", is_error=True)
+            run_at_iso = None
+            cron = preset_to_cron(
+                frequency,
+                hour=int(kwargs.get("hour") or 0),
+                minute=int(kwargs.get("minute") or 0),
+                day_of_week=kwargs.get("day_of_week"),
+                day_of_month=kwargs.get("day_of_month"),
+            )
 
         if target_channel not in (ChannelEnum.WEBUI, ChannelEnum.TG):
             return ToolResult(

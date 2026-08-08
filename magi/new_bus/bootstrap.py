@@ -79,6 +79,20 @@ class NewBus:
     mcp_servers_book: object  # McpServerBook
     tool_job_board: object  # runToolJobBoard
 
+    # -- local: background shells (cross-worker registry) ----------------
+    #
+    # ``background_shells_book`` + ``background_shell_lines_book``
+    # carry the per-process :class:`_BackgroundShellManager` state
+    # across worker processes so :class:`~magi.tools.shell.output.BashOutputTool`
+    # and :class:`~magi.tools.shell.kill.BashKillTool` can run on
+    # any worker, not just the one that spawned the subprocess.
+    # The live ``asyncio.subprocess.Process`` still lives in the
+    # spawning worker — see the module docstring of
+    # :mod:`magi.new_bus.library.local.shellBook` for the split.
+
+    background_shells_book: object  # BackgroundShellBook
+    background_shell_lines_book: object  # BackgroundShellLineBook
+
     # -- local: agent (Job boards) -------------------------------------------
 
     agent_job_board: object  # runAgentJobBoard
@@ -177,6 +191,8 @@ def _bootstrap_with_dirs(
     # ---- lazy imports (avoid eager ORM table registration) ----------------
     from magi.new_bus.library.local import (
         ActionItemBook,
+        BackgroundShellBook,
+        BackgroundShellLineBook,
         ContactBook,
         ContactNoteBook,
         HookSignoffBook,
@@ -242,6 +258,13 @@ def _bootstrap_with_dirs(
     token_usage_book = TokenUsageBook(local_factory)
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
+
+    # Cross-worker background-shell registry. The line Book pairs
+    # with the shell Book; both are constructed here so
+    # :mod:`magi.tools.shell._manager` can reach them via
+    # ``ctx.bus`` without holding its own session.
+    background_shells_book = BackgroundShellBook(local_factory)
+    background_shell_lines_book = BackgroundShellLineBook(local_factory)
 
     # ---- stream hub (in-process pipe registry) ------------------------------
     from magi.new_bus.stream import StreamHub
@@ -320,6 +343,8 @@ def _bootstrap_with_dirs(
         token_usage_book=token_usage_book,
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,
+        background_shells_book=background_shells_book,
+        background_shell_lines_book=background_shell_lines_book,
         stream_hub=stream_hub,
         magis_book=magis_book,
         magis_admins_book=magis_admins_book,

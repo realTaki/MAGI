@@ -75,6 +75,17 @@ class ToolContext:
     ``gate()`` re-resolve fresh on every call so role flips
     take effect without a process restart.
 
+    ``worker_id`` is the
+    :attr:`~magi.tools.worker.ToolsWorker.worker_id` of the
+    process currently executing the tool — useful for tools that
+    own per-process state and need to know whether they're
+    looking at their own work (e.g.
+    :class:`~magi.tools.shell._manager._BackgroundShellManager`
+    uses it to detect cross-worker ``bash_output`` /
+    ``bash_kill`` calls). Empty string when no worker is wired
+    (tests / boot probes); the manager treats that as
+    "single-worker mode" and skips cross-worker fan-out.
+
     ``bus`` is ``None`` for tests / boot probes — tools that
     require bus access should fail closed when ``ctx.bus``
     is missing.
@@ -85,6 +96,7 @@ class ToolContext:
     channel: str
     session_id: str = ""
     bus: "NewBus | None" = None
+    worker_id: str = ""
 
 
 #: Truncation budget for :meth:`ToolResult.ok`. Mirrors the worker's
