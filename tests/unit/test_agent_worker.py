@@ -269,7 +269,7 @@ async def test_steering_injected():
     from magi.new_bus.guild.chatJob import ChatJobResult
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
-        result=ChatJobResult(event_id="steer-1", success=True),
+        result=ChatJobResult(event_id="steer-1", success=True, status="completed"),
     )
 
 

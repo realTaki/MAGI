@@ -1,1180 +1,227 @@
-# Channels Worker 设计书
+# Channels 迁移设计书
 
-> 版本: v3.0 | 日期: 2026-08-08 | 状态: Approved with full-cutover contract
->
-> v3.0 采用**全新 NewBus schema**：不兼容、不迁移、不双写旧 `magi.bus`
-> 的表、字段、Worker 或 HTTP 运行时协议。旧运行时在新链路完整实施后直接删除。
-> 本文 §24 是 v3.0 的最高优先级合同；与前文 v1/v2 描述冲突时，以 §24 为准。
->
-> **执行跟踪**：每个 Part 开始前请在本文件顶部加一行 `<!-- Agent X claiming Part Y -->`；完成时改成 `<!-- Agent X done Part Y at HH:MM -->`。
+> 日期：2026-08-08
+> 状态：全量切换合同
 
-<!-- Agent Taki (Claude) claiming full v3.0 implementation per §24.8 steps 1–4 (foundation → boards → workers → composition root). Tests (step 5) after the rest lands. Starting from scratch — no other agent in flight as of 2026-08-08 session. -->
+## 1. 目标与非目标
 
----
+Channels 将全部切到注入式 `NewBus`。每个通道负责自己的入站适配和出站投递；
+Agent 只消费 `ChatJob`、产出 `DeliveryJob`，不调用 Telegram、HTTP 或 WebUI
+持久化实现。
 
-## 1. 协作开发规则
+这是一次完整切换，不是兼容层：
 
-多个 Agent 同时实现本计划。这些规则防止一个 Agent 破坏另一个 Agent 的进行中工作。
+- 不读取、双写或回退到 `magi.bus`、`get_bus()`、旧 Bus 表、旧 worker 或旧
+  HTTP 运行时协议。
+- 不让 NewBus 和旧 Bus 同时 claim 同一业务方向；切换完成后删除旧 delivery、
+  scheduler、dispatcher 与模块级旧 Bus 入口。
+- 不新增 Channel 专属的进程内队列、隐式全局 worker registry 或第二套 agent
+  turn 状态机。
+- 当前 NewBus board 的物理表与 migration 只属于 `magi.new_bus`。最终独立
+  schema 的物理命名由 NewBus migration 一次确定，不是对旧表/字段的兼容承诺。
 
-1. **NO git 操作。** 不允许 `git add` / `commit` / `rebase` / `push` / `checkout` / `stash` / `reset` / `branch`——任何会移动 HEAD 或工作树状态的操作。原因：你 stage/commit 时如果另一个 Agent 有未提交编辑，会把对方半成品代码拉进 commit（或冲突解决时丢掉），静默摧毁对方工作。所有 git 操作等实现 pass 完全结束后由人工执行。
-2. **把本设计书当合同。** 开始一个 Part 前，在文件顶部加一条短注释声明"Agent X starting Part Y at <files>"，让其他 Agent 看到你认领了。如果设计书显示另一个 Agent 在做同一 Part，**先停手读对方的进行中编辑**再动。
-3. **写之前先看对方的实现。** 如果另一个 Agent 已经在不同文件里开始做 Part C，先读他的代码。如果他的设计*比本设计书更好*（更干净的抽象、更少的边界情况、更好的错误处理），**采纳他的**，不要为了字面匹配计划而重做。
-4. **只在对方实现真的坏掉时才介入。** 坏的迹象：缺边界情况（如 `run_at` 任务无限重触发）、竞态、硬编码路径、未测试代码路径。**不要介入的迹象**：风格不同但正确性相同、命名不同、加了你没想到的辅助函数。
-5. **介入时写注释说明原因。** 不要静默重写别人的代码。格式：
-   ```python
-   # [Agent X → Agent Y's code]: 原 _should_fire_cron 每个 15s
-   # 都触发错过的 tick；设计书 §16.5 要求"每个错过的窗口最多
-   # 触发一次"。此处修复。如果你的意图是另一种语义，请在
-   # 设计书里 flag。
-   ```
-   注释里点出对方（或者他文件的最后编辑者），说明问题点。原作者能看到改动原因，如果不同意可以反推。
-6. **注释是 Agent 间总线。** 没有 code reviewer——只有 Agent 互相读代码。每个非显然决策（为什么这个 shape、为什么这个 helper、为什么这个异常类型）都需要注释。两个方案都能走通时，写一行注释列出两者并说明选了哪个。
-7. **测试在实现期间只读。** 不要中途跑 `pytest` 然后通过删断言或 skip 来"修"失败测试。测试失败是因为实现没完成，这是预期的。一次性测试 pass 在所有 Part 落地后跑（§20）。
-8. **实现中发现计划层错误，** 改 + 在文件里留 `# [plan amendment]: <改了啥，为啥>` + 在本设计书 §23 加一行。不要静默偏离计划。
+本文不规定 Agent 的 LLM/tool loop；该合同见
+`docs/design/agent-worker-new-bus.md`。Channel 只需遵守其中的 job-board DTO
+和 delivery 边界。
 
----
+## 2. 组件与职责
 
-## 2. 背景与动机
+| 组件 | 入站职责 | 出站职责 | 依赖 |
+| --- | --- | --- | --- |
+| `TelegramWorker` | Telegram 长轮询、鉴权、session/message 写入、发布 `ChatJob` | 投递 `DeliveryJob(channel="tg")` | `NewBus` + Telegram API |
+| `TaskWorker` | 轮询 cron/run-at、消费 `RunTaskJob`、发布 `ChatJob` | 无；回复由目标 channel 投递 | `NewBus` |
+| WebUI FastAPI 路由 | 鉴权、session/message 写入、发布 `ChatJob`、立即返回 202 | 无 | `NewBus` |
+| `WebUIWorker` | 无 | 消费 `DeliveryJob(channel="webui")`，追加 assistant message | `NewBus` |
+| A2A FastAPI 路由 | 验签、接收 request/result、发布或完成 A2A job | 无 | `NewBus` |
+| `A2AWorker` | 无 | 消费 `SendA2AJob`，执行对端 HTTP，提交 `SendA2AResult` | `NewBus` + A2A transport |
 
-### 2.1 现状问题（保留 v1.0）
+`ChannelWorker` 是 Telegram、Task、WebUI delivery 的共同生命周期基类：构造
+注入 `NewBus`，提供幂等 `start/stop`、health 和 delivery claim 模板。A2A 不
+消费 `DeliveryJob`，而是使用专用的 `a2a_job_board`。
 
-**生命周期异构。** TG 守护线程（独立 asyncio event loop），Task APScheduler 线程（又一独立 event loop），A2A/WebUI 入站 FastAPI 路由，出站统一 `DeliveryWorker`。四种通道，四种启动/关闭方式，没有统一抽象。
+## 3. 数据合同
 
-**旧总线依赖。** 通道代码通过 `get_bus()` 全局单例访问 `magi.bus.Bus`（旧总线）。ProvidersWorker / ToolsWorker / AgentWorker / ProactiveWorker 已迁到 `new_bus` 构造注入。两个总线并存，通道模块孤悬。
+### 3.1 Channel 到 Agent
 
-**入站/出站职责分裂。** 入站在各通道的 `bot.py` / `scheduler.py` / `router.py` / `api/chat.py`，出站统一在 `DeliveryWorker` 的 `if claim.channel == "tg": ...elif "a2a": ...elif "webui":` 分支里。一个通道的完整行为被拆在两个文件。
-
-### 2.2 v1.0 设计书的额外问题（v2.0 修复）
-
-- **基类抽象止步于 start/stop。** 出站 claim loop 在 WebUIWorker / A2AWorker / TelegramWorker 三处复制粘贴——只是把 if-elif 从 `DeliveryWorker` 翻到 `ChannelWorker` 之外。
-- **TaskWorker `_last_fire` 内存态。** 重启即丢；`run_at` 一次性任务没有 mark_consume，每次 poll 都触发。
-- **没有 `runTaskJob` board。** `schedule_task` tool 等场景需要 fire-by-id 任务时，直接调 `TaskChannel.dispatch` 绕过 new_bus 模式。
-- **apscheduler 是隐式依赖。** 仅在 cron 验证/计算用，被 TaskScheduler 拖进来。
-- **旧模块（`delivery.py` / `scheduler.py` / `runner.py`）和新 Worker 不能并存。** 旧走 `get_bus()`、新走 `new_bus`，claim 同一 delivery 来源但接口不兼容。Phase 1/2/3 的过渡窗口在 new_bus-only 部署里不适用——必须一次性切。
-
-### 2.3 目标
-
-1. **统一 Worker 模式。** 每个通道都有自己的 worker 类，构造注入 `NewBus`，`start/stop` 生命周期对齐 `ProvidersWorker`/`ToolsWorker`。
-2. **入站/出站归位。** 每个 Channel Worker 同时管入站 + 出站；旧的 `DeliveryWorker` 直接删除（无过渡）。
-3. **基类承担出站 claim loop 模板。** 三个 Worker 不再复制 claim/deliver/submit 协议。
-4. **Task 状态持久化。** `last_run_at` 落库；`run_at` 任务触发后 `enabled=0`。
-5. **可观测性 / 重试 / 背压有明确语义。** 不留空白。
-
----
-
-## 3. 现状分析（保留 + 更新）
-
-### 3.1 现有通道一览
-
-| 通道 | 入站机制 | 出站机制 | 生命周期 | 总线 |
-|------|---------|---------|---------|------|
-| **Telegram** | 守护线程 `asyncio.run(_run_forever())` + python-telegram-bot polling | 旧 `DeliveryWorker.channel=="tg"` 分支 → 原始 HTTP | `start_bot()`/`stop_bot()` 模块级单例 | `get_bus()` |
-| **Task** | APScheduler BackgroundScheduler + 自有线程 + 自有 event loop | 任务触发由 Agent 的工具调用 `send_message` 驱动 | `start_scheduler()`/`stop_scheduler()` | `get_bus()` |
-| **A2A** | FastAPI `/a2a/inbox` 路由 + HMAC 验证 | 旧 `DeliveryWorker.channel=="a2a"` 分支 → HTTP POST | FastAPI lifespan | `get_bus()` |
-| **WebUI** | FastAPI `/chat/send` 路由 | 旧 `DeliveryWorker.channel=="webui"` 分支 → 追加 Session | uvicorn | `get_bus()` |
-
-### 3.2 现有 Worker 模式（基准）
+所有入站请求都发布同一个 `ChatJob`：
 
 ```python
-# magi/providers/worker.py — 标准形态
-class ProvidersWorker:
-    bus: NewBus                     # 构造注入
-    _task: asyncio.Task | None
-    _stopping: bool
-
-    async def start(self): ...      # 幂等
-    async def stop(self): ...       # 幂等
-
-# 模块级单例 + start_xxx_worker(bus=...) 工厂
-_worker: ProvidersWorker | None = None
-async def start_provider_worker(bus: NewBus | None = None, ...) -> ProvidersWorker: ...
+ChatJob(
+    event_id=source_idempotency_key,
+    run_id=run_id,
+    conversation_id=conversation_id,
+    correlation_id=correlation_id,
+    kind="chat" | "task.triggered" | "a2a.request" | "run.cancel",
+    payload={
+        "text": text,
+        "channel": reply_channel,        # "tg" | "webui" | "a2a"
+        "uid": uid,
+        "session_id": session_id,
+        "caller_role": caller_role,
+        # 可选：source_channel、task_id、a2a_event_id、reply_to 等来源上下文
+    },
+)
 ```
 
-本设计沿用此模式。
+`event_id` 必须来自上游稳定事件：Telegram 使用 chat/message ID，WebUI 使用
+请求生成并持久化的 idempotency key，A2A 使用 sender/event ID，Task 使用
+`task_id + scheduled window`。重投同一事件必须得到同一处理语义。
 
-### 3.3 `ChatJob` / `DeliveryJob` 实际字段（v1.0 文档错处）
+`payload["channel"]` 是回复路由，必须是一个真实的 egress channel。Task 是
+来源，不是 reply channel；任务应写 `source_channel="task"`，并以 task 的
+目标 `tg` 或 `webui` 填入 `channel`。禁止让 Agent 为 `channel="task"` 发布
+没有消费者的 delivery job。
 
-`magi/new_bus/guild/chatJob.py:28-39` 实际定义：
+取消使用 `ChatJob.kind == "run.cancel"` 和相同的 `conversation_id`。不使用
+额外的 cancel board 或 metadata 兼容字段。
+
+### 3.2 Agent 到 Channel
+
+正常回复和失败提示均由 Agent 发布：
 
 ```python
-@dataclass(frozen=True, slots=True)
-class ChatJob:
-    event_id: str = ""
-    run_id: str = ""
-    conversation_id: str | None = None
-    correlation_id: str | None = None
-    kind: str = "chat"
-    payload: dict[str, Any] | None = None   # ← text/channel/uid/session_id 都在这里
+DeliveryJob(
+    channel="tg" | "webui",
+    payload={"text": reply, "session_id": session_id, "uid": uid},
+    destination=channel_address_or_none,
+    run_id=run_id,
+)
 ```
 
-`magi/new_bus/guild/deliveryJob.py:19-25`：
+`ChatJobResult` 只表示输入 turn 的处理结果，不携带回复正文；`DeliveryResult`
+只表示外部投递结果。WebUI 的 assistant message 由 `WebUIWorker` 在 delivery
+成功路径写入，Telegram 的外部 API 写入由 `TelegramWorker` 完成。
+
+A2A 不是 delivery channel：Agent 的 `message_magi` 生成：
 
 ```python
-@dataclass(frozen=True, slots=True)
-class DeliveryJob:
-    channel: str                     # ← 用来 claim 时 filter
-    payload: dict
-    destination: str | None = None
-    run_id: str = ""
-    job_id: str = ""
+SendA2AJob(
+    invocation_id=..., run_id=..., target=..., tool_call_id=...,
+    expect_reply=..., request={"text": text, ...},
+)
 ```
 
-v1.0 设计书把 `ChatJob` 字段当成顶层（`text`/`channel`/`uid` 等），错。**所有业务字段都在 `payload` dict 里**，与 `agent-worker-new-bus.md` §2.1 一致。
+`A2AWorker` 提交相同 `invocation_id` 的 `SendA2AResult`；入站 A2A `result`
+也完成该 board 上的同一 invocation。A2A request 才转换为 `ChatJob`。
 
----
+### 3.3 Queue 语义
 
-## 4. 架构决策（v2.0 更新）
+所有 job board 都有统一的 `publish -> claim -> submit_result` 生命周期。
+lease 过期由 `BaseJobBoard` 回收并按其重试上限处理。Worker 不建立自己的
+retry queue 或 turn lease。
 
-### 决策 1：Channel → Agent 的通信方向（保留）
+delivery claim 必须按 channel 隔离：若当前 board API 暂无原子 channel filter，
+认领到其他 channel 的 job 必须立即 `release()`，不能提交成功/失败。最终实现
+应将 filter 纳入 board claim，避免多个 channel worker 无谓争抢。
 
-```
-Channel → Agent:     ChatJob           (bus.agent_job_board)
-Agent  → Channel:    DeliveryJob       (bus.delivery_job_board)
-```
+## 4. 各通道流程
 
-理由（保留 v1.0）：一对多天然支持、生命周期解耦、职责清晰、Board 消费模式一致。
-
-### 决策 2：每个 Channel 一个 Worker（保留）
-
-不采用统一 `ChannelsWorker`（轮询机制不同、故障隔离、并发模型冲突、符合开闭原则）。
-
-### 决策 3：入站出站合一（保留 + 修正）
-
-**例外：** WebUI/A2A 的入站是 FastAPI HTTP 路由——保留为 HTTP handler，不变成 worker 的轮询。因此 `WebUIWorker` 和 `A2AWorker` 是"只管出"。`TelegramWorker` 因为有长轮询，入站也在 worker 里。
-
-### 决策 4（新增）：出站 claim loop 提到基类
-
-`ChannelWorker` 提供 `_claim_delivery_loop(deliver_fn, channel_label)` 模板方法，子类只写 `_deliver_X(job: DeliveryJob)`。理由：v1.0 的 if-elif-routing 反模式换成了 claim-deliver-submit 的复制粘贴；基类提取消除后者。
-
-### 决策 5（新增）：Task 状态持久化
-
-- `last_run_at` 已存在于 `_TaskRow` schema（`tasksBook.py:246`），只需写方法。
-- `run_at` 一次性任务触发成功后调 `mark_run_at_consumed` → `enabled=0`。
-- 内存中 `_next_fire: dict[task_id, datetime]` 从 `last_run_at` rehydrate，不再裸 in-memory dict。
-
-### 决策 6（新增）：新增 `runTaskJob` board
-
-允许 inter-worker / tool 触发：任何调用方 `bus.run_task_job_board.publish(RunTaskJob(task_id=...))`，`TaskWorker` claim 后调同一 `_fire_task`。`schedule_task` tool、WebUI 手动触发、CLI 触发都走这条路径。
-
-### 决策 7（新增）：删 apscheduler 依赖
-
-`tasksBook.py` 的 `validate_cron` / `next_fire` / `humanize_cron` 全部用 `croniter` 重写。`TaskScheduler` 删除后 apscheduler 在 `magi/` 下没有调用方。
-
-### 决策 8（新增）：旧模块同步删除
-
-`magi/channels/delivery.py`、`magi/channels/tasks/scheduler.py`、`magi/channels/tasks/runner.py` 在本批次全部删除。**不存在"过渡期双消费"**——新 Worker 走 `new_bus`，旧 Worker 走旧 `magi.bus.Bus`，二者 claim 不同的 outbox 表（旧 `bus.delivery`，新 `bus.delivery_job_board`），本就可以并存但行为分裂；用户选择一次切干净。
-
----
-
-## 5. 整体架构
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        NewBus                                     │
-│                                                                   │
-│  agent_job_board          delivery_job_board    run_task_job_board│
-│  (ChatJob publish/claim)  (DeliveryJob)         (RunTaskJob)      │
-│       ▲                         │                   ▲             │
-│       │ publish                 │ claim             │ claim        │
-│       │                         ▼                   │             │
-│  ┌────┴──────────────────────────┐    ┌─────────────┴─────┐       │
-│  │ Channel Worker (入站)          │    │ TaskWorker         │       │
-│  │   TelegramWorker  ────────────┼──▶ │  ├─ cron 轮询     │       │
-│  │   WebUI / A2A FastAPI 路由     │    │  ├─ run_at 触发   │       │
-│  └───────────────────────────────┘    │  └─ runTaskJob    │       │
-│                                       └───────────────────┘       │
-│  agent_job_board ←── AgentWorker  处理 ChatJob → publish DeliveryJob
-│       │                                                            │
-│       │ claim                                                      │
-│       ▼                                                            │
-│  AgentWorker ──────▶ delivery_job_board                            │
-│       │                                                            │
-│       │ claim by channel                                           │
-│       ▼                                                            │
-│  Channel Worker (出站)  TelegramWorker / WebUIWorker / A2AWorker   │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-**Worker 全景：**
-
-| Worker | 入站 | 出站 | 触发方式 |
-|--------|------|------|---------|
-| `TelegramWorker` | python-telegram-bot 长轮询 | claim delivery(channel=tg) → HTTP | 自启 |
-| `TaskWorker` | 无（cron 轮询 + runTaskJob 认领） | 不投递 | 自启 |
-| `WebUIWorker` | 无（FastAPI `/chat/send`） | claim delivery(channel=webui) → Session 追加 | 自启 |
-| `A2AWorker` | 无（FastAPI `/a2a/inbox`） | claim delivery(channel=a2a) → HTTP POST | 自启 |
-| `AgentWorker` | claim ChatJob | publish DeliveryJob | 自启 |
-
----
-
-## 6. ChannelWorker 基类
-
-`magi/channels/workers/base.py`：
-
-```python
-class ChannelWorker(ABC):
-    bus: NewBus
-    poll_seconds: float
-    channel_name: str                         # abstract
-
-    def __init__(self, bus, *, poll_seconds=0.25):
-        self.bus = bus
-        self.poll_seconds = poll_seconds
-        self._task: asyncio.Task | None = None
-        self._stopping = False
-        self._last_poll_at: datetime | None = None
-        self._last_success_at: datetime | None = None
-        self._last_error: str | None = None
-
-    async def start(self) -> None: ...        # 幂等
-    async def stop(self) -> None: ...         # 幂等
-
-    # 出站模板方法（Part B 提取）
-    async def _claim_delivery_loop(
-        self, deliver_fn: Callable[[DeliveryJob], Awaitable[None]], channel_label: str,
-    ) -> None: ...
-
-    # 可观测性（Part E.3）
-    def health(self) -> dict: ...
-
-    @abstractmethod
-    async def _run(self) -> None: ...         # 子类实现入口
-```
-
-**模块 docstring** 包含：
-
-> Delivery retry 由 `BaseJobBoard._claim`（`magi/new_bus/guild/base.py:121`）负责：abandoned 的 DeliveryJob 在 lease 过期后被重 claim，最多 `MAX_ATTEMPTS=3` 后 `_make_exhausted_result` 标记 failed。Channel Worker 不自己重试。
-
-> **Phase 1 Verification**（Part A-F 全部落地后跑）：
-> - [ ] `grep -rE "from magi.bus import get_bus" magi/channels/` → 0 hits
-> - [ ] `_runtime_lifespan` 起/停 4 个 Worker
-> - [ ] TG inbound ChatJob 到达 AgentWorker
-> - [ ] TG outbound DeliveryJob 到达 TG API
-> - [ ] TaskWorker cron 任务每个 tick 最多触发一次
-> - [ ] TaskWorker `run_at` 任务恰好触发一次
-> - [ ] `RunTaskJob` 从 `schedule_task` tool 流转到 TaskRun
-> - [ ] `/health/channels` 返回 4 通道 JSON
-> - [ ] pending depth > 1000 触发节流警告
-> - [ ] `pytest` 全部 pass；TODO 注释全部移除
-
----
-
-## 7. TelegramWorker
-
-`magi/channels/workers/telegram.py`。**两路并发**：
-
-```python
-async def _run(self) -> None:
-    await asyncio.gather(self._run_inbound(), self._run_outbound())
-
-async def _run_outbound(self) -> None:
-    await self._claim_delivery_loop(self._deliver_tg, "tg")
-
-async def _run_inbound(self) -> None:
-    # python-telegram-bot Application，长轮询
-    # 收到消息 → contacts_book.find_by_telegram_id → 权限检查 →
-    # sessions_book.create → messages_book.append →
-    # bus.agent_job_board.publish(ChatJob(payload={...}))
-    # 关键：event loop 必须和 start() 同一 loop，
-    # __init__ 时缓存 loop，assert get_running_loop() is self._loop
-```
-
-`_deliver_tg(job)`：复用 `magi/channels/telegram/bot.py` 里的 `send_text_raw`（保留为纯 HTTP helper）。
-
----
-
-## 8. TaskWorker
-
-`magi/channels/workers/task.py`。
-
-**双输入**：cron-tick poll + `run_task_job_board` claim。
-
-```python
-async def _run(self) -> None:
-    self._rehydrate()                  # 从 tasks.last_run_at 重建 self._next_fire
-    self._reap_stale_runs()            # Part E.4 crash recovery
-    while not self._stopping:
-        # 1. runTaskJob 优先
-        rj = await asyncio.to_thread(self.bus.run_task_job_board.claim)
-        if rj is not None:
-            await self._handle_run_task_job(rj); continue
-
-        # 2. cron / run_at 轮询
-        tasks = self.bus.tasks_book.list_all_enabled_for_workers()
-        now = datetime.now(timezone.utc)
-        for task in tasks:
-            if self._should_fire(task, now):
-                await self._fire_task(task, fired_by="cron_tick", ...)
-                if task.run_at and not task.cron:
-                    self.bus.tasks_book.mark_run_at_consumed(task_id=task.id)
-
-        await asyncio.sleep(self.poll_seconds)
-```
-
-**`_fire_task`** 单一实现，被 cron 和 runTaskJob 共用：
-1. `tasks_book.record_run_start(task_id, trigger=fired_by)` → 返回 TaskRun
-2. `_build_contextual_prompt(task)`
-3. `messages_book.append(uid, session_id, role="user", text=...)`
-4. `agent_job_board.publish(ChatJob(event_id=..., run_id=..., conversation_id=..., kind="task.triggered", payload={...}))`
-
-**`_should_fire_cron`**：用 croniter 算 `get_prev(datetime)`，对比 `self._next_fire[task.id]`。**每个错过的窗口最多触发一次**（与旧 APScheduler coalesce 等价）。
-
-**`__init__`**：`from croniter import croniter as _croniter` 在模块顶部；不再 hot-path import。
-
-**`schedule_desc`**：if-elif-else 显式分支。
-
----
-
-## 9. WebUIWorker
-
-`magi/channels/workers/webui.py`。出站 only：
-
-```python
-async def _run(self) -> None:
-    await self._claim_delivery_loop(self._deliver_webui, "webui")
-
-async def _deliver_webui(self, job: DeliveryJob) -> None:
-    session_id = str(job.payload.get("session_id") or "")
-    uid = job.payload.get("uid")
-    if not session_id or not isinstance(uid, int):
-        raise ValueError("webui delivery missing session_id or uid")
-    self.bus.messages_book.append(
-        uid=uid, session_id=session_id, role="assistant",
-        text=str(job.payload.get("text") or ""),
-    )
-```
-
-入站由 FastAPI `/chat/send`（`magi/channels/api/chat.py`）处理——把 `get_bus()` 替换成通过 FastAPI dependency 注入的 `bus`（或 `_current_bus` module-level helper）。
-
----
-
-## 10. A2AWorker
-
-`magi/channels/workers/a2a.py`。出站 only：
-
-```python
-async def _run(self) -> None:
-    await self._claim_delivery_loop(self._deliver_a2a, "a2a")
-
-async def _deliver_a2a(self, job: DeliveryJob) -> None:
-    from magi.channels.a2a.transport import send_a2a_delivery
-    await send_a2a_delivery(int(job.destination), job.job_id, job.payload)
-```
-
-入站 `magi/channels/a2a/router.py`（HMAC + `/a2a/inbox`）：把 `get_bus()` 替换为 `bus` 注入；`bus.agent_runs.publish_input` → `bus.agent_job_board.publish(ChatJob(...))`。
-
----
-
-## 11. 旧模块废弃（同步删除）
-
-`magi/channels/delivery.py` 整个文件删除。
-`magi/channels/tasks/scheduler.py` 整个文件删除。
-`magi/channels/tasks/runner.py` 整个文件删除。
-`magi/channels/tasks/channel.py`：`TaskChannel.dispatch` 保留为 deprecated wrapper，内部转发到 `bus.run_task_job_board.publish(...)`。
-apscheduler 依赖在 `magi/` 下没有其他调用方，可从 `pyproject.toml` / `requirements*.txt` 删除（实施时确认）。
-
----
-
-## 12. 启动与组合根
-
-### 12.1 模块级单例（项目惯例）
-
-`magi/channels/workers/__init__.py`：
-
-```python
-_telegram: TelegramWorker | None = None
-_task: TaskWorker | None = None
-_webui: WebUIWorker | None = None
-_a2a: A2AWorker | None = None
-_registry: dict[str, ChannelWorker] = {}     # ← 健康端点查这里
-
-async def start_channel_workers(bus: NewBus, *, enabled: set[str]) -> dict[str, ChannelWorker]:
-    unknown = enabled - _KNOWN_CHANNELS
-    if unknown:
-        logger.warning("channels: ignoring unknown enabled names: %s", sorted(unknown))
-    ...
-
-def registered_channel_workers() -> dict[str, ChannelWorker]:
-    return dict(_registry)
-```
-
-### 12.2 `_runtime_lifespan` 集成
-
-`magi/startup/runtime.py`：
-
-```python
-# 启动顺序：provider → tool → mcp → agent → proactive → channels
-channel_workers = await start_channel_workers(new_bus, enabled=set(channels))
-
-# 反向停止
-```
-
-旧的 `start_channel(name)` / `stop_channel(name)` / `is_channel_running(name)` TG wrappers 删除。`POST /api/channels` 改用 `workers._registry[name].start(bus)` / `.stop()`。
-
----
-
-## 13. 数据流总览
-
-### 13.1 Telegram 全链路
-
-```
-TG User 发消息
-   │
-   ▼
-TelegramWorker._on_tg_message
-   │
-   ├─ bus.contacts_book.find_by_telegram_id(tgid)
-   ├─ bus.sessions_book.create(...)          # 一个 TG chat 一个 session
-   ├─ bus.messages_book.append(...)
-   └─ bus.agent_job_board.publish(ChatJob(
-          event_id="telegram:...",
-          run_id="...",
-          conversation_id="...",
-          kind="chat",
-          payload={"text": ..., "channel": "tg", "uid": ...,
-                   "session_id": ..., "tg_chat_id": ..., "tg_message_id": ...},
-      ))
-   │
-   ▼
-AgentWorker._process (claim ChatJob) → LLM → publish DeliveryJob(
-       channel="tg",
-       destination=tg_chat_id,
-       payload={"text": "reply..."},
-   )
-   │
-   ▼
-TelegramWorker._run_outbound
-   │
-   ├─ claim DeliveryJob(channel="tg")
-   ├─ HTTP POST sendMessage → TG API
-   └─ submit_result(success=True)
-```
-
-### 13.2 简化图
-
-```
-External Input                MAGI Internal                    External Output
-═══════════════               ═════════════                    ════════════════
-
-TG User ──▶ TelegramWorker ──▶ ChatJob ──▶ AgentWorker
-Task cron ──▶ TaskWorker ──▶ ChatJob ──▶    │
-RunTaskJob ──▶ TaskWorker ──▶ ChatJob ──▶   │
-A2A HTTP ─▶ FastAPI Route ──▶ ChatJob ──▶   │
-WebUI HTTP ▶ FastAPI Route ──▶ ChatJob ──▶   ▼
-                                    delivery_job_board
-                                         │
-                  ┌──────────────────────┼──────────────────────┐
-                  ▼                      ▼                      ▼
-          TelegramWorker            WebUIWorker            A2AWorker
-                  │                      │                      │
-                  ▼                      ▼                      ▼
-              TG API               Session 追加          Peer MAGI
-```
-
----
-
-## 14. Part A 代码清理
-
-### A.1 TelegramWorker `DeliveryResult` import
-
-`magi/channels/workers/telegram.py`：
-
-```python
-if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.chatJob import ChatJob
-    from magi.new_bus.guild.deliveryJob import DeliveryJob, DeliveryResult   # ← 补 DeliveryResult
-```
-
-### A.2 `croniter` 提到模块顶部
-
-`magi/channels/workers/task.py`：
-
-```python
-from croniter import croniter as _croniter
-```
-
-### A.3 `schedule_desc` if-elif
-
-替换嵌套三元链：
-
-```python
-if task.cron:
-    schedule_desc = task.cron
-elif task.run_at:
-    schedule_desc = f"once at {task.run_at}"
-else:
-    schedule_desc = "ad-hoc"
-```
-
-### A.4 `enabled` 集合验证
-
-```python
-_KNOWN_CHANNELS = frozenset({"tg", "webui", "a2a", "scheduled"})
-```
-
-未知名记 warning，不静默跳过。
-
-### A.5 `channels/api/channels.py` 迁移
-
-`magi/channels/api/channels.py`：
-
-- `get_bus().settings.get/set` → `bus.settings_book.get/set`（bus 通过 FastAPI dependency 注入，或 module-level `_current_bus` helper）。
-- `start_channel(name)` / `stop_channel(name)` / `is_channel_running(name)` 从 `magi.startup.runtime` 删；改用 `workers._registry[name].start()` / `.stop()`。
-
-### A.6 `channels/api/app.py` 移除 inline `start_bot`
-
-`magi/channels/api/app.py` lines 109-123 的 `if start_telegram: start_bot()` 块删除。`create_app` 的 `start_telegram` 参数删除（默认 true 的语义失效，因为现在 TG 由 `_runtime_lifespan` 起）。
-
----
-
-## 15. Part B 基类抽象
-
-### B.1 `_claim_delivery_loop` 模板方法
-
-`magi/channels/workers/base.py`：
-
-```python
-async def _claim_delivery_loop(
-    self,
-    deliver_fn: Callable[[DeliveryJob], Awaitable[None]],
-    channel_label: str,
-) -> None:
-    """Template: backpressure check → claim → deliver_fn → submit_result.
-
-    ``deliver_fn`` 是 async (DeliveryJob) -> None，失败时 raise。
-    本方法处理 backpressure throttle（Part E.2）+ claim 异常 +
-    submit_result 一次（成功或失败）。
-    """
-    max_depth = self._read_max_queue_depth()
-    while not self._stopping:
-        # ── backpressure ──────────────────────────────────────
-        depth = self._bus_depth(channel_label)
-        if depth > max_depth:
-            self._log_backpressure_throttle(channel_label, depth)
-            await asyncio.sleep(self.poll_seconds * 5)
-            continue
-
-        # ── claim ─────────────────────────────────────────────
-        try:
-            job = await asyncio.to_thread(
-                self.bus.delivery_job_board.claim, channel=channel_label,
-            )
-        except Exception:
-            logger.exception("channels[%s]: claim failed", channel_label)
-            await asyncio.sleep(self.poll_seconds)
-            continue
-        if job is None:
-            await asyncio.sleep(self.poll_seconds)
-            continue
-
-        self._last_poll_at = datetime.now(timezone.utc)
-
-        # ── deliver + submit_result ───────────────────────────
-        try:
-            await deliver_fn(job)
-            self._last_success_at = datetime.now(timezone.utc)
-            self.bus.delivery_job_board.submit_result(
-                key=job.job_id,
-                result=DeliveryResult(job_id=job.job_id, success=True),
-            )
-        except Exception as exc:
-            self._last_error = str(exc)
-            logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
-            self.bus.delivery_job_board.submit_result(
-                key=job.job_id,
-                result=DeliveryResult(
-                    job_id=job.job_id, success=False, error=str(exc)[:1024],
-                ),
-            )
-```
-
-`_read_max_queue_depth()` 读 `bus.settings_book.get("channels.delivery.max_queue_depth")`，默认 1000。
-
-`_bus_depth(channel)` 调新加的 `BaseJobBoard.pending_count(channel=...)`（Part E.2）。
-
-`_log_backpressure_throttle` 每个 channel 每分钟最多打一次 warning（避免日志洪水）。
-
-### B.2 子类瘦下来
-
-`WebUIWorker._run` ≈ 1 行（调模板）；`A2AWorker._run` ≈ 1 行；`TelegramWorker._run_outbound` ≈ 1 行。每个子类只写 `_deliver_X(job: DeliveryJob) -> None`。
-
----
-
-## 16. Part C TaskWorker 状态持久化
-
-### C.1 `TaskBook` 新增 4 个方法
-
-`magi/new_bus/library/local/tasksBook.py`：
-
-```python
-def record_run_start(
-    self, *, task_id: str, trigger: str, run_id: str | None = None,
-) -> TaskRun:
-    """Insert a task_runs row, write task.last_run_at.
-
-    trigger ∈ closed set:
-      'cron_tick' | 'run_at_consume' | 'manual_run' |
-      'api_manual_run' | 'schedule_task_tool'
-    """
-    run_id = run_id or uuid.uuid4().hex
-    started_at = utcnow_naive().isoformat()
-    with self._session() as s:
-        run_row = _TaskRunRow(
-            id=run_id, task_id=task_id, trigger=trigger,
-            started_at=started_at, status="running",
-        )
-        s.add(run_row)
-        task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
-        if task is not None:
-            task.last_run_at = started_at
-        s.commit()
-        return self._row_to_dto(run_row)
-
-
-def record_run_end(
-    self, *, task_id: str, status: str, error: str | None = None,
-) -> None:
-    """status ∈ {'completed', 'failed'}.
-
-    Resets consecutive_failures on success; increments on failure (capped at 9999).
-    """
-    with self._session() as s:
-        task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
-        if task is None: return
-        task.last_status = status
-        task.last_error = (error or "")[:500] or None
-        if status == "completed":
-            task.consecutive_failures = 0
-        else:
-            task.consecutive_failures = min((task.consecutive_failures or 0) + 1, 9999)
-        s.commit()
-
-
-def mark_run_at_consumed(self, *, task_id: str) -> None:
-    """One-shot run_at: set enabled=0 after successful fire."""
-    with self._session() as s:
-        task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
-        if task is None: return
-        task.enabled = 0
-        s.commit()
-
-
-def list_all_enabled_for_workers(self) -> list[Task]:
-    """Per-user scan across all uids — workers only path.
-
-    The uid-scoped list_enabled(uid) is preserved for user-facing UI;
-    this is a separate primitive for the cron poll loop that needs
-    to scan every user's tasks.
-    """
-    with self._session() as s:
-        rows = s.scalars(
-            select(_TaskRow).where(
-                _TaskRow.enabled == 1,
-                _TaskRow.source == SOURCE_USER,
-            )
-        ).all()
-        return [self._row_to_dto(r) for r in rows]
-```
-
-### C.2 `croniter` 替换 apscheduler
-
-`tasksBook.py` 当前的 `from apscheduler.triggers.cron import CronTrigger` 删掉。`validate_cron` / `next_fire` / `humanize_cron` 全部用 `croniter` 重写。`preset_to_cron` 是从结构化 form 转 cron string 的纯函数，与解析器无关，保留。`validate_run_at` / `validate_run_at_future` 用 `datetime.fromisoformat`，与 apscheduler 无关，保留。
-
-### C.3 TaskWorker rehydrate
-
-```python
-def _rehydrate(self) -> None:
-    """Rebuild self._next_fire from each task's last_run_at column."""
-    tasks = self.bus.tasks_book.list_all_enabled_for_workers()
-    self._next_fire = {
-        t.id: datetime.fromisoformat(t.last_run_at) if t.last_run_at else None
-        for t in tasks
-    }
-    logger.info("TaskWorker: rehydrated %d enabled task(s)", len(tasks))
-```
-
-### C.4 `_should_fire_cron`（coalesce 等价）
-
-```python
-def _should_fire_cron(self, task: Task, now: datetime) -> bool:
-    """Fire at most once per missed window (coalesce-equivalent)."""
-    if not task.cron:
-        return False
-    cron_iter = _croniter(task.cron, now)
-    prev_fire = cron_iter.get_prev(datetime)
-    last = self._next_fire.get(task.id)
-    return last is None or (prev_fire and prev_fire > last)
-```
-
-### C.5 `run_at` 消费
-
-`_fire_task` 成功后，若 `task.run_at and not task.cron`，调 `mark_run_at_consumed(task.id)`。
-
----
-
-## 17. Part D runTaskJob
-
-### D.1 `magi/new_bus/guild/runTaskJob.py`
-
-```python
-from __future__ import annotations
-import uuid
-from dataclasses import dataclass
-from typing import Any
-
-from sqlalchemy import JSON, DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
-
-from magi.new_bus.db.base import Base, utcnow_naive
-from magi.new_bus.guild.base import BaseJobBoard
-
-
-@dataclass(frozen=True, slots=True)
-class RunTaskJob:
-    task_id: str
-    manual: bool = True
-    fired_by: str = "manual"          # closed set:
-                                       # cron_tick | run_at_consume |
-                                       # api_manual_run | schedule_task_tool
-    session_id: str | None = None
-    uid: int | None = None
-    job_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class RunTaskResult:
-    job_id: str
-    success: bool
-    run_id: str | None = None
-    error: str | None = None
-
-
-class _RunTaskJobRow(Base):
-    __tablename__ = "run_task_jobs"
-    __table_args__ = {"extend_existing": True}
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
-    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    manual: Mapped[int] = mapped_column(Integer, default=1)
-    fired_by: Mapped[str] = mapped_column(String(32), default="manual")
-    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    uid: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive,
-    )
-
-
-class runTaskJobBoard(BaseJobBoard[_RunTaskJobRow, RunTaskJob, RunTaskResult]):
-    job_model = _RunTaskJobRow
-    job_cls = RunTaskJob
-    result_cls = RunTaskResult
-    natural_key_attr = "job_id"
-
-    def publish(self, job: RunTaskJob) -> str:
-        with self._session() as s:
-            row = _RunTaskJobRow(
-                job_id=uuid.uuid4().hex, status="pending",
-                task_id=job.task_id, manual=int(job.manual),
-                fired_by=job.fired_by,
-                session_id=job.session_id, uid=job.uid,
-            )
-            s.add(row); s.flush(); s.commit()
-            return row.job_id
-```
-
-### D.2 接入 `NewBus`
-
-`magi/new_bus/bootstrap.py`：
-- `NewBus` dataclass 加 `run_task_job_board: object  # runTaskJobBoard`
-- `_bootstrap_with_dirs`：lazy import `RunTaskJobBoard`，实例化，传给 `NewBus(...)`
-
-### D.3 TaskWorker 双输入
-
-见 §8。`_handle_run_task_job(rj)` 复用 `_fire_task`：
-
-```python
-async def _handle_run_task_job(self, rj: RunTaskJob) -> None:
-    try:
-        task = self.bus.tasks_book.get(task_id=rj.task_id)
-        if task is None:
-            self.bus.run_task_job_board.submit_result(
-                key=rj.job_id,
-                result=RunTaskResult(rj.job_id, False, error="task not found"),
-            ); return
-        run = await self._fire_task(
-            task, fired_by=rj.fired_by,
-            session_id=rj.session_id or task.session_id,
-            uid=rj.uid or task.uid,
-        )
-        self.bus.run_task_job_board.submit_result(
-            key=rj.job_id,
-            result=RunTaskResult(rj.job_id, True, run_id=run.id),
-        )
-    except Exception as exc:
-        self.bus.run_task_job_board.submit_result(
-            key=rj.job_id,
-            result=RunTaskResult(rj.job_id, False, error=str(exc)[:1024]),
-        )
-```
-
-### D.4 调用方切换
-
-- `magi/tools/schedule_task.py`（LLM-side tool）：`TaskChannel.dispatch(...)` → `bus.run_task_job_board.publish(RunTaskJob(task_id, fired_by="schedule_task_tool", ...))`。先用 grep 确认工具的精确路径。
-- `magi/channels/api/tasks.py` 的 `POST /api/tasks/{id}/run`（手动触发）：同路径，`fired_by="api_manual_run"`。
-
----
-
-## 18. Part E 工程完备性
-
-### E.1 重试策略（仅文档）
-
-`ChannelWorker` docstring 写明 DeliveryJob 重试由 `BaseJobBoard._claim`（`magi/new_bus/guild/base.py:121`）的 lease 机制负责：abandoned 的 job 在 lease 过期后被重 claim，最多 `MAX_ATTEMPTS=3` 后 `_make_exhausted_result` 标记 failed。**Channel Worker 不自己重试。**
-
-### E.2 背压
-
-`magi/new_bus/guild/base.py` 加：
-
-```python
-from sqlalchemy import func
-
-def pending_count(self, *, channel: str | None = None) -> int:
-    """Count rows in pending state, optionally filtered by `channel`.
-
-    Used by ChannelWorker._claim_delivery_loop for backpressure.
-    """
-    with self._session() as s:
-        stmt = select(func.count()).select_from(self.job_model).where(
-            self.job_model.status == "pending"
-        )
-        if channel is not None and hasattr(self.job_model, "channel"):
-            stmt = stmt.where(self.job_model.channel == channel)
-        return int(s.scalar(stmt) or 0)
-```
-
-阈值从 `bus.settings_book.get("channels.delivery.max_queue_depth")` 读，默认 1000。超阈值 → 每分钟每 channel 一次 warning + poll 间隔 ×5。
-
-### E.3 可观测性
-
-`ChannelWorker.health()` 返回：
-
-```python
-{
-    "name": self.channel_name,
-    "running": self._task is not None and not self._task.done(),
-    "last_poll_at": self._last_poll_at.isoformat() if self._last_poll_at else None,
-    "last_success_at": self._last_success_at.isoformat() if self._last_success_at else None,
-    "last_error": self._last_error,
-    "queue_depth": self._bus_depth(self.channel_name),
-}
-```
-
-新文件 `magi/channels/api/health.py`：
-
-```python
-router = APIRouter(tags=["health"])
-
-@router.get("/health/channels")
-async def health_channels() -> dict:
-    from magi.channels.workers import registered_channel_workers
-    return {"channels": [
-        w.health() for w in registered_channel_workers().values()
-    ]}
-```
-
-挂到 `magi/channels/api/app.py` 的 `/health` 路由之后。
-
-### E.4 崩溃恢复
-
-- **TaskWorker**：`_rehydrate` 末尾调 `TaskRunBook.reap_stale(older_than_seconds=300)`——把 status="running" 但 started_at < now-300s 的 task_runs 行翻成 failed，error="abandoned by previous worker"。新增方法在 `TaskRunBook`。
-
-  ```python
-  def reap_stale(self, *, older_than_seconds: int = 300) -> int:
-      """Flip stuck 'running' rows to 'failed'. Returns count."""
-      cutoff = (datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)).isoformat()
-      with self._session() as s:
-          rows = s.scalars(
-              select(_TaskRunRow).where(
-                  _TaskRunRow.status == "running",
-                  _TaskRunRow.started_at < cutoff,
-              )
-          ).all()
-          for row in rows:
-              row.status = "failed"
-              row.error = "abandoned by previous worker"
-              row.finished_at = utcnow_naive().isoformat()
-          s.commit()
-          return len(rows)
-  ```
-
-- **TelegramWorker**：`python-telegram-bot` `Application.updater.start_polling` 自动重连网络错误；硬失败时 `_run_inbound` task 退出，需要操作员重启 process。
-- **WebUIWorker / A2AWorker**：无状态 claim loop，lease 机制自动处理。
-
-### E.5 Phase 1 验收清单
-
-见 §6 模块 docstring 末尾的 checklist。所有项必须勾选完才能算 Phase 1 完成。
-
----
-
-## 19. Part F 测试一次性通过
-
-### 19.1 测试 rebind 模式
-
-所有现有测试里的 `magi.bus.get_bus()` 替换为 `bootstrap_new_bus(state_dir=tmp_path/"memories")`。字段映射：
-
-| 旧 bus | new_bus |
-|--------|---------|
-| `bus.task` | `bus.tasks_book` |
-| `bus.task_runs` | `bus.task_runs_book` |
-| `bus.session` | `bus.sessions_book` |
-| `bus.session.append_messages(...)` | `bus.messages_book.append(...)` |
-| `bus.delivery` | `bus.delivery_job_board` |
-| `bus.agent_runs.publish_input(AgentMessage)` | `bus.agent_job_board.publish(ChatJob(payload={...}, kind="..."))` |
-| `bus.contacts` | `bus.contacts_book` |
-| `bus.contacts.find_by_telegram_id` | `bus.contacts_book.find_by_telegram_id` |
-| `bus.settings.get/set` | `bus.settings_book.get/set` |
-
-### 19.2 受影响测试
-
-- `tests/unit/test_delivery_worker.py` — 改用 `delivery_job_board` + `TelegramWorker._deliver_tg`，mock `send_text_raw`，断言 `submit_result(success=True)` 落库。删 `TODO migrate to new_bus` 头注。
-- `tests/unit/test_task_scheduler.py` — 改测 `TaskWorker.__init__` + `_fire_task`，断言 cron 每 tick 一次、`run_at` 一次。删 TODO。
-- `tests/unit/test_task_channel.py` — 改测 `RunTaskJob` publish→claim→submit_result。删 TODO。
-- `tests/unit/test_tasks_once_model.py` — 保留模型测试，rebase fixture 到 `bootstrap_new_bus`（原 `init_orm`/`init_sqlite`）。删 TODO。
-- `tests/unit/test_tasks_api_inference.py` — 同上。
-
-### 19.3 新增测试
-
-- `tests/unit/test_run_task_job.py` — publish/claim/submit_result；lease 过期回 pending；MAX_ATTEMPTS=3 触发 `_make_exhausted_result`。
-- `tests/unit/test_task_run_persistence.py` — `record_run_start` 写 TaskRun + bump `last_run_at`；`record_run_end("completed")` reset failures；`record_run_end("failed")` increment + 写 error；`mark_run_at_consumed` 设 `enabled=0`；`list_all_enabled_for_workers` 不带 uid 过滤。
-- `tests/unit/test_channel_worker_template.py` — fake `delivery_job_board.claim` 返 job；断言 `_claim_delivery_loop` 调 `deliver_fn` 后 `submit_result(success=True)`；backpressure 分支在 `pending_count > max_depth` 时早退（mock `settings_book.get`）。
-- `tests/unit/test_health_channels.py` — 起 4 个 Worker，hit `/health/channels`，断言 4 条 entry。
-
----
-
-## 20. 验证
-
-Part A-F 全部落地后，跑一次：
-
-1. `grep -rE "from magi.bus import get_bus" magi/channels/` → 期望 **0** hits。
-2. `pytest tests/unit/test_run_task_job.py tests/unit/test_task_run_persistence.py tests/unit/test_channel_worker_template.py tests/unit/test_health_channels.py tests/unit/test_delivery_worker.py tests/unit/test_task_scheduler.py tests/unit/test_task_channel.py tests/unit/test_tasks_once_model.py tests/unit/test_tasks_api_inference.py -v` → 全部 pass。
-3. 走 §6 模块 docstring 的 Phase 1 Verification checklist 顶到底。
-4. 操作员手工冒烟（非 pytest）：TG inbound → ChatJob → Agent → DeliveryJob → TG outbound；cron 任务恰好触发一次；`/health/channels` 返回 JSON。
-
----
-
-## 21. 风险与注意事项
-
-1. **TelegramWorker event-loop 不匹配。** 旧 `bot.py` 在 daemon thread 自有 asyncio loop；python-telegram-bot v21 共享 loop 可行，但 `Application.initialize()` 必须和 `start()` 在同一 loop。*缓解：* `__init__` 缓存 loop，`_run_inbound` 入口 `assert asyncio.get_running_loop() is self._loop`。
-
-2. **ChatJob payload 契约漂移。** 本设计的 payload 键集合（`text` / `channel` / `uid` / `session_id` / `task_id` / `task_run_id` / `tg_chat_id` / `tg_message_id`）与 `agent-worker-new-bus.md` §2.1 对齐。`chatJob.py` 或 `AgentWorker._process` 的未来修改可能静默破坏 TaskWorker。*缓解：* `test_run_task_job.py` 加 payload 键断言。
-
-3. **背压默认 1000 静默压制合法突发。** *缓解：* 阈值是 `settings_book` key（`channels.delivery.max_queue_depth`），操作员可调；warning 每分钟每 channel 一次。
-
-4. **`record_run_start` 与 `agent_job_board.publish` 之间崩溃。** task_runs 行留在 `status="running"`。*缓解：* `TaskRunBook.reap_stale(older_than_seconds=300)` 在 `_rehydrate` 末尾跑（§18 E.4）；加单元测试。
-
-5. **`channels.enabled` toggle 漏改。** `channels/api/channels.py` 必须同步迁到 `bus.settings_book`；否则 WebUI 切换按钮不真启动/停 worker。*缓解：* Part A.5 覆盖；若推迟则在 §23 plan amendments 标。
-
-6. **A2A outbound 依赖 `MAGI_RUNTIME_ID` 环境变量。** `channels/a2a/transport.py:17`。*缓解：* test fixture 里 set env；`A2AWorker` docstring 注明。
-
-7. **Worker 启动与 FastAPI lifespan 的竞态。** `_lifespan` 调 `worker_lifespan()`；若 FastAPI app 在 lifespan 跑之前被 import，`registered_channel_workers()` 是空的，`/health/channels` 返 `[]`。*缓解：* 测试用 `with TestClient(app) as client`（触发 lifespan）。
-
----
-
-## 22. 复用的现有工具
-
-- `BaseJobBoard.claim` / `submit_result` / `get_result` — [`magi/new_bus/guild/base.py:67-82`](../../magi/new_bus/guild/base.py#L67-L82)。所有 Channel Worker 出站循环走这些。
-- `BaseJobBoard._claim` lease 恢复 — [`magi/new_bus/guild/base.py:121-139`](../../magi/new_bus/guild/base.py#L121-L139)。自动重试 abandoned 任务最多 3 次。
-- `BaseBook._row_to_dto` — [`magi/new_bus/library/base.py:59`](../../magi/new_bus/library/base.py#L59)。所有 `record_run_*` / `list_*` 返回值走这里。
-- `NewBus` 字段 — [`magi/new_bus/bootstrap.py:31-151`](../../magi/new_bus/bootstrap.py#L31-L151)。`agent_job_board` 即 `chatJobBoard`；`delivery_job_board` 是出站队列。
-- `ChannelEnum` — [`magi/new_bus/library/local/tasksBook.py:64-90`](../../magi/new_bus/library/local/tasksBook.py#L64-L90)。`enabled` 验证（Part A.4）从这里取。
-- `bootstrap_new_bus` — [`magi/new_bus/bootstrap.py:158`](../../magi/new_bus/bootstrap.py#L158)。test fixture 的入口。
-- 模块级单例 + `start_xxx_worker(bus=...)` 模式 — [`magi/providers/worker.py:547-582`](../../magi/providers/worker.py#L547-L582)。`start_channel_workers` 镜像此模式。
-- `_SessionMessage` 等 webui 出站所需 dataclass（如果还需要）：见 `magi/channels/delivery.py:64-72` 的兼容层，迁移后保留。
-
----
-
-## 23. Plan amendments
-
-实现期间发现需要偏离本设计书时，在下方加一行（含 Agent 名、时间、原因、影响范围）。**不要静默改代码不记录。**
-
-| # | 时间 | Agent | 偏离内容 | 原因 | 影响范围 |
-|---|------|-------|---------|------|---------|
-| 1 | 2026-08-08 | Taki (Claude) | Step 1-3a 已落地 v3.0（agentJob.py / agentTurnStore.py / channelDeliveryJob.py / a2aJob.py / scheduledTaskBook.py），但 Step 3b（Channel Worker 主体：base.py / telegram.py / task.py / a2a.py / __init__.py）由另一位 Agent 接手并回退到 v2.0 形态（仍使用旧 chatJob.py + deliveryJob.py + tasksBook.py）。 | 多人并行；另一位 Agent 已先落地 v2.0 实现并被回滚采用。§1 协作规则 #4："风格不同但正确性相同 → 不介入"。 | 当前 live path 是 v2.0；v3.0 文件作为下一阶段资产保留（不同 module 路径，不与 v2.0 冲突）。切换到 v3.0 需要：① 重建 AgentWorker 消费 agentJobBoard 替代 agent_job_board；② 更新 bootstrap.py 注入新 board 字段；③ 更新 composition root；④ 删除旧 chatJob.py / deliveryJob.py / sendA2AJob.py / tasksBook.py + 旧 channel 模块。 |
-| 2 | 2026-08-08 | Taki (Claude) | `__init__.py` line 54 有 typo `global ... _a2 ...`（应为 `_a2a`）。未修。 | 该 typo 在运行时不会 break（globals 未被 stop 路径读取——stop_channel_workers 用入参 dict），属于 dead code 风格问题；§1 #4 "不要介入"。 | 下次自然清理时一并修。 |
-| 3 | 2026-08-08 | Taki (Claude) | 全量实现 Part A-F（v2.0 基准）。增：runTaskJob board、ChannelWorker 基类+4 Worker、TaskBook 方法、pending_count、health 端点。删：delivery.py / scheduler.py / runner.py。改：runtime.py(lifespan)、bootstrap.py、guild/__init__.py、base.py、tasksBook.py、app.py、TaskChannel.dispatch、TaskSchedulerBridge。 | 按设计书完整实现。magi/channels/__init__.py 新增 module-level `_current_new_bus` + `set_current_new_bus/get_current_new_bus` helper，供 TaskChannel.dispatch / TaskSchedulerBridge 过渡期用。api/ 路由未全量迁移 get_bus→new_bus（后续 phase）。 | 全部 v2.0 Channel Worker 模块就绪；旧 delivery/scheduler/runner 已删除；runtime.py lifespan 集成完成。 |
-| 4 | 2026-08-08 | Taki (Claude) | API 接口修正：8 处 Book/Board 方法名/签名不匹配修复。 | 实现时用了设计书里的伪方法名（sessions_book.create/find_latest_tg_session、messages_book.append、contacts_book.find_by_telegram_id/create_contact、settings_book.get()位置参数、delivery_job_board.claim(channel=)）。改为实际方法：sessions_book.add/get_for_owner/list_for_owner、messages_book.add、contacts_book.get_by_telegram/add、settings_book.get(key=)/set(key=,value=)、claim()无参+手动channel检查。 | base/telegram/task/webui/channels.py 共 5 文件。 |
-| 5 | 2026-08-08 | Taki (Claude, v3-foundation) | `bootstrap.py` 新增 4 个 v3.0 board 字段：`channel_delivery_board` / `a2a_request_job_board` / `scheduled_task_book` / `scheduled_task_store`，在 `_bootstrap_with_dirs` 末尾实例化并传给 `NewBus(...)`。`pyproject.toml` `eva` extra 加 `croniter>=2.0.0` 依赖。`scheduledTaskBook.py` 删除重复的 `_RunTaskJobRow` + `RunTaskJob`/`RunTaskResult`/`runTaskJobBoard`——这些由 v2.0 的 `magi.new_bus.guild.runTaskJob` 独占，避免 SQLAlchemy `MetaData` 重复定义 `run_task_jobs`。 | 按 §24 Step 4 推进 v3.0 落地：`NewBus` 是 §24 的唯一运行时 facade，v3 board 必须挂在 `NewBus` 上才能被未来的 v3 AgentWorker / ChannelWorker 消费。删除 v3 `scheduledTaskBook.py` 里的 `run_task_jobs` 是因为另一 Agent 的 v2.0 文件已注册该表（SQLAlchemy 同 MetaData 重复定义抛 `InvalidRequestError`）。 | `bootstrap.py` 新增 4 字段 + 4 实例化；`pyproject.toml` 加 croniter；`scheduledTaskBook.py` 删 ~250 行（重复的 run_task 部分），文件从 791 行减到 ~540 行。`bootstrap_new_bus()` 端到端验证通过（v2.0 board + v3.0 board 共存，6 个 board 实例正确）。 |
-| 6 | 2026-08-08 | Taki (Claude, v3-foundation) | **回滚** row #5 的 4 个 v3.0 board 字段 + `agentTurnStore.py` / `scheduledTaskBook.py` / `agentJob.py` / `channelDeliveryJob.py` / `a2aJob.py` 的全部 v3.0 写入。 | 用户指正：v3.0 board 字段与 v2.0 现有 `delivery_job_board` / `a2a_job_board` / `tasks_book` / `task_runs_book` 是同一职责的成对副本（"一对 Job"），违反 §24.1 的"双写禁止" + 引起隔壁 Agent 迁移组的混淆。正确路径：在 v2.0 board 内部做 v3.0 兼容性升级，而不是在 `NewBus` 上挂平行 board。v3.0 schema 是"未来 cutover 目标"不是"现在并存"。 | `bootstrap.py` 回退到纯 v2.0 board 列表；5 个 v3.0 文件被其他 Agent 删除；`bootstrap_new_bus()` 验证通过纯 v2.0 NewBus。`pyproject.toml` croniter 依赖保留（其他 Agent 的 `channels/workers/task.py` 还在用）。 |
-| 7 | 2026-08-08 | Taki (Claude, ingress-migration) | FastAPI ingress 部分迁移：`api/chat.py` 与 `a2a/router.py` 的 publish/complete 步骤改用 `bus.agent_job_board.publish(ChatJob(...))` / `bus.a2a_job_board.submit_result(SendA2AResult(...))`，旧 `magi.bus` 调用降级为 fallback。 | §24.7 要求 HTTP ingress 通过 dependency 获取 NewBus 完成短事务发布；§23 row #3 已声明这是后续 phase。两条路径写同一张 `agent_inbox` 表（AgentWorker 从同表 claim），所以是纯 surface swap，**不是双写**——是同一个持久化层的两种 API。session / contacts / messages 仍走旧 bus（迁移成本大，留给后续 phase）。 | `magi/channels/api/chat.py`：`get_bus().agent_runs.publish_input(AgentMessage(...))` → 新_bus 路径 `bus.agent_job_board.publish(ChatJob(event_id=..., kind='chat', payload={text, channel, uid, session_id, caller_role}))`。`magi/channels/a2a/router.py`：publish_input 同样替换；`complete_a2a` 替换为 `bus.a2a_job_board.submit_result(SendA2AResult(invocation_id=reply_to, success=..., response={'text': text}))`。`a2a_request_job_board` 字段不存在于 `NewBus` 故用 `a2a_job_board`（v2.0 board）—— v3.0 rename 等 §24 cutover 一并处理。`api/channels.py` 的 start_channel/stop_channel 仍走 `magi.startup.runtime` 的 deprecated stub（§24.7 "runtime control plane command" 是未来 workstream）。 |
-| 8 | 2026-08-08 | Taki (Claude, book-layer) | agent-worker-new-bus.md §6 Book 层补齐：`SettingBook` 加 `compaction_policy()` / `show_daily_note()` / `show_daily_note_prompt()` + 对应 `KNOWN_KEYS` 项；`MagisMembershipBook` 加 `instruction_context(magic_id)` + 构造函数接受 `settings_book` 参数（book 内部 join 读 personal instruction）。bootstrap.py 把 `settings_book=settings_book` 传给 `MagisMembershipBook`。 | agent-worker-new-bus.md §6 "Book 层补齐" 列了 7 个新方法；ContactBook 那 3 个（`get_by_uid` / `list_notes_for_uid` / `read_daily_note_for_uid`）已经以 `get(contact_id=...)` / `list_for_contact(contact_id=...)` / `read_daily_note(contact_id=...)` 别名存在。剩 4 个（SettingBook 3 + MembershipBook 1）补齐。 | `magi/new_bus/library/local/settingBook.py`：加 `compaction_policy()` 返回 `(context_window, threshold_pct, keep_recent)` + clamp + bool helpers；`KNOWN_KEYS` 加 5 个新键。`magi/new_bus/library/magis/membershipBook.py`：构造函数加 `settings_book` 参数；加 `instruction_context(magic_id)` 方法返回 `(personal, memberships)`（settings + magis + role 三表 JOIN）。`magi/new_bus/bootstrap.py`：把 `settings_book` 传给 `MagisMembershipBook`。验证：`bootstrap_new_bus()` 成功；`bus.settings_book.compaction_policy()` 返回 `(100000, 80, 20)` 默认值；持久化 `42` → 返回 `42`；clamp `9999` → 返回默认 `20`。 |
-
----
-
-## 24. v3 全新技术栈合同（最高优先级）
-
-### 24.1 Cutover 规则
-
-本次迁移不是旧 Bus 的适配层，也不是同表换 DTO。以下内容**禁止**出现在完成后的
-production path：
-
-- `magi.bus`、`get_bus()`、`BusStore`、旧 `AgentMessage`、旧 `DeliveryWorker`；
-- 旧表 `agent_inbox`、`delivery_outbox`、`tasks`、`task_runs` 及其字段/迁移兼容；
-- 双写、fallback read、兼容 wrapper、旧 HTTP run-status/SSE 的服务端实现；
-- 新旧 Worker 对同一队列或同一外部通道同时消费。
-
-部署使用新的 state directory / database。旧状态不导入；如需保留历史，仅作为离线、
-只读归档，不被新运行时读取。`NewBus` 是唯一运行时 facade，所有 Worker 和 FastAPI
-dependency 都显式注入同一个实例。
-
-### 24.2 新 schema 与唯一所有者
-
-下表是目标 schema；名称刻意避开旧表，避免 SQLAlchemy `extend_existing` 或列形状冲突。
-
-| 表 | 所有者 | 用途 |
-|---|---|---|
-| `agent_turn_jobs` | `AgentJobBoard` | 外部输入、steering 与 cancel 请求 |
-| `agent_turns` | `AgentTurnStore` | conversation lease、phase、continuation、terminal result |
-| `agent_messages` | `AgentTurnStore` | committed user / assistant transcript |
-| `channel_delivery_jobs` | `ChannelDeliveryBoard` | 只包含外部 delivery effect |
-| `a2a_request_jobs` | `A2AJobBoard` | `message_magi` 请求、关联回复与结果 |
-| `scheduled_tasks` | `ScheduledTaskBook` | cron / run_at 的任务定义 |
-| `scheduled_task_runs` | `ScheduledTaskStore` | 每次 fire 的 lifecycle 与 Agent turn 关联 |
-| `run_task_jobs` | `RunTaskJobBoard` | 手动/API/tool 触发任务的命令 |
-
-所有表使用同一 new-stack metadata / migration chain。不得为旧表写 `extend_existing=True`，
-不得共享旧 ORM model。表的 DTO 由本计划定义，而不是从旧表名推导。
-
-### 24.3 共享 DTO 合同
-
-Channel 与 Agent 以以下 immutable DTO 交互；顶层字段是正式合同，不再把通道身份藏在
-不受约束的 `payload` 中：
-
-```python
-@dataclass(frozen=True, slots=True)
-class ChatJob:
-    job_id: str
-    run_id: str
-    conversation_id: str
-    idempotency_key: str
-    kind: Literal["message", "steer", "cancel", "task"]
-    text: str
-    channel: str
-    uid: int | None
-    session_id: str | None
-    caller_role: str | None
-    metadata: dict[str, JsonValue]
-    deadline_at: datetime | None = None
-
-@dataclass(frozen=True, slots=True)
-class ChannelDeliveryJob:
-    job_id: str
-    run_id: str
-    channel: Literal["tg"]
-    destination: str
-    idempotency_key: str
-    payload: dict[str, JsonValue]
-
-@dataclass(frozen=True, slots=True)
-class A2ARequestJob:
-    job_id: str
-    run_id: str
-    target_magic_id: int
-    tool_call_id: str
-    correlation_id: str
-    expect_reply: bool
-    request: dict[str, JsonValue]
-```
-
-`ChatJobResult`、`ChannelDeliveryResult`、`A2ARequestResult` 都以 `job_id` 为自然键，
-包含 `success`、稳定 `error_code` 与受限 `result`。每个 publish 必须携带稳定的
-idempotency key：TG 使用 update/message id，WebUI 使用 client message id，A2A 使用
-sender event id，Task 使用 task-run id。
-
-### 24.4 所有权与数据流
+### 4.1 Telegram
 
 ```text
-TG / WebUI / Task / A2A ingress
-              │
-              ▼
-        AgentJobBoard (agent_turn_jobs)
-              │
-              ▼
- AgentTurnStore / AgentWorker
-   ├─ commit transcript + turn state atomically
-   ├─ ToolJobBoard
-   ├─ A2AJobBoard ──► A2AWorker ──► A2ARequestResult
-   └─ ChannelDeliveryBoard ──► TelegramWorker ──► external HTTP
+Telegram update
+  -> 联系人/角色校验
+  -> 建立或获取 session，写 user message
+  -> publish ChatJob(channel="tg", destination/会话信息)
+  -> AgentWorker
+  -> publish DeliveryJob(channel="tg", destination=tg_chat_id)
+  -> TelegramWorker 调用 Telegram API
+  -> submit DeliveryResult
 ```
 
-- AgentTurnStore 是 transcript 的**唯一写者**。`WebUIWorker` 不存在；WebUI 从
-  committed transcript / run API 读取，SSE 只是 best-effort 通知。绝不能在 delivery
-  consumer 再追加 assistant message。
-- TelegramWorker 是 `channel_delivery_jobs(channel="tg")` 的唯一消费者，且只执行
-  外部 Telegram HTTP I/O。
-- A2AWorker 消费 `a2a_request_jobs`，不是 ChannelDeliveryBoard；它把结果提交回
-  A2AJobBoard，供 Agent continuation 使用。
-- TaskWorker 创建 `ScheduledTaskRun` 并原子写入对应 user message + `ChatJob`；
-  AgentTurn terminal transition 通过 `task_run_id` 投影完成/失败、token usage 与
-  reply excerpt。TaskWorker 不猜测 Agent 是否成功。
+Telegram 的 polling application 必须在 `TelegramWorker.start()` 所在 event loop
+初始化和关闭，不再创建守护线程或第二个 asyncio loop。TG 未绑定、非授权用户、
+非文本输入等拒绝都在适配层处理，不进入 Agent。
 
-### 24.5 通用 queue 状态机
-
-每个可执行 job 使用同一状态机：
+### 4.2 WebUI
 
 ```text
-pending → leased → completed
-                 ├→ retry_wait → leased
-                 └→ failed | cancelled
+POST /api/chat/send
+  -> AdminGate + 输入校验
+  -> 建立/获取 session，写 user message
+  -> publish ChatJob(channel="webui")
+  -> 202 {run_id, session_id, status="accepted"}
+  -> AgentWorker -> DeliveryJob(channel="webui")
+  -> WebUIWorker 写 assistant message
 ```
 
-`claim_for_channel(channel, worker_id)`、`claim_for_conversation(...)` 与
-`renew_lease(job_id, worker_id)` 必须在 SQLite 中通过 compare-and-set UPDATE 实现；
-不能依赖 `SELECT FOR UPDATE SKIP LOCKED`。发送失败不可直接 `submit_result(false)`：
-可恢复错误进入 `retry_wait` 并带 `available_at/backoff`，永久错误或耗尽重试才进入
-`failed`。所有 terminal 写入要求 owner/version match，避免取消或 lease 被夺回后由
-晚到 worker 覆盖结果。
+HTTP handler 不等待 LLM、工具或 delivery。前端以 `run_id` 查询状态或订阅 SSE；
+持久化 session message 是权威结果，SSE 仅是最佳努力的增量。
 
-外部 Telegram/A2A 请求使用 `idempotency_key` 传递可用的对端幂等标识；无法保证对端
-exactly-once 时，系统保证 at-least-once，并持久化 delivery attempt 供查询。
+### 4.3 Task
 
-### 24.6 Task 调度合同
+```text
+cron/run_at poll 或 RunTaskJob
+  -> 唯一化 scheduled window / task run
+  -> 写任务上下文 user message
+  -> publish ChatJob(source_channel="task", channel=target_channel)
+  -> AgentWorker -> target channel DeliveryJob
+```
 
-`ScheduledTaskStore.fire()` 是一个事务：验证 task 仍 enabled、按 task 自己的 `tz`
-计算 cron 或 `run_at`、创建唯一 `scheduled_task_run`、写 user transcript，并发布
-`ChatJob(kind="task")`。唯一键 `(task_id, scheduled_window)` 防止重复 tick / 重启重复。
+`TaskWorker` 不等待 Agent reply。cron 的触发去重和 `run_at` 的一次性消费必须落
+在 NewBus task books；重启时从持久化状态恢复。手动运行、API 和
+`schedule_task` tool 一律发布 `RunTaskJob`，复用同一 fire path。
 
-`run_at` 在该事务内标为 consumed；cron 以 last scheduled window 而非 wall-clock
-poll 时间判断。每个 Agent terminal transition 都依据 `task_run_id` 完成对应 task run，
-更新失败计数；超时/取消同样有明确 terminal 投影。
+任务在 Agent terminal 后更新对应 task run 的状态；不得把“已发布 ChatJob”当作
+任务已经成功执行。
 
-### 24.7 启动与 HTTP 边界
+### 4.4 A2A
 
-Composition root 只启动：Providers → Tools → MCP → Agent → Task → Telegram → A2A。
-WebUI 与 A2A ingress 是 FastAPI handlers，不是 worker；它们通过 dependency 获取
-NewBus，完成短事务发布后立即返回 `202 + run_id`。
+```text
+对端 request -> 验签/拓扑授权 -> ChatJob(channel="a2a") -> AgentWorker
+Agent message_magi -> SendA2AJob -> A2AWorker HTTP POST -> SendA2AResult
+对端 result -> 验签/关联 invocation_id -> a2a_job_board.submit_result
+```
 
-`channels.enabled` 的修改交给一个运行时控制面命令处理；HTTP route 不得直接操作模块级
-worker registry。启动/停止必须串行、幂等，并持久化实际状态，避免 WebUI lifespan 与
-runtime process 同时启动同一外部 consumer。
+A2A 是 MAGI 间协作，不是 WebUI、资源或管理员授权的替代路径。`expect_reply`
+决定 Agent 是否等待关联结果；单向消息不能被伪装成普通 WebUI delivery。
 
-### 24.8 实施顺序与统一验证
+## 5. 启动、健康与关闭
 
-1. 建立 v3 metadata、全新 migration chain 与 DTO / board contracts。
-2. 实现 AgentTurnStore、AgentJobBoard、A2AJobBoard 及它们的 lease / cancel / atomic
-   transition；以此作为 Channel 的唯一上游。
-3. 实现 ScheduledTaskStore、TaskWorker、TelegramWorker、A2AWorker 和 HTTP ingress。
-4. 切换 composition root 与 HTTP API，删除所有旧 Bus、旧 Channel、旧表访问和兼容代码。
-5. **仅在 1–4 全部完成后**，与 `agent-worker-new-bus.md` 一起统一更新测试、运行完整
-   单元/集成/端到端验证及手工冒烟。实施途中只允许静态检查，不以局部测试通过宣告完成。
-| 5 | 2026-08-08 | Taki (Claude) | tasksBook.py: croniter 替换 apscheduler（validate_cron / next_fire / humanize_cron）。移除 `from apscheduler.triggers.cron import CronTrigger`。 | §16.C.2 要求。apscheduler 在 `magi/` 下无其他调用方。 | tasksBook.py。 |
-| 6 | 2026-08-08 | Taki (Claude) | 新增 4 测试 + 重写 3 现有测试。 | §19 要求；现有测试引用已删除模块。 | 7 测试文件。 |
+composition root 在一个 `NewBus` 实例创建后，以确定顺序启动：
+
+```text
+providers -> tools -> mcp -> agent -> task -> telegram -> webui -> a2a
+```
+
+关闭按反序执行。FastAPI 只承担 WebUI/A2A ingress 和生命周期托管；不得在路由
+中创建 worker 或修改模块级 worker registry。临时 `get_current_new_bus()` 仅可
+作为正在迁移的旧调用定位工具，切换完成前必须删除。
+
+每个 worker 公开只读 health：运行状态、最近 poll/success/error、该 channel
+的 pending depth。队列过深只记录节流与告警；不得静默丢弃 job。
+
+## 6. 实施顺序
+
+1. 冻结本文件和 Agent 文档中的 DTO/board 合同，删除版本覆盖段落与不属于
+   job-board 模型的状态机设计。
+2. 完成 NewBus-only ingress：Telegram、WebUI、Task、A2A 只使用 Books 和
+   `ChatJob`/`SendA2AJob`；消除 `get_bus()` fallback。
+3. 完成 egress：Telegram/WebUI 使用 `delivery_job_board`；A2A 使用
+   `a2a_job_board`；修正 Task 的真实 reply channel 和 task-run terminal
+   projection。
+4. 在 composition root 注册并启动全部 worker；建立独立 NewBus schema/migration
+   与状态目录；删除旧 channels worker、scheduler、dispatcher 和旧 Bus 访问。
+5. 上述代码全部落地后才运行完整测试、迁移验证和端到端 smoke。实施期间只做
+   静态 import/编译/文档检查，不逐个功能运行 pytest。
+
+## 7. 最终验收
+
+- `magi/channels/`、Agent 和启动路径没有 `magi.bus` / `get_bus()` 生产依赖；
+- TG、WebUI、Task、A2A 入站各自生成可去重的正确 board job；
+- 回复只进入有消费者的 `tg`/`webui` delivery，A2A 只走 A2A board；
+- 取消、steering、LLM 失败、工具/A2A 超时、delivery 失败都产生正确 terminal
+  result；
+- cron window 不重复触发，`run_at` 恰好一次，task run 有终态；
+- worker 启动/关闭无额外 event loop、无重复消费，lease 过期可回收；
+- 全量测试、独立 schema migration 和 TG/WebUI/Task/A2A 端到端 smoke 通过。
+
+## 8. 协作同步
+
+修改 public DTO、board 方法、物理 schema、worker 启动顺序或路由语义前，先在
+本节追加一行：日期、责任人、变更的合同、影响范围。未经记录，不得以重构为由
+增加兼容层、废弃其他 worker 仍依赖的方法，或新建独立的持久化协调层。
+
+- 2026-08-08 / Codex：将历史 v1/v2/v3 拼接文档收敛为本单一合同；明确
+  A2A 专用 board、Task reply channel、NewBus-only cutover 与最后统一测试。
+  本次未修改生产代码。

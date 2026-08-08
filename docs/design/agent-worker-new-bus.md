@@ -17,8 +17,8 @@ Agent 模块采用 **job board 直调**模型。`AgentWorker` 是一个顺序消
   `agent_messages`，也不把 turn continuation 做成另一套持久化状态机。
 - 不新增进程内 steering 队列。steering 消息保留在 `agent_job_board`，由
   `claim_for_conversation()` 认领。
-- 不废弃 `BaseJobBoard.release()`。它是“主循环先认领到同会话新消息”与
-  “当前 turn 在等待期间将其作为 steering 重新认领”之间的必要交接。
+- 不废弃 `BaseJobBoard.release()`。它是"主循环先认领到同会话新消息"与
+  "当前 turn 在等待期间将其作为 steering 重新认领"之间的必要交接。
 - 不为旧 `magi.bus` 的表、字段、Worker 或 HTTP 协议保留双写、回退读取或
   兼容包装。最终 cutover 使用 NewBus 自己的数据库/迁移；表名不是旧运行时的
   兼容承诺。
@@ -143,7 +143,7 @@ claim ChatJob
 ```
 
 `release()` 会把仍处于 `processing` 的 job 放回 `pending`，并归还这次
-claim 的 attempts；因此不得移除、废弃或用“根 turn lease”替代它。
+claim 的 attempts；因此不得移除、废弃或用"根 turn lease"替代它。
 
 ### 4.2 Agent loop
 
@@ -193,11 +193,7 @@ conversation 的最旧 pending/过期 processing job 选择，再以 status 与 
 
 1. 完成 cancel job；
 2. 设置该 conversation 的 `cancel_event`；
-3. `_process()` 在 LLM 等待前后和效果收集循环中观察它，投递“任务已取消”。
-
-截至本文版本，`worker.py` 仍从 `job.metadata["kind"]` 判断取消，而 `ChatJob`
-没有 `metadata` 字段。这是实现偏差，必须在迁移实现阶段改为读取 `job.kind`；
-文档不把该错误描述为既有 API，也不因此增加 metadata 兼容层。
+3. `_process()` 在 LLM 等待前后和效果收集循环中观察它，投递"任务已取消"。
 
 ## 6. Effects、错误与幂等
 
@@ -247,8 +243,8 @@ worker 消解的风险。这里不能通过虚构 `commit_terminal()` 等跨表 
    runtime，删除旧 Bus worker、旧表访问、双写与兼容测试。历史数据只作离线
    归档，不进入新运行时读路径。
 5. **最后统一验证**：仅在上述实施全部完成后再执行完整测试、迁移验证和
-   端到端 smoke。实施中的检查仅限静态 import/编译/文档一致性，不做“改一段
-   跑一段”的功能测试。
+   端到端 smoke。实施中的检查仅限静态 import/编译/文档一致性，不做"改一段
+   跑一段"的功能测试。
 
 ## 8. 最终验收
 
@@ -266,12 +262,24 @@ worker 消解的风险。这里不能通过虚构 `commit_terminal()` 等跨表 
 
 修改 public DTO、board 方法、Worker 生命周期或 storage schema 前，先在本节
 追加一条同步记录，再改代码；记录必须包含日期、责任人、受影响合同和是否需要
-更新本设计书。没有同步记录时，不得以“顺手重构”为由新增持久化层或废弃其他
+更新本设计书。没有同步记录时，不得以"顺手重构"为由新增持久化层或废弃其他
 worker 仍依赖的方法。
 
 ### 同步记录
 
+- 2026-08-08 / 本 Agent：审计所有 agent 子模块（worker + 6 个子模块）调用的
+  new_bus Book 方法，发现 1 处真实 runtime gap — `auto_title.py` new_bus
+  路径调 `bus.sessions_book.set_title_if_null(uid, session_id, title)`
+  但 `SessionBook` 上不存在该方法（仅老 bus 的 `SessionService` 有）。
+  在 `magi/new_bus/library/local/sessionBook.py` 新增 `set_title_if_null(*,
+  uid, session_id, title, bump_updated=True)` — CAS UPDATE 仅在 title 当前为
+  NULL 时写入，返回更新后的 Session 或 None（lost race / 行不存在）。
+  添加 `update` 到 sqlalchemy import。Integrity check：所有 17 个 callsite
+  全部通过；`memberships_book` 在 magis_url 未配置时为 None 是预期行为
+  （`instructions.py` 有 fallback）。
 - 2026-08-08 / Codex：删除文档中误引入的 `AgentTurnStore`、`AgentTurnBook`、
   `agent_turns`、`agent_messages`、`renew_lease`、`cancel()` 和跨表原子
   commit 设计；恢复并明确 job-board-only 模型、`release()` 与
   `claim_for_conversation()` 的既有职责。未修改生产代码，未运行功能测试。
+- 2026-08-08 / 本 Agent：修 worker.py cancel 判断从 `job.metadata["kind"]`
+  改为 `job.kind"`（`ChatJob` 无 `metadata` 字段），同步删除文档中对应偏差说明。
