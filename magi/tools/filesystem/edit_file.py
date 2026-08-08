@@ -121,29 +121,23 @@ class EditFileTool(Tool):
         new_str = kwargs.get("new_str")
 
         if not isinstance(path_arg, str) or not path_arg:
-            return ToolResult(
-                content="edit_file: ``path`` is required and must be a non-empty string",
-                is_error=True,
+            return ToolResult.err(
+                "edit_file: ``path`` is required and must be a non-empty string",
             )
         if not isinstance(old_str, str) or not old_str:
-            return ToolResult(
-                content="edit_file: ``old_str`` is required and must be a non-empty string",
-                is_error=True,
+            return ToolResult.err(
+                "edit_file: ``old_str`` is required and must be a non-empty string",
             )
         if not isinstance(new_str, str):
-            return ToolResult(
-                content="edit_file: ``new_str`` is required and must be a string",
-                is_error=True,
+            return ToolResult.err(
+                "edit_file: ``new_str`` is required and must be a string",
             )
         if len(old_str.encode("utf-8")) > _MAX_OLD_STR_BYTES:
-            return ToolResult(
-                content=(
-                    f"edit_file: ``old_str`` is "
-                    f"{len(old_str.encode('utf-8'))} bytes; v0 "
-                    f"limit is {_MAX_OLD_STR_BYTES}. Pass a "
-                    f"smaller chunk (5-10 lines usually)."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: ``old_str`` is "
+                f"{len(old_str.encode('utf-8'))} bytes; v0 "
+                f"limit is {_MAX_OLD_STR_BYTES}. Pass a "
+                f"smaller chunk (5-10 lines usually)."
             )
 
         # Path must exist (edit_file is for existing files
@@ -152,24 +146,20 @@ class EditFileTool(Tool):
         try:
             target = safe_resolve(ctx.workspace, path_arg)
         except ValueError as e:
-            return ToolResult(content=f"edit_file: {e}", is_error=True)
+            return ToolResult.err(f"edit_file: {e}")
 
         # Read the current file. UTF-8 only — matches
         # read_file / write_file's contract.
         try:
             original = target.read_text(encoding="utf-8")
         except UnicodeDecodeError as e:
-            return ToolResult(
-                content=(
-                    f"edit_file: {path_arg!r} is not valid UTF-8 "
-                    f"({e}). Use a binary-safe workflow instead."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: {path_arg!r} is not valid UTF-8 "
+                f"({e}). Use a binary-safe workflow instead."
             )
         except OSError as e:
-            return ToolResult(
-                content=f"edit_file: failed to read {path_arg!r}: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: failed to read {path_arg!r}: {e}",
             )
 
         # ``count`` is a fast str method: counts
@@ -178,31 +168,25 @@ class EditFileTool(Tool):
         # optimisation.
         occurrences = original.count(old_str)
         if occurrences == 0:
-            return ToolResult(
-                content=(
-                    f"edit_file: ``old_str`` not found in "
-                    f"{path_arg!r}. The file's current content "
-                    f"differs from what your ``old_str`` "
-                    f"expects — either the file was edited "
-                    f"since your last ``read_file`` or your "
-                    f"``old_str`` has whitespace / indentation "
-                    f"that doesn't match. Call ``read_file`` "
-                    f"on {path_arg!r} first to refresh your view "
-                    f"of the file before retrying."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: ``old_str`` not found in "
+                f"{path_arg!r}. The file's current content "
+                f"differs from what your ``old_str`` "
+                f"expects — either the file was edited "
+                f"since your last ``read_file`` or your "
+                f"``old_str`` has whitespace / indentation "
+                f"that doesn't match. Call ``read_file`` "
+                f"on {path_arg!r} first to refresh your view "
+                f"of the file before retrying."
             )
         if occurrences > 1:
-            return ToolResult(
-                content=(
-                    f"edit_file: ``old_str`` appears {occurrences} "
-                    f"times in {path_arg!r}. The tool requires a "
-                    f"unique match — include more surrounding "
-                    f"context (a few lines before + after) to "
-                    f"disambiguate, or call ``read_file`` first "
-                    f"to confirm the current content."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: ``old_str`` appears {occurrences} "
+                f"times in {path_arg!r}. The tool requires a "
+                f"unique match — include more surrounding "
+                f"context (a few lines before + after) to "
+                f"disambiguate, or call ``read_file`` first "
+                f"to confirm the current content."
             )
 
         # Substitute and write atomically. We reuse the
@@ -231,9 +215,8 @@ class EditFileTool(Tool):
                     pass
                 raise
         except OSError as e:
-            return ToolResult(
-                content=f"edit_file: failed to write {path_arg!r}: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"edit_file: failed to write {path_arg!r}: {e}",
             )
 
         # Tell the LLM what just happened in a way that

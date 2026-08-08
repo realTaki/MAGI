@@ -30,6 +30,7 @@ from magi.new_bus.library.local.hookSignoffBook import HookSignoff, HookSignoffB
 from magi.new_bus.library.local.mcpServerBook import McpServer, McpServerBook
 from magi.new_bus.library.local.memoryBook import (
     ALL_KINDS,
+    ALL_SOURCES as ALL_MEMORY_SOURCES,
     KIND_IMPORTANT,
     KIND_ONGOING,
     Memory,

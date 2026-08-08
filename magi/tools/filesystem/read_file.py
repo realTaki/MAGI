@@ -137,9 +137,8 @@ class ReadFileTool(Tool):
         limit_arg = kwargs.get("limit")
 
         if not isinstance(path_arg, str) or not path_arg:
-            return ToolResult(
-                content="read_file: ``path`` is required and must be a non-empty string",
-                is_error=True,
+            return ToolResult.err(
+                "read_file: ``path`` is required and must be a non-empty string",
             )
 
         # Type-validate the optional ints. We don't
@@ -148,15 +147,9 @@ class ReadFileTool(Tool):
         # the tool belt-and-suspenders pattern matches
         # the other tools in this package.
         if offset_arg is not None and not isinstance(offset_arg, int):
-            return ToolResult(
-                content="read_file: ``offset`` must be an integer",
-                is_error=True,
-            )
+            return ToolResult.err("read_file: ``offset`` must be an integer")
         if limit_arg is not None and not isinstance(limit_arg, int):
-            return ToolResult(
-                content="read_file: ``limit`` must be an integer",
-                is_error=True,
-            )
+            return ToolResult.err("read_file: ``limit`` must be an integer")
 
         # Resolve the path. ``safe_resolve`` enforces
         # workspace containment + ``must_be_file`` so a
@@ -164,14 +157,13 @@ class ReadFileTool(Tool):
         try:
             target = safe_resolve(ctx.workspace, path_arg)
         except ValueError as e:
-            return ToolResult(content=f"read_file: {e}", is_error=True)
+            return ToolResult.err(f"read_file: {e}")
 
         try:
             raw = target.read_bytes()
         except OSError as e:
-            return ToolResult(
-                content=f"read_file: failed to read {path_arg!r}: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"read_file: failed to read {path_arg!r}: {e}",
             )
 
         # Sniff encoding. ``read_file`` advertises UTF-8; we
@@ -182,13 +174,10 @@ class ReadFileTool(Tool):
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as e:
-            return ToolResult(
-                content=(
-                    f"read_file: {path_arg!r} is not valid UTF-8 "
-                    f"(decoded bytes {e.start}..{e.end}); the "
-                    f"tool only reads UTF-8 files."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"read_file: {path_arg!r} is not valid UTF-8 "
+                f"(decoded bytes {e.start}..{e.end}); the "
+                f"tool only reads UTF-8 files."
             )
 
         # Windowed mode: line-numbered output. The LLM
@@ -266,13 +255,10 @@ class ReadFileTool(Tool):
         if start < 0:
             start = 0
         if start >= len(lines):
-            return ToolResult(
-                content=(
-                    f"read_file: ``offset`` {offset} is past "
-                    f"the end of {path_arg!r} (file has "
-                    f"{len(lines)} lines)."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"read_file: ``offset`` {offset} is past "
+                f"the end of {path_arg!r} (file has "
+                f"{len(lines)} lines)."
             )
         end = min(start + limit, len(lines))
 

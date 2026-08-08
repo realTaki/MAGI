@@ -83,22 +83,17 @@ class WriteFileTool(Tool):
         content_arg = kwargs.get("content")
 
         if not isinstance(path_arg, str) or not path_arg:
-            return ToolResult(
-                content="write_file: ``path`` is required and must be a non-empty string",
-                is_error=True,
+            return ToolResult.err(
+                "write_file: ``path`` is required and must be a non-empty string",
             )
         if not isinstance(content_arg, str):
-            return ToolResult(
-                content="write_file: ``content`` is required and must be a string",
-                is_error=True,
+            return ToolResult.err(
+                "write_file: ``content`` is required and must be a string",
             )
         if len(content_arg.encode("utf-8")) > _MAX_CONTENT_BYTES:
-            return ToolResult(
-                content=(
-                    f"write_file: content is {len(content_arg.encode('utf-8'))} "
-                    f"bytes; v0 limit is {_MAX_CONTENT_BYTES}."
-                ),
-                is_error=True,
+            return ToolResult.err(
+                f"write_file: content is {len(content_arg.encode('utf-8'))} "
+                f"bytes; v0 limit is {_MAX_CONTENT_BYTES}."
             )
 
         # Resolve the path WITHOUT ``must_be_file=True`` —
@@ -108,7 +103,7 @@ class WriteFileTool(Tool):
         try:
             target = safe_resolve(ctx.workspace, path_arg, must_be_file=False)
         except ValueError as e:
-            return ToolResult(content=f"write_file: {e}", is_error=True)
+            return ToolResult.err(f"write_file: {e}")
 
         # Auto-create parent dirs. ``mkdir(parents=True, exist_ok=True)``
         # is idempotent — if the parent already exists it's a
@@ -121,9 +116,8 @@ class WriteFileTool(Tool):
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            return ToolResult(
-                content=f"write_file: failed to create parent dirs: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"write_file: failed to create parent dirs: {e}",
             )
 
         try:
@@ -147,9 +141,8 @@ class WriteFileTool(Tool):
                     pass
                 raise
         except OSError as e:
-            return ToolResult(
-                content=f"write_file: failed to write {path_arg!r}: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"write_file: failed to write {path_arg!r}: {e}",
             )
 
         bytes_written = len(content_arg.encode("utf-8"))

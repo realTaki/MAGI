@@ -69,10 +69,7 @@ class ListFilesTool(Tool):
     ) -> ToolResult:
         path_arg = kwargs.get("path", ".")
         if not isinstance(path_arg, str):
-            return ToolResult(
-                content="list_files: ``path`` must be a string",
-                is_error=True,
-            )
+            return ToolResult.err("list_files: ``path`` must be a string")
 
         # ``must_be_file=False`` + manual existence check,
         # because we want to accept "directory that exists"
@@ -81,25 +78,22 @@ class ListFilesTool(Tool):
         try:
             target = safe_resolve(ctx.workspace, path_arg, must_be_file=False)
         except ValueError as e:
-            return ToolResult(content=f"list_files: {e}", is_error=True)
+            return ToolResult.err(f"list_files: {e}")
 
         if not target.exists():
-            return ToolResult(
-                content=f"list_files: path does not exist: {path_arg!r}",
-                is_error=True,
+            return ToolResult.err(
+                f"list_files: path does not exist: {path_arg!r}",
             )
         if not target.is_dir():
-            return ToolResult(
-                content=f"list_files: path is a file, not a directory: {path_arg!r}",
-                is_error=True,
+            return ToolResult.err(
+                f"list_files: path is a file, not a directory: {path_arg!r}",
             )
 
         try:
             entries_raw = sorted(target.iterdir(), key=lambda p: p.name)
         except OSError as e:
-            return ToolResult(
-                content=f"list_files: failed to read directory: {e}",
-                is_error=True,
+            return ToolResult.err(
+                f"list_files: failed to read directory: {e}",
             )
 
         truncated = len(entries_raw) > _MAX_ENTRIES
