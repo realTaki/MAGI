@@ -9,6 +9,8 @@
   代码改动才需要重发。
 - **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 session，
   全走 :class:`RunToolJob` → :class:`RunToolResult`。
+- **并发执行**。通过 ``asyncio.Semaphore`` 控制并发槽位，
+  ``MAGI_TOOL_CONCURRENCY`` 环境变量覆盖默认值 2。
 
 GATE（enqueue 时由调用方校验角色）已在 publish 之前完成；
 worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
@@ -25,9 +27,9 @@ worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
       └─ spawn _run() task
     _run() loop
       └─ bus.tool_job_board.claim()
-      └─ _execute(claim)               # catalog 校验 + 执行 + submit_result
-                                          BaseJobBoard 自带 attempts ≥
-                                          MAX_ATTEMPTS → exhausted result
+      └─ await _slots.acquire()         # 等待并发槽位
+      └─ create_task(_invoke_safe(job)) # fire-and-forget
+      └─ continue                       # 立即回到循环顶部 claim 下一个
 
 入队 helper
 ===========
@@ -42,6 +44,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +68,10 @@ _ERROR_CODES = {
     "unknown": "tool.unknown",
     "crashed": "tool.crashed",
 }
+
+#: Default concurrency — how many tool jobs may run simultaneously.
+#: Override with ``MAGI_TOOL_CONCURRENCY`` environment variable.
+_DEFAULT_CONCURRENCY = 2
 
 
 def _canonical_json(value: object) -> str:
@@ -130,6 +137,14 @@ class ToolsWorker:
     Receives a fully-wired :class:`NewBus` via constructor injection.
     Publishes the builtin tool catalog at ``start()``, then drains
     :class:`RunToolJob` claims forever.
+
+    Concurrency is controlled by an :class:`asyncio.Semaphore` whose
+    size defaults to :data:`_DEFAULT_CONCURRENCY` (2) and can be
+    overridden by the ``MAGI_TOOL_CONCURRENCY`` env var.  The claim
+    loop is fire-and-forget — it acquires a slot, spawns a child
+    :class:`asyncio.Task`, and immediately loops to claim the next
+    job.  The semaphore is the throttle; there is no fixed worker
+    pool or queue depth limit.
     """
 
     def __init__(
@@ -137,10 +152,14 @@ class ToolsWorker:
         bus: "NewBus",
         *,
         poll_seconds: float = 0.25,
+        concurrency: int | None = None,
     ) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
+        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
+        self._slots = asyncio.Semaphore(self.concurrency)
         self._task: asyncio.Task[None] | None = None
+        self._inflight: set[asyncio.Task[None]] = set()
         self._stopping = False
 
     async def start(self) -> None:
@@ -155,6 +174,7 @@ class ToolsWorker:
         await asyncio.to_thread(self._publish_builtin_catalog)
 
         self._stopping = False
+        self._inflight.clear()
         self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
 
     async def stop(self) -> None:
@@ -164,6 +184,13 @@ class ToolsWorker:
             with suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        # Wait for any still-running child tasks before the event
+        # loop tears down.  Semaphore prevents new tasks from
+        # spawning after _run() exits; inflight drains what's
+        # already in flight.
+        if self._inflight:
+            await asyncio.gather(*self._inflight, return_exceptions=True)
+            self._inflight.clear()
 
     async def _run(self) -> None:
         while not self._stopping:
@@ -178,7 +205,27 @@ class ToolsWorker:
             if job is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
+
+            # Acquire a concurrency slot before spawning.  The
+            # loop blocks here when all slots are busy — no
+            # further claims happen until a slot frees up.
+            await self._slots.acquire()
+            task = asyncio.create_task(self._invoke_safe(job))
+            self._inflight.add(task)
+            task.add_done_callback(self._inflight.discard)
+
+    async def _invoke_safe(self, job: "RunToolJob") -> None:
+        """Wrapper that guarantees ``_slots.release()``.
+
+        Even if :meth:`_execute` raises an unexpected exception
+        (real bug, not a tool-level ``ToolResult(is_error=True)``),
+        the slot is released so the worker doesn't deadlock.
+        Mirrors :meth:`ProvidersWorker._invoke_safe`.
+        """
+        try:
             await self._execute(job)
+        finally:
+            self._slots.release()
 
     # ----- catalog publish ----------------------------------------------
 
@@ -365,10 +412,21 @@ class ToolsWorker:
 _worker: ToolsWorker | None = None
 
 
-async def start_tool_worker(bus: "NewBus") -> ToolsWorker:
+async def start_tool_worker(
+    bus: "NewBus",
+    *,
+    concurrency: int | None = None,
+) -> ToolsWorker:
     global _worker
     if _worker is None:
-        _worker = ToolsWorker(bus=bus)
+        if concurrency is None:
+            try:
+                concurrency = int(os.environ.get("MAGI_TOOL_CONCURRENCY", ""))
+            except (TypeError, ValueError):
+                concurrency = _DEFAULT_CONCURRENCY
+        if concurrency is None or concurrency < 1:
+            concurrency = _DEFAULT_CONCURRENCY
+        _worker = ToolsWorker(bus=bus, concurrency=concurrency)
         await _worker.start()
     return _worker
 
