@@ -88,51 +88,74 @@ producers.
 
 from __future__ import annotations
 
-from magi.connectors.base import (
-    Connector,
-    ConnectorConfig,
-    ConnectorEvent,
-    ConnectorEventKind,
-    EventHandler,
-)
-from magi.connectors.bus import (
-    EventBus,
-    get_bus,
-    publish,
-    reset_bus,
-    subscribe,
-)
-from magi.connectors.registry import (
-    get_connector,
-    get_factory,
-    list_connectors,
-    load_connectors,
-    register_connector,
-    register_connector_factory,
-    reset as reset_registry,
-    unload_all,
-)
+# ---------------------------------------------------------------------------
+# DISABLED — ``magi.connectors`` is commented out. The new BUS
+# (``magi.new_bus``) has not yet integrated the connector lifecycle /
+# event-bus primitives this package depends on, and the package is
+# blocked on a few upstream decisions (where connector configs live,
+# how events cross MAGI boundaries, tool-wrapper auto-derivation).
+# Until those decisions land, importing this package would race with
+# partial wiring.
+#
+# The historical contracts (Connector / ConnectorConfig / ConnectorEvent /
+# EventBus / registry) are kept verbatim below so they can be
+# re-enabled in one move once the integration plan is settled. To
+# re-enable: uncomment the import block and the ``__all__`` list, then
+# delete this banner.
+#
+# Known fallout while disabled:
+#   - ``tests/unit/test_connectors.py`` will fail to import. Re-enable
+#     the package, or comment that test file out, before running the
+#     unit suite.
+# ---------------------------------------------------------------------------
 
-__all__ = [
-    # Protocol types
-    "Connector",
-    "ConnectorConfig",
-    "ConnectorEvent",
-    "ConnectorEventKind",
-    "EventHandler",
-    # Bus API
-    "EventBus",
-    "get_bus",
-    "publish",
-    "reset_bus",
-    "subscribe",
-    # Registry API
-    "get_connector",
-    "get_factory",
-    "list_connectors",
-    "load_connectors",
-    "register_connector",
-    "register_connector_factory",
-    "reset_registry",
-    "unload_all",
-]
+# from magi.connectors.base import (
+#     Connector,
+#     ConnectorConfig,
+#     ConnectorEvent,
+#     ConnectorEventKind,
+#     EventHandler,
+# )
+# from magi.connectors.bus import (
+#     EventBus,
+#     get_bus,
+#     publish,
+#     reset_bus,
+#     subscribe,
+# )
+# from magi.connectors.registry import (
+#     get_connector,
+#     get_factory,
+#     list_connectors,
+#     load_connectors,
+#     register_connector,
+#     register_connector_factory,
+#     reset as reset_registry,
+#     unload_all,
+# )
+#
+# __all__ = [
+#     # Protocol types
+#     "Connector",
+#     "ConnectorConfig",
+#     "ConnectorEvent",
+#     "ConnectorEventKind",
+#     "EventHandler",
+#     # Bus API
+#     "EventBus",
+#     "get_bus",
+#     "publish",
+#     "reset_bus",
+#     "subscribe",
+#     # Registry API
+#     "get_connector",
+#     "get_factory",
+#     "list_connectors",
+#     "load_connectors",
+#     "register_connector",
+#     "register_connector_factory",
+#     "reset_registry",
+#     "unload_all",
+# ]
+
+__all__: list[str] = []
