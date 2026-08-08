@@ -51,18 +51,31 @@ Failure modes (graceful, never raise at scan time):
   - missing bundle root → empty registry, log INFO
   - invalid directory name → skip, log a warning
 
-Hot-reload is intentionally **not** provided: the registry is built
-once at :class:`SkillsBook` construction and stays stable for the
-process lifetime. Operators add a SKILL.md, restart the MAGI node, the
-new skill appears. The :class:`~magi.new_bus.db.file.FileShelf` hot-
-reload machinery is available underneath — future work can opt in
-without a schema change.
+Hot-reload: every public read (``get`` / ``list`` / ``exists`` /
+``read_body``) checks the on-disk fingerprint of both roots and
+re-scans when it changes. The fingerprint is the sorted tuple of
+``(skill_dir_name, skill_md_mtime_ns, skill_md_size)`` for every
+``SKILL.md`` under each root — that single tuple catches *all* of:
+
+  - skill dir added / removed
+  - ``SKILL.md`` created / deleted inside an existing dir
+  - ``SKILL.md`` content edited (mtime or size delta)
+
+Re-scan cost is bounded: one ``stat()`` per skill dir per public
+call (microseconds). Body reads were already always-fresh —
+:meth:`SkillsBook.read_body` reads from disk to capture the mtime
+the API surface returns; this just brings the registry in line.
+
+Thread safety: rebuild + registry read are guarded by a single
+:class:`threading.Lock`. Tests + workers can call any public
+method from any thread without external synchronisation.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -385,17 +398,23 @@ class SkillsBook:
 
     Built on two :class:`~magi.new_bus.db.file.FileShelf` instances
     (bundle + operator). The shelves give us safe path resolution
-    and a hot-reload cache underneath, even though the registry
-    itself only re-scans on construction.
+    underneath; the registry itself is hot-reloaded on every public
+    read via :meth:`_ensure_fresh`.
 
     Lookup contract:
 
-      - :meth:`get` / :meth:`list` / :meth:`exists` read the registry
-        built once at construction — restart-required to pick up new
-        or edited SKILL.md files. Same as the pre-refactor loader.
+      - :meth:`get` / :meth:`list` / :meth:`exists` / :meth:`read_body`
+        all call :meth:`_ensure_fresh` first, which re-scans if the
+        on-disk fingerprint (per-skill-dir tuple of name + mtime +
+        size of SKILL.md) has changed. New / removed / edited
+        skills become visible without a process restart.
       - :meth:`read_body` reads ``meta.path`` directly to capture the
-        on-disk mtime for the API response; this bypasses the
-        FileShelf cache but matches the previous behaviour.
+        on-disk mtime for the API response; it bypasses any cache
+        but matches the previous behaviour.
+
+    Thread safety: a single :class:`threading.Lock` guards both the
+    fingerprint check + re-scan and the registry read that follows.
+    Public methods are safe to call from any thread.
     """
 
     def __init__(
@@ -406,24 +425,47 @@ class SkillsBook:
         self._bundle = bundle
         self._operator = operator
         self._registry: dict[str, SkillMeta] = {}
-        self._scan()
+        # Per-root fingerprints; ``()`` until the first scan. The
+        # initial scan writes both, so the first public call is a
+        # no-op compare.
+        self._bundle_fp: tuple = ()
+        self._operator_fp: tuple = ()
+        self._lock = threading.Lock()
+        self._ensure_fresh(force=True)
 
     # ─── public surface ────────────────────────────────────────────────
 
     def list(self) -> list[SkillMeta]:
-        """Sorted by skill name for stable UI ordering."""
-        return sorted(self._registry.values(), key=lambda s: s.name)
+        """Sorted by skill name for stable UI ordering.
+
+        Hot-reloads the registry first if the on-disk fingerprint of
+        either root has changed since the last scan.
+        """
+        self._ensure_fresh()
+        with self._lock:
+            return sorted(self._registry.values(), key=lambda s: s.name)
 
     def get(self, name: str) -> Optional[SkillMeta]:
-        return self._registry.get(name)
+        """Return the :class:`SkillMeta` for *name*, or ``None``.
+
+        Hot-reloads the registry first.
+        """
+        self._ensure_fresh()
+        with self._lock:
+            return self._registry.get(name)
 
     def exists(self, name: str) -> bool:
-        return name in self._registry
+        """``True`` iff *name* is registered. Hot-reloads first."""
+        self._ensure_fresh()
+        with self._lock:
+            return name in self._registry
 
     def read_body(self, name: str) -> SkillBody:
         """Read the full markdown body for *name*, ready for the LLM.
 
-        Pipeline (matches the pre-refactor ``SkillLoaderTool._read_skill_body``):
+        Hot-reloads the registry first, then runs the standard
+        pipeline (matches the pre-refactor
+        ``SkillLoaderTool._read_skill_body``):
 
           1. Look up :class:`SkillMeta`; raise :class:`SkillNotFound` if missing.
           2. Byte-read + UTF-8-decode the SKILL.md, capture mtime via ``stat``.
@@ -439,7 +481,7 @@ class SkillsBook:
         truncation flag. The :attr:`SkillBody.truncated` flag is True
         iff the on-disk body exceeded :data:`_BODY_MAX_BYTES`.
         """
-        meta = self._registry.get(name)
+        meta = self.get(name)
         if meta is None:
             raise SkillNotFound(f"no skill named {name!r} is registered")
         skill_path = meta.path
@@ -497,9 +539,10 @@ class SkillsBook:
         :meth:`__init__` twice on the same roots behaves the same as
         once (used by tests).
 
-        Two passes — bundle first (the defaults), then operator
-        (overrides bundle entries with the same name; no warning,
-        that is the normal customisation flow).
+        Must be called with :attr:`_lock` held (see
+        :meth:`_ensure_fresh`). Two passes — bundle first (the
+        defaults), then operator (overrides bundle entries with the
+        same name; no warning, that is the normal customisation flow).
         """
         self._registry.clear()
         bundle_count = self._scan_root(self._bundle, source="bundle")
@@ -510,6 +553,56 @@ class SkillsBook:
             "skills: %d loaded (%d from bundle, %d from operator)",
             len(self._registry), bundle_count, operator_count,
         )
+
+    def _ensure_fresh(self, *, force: bool = False) -> None:
+        """Re-scan if either root's on-disk fingerprint has changed.
+
+        Called by every public read method. Catches: skill dir
+        added/removed, ``SKILL.md`` created/deleted, ``SKILL.md``
+        content edited.
+
+        Fingerprint cost: one ``stat()`` per skill dir (microseconds).
+        The fast path (no change) skips the full re-scan.
+        """
+        bundle_fp = self._root_fingerprint(self._bundle)
+        operator_fp = self._root_fingerprint(self._operator)
+        with self._lock:
+            if (
+                not force
+                and self._bundle_fp == bundle_fp
+                and self._operator_fp == operator_fp
+            ):
+                return
+            self._scan()
+            self._bundle_fp = bundle_fp
+            self._operator_fp = operator_fp
+
+    def _root_fingerprint(self, shelf: FileShelf) -> tuple:
+        """Sorted tuple of ``(dir_name, mtime_ns, size)`` per SKILL.md.
+
+        Missing root → ``()``. Missing/unreadable ``SKILL.md`` is
+        silently skipped here (will be reported as a scan warning
+        by :meth:`_scan_one` if the re-scan actually runs). ``iterdir``
+        mid-write races are caught by :func:`OSError` → ``()``.
+        """
+        root = shelf.root
+        if not root.is_dir():
+            return ()
+        try:
+            entries = list(root.iterdir())
+        except OSError:
+            return ()
+        out: list[tuple[str, int, int]] = []
+        for skill_dir in entries:
+            if not skill_dir.is_dir():
+                continue
+            skill_path = skill_dir / _SKILL_FILENAME
+            try:
+                st = skill_path.stat()
+            except OSError:
+                continue
+            out.append((skill_dir.name, st.st_mtime_ns, st.st_size))
+        return tuple(sorted(out))
 
     def _scan_root(self, shelf: FileShelf, *, source: str) -> int:
         """Scan one shelf's root, register its skills, return count.

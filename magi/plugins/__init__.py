@@ -63,50 +63,64 @@ session / tool-catalog / task / settings hooks.
 
 from __future__ import annotations
 
-from magi.plugins.base import Plugin
-from magi.plugins.hooks import (
-    HookAction,
-    HookDataScope,
-    HookDecision,
-    HookEnvelope,
-    HookEvaluation,
-    HookHandler,
-    HookHandlerProtocol,
-    HookMode,
-    HookPoint,
-    HookRegistration,
-    PrincipalType,
-    RuntimeHookContext,
-    SecurityHookContext,
-    PrincipalHookContext,
-    CausalityHookContext,
-    HookPluginDescriptor,
-    HookPluginLoader,
-    HookFailureMode,
-    hook_handler,
-)
+# ---------------------------------------------------------------------------
+# DISABLED — ``magi.plugins`` is commented out because the new BUS
+# (``magi.new_bus``) has not yet implemented the hook subsystem that this
+# module depends on. Until the new BUS ships hooks, importing this package
+# would fail (and any consumer relying on it would break).
+#
+# The historical contracts, types, and protocol re-exports below are kept
+# here verbatim so they can be re-enabled once the new BUS lands its hook
+# implementation. To re-enable: uncomment the import block and the
+# ``__all__`` list, then delete this banner.
+# ---------------------------------------------------------------------------
 
-__all__ = [
-    # Back-compat shims
-    "Plugin",
-    # Hook contracts (re-exported from magi.plugins.hooks)
-    "CausalityHookContext",
-    "HookAction",
-    "HookDataScope",
-    "HookDecision",
-    "HookEnvelope",
-    "HookEvaluation",
-    "HookFailureMode",
-    "HookHandler",
-    "HookHandlerProtocol",
-    "HookMode",
-    "HookPoint",
-    "HookRegistration",
-    "HookPluginDescriptor",
-    "HookPluginLoader",
-    "PrincipalHookContext",
-    "PrincipalType",
-    "RuntimeHookContext",
-    "SecurityHookContext",
-    "hook_handler",
-]
+# from magi.plugins.base import Plugin
+# from magi.plugins.hooks import (
+#     HookAction,
+#     HookDataScope,
+#     HookDecision,
+#     HookEnvelope,
+#     HookEvaluation,
+#     HookHandler,
+#     HookHandlerProtocol,
+#     HookMode,
+#     HookPoint,
+#     HookRegistration,
+#     PrincipalType,
+#     RuntimeHookContext,
+#     SecurityHookContext,
+#     PrincipalHookContext,
+#     CausalityHookContext,
+#     HookPluginDescriptor,
+#     HookPluginLoader,
+#     HookFailureMode,
+#     hook_handler,
+# )
+#
+# __all__ = [
+#     # Back-compat shims
+#     "Plugin",
+#     # Hook contracts (re-exported from magi.plugins.hooks)
+#     "CausalityHookContext",
+#     "HookAction",
+#     "HookDataScope",
+#     "HookDecision",
+#     "HookEnvelope",
+#     "HookEvaluation",
+#     "HookFailureMode",
+#     "HookHandler",
+#     "HookHandlerProtocol",
+#     "HookMode",
+#     "HookPoint",
+#     "HookRegistration",
+#     "HookPluginDescriptor",
+#     "HookPluginLoader",
+#     "PrincipalHookContext",
+#     "PrincipalType",
+#     "RuntimeHookContext",
+#     "SecurityHookContext",
+#     "hook_handler",
+# ]
+
+__all__: list[str] = []
