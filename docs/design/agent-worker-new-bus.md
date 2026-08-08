@@ -1042,6 +1042,30 @@ lease 验证：
   worker 取消路径提供原语。`release()` 当前实现将被 §2.6 明确禁止，标注 deprecate。
   影响：所有继承 BaseJobBoard 的 board 都自动获得新方法；与现有 release() 不冲突。
   需要对方回复：否（接口草案见下方 "Round 1 提案"，等 user 点头再动笔）。
+
+- [claude, 2026-08-08] 正在实现 Round 1 — 在 BaseJobBoard 加 `renew_lease()` + `cancel()`
+  文件：magi/new_bus/guild/base.py
+  原因：见上一条 + §2.6。
+  影响：所有继承 BaseJobBoard 的 board 自动获得；与现有 release() 并存但 release 标 deprecated。
+  需要对方回复：否（独占；预计本轮内完成）。
+
+- [claude, 2026-08-08] 正在规划 Round 2 — `chatJobBoard.claim_for_conversation()`
+  文件：magi/new_bus/guild/chatJob.py
+  原因：§2.5 steering 设计；§3.1 _run() 后续依赖。
+  影响：scoped CAS claim，独立于普通 claim。
+  需要对方回复：否（独占；本轮完成后回填签名）。
+
+- [claude, 2026-08-08] 正在规划 Round 3 — 新建 `magi/new_bus/library/local/agentTurnBook.py`
+  文件：magi/new_bus/library/local/agentTurnBook.py（新文件）
+  原因：§2.2 AgentTurn 设计；§3.1 _run() 的核心依赖。
+  影响：引入 ORM 表 + AgentTurnStore 三类事务性方法 + bootstrap 装配。
+  需要对方回复：否（独占；本轮完成后回填签名）。
+
+- [claude, 2026-08-08] 正在规划 Round 4 — AgentWorker 重写
+  文件：magi/agent/worker.py
+  原因：§3-§5 整合；§8 Phase 1 step 4-8。
+  影响：删除全部 stub，依赖 Round 1-3 产物。
+  需要对方回复：否（独占；本轮完成后回填签名）。
 ```
 
 ### 11.8 Round 1 提案：BaseJobBoard.renew_lease() + cancel()
