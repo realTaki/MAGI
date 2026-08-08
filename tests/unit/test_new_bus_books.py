@@ -289,8 +289,6 @@ def test_action_item_book_add_invariants(factory, contact_id):
         book.add(uid=contact_id, title="")
     with pytest.raises(ValueError, match="title must be a non-empty"):
         book.add(uid=contact_id, title="   ")
-    with pytest.raises(ValueError, match="title"):
-        book.add(uid=contact_id)  # type: ignore[call-arg]
 
     # Title over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="title length"):
@@ -407,22 +405,28 @@ def test_tool_definition_upsert(factory):
 def test_task_book_lifecycle(factory, contact_id):
     """One ``TaskBook`` carries BOTH user tasks
     (``source=SOURCE_USER``) and preset templates
-    (``source=SOURCE_PROACTIVE``). User task links to a
-    preset via ``preset_id`` / ``preset_key`` — same table,
-    same Book.
+    (``source=SOURCE_PROACTIVE``) on the same table. The
+    Book deliberately keeps no per-row ``preset_id`` /
+    ``preset_key`` linkage — the dashboard / LLM tool pair
+    templates and user tasks by overlap (name / cron /
+    target_channel) outside the Book.
+
+    Schedule is unified: every row carries either
+    ``cron`` (recurring) or ``run_at`` (one-shot), never
+    the structured ``frequency`` / ``hour`` / etc.
     """
     tbook = TaskBook(factory)
 
-    # Preset row: source=SOURCE_PROACTIVE, structured
-    # frequency/hour/minute, no uid.
+    # Preset row: source=SOURCE_PROACTIVE, cron string
+    # (caller converted the LLM-facing structured form
+    # via ``preset_to_cron`` before reaching the Book),
+    # no uid.
     preset = tbook.add(
         id="p1",
         name="Daily-preset",
         prompt="preset prompt",
         key="daily",
-        frequency="daily",
-        hour=9,
-        minute=0,
+        cron="0 9 * * *",
         target_channel="webui",
         source=SOURCE_PROACTIVE,
         created_at="2026-08-05T00:00:00Z",
@@ -432,9 +436,15 @@ def test_task_book_lifecycle(factory, contact_id):
     assert preset.source == SOURCE_PROACTIVE
     assert preset.key == "daily"
     assert preset.uid is None
+    assert preset.cron == "0 9 * * *"
+    assert preset.run_at is None
 
     # User task row: source=SOURCE_USER, cron string,
-    # owned by a contact, links back to the preset.
+    # owned by a contact. No ``preset_id`` / ``preset_key``
+    # linkage — the relationship between a user task and
+    # the proactive template that inspired it lives in the
+    # caller's head (e.g., the dashboard pairs them by
+    # ``name`` / cron overlap); the Book doesn't persist it.
     t = tbook.add(
         id="t1",
         name="MyTask",
@@ -442,28 +452,40 @@ def test_task_book_lifecycle(factory, contact_id):
         cron="0 9 * * *",
         uid=contact_id,
         target_channel="webui",
-        preset_id="p1",
-        preset_key="daily",
         source=SOURCE_USER,
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
     assert isinstance(t, Task)
     assert t.source == SOURCE_USER
-    assert t.preset_id == "p1"
-    assert t.preset_key == "daily"
     assert t.uid == contact_id
 
-    # list_for_owner: only SOURCE_USER rows owned by uid.
-    owned = tbook.list_for_owner(uid=contact_id)
+    # list_by_user: only SOURCE_USER rows owned by uid.
+    owned = tbook.list_by_user(uid=contact_id)
     assert len(owned) == 1
     assert owned[0].id == "t1"
 
-    # list_presets: only SOURCE_PROACTIVE enabled rows.
-    presets = tbook.list_presets()
+    # list_proactive_tasks: uid-scoped; system preset
+    # (uid IS NULL) visible to every uid.
+    presets = tbook.list_proactive_tasks(uid=contact_id)
     assert len(presets) == 1
     assert presets[0].id == "p1"
     assert presets[0].source == SOURCE_PROACTIVE
+
+    # list_enabled: per-user only — same uid.
+    enabled = tbook.list_enabled(uid=contact_id)
+    assert len(enabled) == 1
+    assert enabled[0].id == "t1"
+
+    # disable is owner-scoped: other uid returns False.
+    other_id = contact_id + 999
+    assert tbook.disable(task_id="t1", uid=other_id) is False
+    assert tbook.get(task_id="t1").enabled == 1  # unchanged
+    # right uid flips it; row is now disabled.
+    assert tbook.disable(task_id="t1", uid=contact_id) is True
+    assert tbook.get(task_id="t1").enabled == 0
+    # post-disable, list_enabled no longer surfaces it.
+    assert tbook.list_enabled(uid=contact_id) == []
 
     # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
@@ -498,6 +520,89 @@ def test_task_book_add_rejects_unknown_source(factory):
         )
 
 
+def test_task_book_add_invariants(factory, contact_id):
+    """Write invariants the Book owns so any caller
+    (LLM-driven tool, dashboard API, future agent loop)
+    gets the same validation:
+
+    * ``name`` non-empty + ≤120 chars (mirrors ``String(120)``)
+    * ``prompt`` non-empty + ≤8000 chars
+    * ``target_channel`` in the closed :class:`ChannelEnum`
+    * ``source`` in :data:`ALL_SOURCES`
+
+    Each violation raises ``ValueError`` for the caller to
+    translate (``ToolResult.err`` for the LLM tool, 4xx for
+    the dashboard route).
+    """
+    book = TaskBook(factory)
+
+    # ``name`` empty / whitespace-only is rejected.
+    with pytest.raises(ValueError, match="name must be a non-empty"):
+        book.add(id="t1", name="", prompt="p", cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+    with pytest.raises(ValueError, match="name must be a non-empty"):
+        book.add(id="t2", name="   ", prompt="p", cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+
+    # ``name`` over the column cap is rejected.
+    with pytest.raises(ValueError, match="name length"):
+        book.add(id="t3", name="n" * 121, prompt="p", cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+
+    # ``prompt`` empty / whitespace-only is rejected.
+    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+        book.add(id="t4", name="ok", prompt="", cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+        book.add(id="t5", name="ok", prompt="   ", cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+
+    # ``prompt`` over the cap is rejected.
+    with pytest.raises(ValueError, match="prompt length"):
+        book.add(id="t6", name="ok", prompt="p" * 8001, cron="0 0 * * *",
+                 uid=contact_id, target_channel="webui",
+                 created_at="x", updated_at="x")
+
+    # ``target_channel`` outside the closed enum is rejected.
+    with pytest.raises(ValueError, match="target_channel must be one of"):
+        book.add(id="t7", name="ok", prompt="p", cron="0 0 * * *",
+                 uid=contact_id, target_channel="web",
+                 created_at="x", updated_at="x")
+
+    # All closed-set values pass.
+    for ch in ("webui", "tg", "a2a", "scheduled"):
+        row = book.add(
+            id=f"t-ch-{ch}",
+            name=f"task-{ch}",
+            prompt="p",
+            cron="0 0 * * *",
+            uid=contact_id,
+            target_channel=ch,
+            created_at="x",
+            updated_at="x",
+        )
+        assert row.target_channel == ch
+
+    # Happy path lands a row.
+    happy = book.add(
+        id="happy",
+        name="ok-name",
+        prompt="ok-prompt",
+        cron="0 9 * * *",
+        uid=contact_id,
+        target_channel="webui",
+        created_at="x",
+        updated_at="x",
+    )
+    assert happy.name == "ok-name"
+    assert happy.target_channel == "webui"
+
+
 def test_channel_enum_values():
     """Pin the enum values — the dashboard and dispatcher
     treat them as a closed vocabulary, and the value strings
@@ -517,12 +622,194 @@ def test_channel_enum_values():
     assert ALL_SOURCES == frozenset({SOURCE_USER, SOURCE_PROACTIVE})
 
 
+def test_task_book_schedule_xor(factory, contact_id):
+    """Schedule is ONE shape: ``cron`` (recurring) XOR
+    ``run_at`` (one-shot). Setting both, or neither, raises
+    at the Book boundary.
+    """
+    book = TaskBook(factory)
+
+    # Both set — rejected.
+    with pytest.raises(ValueError, match="exactly one of cron"):
+        book.add(
+            id="both",
+            name="both",
+            prompt="p",
+            cron="0 9 * * *",
+            run_at="2026-12-31T00:00:00Z",
+            uid=contact_id,
+            target_channel="webui",
+            created_at="x", updated_at="x",
+        )
+
+    # Neither set — rejected.
+    with pytest.raises(ValueError, match="exactly one of cron"):
+        book.add(
+            id="neither",
+            name="neither",
+            prompt="p",
+            uid=contact_id,
+            target_channel="webui",
+            created_at="x", updated_at="x",
+        )
+
+    # run_at alone — accepted (one-shot).
+    once = book.add(
+        id="once",
+        name="once",
+        prompt="p",
+        run_at="2026-12-31T00:00:00Z",
+        uid=contact_id,
+        target_channel="webui",
+        created_at="x", updated_at="x",
+    )
+    assert once.run_at == "2026-12-31T00:00:00Z"
+    assert once.cron is None
+
+
+def test_task_book_rejects_invalid_cron(factory, contact_id):
+    """A cron string the apscheduler parser can't read is
+    rejected at the Book boundary — last line of defence
+    before the row lands in SQLite.
+    """
+    book = TaskBook(factory)
+    with pytest.raises(ValueError, match="cron is not a valid expression"):
+        book.add(
+            id="badcron",
+            name="badcron",
+            prompt="p",
+            cron="not a cron",
+            uid=contact_id,
+            target_channel="webui",
+            created_at="x", updated_at="x",
+        )
+
+
+def test_task_book_list_proactive_uid_scoped(factory, contact_id):
+    """``list_proactive_tasks(uid=...)`` is privacy-safe:
+    system presets (``uid IS NULL``) visible to every uid;
+    user-private presets (``uid == X``) only to X.
+    """
+    from magi.new_bus.library.local.contactBook import ContactBook
+
+    book = TaskBook(factory)
+    other_id = ContactBook(factory).add(name="Other").id
+
+    # System preset (uid=None): visible to both uids.
+    book.add(
+        id="sys-preset",
+        name="system",
+        prompt="p",
+        cron="0 9 * * *",
+        key="sys",
+        target_channel="webui",
+        source=SOURCE_PROACTIVE,
+        created_at="x", updated_at="x",
+    )
+    # User-private preset for contact_id only.
+    book.add(
+        id="priv-preset",
+        name="private",
+        prompt="p",
+        cron="0 10 * * *",
+        key="priv",
+        uid=contact_id,
+        target_channel="webui",
+        source=SOURCE_PROACTIVE,
+        created_at="x", updated_at="x",
+    )
+
+    # contact_id sees BOTH (system + own private).
+    own = book.list_proactive_tasks(uid=contact_id)
+    assert {t.id for t in own} == {"sys-preset", "priv-preset"}
+
+    # other_id sees only the system preset.
+    other = book.list_proactive_tasks(uid=other_id)
+    assert {t.id for t in other} == {"sys-preset"}
+
+
 # -- HookSignoffBook --------------------------------------------------
 
 
 def test_hook_signoff_book_empty(factory):
     book = HookSignoffBook(factory)
     assert book.list_pending() == []
+
+
+def test_task_book_upsert_by_name(factory, contact_id):
+    """The ``upsert_by_name`` primitive — same shape the
+    WebUI task API + ``schedule_task`` tool share. Idempotent
+    on the unique ``name`` column, so LLM retries don't
+    create duplicates.
+
+    First call inserts; second call with the same name
+    updates in place and returns the **same** ``task_id``
+    with ``is_update=True``. ``session_id`` is sticky on
+    update (preserves conversation continuity); only
+    inserts consume the caller-supplied session.
+
+    Book invariants (length caps, channel enum) fire on
+    the insert branch only — updates mutate an existing
+    row that already passed those checks at insert.
+    """
+    book = TaskBook(factory)
+
+    # First call: insert.
+    task_id_1, is_update_1 = book.upsert_by_name(
+        name="daily-brief",
+        prompt="summarise the dashboard",
+        cron="0 9 * * *",
+        run_at=None,
+        delivery_to=None,
+        target_channel="webui",
+        uid=contact_id,
+        session_id="01ABC",
+        tz="UTC",
+    )
+    assert is_update_1 is False
+    assert isinstance(task_id_1, str) and task_id_1
+
+    # Second call: same name → update, same id.
+    task_id_2, is_update_2 = book.upsert_by_name(
+        name="daily-brief",
+        prompt="summarise the dashboard v2",
+        cron="0 10 * * *",
+        run_at=None,
+        delivery_to=None,
+        target_channel="tg",
+        uid=contact_id,
+        session_id="01DEF",  # different from the row's current session
+        tz="UTC",
+    )
+    assert is_update_2 is True
+    assert task_id_2 == task_id_1
+
+    # Verify the row got refreshed, with session_id kept sticky.
+    row = book.get(task_id=task_id_1)
+    assert row is not None
+    assert row.prompt == "summarise the dashboard v2"
+    assert row.cron == "0 10 * * *"
+    assert row.target_channel == "tg"
+    assert row.session_id == "01ABC"  # sticky: NOT overwritten by 01DEF
+
+    # Book invariants still fire via the insert branch —
+    # inserting a third task with bad data raises.
+    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+        book.upsert_by_name(
+            name="bad",
+            prompt="",
+            cron="0 0 * * *",
+            run_at=None,
+            delivery_to=None,
+            target_channel="webui",
+            uid=contact_id,
+            session_id="x",
+            tz="UTC",
+        )
+
+    # ``get_by_name`` lookup helper.
+    assert book.get_by_name(name="daily-brief").id == task_id_1
+    assert book.get_by_name(name="nonexistent") is None
 
 
 __all__ = [

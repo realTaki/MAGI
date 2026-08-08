@@ -13,7 +13,6 @@ items. ``guest`` callers don't see the tool in their menu.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -79,18 +78,16 @@ class ListActionItemsTool(Tool):
             include_completed=include_completed,
             source=SOURCE_USER,
         )
-        body = json.dumps(
-            {
-                "items": [row.to_dict() for row in rows],
-                "total": len(rows),
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-        if len(body) > 8 * 1024:
-            body = body[: 8 * 1024] + "\n…(truncated)"
         logger.info(
             "list_action_item: contact=%s include_completed=%s returned=%s",
             ct_id, include_completed, len(rows),
         )
-        return ToolResult(content=body, is_error=False)
+        # ``ToolResult.ok`` handles JSON serialisation
+        # (indent=2, ensure_ascii=False) and the 8 KB
+        # truncation marker for free — same shape
+        # ``add_action_item`` / ``complete_action_item``
+        # use, no need to roll our own here.
+        return ToolResult.ok({
+            "items": [row.to_dict() for row in rows],
+            "total": len(rows),
+        })

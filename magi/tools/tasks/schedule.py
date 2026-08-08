@@ -49,15 +49,17 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.bus.jobs.protocols.channels import ChannelEnum as Channel
+from magi.new_bus.library.local.tasksBook import (
+    preset_to_cron,
+    validate_run_at,
+    validate_run_at_future,
+)
+from magi.new_bus.library.local.tasksBook import ChannelEnum
 from magi.bus.jobs.protocols.session import new_session_id
 from magi.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("magi.tools.tasks.schedule")
-
-_NAME_MAX = 120
-_PROMPT_MAX = 8000
 
 # ``admin`` and ``assigned`` may create a task. ``guest``
 # (and any operator without a MAGIS admin row) gets
@@ -180,8 +182,8 @@ class ScheduleTaskTool(Tool):
             },
             "channel": {
                 "type": "string",
-                "enum": [Channel.WEBUI, Channel.TG],
-                "default": Channel.WEBUI,
+                "enum": [ChannelEnum.WEBUI, ChannelEnum.TG],
+                "default": ChannelEnum.WEBUI,
                 "description": (
                     "Where the fired reply surfaces. 'webui' "
                     "creates a chat session visible in the "
@@ -209,36 +211,27 @@ class ScheduleTaskTool(Tool):
         "required": ["name", "prompt", "frequency"],
     }
 
+    @Tool.require_bus
     async def run(
         self,
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        # Shape translation — kwargs → typed args.
+        # ``name`` / ``prompt`` length & non-empty, plus
+        # ``target_channel`` enum membership, are owned by
+        # :meth:`TaskBook.add` (single source of truth, so
+        # the dashboard API and any future agent-loop writer
+        # get the same validation). Each violation surfaces
+        # as ``ValueError``; we translate to LLM-facing
+        # ``ToolResult.err`` after the Book call below.
         name = (kwargs.get("name") or "").strip()
         prompt = (kwargs.get("prompt") or "").strip()
         frequency = (kwargs.get("frequency") or "").strip()
         # ``channel`` is referenced up-front by the delivery_to
         # resolution block below (webui vs tg drives both the
         # default-rule branch and the format validator).
-        target_channel = kwargs.get("channel") or Channel.WEBUI
-        if not name or len(name) > _NAME_MAX:
-            return ToolResult(
-                content=f"name must be non-empty and ≤{_NAME_MAX} chars",
-                is_error=True,
-            )
-        if not prompt or len(prompt) > _PROMPT_MAX:
-            return ToolResult(
-                content=f"prompt must be non-empty and ≤{_PROMPT_MAX} chars",
-                is_error=True,
-            )
-        if frequency not in ("hourly", "daily", "weekly", "monthly", "once"):
-            return ToolResult(
-                content=(
-                    f"frequency must be one of "
-                    f"hourly/daily/weekly/monthly/once, got {frequency!r}"
-                ),
-                is_error=True,
-            )
+        target_channel = kwargs.get("channel") or ChannelEnum.WEBUI
 
         # ``delivery_to`` is server-derived per the unified
         # rule: only ``channel`` + ``ctx`` drive the value.
@@ -265,9 +258,9 @@ class ScheduleTaskTool(Tool):
         # the source of truth for IM addressing, and
         # the dispatcher is the only thing that interprets
         # the value).
-        if target_channel == Channel.WEBUI:
+        if target_channel == ChannelEnum.WEBUI:
             delivery_to = None
-        elif target_channel == Channel.TG:
+        elif target_channel == ChannelEnum.TG:
             delivery_to = ctx.bus.session_book.resolve_delivery_address_for_session(
                 ctx.session_id
             )
@@ -284,14 +277,14 @@ class ScheduleTaskTool(Tool):
         run_at_iso: str | None = None
         if frequency == "once":
             try:
-                run_at_iso = bus.task.validate_run_at(
+                run_at_iso = validate_run_at(
                     kwargs.get("run_at") or ""
                 )
                 # Past-time run_at silently no-ops in
                 # apscheduler — reject here so the LLM
                 # can retry with a future timestamp
                 # rather than ship a dead task.
-                bus.task.validate_run_at_future(run_at_iso)
+                validate_run_at_future(run_at_iso)
             except ValueError as exc:
                 return ToolResult(
                     content=f"invalid run_at: {exc}",
@@ -305,7 +298,7 @@ class ScheduleTaskTool(Tool):
             # the contract tolerant.
         else:
             try:
-                cron = bus.task.preset_to_cron(
+                cron = preset_to_cron(
                     frequency,
                     hour=int(kwargs.get("hour") or 0),
                     minute=int(kwargs.get("minute") or 0),
@@ -315,7 +308,7 @@ class ScheduleTaskTool(Tool):
             except ValueError as exc:
                 return ToolResult(content=f"invalid preset: {exc}", is_error=True)
 
-        if target_channel not in (Channel.WEBUI, Channel.TG):
+        if target_channel not in (ChannelEnum.WEBUI, ChannelEnum.TG):
             return ToolResult(
                 content=f"channel must be one of webui/tg, got {target_channel!r}",
                 is_error=True,
@@ -334,7 +327,7 @@ class ScheduleTaskTool(Tool):
         operator_id = int(ctx.uid)
         bus = ctx.bus
         task_session_delivery_address = (
-            bus.dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
+            bus.dispatcher.lookup_im_id(operator_id, ChannelEnum.TG) or ""
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
@@ -352,17 +345,25 @@ class ScheduleTaskTool(Tool):
             title=f"[定时] {name}",
             delivery_address=task_session_delivery_address,
         )
-        task_id, is_update = bus.task.upsert_by_name(
-            name=name,
-            prompt=prompt,
-            cron=cron,
-            run_at=run_at_iso,
-            delivery_to=delivery_to,
-            target_channel=target_channel,
-            uid=operator_id,
-            session_id=new_session_id_str,
-            tz=resolved_tz,
-        )
+        try:
+            task_id, is_update = bus.tasks_book.upsert_by_name(
+                name=name,
+                prompt=prompt,
+                cron=cron,
+                run_at=run_at_iso,
+                delivery_to=delivery_to,
+                target_channel=target_channel,
+                uid=operator_id,
+                session_id=new_session_id_str,
+                tz=resolved_tz,
+            )
+        except ValueError as e:
+            # Book owns the write invariants (length caps,
+            # channel enum, source enum). Translate the
+            # ValueError to a clean LLM-facing error
+            # rather than letting it bubble to the worker's
+            # "tool.crashed" envelope.
+            return ToolResult.err(str(e))
 
         return ToolResult(
             content=(
