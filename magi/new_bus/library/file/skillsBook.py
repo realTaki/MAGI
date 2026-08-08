@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from magi.new_bus.db.file import FileShelf
+from magi.startup.paths import resolve_bundle_skills_dir
 
 logger = logging.getLogger("magi.new_bus.library.file.skills_book")
 
@@ -260,12 +261,6 @@ def _coerce_str_dict(value: Any) -> Optional[dict[str, str]]:
 # ──────────────────────────────────────────────────────────────────────── #
 
 
-# File extensions we recognise as "documents the LLM might want to
-# read with read_file". The LLM uses this to decide "is this a sibling
-# file I should look at" vs "is this just prose / a code snippet".
-_RECOGNISED_DOC_EXTS = (
-    ".md", ".txt", ".json", ".yaml", ".yml",
-)
 
 
 def _skill_root_dir_line(skill_dir: Path) -> str:
@@ -378,36 +373,6 @@ def _process_skill_paths(
     body = re.sub(pattern_md, _replace_md_link, body)
 
     return body
-
-
-# ──────────────────────────────────────────────────────────────────────── #
-# Bundle-root resolver
-# ──────────────────────────────────────────────────────────────────────── #
-
-
-def _resolve_bundle_skills_dir() -> Path:
-    """Return the path to the image-shipped skills bundle.
-
-    Mirrors :func:`magi.new_bus.bootstrap._resolve_prompts_dir`'s
-    two-tier resolution: prefer anchoring on the ``magi`` package
-    (which works in normal installs and wheel / zip-app installs),
-    fall back to deriving from ``__file__`` (which works when the
-    package is somehow not importable — e.g. ad-hoc test runs).
-    """
-    # Tier 1: ``magi/__init__.py`` is the canonical anchor for the
-    # bundle, which is shipped inside the installed package.
-    try:
-        import magi
-        candidate = Path(magi.__file__).resolve().parent / "skills"
-        if candidate.is_dir():
-            return candidate
-    except Exception:
-        pass
-
-    # Tier 2: ``__file__`` fallback. This file lives at
-    # ``magi/new_bus/library/file/skillsBook.py``; four levels up is
-    # ``magi/``. ``+ "skills"`` gives ``magi/skills/``.
-    return Path(__file__).resolve().parents[3] / "skills"
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -637,12 +602,7 @@ class SkillsBook:
         #     the conflict.
         if name in self._registry:
             existing = self._registry[name]
-            if source == "operator" and existing.path.parent.parent.name == "skills":
-                # Heuristic: the existing entry came from the bundle
-                # iff its parent is the bundle root. Operator entries
-                # sit under ``<workspace>/skills/<name>/SKILL.md`` so
-                # their parent.parent.name is also ``"skills"`` —
-                # different paths, so this check is approximate.
+            if source == "operator" and existing.path.is_relative_to(self._bundle.root):
                 logger.debug(
                     "skills: operator %s overrides bundle %s for name %r",
                     skill_path, existing.path, name,
@@ -678,7 +638,7 @@ def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
     Two roots:
 
       - **bundle** — ``<magi>/skills/`` (image-shipped defaults,
-        auto-detected via :func:`_resolve_bundle_skills_dir`).
+        resolved via :func:`magi.startup.paths.resolve_bundle_skills_dir`).
       - **operator** — ``<workspace_dir>/skills/`` (the deployer's
         customised catalog). Created lazily by
         :func:`magi.startup.paths.ensure_workspace` at boot, so we
@@ -689,7 +649,7 @@ def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
     a custom layout should construct :class:`SkillsBook` directly
     with explicit :class:`~magi.new_bus.db.file.FileShelf` instances.
     """
-    bundle_shelf = FileShelf(_resolve_bundle_skills_dir())
+    bundle_shelf = FileShelf(resolve_bundle_skills_dir())
     operator_shelf = FileShelf(workspace_dir / "skills", create_root=False)
     return SkillsBook(bundle_shelf, operator_shelf)
 
