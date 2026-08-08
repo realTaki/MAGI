@@ -96,9 +96,9 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 class SkillMeta:
     """One row in the registry.
 
-    The body is **not** stored here. ``format_skills_block``
-    only needs ``name`` and ``description``. The body is
-    read on demand by :class:`magi.agent.skills.loader_tool.SkillLoaderTool`.
+    The body is **not** stored here. Only ``name`` and
+    ``description`` are needed for the system-prompt skills
+    block. The body is read on demand by :class:`magi.agent.skills.loader_tool.SkillLoaderTool`.
 
     The three optional frontmatter fields (``license`` /
     ``allowed_tools`` / ``metadata``) are read but not
@@ -613,47 +613,9 @@ def _reset_for_tests() -> None:
     _skill_loader = None
 
 
-# ──────────────────────────────────────────────────────────────────────── #
-# System-prompt formatter
-# ──────────────────────────────────────────────────────────────────────── #
-
-
-def format_skills_block(skills: list[SkillMeta]) -> str:
-    """Render an "Available skills" block for the system prompt.
-
-    Returns an empty string when there are no skills — agent
-    loop short-circuits and uses ``soul`` verbatim, saving
-    every turn a few tokens.
-
-    The block is **Markdown-ish** — bullets, plain
-    ``name — description`` style, easily parsed by every
-    LLM we currently ship to (Anthropic and OpenAI both
-    handle the format without problem).
-    """
-    if not skills:
-        return ""
-    # Static header + intro come from the bundled
-    # ``context/skills_block.md`` template so an operator can reword
-    # the wording in one file without touching Python. The
-    # per-skill bullets below are formatted from the
-    # runtime catalog.
-    from magi.prompts import load_skills_block_template
-    lines = ["", *load_skills_block_template().splitlines(), ""]
-    for s in skills:
-        # One bullet per skill. Version is appended in
-        # parentheses when present so a draft/bump cycle
-        # is observable in the system-prompt audit log.
-        if s.version:
-            lines.append(f"- **{s.name}** (v{s.version}) — {s.description}")
-        else:
-            lines.append(f"- **{s.name}** — {s.description}")
-    return "\n".join(lines)
-
-
 __all__ = [
     "SkillMeta",
     "SkillLoader",
     "get_skill_loader",
-    "format_skills_block",
     "_reset_for_tests",
 ]

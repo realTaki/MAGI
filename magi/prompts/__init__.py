@@ -228,8 +228,8 @@ def load_contact_block_template() -> str:
 def load_skills_block_template() -> str:
     """The "Available skills" block the agent loop appends
     to the system prompt when any SKILL.md is registered.
-    See :func:`magi.tools.skill_loader.format_skills_block`
-    for the per-skill bullet rendering that follows.
+    Per-skill bullets follow this template in
+    ``system_prompt.py``.
     """
     return _load("context/skills_block")
 

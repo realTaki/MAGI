@@ -118,8 +118,7 @@ def build_system_prompt(
          via ``system.show_daily_note`` (default ON); the
          capture-rules prompt fold-in is gated separately by
          ``system.show_daily_note_prompt`` for noisy loops.
-      6. **Available skills** — :func:`format_skills_block`
-         lists the frontmatter ``name`` + ``description``
+      6. **Available skills** — lists the frontmatter ``name`` + ``description``
          of every registered SKILL.md. Bodies load on
          demand via ``load_skill``.
 
@@ -136,7 +135,8 @@ def build_system_prompt(
     ``get_skill_loader`` (filesystem scan). Each is
     bounded; no N+1 risk.
     """
-    from magi.skills import format_skills_block, get_skill_metas
+    from magi.skills import get_skill_metas
+    from magi.prompts import load_skills_block_template
     from magi.bus import get_bus
 
     # SOUL first — establishes the persona for the rest
@@ -205,9 +205,15 @@ def build_system_prompt(
             parts.append(daily_block)
 
     # Skills block — last so it caps the prompt.
-    skills_block = format_skills_block(get_skill_metas())
-    if skills_block:
-        parts.append(skills_block)
+    skills = get_skill_metas()
+    if skills:
+        lines = ["", *load_skills_block_template().splitlines(), ""]
+        for s in skills:
+            if s.version:
+                lines.append(f"- **{s.name}** (v{s.version}) — {s.description}")
+            else:
+                lines.append(f"- **{s.name}** — {s.description}")
+        parts.append("\n".join(lines))
 
     rendered = "\n\n".join(parts).strip()
     # If every block was empty (highly unlikely — at
