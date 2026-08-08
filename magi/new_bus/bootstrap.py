@@ -1,11 +1,12 @@
 """Composition-root bootstrap for new_bus.
 
 Provides :func:`bootstrap_new_bus` — a pure function that wires local
-SQLite and MAGIS database access into a single :class:`NewBus` facade.
-All paths are passed explicitly; no environment variable reads, no
-auto-discovery.  The composition root (:mod:`magi.startup.runtime`)
-calls this after resolving identity and database paths, then passes
-the resulting ``NewBus`` to workers via constructor injection.
+SQLite, MAGIS database, and file-storage access into a single
+:class:`NewBus` facade.  All paths are passed explicitly; no
+environment variable reads, no auto-discovery.  The composition root
+(:mod:`magi.startup.runtime`) calls this after resolving identity and
+database paths, then passes the resulting ``NewBus`` to workers via
+constructor injection.
 
 All Job/Book imports are **lazy** (inside ``_bootstrap_with_dirs``) so
 that merely importing this module does not register ORM tables.  This
@@ -14,9 +15,13 @@ avoids ``extend_existing`` conflicts with the old bus at import time.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from magi.new_bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
+
+logger = logging.getLogger("magi.new_bus.bootstrap")
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +118,10 @@ class NewBus:
     action_items_book: object  # ActionItemBook
     hook_signoffs_book: object  # HookSignoffBook
 
+    # -- local: prompts (File-backed Book) ----------------------------------
+
+    prompt_book: object  # PromptBook
+
     # -- internal factories (advanced / test use) ---------------------------
     # Positioned *before* defaulted fields so dataclass __init__ ordering
     # is satisfied (required fields must precede optional ones).
@@ -149,6 +158,7 @@ def bootstrap_new_bus(
     *,
     state_dir: str,
     magis_url: str | None = None,
+    prompts_dir: str | None = None,
 ) -> NewBus:
     """Explicitly bootstrap a ``NewBus`` with resolved paths.
 
@@ -157,16 +167,22 @@ def bootstrap_new_bus(
     read environment variables or call auto-discovery — all paths
     are passed explicitly (plan §10).
 
+    If *prompts_dir* is ``None``, the bundled ``magi/prompts/``
+    directory is auto-detected from the package location.
+
     Returns a ready-to-use ``NewBus``.  The caller is responsible for
     passing it to workers via constructor injection.
     """
-    return _bootstrap_with_dirs(state_dir=state_dir, magis_url=magis_url)
+    return _bootstrap_with_dirs(
+        state_dir=state_dir, magis_url=magis_url, prompts_dir=prompts_dir,
+    )
 
 
 def _bootstrap_with_dirs(
     *,
     state_dir: str,
     magis_url: str | None = None,
+    prompts_dir: str | None = None,
 ) -> NewBus:
     """Wire the BUS with explicit paths (for tests).
 
@@ -258,6 +274,21 @@ def _bootstrap_with_dirs(
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
 
+    # ---- prompt book (file-backed, not ORM) --------------------------------
+    _prompts_dir = _resolve_prompts_dir(prompts_dir)
+    if _prompts_dir is not None:
+        from magi.new_bus.db.file import FileStore
+        from magi.new_bus.library.file.promptBook import PromptBook
+
+        prompt_store = FileStore(_prompts_dir)
+        prompt_book = PromptBook(prompt_store)
+
+        # Seed SOUL.md into the workspace if missing.  The convention is
+        # ``state_dir = <workspace>/memories``, so workspace is one level up.
+        _ensure_workspace_soul(Path(state_dir).parent, _prompts_dir)
+    else:
+        prompt_book = None
+
     # ---- stream hub (in-process pipe registry) ------------------------------
     from magi.new_bus.stream import StreamHub
 
@@ -335,6 +366,7 @@ def _bootstrap_with_dirs(
         token_usage_book=token_usage_book,
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,
+        prompt_book=prompt_book,
         stream_hub=stream_hub,
         magis_book=magis_book,
         magis_admins_book=magis_admins_book,
@@ -349,3 +381,65 @@ def _bootstrap_with_dirs(
         _local_factory=local_factory,
         _magis_factory=magis_factory,
     )
+
+
+# ---------------------------------------------------------------------------
+# internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_prompts_dir(prompts_dir: str | None) -> Path | None:
+    """Resolve the bundled prompts directory.
+
+    If *prompts_dir* is explicitly provided, use it as-is.
+    Otherwise auto-detect from the ``magi`` package location.
+    Returns ``None`` if auto-detection fails (e.g. in a test
+    environment where ``magi`` isn't a regular package).
+    """
+    if prompts_dir is not None:
+        return Path(prompts_dir)
+
+    # Auto-detect: ``magi/prompts/`` relative to the magi package root.
+    try:
+        import magi
+        candidate = Path(magi.__file__).resolve().parent / "prompts"
+        if candidate.is_dir():
+            return candidate
+    except Exception:
+        pass
+
+    # Last resort: try relative to *this* file (``new_bus/bootstrap.py``).
+    # ``magi/new_bus/bootstrap.py`` → ``magi/`` → ``magi/prompts/``
+    try:
+        candidate = Path(__file__).resolve().parent.parent / "prompts"
+        if candidate.is_dir():
+            return candidate
+    except Exception:
+        pass
+
+    logger.debug("Could not auto-detect prompts directory; prompt_book will be None")
+    return None
+
+
+def _ensure_workspace_soul(workspace_dir: Path, prompts_dir: Path) -> None:
+    """Copy the bundled ``soul.md`` into *workspace_dir* if missing.
+
+    Idempotent — if ``<workspace>/SOUL.md`` already exists, this is
+    a no-op.  Previously this lived in :func:`magi.startup.paths.ensure_workspace`;
+    now it's part of the new_bus bootstrap so file seeding stays
+    alongside the bus composition that consumes those files.
+    """
+    soul = workspace_dir / "SOUL.md"
+    if soul.exists():
+        return
+
+    bundled = prompts_dir / "soul.md"
+    if bundled.is_file():
+        try:
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
+            logger.info("SOUL.md seeded from %s", bundled)
+        except OSError:
+            logger.exception("Failed to seed SOUL.md from %s", bundled)
+    else:
+        logger.warning("Bundled soul.md missing at %s; SOUL.md not created", bundled)

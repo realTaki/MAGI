@@ -39,7 +39,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import suppress
@@ -61,7 +60,8 @@ logger = logging.getLogger("magi.providers.worker")
 
 # Backpressure cap. Two parallel upstream calls keep latency low
 # while leaving room for a streaming job to take a long time
-# without starving shorter turns. Override via ``MAGI_PROVIDER_CONCURRENCY``.
+# without starving shorter turns. Injected via the ``concurrency``
+# constructor parameter; there is no environment-variable knob.
 _DEFAULT_CONCURRENCY = 2
 
 # Stable short codes for the operator-facing error envelope.
@@ -99,14 +99,12 @@ class ProvidersWorker:
     ) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
-        if concurrency is None:
-            try:
-                concurrency = int(
-                    os.environ.get("MAGI_PROVIDER_CONCURRENCY", _DEFAULT_CONCURRENCY),
-                )
-            except ValueError:
-                concurrency = _DEFAULT_CONCURRENCY
-        self.concurrency = max(1, concurrency)
+        # Concurrency is constructor-injected only — this worker does
+        # no env reads. A worker reaching into ``os.environ`` makes its
+        # behaviour untestable and invisible to the composition root,
+        # so the knob is a constructor parameter and nothing else.
+        # Mirrors :class:`~magi.tools.worker.ToolsWorker`.
+        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
         self._task: asyncio.Task[None] | None = None
         self._stopping = False
         self._slots = asyncio.Semaphore(self.concurrency)
@@ -551,12 +549,19 @@ _worker: ProvidersWorker | None = None
 
 async def start_provider_worker(
     bus: "NewBus | None" = None,
+    *,
+    concurrency: int | None = None,
 ) -> ProvidersWorker:
     """Start the process-local provider worker.
 
     ``bus`` is the wired :class:`NewBus` from the composition root.
     It's optional only for backwards-compat with callers that don't
     pass it (legacy tests); the production runtime always supplies it.
+
+    ``concurrency`` overrides :data:`_DEFAULT_CONCURRENCY`; leave it
+    ``None`` to take the default. Mirrors
+    :func:`magi.tools.worker.start_tool_worker` — the knob reaches
+    the worker by injection, never by an env read inside it.
     """
     global _worker
     if _worker is None:
@@ -564,7 +569,7 @@ async def start_provider_worker(
             raise RuntimeError(
                 "start_provider_worker requires a NewBus"
             )
-        _worker = ProvidersWorker(bus)
+        _worker = ProvidersWorker(bus, concurrency=concurrency)
         await _worker.start()
     return _worker
 

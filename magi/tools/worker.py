@@ -4,7 +4,7 @@
 
 - **只依赖 new_bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
 - **构造靠注入**。Composition root 显式构造并传进来，
-  ``concurrency`` 由调用方注入（环境变量由 startup 模块读取后传入）。
+  ``concurrency`` 由调用方注入（无环境变量回退）。
 - **启动时 publish full tool catalog** — builtin + 所有已注入的外部工具
   (MCP, skills) 写到 ``bus.tool_definitions_book``。
   外部子系统通过 :func:`magi.tools.registry.register_tools` 注入后，
@@ -506,9 +506,10 @@ async def start_tool_worker(
 ) -> ToolsWorker:
     """Start the process-local tools worker.
 
-    ``concurrency`` overrides the default; leave it ``None`` to
-    use :data:`_DEFAULT_CONCURRENCY` (2). The startup module
-    (not this function) reads any env-configured override.
+    ``concurrency`` overrides the default; leave it ``None`` to use
+    :data:`_DEFAULT_CONCURRENCY` (2). There is no environment-variable
+    knob — concurrency is a code-level constant unless a caller
+    injects otherwise.
     """
     global _worker
     if _worker is None:

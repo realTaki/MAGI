@@ -182,7 +182,12 @@ def ensure_workspace(workspace_dir: Path) -> Path:
     - ``<workspace>/memories/``
     - ``<workspace>/logs/``
     - ``<workspace>/run/``
-    - ``<workspace>/SOUL.md`` (from bundled default if absent)
+
+    .. note::
+
+        ``SOUL.md`` seeding has moved to
+        :func:`magi.new_bus.bootstrap.bootstrap_new_bus` — the
+        composition root that owns prompt-file lifecycle.
 
     Returns the guaranteed-to-exist workspace directory.  Idempotent.
     """
@@ -192,25 +197,9 @@ def ensure_workspace(workspace_dir: Path) -> Path:
     for sub in ("skills", "memories", "logs", "run"):
         (workspace_dir / sub).mkdir(parents=True, exist_ok=True)
 
-    # Seed SOUL.md from the bundled default if missing
-    _ensure_soul(workspace_dir)
-
     return workspace_dir
 
 
-def _ensure_soul(workspace_dir: Path) -> None:
-    """Copy the bundled default SOUL.md into the workspace if absent."""
-    soul = workspace_dir / "SOUL.md"
-    if soul.exists():
-        return
-    import logging
-    _log = logging.getLogger("magi.startup.paths")
-    bundled = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
-    if bundled.is_file():
-        soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
-        _log.info("SOUL.md seeded from %s", bundled)
-    else:
-        _log.warning("bundled soul.md missing at %s; SOUL.md not created", bundled)
 
 
 # ------------------------------------------------------------------
@@ -305,6 +294,8 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
     Plan §20.1 retired ``magi.launcher.cli``; this helper now lives here
     for compatibility with any deployment script that still references
     it by name.  New code should call :func:`ensure_workspace` directly.
+
+    SOUL.md seeding has moved to :func:`magi.new_bus.bootstrap.bootstrap_new_bus`.
     """
     workspace.mkdir(parents=True, exist_ok=True)
     created: dict[str, str] = {"workspace_root": "kept"}
@@ -315,16 +306,6 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
         target = workspace / sub
         target.mkdir(parents=True, exist_ok=True)
         created[label] = "kept"
-    soul = workspace / "SOUL.md"
-    if not soul.exists():
-        bundled = Path(__file__).resolve().parent.parent / "prompts" / "soul.md"
-        if bundled.is_file():
-            soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
-            created["SOUL.md"] = "created"
-        else:
-            created["SOUL.md"] = "skipped (no bundled default)"
-    else:
-        created["SOUL.md"] = "kept"
     return created
 
 

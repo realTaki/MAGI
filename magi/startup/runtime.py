@@ -115,6 +115,7 @@ def _build_buses(startup: StartupContext) -> tuple[object, "NewBus"]:
     )
 
     # --- new bus (explicit, no global injection, no env reads) ---
+    # prompts_dir=None → auto-detect from the magi package location.
     new_bus = bootstrap_new_bus(
         state_dir=state_dir,
         magis_url=startup.magis_database_url,
