@@ -5,16 +5,18 @@ Books（读侧 CRUD）、Guild（写侧 publish/claim/submit_result）、
 FileShelf（文件 I/O + 热重载），以及
 通过 :func:`bootstrap_new_bus` 构造的统一门面 ``NewBus``。
 
-``NewBus`` 由组合根（:mod:`magi.startup.runtime`）显式构造并传入 worker::
+``NewBus`` 由组合根（:mod:`magi.startup.runtime`）显式构造，通过
+**构造器注入**传入各 Worker。 没有进程级单例——调用方依赖显式传入的
+``NewBus`` 实例，不通过全局变量取回::
 
     from magi.new_bus import bootstrap_new_bus
 
     bus = bootstrap_new_bus(state_dir="/path/to/memories", magis_url="...")
+    worker = AgentWorker(bus=bus)    # 构造器注入
     job = bus.tool_job_board.claim()
     adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
-    soul = bus.prompt_book.soul()
 
-需要具体的 DTO / Book / Job 类型时，直接从子模块导入：:
+需要具体的 DTO / Book / Job 类型时，直接从子模块导入::
 
     from magi.new_bus.library.local import SessionBook
     from magi.new_bus.library.file import PromptBook
@@ -23,6 +25,8 @@ FileShelf（文件 I/O + 热重载），以及
 底层设施（``Base`` / ``utcnow_naive`` / ``EngineFactory`` / ``FileShelf``）
 同理，从 :mod:`magi.new_bus.db` 导入。
 """
+
+from __future__ import annotations
 
 from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 

@@ -8,6 +8,9 @@ environment variable reads, no auto-discovery.  The composition root
 database paths, then passes the resulting ``NewBus`` to workers via
 constructor injection.
 
+No process-level singleton — every component receives its ``NewBus``
+explicitly via constructor injection.
+
 All Job/Book imports are **lazy** (inside ``_bootstrap_with_dirs``) so
 that merely importing this module does not register ORM tables.  This
 avoids ``extend_existing`` conflicts with the old bus at import time.
@@ -118,16 +121,20 @@ class NewBus:
     action_items_book: object  # ActionItemBook
     hook_signoffs_book: object  # HookSignoffBook
 
-    # -- local: prompts (File-backed Book) ----------------------------------
-
-    prompt_book: object  # PromptBook
-
     # -- internal factories (advanced / test use) ---------------------------
     # Positioned *before* defaulted fields so dataclass __init__ ordering
     # is satisfied (required fields must precede optional ones).
 
     _local_factory: EngineFactory = field(repr=False)
     _magis_factory: EngineFactory | None = field(repr=False, default=None)
+
+    # -- local: prompts (File-backed Book) ----------------------------------
+
+    prompt_book: object | None = None  # PromptBook | None
+
+    # -- local: skills (File-backed Book; two roots: bundle + operator) ----
+
+    skills_book: object | None = None  # SkillsBook | None
 
     # -- magis_book: society tree (all Optional — None when MAGIS DB absent) ------
 
@@ -165,13 +172,15 @@ def bootstrap_new_bus(
     Called by the composition root (e.g. :mod:`magi.startup.runtime`)
     after identity + database paths have been resolved.  Does NOT
     read environment variables or call auto-discovery — all paths
-    are passed explicitly (plan §10).
+    are passed explicitly.
 
     If *prompts_dir* is ``None``, the bundled ``magi/prompts/``
     directory is auto-detected from the package location.
 
     Returns a ready-to-use ``NewBus``.  The caller is responsible for
-    passing it to workers via constructor injection.
+    passing it to workers via constructor injection.  There is no
+    process-level singleton — every component receives its ``NewBus``
+    explicitly.
     """
     return _bootstrap_with_dirs(
         state_dir=state_dir, magis_url=magis_url, prompts_dir=prompts_dir,
@@ -234,6 +243,9 @@ def _bootstrap_with_dirs(
         setConfigNotifyBoard,
         setSettingNotifyBoard,
     )
+    from magi.new_bus.db.file import FileShelf
+    from magi.new_bus.library.file.promptBook import PromptBook
+    from magi.new_bus.library.file.skillsBook import build_default_skills_book
 
     # ---- wire factories ----------------------------------------------------
     local_factory = build_local_factory(state_dir)
@@ -277,9 +289,6 @@ def _bootstrap_with_dirs(
     # ---- prompt book (file-backed, not ORM) --------------------------------
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
     if _prompts_dir is not None:
-        from magi.new_bus.db.file import FileShelf
-        from magi.new_bus.library.file.promptBook import PromptBook
-
         prompt_shelf = FileShelf(_prompts_dir)
         prompt_book = PromptBook(prompt_shelf)
 
@@ -288,6 +297,17 @@ def _bootstrap_with_dirs(
         _ensure_workspace_soul(Path(state_dir).parent, _prompts_dir)
     else:
         prompt_book = None
+
+    # ---- skills book (file-backed, two roots: bundle + operator) ---------
+    # Convention: workspace is ``state_dir.parent`` (``<workspace>/memories``
+    # is the state dir). Operator skills live at ``<workspace>/skills/``;
+    # the bundle ships inside the ``magi`` package at ``<magi>/skills/``.
+    # ``ensure_workspace`` (run by the composition root) creates the
+    # operator ``skills/`` subdir before we get here, so we pass
+    # ``create_root=False`` (set inside ``build_default_skills_book``) to
+    # avoid a duplicate ``mkdir``.
+    workspace_dir = Path(state_dir).parent
+    skills_book = build_default_skills_book(workspace_dir)
 
     # ---- stream hub (in-process pipe registry) ------------------------------
     from magi.new_bus.stream import StreamHub
@@ -367,6 +387,7 @@ def _bootstrap_with_dirs(
         action_items_book=action_items_book,
         hook_signoffs_book=hook_signoffs_book,
         prompt_book=prompt_book,
+        skills_book=skills_book,
         stream_hub=stream_hub,
         magis_book=magis_book,
         magis_admins_book=magis_admins_book,
