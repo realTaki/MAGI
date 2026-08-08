@@ -42,9 +42,8 @@ _tools_cache: list["Tool"] | None = None
 #: the entire slot for that source.
 _injected: dict[str, list["Tool"]] = {}
 
-#: Change listeners — fired after :func:`register_tools` or
-#: :func:`unregister_source`. The worker uses this to republish
-#: the tool catalog.
+#: Change listeners — fired after :func:`register_tools`.
+#: The worker uses this to republish the tool catalog.
 _listeners: list[Callable[[], None]] = []
 
 

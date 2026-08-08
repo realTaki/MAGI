@@ -238,11 +238,10 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # Action Items sidebar entry fetches. Hooked last so the
     # auth-gated routers above (which it re-imports ``AdminGate``
     # from) are mounted first.
-    from magi.channels.api import action_items, memory, prompts
+    from magi.channels.api import action_items, memory
 
     app.include_router(action_items.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
-    app.include_router(prompts.router, prefix="/api")
     # Soul editor — the persona text the agent loop reads as
     # the system prompt. Read/write/reset the workspace
     # ``SOUL.md`` from the Settings tab.

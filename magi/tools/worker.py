@@ -333,7 +333,7 @@ class ToolsWorker:
 
     def _on_injected_tools_changed(self) -> None:
         """Registry listener — fires when an external subsystem
-        calls :func:`register_tools` or :func:`unregister_source`.
+        calls :func:`register_tools`.
 
         Thread-safe: :class:`asyncio.Event` is safe to
         :meth:`~asyncio.Event.set` from any thread.  The claim

@@ -43,11 +43,7 @@ on the source file (microseconds) and compares ``mtime`` /
 cached text and re-reads. The cost is one stat per LLM turn
 per block — invisible at any realistic request rate.
 
-Manual eviction is also available via ``reset_cache()`` —
-the admin endpoint ``POST /api/prompts/reload`` calls it.
-This is the fallback when an operator edits a file and
-doesn't want to wait for the next LLM call to discover the
-change (e.g. during prompt tuning sessions).
+
 """
 
 from __future__ import annotations
@@ -290,17 +286,3 @@ def load_bot_replies() -> dict[str, str]:
     return out
 
 
-def reset_cache() -> None:
-    """Drop the in-memory cache.
-
-    Called by the test suite (``pytest`` fixture teardown)
-    and by the ``POST /api/prompts/reload`` admin
-    endpoint. Both also need to drop ``_versions`` so the
-    next ``_load`` walks the slow path and re-stats; if
-    ``_versions`` kept stale entries, the next read could
-    fast-path to the cached text on the first stat (a
-    no-op stat) and skip the actual re-read.
-    """
-    with _cache_lock:
-        _cache.clear()
-        _versions.clear()
