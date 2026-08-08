@@ -83,7 +83,7 @@ def test_fresh_db_stamps_at_canonical_head(monkeypatch, tmp_path: Path) -> None:
     baseline migration. A fresh workspace boots, runs that one migration,
     and ``alembic_version`` reads the canonical head.
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
 
     # Force the engine cache to rebuild against the tmp_path DB.
     import magi.bus.db.engine as engine_mod
@@ -118,7 +118,7 @@ def test_legacy_db_unknown_revision_is_rebased(monkeypatch, tmp_path: Path) -> N
     revisions added is part of the new baseline. The only thing
     changing is the bookkeeping row.
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
 
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
@@ -192,7 +192,7 @@ def test_baseline_includes_all_actor_runtime_columns(
     runtime expects. Parametrised so a missing column fails with a
     named assertion rather than a generic ``assert set.issubset`` dump.
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
 
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None

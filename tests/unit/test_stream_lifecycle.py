@@ -30,9 +30,10 @@ from magi.bus.db import (
 
 @pytest.fixture()
 def store(tmp_path: Path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    return BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = tmp_path / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def test_message_committed_event_only_fires_after_commit_succeeds(

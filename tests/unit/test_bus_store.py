@@ -22,9 +22,10 @@ from magi.bus.db.base import utcnow_naive
 @pytest.fixture()
 def bus_store(tmp_path, monkeypatch) -> BusStore:
     state = tmp_path / "state"
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state / "memories"), seed_root=False)
-    return BusStore(str(state))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(state))
+    state_dir = state / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def _message(event_id: str = "webui-message-1") -> AgentMessage:

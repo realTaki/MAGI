@@ -23,9 +23,10 @@ from magi.bus.db import init_orm
 
 
 def _setup(tmp_path: Path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    return BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = tmp_path / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def test_two_writers_to_same_db_do_not_deadlock(

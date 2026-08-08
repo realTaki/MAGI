@@ -26,11 +26,18 @@ from magi.bus.db import (
 )
 
 
+def _canonical_state_dir(host: Path) -> Path:
+    """Canonical per-MAGI state dir derived from the new
+    ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` scheme."""
+    return host / "MAGI_Citizens" / "eva-000" / "memories"
+
+
 @pytest.fixture()
 def store(tmp_path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    return BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = _canonical_state_dir(tmp_path)
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def _raw_columns(db_path: Path, table: str) -> set[str]:
@@ -51,20 +58,21 @@ def test_migration_0009_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     this, every boot would re-attempt ``ADD COLUMN`` / ``CREATE INDEX``
     and crash on the second one.
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = _canonical_state_dir(tmp_path)
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    init_orm(str(tmp_path / "memories"), seed_root=False)
+    init_orm(str(state_dir), seed_root=False)
     # Reset engine cache so the second init_orm sees a "fresh" environment
     # (init_orm is idempotent at the alembic level via version stamp,
     # but the cache means the second call would be a no-op anyway).
     engine_mod._engine = engine_mod._SessionLocal = None
-    init_orm(str(tmp_path / "memories"), seed_root=False)
+    init_orm(str(state_dir), seed_root=False)
 
     # If the second upgrade tried to re-add columns the migration would
     # have raised; reaching here is success. Spot-check the new
-    # columns are present.
-    cols = _raw_columns(tmp_path / "magi.db", "agent_inbox")
+    # columns are present at the canonical SQLite path.
+    cols = _raw_columns(state_dir / "magi.db", "agent_inbox")
     assert "source_type" in cols
     assert "external_event_id" in cols
 

@@ -34,9 +34,10 @@ from magi.bus.db.base import utcnow_naive
 
 @pytest.fixture()
 def store(tmp_path: Path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    return BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = tmp_path / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def test_interrupted_transition_uses_new_attempt_id(
@@ -89,9 +90,10 @@ def test_pending_delivery_resumes_after_process_restart(
     survives the restart because it was never leased (and is
     therefore not subject to lease-expiry recovery).
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    store = BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = tmp_path / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    store = BusStore(str(state_dir))
     run_id = store.publish_agent_message(AgentMessage(
         event_id="restart-delivery-root",
         text="hi",

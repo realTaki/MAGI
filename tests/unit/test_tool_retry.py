@@ -28,9 +28,10 @@ from magi.bus.db.base import utcnow_naive
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch) -> BusStore:
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
-    init_orm(str(tmp_path / "memories"), seed_root=False)
-    return BusStore(str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
+    state_dir = tmp_path / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return BusStore(str(state_dir))
 
 
 def _seed_run_with_tool(store: BusStore, tool_call_id: str) -> str:

@@ -16,9 +16,10 @@ from magi.bus.db import init_orm
 @pytest.fixture()
 def catalog(tmp_path, monkeypatch):
     state = tmp_path / "state"
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state / "memories"), seed_root=False)
-    return bootstrap(str(state)).tool_catalog
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(state))
+    state_dir = state / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return bootstrap(str(state_dir)).tool_catalog
 
 
 def _definition(name: str, *, source: str = "builtin", roles: tuple[str, ...] = ()) -> ToolDefinition:

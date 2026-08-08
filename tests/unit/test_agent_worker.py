@@ -22,9 +22,10 @@ from magi.bus.db import init_orm
 @pytest.fixture()
 def worker_state(tmp_path, monkeypatch) -> str:
     state = tmp_path / "state"
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state / "memories"), seed_root=False)
-    return str(state)
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(state))
+    state_dir = state / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    return str(state_dir)
 
 
 @pytest.mark.asyncio

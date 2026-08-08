@@ -19,9 +19,10 @@ from magi.tools.base import ToolResult
 @pytest.mark.asyncio
 async def test_tool_worker_returns_result_to_agent_inbox(tmp_path, monkeypatch) -> None:
     state = tmp_path / "state"
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(state))
-    init_orm(str(state / "memories"), seed_root=False)
-    store = BusStore(str(state))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(state))
+    state_dir = state / "MAGI_Citizens" / "eva-000" / "memories"
+    init_orm(str(state_dir), seed_root=False)
+    store = BusStore(str(state_dir))
     store.enqueue_tool_job(
         run_id="run-1",
         tool_call_id="call-1",
