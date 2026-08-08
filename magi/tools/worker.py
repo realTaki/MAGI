@@ -304,7 +304,6 @@ class ToolsWorker:
             channel=str(ctx_data.get("channel") or ""),
             session_id=str(ctx_data.get("session_id") or ""),
             bus=self.bus,
-            worker_id=self.worker_id,
         )
         denied = tool.gate(ctx)
         if denied:

@@ -29,11 +29,8 @@ sees.
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from dataclasses import dataclass, field
-
-logger = logging.getLogger("magi.tools.shell._manager")
 
 # Cap on a foreground command. Mirrors the reference
 # implementation's ``max: 600`` — a deployer who wants
@@ -113,8 +110,28 @@ class _BackgroundShellManager:
     _monitor_tasks: dict[str, asyncio.Task] = {}
 
     @classmethod
-    def add(cls, shell: _BackgroundShell) -> None:
-        cls._shells[shell.bash_id] = shell
+    def add(
+        cls,
+        *,
+        bash_id: str,
+        command: str,
+        process: "asyncio.subprocess.Process",
+        start_time: float,
+    ) -> _BackgroundShell:
+        """Register a new background shell and return it.
+
+        The manager owns construction so callers can't hand us a
+        half-built dataclass or register one under a key that
+        disagrees with ``shell.bash_id``.
+        """
+        shell = _BackgroundShell(
+            bash_id=bash_id,
+            command=command,
+            process=process,
+            start_time=start_time,
+        )
+        cls._shells[bash_id] = shell
+        return shell
 
     @classmethod
     def get(cls, bash_id: str) -> _BackgroundShell | None:
@@ -125,7 +142,7 @@ class _BackgroundShellManager:
         return list(cls._shells.keys())
 
     @classmethod
-    async def start_monitor(cls, bash_id: str) -> None:
+    async def start_monitor(cls, *, bash_id: str) -> None:
         """Spawn a coroutine that drains the
         subprocess's stdout into the shell's
         ``output_lines`` until the process ends."""
@@ -136,7 +153,20 @@ class _BackgroundShellManager:
 
         async def _drain() -> None:
             try:
-                while process.returncode is None:
+                # Drain until the pipe closes (EOF on
+                # ``readline``), NOT until ``returncode`` is
+                # set. The two are not atomic — the kernel can
+                # close stdout the instant the process exits
+                # while Python's subprocess machinery takes a
+                # tick or two to set ``returncode``. Gating the
+                # loop on ``returncode is None`` breaks out
+                # early on EOF and loses whatever the kernel
+                # still had buffered in the pipe (short bursts
+                # like ``echo a; echo b; echo c`` trip this
+                # reliably). The ``readline`` timeout handles
+                # "alive but idle"; ``break`` on EOF handles
+                # "process exited".
+                while True:
                     if process.stdout is None:
                         break
                     try:

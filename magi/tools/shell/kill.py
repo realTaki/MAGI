@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.shell._manager import _BackgroundShell, _BackgroundShellManager
+from magi.tools.shell._manager import _BackgroundShellManager
 
 
 logger = logging.getLogger("magi.tools.shell.kill")
@@ -59,7 +59,7 @@ class BashKillTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
+        _ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         bash_id = (kwargs.get("bash_id") or "").strip()
