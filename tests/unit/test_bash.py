@@ -37,7 +37,7 @@ def workspace_ctx(tmp_path, monkeypatch):
     Each test gets its own tmp_path so concurrent
     background-process tests don't share state.
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "state"))
     return ToolContext(
         workspace=tmp_path,
         uid=42,
@@ -626,11 +626,11 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     ``tool_catalog.list_schemas``. So this asserts through
     :func:`get_tool`, not a schema listing.
 
-    ``MAGI_WORKSPACE_DIR`` must be set so the registry's
+    ``HOST_WORKSPACE_DIR`` must be set so the registry's
     tool-construction path can build the SQLAlchemy engine
     (the LLM tools gate on roles, which requires a DB lookup).
     """
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "state"))
     from magi.tools.registry import get_tool
 
     for name in ("bash", "bash_output", "bash_kill"):

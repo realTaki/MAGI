@@ -44,7 +44,7 @@ from magi.channels.tasks.scheduler import (
 
 @pytest.fixture
 def fresh_state_dir(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    """Per-test state directory + ``MAGI_WORKSPACE_DIR`` env var.
+    """Per-test state directory + ``HOST_WORKSPACE_DIR`` env var.
 
     The env var matters because ``start_scheduler`` →
     ``start()`` lazily initialises the SQLAlchemy engine,
@@ -60,7 +60,7 @@ def fresh_state_dir(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     ``stop_scheduler`` in the teardown handles that.
     """
     sd = tempfile.mkdtemp(prefix="magi-scheduler-test-")
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", sd)
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", sd)
     yield sd
     # Defensive: stop in case a test forgot. Idempotent.
     try:

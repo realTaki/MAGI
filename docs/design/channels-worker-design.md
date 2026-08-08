@@ -1008,3 +1008,162 @@ Part A-F 全部落地后，跑一次：
 | # | 时间 | Agent | 偏离内容 | 原因 | 影响范围 |
 |---|------|-------|---------|------|---------|
 | — | — | — | （实施时填） | — | — |
+
+---
+
+## 24. v3 全新技术栈合同（最高优先级）
+
+### 24.1 Cutover 规则
+
+本次迁移不是旧 Bus 的适配层，也不是同表换 DTO。以下内容**禁止**出现在完成后的
+production path：
+
+- `magi.bus`、`get_bus()`、`BusStore`、旧 `AgentMessage`、旧 `DeliveryWorker`；
+- 旧表 `agent_inbox`、`delivery_outbox`、`tasks`、`task_runs` 及其字段/迁移兼容；
+- 双写、fallback read、兼容 wrapper、旧 HTTP run-status/SSE 的服务端实现；
+- 新旧 Worker 对同一队列或同一外部通道同时消费。
+
+部署使用新的 state directory / database。旧状态不导入；如需保留历史，仅作为离线、
+只读归档，不被新运行时读取。`NewBus` 是唯一运行时 facade，所有 Worker 和 FastAPI
+dependency 都显式注入同一个实例。
+
+### 24.2 新 schema 与唯一所有者
+
+下表是目标 schema；名称刻意避开旧表，避免 SQLAlchemy `extend_existing` 或列形状冲突。
+
+| 表 | 所有者 | 用途 |
+|---|---|---|
+| `agent_turn_jobs` | `AgentJobBoard` | 外部输入、steering 与 cancel 请求 |
+| `agent_turns` | `AgentTurnStore` | conversation lease、phase、continuation、terminal result |
+| `agent_messages` | `AgentTurnStore` | committed user / assistant transcript |
+| `channel_delivery_jobs` | `ChannelDeliveryBoard` | 只包含外部 delivery effect |
+| `a2a_request_jobs` | `A2AJobBoard` | `message_magi` 请求、关联回复与结果 |
+| `scheduled_tasks` | `ScheduledTaskBook` | cron / run_at 的任务定义 |
+| `scheduled_task_runs` | `ScheduledTaskStore` | 每次 fire 的 lifecycle 与 Agent turn 关联 |
+| `run_task_jobs` | `RunTaskJobBoard` | 手动/API/tool 触发任务的命令 |
+
+所有表使用同一 new-stack metadata / migration chain。不得为旧表写 `extend_existing=True`，
+不得共享旧 ORM model。表的 DTO 由本计划定义，而不是从旧表名推导。
+
+### 24.3 共享 DTO 合同
+
+Channel 与 Agent 以以下 immutable DTO 交互；顶层字段是正式合同，不再把通道身份藏在
+不受约束的 `payload` 中：
+
+```python
+@dataclass(frozen=True, slots=True)
+class ChatJob:
+    job_id: str
+    run_id: str
+    conversation_id: str
+    idempotency_key: str
+    kind: Literal["message", "steer", "cancel", "task"]
+    text: str
+    channel: str
+    uid: int | None
+    session_id: str | None
+    caller_role: str | None
+    metadata: dict[str, JsonValue]
+    deadline_at: datetime | None = None
+
+@dataclass(frozen=True, slots=True)
+class ChannelDeliveryJob:
+    job_id: str
+    run_id: str
+    channel: Literal["tg"]
+    destination: str
+    idempotency_key: str
+    payload: dict[str, JsonValue]
+
+@dataclass(frozen=True, slots=True)
+class A2ARequestJob:
+    job_id: str
+    run_id: str
+    target_magic_id: int
+    tool_call_id: str
+    correlation_id: str
+    expect_reply: bool
+    request: dict[str, JsonValue]
+```
+
+`ChatJobResult`、`ChannelDeliveryResult`、`A2ARequestResult` 都以 `job_id` 为自然键，
+包含 `success`、稳定 `error_code` 与受限 `result`。每个 publish 必须携带稳定的
+idempotency key：TG 使用 update/message id，WebUI 使用 client message id，A2A 使用
+sender event id，Task 使用 task-run id。
+
+### 24.4 所有权与数据流
+
+```text
+TG / WebUI / Task / A2A ingress
+              │
+              ▼
+        AgentJobBoard (agent_turn_jobs)
+              │
+              ▼
+ AgentTurnStore / AgentWorker
+   ├─ commit transcript + turn state atomically
+   ├─ ToolJobBoard
+   ├─ A2AJobBoard ──► A2AWorker ──► A2ARequestResult
+   └─ ChannelDeliveryBoard ──► TelegramWorker ──► external HTTP
+```
+
+- AgentTurnStore 是 transcript 的**唯一写者**。`WebUIWorker` 不存在；WebUI 从
+  committed transcript / run API 读取，SSE 只是 best-effort 通知。绝不能在 delivery
+  consumer 再追加 assistant message。
+- TelegramWorker 是 `channel_delivery_jobs(channel="tg")` 的唯一消费者，且只执行
+  外部 Telegram HTTP I/O。
+- A2AWorker 消费 `a2a_request_jobs`，不是 ChannelDeliveryBoard；它把结果提交回
+  A2AJobBoard，供 Agent continuation 使用。
+- TaskWorker 创建 `ScheduledTaskRun` 并原子写入对应 user message + `ChatJob`；
+  AgentTurn terminal transition 通过 `task_run_id` 投影完成/失败、token usage 与
+  reply excerpt。TaskWorker 不猜测 Agent 是否成功。
+
+### 24.5 通用 queue 状态机
+
+每个可执行 job 使用同一状态机：
+
+```text
+pending → leased → completed
+                 ├→ retry_wait → leased
+                 └→ failed | cancelled
+```
+
+`claim_for_channel(channel, worker_id)`、`claim_for_conversation(...)` 与
+`renew_lease(job_id, worker_id)` 必须在 SQLite 中通过 compare-and-set UPDATE 实现；
+不能依赖 `SELECT FOR UPDATE SKIP LOCKED`。发送失败不可直接 `submit_result(false)`：
+可恢复错误进入 `retry_wait` 并带 `available_at/backoff`，永久错误或耗尽重试才进入
+`failed`。所有 terminal 写入要求 owner/version match，避免取消或 lease 被夺回后由
+晚到 worker 覆盖结果。
+
+外部 Telegram/A2A 请求使用 `idempotency_key` 传递可用的对端幂等标识；无法保证对端
+exactly-once 时，系统保证 at-least-once，并持久化 delivery attempt 供查询。
+
+### 24.6 Task 调度合同
+
+`ScheduledTaskStore.fire()` 是一个事务：验证 task 仍 enabled、按 task 自己的 `tz`
+计算 cron 或 `run_at`、创建唯一 `scheduled_task_run`、写 user transcript，并发布
+`ChatJob(kind="task")`。唯一键 `(task_id, scheduled_window)` 防止重复 tick / 重启重复。
+
+`run_at` 在该事务内标为 consumed；cron 以 last scheduled window 而非 wall-clock
+poll 时间判断。每个 Agent terminal transition 都依据 `task_run_id` 完成对应 task run，
+更新失败计数；超时/取消同样有明确 terminal 投影。
+
+### 24.7 启动与 HTTP 边界
+
+Composition root 只启动：Providers → Tools → MCP → Agent → Task → Telegram → A2A。
+WebUI 与 A2A ingress 是 FastAPI handlers，不是 worker；它们通过 dependency 获取
+NewBus，完成短事务发布后立即返回 `202 + run_id`。
+
+`channels.enabled` 的修改交给一个运行时控制面命令处理；HTTP route 不得直接操作模块级
+worker registry。启动/停止必须串行、幂等，并持久化实际状态，避免 WebUI lifespan 与
+runtime process 同时启动同一外部 consumer。
+
+### 24.8 实施顺序与统一验证
+
+1. 建立 v3 metadata、全新 migration chain 与 DTO / board contracts。
+2. 实现 AgentTurnStore、AgentJobBoard、A2AJobBoard 及它们的 lease / cancel / atomic
+   transition；以此作为 Channel 的唯一上游。
+3. 实现 ScheduledTaskStore、TaskWorker、TelegramWorker、A2AWorker 和 HTTP ingress。
+4. 切换 composition root 与 HTTP API，删除所有旧 Bus、旧 Channel、旧表访问和兼容代码。
+5. **仅在 1–4 全部完成后**，与 `agent-worker-new-bus.md` 一起统一更新测试、运行完整
+   单元/集成/端到端验证及手工冒烟。实施途中只允许静态检查，不以局部测试通过宣告完成。

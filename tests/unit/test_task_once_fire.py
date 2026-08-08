@@ -90,7 +90,7 @@ def state_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     singleton."""
     sd = tmp_path / "state"
     sd.mkdir()
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(sd))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(sd))
 
     import magi.bus.db.engine as orm_mod
     orm_mod._engine = None

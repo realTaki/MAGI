@@ -15,7 +15,7 @@ Covers the contract changes:
 
 These tests use the same per-test SQLite fixture as
 ``test_providers_worker.py`` — a ``tmp_path`` is wired into both the
-private SQLite (via ``MAGI_WORKSPACE_DIR``) and the public MAGIS
+private SQLite (via ``HOST_WORKSPACE_DIR``) and the public MAGIS
 SQLite (via ``MAGIS_DATABASE_URL``) so each test sees a fresh
 database with a fresh bootstrap.
 """
@@ -214,9 +214,9 @@ def test_runtime_settings_corrupt_file_returns_empty(tmp_path, caplog):
 def test_provider_configuration_reads_runtime_settings_file(magi_state, tmp_path, monkeypatch):
     """MagicService.provider_configuration returns the file-backed config."""
     # The runtime_settings loader resolves to ``workspace_dir()`` which
-    # honours ``MAGI_WORKSPACE_DIR``.  Pin it to our tmp_path BEFORE
+    # honours ``HOST_WORKSPACE_DIR``.  Pin it to our tmp_path BEFORE
     # writing the file so save and load see the same path.
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path))
 
     save_runtime_settings(
         RuntimeSettings(provider="claude", api_key="sk-from-file", model="claude-opus-4-7"),

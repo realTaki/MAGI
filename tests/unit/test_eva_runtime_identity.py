@@ -41,7 +41,7 @@ def test_eva_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_pa
     """Provider config now comes from the direct MAGIS public database."""
     import magi.bus.db.engine as engine_mod
     engine_mod._engine = engine_mod._SessionLocal = None
-    monkeypatch.setenv("MAGI_WORKSPACE_DIR", str(tmp_path / "private"))
+    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "private"))
     monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'public.db'}")
     from magi.bus.db import init_orm
     from magi.bus.db.magis.engine import init_magis_public_db

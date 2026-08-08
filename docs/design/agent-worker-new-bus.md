@@ -10,6 +10,12 @@
 Agent / Channel 迁移的边界。它是实现合同：文中的 DTO 字段和事务边界必须先
 落实，不能把示例中的字段当作当前代码已经提供的 API。
 
+> **v3 storage profile（与 `channels-worker-design.md` §24 一致）**：最终运行时
+> 使用全新 `agent_turn_jobs`、`agent_turns`、`agent_messages`、
+> `channel_delivery_jobs` 与 `a2a_request_jobs` schema。本文早先出现的
+> `agent_inbox`、`delivery_outbox`、现有 `ChatJob` 字段形状只描述迁移前代码，
+> 不构成目标兼容要求；不迁移、不双写、不读取旧 Bus 表。
+
 ---
 
 ## 1. 架构总览
@@ -1029,7 +1035,71 @@ lease 验证：
   原因：按 §2.5 设计
   影响：claim_for_conversation 是 §3.1 _run() 的前置依赖
   需要对方回复：否（接口草案中，预计 14:40 完成时回填签名）
+
+- [claude, 2026-08-08] 计划：Round 1 — 在 BaseJobBoard 加 `renew_lease()` + `cancel()`
+  文件：magi/new_bus/guild/base.py
+  原因：§2.6 lease 设计；§8 Phase 0 step 3；为 AgentTurnStore 的 lease heartbeat 与
+  worker 取消路径提供原语。`release()` 当前实现将被 §2.6 明确禁止，标注 deprecate。
+  影响：所有继承 BaseJobBoard 的 board 都自动获得新方法；与现有 release() 不冲突。
+  需要对方回复：否（接口草案见下方 "Round 1 提案"，等 user 点头再动笔）。
 ```
+
+### 11.8 Round 1 提案：BaseJobBoard.renew_lease() + cancel()
+
+```python
+# 新增到 BaseJobBoard
+
+def renew_lease(
+    self,
+    *,
+    key: str,
+    owner: str,
+    extend_seconds: int | None = None,
+) -> bool:
+    """CAS 续租；只有 leased_by == owner 才能成功。
+    返回 True 表示续租成功；False 表示 ownership 已被回收（worker 必须放弃）。"""
+    extend = timedelta(seconds=extend_seconds or self._lease_seconds)
+    now = utcnow_naive()
+    with self._session() as s:
+        row = s.scalar(
+            select(self.job_model).where(
+                getattr(self.job_model, self.natural_key_attr) == key,
+                self.job_model.leased_by == owner,
+                self.job_model.status == "processing",
+            )
+        )
+        if row is None:
+            return False
+        row.leased_until = now + extend
+        s.commit()
+        return True
+
+def cancel(
+    self,
+    *,
+    key: str,
+    owner: str,
+) -> bool:
+    """Ownership-aware cancel：把 leased_until 缩到 now()，让 worker 在下一次
+    renew 之前感知到自己失去 ownership；status 保持 'processing' 以便
+    后续 reclaim。返回 True 表示 cancel 成功。"""
+    now = utcnow_naive()
+    with self._session() as s:
+        row = s.scalar(
+            select(self.job_model).where(
+                getattr(self.job_model, self.natural_key_attr) == key,
+                self.job_model.leased_by == owner,
+                self.job_model.status == "processing",
+            )
+        )
+        if row is None:
+            return False
+        row.leased_until = now  # 立即过期
+        s.commit()
+        return True
+```
+
+`release()` 标 `.. deprecated::` 注释，保留给已迁移的 caller 暂时不掉；Phase 4 统一删除。
 
 ### 11.5 抢占式声明（防重复造轮子）
 
