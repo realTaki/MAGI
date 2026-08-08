@@ -1,17 +1,14 @@
 """Foreground / background command execution — :class:`BashRunTool`.
 
 The subprocess's **initial cwd is the workspace root**
-(``ToolContext.workspace``). We don't enforce stay-
+(``ToolContext.workspace``).  We don't enforce stay-
 inside-workspace on subsequent ``cd`` calls — the LLM
 is trusted to stay inside the tree, matching the
-reference bash tool's posture. The actual safety
-boundary is the operator's container / deploy boundary
-(see :mod:`magi.tools._safe_path` for the same trust
-model on the file tools).
+reference bash tool's posture.
 
 Timeouts cap at 600 s — a misbehaving command can't pin
 an event loop forever; the foreground path returns
-``is_error=True`` on timeout. Background processes have
+``is_error=True`` on timeout.  Background processes have
 no timeout; they live until :class:`BashKillTool` ends
 them.
 """
@@ -28,7 +25,6 @@ from typing import Any
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.shell._manager import (
     _BASH_ID_LEN,
-    _BackgroundShell,
     _BackgroundShellManager,
     _FOREGROUND_TIMEOUT_DEFAULT,
     _FOREGROUND_TIMEOUT_MAX,
@@ -51,30 +47,11 @@ class BashRunTool(Tool):
     # Visible only to ``admin`` and ``assigned``
     # operators — same gate as the WebUI dashboard and
     # as :class:`~magi.tools.tasks.schedule.ScheduleTaskTool`
-    # / the action-item trio. The chat path always
-    # passes the operator's role through to
-    # ``handle_message(caller_role=...)`` so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
+    # / the action-item trio.
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     def _build_description(self) -> str:
-        """OS-specific description block.
-
-        Different shells (bash vs PowerShell) have
-        different idioms for chaining commands
-        (``&&`` vs ``;``), path quoting, and the
-        long-running-process pattern. We render the
-        relevant version up-front so the LLM picks
-        the right syntax on the first call — it's
-        easier than reading generic text and
-        re-deriving the platform rules.
-
-        Body unchanged across platforms; only the
-        example block (chain syntax, sample long-
-        running command) flips.
-        """
+        """OS-specific description block."""
         if self.is_windows:
             examples_block = (
                 "Tips:\n"
@@ -128,11 +105,6 @@ class BashRunTool(Tool):
 
     @property
     def description(self) -> str:
-        # Built lazily on first read. The reference
-        # implementation builds it in __init__; we
-        # delay because the LLM schema is rendered
-        # at first registry access, not at every
-        # BashRunTool construction.
         cached = getattr(self, "_description_cache", None)
         if cached is not None:
             return cached
@@ -176,15 +148,8 @@ class BashRunTool(Tool):
     }
 
     def __init__(self) -> None:
-        # OS detection once at construction. The reference
-        # code does this per-instance; we do it per-class
-        # because the class is registered as a singleton
-        # in the tool registry.
         self.is_windows = platform.system() == "Windows"
         self.shell_name = "PowerShell" if self.is_windows else "bash"
-        # Lazily populated by ``description``; cleared on
-        # each instance so the property is correct if
-        # ``is_windows`` is ever mutated (v0: never).
         self._description_cache: str | None = None
 
     # -- run -----------------------------------------------------------
@@ -201,10 +166,6 @@ class BashRunTool(Tool):
                 is_error=True,
             )
 
-        # Clamp the foreground timeout. The reference
-        # code clamps inside the execute method; we do it
-        # at the boundary so the schema's default is the
-        # single source of truth.
         try:
             timeout = int(kwargs.get("timeout") or _FOREGROUND_TIMEOUT_DEFAULT)
         except (TypeError, ValueError):
@@ -219,7 +180,7 @@ class BashRunTool(Tool):
 
         try:
             if run_in_background:
-                return await self._run_background(command, cwd, ctx)
+                return await self._run_background(command, cwd)
             return await self._run_foreground(command, timeout, cwd)
         except Exception as e:
             logger.exception("bash tool: unexpected error")
@@ -234,47 +195,30 @@ class BashRunTool(Tool):
         self,
         command: str,
         cwd: str | None,
-        ctx: ToolContext,
     ) -> ToolResult:
         bash_id = uuid.uuid4().hex[:_BASH_ID_LEN]
         if self.is_windows:
-            # PowerShell: -NoProfile avoids loading
-            # the user's $PROFILE which can hang on
-            # network drives.
             process = await asyncio.create_subprocess_exec(
                 "powershell.exe", "-NoProfile", "-Command", command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,  # combine
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=cwd,
             )
         else:
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,  # combine
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=cwd,
             )
 
-        # Owner identity: ``ctx.worker_id`` is the
-        # ``ToolsWorker.worker_id`` of this process — the only
-        # process that holds the live subprocess handle. A
-        # non-owner ``bash_output`` / ``bash_kill`` consults
-        # the row to know it isn't looking at its own work.
-        # ``uid`` rides on the row so a future per-operator
-        # audit / cleanup can attribute shells.
-        owner_worker_id = ctx.worker_id or ""
         _BackgroundShellManager.add(
             bash_id=bash_id,
             command=command,
             process=process,
-            owner_worker_id=owner_worker_id,
             start_time=time.time(),
-            bus=ctx.bus,
-            uid=int(ctx.uid),
         )
-        await _BackgroundShellManager.start_monitor(
-            bash_id=bash_id, bus=ctx.bus,
-        )
+        await _BackgroundShellManager.start_monitor(bash_id=bash_id)
 
         return ToolResult(
             content=(
@@ -309,12 +253,10 @@ class BashRunTool(Tool):
 
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=timeout
+                process.communicate(), timeout=timeout,
             )
         except asyncio.TimeoutError:
             process.kill()
-            # Best-effort reap so the OS doesn't leak
-            # zombies.
             try:
                 await asyncio.wait_for(process.wait(), timeout=2)
             except asyncio.TimeoutError:
@@ -333,8 +275,6 @@ class BashRunTool(Tool):
         stderr = stderr_bytes.decode("utf-8", errors="replace")
         returncode = process.returncode
 
-        # Format: stdout + (stderr if any) + exit code line
-        # so the LLM has the failure mode in one read.
         parts: list[str] = []
         if stdout:
             parts.append(stdout.rstrip("\n"))

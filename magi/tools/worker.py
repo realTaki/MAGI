@@ -156,57 +156,8 @@ class ToolsWorker:
         #    this session.
         await asyncio.to_thread(self._publish_builtin_catalog)
 
-        # 2. Reap orphaned background shells from this worker's
-        #    previous life (process restart / crash). The live
-        #    subprocess is gone — the row's ``status='running'``
-        #    is now a lie. Mark them terminal so cross-worker
-        #    ``bash_output`` sees a final status instead of
-        #    polling forever. Failure here is logged and
-        #    swallowed; the next tool call's lookup will keep
-        #    returning "running" until the operator manually
-        #    reaps, which is no worse than v0's behaviour.
-        await asyncio.to_thread(self._reap_orphaned_shells)
-
         self._stopping = False
         self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
-
-    def _reap_orphaned_shells(self) -> None:
-        """Mark this worker's prior ``status='running'`` shells
-        as orphaned.
-
-        Runs once at worker startup. The :class:`BackgroundShellBook`
-        is the cross-worker registry; scanning by
-        ``owner_worker_id == self.worker_id`` keeps each worker's
-        reaping local to its own prior shells (a worker doesn't
-        reach into another worker's live registry).
-        """
-        try:
-            shells = self.bus.background_shells_book.list_by_owner(
-                owner_worker_id=self.worker_id,
-                status="running",
-            )
-        except Exception:
-            logger.exception(
-                "tools worker: orphan-shell scan failed; "
-                "leaving prior rows as 'running'"
-            )
-            return
-        for shell in shells:
-            try:
-                self.bus.background_shells_book.mark_orphaned(
-                    bash_id=shell.bash_id,
-                )
-            except Exception:
-                logger.exception(
-                    "tools worker: failed to mark %s orphaned",
-                    shell.bash_id,
-                )
-        if shells:
-            logger.warning(
-                "tools worker: reaped %d orphaned shell(s) "
-                "from previous run",
-                len(shells),
-            )
 
     async def stop(self) -> None:
         self._stopping = True
@@ -347,11 +298,6 @@ class ToolsWorker:
         #    ``Tool.gate`` re-resolves the caller's role from
         #    ``ctx.bus.contacts_book`` on every call, so we
         #    don't carry a stale role on the context.
-        #    ``worker_id`` lets tools that own per-process
-        #    state (e.g. the background-shell manager) detect
-        #    cross-worker invocations and route them through
-        #    the bus instead of trying to touch the local
-        #    subprocess handle.
         ctx = ToolContext(
             workspace=str(ctx_data.get("workspace") or ""),
             uid=int(ctx_data.get("uid") or 0),

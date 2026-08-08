@@ -77,14 +77,10 @@ class ToolContext:
 
     ``worker_id`` is the
     :attr:`~magi.tools.worker.ToolsWorker.worker_id` of the
-    process currently executing the tool — useful for tools that
-    own per-process state and need to know whether they're
-    looking at their own work (e.g.
-    :class:`~magi.tools.shell._manager._BackgroundShellManager`
-    uses it to detect cross-worker ``bash_output`` /
-    ``bash_kill`` calls). Empty string when no worker is wired
-    (tests / boot probes); the manager treats that as
-    "single-worker mode" and skips cross-worker fan-out.
+    process currently executing the tool — available for tools
+    that own per-process state and need to identify their own
+    work across restarts.  Empty string when no worker is wired
+    (tests / boot probes).
 
     ``bus`` is ``None`` for tests / boot probes — tools that
     require bus access should fail closed when ``ctx.bus``
