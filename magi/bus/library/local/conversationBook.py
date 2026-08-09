@@ -450,6 +450,42 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             persisted.append(msg)
         return persisted
 
+    def get_messages_page(
+        self,
+        contact_id: int,
+        conversation_id: str,
+        *,
+        limit: int,
+        offset: int,
+        include_archived: bool = False,
+    ) -> tuple[list[Message], int, int]:
+        """Paginated message slice, scoped to ``contact_id``'s conversation.
+
+        Thin facade over :meth:`MessageBook.list_for_conversation_page`
+        that closes the seam between the two Books: callers holding a
+        ``ConversationBook`` (which is the natural injection point —
+        it owns the conversation identity and the ownership check)
+        don't have to also inject a ``MessageBook`` for the paginated
+        read path.
+
+        Ownership validation is delegated to
+        :meth:`get_for_owner`: if the conversation doesn't belong to
+        ``contact_id``, raises the same ``ConversationNotFoundError``
+        the rest of the Book surface raises, so callers don't need a
+        special branch for "wrong owner".
+        """
+        if self.get_for_owner(
+            contact_id=contact_id, conversation_id=conversation_id
+        ) is None:
+            raise ConversationNotFoundError(conversation_id)
+        message_book = MessageBook(self._factory)
+        return message_book.list_for_conversation_page(
+            conversation_id=conversation_id,
+            limit=limit,
+            offset=offset,
+            include_archived=include_archived,
+        )
+
     def touch(self, *, conversation_id: str, updated_at: str) -> None:
         with self._session() as s:
             row = s.scalar(
@@ -522,6 +558,68 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             stmt = stmt.order_by(_MessageRow.id)
             rows = s.scalars(stmt).all()
             return [self._row_to_dto(r) for r in rows]
+
+    def list_for_conversation_page(
+        self,
+        *,
+        conversation_id: str,
+        limit: int,
+        offset: int,
+        include_archived: bool = False,
+    ) -> tuple[list[Message], int, int]:
+        """Paginated slice of ``conversation_id``'s messages.
+
+        Returns ``(messages, total_active, total_all)``:
+          - ``messages``: the requested page, oldest-first within the page
+            (so the WebUI can render top-down). Ordering is by
+            ``chat_messages.id ASC`` — i.e. insertion order, which is
+            identical to chronological order for messages inserted in a
+            single transaction.
+          - ``total_active``: count of non-archived rows for the page
+            bookkeeping (the UI uses ``loaded_count < total_active`` to
+            decide whether to show the "load older messages" affordance).
+          - ``total_all``: count including archived rows, so the UI can
+            surface a "(+N archived)" hint if there's history the user
+            hasn't seen since compaction rolled it out.
+
+        ``limit`` / ``offset`` are clamped by the caller — the route
+        handler in :mod:`magi.channels.api.chat_sessions` does it inline
+        because ``Query(ge=…, le=…)`` interacts badly with
+        ``from __future__ import annotations`` for some pydantic
+        versions.
+        """
+        from sqlalchemy import func
+
+        with self._session() as s:
+            base = select(_MessageRow).where(
+                _MessageRow.conversation_id == conversation_id
+            )
+            archived_filter = (
+                [] if include_archived else [_MessageRow.archived == 0]
+            )
+
+            page_rows = s.scalars(
+                base.where(*archived_filter)
+                .order_by(_MessageRow.id)
+                .limit(limit)
+                .offset(offset)
+            ).all()
+            total_active = s.scalar(
+                select(func.count())
+                .select_from(_MessageRow)
+                .where(_MessageRow.conversation_id == conversation_id)
+                .where(_MessageRow.archived == 0)
+            ) or 0
+            total_all = s.scalar(
+                select(func.count())
+                .select_from(_MessageRow)
+                .where(_MessageRow.conversation_id == conversation_id)
+            ) or 0
+        return (
+            [self._row_to_dto(r) for r in page_rows],
+            int(total_active),
+            int(total_all),
+        )
 
 
     def add(self, *, conversation_id: str, role: str, text: str,

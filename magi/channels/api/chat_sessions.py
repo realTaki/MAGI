@@ -618,6 +618,16 @@ def get_session_messages(
             limit=limit, offset=offset,
             include_archived=include_archived,
         )
+    except ConversationNotFoundError:
+        # ``get_messages_page`` raises this when the conversation
+        # doesn't exist OR doesn't belong to ``contact_id`` — both
+        # cases are 404 to the operator (don't leak existence of
+        # other operators' conversations).
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.session",
+            detail=f"session {session_id} not found",
+        )
     except ConversationPathError as e:
         raise MagiHTTPException(
             status_code=400,
