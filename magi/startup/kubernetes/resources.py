@@ -48,8 +48,8 @@ def _slug(value: str | None, fallback: str = "eva") -> str:
     return slug[:55].rstrip("-")
 
 
-def _eva_resource_name(magic_id: int | str, name: str) -> str:
-    return f"magi-eva-{magic_id}-{_slug(name, 'eva')}"[:63].rstrip("-")
+def _eva_resource_name(magi_id: int | str, name: str) -> str:
+    return f"magi-eva-{magi_id}-{_slug(name, 'eva')}"[:63].rstrip("-")
 
 
 def _magis_resource_name(magis_id: int | str, name: str) -> str:
@@ -82,7 +82,7 @@ def _namespace() -> str:
 # ----------------------------------------------------------------------
 
 
-def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, Any]:
+def create_magi_resources(*, config: StartupConfig, magi_id: int) -> dict[str, Any]:
     """Build the manifests for one MAGI's PVC + Service + Deployment.
 
     Returns a dict with the three manifest documents; the caller (the
@@ -97,7 +97,7 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
     """
     if config.is_first_magi and config.magi_name != DEFAULT_MAGI_NAME:
         raise ValueError(f"first MAGI must be {DEFAULT_MAGI_NAME}")
-    name = _eva_resource_name(magic_id, config.magi_name)
+    name = _eva_resource_name(magi_id, config.magi_name)
     pvc_name = f"{name}-workspace"
     ns = _namespace()
     runtime_port = RUNTIME_PORT
@@ -116,7 +116,7 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
                 "kind": "Service",
                 "metadata": {"name": name, "namespace": ns},
                 "spec": {
-                    "selector": {"magi.io/magic-id": str(magic_id)},
+                    "selector": {"magi.io/magi-id": str(magi_id)},
                     # ClusterIP is the default; do not mark externally
                     # reachable (plan §15 — only the WebUI is).
                     "ports": [
@@ -131,9 +131,9 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
                 "spec": {
                     "replicas": 1,
                     "strategy": {"type": "Recreate"},
-                    "selector": {"matchLabels": {"magi.io/magic-id": str(magic_id)}},
+                    "selector": {"matchLabels": {"magi.io/magi-id": str(magi_id)}},
                     "template": {
-                        "metadata": {"labels": {"magi.io/magic-id": str(magic_id)}},
+                        "metadata": {"labels": {"magi.io/magi-id": str(magi_id)}},
                         "spec": {
                             "containers": [
                                 {
@@ -142,7 +142,7 @@ def create_magi_resources(*, config: StartupConfig, magic_id: int) -> dict[str, 
                                     "env": [
                                         {"name": "HOST_WORKSPACE_DIR", "value": "/workspace"},
                                         {"name": "MAGI_NAME", "value": config.magi_name},
-                                        {"name": "MAGI_ID", "value": str(magic_id)},
+                                        {"name": "MAGI_ID", "value": str(magi_id)},
                                         {
                                             "name": "MAGIS_DATABASE_URL",
                                             "value": config.magis_database_url
@@ -304,7 +304,7 @@ _CA_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
 def _k8s_resource_name(spec_or_binding) -> str:
     raw = (getattr(spec_or_binding, "name", None) or "eva").lower()
     slug = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-") or "eva"
-    return f"magi-eva-{spec_or_binding.magic_id}-{slug}"[:63].rstrip("-")
+    return f"magi-eva-{spec_or_binding.magi_id}-{slug}"[:63].rstrip("-")
 
 
 def _magis_k8s_resource_name(binding) -> str:
@@ -547,7 +547,7 @@ class KubernetesEvaBackend:
             "app.kubernetes.io/name": "magi",
             "app.kubernetes.io/component": "eva",
             "magi.io/managed-by": "magi-orchestrator",
-            "magi.io/magic-id": str(spec.magic_id),
+            "magi.io/magi-id": str(spec.magi_id),
         }
         prefix = f"/api/v1/namespaces/{self.namespace}"
         if spec.magis is None:
@@ -574,7 +574,7 @@ class KubernetesEvaBackend:
                 "kind": "Service",
                 "metadata": {"name": name, "labels": labels},
                 "spec": {
-                    "selector": {"magi.io/magic-id": str(spec.magic_id)},
+                    "selector": {"magi.io/magi-id": str(spec.magi_id)},
                     # The Service forwards to the Runtime's internal
                     # port (plan §15 — no external MAGI exposure).
                     "ports": [
@@ -596,7 +596,7 @@ class KubernetesEvaBackend:
                 "spec": {
                     "replicas": 1,
                     "strategy": {"type": "Recreate"},
-                    "selector": {"matchLabels": {"magi.io/magic-id": str(spec.magic_id)}},
+                    "selector": {"matchLabels": {"magi.io/magi-id": str(spec.magi_id)}},
                     "template": {
                         "metadata": {"labels": labels},
                         "spec": {
@@ -610,7 +610,7 @@ class KubernetesEvaBackend:
                                     "env": [
                                         {
                                             "name": "MAGI_RUNTIME_ID",
-                                            "value": str(spec.magic_id),
+                                            "value": str(spec.magi_id),
                                         },
                                         {"name": "MAGIS_ID", "value": str(spec.magis.id)},
                                         {

@@ -31,7 +31,7 @@ class MagisRuntimeConfiguration(BaseModel):
 
 
 class EvaSpec(BaseModel):
-    magic_id: int = Field(ge=1)
+    magi_id: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=100)
     magis: MagisBinding | None = None
     configuration: MagisRuntimeConfiguration | None = None
@@ -67,7 +67,7 @@ class RuntimeEndpoint(BaseModel):
 class RuntimeSpec(BaseModel):
     """Identity needed for one runtime lifecycle operation."""
 
-    magic_id: int = Field(ge=1)
+    magi_id: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=100)
     magis_id: int | None = Field(default=None, ge=1)
     magis_name: str | None = Field(default=None, max_length=120)

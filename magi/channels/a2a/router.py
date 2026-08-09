@@ -27,11 +27,11 @@ def _error(status: int, code: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": code})
 
 
-def _can_receive_from(bus, sender_magic_id: int) -> bool:
+def _can_receive_from(bus, sender_magi_id: int) -> bool:
     # Bus memberships_book is the source of truth for A2A scope
     if bus.memberships_book is not None:
         try:
-            return bus.memberships_book.can_receive_a2a(sender_magic_id)
+            return bus.memberships_book.can_receive_a2a(sender_magi_id)
         except (AttributeError, NotImplementedError):
             pass
     # Fallback: accept during transition
@@ -44,26 +44,26 @@ async def receive(request: Request) -> JSONResponse:
     raw = await request.body()
     headers = request.headers
     try:
-        magic_id = int(headers["x-magi-magic-id"])
+        magi_id = int(headers["x-magi-id"])
         timestamp = int(headers["x-magi-timestamp"])
         signature = headers["x-magi-signature"]
     except (KeyError, ValueError):
         return _error(400, "bad_request")
     if headers.get("x-magi-protocol") != PROTOCOL_VERSION:
         return _error(400, "bad_request")
-    if not verify_signature(magic_id=magic_id, timestamp=timestamp, body=raw, signature=signature):
+    if not verify_signature(magi_id=magi_id, timestamp=timestamp, body=raw, signature=signature):
         return _error(401, "auth.invalid_signature")
-    if not _can_receive_from(bus, magic_id):
+    if not _can_receive_from(bus, magi_id):
         return _error(403, "auth.out_of_scope")
     try:
         body = json.loads(raw)
         event_id = str(body["event_id"])
         text = str(body["text"])
-        from_magic_id = int(body["from_magic_id"])
+        from_magi_id = int(body["from_magi_id"])
         kind = str(body.get("kind") or "request")
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return _error(400, "bad_request")
-    if from_magic_id != magic_id or not event_id or not text:
+    if from_magi_id != magi_id or not event_id or not text:
         return _error(400, "bad_request")
 
     reply_to = body.get("reply_to")
@@ -98,15 +98,15 @@ async def receive(request: Request) -> JSONResponse:
 
     run_id = bus.agent_job_board.publish(
         ChatJob(
-            event_id=f"a2a:{magic_id}:{event_id}",
-            run_id=f"a2a:{magic_id}:{event_id}",
-            conversation_id=f"a2a:{magic_id}:{reply_to or event_id}",
+            event_id=f"a2a:{magi_id}:{event_id}",
+            run_id=f"a2a:{magi_id}:{event_id}",
+            conversation_id=f"a2a:{magi_id}:{reply_to or event_id}",
             correlation_id=str(body.get("correlation_id") or event_id),
             kind="a2a.request",
             payload={
                 "text": text,
                 "channel": "a2a",
-                "from_magic_id": magic_id,
+                "from_magi_id": magi_id,
                 "reply_to": reply_to,
                 "expect_reply": bool(reply_to),
                 "a2a_event_id": event_id,

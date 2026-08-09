@@ -417,11 +417,17 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             except ValueError as e:
                 raise ValueError(f"cron is not a valid expression: {e}") from None
         else:
+            # ``run_at_val`` is guaranteed non-None here by the
+            # XOR check at line 408; the ``assert`` documents the
+            # invariant for the type checker (and trips loudly if
+            # someone breaks the XOR later).
+            assert run_at_val is not None
             # ``run_at`` path: ISO-parse + canonicalise (so
             # "+08:00" / "Z" / naive UTC all land on the same
             # canonical string in SQLite) + reject past times
             # so an apscheduler ``DateTrigger`` that would
             # silently drop the job never reaches the DB.
+            assert run_at_val is not None
             try:
                 canonical = validate_run_at(run_at_val)
             except ValueError as e:

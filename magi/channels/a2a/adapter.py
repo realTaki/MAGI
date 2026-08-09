@@ -7,21 +7,22 @@ registered in the human-channel delivery path.
 Route resolver contract:
 
   - ``name`` is ``"a2a"`` (matches :attr:`magi.channels.Channel.A2A`).
-  - ``send(uid=magic_id, text)``
+  - ``send(uid=magi_id, text)``
       Resolves the peer's cluster DNS via
       ``lookup_im_id(uid)`` and POSTs to ``{peer}/a2a/inbox``.
       Future work; raises ``NotImplementedError`` for now.
-  - ``lookup_im_id(uid=magic_id)``
+  - ``lookup_im_id(uid=magi_id)``
       Returns the cluster DNS name of the peer's runtime pod,
-      resolved from the public MAGIS PostgreSQL ``magic`` row +
-      k8s convention ``magi-magi-node-<magic_id>-<suffix>``.
+      resolved from the public MAGIS PostgreSQL
+      ``magis_memberships.id`` row + k8s convention
+      ``magi-magi-node-<magi_id>-<suffix>``.
       **Implemented as a stub** — returns a synthetic
       placeholder so domain code can already serialise the
       result without crashing.
   - ``bind_im_id(uid, im_id)``
       Not applicable — peer routing is identity-based via the
-      ``magic`` table, no per-peer im_id binding needed.
-      Raises ``NotImplementedError``.
+      ``magis_memberships`` table, no per-peer im_id binding
+      needed. Raises ``NotImplementedError``.
   - ``unbind_im_id(uid)``
       Not applicable — same as ``bind_im_id``. Raises
       ``NotImplementedError``.
@@ -48,7 +49,7 @@ class A2AAdapter:
     """Channel adapter for MAGI-to-MAGI peer messaging.
 
     Holds the explicit BUS dependency. The HTTP client (when implemented) will be
-    cached per peer ``magic_id`` and refreshed when the
+    cached per peer ``magi_id`` and refreshed when the
     direct-membership list changes (the membership change is
     visible to this process via the public MAGIS PostgreSQL,
     same engine used by every other runtime path).
@@ -60,7 +61,8 @@ class A2AAdapter:
         self.bus = bus
 
     async def send(self, uid: int, text: str) -> None:
-        """Push ``text`` to peer ``uid`` (a ``magic.id``).
+        """Push ``text`` to peer ``uid`` (a MAGI's
+        ``magis_memberships.id``).
 
         Queue a durable A2A delivery through bus delivery_job_board.
         """
@@ -92,7 +94,7 @@ class A2AAdapter:
         production.
 
         Future work: query the public MAGIS PostgreSQL for
-        the peer's ``magic.id`` row, then build the actual
+        the peer's ``magis_memberships.id`` row, then build the actual
         FQDN from the orchestrator-managed ``Service`` /
         ``Deployment`` name.
         """
@@ -100,7 +102,8 @@ class A2AAdapter:
 
     def bind_im_id(self, uid: int, im_id: str) -> None:
         """Not applicable for a2a — peer routing uses the
-        public ``magic`` table, no per-peer im_id binding.
+        public ``magis_memberships`` table, no per-peer im_id
+        binding.
 
         A2A has no user-selectable address binding. We raise explicitly so a
         future caller that tries to reuse human-channel binding gets a clear
@@ -109,7 +112,7 @@ class A2AAdapter:
         raise NotImplementedError(
             "A2AAdapter.bind_im_id is not applicable: peer "
             "routing is identity-based via the public "
-            "MAGIS PostgreSQL magic table"
+            "MAGIS PostgreSQL magis_memberships table"
         )
 
     def unbind_im_id(self, uid: int) -> None:
@@ -117,7 +120,7 @@ class A2AAdapter:
         raise NotImplementedError(
             "A2AAdapter.unbind_im_id is not applicable: peer "
             "routing is identity-based via the public "
-            "MAGIS PostgreSQL magic table"
+            "MAGIS PostgreSQL magis_memberships table"
         )
 
 

@@ -15,14 +15,14 @@ Inbound (peer → me):
 
     POST /a2a/inbox
     Headers:
-        X-MAGI-Magic-Id:        <caller magic_id, int>
+        X-MAGI-Id:              <caller magi_id, int>
         X-MAGI-Timestamp:      <unix_seconds, int>
         X-MAGI-Signature:       hex(hmac_sha256(MAGI_CONTROL_SECRET,
                                             payload_digest)[:32])
         X-MAGI-Protocol:        "1"
     Body (JSON):
         {
-          "from_magic_id": int,        # duplicate of header, integrity check
+          "from_magi_id": int,         # duplicate of header, integrity check
           "text":          str,         # the message body
           "ts":            iso8601,     # caller-side wall clock (audit only)
           "reply_to":      str | null   # optional correlation id
@@ -50,7 +50,7 @@ Outbound (me → peer):
 Body digest (what HMAC signs):
 
     payload_digest = sha256(canonical_body_bytes).hexdigest()
-    signed_string  = f"{magic_id}:{timestamp}:{payload_digest}"
+    signed_string  = f"{magi_id}:{timestamp}:{payload_digest}"
     signature      = hmac_sha256(MAGI_CONTROL_SECRET, signed_string)[:32]
 
 Replay window: 5 minutes clock-skew tolerance, same as
@@ -132,7 +132,7 @@ def _shared_secret() -> bytes | None:
 
 def sign_request(
     *,
-    magic_id: int,
+    magi_id: int,
     body: bytes,
     timestamp: int | None = None,
 ) -> dict[str, str]:
@@ -142,13 +142,13 @@ def sign_request(
     headers=...)``:
 
         {
-          "X-MAGI-Magic-Id":   "<int>",
+          "X-MAGI-Id":         "<int>",
           "X-MAGI-Timestamp":   "<int>",
           "X-MAGI-Signature":   "<hex>",
           "X-MAGI-Protocol":    "1",
         }
 
-    The signature covers ``"<magic_id>:<timestamp>:<sha256(body)>"``
+    The signature covers ``"<magi_id>:<timestamp>:<sha256(body)>"``
     so the receiver can verify the body bytes have not been
     mutated in flight.
 
@@ -165,12 +165,12 @@ def sign_request(
     if timestamp is None:
         timestamp = int(time.time())
     payload_digest = hashlib.sha256(body).hexdigest()
-    signed = f"{magic_id}:{timestamp}:{payload_digest}".encode("utf-8")
+    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode("utf-8")
     signature = hmac.new(secret, signed, hashlib.sha256).hexdigest()[
         :SIGNATURE_LENGTH
     ]
     return {
-        "X-MAGI-Magic-Id": str(magic_id),
+        "X-MAGI-Id": str(magi_id),
         "X-MAGI-Timestamp": str(timestamp),
         "X-MAGI-Signature": signature,
         "X-MAGI-Protocol": PROTOCOL_VERSION,
@@ -179,7 +179,7 @@ def sign_request(
 
 def verify_signature(
     *,
-    magic_id: int,
+    magi_id: int,
     timestamp: int,
     body: bytes,
     signature: str,
@@ -217,7 +217,7 @@ def verify_signature(
         return False
 
     payload_digest = hashlib.sha256(body).hexdigest()
-    signed = f"{magic_id}:{timestamp}:{payload_digest}".encode("utf-8")
+    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode("utf-8")
     expected = hmac.new(secret, signed, hashlib.sha256).hexdigest()[
         :SIGNATURE_LENGTH
     ]

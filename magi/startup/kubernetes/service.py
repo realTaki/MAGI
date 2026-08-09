@@ -57,14 +57,14 @@ def _to_runtime_result(legacy, spec: RuntimeSpec) -> RuntimeOperationResult:
     endpoint = None
     if legacy.observed_state not in {"stopped", "deleted"} and legacy.deployment_name:
         endpoint = RuntimeEndpoint(
-            runtime_id=spec.magic_id,
+            runtime_id=spec.magi_id,
             backend_kind="kubernetes",
             base_url=f"http://{legacy.deployment_name}:42069",
             backend_ref=legacy.deployment_name,
             observed_state=legacy.observed_state,
         )
     return RuntimeOperationResult(
-        runtime_id=spec.magic_id,
+        runtime_id=spec.magi_id,
         backend_kind="kubernetes",
         backend_ref=legacy.deployment_name,
         observed_state=legacy.observed_state,
@@ -76,7 +76,7 @@ def _to_runtime_result(legacy, spec: RuntimeSpec) -> RuntimeOperationResult:
 
 def _to_runtime_spec(legacy: EvaSpec) -> RuntimeSpec:
     return RuntimeSpec(
-        magic_id=legacy.magic_id,
+        magi_id=legacy.magi_id,
         name=legacy.name,
         magis_id=(legacy.magis.id if legacy.magis is not None else None),
         magis_name=(legacy.magis.name if legacy.magis is not None else None),
@@ -119,42 +119,42 @@ def create_app() -> FastAPI:
         _verify_request(body, x_magi_timestamp, x_magi_signature)
         return EvaSpec.model_validate_json(body)
 
-    @app.post("/v1/evas/{magic_id}/start", response_model=RuntimeOperationResult)
+    @app.post("/v1/evas/{magi_id}/start", response_model=RuntimeOperationResult)
     async def start_eva(
-        magic_id: int,
+        magi_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> RuntimeOperationResult:
         legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if legacy.magic_id != magic_id:
-            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
+        if legacy.magi_id != magi_id:
+            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
         k8s = _k8s_backend()
         return _to_runtime_result(k8s.start(legacy), _to_runtime_spec(legacy))
 
-    @app.post("/v1/evas/{magic_id}/stop", response_model=RuntimeOperationResult)
+    @app.post("/v1/evas/{magi_id}/stop", response_model=RuntimeOperationResult)
     async def stop_eva(
-        magic_id: int,
+        magi_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> RuntimeOperationResult:
         legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if legacy.magic_id != magic_id:
-            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
+        if legacy.magi_id != magi_id:
+            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
         k8s = _k8s_backend()
         return _to_runtime_result(k8s.stop(legacy), _to_runtime_spec(legacy))
 
-    @app.post("/v1/evas/{magic_id}/delete", response_model=RuntimeOperationResult)
+    @app.post("/v1/evas/{magi_id}/delete", response_model=RuntimeOperationResult)
     async def delete_eva(
-        magic_id: int,
+        magi_id: int,
         request: Request,
         x_magi_timestamp: str | None = Header(default=None),
         x_magi_signature: str | None = Header(default=None),
     ) -> RuntimeOperationResult:
         legacy = await _spec_and_auth(request, x_magi_timestamp, x_magi_signature)
-        if legacy.magic_id != magic_id:
-            raise HTTPException(status_code=400, detail="path/body magic id mismatch")
+        if legacy.magi_id != magi_id:
+            raise HTTPException(status_code=400, detail="path/body magi id mismatch")
         k8s = _k8s_backend()
         return _to_runtime_result(k8s.delete(legacy), _to_runtime_spec(legacy))
 
