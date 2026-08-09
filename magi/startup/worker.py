@@ -1,0 +1,124 @@
+"""Shared runtime-worker lifecycle and observability primitives.
+
+Workers own domain behaviour; this module owns the mechanics common to every
+long-lived MAGI worker: lifecycle, tracked child tasks, blocking BUS calls,
+and health reporting.  It deliberately does not impose a job-board protocol.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
+
+if TYPE_CHECKING:
+    from magi.bus import Bus
+
+logger = logging.getLogger("magi.startup.worker")
+T = TypeVar("T")
+
+
+class RuntimeWorker(ABC):
+    """Common lifecycle for one BUS-backed background worker."""
+
+    worker_name = "worker"
+    worker_kind = "runtime"
+
+    def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
+        self.bus = bus
+        self.poll_seconds = poll_seconds
+        self._task: asyncio.Task[None] | None = None
+        self._children: set[asyncio.Task[Any]] = set()
+        self._stopping = False
+        self._last_poll_at: datetime | None = None
+        self._last_success_at: datetime | None = None
+        self._last_error: str | None = None
+
+    async def start(self) -> None:
+        if self._task is not None:
+            return
+        self._stopping = False
+        await self.on_start()
+        self._task = asyncio.create_task(
+            self._run_guarded(), name=f"magi-{self.worker_name}-worker"
+        )
+
+    async def stop(self) -> None:
+        self._stopping = True
+        await self.on_stop_requested()
+        if self._task is not None:
+            self._task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._task
+            self._task = None
+        if self._children:
+            children = tuple(self._children)
+            for task in children:
+                task.cancel()
+            await asyncio.gather(*children, return_exceptions=True)
+            self._children.clear()
+        await self.on_stopped()
+
+    async def on_start(self) -> None:
+        """Optional worker-specific startup work before the main loop."""
+
+    async def on_stop_requested(self) -> None:
+        """Optional signal step before the main loop is cancelled."""
+
+    async def on_stopped(self) -> None:
+        """Optional cleanup after all owned tasks have stopped."""
+
+    @abstractmethod
+    async def _run(self) -> None:
+        """Run until ``_stopping`` is true or cancellation is requested."""
+
+    async def _run_guarded(self) -> None:
+        try:
+            await self._run()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive lifecycle guard
+            self._last_error = str(exc)
+            logger.exception("worker %s stopped unexpectedly", self.worker_name)
+
+    async def call(self, fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+        """Run a synchronous BUS/Book operation away from the event loop."""
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+    def spawn(self, awaitable: Awaitable[T], *, name: str | None = None) -> asyncio.Task[T]:
+        """Create and retain an owned child task for deterministic shutdown."""
+        task = asyncio.create_task(awaitable, name=name)
+        self._children.add(task)
+        task.add_done_callback(self._children.discard)
+        return task
+
+    def polled(self) -> None:
+        self._last_poll_at = datetime.now(timezone.utc)
+
+    def succeeded(self) -> None:
+        self._last_success_at = datetime.now(timezone.utc)
+        self._last_error = None
+
+    def failed(self, exc: BaseException | str) -> None:
+        self._last_error = str(exc)
+
+    def queue_depth(self) -> int | None:
+        return None
+
+    def health(self) -> dict[str, object]:
+        return {
+            "name": self.worker_name,
+            "kind": self.worker_kind,
+            "running": self._task is not None and not self._task.done(),
+            "last_poll_at": self._last_poll_at.isoformat() if self._last_poll_at else None,
+            "last_success_at": self._last_success_at.isoformat() if self._last_success_at else None,
+            "last_error": self._last_error,
+            "inflight": len(self._children),
+            "queue_depth": self.queue_depth(),
+        }
+
+
+__all__ = ["RuntimeWorker"]

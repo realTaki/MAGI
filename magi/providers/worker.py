@@ -41,7 +41,6 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from magi.bus.guild import (
@@ -52,6 +51,7 @@ from magi.bus.guild import (
 )
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.startup.worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -84,11 +84,13 @@ _PROVIDER_OPTIONS: list[dict[str, str]] = [
 ]
 
 
-class ProvidersWorker:
+class ProvidersWorker(RuntimeWorker):
     """Consumer that owns every LLM API call in a MAGI process.
 
     Receives a fully-wired :class:`Bus` via constructor injection.
     """
+
+    worker_name = "providers"
 
     def __init__(
         self,
@@ -97,16 +99,13 @@ class ProvidersWorker:
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        self.bus = bus
-        self.poll_seconds = poll_seconds
+        super().__init__(bus, poll_seconds=poll_seconds)
         # Concurrency is constructor-injected only — this worker does
         # no env reads. A worker reaching into ``os.environ`` makes its
         # behaviour untestable and invisible to the composition root,
         # so the knob is a constructor parameter and nothing else.
         # Mirrors :class:`~magi.tools.worker.ToolsWorker`.
         self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = False
         self._slots = asyncio.Semaphore(self.concurrency)
         self._inflight: set[asyncio.Task[None]] = set()
 
@@ -116,31 +115,18 @@ class ProvidersWorker:
         self._provider: LLMProvider | None = None
         self._provider_error: LLMError | None = None
 
-    async def start(self) -> None:
-        if self._task is not None:
-            return
-
+    async def on_start(self) -> None:
         # Publish supported-provider list to bus.settings so the
         # WebUI can read it from a Book without importing
         # :mod:`magi.providers`. Fire-and-forget — failure here
         # doesn't block boot.
-        self._publish_provider_options()
+        await self.call(self._publish_provider_options)
 
         # Build the cached provider client from current config.
-        self._rebuild_provider()
+        await self.call(self._rebuild_provider)
 
-        self._stopping = False
-        self._task = asyncio.create_task(
-            self._run(), name="magi-provider-worker"
-        )
 
-    async def stop(self) -> None:
-        self._stopping = True
-        if self._task is not None:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
+    async def on_stopped(self) -> None:
         if self._inflight:
             await asyncio.gather(*self._inflight, return_exceptions=True)
             self._inflight.clear()
@@ -154,7 +140,7 @@ class ProvidersWorker:
             # 1. Drain any explicitly-published config-change job.
             #    The api channel doesn't publish yet (still on old
             #    bus), but this is the future hook.
-            cfg_job = await asyncio.to_thread(
+            cfg_job = await self.call(
                 self.bus.change_provider_config_job_board.claim,
             )
             if cfg_job is not None:
@@ -162,7 +148,7 @@ class ProvidersWorker:
                 continue
 
             # 2. Claim one LLM job.
-            job = await asyncio.to_thread(
+            job = await self.call(
                 self.bus.llm_job_board.claim,
             )
             if job is None:
@@ -170,7 +156,7 @@ class ProvidersWorker:
                 continue
 
             await self._slots.acquire()
-            task_obj = asyncio.create_task(
+            task_obj = self.spawn(
                 self._invoke_safe(job),
                 name=f"provider-job-{job.job_id}",
             )
@@ -194,10 +180,10 @@ class ProvidersWorker:
             logger.info(
                 "providers worker: changeProviderConfig (provider/auth) — rebuilding client"
             )
-            self._rebuild_provider()
+            await self.call(self._rebuild_provider)
         elif job.model is not None and self._provider is not None:
             # Pure model change: the SDK client is unaffected.
-            self._update_model(job.model)
+            await self.call(self._update_model, job.model)
         else:
             # Either model came in without a cached provider (try
             # to bootstrap from the freshly-written settings_book),
@@ -207,7 +193,7 @@ class ProvidersWorker:
             logger.info(
                 "providers worker: changeProviderConfig (bootstrap / no-op) — rebuilding client"
             )
-            self._rebuild_provider()
+            await self.call(self._rebuild_provider)
 
         if self._provider is not None:
             result = ChangeProviderConfigResult(job_id=job.job_id, success=True)
@@ -217,7 +203,7 @@ class ProvidersWorker:
                 error=str(self._provider_error) if self._provider_error else "unknown",
             )
         try:
-            self.bus.change_provider_config_job_board.submit_result(
+            await self.call(self.bus.change_provider_config_job_board.submit_result,
                 key=job.job_id, result=result,
             )
         except Exception:  # noqa: BLE001
@@ -323,7 +309,7 @@ class ProvidersWorker:
         try:
             await self._invoke_provider(job)
         except asyncio.CancelledError:
-            self._safe_submit_failure(
+            await self._safe_submit_failure(
                 job,
                 error_code="magi.run_cancelled",
                 error_detail="providers worker cancelled",
@@ -334,7 +320,7 @@ class ProvidersWorker:
                 "providers worker: unhandled exception on job %s",
                 job.job_id,
             )
-            self._safe_submit_failure(
+            await self._safe_submit_failure(
                 job,
                 error_code=_PROVIDER_CRASHED_CODE,
                 error_detail=str(exc),
@@ -355,7 +341,7 @@ class ProvidersWorker:
                 if isinstance(exc, LLMNotConfiguredError)
                 else type(exc).__name__
             )
-            self._safe_submit_failure(
+            await self._safe_submit_failure(
                 job, error_code=error_code, error_detail=str(exc),
             )
             return
@@ -394,14 +380,14 @@ class ProvidersWorker:
                     tools=tools,
                 )
         except LLMNotConfiguredError as exc:
-            self._safe_submit_failure(
+            await self._safe_submit_failure(
                 job,
                 error_code=_NOT_CONFIGURED_CODE,
                 error_detail=str(exc),
             )
             return
         except LLMError as exc:
-            self._safe_submit_failure(
+            await self._safe_submit_failure(
                 job,
                 error_code=type(exc).__name__,
                 error_detail=str(exc),
@@ -423,7 +409,7 @@ class ProvidersWorker:
             stream_key=result_dict.get("stream_key") or "",
         )
         try:
-            self.bus.llm_job_board.submit_result(key=job.job_id, result=result)
+            await self.call(self.bus.llm_job_board.submit_result, key=job.job_id, result=result)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit llm result for %s",
@@ -515,7 +501,7 @@ class ProvidersWorker:
 
     # ----- helpers ------------------------------------------------------
 
-    def _safe_submit_failure(
+    async def _safe_submit_failure(
         self,
         job: CallLLMJob,
         *,
@@ -531,7 +517,7 @@ class ProvidersWorker:
             error_code=error_code,
         )
         try:
-            self.bus.llm_job_board.submit_result(key=job.job_id, result=result)
+            await self.call(self.bus.llm_job_board.submit_result, key=job.job_id, result=result)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit failure for %s",
@@ -539,50 +525,4 @@ class ProvidersWorker:
             )
 
 
-# ---------------------------------------------------------------------------
-# module-level singletons
-# ---------------------------------------------------------------------------
-
-
-_worker: ProvidersWorker | None = None
-
-
-async def start_provider_worker(
-    bus: "Bus | None" = None,
-    *,
-    concurrency: int | None = None,
-) -> ProvidersWorker:
-    """Start the process-local provider worker.
-
-    ``bus`` is the wired :class:`Bus` from the composition root.
-    It's optional only for backwards-compat with callers that don't
-    pass it (legacy tests); the production runtime always supplies it.
-
-    ``concurrency`` overrides :data:`_DEFAULT_CONCURRENCY`; leave it
-    ``None`` to take the default. Mirrors
-    :func:`magi.tools.worker.start_tool_worker` — the knob reaches
-    the worker by injection, never by an env read inside it.
-    """
-    global _worker
-    if _worker is None:
-        if bus is None:
-            raise RuntimeError(
-                "start_provider_worker requires a Bus"
-            )
-        _worker = ProvidersWorker(bus, concurrency=concurrency)
-        await _worker.start()
-    return _worker
-
-
-async def stop_provider_worker() -> None:
-    global _worker
-    if _worker is not None:
-        await _worker.stop()
-        _worker = None
-
-
-__all__ = [
-    "ProvidersWorker",
-    "start_provider_worker",
-    "stop_provider_worker",
-]
+__all__ = ["ProvidersWorker"]

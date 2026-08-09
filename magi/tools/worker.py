@@ -48,13 +48,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from magi.bus.library.local import ToolDefinition
 from magi.bus.guild.runToolJob import RunToolResult
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
+from magi.startup.worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -133,7 +133,7 @@ def _build_definitions_from_tools(
     return definitions
 
 
-class ToolsWorker:
+class ToolsWorker(RuntimeWorker):
     """Consumer that owns every tool execution in a MAGI process.
 
     Receives a fully-wired :class:`Bus` via constructor injection.
@@ -149,6 +149,8 @@ class ToolsWorker:
     worker pool or queue depth limit.
     """
 
+    worker_name = "tools"
+
     def __init__(
         self,
         bus: "Bus",
@@ -156,26 +158,20 @@ class ToolsWorker:
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        self.bus = bus
-        self.poll_seconds = poll_seconds
+        super().__init__(bus, poll_seconds=poll_seconds)
         # Concurrency is constructor-injected only — no env var
         # fallback. The startup module reads any env-configured
         # override and passes it in. Mirrors
         # :class:`~magi.providers.worker.ProvidersWorker`.
         self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
         self._slots = asyncio.Semaphore(self.concurrency)
-        self._task: asyncio.Task[None] | None = None
         self._inflight: set[asyncio.Task[None]] = set()
-        self._stopping = False
         #: Set by :meth:`_on_injected_tools_changed` when external
         #: subsystems inject tools.  The claim loop checks this
         #: before each claim and republishes the catalog.
         self._catalog_dirty = asyncio.Event()
 
-    async def start(self) -> None:
-        if self._task is not None:
-            return
-
+    async def on_start(self) -> None:
         # Subscribe to runtime tool injection so we can republish
         # the catalog when MCP / skills register their tools.
         from magi.tools.registry import on_tools_changed
@@ -185,19 +181,11 @@ class ToolsWorker:
         # 1. Publish the full tool catalog (builtin + any
         #    already-injected tools). Called synchronously
         #    (mirrors ProvidersWorker._publish_provider_options).
-        self._publish_full_catalog()
+        await self._publish_full_catalog()
 
-        self._stopping = False
         self._inflight.clear()
-        self._task = asyncio.create_task(self._run(), name="magi-tool-worker")
 
-    async def stop(self) -> None:
-        self._stopping = True
-        if self._task is not None:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
+    async def on_stopped(self) -> None:
         # Wait for any still-running child tasks before the event
         # loop tears down.  Semaphore prevents new tasks from
         # spawning after _run() exits; inflight drains what's
@@ -227,7 +215,7 @@ class ToolsWorker:
             # Republish the catalog if external subsystems
             # injected new tools since the last iteration.
             if self._catalog_dirty.is_set():
-                self._publish_full_catalog()
+                await self._publish_full_catalog()
                 self._catalog_dirty.clear()
 
             try:
@@ -246,7 +234,7 @@ class ToolsWorker:
             # loop blocks here when all slots are busy — no
             # further claims happen until a slot frees up.
             await self._slots.acquire()
-            task = asyncio.create_task(self._invoke_safe(job))
+            task = self.spawn(self._invoke_safe(job), name=f"tool-job-{job.job_id}")
             self._inflight.add(task)
             task.add_done_callback(self._inflight.discard)
 
@@ -263,7 +251,7 @@ class ToolsWorker:
         try:
             await self._execute(job)
         except asyncio.CancelledError:
-            self._submit_failure(
+            await self._submit_failure(
                 job,
                 content="tools worker cancelled",
                 error_code=_ERROR_CODES["cancelled"],
@@ -274,7 +262,7 @@ class ToolsWorker:
 
     # ----- catalog publish ----------------------------------------------
 
-    def _publish_full_catalog(self) -> None:
+    async def _publish_full_catalog(self) -> None:
         """Publish builtin + all injected tool definitions to the Book.
 
         Each source (``"builtin"``, ``"mcp"``, ``"skills"``, …)
@@ -288,7 +276,7 @@ class ToolsWorker:
         builtin_defs = _build_definitions_from_tools(
             _build_tools(), source="builtin",
         )
-        self.bus.tool_definitions_book.upsert_many(
+        await self.call(self.bus.tool_definitions_book.upsert_many,
             definitions=builtin_defs, source="builtin",
         )
 
@@ -296,16 +284,16 @@ class ToolsWorker:
         total = len(builtin_defs)
         for source, tools in list_injected().items():
             defs = _build_definitions_from_tools(tools, source=source)
-            self.bus.tool_definitions_book.upsert_many(
+            await self.call(self.bus.tool_definitions_book.upsert_many,
                 definitions=defs, source=source,
             )
             total += len(defs)
 
         # 3. Bump revision + recompute snapshot_hash across ALL
         #    enabled rows (builtin + injected).
-        state = self.bus.tool_catalog_book.get()
+        state = await self.call(self.bus.tool_catalog_book.get)
         next_revision = (state.revision + 1) if state else 1
-        enabled_rows = self.bus.tool_definitions_book.list_enabled()
+        enabled_rows = await self.call(self.bus.tool_definitions_book.list_enabled)
         # Build a hash map from the definitions we just computed.
         hash_by_name: dict[str, str] = {}
         for d in builtin_defs:
@@ -323,7 +311,7 @@ class ToolsWorker:
         snapshot_hash = hashlib.sha256(
             _canonical_json(hash_input).encode()
         ).hexdigest()
-        self.bus.tool_catalog_book.replace_snapshot(
+        await self.call(self.bus.tool_catalog_book.replace_snapshot,
             revision=next_revision, snapshot_hash=snapshot_hash,
         )
         logger.info(
@@ -341,14 +329,14 @@ class ToolsWorker:
         """
         self._catalog_dirty.set()
 
-    def refresh_catalog(self) -> None:
+    async def refresh_catalog(self) -> None:
         """Force immediate republish of the full tool catalog.
 
         External callers use this after injecting tools when
         they need the new definitions visible before the claim
         loop's next natural iteration (e.g. in tests).
         """
-        self._publish_full_catalog()
+        await self._publish_full_catalog()
 
     # ----- per-job execution --------------------------------------------
 
@@ -358,10 +346,10 @@ class ToolsWorker:
         # 1. Catalog revision check — did the menu move between
         #    the agent's LLM call and our claim?
         if job.catalog_revision:
-            state = self.bus.tool_catalog_book.get()
+            state = await self.call(self.bus.tool_catalog_book.get)
             current_revision = state.revision if state else 0
             if current_revision > job.catalog_revision:
-                self._submit_failure(
+                await self._submit_failure(
                     job,
                     content=(
                         f"tool {job.tool_name!r}: catalog moved "
@@ -380,11 +368,11 @@ class ToolsWorker:
         #    :func:`_schema_hash` on it directly. ``schema_hash`` is
         #    not a stored column — recomputing is the contract.
         if job.schema_hash:
-            definition = self.bus.tool_definitions_book.get_by_name(
+            definition = await self.call(self.bus.tool_definitions_book.get_by_name,
                 name=job.tool_name,
             )
             if definition is None:
-                self._submit_failure(
+                await self._submit_failure(
                     job,
                     content=f"unknown tool: {job.tool_name!r}",
                     error_code=_ERROR_CODES["unknown"],
@@ -392,7 +380,7 @@ class ToolsWorker:
                 return
             current_hash = _schema_hash(definition)
             if current_hash != job.schema_hash:
-                self._submit_failure(
+                await self._submit_failure(
                     job,
                     content=(
                         f"tool {job.tool_name!r}: schema changed since "
@@ -409,7 +397,7 @@ class ToolsWorker:
         #    the agent side via the catalog, not here).
         tool = get_tool(job.tool_name)
         if tool is None:
-            self._submit_failure(
+            await self._submit_failure(
                 job,
                 content=f"unknown tool: {job.tool_name!r}",
                 error_code=_ERROR_CODES["unknown"],
@@ -429,7 +417,7 @@ class ToolsWorker:
         )
         denied = tool.gate(ctx)
         if denied:
-            self._submit_failure(
+            await self._submit_failure(
                 job,
                 content=denied,
                 error_code="tool.unauthorized",
@@ -447,7 +435,7 @@ class ToolsWorker:
             )
         except Exception as exc:
             logger.exception("tool job %s crashed", job.job_id)
-            self._submit_failure(
+            await self._submit_failure(
                 job,
                 content=f"tool {job.tool_name!r} crashed: {exc}"[:8000],
                 error_code=_ERROR_CODES["crashed"],
@@ -457,12 +445,12 @@ class ToolsWorker:
         # 5. Submit the result. BaseJobBoard handles attempts ≥
         #    MAX_ATTEMPTS automatically; we don't call retry()
         #    ourselves.
-        self.bus.tool_job_board.submit_result(
+        await self.call(self.bus.tool_job_board.submit_result,
             key=job.job_id,
             result=_to_result(job, result),
         )
 
-    def _submit_failure(
+    async def _submit_failure(
         self,
         job: "RunToolJob",
         *,
@@ -474,7 +462,7 @@ class ToolsWorker:
         blip.  Mirrors
         :meth:`ProvidersWorker._safe_submit_failure`."""
         try:
-            self.bus.tool_job_board.submit_result(
+            await self.call(self.bus.tool_job_board.submit_result,
                 key=job.job_id,
                 result=RunToolResult(
                     job_id=job.job_id,
@@ -492,37 +480,6 @@ class ToolsWorker:
                 "tools worker: failed to submit failure for %s",
                 job.job_id,
             )
-
-
-# -- module-level singleton (composition root drives the lifecycle) -----
-
-_worker: ToolsWorker | None = None
-
-
-async def start_tool_worker(
-    bus: "Bus",
-    *,
-    concurrency: int | None = None,
-) -> ToolsWorker:
-    """Start the process-local tools worker.
-
-    ``concurrency`` overrides the default; leave it ``None`` to use
-    :data:`_DEFAULT_CONCURRENCY` (2). There is no environment-variable
-    knob — concurrency is a code-level constant unless a caller
-    injects otherwise.
-    """
-    global _worker
-    if _worker is None:
-        _worker = ToolsWorker(bus=bus, concurrency=concurrency)
-        await _worker.start()
-    return _worker
-
-
-async def stop_tool_worker() -> None:
-    global _worker
-    if _worker is not None:
-        await _worker.stop()
-        _worker = None
 
 
 # -- helpers --------------------------------------------------------------

@@ -23,17 +23,11 @@ from magi.proactive.credentials_action import (
     CredentialsNudgeSpec,
     ensure_for_admin,
 )
-from magi.proactive.worker import (
-    ProactiveWorker,
-    start_proactive_worker,
-    stop_proactive_worker,
-)
+from magi.proactive.worker import ProactiveWorker
 
 __all__ = [
     "CREDENTIALS_NUDGE",
     "CredentialsNudgeSpec",
     "ensure_for_admin",
     "ProactiveWorker",
-    "start_proactive_worker",
-    "stop_proactive_worker",
 ]

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import suppress
 from typing import TYPE_CHECKING
+
+from magi.startup.worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -25,12 +26,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.proactive.worker")
 
 
-class ProactiveWorker:
+class ProactiveWorker(RuntimeWorker):
     """系统级主动策略的消费者。
 
     Receives a fully-wired :class:`Bus` and the current
     ``magi_id`` via constructor injection.
     """
+
+    worker_name = "proactive"
 
     def __init__(
         self,
@@ -39,30 +42,13 @@ class ProactiveWorker:
         magi_id: int | None = None,
         poll_seconds: float = 0.25,
     ) -> None:
-        self.bus = bus
+        super().__init__(bus, poll_seconds=poll_seconds)
         self._magi_id = magi_id
-        self.poll_seconds = poll_seconds
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = False
-
-    async def start(self) -> None:
-        if self._task is not None:
-            return
-
+    async def on_start(self) -> None:
         # 1. Bootstrap: Adam 检查 + admin credentials nudge
         await self._bootstrap()
 
         # 2. 启动主循环
-        self._stopping = False
-        self._task = asyncio.create_task(self._run(), name="magi-proactive-worker")
-
-    async def stop(self) -> None:
-        self._stopping = True
-        if self._task is not None:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
 
     # ------------------------------------------------------------------
     # main loop
@@ -73,7 +59,7 @@ class ProactiveWorker:
 
         while not self._stopping:
             try:
-                job = await asyncio.to_thread(
+                job = await self.call(
                     self.bus.seed_preset_tasks_job_board.claim,
                 )
             except Exception:
@@ -155,38 +141,4 @@ class ProactiveWorker:
         return magis_node.adam_id == magi_id
 
 
-# -- module-level singleton ------------------------------------------------
-
-
-_worker: ProactiveWorker | None = None
-
-
-async def start_proactive_worker(
-    bus: "Bus",
-    *,
-    magi_id: int | None = None,
-) -> ProactiveWorker:
-    """Start the process-local proactive worker.
-
-    ``magi_id`` is the per-MAGI identity; ``None`` skips
-    Adam-dependent bootstrap checks.
-    """
-    global _worker
-    if _worker is None:
-        _worker = ProactiveWorker(bus=bus, magi_id=magi_id)
-        await _worker.start()
-    return _worker
-
-
-async def stop_proactive_worker() -> None:
-    global _worker
-    if _worker is not None:
-        await _worker.stop()
-        _worker = None
-
-
-__all__ = [
-    "ProactiveWorker",
-    "start_proactive_worker",
-    "stop_proactive_worker",
-]
+__all__ = ["ProactiveWorker"]

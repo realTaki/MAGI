@@ -23,9 +23,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from magi.startup.worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -101,33 +102,16 @@ class _GatherResult:
 # AgentWorker
 # ---------------------------------------------------------------------------
 
-class AgentWorker:
+class AgentWorker(RuntimeWorker):
     """Sequential consumer of one MAGI's ``chat_jobs`` stream."""
 
+    worker_name = "agent"
+
     def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
-        self.bus = bus
+        super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
-        self.poll_seconds = poll_seconds
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = False
         self._active_sessions: set[str] = set()
         self._in_flight: dict[str, asyncio.Event] = {}  # conv_id → cancel_event
-
-    # -- lifecycle -----------------------------------------------------------
-
-    async def start(self) -> None:
-        if self._task is not None:
-            return
-        self._stopping = False
-        self._task = asyncio.create_task(self._run(), name="magi-agent-worker")
-
-    async def stop(self) -> None:
-        self._stopping = True
-        if self._task is not None:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
 
     # -- main loop -----------------------------------------------------------
 
@@ -135,7 +119,7 @@ class AgentWorker:
         from magi.bus.guild.chatJob import ChatJobResult
 
         while not self._stopping:
-            job = await asyncio.to_thread(self.bus.agent_job_board.claim)
+            job = await self.call(self.bus.agent_job_board.claim)
             if job is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
@@ -144,7 +128,7 @@ class AgentWorker:
 
             # cancel
             if getattr(job, "kind", "") == "run.cancel":
-                self.bus.agent_job_board.submit_result(
+                await self.call(self.bus.agent_job_board.submit_result,
                     key=job.event_id,
                     result=ChatJobResult(
                         event_id=job.event_id, success=True, status="completed",
@@ -155,7 +139,7 @@ class AgentWorker:
 
             # steering — release back to board for _process to claim
             if conv_id and conv_id in self._active_sessions:
-                self.bus.agent_job_board.release(key=job.event_id)
+                await self.call(self.bus.agent_job_board.release, key=job.event_id)
                 continue
 
             # new run
@@ -168,20 +152,23 @@ class AgentWorker:
                 channel=payload.get("channel", ""),
                 caller_role=payload.get("caller_role"),
                 conversation_id=conv_id,
-                max_iterations=self._read_max_iterations(),
+                max_iterations=await self._read_max_iterations(),
             )
             try:
                 await self._process(ctx)
+            except asyncio.CancelledError:
+                ctx.final_error = "magi.run_cancelled"
+                raise
             except Exception:
                 logger.exception("agent run failed conv=%s", conv_id)
                 ctx.final_error = "agent_crashed"
                 ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
-                self._publish_delivery(ctx)
+                await self._publish_delivery(ctx)
             finally:
                 if conv_id:
                     self._active_sessions.discard(conv_id)
                 succeeded = ctx.final_error is None
-                self.bus.agent_job_board.submit_result(
+                await self.call(self.bus.agent_job_board.submit_result,
                     key=job.event_id,
                     result=ChatJobResult(
                         event_id=job.event_id,
@@ -195,43 +182,43 @@ class AgentWorker:
     # -- agent loop ----------------------------------------------------------
 
     async def _process(self, ctx: RunContext) -> None:
-        self._load_history(ctx)
+        await self._load_history(ctx)
         self._in_flight[ctx.conversation_id] = ctx.cancel_event
         try:
             for _ in range(ctx.max_iterations):
                 if ctx.cancel_event.is_set():
                     ctx.cancelled = True
                     ctx.final_reply = "任务已取消。"
-                    self._publish_delivery(ctx)
+                    await self._publish_delivery(ctx)
                     return
 
-                llm_job = self._build_llm_job(ctx)
+                llm_job = await self._build_llm_job(ctx)
                 if llm_job is None:
-                    ctx.final_reply = self._fallback_reply()
-                    self._publish_delivery(ctx)
+                    ctx.final_reply = await self._fallback_reply()
+                    await self._publish_delivery(ctx)
                     return
 
-                job_id = self.bus.llm_job_board.publish(llm_job)
+                job_id = await self.call(self.bus.llm_job_board.publish, llm_job)
                 result = await self._wait_for_llm(job_id)
 
                 if ctx.cancel_event.is_set():
                     ctx.cancelled = True
                     ctx.final_reply = "任务已取消。"
-                    self._publish_delivery(ctx)
+                    await self._publish_delivery(ctx)
                     return
 
                 if result is None:
                     ctx.final_reply = "抱歉，回复生成超时，请稍后再试。"
                     ctx.final_error = "llm_timeout"
-                    self._publish_delivery(ctx)
+                    await self._publish_delivery(ctx)
                     return
                 if not result.success:
                     ctx.final_reply = "抱歉，回复生成失败，请稍后再试。"
                     ctx.final_error = getattr(result, "error", None) or getattr(result, "error_code", "") or "llm_failed"
-                    self._publish_delivery(ctx)
+                    await self._publish_delivery(ctx)
                     return
 
-                self._record_token_usage(ctx, result)
+                await self._record_token_usage(ctx, result)
                 assistant_msg = self._build_assistant_message(result)
                 ctx.messages.append(assistant_msg)
 
@@ -241,11 +228,11 @@ class AgentWorker:
 
                 if not tool_uses:
                     ctx.final_reply = text
-                    self._publish_delivery(ctx)
+                    await self._publish_delivery(ctx)
                     self._maybe_title(ctx)
                     return
 
-                split = self._split_tools(ctx, tool_uses)
+                split = await self._split_tools(ctx, tool_uses)
                 tool_ids = await self._publish_effects(split)
                 gather = await self._gather_all(ctx, split, tool_ids)
                 if gather is None:
@@ -255,13 +242,13 @@ class AgentWorker:
                 self._append_tool_result_user_message(ctx, gather)
 
             ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
-            self._publish_delivery(ctx)
+            await self._publish_delivery(ctx)
         finally:
             self._in_flight.pop(ctx.conversation_id, None)
 
     # -- context assembly ----------------------------------------------------
 
-    def _load_history(self, ctx: RunContext) -> None:
+    async def _load_history(self, ctx: RunContext) -> None:
         if ctx.messages:
             return
         if not ctx.session_id or ctx.uid is None:
@@ -269,7 +256,8 @@ class AgentWorker:
         from magi.agent.agent_context import build_messages_from_session
 
         try:
-            msgs = build_messages_from_session(
+            msgs = await self.call(
+                build_messages_from_session,
                 uid=ctx.uid, session_id=ctx.session_id,
                 new_user_text="", bus=self.bus,
             )
@@ -277,16 +265,16 @@ class AgentWorker:
         except Exception:
             logger.warning("load_history failed, starting fresh", exc_info=True)
 
-    def _build_llm_job(self, ctx: RunContext) -> Any:
+    async def _build_llm_job(self, ctx: RunContext) -> Any:
         """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""
         from magi.bus.guild.callLLMJob import CallLLMJob
 
-        system = self._system_prompt(ctx)
+        system = await self._system_prompt(ctx)
         messages = [{"role": "system", "content": system}] + list(ctx.messages)
-        tools = self._tool_schemas(ctx.caller_role)
+        tools = await self._tool_schemas(ctx.caller_role)
 
         return CallLLMJob(
-            messages=messages, max_tokens=self._read_max_tokens(),
+            messages=messages, max_tokens=await self._read_max_tokens(),
             tools=tools or None, streaming=False,
             parameters={
                 "uid": ctx.uid, "session_id": ctx.session_id,
@@ -294,20 +282,25 @@ class AgentWorker:
             },
         )
 
-    def _system_prompt(self, ctx: RunContext) -> str:
+    async def _system_prompt(self, ctx: RunContext) -> str:
         from magi.agent.system_prompt import build_system_prompt, read_soul
 
         try:
-            return build_system_prompt(
-                uid=ctx.uid or 0, soul=read_soul(bus=self.bus), bus=self.bus,
+            return await self.call(
+                lambda: build_system_prompt(
+                    uid=ctx.uid or 0, soul=read_soul(bus=self.bus), bus=self.bus,
+                )
             )
         except Exception:
             logger.exception("system_prompt build failed; falling back to bare soul")
             return "You are a helpful assistant."
 
-    def _tool_schemas(self, caller_role: str | None) -> list[dict] | None:
+    async def _tool_schemas(self, caller_role: str | None) -> list[dict] | None:
         try:
-            defs = self.bus.tool_definitions_book.list_enabled(caller_role=caller_role)
+            defs = await self.call(
+                self.bus.tool_definitions_book.list_enabled,
+                caller_role=caller_role,
+            )
             result = []
             for d in defs or []:
                 result.append({
@@ -323,10 +316,10 @@ class AgentWorker:
     # -- LLM wait ------------------------------------------------------------
 
     async def _wait_for_llm(self, job_id: str) -> "CallLLMResult | None":
-        timeout = self._read_llm_timeout()
+        timeout = await self._read_llm_timeout()
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(self.bus.llm_job_board.get_result, key=job_id),
+                self.call(self.bus.llm_job_board.get_result, key=job_id),
                 timeout=timeout,
             )
         except TimeoutError:
@@ -347,12 +340,15 @@ class AgentWorker:
             catalog_revision=catalog_revision,
         )
 
-    def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
+    async def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
         from magi.bus.guild.sendA2AJob import SendA2AJob
 
         tool_jobs: list[RunToolJob] = []
         a2a_jobs: list[SendA2AJob] = []
-        catalog_state = self.bus.tool_catalog_book.get() if hasattr(self.bus, "tool_catalog_book") else None
+        catalog_state = (
+            await self.call(self.bus.tool_catalog_book.get)
+            if hasattr(self.bus, "tool_catalog_book") else None
+        )
         catalog_revision = catalog_state.revision if catalog_state else 0
 
         for tu in tool_uses:
@@ -400,10 +396,10 @@ class AgentWorker:
         """Publish tool + a2a jobs.  Returns tool_call_id → job_id mapping."""
         tool_ids: dict[str, str] = {}
         for tj in split.tool_jobs:
-            jid = await asyncio.to_thread(self.bus.tool_job_board.publish, tj)
+            jid = await self.call(self.bus.tool_job_board.publish, tj)
             tool_ids[tj.tool_call_id] = jid
         for aj in split.a2a_jobs:
-            await asyncio.to_thread(self.bus.a2a_job_board.publish, aj)
+            await self.call(self.bus.a2a_job_board.publish, aj)
         return tool_ids
 
     # -- gather results + steering -------------------------------------------
@@ -414,7 +410,7 @@ class AgentWorker:
         split: _SplitJobs,
         tool_ids: dict[str, str],  # tool_call_id → job_id
     ) -> _GatherResult | None:
-        deadline = asyncio.get_running_loop().time() + self._read_tool_wait()
+        deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
         tool_timeout: dict[str, str] = dict(tool_ids)  # tc_id → job_id (copy to mutate)
         a2a_timeout: dict[str, str] = {aj.tool_call_id: aj.invocation_id for aj in split.a2a_jobs}
         tool_results: dict[str, Any] = {}
@@ -427,7 +423,7 @@ class AgentWorker:
 
             # steering
             if ctx.conversation_id and len(steering_parts) < _MAX_STEERING_PARTS:
-                steer = await asyncio.to_thread(
+                steer = await self.call(
                     self.bus.agent_job_board.claim_for_conversation,
                     conversation_id=ctx.conversation_id,
                 )
@@ -436,7 +432,7 @@ class AgentWorker:
                     if text:
                         steering_parts.append(text)
                     from magi.bus.guild.chatJob import ChatJobResult
-                    self.bus.agent_job_board.submit_result(
+                    await self.call(self.bus.agent_job_board.submit_result,
                         key=steer.event_id,
                         result=ChatJobResult(
                             event_id=steer.event_id, success=True, status="completed",
@@ -445,14 +441,14 @@ class AgentWorker:
 
             # tool results
             for tc_id, job_id in list(tool_timeout.items()):
-                r = await asyncio.to_thread(self.bus.tool_job_board.get_result, key=job_id)
+                r = await self.call(self.bus.tool_job_board.get_result, key=job_id)
                 if r is not None:
                     tool_results[tc_id] = r
                     del tool_timeout[tc_id]
 
             # a2a results
             for tc_id, inv_id in list(a2a_timeout.items()):
-                r = await asyncio.to_thread(self.bus.a2a_job_board.get_result, key=inv_id)
+                r = await self.call(self.bus.a2a_job_board.get_result, key=inv_id)
                 if r is not None:
                     a2a_results[tc_id] = r
                     del a2a_timeout[tc_id]
@@ -502,9 +498,9 @@ class AgentWorker:
             "content_blocks": blocks,
         })
 
-    def _publish_delivery(self, ctx: RunContext) -> None:
+    async def _publish_delivery(self, ctx: RunContext) -> None:
         from magi.bus.guild.deliveryJob import DeliveryJob
-        self.bus.delivery_job_board.publish(DeliveryJob(
+        await self.call(self.bus.delivery_job_board.publish, DeliveryJob(
             channel=ctx.channel,
             payload={
                 "text": ctx.final_reply or "处理完毕。",
@@ -517,7 +513,7 @@ class AgentWorker:
         if not ctx.session_id or ctx.uid is None:
             return
         from magi.agent.auto_title import request_session_title
-        asyncio.create_task(
+        self.spawn(
             request_session_title(ctx.uid, ctx.session_id, bus=self.bus),
             name=f"magi-title-{ctx.session_id}",
         )
@@ -532,18 +528,20 @@ class AgentWorker:
             msg["content_blocks"] = blocks
         return msg
 
-    def _fallback_reply(self) -> str:
+    async def _fallback_reply(self) -> str:
         try:
-            return self.bus.prompt_book.bot_replies().get("agent_no_credentials", "(no credentials)")
+            replies = await self.call(self.bus.prompt_book.bot_replies)
+            return replies.get("agent_no_credentials", "(no credentials)")
         except Exception:
             return "(no credentials)"
 
-    def _record_token_usage(self, ctx: RunContext, result: "CallLLMResult") -> None:
+    async def _record_token_usage(self, ctx: RunContext, result: "CallLLMResult") -> None:
         if not getattr(result, "token_usage", None):
             return
         from magi.agent.token_usage import record_token_usage
         model = getattr(result, "model", "") or ""
-        record_token_usage(
+        await self.call(
+            record_token_usage,
             uid=ctx.uid or 0, channel=ctx.channel,
             provider=model.split(":")[0] if model else "unknown",
             model=model, usage=getattr(result, "token_usage", {}) or {},
@@ -559,39 +557,21 @@ class AgentWorker:
 
     # -- settings helpers ----------------------------------------------------
 
-    def _read_max_iterations(self) -> int:
-        return _coerce_int(getattr(self.bus.settings_book, "get", lambda _: None)("agent.max_iterations"), _DEFAULT_MAX_ITERATIONS)
+    async def _read_max_iterations(self) -> int:
+        raw = await self.call(self.bus.settings_book.get, key="agent.max_iterations")
+        return _coerce_int(raw, _DEFAULT_MAX_ITERATIONS)
 
-    def _read_max_tokens(self) -> int:
-        return _coerce_int(getattr(self.bus.settings_book, "get", lambda _: None)("agent.max_tokens"), _DEFAULT_MAX_TOKENS)
+    async def _read_max_tokens(self) -> int:
+        raw = await self.call(self.bus.settings_book.get, key="agent.max_tokens")
+        return _coerce_int(raw, _DEFAULT_MAX_TOKENS)
 
-    def _read_tool_wait(self) -> float:
-        return _coerce_float(getattr(self.bus.settings_book, "get", lambda _: None)("agent.tool_wait_seconds"), _DEFAULT_TOOL_WAIT_SECONDS)
+    async def _read_tool_wait(self) -> float:
+        raw = await self.call(self.bus.settings_book.get, key="agent.tool_wait_seconds")
+        return _coerce_float(raw, _DEFAULT_TOOL_WAIT_SECONDS)
 
-    def _read_llm_timeout(self) -> float:
-        return _coerce_float(getattr(self.bus.settings_book, "get", lambda _: None)("agent.llm_timeout_seconds"), _DEFAULT_LLM_TIMEOUT_SECONDS)
-
-
-# ---------------------------------------------------------------------------
-# module-level singleton
-# ---------------------------------------------------------------------------
-
-_worker: AgentWorker | None = None
-
-
-async def start_agent_worker(bus: "Bus") -> AgentWorker:
-    global _worker
-    if _worker is None:
-        _worker = AgentWorker(bus=bus)
-        await _worker.start()
-    return _worker
-
-
-async def stop_agent_worker() -> None:
-    global _worker
-    if _worker is not None:
-        await _worker.stop()
-        _worker = None
+    async def _read_llm_timeout(self) -> float:
+        raw = await self.call(self.bus.settings_book.get, key="agent.llm_timeout_seconds")
+        return _coerce_float(raw, _DEFAULT_LLM_TIMEOUT_SECONDS)
 
 
 async def submit_agent_message(bus: "Bus", message: Any) -> str:

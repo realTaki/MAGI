@@ -147,9 +147,15 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         falls back to its default on missing / unparseable values.
         """
         return MCPTimeout(
-            connect_timeout=self._read_float("mcp.connect_timeout", connect_default),
-            execute_timeout=self._read_float("mcp.execute_timeout", execute_default),
-            sse_read_timeout=self._read_float("mcp.sse_read_timeout", sse_default),
+            connect_timeout=self._read_float(
+                self.get(key="mcp.connect_timeout"), connect_default,
+            ),
+            execute_timeout=self._read_float(
+                self.get(key="mcp.execute_timeout"), execute_default,
+            ),
+            sse_read_timeout=self._read_float(
+                self.get(key="mcp.sse_read_timeout"), sse_default,
+            ),
         )
 
     @staticmethod

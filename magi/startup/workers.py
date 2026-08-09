@@ -1,0 +1,101 @@
+"""Startup-owned construction and lifecycle for the MAGI worker pool."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+from magi.startup.worker import RuntimeWorker
+
+if TYPE_CHECKING:
+    from magi.bus import Bus
+
+logger = logging.getLogger("magi.startup.workers")
+
+
+class WorkerRegistry:
+    """The sole owner of one process' runtime-worker instances."""
+
+    def __init__(
+        self,
+        bus: "Bus",
+        *,
+        enabled_channels: Iterable[str] = (),
+        magi_id: int | None = None,
+    ) -> None:
+        from magi.agent.worker import AgentWorker
+        from magi.channels.a2a.worker import A2AWorker
+        from magi.channels.tasks.worker import TaskWorker
+        from magi.channels.telegram.worker import TelegramWorker
+        from magi.channels.webui.worker import WebUIWorker
+        from magi.mcp.worker import McpWorker
+        from magi.proactive.worker import ProactiveWorker
+        from magi.providers.worker import ProvidersWorker
+        from magi.tools.worker import ToolsWorker
+
+        enabled = set(enabled_channels)
+        self._workers: dict[str, RuntimeWorker] = {
+            "providers": ProvidersWorker(bus),
+            "tools": ToolsWorker(bus),
+            "mcp": McpWorker(bus),
+            "agent": AgentWorker(bus),
+            "task": TaskWorker(bus),
+            "tg": TelegramWorker(bus),
+            "webui": WebUIWorker(bus),
+            "a2a": A2AWorker(bus),
+            "proactive": ProactiveWorker(bus, magi_id=magi_id),
+        }
+        self._started: list[RuntimeWorker] = []
+        self._enabled_channels = enabled
+
+    @property
+    def workers(self) -> dict[str, RuntimeWorker]:
+        return dict(self._workers)
+
+    def channel_workers(self) -> dict[str, RuntimeWorker]:
+        return {
+            name: worker for name, worker in self._workers.items()
+            if worker.worker_kind == "channel"
+        }
+
+    async def start(self) -> None:
+        try:
+            for name in ("providers", "tools", "mcp", "agent"):
+                await self.start_worker(name)
+            for name in ("task", "tg", "webui", "a2a"):
+                aliases = {"task": {"task", "scheduled"}, "tg": {"tg", "telegram"}}
+                if self._enabled_channels & aliases.get(name, {name}):
+                    await self.start_worker(name)
+            await self.start_worker("proactive")
+        except Exception:
+            await self.stop()
+            raise
+
+    async def start_worker(self, name: str) -> None:
+        worker = self._workers[name]
+        if worker in self._started:
+            return
+        await worker.start()
+        self._started.append(worker)
+
+    async def stop_worker(self, name: str) -> None:
+        worker = self._workers[name]
+        if worker not in self._started:
+            return
+        await worker.stop()
+        self._started.remove(worker)
+
+    async def stop(self) -> None:
+        while self._started:
+            worker = self._started.pop()
+            try:
+                await worker.stop()
+            except Exception:
+                logger.exception("failed to stop worker %s", worker.worker_name)
+
+    def health(self) -> list[dict[str, object]]:
+        return [worker.health() for worker in self._workers.values()]
+
+
+__all__ = ["WorkerRegistry"]

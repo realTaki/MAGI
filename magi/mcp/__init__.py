@@ -45,10 +45,8 @@ Module layout
   removed — the worker is the only connection owner now, and
   the WebUI detail page reads the Book directly when it needs
   metadata.
-- :mod:`magi.mcp.worker` — :class:`McpWorker` plus
-  :func:`start_mcp_worker` / :func:`stop_mcp_worker` lifecycle
-  helpers. Started by :mod:`magi.startup.runtime` immediately
-  after :class:`~magi.tools.worker.ToolsWorker`.
+- :mod:`magi.mcp.worker` — :class:`McpWorker`, started by the
+  startup-owned :class:`magi.startup.workers.WorkerRegistry`.
 - :mod:`magi.mcp.sharing` — *future*. MAGIS-level sharing of
   MCP server configs. Defining point only today; the table /
   API / LLM tools land in a follow-up PR.
@@ -67,15 +65,13 @@ from magi.mcp.MCPClient import (
     MCPTimeoutConfig,
     MCPTool,
 )
-from magi.mcp.worker import McpWorker, start_mcp_worker, stop_mcp_worker
+from magi.mcp.worker import McpWorker
 
 __all__ = [
     # Client primitives
     "MCPTimeoutConfig",
     "MCPServerConnection",
     "MCPTool",
-    # Worker + lifecycle helpers
+    # Worker
     "McpWorker",
-    "start_mcp_worker",
-    "stop_mcp_worker",
 ]

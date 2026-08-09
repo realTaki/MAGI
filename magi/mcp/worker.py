@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from magi.bus.guild import (
@@ -72,6 +71,7 @@ from magi.bus.guild import (
     McpServerChangedResult,
 )
 from magi.tools.registry import register_tools
+from magi.startup.worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
@@ -94,11 +94,7 @@ _DEFAULT_SSE_READ_TIMEOUT = 120.0
 #: belt against a wedged DB / Worker.
 _DEFAULT_TOOL_WAIT_TIMEOUT = 5.0
 
-#: Module-level singleton — composition root drives the lifecycle.
-_worker: McpWorker | None = None
-
-
-class McpWorker:
+class McpWorker(RuntimeWorker):
     """Consumer that owns every MCP server connection in a MAGI process.
 
     Receives a fully-wired :class:`~magi.bus.Bus` via
@@ -111,39 +107,27 @@ class McpWorker:
     code that touches either side after startup.
     """
 
+    worker_name = "mcp"
+
     def __init__(
         self,
         bus: Bus,
         *,
         poll_seconds: float = 0.25,
     ) -> None:
-        self.bus = bus
-        self.poll_seconds = poll_seconds
+        super().__init__(bus, poll_seconds=poll_seconds)
         self._connections: dict[str, MCPServerConnection] = {}
-        self._task: asyncio.Task[None] | None = None
-        self._stopping = False
 
     # -- lifecycle --------------------------------------------------------
 
-    async def start(self) -> None:
-        if self._task is not None:
-            return
-
+    async def on_start(self) -> None:
         # 1. Connect every currently-enabled row in parallel.
         await self._bootstrap_connections()
 
         # 2. Drain change jobs forever — every claim turns
         #    into a Book write + connection refresh.
-        self._stopping = False
-        self._task = asyncio.create_task(self._run(), name="magi-mcp-worker")
 
-    async def stop(self) -> None:
-        self._stopping = True
-        if self._task is not None:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-            self._task = None
+    async def on_stopped(self) -> None:
         await self._disconnect_all()
         # Clear the source — the ToolsWorker listener will see
         # the empty list and republish the catalog without the
@@ -155,7 +139,7 @@ class McpWorker:
     async def _run(self) -> None:
         while not self._stopping:
             try:
-                job = await asyncio.to_thread(
+                job = await self.call(
                     self.bus.mcp_server_changed_job_board.claim
                 )
             except Exception:
@@ -178,7 +162,7 @@ class McpWorker:
         :func:`register_tools` (triggers the ToolsWorker listener).
         """
         try:
-            servers = self.bus.mcp_servers_book.list_enabled()
+            servers = await self.call(self.bus.mcp_servers_book.list_enabled)
         except Exception:
             logger.exception("mcp worker: mcp_servers_book.list_enabled failed")
             register_tools("mcp", [])
@@ -189,7 +173,7 @@ class McpWorker:
             logger.info("mcp worker: bootstrapped 0/0 servers (none enabled)")
             return
 
-        timeouts = self._timeouts_from_bus()
+        timeouts = await self.call(self._timeouts_from_bus)
         connected: dict[str, MCPServerConnection] = {}
 
         async def _connect_one(server: Any) -> tuple[str, MCPServerConnection | None]:
@@ -228,7 +212,7 @@ class McpWorker:
         error: str | None = None
         try:
             if job.kind == "deleted":
-                self.bus.mcp_servers_book.delete_by_name(name=name)
+                await self.call(self.bus.mcp_servers_book.delete_by_name, name=name)
                 await self._remove_server(name)
                 success = True
             elif job.kind in ("added", "updated"):
@@ -236,13 +220,13 @@ class McpWorker:
                     raise ValueError(
                         f"kind={job.kind!r} requires server payload"
                     )
-                self._write_server(job.server)
+                await self.call(self._write_server, job.server)
                 await self._reload_server_from_dto(job.server)
                 success = True
             elif job.kind == "toggled":
                 if job.new_enabled is None:  # __post_init__ should have caught this
                     raise ValueError("kind='toggled' requires new_enabled flag")
-                self._set_enabled(name=name, enabled=job.new_enabled)
+                await self.call(self._set_enabled, name=name, enabled=job.new_enabled)
                 await self._reload_server(name)
                 success = True
             else:
@@ -256,7 +240,7 @@ class McpWorker:
             error = str(exc)
 
         try:
-            self.bus.mcp_server_changed_job_board.submit_result(
+            await self.call(self.bus.mcp_server_changed_job_board.submit_result,
                 key=job.job_id,
                 result=McpServerChangedResult(
                     job_id=job.job_id,
@@ -289,7 +273,7 @@ class McpWorker:
             await existing.disconnect()
 
         try:
-            row = self.bus.mcp_servers_book.get_by_name(name=name)
+            row = await self.call(self.bus.mcp_servers_book.get_by_name, name=name)
         except Exception:
             logger.exception(
                 "mcp worker: mcp_servers_book.get_by_name failed for %r", name
@@ -302,7 +286,7 @@ class McpWorker:
             self._reinject_tools()
             return
 
-        timeouts = self._timeouts_from_bus()
+        timeouts = await self.call(self._timeouts_from_bus)
         conn = self._build_connection(row)
         if await conn.connect(timeouts):
             self._connections[name] = conn
@@ -322,7 +306,7 @@ class McpWorker:
             self._reinject_tools()
             return
 
-        timeouts = self._timeouts_from_bus()
+        timeouts = await self.call(self._timeouts_from_bus)
         conn = self._build_connection(server)
         if await conn.connect(timeouts):
             self._connections[server.name] = conn
@@ -458,29 +442,4 @@ class McpWorker:
         return dict(self._connections)
 
 
-# -- module-level singletons -----------------------------------------------
-
-
-async def start_mcp_worker(bus: Bus) -> McpWorker:
-    """Start the process-local MCP worker.
-
-    The composition root passes the fully-wired
-    :class:`~magi.bus.Bus`. Subsequent calls return the
-    already-started worker (mirrors the pattern in
-    :mod:`magi.tools.worker`).
-    """
-    global _worker
-    if _worker is None:
-        _worker = McpWorker(bus=bus)
-        await _worker.start()
-    return _worker
-
-
-async def stop_mcp_worker() -> None:
-    global _worker
-    if _worker is not None:
-        await _worker.stop()
-        _worker = None
-
-
-__all__ = ["McpWorker", "start_mcp_worker", "stop_mcp_worker"]
+__all__ = ["McpWorker"]

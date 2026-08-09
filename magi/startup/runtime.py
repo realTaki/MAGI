@@ -71,14 +71,13 @@ async def run_magi(config: StartupConfig) -> None:
     startup = bootstrap_magi(config)
 
     bus = _build_bus(startup)
-    workers = _build_workers()
     channels = _build_channels(startup, bus)
 
     async with _runtime_lifespan(
-        workers, channels, bus,
+        channels, bus,
         magi_id=_to_magi_id(startup.magi_id),
-    ):
-        await _serve_runtime_api(startup, bus)
+    ) as workers:
+        await _serve_runtime_api(startup, bus, workers=workers)
 
 
 # ----------------------------------------------------------------------
@@ -115,60 +114,24 @@ def _to_magi_id(raw: str) -> int | None:
 # ----------------------------------------------------------------------
 
 
-def _build_workers() -> "WorkerHandles":
-    """Local handle set — actual start/stop lives in :func:`_runtime_lifespan`."""
-    return WorkerHandles()
-
-
 @asynccontextmanager
 async def _runtime_lifespan(
-    workers: "WorkerHandles",
     channels: list[str],
     bus: "Bus",
     *,
     magi_id: int | None = None,
 ):
-    """Start / stop the durable worker pool + message channels.
+    """Start one centrally-owned worker registry and stop it in reverse."""
+    from magi.channels import set_current_bus
+    from magi.startup.workers import WorkerRegistry
 
-    Provider worker goes first (so it can drain orphans from a previous
-    crash); proactive worker goes last (so everything else is ready).
-
-    ``bus`` is required for :func:`start_provider_worker` — the
-    provider worker has been migrated to bus; the rest of the
-    workers use the bus via constructor injection.
-
-    ``magi_id`` is passed through to the proactive worker for
-    Adam-dependent bootstrap checks.
-    """
-    from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels import start_channel_workers, stop_channel_workers
-    from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
-    from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
-    from magi.providers.worker import start_provider_worker, stop_provider_worker
-    from magi.tools.worker import start_tool_worker, stop_tool_worker
-
-    # Startup order: providers → tools → mcp → agent → channels → proactive
-    await start_provider_worker(bus=bus)
-    await start_tool_worker(bus=bus)
-    await start_mcp_worker(bus=bus)
-    await start_agent_worker(bus=bus)
-
-    channel_workers = await start_channel_workers(bus, enabled=set(channels))
-
-    await start_proactive_worker(bus=bus, magi_id=magi_id)
+    set_current_bus(bus)
+    registry = WorkerRegistry(bus, enabled_channels=channels, magi_id=magi_id)
+    await registry.start()
     try:
-        yield
+        yield registry
     finally:
-        await stop_proactive_worker()
-        await stop_channel_workers(channel_workers)
-        await stop_agent_worker()
-        await stop_mcp_worker()
-        await stop_tool_worker()
-        await stop_provider_worker()
-
-
-class WorkerHandles:
-    """Marker — actual worker refs are bound by :func:`_runtime_lifespan`."""
+        await registry.stop()
 
 
 @asynccontextmanager
@@ -182,88 +145,14 @@ async def worker_lifespan():
     Builds its own :class:`Bus` from the active workspace so the
     provider worker (now on bus) has a bus to claim from.
     """
-    from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels import start_channel_workers, stop_channel_workers
-    from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
-    from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
-    from magi.providers.worker import start_provider_worker, stop_provider_worker
-    from magi.tools.worker import start_tool_worker, stop_tool_worker
     from magi.bus.bootstrap import bootstrap_bus
     from magi.startup.paths import resolve_workspace_dir
 
     state_dir = str(resolve_workspace_dir() / "memories")
     bus = bootstrap_bus(state_dir=state_dir)
 
-    await start_provider_worker(bus=bus)
-    await start_tool_worker(bus=bus)
-    await start_mcp_worker(bus=bus)
-    await start_agent_worker(bus=bus)
-
-    channel_workers = await start_channel_workers(bus, enabled={"webui"})
-
-    await start_proactive_worker(bus=bus, magi_id=None)
-    try:
-        yield
-    finally:
-        await stop_proactive_worker()
-        await stop_channel_workers(channel_workers)
-        await stop_agent_worker()
-        await stop_mcp_worker()
-        await stop_tool_worker()
-        await stop_provider_worker()
-
-
-# ----------------------------------------------------------------------
-# Channel lifecycle (Telegram for now — extensible)
-# ----------------------------------------------------------------------
-
-
-# [plan amendment §11]: old start_channel/stop_channel/is_channel_running
-# deleted — Channel Workers now own their lifecycle via
-# magi.channels module-level singletons. The WebUI
-# POST /api/channels toggle path now reads
-# `workers._registry[name].start(bus)` / `.stop()`.
-# Keeping stub wrappers for backward compat during migration.
-
-
-def start_channel(name: str) -> None:
-    """Deprecated — Channel Workers own lifecycle now."""
-    import warnings
-    warnings.warn(
-        "start_channel is deprecated; Channel Workers own lifecycle now",
-        DeprecationWarning, stacklevel=2,
-    )
-    if name == "telegram":
-        from magi.channels.telegram.bot import start_bot
-        start_bot()
-
-
-def stop_channel(name: str) -> None:
-    """Deprecated — Channel Workers own lifecycle now."""
-    import warnings
-    warnings.warn(
-        "stop_channel is deprecated; Channel Workers own lifecycle now",
-        DeprecationWarning, stacklevel=2,
-    )
-    if name == "telegram":
-        from magi.channels.telegram.bot import stop_bot
-        stop_bot()
-
-
-def is_channel_running(name: str) -> bool:
-    """Deprecated — Channel Workers own lifecycle now."""
-    if name == "telegram":
-        from magi.channels.telegram.bot import is_running
-        return is_running()
-    if name == "webui":
-        return True
-    try:
-        from magi.channels import registered_channel_workers
-        workers = registered_channel_workers()
-        w = workers.get(name)
-        return w is not None and w._task is not None and not w._task.done()
-    except Exception:
-        return False
+    async with _runtime_lifespan(["webui"], bus) as registry:
+        yield registry
 
 
 # ----------------------------------------------------------------------
@@ -303,6 +192,8 @@ def _build_channels(
 async def _serve_runtime_api(
     _startup: StartupContext,
     bus: "Bus | None" = None,
+    *,
+    workers: "WorkerRegistry",
 ) -> None:
     """Serve the private Runtime FastAPI app in the active event loop.
 
@@ -318,7 +209,7 @@ async def _serve_runtime_api(
     from magi.channels.api.app import create_runtime_app
 
     config = uvicorn.Config(
-        create_runtime_app(bus=bus),
+        create_runtime_app(bus=bus, workers=workers),
         factory=False,
         host=host,
         port=port,
@@ -362,9 +253,5 @@ def _reload_dirs() -> list[str]:
 
 __all__ = [
     "run_magi",
-    "WorkerHandles",
     "worker_lifespan",
-    "start_channel",
-    "stop_channel",
-    "is_channel_running",
 ]
