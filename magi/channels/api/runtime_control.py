@@ -42,7 +42,7 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
     bus.settings_book.set(key="telegram.bot_token", value=payload.token)
     bus.settings_book.set(key="telegram.bot_username", value=payload.username)
     # Hot-restart the TG polling worker so it picks up the newly-saved
-    # token without a process restart. ``stop_worker`` is a no-op when
+    # token without a process restart. `stop_worker` is a no-op when
     # the worker isn't currently running, so this also covers the
     # cold-start case (token saved for the first time).
     workers = get_workers(request)

@@ -51,6 +51,10 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
+# ``_iso`` is the timestamp helper ``contacts`` uses for the same
+# payload shape; import it from there rather than redefining.
+from magi.channels.api.contacts import _iso
+
 logger = logging.getLogger("magi.api.action_items")
 
 router = APIRouter(tags=["action_items"])

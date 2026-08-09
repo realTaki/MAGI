@@ -13,7 +13,7 @@ Functions
 - :func:`verify_token` — onboarding probe (``getMe``) so the operator
   can confirm the token is live before saving it.
 
-Inbound + lifecycle (formerly ``_on_message`` / ``start_bot`` / etc.)
+Inbound + lifecycle (formerly `_on_message` / `start_bot` / etc.)
 live in :mod:`magi.channels.telegram.worker` instead.
 """
 
