@@ -79,7 +79,7 @@ class Contact:
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
 
-        Mirrors the BUS's ``ContactView`` field names
+        Mirrors the ``ContactView`` field names
         (``admin`` / ``notes`` / ``source`` fields are
         gone — admin moved to MAGIS, notes/source live on
         ``ContactNoteBook``). Timestamp fields are ISO-8601
@@ -103,7 +103,7 @@ class ContactNote:
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
 
-        Mirrors the BUS's ``NoteView`` field names so
+        Mirrors the ``NoteView`` field names so
         the WebUI API and the LLM tool see the same shape
         they saw pre-migration. Timestamp fields are ISO-8601
         ``Z`` strings via
@@ -305,7 +305,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         Owns the write invariants: ``note`` non-empty after
         strip, content clamped to :data:`_NOTE_MAX_BYTES`.
         Raises :class:`LookupError` if ``note_id`` does
-        not resolve — same exception the BUS raised so
+        not resolve — same exception the old service raised so
         the tool layer's ``LookupError → ToolResult.err``
         path stays in place.
         """
@@ -326,7 +326,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         """Delete a note row by id. Idempotent.
 
         Returns ``True`` if a row was removed, ``False`` if
-        no row matched. Mirrors the BUS's
+        no row matched. Mirrors
         ``ContactsService.delete_note`` so the tool layer
         can render "deleted / no-op" identically.
         """

@@ -39,13 +39,12 @@ class McpServer:
     ``id`` is the autoincrement PK inherited from the bus
     schema (kept for future read-only callers that want the
     numeric handle). Operator-facing identity remains ``name``
-    (matches the BUS PK); ``name`` is immutable — rename by
+    (match the PK); ``name`` is immutable — rename by
     delete + create.
 
     ``args`` / ``env`` / ``headers`` are deserialised from the
     JSON columns on the way out and serialised on the way in.
-    The wire shape is identical to the BUS
-    corresponding BUS DTO, minus
+    The wire shape is identical to the DTO, minus
     the secret values masked at the API layer.
     """
 
@@ -79,7 +78,7 @@ class _McpServerRow(Base):
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # ``name`` is the operator-facing id and the BUS PK. It
+    # ``name`` is the operator-facing id and the PK. It
     # is unique but NOT a SQLAlchemy ``primary_key`` because
     # SQLite refuses autoincrement on composite primary keys.
     # The cross-ORM uniqueness contract lives in the
@@ -114,7 +113,7 @@ class _McpServerRow(Base):
 
     # Reserved for future read-only callers — writes still go
     # through the dedicated columns. Kept as ``JSON`` to match
-    # the BUS ``mcp_server.McpServer`` schema naming.
+    # the ``mcp_server.McpServer`` schema naming.
     config: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=dict,
     )
@@ -130,7 +129,7 @@ class _McpServerRow(Base):
     )
 
     # ``name`` is unique per operator; this is the contract the
-    # BUS ORM enforces via PK. Without it the BUS would
+    # The PK enforces uniqueness. Without it the column would
     # allow duplicate server names — the worker would pick one
     # and silently drop the other.
     __table_args__ = (
@@ -226,7 +225,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     def list_enabled(self) -> list[McpServer]:
         """Return every row whose ``enabled`` column is true.
 
-        Mirrors the BUS ``McpService.enabled_configs`` filter
+        Mirrors the ``McpService.enabled_configs`` filter
         — disabled rows are skipped so the worker doesn't try
         to connect them at bootstrap.
         """
@@ -355,7 +354,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     ) -> McpServer:
         """Insert-or-update a row by name.
 
-        Same shape as the BUS ``McpService.upsert`` (which
+        Same shape as ``McpService.upsert`` (which
         is what the WebUI + LLM manage tools still call until
         they migrate to bus). Validates ``connection_type``
         + transport-specific required fields; raises

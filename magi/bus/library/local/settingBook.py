@@ -163,7 +163,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     def compaction_policy(self) -> tuple[int, int, int]:
         """Return ``(context_window, threshold_pct, keep_recent)``.
 
-        Mirrors ``SettingService.compaction_policy()`` in the BUS.
+        Mirrors ``SettingService.compaction_policy()`` in the old service.
         Used by :func:`magi.agent.compaction.maybe_compact`.
         """
         return (

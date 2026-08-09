@@ -190,7 +190,7 @@ def _bootstrap_with_dirs(
     magis_url: str | None = None,
     prompts_dir: str | None = None,
 ) -> Bus:
-    """Wire the BUS with explicit paths (for tests).
+    """Wire the bus with explicit paths (for tests).
 
     All Job/Book imports are lazy (inside this function) to avoid
     registering ORM tables at module-import time.
@@ -248,7 +248,7 @@ def _bootstrap_with_dirs(
     magis_factory = build_magis_factory(magis_url) if magis_url else None
     if magis_factory is not None:
         # MAGIS Books own their schema as well as local Books.  A Bus-only
-        # runtime must not depend on the BUS bootstrap to create it.
+        # runtime must not depend on another bootstrap to create it.
         # The Book modules were imported above, so all MAGIS ORM tables are
         # registered before this idempotent create-all call.
         magis_factory.create_all()

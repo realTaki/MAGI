@@ -104,7 +104,7 @@ class ActionItem:
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
 
-        Mirrors BUS DTO
+        Mirrors DTO
         so the WebUI API and the LLM tool see the same field
         names they saw pre-migration.
 
@@ -124,7 +124,7 @@ class _ActionItemRow(Base):
     __tablename__ = "action_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    # ``SET NULL`` mirrors the BUS policy: removing an
+    # ``SET NULL`` mirrors the previous policy: removing an
     # operator leaves the row as an orphan rather than wiping
     # action history. Re-binding is handled by the caller.
     uid: Mapped[int | None] = mapped_column(
@@ -133,7 +133,7 @@ class _ActionItemRow(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     # Optional longer text — surfaces under the title in the
     # dashboard. ``Text`` rather than ``String(N)`` to match
-    # the BUS column shape.
+    # the column shape.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # In-app deep-link target for the row's "go to" button.
     target_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
