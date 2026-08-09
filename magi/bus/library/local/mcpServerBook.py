@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime
+from typing import Any, Union, cast
 
 from sqlalchemy import (
     JSON,
@@ -275,16 +276,19 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         self,
         *,
         server_id: int,
-        connection_type: str | None = _UNSET,
-        command: str | None = _UNSET,
-        args: list[str] | None = _UNSET,
-        env: dict[str, str] | None = _UNSET,
-        url: str | None = _UNSET,
-        headers: dict[str, str] | None = _UNSET,
-        enabled: bool | None = _UNSET,
-        connect_timeout: float | None = _UNSET,
-        execute_timeout: float | None = _UNSET,
-        sse_read_timeout: float | None = _UNSET,
+        # ``connection_type`` and ``enabled`` are NOT NULL columns; the
+        # ``_UnsetType`` sentinel is the only legal "leave alone" value.
+        # Nullable columns also accept ``None`` to clear the value.
+        connection_type: Union[str, _UnsetType] = _UNSET,
+        command: Union[str, None, _UnsetType] = _UNSET,
+        args: Union[list[str], None, _UnsetType] = _UNSET,
+        env: Union[dict[str, str], None, _UnsetType] = _UNSET,
+        url: Union[str, None, _UnsetType] = _UNSET,
+        headers: Union[dict[str, str], None, _UnsetType] = _UNSET,
+        enabled: Union[bool, _UnsetType] = _UNSET,
+        connect_timeout: Union[float, None, _UnsetType] = _UNSET,
+        execute_timeout: Union[float, None, _UnsetType] = _UNSET,
+        sse_read_timeout: Union[float, None, _UnsetType] = _UNSET,
     ) -> None:
         """In-place update of a row by numeric id.
 
@@ -303,25 +307,25 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             if row is None:
                 return
             if connection_type is not _UNSET:
-                row.connection_type = connection_type
+                setattr(row, "connection_type", connection_type)
             if command is not _UNSET:
-                row.command = command
+                setattr(row, "command", command)
             if args is not _UNSET:
-                row.args_json = json.dumps(args or [])
+                setattr(row, "args_json", json.dumps(args or []))
             if env is not _UNSET:
-                row.env_json = json.dumps(env or {})
+                setattr(row, "env_json", json.dumps(env or {}))
             if url is not _UNSET:
-                row.url = url
+                setattr(row, "url", url)
             if headers is not _UNSET:
-                row.headers_json = json.dumps(headers or {})
+                setattr(row, "headers_json", json.dumps(headers or {}))
             if enabled is not _UNSET:
-                row.enabled = enabled
+                setattr(row, "enabled", enabled)
             if connect_timeout is not _UNSET:
-                row.connect_timeout = connect_timeout
+                setattr(row, "connect_timeout", connect_timeout)
             if execute_timeout is not _UNSET:
-                row.execute_timeout = execute_timeout
+                setattr(row, "execute_timeout", execute_timeout)
             if sse_read_timeout is not _UNSET:
-                row.sse_read_timeout = sse_read_timeout
+                setattr(row, "sse_read_timeout", sse_read_timeout)
             s.commit()
 
     def delete(self, *, server_id: int) -> bool:
@@ -496,13 +500,18 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         ):
             value = getattr(row, ts_name, None)
             if isinstance(value, DateTime):
-                # Naive UTC datetimes — match the to_iso contract
-                # used by every other Book so the wire shape
-                # carries an explicit ``Z`` suffix.
-                if value.tzinfo is None:
-                    kwargs[ts_name] = value.isoformat() + "Z"
+                # SQLAlchemy's DateTime column type is structurally
+                # identical to ``datetime.datetime`` at runtime (the
+                # value is loaded from a row that's already been
+                # refreshed via ``s.refresh(row)`` above), but the
+                # stub types ``value`` as the column class. Cast to
+                # the underlying stdlib type so ``tzinfo`` /
+                # ``isoformat`` / ``astimezone`` resolve statically.
+                dt = cast(datetime, value)
+                if dt.tzinfo is None:
+                    kwargs[ts_name] = dt.isoformat() + "Z"
                 else:
-                    kwargs[ts_name] = value.astimezone().isoformat().replace("+00:00", "Z")
+                    kwargs[ts_name] = dt.astimezone().isoformat().replace("+00:00", "Z")
             elif value is None:
                 kwargs[ts_name] = None
             else:

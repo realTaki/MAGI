@@ -1,8 +1,9 @@
-"""Explicit MAGIC identity, runtime-status, and self-instruction APIs.
+"""Per-MAGI identity, runtime-status, and self-instruction APIs.
 
-There is no separate ``magic`` table in the BUS model: a MAGIC is the
-identity of a :class:`MagisMembership` row.  The control-plane runtime record
-adds the operator-facing name and lifecycle intent; each running MAGI keeps
+A MAGI is the identity of a :class:`MagisMembership` row (no separate
+``magic`` table anymore — the term was retired when ``magic`` collapsed
+into ``magis_memberships``).  The control-plane runtime record adds the
+operator-facing name and lifecycle intent; each running MAGI keeps
 its personal instruction in its own ``settings_book``.
 
 The module intentionally exposes two routers.  Management routes are mounted
@@ -25,8 +26,8 @@ from magi.channels.api.auth_gates import admin_gate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
-router = APIRouter(tags=["magic"])
-self_router = APIRouter(tags=["magic"])
+router = APIRouter(tags=["magi"])
+self_router = APIRouter(tags=["magi"])
 AdminGate = Annotated[str, Depends(admin_gate)]
 
 
@@ -48,7 +49,7 @@ class RuntimeOut(BaseModel):
     updated_at: str = ""
 
 
-class MAGICOut(BaseModel):
+class MagiOut(BaseModel):
     id: int
     name: str | None = None
     provider: str | None = None
@@ -60,13 +61,13 @@ class MAGICOut(BaseModel):
     updated_at: str = ""
 
 
-class MAGICCreate(BaseModel):
+class MagiCreate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     magis_id: int = Field(ge=1)
     role_id: int | None = Field(default=None, ge=1)
 
 
-class MAGICUpdate(BaseModel):
+class MagiUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
@@ -75,11 +76,11 @@ class InstructionPayload(BaseModel):
 
 
 class InstructionOut(BaseModel):
-    magic_id: int
+    magi_id: int
     instruction: str
 
 
-def _runtime_magic_id() -> int:
+def _runtime_magi_id() -> int:
     value = os.environ.get("MAGI_RUNTIME_ID")
     if not value or not value.isdigit():
         raise MagiHTTPException(503, "runtime.identity_missing", "MAGI runtime identity is missing")
@@ -94,13 +95,13 @@ def _served_direct_magis_id(bus: Bus) -> int | None:
     return membership.magis_id if membership is not None else None
 
 
-def _require_visible(bus: Bus, magic_id: int) -> None:
-    membership = bus.memberships_book.get(magi_id=magic_id) if bus.memberships_book else None
+def _require_visible(bus: Bus, magi_id: int) -> None:
+    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
     if membership is None:
-        raise MagiHTTPException(404, "not_found.magic", "MAGI not found")
+        raise MagiHTTPException(404, "not_found.magi", "MAGI not found")
     served = _served_direct_magis_id(bus)
     if served is not None and membership.magis_id != served:
-        raise MagiHTTPException(403, "forbidden.magic_management_scope", "MAGI is outside the current direct MAGIS")
+        raise MagiHTTPException(403, "forbidden.magi_management_scope", "MAGI is outside the current direct MAGIS")
 
 
 def _runtime_out(runtime) -> RuntimeOut | None:
@@ -139,14 +140,14 @@ def _runtime_out(runtime) -> RuntimeOut | None:
     )
 
 
-def _magic_out(bus: Bus, membership) -> MAGICOut:
+def _magi_out(bus: Bus, membership) -> MagiOut:
     magis = bus.magis_book.get(magis_id=membership.magis_id) if bus.magis_book else None
     role = bus.roles_book.get(role_id=membership.role_id) if bus.roles_book else None
     runtime = (
         bus.control_runtimes_book.get(runtime_id=membership.id)
         if bus.control_runtimes_book else None
     )
-    return MAGICOut(
+    return MagiOut(
         id=membership.id,
         name=runtime.backend_ref if runtime else None,
         memberships=[MembershipBrief(
@@ -169,10 +170,10 @@ def _magic_out(bus: Bus, membership) -> MAGICOut:
     )
 
 
-def _membership_or_404(bus: Bus, magic_id: int):
-    membership = bus.memberships_book.get(magi_id=magic_id) if bus.memberships_book else None
+def _membership_or_404(bus: Bus, magi_id: int):
+    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
     if membership is None:
-        raise MagiHTTPException(404, "not_found.magic", "MAGI not found")
+        raise MagiHTTPException(404, "not_found.magi", "MAGI not found")
     return membership
 
 
@@ -181,26 +182,26 @@ def _default_eva_role(bus: Bus, magis_id: int):
     return next((role for role in roles if role.name == "EVA"), None)
 
 
-@router.get("/magic", response_model=list[MAGICOut])
-def list_magic(_admin: AdminGate, bus: BusDep) -> list[MAGICOut]:
+@router.get("/magi", response_model=list[MagiOut])
+def list_magi(_admin: AdminGate, bus: BusDep) -> list[MagiOut]:
     memberships = []
     if bus.magis_book and bus.memberships_book:
         served = _served_direct_magis_id(bus)
         for magis in bus.magis_book.list_all():
             if served is None or magis.id == served:
                 memberships.extend(bus.memberships_book.list_for_magis(magis_id=magis.id))
-    return [_magic_out(bus, item) for item in memberships]
+    return [_magi_out(bus, item) for item in memberships]
 
 
-@router.post("/magic", response_model=MAGICOut, status_code=201)
-def create_magic(payload: MAGICCreate, _admin: AdminGate, bus: BusDep) -> MAGICOut:
+@router.post("/magi", response_model=MagiOut, status_code=201)
+def create_magi(payload: MagiCreate, _admin: AdminGate, bus: BusDep) -> MagiOut:
     if bus.magis_book is None or bus.memberships_book is None or bus.roles_book is None:
         raise MagiHTTPException(503, "magis.unavailable", "MAGIS services are unavailable")
     if bus.magis_book.get(magis_id=payload.magis_id) is None:
         raise MagiHTTPException(404, "not_found.magis", "MAGIS not found")
     role = bus.roles_book.get(role_id=payload.role_id) if payload.role_id else _default_eva_role(bus, payload.magis_id)
     if role is None or role.magis_id != payload.magis_id:
-        raise MagiHTTPException(400, "validation.magic_role", "role must belong to the selected MAGIS")
+        raise MagiHTTPException(400, "validation.magi_role", "role must belong to the selected MAGIS")
     membership = bus.memberships_book.add(magis_id=payload.magis_id, role_id=role.id)
     # The identity is valid immediately.  A runtime is provisioned separately
     # by the node lifecycle; the control row keeps the display label while
@@ -217,85 +218,85 @@ def create_magic(payload: MAGICCreate, _admin: AdminGate, bus: BusDep) -> MAGICO
             port=None,
             base_url=None,
         )
-    return _magic_out(bus, membership)
+    return _magi_out(bus, membership)
 
 
-@router.get("/magic/{magic_id}", response_model=MAGICOut)
-def get_magic(magic_id: int, _admin: AdminGate, bus: BusDep) -> MAGICOut:
-    _require_visible(bus, magic_id)
-    return _magic_out(bus, _membership_or_404(bus, magic_id))
+@router.get("/magi/{magi_id}", response_model=MagiOut)
+def get_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> MagiOut:
+    _require_visible(bus, magi_id)
+    return _magi_out(bus, _membership_or_404(bus, magi_id))
 
 
-@router.patch("/magic/{magic_id}", response_model=MAGICOut)
-def update_magic(magic_id: int, payload: MAGICUpdate, _admin: AdminGate, bus: BusDep) -> MAGICOut:
-    _require_visible(bus, magic_id)
+@router.patch("/magi/{magi_id}", response_model=MagiOut)
+def update_magi(magi_id: int, payload: MagiUpdate, _admin: AdminGate, bus: BusDep) -> MagiOut:
+    _require_visible(bus, magi_id)
     if bus.control_runtimes_book is None:
         raise MagiHTTPException(503, "runtime.unavailable", "runtime registry is unavailable")
-    runtime = bus.control_runtimes_book.rename(runtime_id=magic_id, backend_ref=payload.name)
+    runtime = bus.control_runtimes_book.rename(runtime_id=magi_id, backend_ref=payload.name)
     if runtime is None:
         raise MagiHTTPException(409, "runtime.not_provisioned", "MAGI has no control runtime record")
-    return _magic_out(bus, _membership_or_404(bus, magic_id))
+    return _magi_out(bus, _membership_or_404(bus, magi_id))
 
 
-def _set_lifecycle(bus: Bus, *, magic_id: int, desired_state: RuntimeDesiredState) -> RuntimeOut:
-    _require_visible(bus, magic_id)
-    if magic_id == _runtime_magic_id_optional():
-        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot stop the MAGI serving this request")
+def _set_lifecycle(bus: Bus, *, magi_id: int, desired_state: RuntimeDesiredState) -> RuntimeOut:
+    _require_visible(bus, magi_id)
+    if magi_id == _runtime_magi_id_optional():
+        raise MagiHTTPException(409, "runtime.current_magi_protected", "Cannot stop the MAGI serving this request")
     if bus.control_runtimes_book is None:
         raise MagiHTTPException(503, "runtime.unavailable", "runtime registry is unavailable")
-    existing = bus.control_runtimes_book.get(runtime_id=magic_id)
+    existing = bus.control_runtimes_book.get(runtime_id=magi_id)
     if existing is None or existing.backend_kind == "unprovisioned":
         raise MagiHTTPException(409, "runtime.not_provisioned", "Provision this MAGI before changing its lifecycle")
-    runtime = bus.control_runtimes_book.set_desired_state(runtime_id=magic_id, desired_state=desired_state)
+    runtime = bus.control_runtimes_book.set_desired_state(runtime_id=magi_id, desired_state=desired_state)
     result = _runtime_out(runtime)
     assert result is not None
     return result
 
 
-def _runtime_magic_id_optional() -> int | None:
+def _runtime_magi_id_optional() -> int | None:
     raw = os.environ.get("MAGI_RUNTIME_ID")
     return int(raw) if raw and raw.isdigit() else None
 
 
-@router.post("/magic/{magic_id}/runtime/start", response_model=RuntimeOut)
-def start_runtime(magic_id: int, _admin: AdminGate, bus: BusDep) -> RuntimeOut:
-    return _set_lifecycle(bus, magic_id=magic_id, desired_state=RuntimeDesiredState.STARTED)
+@router.post("/magi/{magi_id}/runtime/start", response_model=RuntimeOut)
+def start_runtime(magi_id: int, _admin: AdminGate, bus: BusDep) -> RuntimeOut:
+    return _set_lifecycle(bus, magi_id=magi_id, desired_state=RuntimeDesiredState.STARTED)
 
 
-@router.post("/magic/{magic_id}/runtime/stop", response_model=RuntimeOut)
-def stop_runtime(magic_id: int, _admin: AdminGate, bus: BusDep) -> RuntimeOut:
-    return _set_lifecycle(bus, magic_id=magic_id, desired_state=RuntimeDesiredState.STOPPED)
+@router.post("/magi/{magi_id}/runtime/stop", response_model=RuntimeOut)
+def stop_runtime(magi_id: int, _admin: AdminGate, bus: BusDep) -> RuntimeOut:
+    return _set_lifecycle(bus, magi_id=magi_id, desired_state=RuntimeDesiredState.STOPPED)
 
 
-@router.delete("/magic/{magic_id}", status_code=204)
-def delete_magic(magic_id: int, _admin: AdminGate, bus: BusDep) -> Response:
-    _require_visible(bus, magic_id)
-    if magic_id == _runtime_magic_id_optional():
-        raise MagiHTTPException(409, "runtime.current_magic_protected", "Cannot delete the MAGI serving this request")
-    runtime = bus.control_runtimes_book.get(runtime_id=magic_id) if bus.control_runtimes_book else None
+@router.delete("/magi/{magi_id}", status_code=204)
+def delete_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> Response:
+    _require_visible(bus, magi_id)
+    if magi_id == _runtime_magi_id_optional():
+        raise MagiHTTPException(409, "runtime.current_magi_protected", "Cannot delete the MAGI serving this request")
+    runtime = bus.control_runtimes_book.get(runtime_id=magi_id) if bus.control_runtimes_book else None
     if runtime is not None and runtime.backend_kind != "unprovisioned":
         raise MagiHTTPException(409, "runtime.deprovision_required", "Deprovision the runtime before removing its identity")
     if runtime is not None and bus.control_runtimes_book:
-        bus.control_runtimes_book.remove(runtime_id=magic_id)
-    if not bus.memberships_book or not bus.memberships_book.remove(magi_id=magic_id):
-        raise MagiHTTPException(404, "not_found.magic", "MAGI not found")
+        bus.control_runtimes_book.remove(runtime_id=magi_id)
+    if not bus.memberships_book or not bus.memberships_book.remove(magi_id=magi_id):
+        raise MagiHTTPException(404, "not_found.magi", "MAGI not found")
     return Response(status_code=204)
 
 
-@self_router.get("/magic/self/instruction", response_model=InstructionOut)
+@self_router.get("/magi/self/instruction", response_model=InstructionOut)
 def get_self_instruction(_admin: AdminGate, bus: BusDep) -> InstructionOut:
-    magic_id = _runtime_magic_id()
+    magi_id = _runtime_magi_id()
     return InstructionOut(
-        magic_id=magic_id,
+        magi_id=magi_id,
         instruction=bus.settings_book.get(key="instruction") or "",
     )
 
 
-@self_router.put("/magic/self/instruction", response_model=InstructionOut)
+@self_router.put("/magi/self/instruction", response_model=InstructionOut)
 def put_self_instruction(payload: InstructionPayload, _admin: AdminGate, bus: BusDep) -> InstructionOut:
-    magic_id = _runtime_magic_id()
+    magi_id = _runtime_magi_id()
     bus.settings_book.set(key="instruction", value=payload.instruction)
-    return InstructionOut(magic_id=magic_id, instruction=payload.instruction)
+    return InstructionOut(magi_id=magi_id, instruction=payload.instruction)
 
 
 __all__ = ["router", "self_router"]

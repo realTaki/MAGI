@@ -22,11 +22,11 @@ class MessageMagiTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
-            "magic_id": {"type": "integer", "description": "Target MAGIC id."},
+            "magi_id": {"type": "integer", "description": "Target MAGI id (``magis_memberships.id``)."},
             "text": {"type": "string", "description": "Message to the peer MAGI."},
             "expect_reply": {"type": "boolean", "default": False},
         },
-        "required": ["magic_id", "text"],
+        "required": ["magi_id", "text"],
     }
 
     async def run(self, _ctx: ToolContext, **_kwargs: Any) -> ToolResult:

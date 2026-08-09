@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.api import auth, contacts, magic, magis, onboarding
+from magi.channels.api import auth, contacts, magi, magis, onboarding
 
 from typing import TYPE_CHECKING
 
@@ -177,7 +177,7 @@ def create_app(
     # exists, so it must not be mounted on the browser-facing control service.
     from magi.channels.api import runtime_access
     app.include_router(runtime_access.router, prefix="/api")
-    app.include_router(magic.self_router, prefix="/api")
+    app.include_router(magi.self_router, prefix="/api")
     from magi.channels.a2a.router import router as a2a_router
     app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
