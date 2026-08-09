@@ -44,6 +44,11 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from magi.bus.library.local.tasksBook import (
+    preset_to_cron,
+    validate_run_at,
+    validate_run_at_future,
+)
 from magi.channels.api._bus import bus
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate

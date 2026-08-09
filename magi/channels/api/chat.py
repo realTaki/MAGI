@@ -38,7 +38,7 @@ from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
-from magi.channels import Channel, get_current_bus
+from magi.channels import Channel
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -300,44 +300,21 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    # Bus selection: prefer bus when wired. Both paths target the
-    # same ``chat_jobs`` table (AgentWorker reads from there), so the
-    # migration is a pure surface swap — the legacy AgentMessage shape
-    # becomes the bus ChatJob envelope (kind="chat", payload=...).
-    bus = get_current_bus()
-    if bus is not None:
-        from magi.bus.guild.chatJob import publish_chat
+    # Bus selection: per design §1, BUS has no compatibility paths — the
+    # runtime always wires a single Bus. ``bus`` is provided by the
+    # module-level wrapper (see magi.channels.api._bus), which is itself
+    # the channel-runtime's injected Bus.
+    from magi.bus.guild.chatJob import publish_chat
 
-        # Stable producer-side idempotency: the inbound session-message
-        # id is what makes a network retry collapse to the same inbox row.
-        chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
-        run_id = publish_chat(
-            bus,
-            text=text, channel=Channel.WEBUI, uid=uid, session_id=session_id,
-            caller_role=contact_role,
-            event_id=chat_job_event_id, run_id=chat_job_event_id,
-            conversation_id=f"webui:{uid}:{session_id}",
-            correlation_id=inbound_message_id,
-        )
-    else:
-        run_id = bus.agent_runs.publish_input(
-            AgentMessage(
-                # The persisted inbound session-message id is the producer's
-                # idempotency key. A network retry cannot create a second
-                # agent turn for that exact input.
-                event_id=f"webui:{session_id}:{inbound_message_id}",
-                # Cross-channel idempotency triple (0009_idempotency_keys).
-                # The browser sends a stable client-generated UUID; if the
-                # same message is re-submitted (network retry, double
-                # click), the inbox row collapses to the same run.
-                source_type="webui",
-                source_id=str(uid),
-                external_event_id=inbound_message_id,
-                text=text,
-                channel=Channel.WEBUI,
-                session_id=session_id,
-                uid=uid,
-                caller_role=contact_role,
-            ),
-        )
+    # Stable producer-side idempotency: the inbound session-message
+    # id is what makes a network retry collapse to the same inbox row.
+    chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
+    run_id = publish_chat(
+        bus,
+        text=text, channel=Channel.WEBUI, uid=uid, session_id=session_id,
+        caller_role=contact_role,
+        event_id=chat_job_event_id, run_id=chat_job_event_id,
+        conversation_id=f"webui:{uid}:{session_id}",
+        correlation_id=inbound_message_id,
+    )
     return ChatSendResponse(run_id=run_id, session_id=session_id)

@@ -22,7 +22,10 @@ from magi.bus.library.local.tasksBook import (
 def test_validate_run_at_accepts_offset_aware_iso() -> None:
     raw = "2026-08-01T15:30:00+08:00"
     out = validate_run_at(raw)
-    assert out == raw
+    # v3 contract: canonicalise to the UTC trailing-Z form so two
+    # operators writing the same instant in different offsets collapse
+    # to the same row.
+    assert out == "2026-08-01T07:30:00Z"
     assert dt.datetime.fromisoformat(out).astimezone(dt.timezone.utc) == \
         dt.datetime(2026, 8, 1, 7, 30, tzinfo=dt.timezone.utc)
 
@@ -43,8 +46,12 @@ def test_validate_run_at_rejects_empty_garbage() -> None:
 
 
 def test_validate_run_at_normalises_whitespace() -> None:
+    # ``validate_run_at`` trims whitespace AND canonicalises to the
+    # UTC trailing-Z form (per the v3 contract — see the docstring
+    # of ``validate_run_at`` in tasksBook.py). 15:30 in UTC+8 is
+    # 07:30 UTC.
     out = validate_run_at("  2026-08-01T15:30:00+08:00  ")
-    assert out == "2026-08-01T15:30:00+08:00"
+    assert out == "2026-08-01T07:30:00Z"
 
 
 # -- TaskWorker run_at consumption ------------------------------------------

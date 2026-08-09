@@ -126,7 +126,8 @@ def test_render_once_returns_empty_cron_and_iso_run_at() -> None:
     )
     cron, run_at_iso, _ = _render_cron_from_payload(payload)
     assert cron == ""
-    assert run_at_iso == "2026-08-01T15:30:00+08:00"
+    # v3 contract: 15:30 in UTC+8 → 07:30 UTC, canonical trailing-Z.
+    assert run_at_iso == "2026-08-01T07:30:00Z"
 
 
 def test_render_once_normalises_naive_run_at_to_utc_offset() -> None:
@@ -138,7 +139,9 @@ def test_render_once_normalises_naive_run_at_to_utc_offset() -> None:
     )
     cron, run_at_iso, _ = _render_cron_from_payload(payload)
     assert cron == ""
-    assert run_at_iso == "2026-08-01T12:00:00+00:00"
+    # v3 contract: canonicalise to UTC trailing-Z form (per
+    # ``validate_run_at`` docstring — see tasksBook.py).
+    assert run_at_iso == "2026-08-01T12:00:00Z"
 
 
 def test_render_once_rejects_bad_run_at_with_400() -> None:
