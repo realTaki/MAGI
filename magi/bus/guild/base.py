@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 from datetime import datetime, timedelta
-from typing import Generic, TypeVar
+from typing import ClassVar, Generic, TypeVar
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -52,10 +52,16 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
     get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
     """
 
-    job_model: type[RowT] | None = None
-    job_cls: type[JobT] | None = None
-    result_cls: type[ResultT] | None = None
-    natural_key_attr: str = "job_id"
+    # Subclasses MUST set these — there is no default because the
+    # abstract ``None`` shape breaks Pylance's view of every ORM
+    # call below (``select(self.job_model)`` would otherwise see
+    # ``None``). Each concrete Board (``runToolJobBoard``,
+    # ``chatJobBoard``, ...) supplies the row / DTO / result
+    # types that match its ``Generic[RowT, JobT, ResultT]`` args.
+    job_model: ClassVar[type[RowT]]
+    job_cls: ClassVar[type[JobT]]
+    result_cls: ClassVar[type[ResultT]]
+    natural_key_attr: ClassVar[str] = "job_id"
 
     def __init__(self, factory: EngineFactory,
                  lease_seconds: int = DEFAULT_LEASE_SECONDS):
@@ -97,11 +103,11 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
             )
             if row is None:
                 return
-            if row.status == "processing":
-                row.status = "pending"
-                row.leased_by = None
-                row.leased_until = None
-                row.attempts = max(0, row.attempts - 1)  # 不消耗重试次数
+            if getattr(row, "status", None) == "processing":
+                setattr(row, "status", "pending")
+                setattr(row, "leased_by", None)
+                setattr(row, "leased_until", None)
+                setattr(row, "attempts", max(0, getattr(row, "attempts", 0) - 1))  # 不消耗重试次数
             s.commit()
 
     async def wait_for_result(
@@ -130,8 +136,11 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while True:
+            # ``run_in_executor`` takes ``*args`` positionally; the
+            # previous ``key=key`` shape raised Pylance's
+            # ``reportCallIssue`` AND would TypeError at runtime.
             result = await loop.run_in_executor(
-                None, self.get_result, key=key,
+                None, self.get_result, key,
             )
             if result is not None:
                 return result
@@ -148,10 +157,10 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         """
         with self._session() as s:
             stmt = select(func.count()).select_from(self.job_model).where(
-                self.job_model.status == "pending"
+                getattr(self.job_model, "status") == "pending"
             )
             if channel is not None and hasattr(self.job_model, "channel"):
-                stmt = stmt.where(self.job_model.channel == channel)
+                stmt = stmt.where(getattr(self.job_model, "channel") == channel)
             return int(s.scalar(stmt) or 0)
 
     # -- 内部 --------------------------------------------------------------
@@ -163,27 +172,35 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
             candidate = self._pick_candidate(session, now)
             if candidate is None:
                 return None
-            if candidate.status == "processing" and candidate.attempts >= MAX_ATTEMPTS:
+            status = getattr(candidate, "status", "")
+            attempts = getattr(candidate, "attempts", 0)
+            if status == "processing" and attempts >= MAX_ATTEMPTS:
                 exhausted = self._make_exhausted_result(candidate)
                 self._submit(session, key=self._key_of(candidate), result=exhausted)
                 session.flush()
                 continue
-            is_reclaim = candidate.status == "processing"
-            candidate.status = "processing"
-            candidate.leased_until = lease_until
-            candidate.attempts += 1
+            is_reclaim = status == "processing"
+            setattr(candidate, "status", "processing")
+            setattr(candidate, "leased_until", lease_until)
+            setattr(candidate, "attempts", attempts + 1)
             if not is_reclaim and hasattr(candidate, "started_at"):
-                candidate.started_at = now
+                setattr(candidate, "started_at", now)
             return candidate
 
     def _pick_candidate(self, session: Session, now: datetime) -> RowT | None:
         return session.scalar(
             select(self.job_model)
             .where(or_(
-                self.job_model.status == "pending",
-                and_(self.job_model.status == "processing", self.job_model.leased_until < now),
+                getattr(self.job_model, "status") == "pending",
+                and_(
+                    getattr(self.job_model, "status") == "processing",
+                    getattr(self.job_model, "leased_until") < now,
+                ),
             ))
-            .order_by(self.job_model.created_at, self.job_model.id)
+            .order_by(
+                getattr(self.job_model, "created_at"),
+                getattr(self.job_model, "id"),
+            )
             .limit(1)
             .with_for_update(skip_locked=True)
         )
@@ -197,9 +214,9 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         if row is None:
             return
         now = utcnow_naive()
-        row.status = "completed" if result.success else "failed"
+        setattr(row, "status", "completed" if getattr(result, "success") else "failed")
         if hasattr(row, "completed_at"):
-            row.completed_at = now
+            setattr(row, "completed_at", now)
         _write_result_to_job(row, result, self.result_cls)
 
     def _get_result(self, session: Session, *, key: str) -> ResultT | None:
@@ -208,7 +225,7 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
                 getattr(self.job_model, self.natural_key_attr) == key
             )
         )
-        if row is None or row.status not in ("completed", "failed"):
+        if row is None or getattr(row, "status", "") not in ("completed", "failed"):
             return None
         return _read_result_from_job(row, self.result_cls, self.natural_key_attr)
 
@@ -219,7 +236,7 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         if val is not None:
             return str(val)
         if hasattr(row, "id"):
-            return str(row.id)
+            return str(getattr(row, "id"))
         return ""
 
     # -- 耗尽处理 ----------------------------------------------------------

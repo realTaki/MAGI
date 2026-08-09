@@ -332,7 +332,7 @@ class SessionBook(BaseBook[_SessionRow, Session]):
             if bump_updated:
                 stmt = stmt.values(updated_at=now)
             result = s.execute(stmt)
-            if result.rowcount == 0:
+            if getattr(result, "rowcount", 0) == 0:  # type: ignore[reportAttributeAccessIssue]
                 s.rollback()
                 return None
             s.commit()

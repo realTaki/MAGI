@@ -84,7 +84,7 @@ class Bus:
 
         bus = open_bus(state_dir="...", magis_url="...")
         job = bus.tool_job_board.claim()
-        adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
+        adam = bus.memberships_book.get(magi_id=1)  # ADAM = membership id=1
 
     When MAGIS is not configured, all magis_book-related fields are
     ``None``.

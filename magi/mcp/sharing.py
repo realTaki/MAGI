@@ -69,10 +69,10 @@ The worker in this module runs on a slow timer (every
 each tick it:
 
   1. Reads the new ``MAGISMembership`` for its own
-     ``magic_id`` — operator-set binding to the parent
+     ``magi_id`` — operator-set binding to the parent
      MAGIS.
   2. Asks the parent MAGIS for the rows assigned to
-     this MAGIC since the last successful pull.
+     this MAGI since the last successful pull.
   3. Upserts those rows into the local ``mcp_servers``
      SQLite table (with a flag marking them as
      "inherited" — operators can't delete them, only

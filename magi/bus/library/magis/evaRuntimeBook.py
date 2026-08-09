@@ -91,7 +91,7 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
             rows = s.scalars(select(_EvaRuntimeRow).order_by(_EvaRuntimeRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def upsert(self, *, magic_id: int, deployment_name: str,
+    def upsert(self, *, magi_id: int, deployment_name: str,
                desired_state: str = "Started",
                observed_state: str = "Unknown",
                namespace: str | None = None,
@@ -100,11 +100,11 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
         with self._session() as s:
             row = s.scalar(
                 select(_EvaRuntimeRow)
-                .where(_EvaRuntimeRow.magic_id == magic_id)
+                .where(_EvaRuntimeRow.magi_id == magi_id)
             )
             if row is None:
                 row = _EvaRuntimeRow(
-                    magic_id=magic_id, deployment_name=deployment_name,
+                    magi_id=magi_id, deployment_name=deployment_name,
                     desired_state=desired_state, observed_state=observed_state,
                     namespace=namespace, image=image, extra=extra,
                 )

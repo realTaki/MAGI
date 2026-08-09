@@ -16,7 +16,7 @@ under the ``SettingBook.KNOWN_KEYS`` keys.  This Book only tracks
 the per-MAGI identity + role binding.
 
 FKs that target a per-MAGI identity (``magis.adam_id``,
-``eva_runtimes.magic_id``) all point at ``magis_memberships.id``.
+``eva_runtimes.magi_id``) all point at ``magis_memberships.id``.
 
 Query keys
 ----------
@@ -213,7 +213,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         Books share one surface. No per-MAGI scoping, no
         join with ``magis_roles`` / ``magis``; callers needing
         the rendered (magis_name, role_name, instruction) shape
-        go through :meth:`instruction_context` per ``magic_id``.
+        go through :meth:`instruction_context` per ``magi_id``.
         """
         with self._session() as s:
             rows = s.scalars(
@@ -291,7 +291,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         The MAGI's own identity is assigned by the DB and comes back
         as ``dto.id`` — keep that id for later lookup and for use as
         a FK target from elsewhere (``magis.adam_id``,
-        ``eva_runtimes.magic_id``).
+        ``eva_runtimes.magi_id``).
         """
         with self._session() as s:
             role = s.scalar(
@@ -381,7 +381,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                     _MagisRow,
                     _MagisRow.id == _MagisMembershipRow.magis_id,
                 )
-                .where(_MagisMembershipRow.id == magic_id)
+                .where(_MagisMembershipRow.id == magi_id)
                 .order_by(_MagisMembershipRow.id)
             ).first()
             if row is not None:

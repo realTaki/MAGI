@@ -191,7 +191,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
                         started_at=now,
                     )
                 )
-                if getattr(result, "rowcount", 0) == 1:
+                if getattr(result, "rowcount", 0) == 1:  # type: ignore[reportAttributeAccessIssue]
                     s.commit()
                     # reload fresh row to return
                     fresh = s.get(_ChatJobRow, row.id)
