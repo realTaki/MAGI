@@ -732,7 +732,7 @@ def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
         pass ``create_root=False`` to avoid a duplicate ``mkdir``.
 
     The factory is the public constructor used by
-    :func:`magi.bus.bootstrap.bootstrap_bus`. Tests that need
+    :func:`magi.bus.open_bus`. Tests that need
     a custom layout should construct :class:`SkillsBook` directly
     with explicit :class:`~magi.bus.db.file.FileShelf` instances.
     """

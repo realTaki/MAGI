@@ -16,7 +16,7 @@ turn without restarting the process.
 
 Usage via ``Bus``::
 
-    bus = bootstrap_bus(...)
+    bus = open_bus(...)
     soul = bus.prompt_book.soul()
     replies = bus.prompt_book.bot_replies()
     presets = bus.prompt_book.task_presets()

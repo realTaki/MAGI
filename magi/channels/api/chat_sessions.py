@@ -29,8 +29,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels import Channel
 
@@ -42,7 +42,7 @@ router = APIRouter(tags=["chat_sessions"])
 SessionStore = Any
 
 
-def get_session_store() -> SessionStore:
+def get_session_store(request: Request) -> SessionStore:
     """FastAPI dependency — one bus session facade per request.
 
     We deliberately construct it lazily (per-request) rather
@@ -50,7 +50,7 @@ def get_session_store() -> SessionStore:
     the path is resolved via ``magi.startup.paths.resolve_workspace_dir()``
     current value, not the value captured at import time.
     """
-    return bus.session
+    return get_bus(request).sessions_book
 
 
 SessionServiceDep = Annotated[SessionStore, Depends(get_session_store)]
@@ -193,7 +193,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _delivery_address_for_uid(uid: int) -> str:
+def _delivery_address_for_uid(request: Request, uid: int) -> str:
     """Resolve the operator's bound per-channel delivery
     address (the TG chat id today; opaque to domain code).
 
@@ -209,7 +209,7 @@ def _delivery_address_for_uid(uid: int) -> str:
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
     """
-    contact = bus.contacts.get(uid)
+    contact = get_bus(request).contacts_book.get(contact_id=uid)
     return str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
 
 
@@ -291,7 +291,7 @@ def create_session(
     # ``Contact.telegram_id`` directly. The store key,
     # however, is ``uid`` — see
     # :meth:`SessionService.create`.
-    delivery_address = _delivery_address_for_uid(uid)
+    delivery_address = _delivery_address_for_uid(request, uid)
     sess = service.create(
         uid, channel=Channel.WEBUI, delivery_address=delivery_address,
     )
