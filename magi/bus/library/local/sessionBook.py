@@ -101,6 +101,61 @@ class SearchUnavailable(RuntimeError):
     """
 
 
+class SessionPathError(ValueError):
+    """The ``session_id`` string is structurally invalid.
+
+    Raised by the session service when the caller passes an
+    id that doesn't decode as a Crockford ULID (the schema's
+    primary key format). Distinct from "session not found":
+    a malformed id is a 400, not a 404, and the caller
+    shouldn't retry with the same value.
+    """
+
+
+class SessionCorruptError(RuntimeError):
+    """The session row on disk is malformed.
+
+    Raised when JSON decoding fails, a required column is
+    missing, or the persisted shape doesn't match the
+    current ``Session`` schema. Surface as 500 — the data
+    is unrecoverable without operator intervention.
+    """
+
+
+class SessionNotFoundError(LookupError):
+    """The session id is well-formed but doesn't belong to
+    this operator (or was deleted between the list call
+    and the lookup).
+
+    Distinct from :class:`SessionPathError` (which is "the
+    id is malformed"): here the id is valid, the operator
+    is just not allowed to see it / it doesn't exist.
+    Surface as 404.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class SessionSummary:
+    """Lightweight projection of :class:`Session` for the
+    list-endpoint (``GET /api/chat/sessions``).
+
+    Carries enough to render the sidebar row (id, title /
+    preview, timestamps, channel, message count) without
+    pulling the full transcript. The list endpoint fans
+    these out in bulk; the full :class:`Session` (with
+    ``messages``) is fetched only when the operator opens
+    a row.
+    """
+
+    session_id: str
+    channel: str
+    created_at: str
+    updated_at: str
+    message_count: int
+    preview: str
+    title: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedHit:
     """A search hit after cross-contact validation + context fetch.

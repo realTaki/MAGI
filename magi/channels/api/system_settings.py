@@ -127,10 +127,9 @@ def put_system_timezone(
             code="validation.unknown_timezone",
             detail=f"timezone {tz!r} is not a valid IANA tz name",
         )
-    # Drop the cached value in ``tasks._resolve_system_tz`` so the
-    # next task read picks up the new value.
-    from magi.channels.api.tasks import _invalidate_system_tz_cache
-    _invalidate_system_tz_cache()
+    # No cache invalidation needed: every tz consumer reads
+    # ``bus.settings_book.get("system.timezone")`` directly, so the
+    # next read picks up the new value with no helper to call.
     logger.info("system.timezone set to %r", tz)
     svc.set(key=SYSTEM_TZ_KEY, value=tz)
     return TimezoneOut(

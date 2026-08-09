@@ -274,7 +274,7 @@ export function MagicPane() {
                         title={t("common.delete")}
                         onClick={() => {
                           if (confirm(t("magic.deleteConfirm"))) {
-                            void request(`/api/magic/${m.id}`, "DELETE").then(refresh);
+                            void request(`/api/magi/${m.id}`, "DELETE").then(refresh);
                           }
                         }}
                       >

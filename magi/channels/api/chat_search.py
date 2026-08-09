@@ -19,6 +19,10 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
+from magi.bus.library.local.sessionBook import (
+    SearchHit,
+    SearchUnavailable,
+)
 
 logger = logging.getLogger("magi.api.chat_search")
 
@@ -57,7 +61,7 @@ def search_chat(
     uid = _admin_uid(request)
 
     try:
-        items, total = bus.sessions_book.search(uid=uid, q=q, limit=limit, offset=offset)
+        items, total = bus.messages_book.search(uid=uid, q=q, limit=limit, offset=offset)
     except SearchUnavailable as e:
         raise MagiHTTPException(
             status_code=503,

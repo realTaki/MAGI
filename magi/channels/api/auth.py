@@ -354,7 +354,7 @@ class TargetVerifyRequest(TargetLoginRequest):
     code: str = Field(min_length=6, max_length=6)
 
 
-async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
+async def _target_access(bus: Bus, magi_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
     """Call a target runtime before a browser identity exists.
 
     This is still authenticated service-to-service: ``operator_id=0`` marks
@@ -362,14 +362,14 @@ async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payloa
     selected runtime id and exact path.
     """
     try:
-        runtime = bus.eva_runtimes_book.get(runtime_id=magic_id) if bus.eva_runtimes_book else None
+        runtime = bus.eva_runtimes_book.get(runtime_id=magi_id) if bus.eva_runtimes_book else None
         base = getattr(runtime, "base_url", None) if runtime else None
         if not base:
             raise RuntimeError("runtime unavailable")
     except RuntimeError as exc:
         raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
     headers = build_proxy_headers(
-        method=method, path_and_query=path, target_id=magic_id,
+        method=method, path_and_query=path, target_id=magi_id,
         operator_id=0, operator_name="WebUI login", telegram_id=None,
     )
     try:
@@ -400,19 +400,19 @@ async def available_magi() -> AvailableMAGIResponse:
     return AvailableMAGIResponse(magi=result)
 
 
-@router.get("/targets/{magic_id}/accounts")
-async def target_accounts(magic_id: int, bus: BusDep) -> dict[str, object]:
-    return await _target_access(bus, magic_id, "GET", "/api/access/login-accounts")
+@router.get("/targets/{magi_id}/accounts")
+async def target_accounts(magi_id: int, bus: BusDep) -> dict[str, object]:
+    return await _target_access(bus, magi_id, "GET", "/api/access/login-accounts")
 
 
-@router.post("/targets/{magic_id}/send-login-code")
-async def target_send_login_code(magic_id: int, payload: TargetLoginRequest, bus: BusDep) -> dict[str, object]:
-    return await _target_access(bus, magic_id, "POST", "/api/access/send-login-code", payload.model_dump())
+@router.post("/targets/{magi_id}/send-login-code")
+async def target_send_login_code(magi_id: int, payload: TargetLoginRequest, bus: BusDep) -> dict[str, object]:
+    return await _target_access(bus, magi_id, "POST", "/api/access/send-login-code", payload.model_dump())
 
 
-@router.post("/targets/{magic_id}/verify-login-code", response_model=VerifyLoginCodeResponse)
-async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, response: Response, bus: BusDep) -> VerifyLoginCodeResponse:
-    result = await _target_access(bus, magic_id, "POST", "/api/access/verify-login-code", payload.model_dump())
+@router.post("/targets/{magi_id}/verify-login-code", response_model=VerifyLoginCodeResponse)
+async def target_verify_login_code(magi_id: int, payload: TargetVerifyRequest, response: Response, bus: BusDep) -> VerifyLoginCodeResponse:
+    result = await _target_access(bus, magi_id, "POST", "/api/access/verify-login-code", payload.model_dump())
     if not result.get("ok"):
         return VerifyLoginCodeResponse(ok=False, error=str(result.get("error") or "Code does not match"))
     telegram_id = result.get("telegram_id")

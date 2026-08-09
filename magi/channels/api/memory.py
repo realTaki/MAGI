@@ -125,18 +125,20 @@ def list_memory(
     the operator could read someone else's memory via URL
     guessing.
 
-    Ordering mirrors the system-prompt formatter
-    (``priority DESC, updated_at DESC``) so what the LLM
-    sees in its working block lines up with what the
-    operator sees in the dashboard. Both ``fact``
-    and ``quick_note`` kinds are included regardless of
-    completion state — the operator view is the audit
+    Ordering is whatever ``MemoryBook.list_by_owner`` returns
+    (``created_at DESC``) — the same call, and therefore the same
+    order, the system-prompt memory block is built from, so what
+    the LLM sees lines up with what the operator sees in the
+    dashboard. Both ``fact`` and ``quick_note`` kinds are included
+    regardless of completion state — the operator view is the audit
     trail.
     """
     admin_id = _admin_uid(request)
-    rows = bus.memory_book.list_by_owner(
-        admin_id, include_completed=True, limit=_MAX_ROWS,
-    )
+    # ``MemoryBook.list_by_owner`` is keyword-only and takes ``uid``
+    # alone — it already returns every row for the owner (both kinds,
+    # completed included), so the cap is applied here rather than
+    # pushed into the query.
+    rows = bus.memory_book.list_by_owner(uid=admin_id)[:_MAX_ROWS]
     return MemoryListOut(
         items=[_serialize(r) for r in rows],
         total=len(rows),
