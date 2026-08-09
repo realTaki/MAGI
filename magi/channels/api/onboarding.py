@@ -17,7 +17,7 @@
            ``{ok: false, error}``. **Does not store**.
        ``POST /api/onboarding/save-admin { tgids: list[str] }``
            Upserts a ``Contact`` row per delivery address with
-           ``role='admin'``, a TG binding (via the channel dispatcher),
+           ``role='admin'`` and its TG delivery address,
            with no team. Display names are resolved via Telegram
            ``getChat``. Idempotent.
 
@@ -927,29 +927,6 @@ async def save_admin(payload: SaveAdminRequest) -> SaveAdminResponse:
     except Exception as exc:
         logger.exception("failed to write admin contacts")
         return SaveAdminResponse(ok=False, error=str(exc))
-
-    # D.28: bind each new admin's TG chat id through the
-    # channel dispatcher. The adapter writes
-    # ``user_im_bindings`` (canonical) and syncs the
-    # legacy ``Contact.telegram_id`` column for the bot's
-    # inbound handler. Done outside the bus write so the
-    # dispatcher opens its own session (nested BEGIN
-    # IMMEDIATE inside an outer transaction would deadlock
-    # SQLite).
-    from magi.channels import dispatcher as channel_dispatcher
-    for ct_id, cid in zip(new_ct_ids, parsed_ids):
-        try:
-            channel_dispatcher.bind_im_id(ct_id, Channel.TG, str(cid))
-        except Exception:
-            # Best-effort: the Contact row is already
-            # created with role=admin. If the binding
-            # write fails (e.g. FK or DB hiccup), the
-            # admin can re-bind via the API later.
-            logger.exception(
-                "save_admin: dispatcher.bind_im_id failed "
-                "for ct_id=%s cid=%s",
-                ct_id, cid,
-            )
 
     logger.info("admins saved", extra={"count": len(cleaned)})
     return SaveAdminResponse(ok=True, count=len(cleaned))

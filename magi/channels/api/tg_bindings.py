@@ -5,14 +5,9 @@ Routes:
   DELETE /api/telegram/bind/{telegram_id}    — unbind a TG chat id
   GET    /api/telegram/bind/{telegram_id}    — look up the current binding
 
-All three operate on the channel dispatcher (D.28). The
-endpoint code here is just HTTP shape + admin gating; the
-actual write logic is in
-:meth:`magi.channels.telegram.adapter.TelegramAdapter.bind_im_id` /
-``unbind_im_id`` / ``lookup_im_id`` — which writes both
-``user_im_bindings`` (the canonical store) and the legacy
-``Contact.telegram_id`` column (read-cache, kept for the
-bot's inbound path).
+All three use ``ContactBook.telegram_id`` as the canonical Telegram
+delivery address. The endpoint code is HTTP shape + admin gating;
+the Book owns the durable read/write operations.
 """
 
 from __future__ import annotations
@@ -50,8 +45,7 @@ def bind_telegram(
 ) -> TGBindResponse:
     """Bind ``telegram_id`` to ``uid``.
 
-    Delegates the actual write to the channel dispatcher
-    (which calls the TG adapter). The API enforces the
+    The API writes the Contact-owned address and enforces the
     "contact is active" + "unbind previous holder" rules
     that are policy concerns, not channel concerns.
     """
@@ -112,8 +106,7 @@ def unbind_telegram(
             detail="telegram_id must fit in an integer",
         )
 
-    # The dispatcher resolves the bound uid and the
-    # adapter drops both the new and legacy rows.
+    # ContactBook resolves the bound contact and clears the address.
     contact = bus.contacts.find_by_telegram_id(telegram_id_int)
     if contact is not None:
         bus.contacts.set_telegram_id(contact.id, None)

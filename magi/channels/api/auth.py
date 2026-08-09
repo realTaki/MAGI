@@ -17,9 +17,8 @@ Authorization model (D.24):
   channel. The login input (``uid``) is a per-person
   identity; the cookie output is also the uid. The
   per-channel delivery address (TG chat id for admins
-  who bound one) is resolved server-side via the channel
-  dispatcher (D.28). A contact can be bound to
-  multiple channels — the cookie identity stays stable
+  who bound one) is read from ``Contact.telegram_id``.
+  A contact can be bound to multiple channels — the cookie identity stays stable
   across all of them. ``/me`` resolves the cookie's
   contact id to the row and reports both ``uid`` and
   ``telegram_id`` (the latter may be ``None`` for admins
@@ -37,7 +36,6 @@ Authorization model (D.24):
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
@@ -52,8 +50,7 @@ from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
-from magi.channels import Channel
-from magi.channels.telegram import bot as tg_bot
+from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.channels.api import control_store
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
@@ -575,13 +572,13 @@ async def send_login_code(
             _clear_login_code(uid)
             return SendLoginCodeResponse(ok=False, error=f"send failed: {exc}")
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-    # Resolve the UID's bound IM channel via the channel
-    # dispatcher (D.28). Today: TG. Future: dispatcher picks
-    # the first channel with a live bot. If no IM is
-    # bound, refuse — we have no way to deliver the code.
-    from magi.channels import dispatcher as channel_dispatcher
-    im_id = channel_dispatcher.lookup_im_id(uid, Channel.TG)
-    if im_id is None:
+    # Contact is the single source of truth for the current Telegram binding.
+    # Resolve it before recording a login code, so an unbound operator cannot
+    # accumulate credentials that were never delivered.
+    from magi.channels.api._bus import bus as api_bus
+
+    contact = api_bus.contacts.get(uid)
+    if contact is None or contact.telegram_id is None:
         return SendLoginCodeResponse(
             ok=False,
             error="This account has no IM channel configured; "
@@ -611,49 +608,24 @@ async def send_login_code(
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
     _store_login_code(uid, code, issued_at, expires_at)
 
-    # Send through the resolved IM. The dispatcher routes
-    # to the right channel adapter; the TG adapter does its
-    # own httpx / bot call against api.telegram.org. We
-    # pass the UID; the adapter looks up the bound chat id
-    # itself. No more bot token + httpx here — that path
-    # is encapsulated behind the adapter boundary (D.28).
+    # API code creates a durable delivery intent; the Telegram worker owns
+    # bot I/O, retries, and final delivery status.
     code_text = (
         f"Your MAGI sign-in code is: <code>{code}</code>\n\n"
         f"Enter it in the browser to log in. The code "
         f"expires in {_CODE_TTL_SECONDS // 60} minutes."
     )
     try:
-        await channel_dispatcher.send_to_uid(uid, Channel.TG, code_text)
-    except RuntimeError as e:
-        # Lazy-start path: token exists but no live bot
-        # instance yet. Try booting the TG bot once, then
-        # retry dispatcher send briefly before falling back
-        # to raw HTTP send.
-        try:
-            tg_bot.start_bot()
-            for _ in range(4):
-                await asyncio.sleep(0.25)
-                if tg_bot.get_telegram_bot() is not None:
-                    break
-            await channel_dispatcher.send_to_uid(uid, Channel.TG, code_text)
-            return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-        except Exception:
-            # Fall through to raw-send fallback below.
-            pass
-
-        # Raw-send fallback keeps first login usable even if
-        # the polling bot is still starting or unavailable.
-        try:
-            await tg_bot.send_text_auto(int(im_id), code_text)
-        except Exception as raw_exc:
-            _clear_login_code(uid)
-            return SendLoginCodeResponse(
-                ok=False,
-                error=f"send failed: {raw_exc}",
+        api_bus.delivery_job_board.publish(
+            DeliveryJob(
+                channel="tg",
+                destination=str(contact.telegram_id),
+                payload={"text": code_text, "uid": uid},
             )
-    except Exception as e:
+        )
+    except Exception as exc:
         _clear_login_code(uid)
-        return SendLoginCodeResponse(ok=False, error=f"send failed: {e}")
+        return SendLoginCodeResponse(ok=False, error=f"send failed: {exc}")
 
     return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 

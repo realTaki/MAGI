@@ -416,10 +416,9 @@ def create_task(
 
     operator_id = _resolve_creator_id(request, payload)
     cron, run_at_iso, _preset_used = _render_cron_from_payload(payload)
-    # D.28: resolve the per-channel delivery address via
-    # the channel dispatcher BEFORE we open the
+    # Resolve the Contact-owned Telegram delivery address before we open the
     # FastAPI-managed ``session`` transaction. The
-    # dispatcher opens its own SQLite session
+    # Contact lookup opens its own SQLite session
     # internally — a nested BEGIN IMMEDIATE inside the
     # outer route-scoped txn would deadlock SQLite (the
     # outer txn holds the reserved lock; the inner one
@@ -427,14 +426,15 @@ def create_task(
     # here while the FastAPI session is still in its
     # implicit-begin phase (the ``session.query``
     # below is what triggers the actual BEGIN IMMEDIATE).
-    # For ``channel='tg'`` the dispatcher raises a
-    # friendly 400 when the operator has no TG binding;
-    # for ``channel='webui'`` it returns ``""`` (the
+    # For ``channel='tg'`` an unbound contact returns ``""``; for
+    # ``channel='webui'`` it is also ``""`` (the
     # session has no IM target — channel="webui"
     # disables outbound send_message).
-    from magi.channels import dispatcher as channel_dispatcher
+    operator = bus.contacts.get(operator_id)
     task_session_delivery_address = (
-        channel_dispatcher.lookup_im_id(operator_id, Channel.TG) or ""
+        str(operator.telegram_id)
+        if operator is not None and operator.telegram_id is not None
+        else ""
     )
     # ``tz`` is reserved on the model for backend
     # bookkeeping (DEBUGABILITY — we want to know which
@@ -449,8 +449,7 @@ def create_task(
     # SQLite (the outer txn holds the reserved lock;
     # the inner ``state_get`` session can't acquire it).
     system_tz = _resolve_system_tz()
-    # ``_resolve_delivery_to`` also calls the channel
-    # dispatcher internally for ``channel='tg'`` (so it
+    # ``_resolve_delivery_to`` also reads Contact directly for ``channel='tg'`` (so it
     # can return a 400 when the operator has no TG
     # binding). Same rationale as the dispatcher call
     # above — resolve BEFORE ``session.query`` begins the
@@ -479,10 +478,9 @@ def create_task(
     # their webui + tg chats (the chat-sessions router
     # filters only by uid).
     #
-    # D.28: the per-channel delivery address is resolved
-    # via the channel dispatcher. Looking it up inside
+    # The per-channel delivery address is resolved from Contact. Looking it up inside
     # this ``open_session()`` would deadlock (the
-    # dispatcher's adapter opens its own SQLite session
+    # contact Book opens its own SQLite session
     # — nested BEGIN IMMEDIATE in the outer txn), so the
     # lookup happens OUTSIDE the with block (above) and
     # is passed in as ``task_session_delivery_address``.
@@ -545,14 +543,13 @@ def update_task(
     patch_target_channel = data.pop("target_channel", None)
     data.pop("delivery_to", None)
     # Always re-derive. The helper reads the row's current
-    # channel + the operator's current bound chat id (via
-    # the channel dispatcher, D.28); an unchanged channel
+    # channel + the operator's current bound chat id (from
+    # ContactBook); an unchanged channel
     # still wants the row to track any later TG-binding
-    # edit. Resolve BEFORE any nested dispatcher call —
+    # edit. Resolve before the nested ContactBook call —
     # the FastAPI ``Depends(get_session)`` transaction is
     # already open via ``session.get(Task, ...)`` above;
-    # calling ``dispatcher.lookup_im_id`` (inside
-    # ``_resolve_delivery_to``) inside that open txn would
+    # calling ``_resolve_delivery_to`` inside that open txn would
     # deadlock SQLite. The cache in :func:`_resolve_system_tz`
     # keeps the second-pass write below cheap too.
     new_target_channel = patch_target_channel or existing.target_channel
@@ -852,7 +849,7 @@ def _resolve_delivery_to(
     the WebUI form; the channel alone drives it:
 
       - ``channel='tg'``: must use the operator's bound
-        TG chat (resolved via the channel dispatcher,
+        TG chat (read from ``Contact.telegram_id``).
         D.28). Missing binding is a config mistake —
         surface as 400 so the drawer doesn't silently
         store a NULL the runner then can't dispatch.
@@ -864,8 +861,7 @@ def _resolve_delivery_to(
     Re-deriving on every PATCH keeps the row coherent with
     any later TG-binding edit the operator made.
 
-    Important: the ``channel='tg'`` branch calls
-    ``dispatcher.lookup_im_id``, which opens its own ORM
+    Important: the ``channel='tg'`` branch opens a ContactBook ORM
     session. Callers that hold an outer FastAPI
     ``Depends(get_session)`` transaction must invoke this
     helper BEFORE issuing any outer-session queries —
@@ -873,9 +869,8 @@ def _resolve_delivery_to(
     would deadlock SQLite.
     """
     if target_channel == Channel.TG:
-        from magi.channels import dispatcher as channel_dispatcher
-        chat_id = channel_dispatcher.lookup_im_id(uid, Channel.TG)
-        if not chat_id:
+        contact = bus.contacts.get(uid)
+        if contact is None or contact.telegram_id is None:
             raise MagiHTTPException(
                 status_code=400,
                 code="tasks.telegram_not_bound",
@@ -886,7 +881,7 @@ def _resolve_delivery_to(
                     f"(Settings → Contacts)."
                 ),
             )
-        return chat_id
+        return str(contact.telegram_id)
     # webui: honour an explicit caller-supplied value (the
     # LLM-in-chat path passes ``ctx.session_id``); else
     # default to "new" for fresh-session-per-fire.
