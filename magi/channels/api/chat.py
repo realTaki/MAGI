@@ -39,7 +39,11 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
-from magi.bus.library.local.sessionBook import SessionPathError
+from magi.bus.library.local.sessionBook import (
+    SessionPathError,
+    SessionMessage,
+    ChannelMismatchError,
+)
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.api.chat")
@@ -53,6 +57,28 @@ router = APIRouter(tags=["chat"])
 # the truncation so the operator can see it happened.
 _MAX_INPUT_CHARS = 8000
 _MAX_OUTPUT_CHARS = 4000
+
+
+def _utcnow_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_session_id() -> str:
+    """Generate a new session/message id as a Crockford-base32
+    ULID-like string (26 chars)."""
+    import uuid
+    raw = uuid.uuid4().bytes  # 16 bytes = 128 bits
+    # Encode as 26-char Crockford-like base32 string:
+    # 16 bytes → ~26 chars in base32 (ceil(128/5) = 26).
+    alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+    bits = int.from_bytes(raw, "big")
+    chars = []
+    for _ in range(26):
+        chars.append(alphabet[bits & 31])
+        bits >>= 5
+    return "".join(reversed(chars))
 
 
 def _resolve_caller_credentials(bus: Bus, uid: int) -> tuple[int, str]:

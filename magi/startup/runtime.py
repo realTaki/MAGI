@@ -31,6 +31,7 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 
@@ -43,6 +44,10 @@ from magi.startup.config import (
 )
 from magi.startup.paths import resolve_private_database_url
 from magi.startup.spec import load_runtime_spec
+
+if TYPE_CHECKING:
+    from magi.bus.bootstrap import Bus
+    from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.startup.runtime")
 
@@ -197,6 +202,9 @@ def _build_channels(
     Reads the explicitly injected Bus only.
     """
     import json
+
+    if bus is None:
+        return []
 
     try:
         raw = bus.settings_book.get(key="channels.enabled")

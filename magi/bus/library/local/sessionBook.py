@@ -134,6 +134,40 @@ class SessionNotFoundError(LookupError):
     """
 
 
+class ChannelMismatchError(ValueError):
+    """The session was created on a different channel than
+    the one the caller is writing from (D.22 cross-channel
+    guard). Carries ``session_channel`` so the caller can
+    surface which channel owns the session.
+
+    Example: a WebUI ``POST /chat/send`` targeting a
+    session originally created on TG → 403 with a hint
+    to continue the conversation on the original channel.
+    """
+
+    def __init__(self, session_channel: str) -> None:
+        super().__init__(
+            f"Session owned by channel {session_channel!r}; "
+            "cross-channel writes are not allowed."
+        )
+        self.session_channel = session_channel
+
+
+@dataclass(frozen=True, slots=True)
+class SessionMessage:
+    """Input shape for :meth:`SessionBook.append_messages`.
+
+    Carries the bare minimum needed to persist one inbound
+    message row — role, text, timestamp, and a stable
+    message_id for producer-side idempotency.
+    """
+
+    role: str
+    text: str
+    ts: str
+    message_id: str
+
+
 @dataclass(frozen=True, slots=True)
 class SessionSummary:
     """Lightweight projection of :class:`Session` for the
@@ -342,6 +376,55 @@ class SessionBook(BaseBook[_SessionRow, Session]):
             session_id=sid, delivery_address=delivery_address,
             uid=uid, channel=channel,
         )
+
+    def append_messages(
+        self,
+        uid: int,
+        session_id: str,
+        messages: list[SessionMessage],
+        *,
+        channel: str,
+    ) -> list[Message]:
+        """Atomically append one or more messages to a session.
+
+        D.22 cross-channel guard: if the session row's ``channel``
+        column doesn't match *channel*, raises
+        :class:`ChannelMismatchError`. The caller should surface a
+        403 — two LLM loops from different channels MUST NOT write
+        into the same history.
+
+        Each :class:`SessionMessage` is written to ``chat_messages``
+        via :class:`MessageBook` in a single transaction so the
+        append group is all-or-nothing. Returns the list of
+        persisted :class:`Message` rows in insertion order.
+        """
+        from datetime import datetime, timezone
+
+        # D.22: verify session ownership and channel match.
+        session = self.get_for_owner(uid=uid, session_id=session_id)
+        if session is None:
+            raise SessionNotFoundError(
+                f"Session {session_id} not found for uid {uid}"
+            )
+        if session.channel != channel:
+            raise ChannelMismatchError(session.channel)
+
+        now = datetime.now(timezone.utc).isoformat()
+        self.touch(session_id=session_id, updated_at=now)
+
+        from magi.bus.library.local.sessionBook import MessageBook
+        message_book = MessageBook(self._factory)
+        persisted: list[Message] = []
+        for sm in messages:
+            msg = message_book.add(
+                session_id=session_id,
+                role=sm.role,
+                text=sm.text,
+                message_id=sm.message_id,
+                ts=sm.ts,
+            )
+            persisted.append(msg)
+        return persisted
 
     def touch(self, *, session_id: str, updated_at: str) -> None:
         with self._session() as s:
@@ -714,11 +797,16 @@ def install_session_fts_schema(engine) -> None:
 __all__ = [
     "Session",
     "Message",
+    "SessionMessage",
     "SearchHit",
     "SearchUnavailable",
     "ResolvedHit",
     "SessionBook",
     "MessageBook",
+    "ChannelMismatchError",
+    "SessionPathError",
+    "SessionCorruptError",
+    "SessionNotFoundError",
     "install_session_fts_schema",
     "_SessionRow",
     "_MessageRow",
