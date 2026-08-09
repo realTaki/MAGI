@@ -1,6 +1,6 @@
-"""Composition-root bootstrap for bus.
+"""Composition-root opening for BUS.
 
-Provides :func:`bootstrap_bus` — a pure function that wires local
+Provides :func:`open_bus` — a pure function that opens local
 SQLite, MAGIS database, and file-storage access into a single
 :class:`Bus` facade.  All paths are passed explicitly; no
 environment variable reads, no auto-discovery.  The composition root
@@ -11,7 +11,7 @@ constructor injection.
 No process-level singleton — every component receives its ``Bus``
 explicitly via constructor injection.
 
-All Job/Book imports are **lazy** (inside ``_bootstrap_with_dirs``) so
+All Job/Book imports are **lazy** (inside ``_open_with_dirs``) so
 that merely importing this module does not register ORM tables.
 """
 
@@ -72,7 +72,7 @@ class Bus:
     """Public, domain-partitioned bus facade.
 
     Holds both local SQLite and MAGIS database access internally.
-    Constructed by :func:`bootstrap_bus` in the composition root;
+    Constructed by :func:`open_bus` in the composition root;
     workers receive a ready-to-use ``Bus`` via constructor injection.
 
     Naming conventions
@@ -82,7 +82,7 @@ class Bus:
 
     Usage::
 
-        bus = bootstrap_bus(state_dir="...", magis_url="...")
+        bus = open_bus(state_dir="...", magis_url="...")
         job = bus.tool_job_board.claim()
         adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
 
@@ -195,17 +195,17 @@ class Bus:
 
 
 # ---------------------------------------------------------------------------
-# public bootstrap entry point
+# public open entry point
 # ---------------------------------------------------------------------------
 
 
-def bootstrap_bus(
+def open_bus(
     *,
     state_dir: str,
     magis_url: str | None = None,
     prompts_dir: str | None = None,
 ) -> Bus:
-    """Explicitly bootstrap a ``Bus`` with resolved paths.
+    """Open a provisioned ``Bus`` with resolved paths.
 
     Called by the composition root (e.g. :mod:`magi.startup.runtime`)
     after identity + database paths have been resolved.  Does NOT
@@ -215,21 +215,28 @@ def bootstrap_bus(
     If *prompts_dir* is ``None``, the bundled ``magi/prompts/``
     directory is auto-detected from the package location.
 
+    Storage provisioning is intentionally a separate operation in
+    :mod:`magi.bus.provision`.  This function never creates directories,
+    tables, default settings, or workspace files.  It raises
+    :class:`magi.bus.provision.StorageNotProvisioned` when either requested
+    database has not been provisioned.
+
     Returns a ready-to-use ``Bus``.  The caller is responsible for
     passing it to workers via constructor injection.  There is no
     process-level singleton — every component receives its ``Bus``
     explicitly.
     """
-    return _bootstrap_with_dirs(
+    return _open_with_dirs(
         state_dir=state_dir, magis_url=magis_url, prompts_dir=prompts_dir,
     )
 
 
-def _bootstrap_with_dirs(
+def _open_with_dirs(
     *,
     state_dir: str,
     magis_url: str | None = None,
     prompts_dir: str | None = None,
+    allow_unprovisioned: bool = False,
 ) -> Bus:
     """Wire the bus with explicit paths (for tests).
 
@@ -287,27 +294,16 @@ def _bootstrap_with_dirs(
     # resolution.  No env reads — ``magis_url=None`` simply means
     # "no MAGIS database configured" (test / single-MAGIS scenarios).
     magis_factory = build_magis_factory(magis_url) if magis_url else None
-    if magis_factory is not None:
-        # MAGIS Books own their schema as well as local Books.  A Bus-only
-        # runtime must not depend on another bootstrap to create it.
-        # The Book modules were imported above, so all MAGIS ORM tables are
-        # registered before this idempotent create-all call.
-        magis_factory.create_all()
+    if not allow_unprovisioned:
+        from magi.bus.provision import require_provisioned
+
+        require_provisioned(local_factory, scope="node")
+        if magis_factory is not None:
+            require_provisioned(magis_factory, scope="magis")
 
     # ---- local books -------------------------------------------------------
     sessions_book = SessionBook(local_factory)
     messages_book = MessageBook(local_factory)
-    # Idempotent: creates every bus ORM table on the local SQLite
-    # file (``chat_sessions`` / ``chat_messages`` / etc.).
-    # In a fresh deployment this lays down the tables so the
-    # FTS triggers below have something to attach to; on an
-    # existing database ``create_all`` is a no-op.
-    local_factory.create_all()
-    # Install the FTS5 virtual table + sync triggers (idempotent —
-    # every statement uses ``IF NOT EXISTS``). Calling here means
-    # tests that build a fresh SQLite file via
-    # ``EngineFactory.create_all`` get a working search index too.
-    messages_book.ensure_fts()
     memory_book = MemoryBook(local_factory)
     contacts_book = ContactBook(local_factory)
     contact_notes_book = ContactNoteBook(local_factory)
@@ -321,12 +317,6 @@ def _bootstrap_with_dirs(
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
 
-    # ---- signing key (idempotent — only generated on first boot) ------------
-    import secrets
-    if not settings_book.get(key="auth.signing_key"):
-        settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
-        logger.info("generated new auth.signing_key")
-
     # ---- prompt book (file-backed, not ORM) --------------------------------
     _workspace_dir = Path(state_dir).parent
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
@@ -334,8 +324,6 @@ def _bootstrap_with_dirs(
         prompt_shelf = FileShelf(_prompts_dir, create_root=False)
         prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
 
-        # Seed SOUL.md into the workspace if missing.
-        _ensure_workspace_soul(_workspace_dir, _prompts_dir)
     else:
         prompt_book = None
 

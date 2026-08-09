@@ -192,6 +192,16 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
             )
             return self._row_to_dto(row) if row else None
 
+    def list_active(self) -> list[PortAllocation]:
+        """Return sticky local runtime-port allocations that have not released."""
+        with self._session() as s:
+            rows = s.scalars(
+                select(_ControlPortAllocationRow)
+                .where(_ControlPortAllocationRow.released_at.is_(None))
+                .order_by(_ControlPortAllocationRow.port)
+            ).all()
+            return [self._row_to_dto(row) for row in rows]
+
     def allocate(self, *, runtime_id: int, port: int) -> PortAllocation:
         now = utcnow_naive()
         with self._session() as s:

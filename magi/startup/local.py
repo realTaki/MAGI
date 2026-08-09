@@ -26,25 +26,17 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-from magi.startup.config import (
-    ConfigurationError,
-    RUNTIME_PORT,
-    StartupConfig,
-)
+from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
 from magi.startup.process import is_alive, read_pid
+from magi.startup.spec import load_runtime_spec
 
 logger = logging.getLogger("magi.startup.local")
 
 
-# Plan §21 — the Runtime's internal port is hardcoded; this helper
-# supervises one Runtime subprocess and probes its health on the same
-# loopback port the Runtime binds to.  No operator knob.  Must match
-# :data:`magi.startup.config.RUNTIME_PORT`.
-HEALTH_PROBE_PORT = RUNTIME_PORT
 HEALTH_POLL_TIMEOUT_S = 30.0
 HEALTH_POLL_INTERVAL_S = 0.5
 STOP_GRACE_S = 10.0
@@ -143,6 +135,7 @@ def start_magi(
     workspace.  Per plan §21 the Runtime's port is hardcoded; the
     parent probes the child on the same loopback port.
     """
+    spec = load_runtime_spec(config.workspace_dir)
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
     if pid_path.exists():
         existing = read_pid(pid_path)
@@ -153,13 +146,12 @@ def start_magi(
             )
             return 1
 
-    config.workspace_dir.mkdir(parents=True, exist_ok=True)
     env = _build_subprocess_env(config)
     argv = _build_subprocess_argv(config)
 
     log_stdout, log_stderr = resolve_runtime_log_paths(config.workspace_dir)
-    log_stdout.parent.mkdir(parents=True, exist_ok=True)
-    log_stderr.parent.mkdir(parents=True, exist_ok=True)
+    if not log_stdout.parent.is_dir() or not log_stderr.parent.is_dir():
+        raise ConfigurationError("node logs are not provisioned; run `magi init` or `magi node create`")
 
     stdout_fh = open(log_stdout, "ab")
     stderr_fh = open(log_stderr, "ab")
@@ -188,16 +180,15 @@ def start_magi(
         },
     )
     proc = subprocess.Popen(argv, **popen_kwargs)
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(proc.pid), encoding="utf-8")
 
-    if not _wait_healthy():
+    if not _wait_healthy(spec.runtime_port):
         try:
             os.kill(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         print(
-            f"MAGI {config.magi_name!r} failed health check on port {HEALTH_PROBE_PORT}",
+            f"MAGI {config.magi_name!r} failed health check on port {spec.runtime_port}",
             file=sys.stderr,
         )
         return 1
@@ -293,7 +284,7 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 
 
 def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
-    """Build the env passed to the detached ``magi run`` subprocess.
+    """Build the env passed to the detached ``magi node run`` subprocess.
 
     Plan §21 — only the four startup-contract inputs are propagated;
     no ``MAGI_PORT`` / ``MAGI_RELOAD`` knobs leak into the child.
@@ -309,20 +300,14 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
 
 
 def _build_subprocess_argv(config: StartupConfig) -> list[str]:
-    """Build the ``magi run`` argv for one detached MAGI subprocess.
-
-    Plan §16 — the child is always ``magi run`` with explicit identity
-    args so it works even when env inheritance is disrupted.
-    """
-    argv = [sys.executable, "-m", "magi", "cli", "run", "--name", config.magi_name]
-    if config.magis_database_url:
-        argv.extend(["--magis", config.magis_database_url])
-    if config.magi_id:
-        argv.extend(["--magi-id", str(config.magi_id)])
-    return argv
+    """Build the foreground child command for one provisioned MAGI."""
+    return [
+        sys.executable, "-m", "magi", "node", "run", "--foreground",
+        "--name", config.magi_name,
+    ]
 
 
-def _wait_healthy() -> bool:
+def _wait_healthy(port: int) -> bool:
     """Poll the child Runtime's ``/health`` endpoint on the loopback port.
 
     Plan \u00a721 \u2014 the Runtime's port is fixed, so the parent probes the
@@ -331,7 +316,7 @@ def _wait_healthy() -> bool:
     import httpx
 
     deadline = time.monotonic() + HEALTH_POLL_TIMEOUT_S
-    url = f"http://127.0.0.1:{HEALTH_PROBE_PORT}/health"
+    url = f"http://127.0.0.1:{port}/health"
     while time.monotonic() < deadline:
         try:
             resp = httpx.get(url, timeout=1.0)
@@ -344,7 +329,6 @@ def _wait_healthy() -> bool:
 
 
 __all__ = [
-    "HEALTH_PROBE_PORT",
     "LocalSlotStatus",
     "create_magi",
     "start_magi",

@@ -217,6 +217,7 @@ class StartupContext:
     magis_database_url: str
     private_database_url: str
     is_first_magi: bool
+    runtime_port: int
 
     @property
     def magi_slug(self) -> str:

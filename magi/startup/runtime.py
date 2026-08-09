@@ -35,7 +35,6 @@ from pathlib import Path
 
 import uvicorn
 
-from magi.startup.bootstrap import bootstrap_magi
 from magi.startup.config import (
     DEFAULT_LOG_LEVEL,
     RUNTIME_HOST,
@@ -43,6 +42,8 @@ from magi.startup.config import (
     StartupConfig,
     StartupContext,
 )
+from magi.startup.paths import resolve_private_database_url
+from magi.startup.spec import load_runtime_spec
 
 logger = logging.getLogger("magi.startup.runtime")
 
@@ -68,7 +69,21 @@ async def run_magi(config: StartupConfig) -> None:
     Blocking — uvicorn.serve() blocks the event loop. The function does
     not return until uvicorn is asked to shut down.
     """
-    startup = bootstrap_magi(config)
+    spec = load_runtime_spec(config.workspace_dir)
+    if spec.magi_name != config.magi_name:
+        raise RuntimeError(
+            f"runtime spec belongs to {spec.magi_name!r}, not {config.magi_name!r}"
+        )
+    startup = StartupContext(
+        host_workspace_dir=config.host_workspace_dir,
+        workspace_dir=config.workspace_dir,
+        magi_name=spec.magi_name,
+        magi_id=spec.magi_id,
+        magis_database_url=spec.magis_database_url,
+        private_database_url=resolve_private_database_url(config.workspace_dir),
+        is_first_magi=spec.is_first_magi,
+        runtime_port=spec.runtime_port,
+    )
 
     bus = _build_bus(startup)
     channels = _build_channels(startup, bus)
@@ -92,10 +107,10 @@ def _build_bus(startup: StartupContext) -> "Bus":
     explicitly.  The runtime never bootstraps the retired ``magi.bus``
     facade or shares its process-global state.
     """
-    from magi.bus.bootstrap import Bus, bootstrap_bus
+    from magi.bus.bootstrap import Bus, open_bus
 
     state_dir = str(startup.workspace_dir / "memories")
-    return bootstrap_bus(
+    return open_bus(
         state_dir=state_dir,
         magis_url=startup.magis_database_url,
     )
@@ -132,27 +147,6 @@ async def _runtime_lifespan(
         yield registry
     finally:
         await registry.stop()
-
-
-@asynccontextmanager
-async def worker_lifespan():
-    """Standalone durable worker pool — usable from the WebUI ASGI app.
-
-    Plan §20.1 — this replaces :func:`magi.launcher.worker_lifespan`.
-    The :func:`channels.api.app` FastAPI lifespan pulls in the same set
-    of workers without dragging the Runtime's uvicorn into the picture.
-
-    Builds its own :class:`Bus` from the active workspace so the
-    provider worker (now on bus) has a bus to claim from.
-    """
-    from magi.bus.bootstrap import bootstrap_bus
-    from magi.startup.paths import resolve_workspace_dir
-
-    state_dir = str(resolve_workspace_dir() / "memories")
-    bus = bootstrap_bus(state_dir=state_dir)
-
-    async with _runtime_lifespan(["webui"], bus) as registry:
-        yield registry
 
 
 # ----------------------------------------------------------------------
@@ -201,7 +195,7 @@ async def _serve_runtime_api(
     deployment role, not by an operator-controlled env var.
     """
     host = _RUNTIME_HOST  # internal host only; not externally exposed
-    port = _RUNTIME_PORT
+    port = _startup.runtime_port
     reload = _reload_enabled()
     log_level = _log_level(bus)
     reload_dirs = _reload_dirs() if reload else None
@@ -253,5 +247,4 @@ def _reload_dirs() -> list[str]:
 
 __all__ = [
     "run_magi",
-    "worker_lifespan",
 ]

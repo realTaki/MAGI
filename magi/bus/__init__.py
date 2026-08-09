@@ -2,15 +2,15 @@
 
 提供 ORM 基类、EngineFactory、Books（读侧 CRUD）、
 Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重载），
-以及通过 :func:`bootstrap_bus` 构造的统一门面 ``Bus``。
+以及通过 :func:`open_bus` 构造的统一门面 ``Bus``。
 
 ``Bus`` 由组合根（:mod:`magi.startup.runtime`）显式构造，通过
 **构造器注入**传入各 Worker。没有进程级单例——调用方依赖显式传入的
 ``Bus`` 实例，不通过全局变量取回::
 
-    from magi.bus import bootstrap_bus
+    from magi.bus import open_bus
 
-    bus = bootstrap_bus(state_dir="/path/to/memories", magis_url="...")
+    bus = open_bus(state_dir="/path/to/memories", magis_url="...")
     worker = AgentWorker(bus=bus)    # 构造器注入
     job = bus.tool_job_board.claim()
     adam = bus.memberships_book.get(magic_id=1)  # ADAM = membership id=1
@@ -27,9 +27,9 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
 from __future__ import annotations
 
-from magi.bus.bootstrap import Bus, bootstrap_bus
+from magi.bus.bootstrap import Bus, open_bus
 
 __all__ = [
     "Bus",
-    "bootstrap_bus",
+    "open_bus",
 ]

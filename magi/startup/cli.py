@@ -1,191 +1,17 @@
-"""Unified MAGI CLI — plan §18.
-
-Single entry point for the operator-facing verbs:
-
-- ``magi run``        — bootstrap + serve one MAGI in-process
-- ``magi create``     — register a new MAGI under an existing MAGIS
-- ``magi start``      — spawn detached subprocess for one MAGI
-- ``magi stop``       — SIGTERM the subprocess
-- ``magi restart``    — stop + start
-- ``magi status``     — list local slots + their liveness
-
-All verbs route through :mod:`magi.startup.config` /
-:mod:`magi.startup.bootstrap` / :mod:`magi.startup.local`. There is no
-Runtime / CLI / Kubernetes split — a single package owns startup.
-"""
+"""The explicit MAGI provisioning and lifecycle command line interface."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import json
-import sys
-from typing import Optional, Sequence
+from typing import Sequence
 
 from magi.startup import local, webui
-from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig, StartupContext
-
-logger = __import__("logging").getLogger("magi.startup.cli")
-
-
-# ----------------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------------
+from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.provision import create_node, init_first_magi
 
 
-def _print_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for i, cell in enumerate(row):
-            widths[i] = max(widths[i], len(cell))
-    fmt = "  ".join("{:<%d}" % w for w in widths)
-    print(fmt.format(*headers))
-    print(fmt.format(*("-" * w for w in widths)))
-    for row in rows:
-        print(fmt.format(*row))
-
-
-# ----------------------------------------------------------------------
-# Command handlers
-# ----------------------------------------------------------------------
-
-
-def cmd_run(args: argparse.Namespace) -> int:
-    """``magi run`` — bootstrap and serve this MAGI's Runtime.
-
-    Per plan §3.1 + §16, when ``magi run`` *is the first MAGI*
-    (bootstrap, no ``MAGIS_DATABASE_URL``) the singleton WebUI is
-    brought up alongside the Runtime.  Subsequent MAGI invocations
-    (``MAGIS_DATABASE_URL`` already set) only serve their Runtime —
-    they never start a second WebUI.
-    """
-    config = _config_from_args(args)
-    config.validate()
-
-    # First-MAGI bootstrap: the singleton WebUI lives at the host level
-    # (independent of this Runtime's PID).  Spawn it before blocking on
-    # uvicorn so the operator-facing URL is reachable when the Runtime
-    # comes up.
-    if config.is_first_magi:
-        webui_url = webui.ensure_webui_running(config=config)
-        if webui_url:
-            logger.info("singleton WebUI ready at %s", webui_url)
-
-    from magi.startup.runtime import run_magi
-
-    asyncio.run(run_magi(config))
-    return 0
-
-
-def cmd_create(args: argparse.Namespace) -> int:
-    """``magi create`` — register a new MAGI under an existing MAGIS."""
-    config = _config_from_args(args)
-    if config.magis_database_url is None:
-        print(
-            "error: `magi create` requires an existing MAGIS — "
-            "set MAGIS_DATABASE_URL or run `magi run` first",
-            file=sys.stderr,
-        )
-        return 2
-    return local.create_magi(
-        config=config,
-        start=not args.no_start,
-    )
-
-
-def cmd_start(args: argparse.Namespace) -> int:
-    """``magi start`` — spawn a detached subprocess for one MAGI."""
-    config = _config_from_args(args)
-    rc = local.start_magi(config=config)
-    if rc == 0 and config.is_first_magi:
-        # First MAGI only — start (or recover) the singleton WebUI.
-        webui.ensure_webui_running(config=config)
-    return rc
-
-
-def cmd_stop(args: argparse.Namespace) -> int:
-    """``magi stop`` — SIGTERM one MAGI's subprocess + (if first) WebUI."""
-    config = _config_from_args(args)
-    rc = local.stop_magi(config=config, force=args.force)
-    if config.is_first_magi:
-        webui.stop_webui(config=config, force=args.force)
-    return rc
-
-
-def cmd_restart(args: argparse.Namespace) -> int:
-    """``magi restart`` — stop + start."""
-    config = _config_from_args(args)
-    return local.restart_magi(config=config)
-
-
-def cmd_status(args: argparse.Namespace) -> int:
-    """``magi status`` — list local slots + their liveness."""
-    config = _config_from_args(args)
-    rows = []
-    for slot in local.list_slots(config.host_workspace_dir):
-        sub_config = StartupConfig(
-            host_workspace_dir=config.host_workspace_dir,
-            magi_name=slot,
-            magis_database_url=config.magis_database_url,
-            magi_id=config.magi_id,
-        )
-        st = local.status_magi(config=sub_config)
-        rows.append(
-            [
-                slot,
-                str(st.pid) if st.pid else "-",
-                "alive" if st.alive else "dead",
-                st.pid_file,
-            ]
-        )
-    if not rows:
-        print("(no MAGI slots — run `magi run` first)")
-        return 0
-    _print_table(["name", "pid", "state", "pid_file"], rows)
-    return 0
-
-
-def cmd_webui(args: argparse.Namespace) -> int:
-    """``magi webui`` — boot the singleton WebUI in-process (used by ``magi start``)."""
-    # Same entry point as the legacy `magi webui` — uvicorn.run with the
-    # control app. The detached subprocess wrapper is in :func:`webui.start_webui`.
-    from magi.__main__ import run_webui as legacy_run_webui
-
-    legacy_run_webui()
-    return 0
-
-
-# ----------------------------------------------------------------------
-# Parser
-# ----------------------------------------------------------------------
-
-
-def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--host-workspace-dir",
-        default=None,
-        help="operator host workspace (default: ~/.magi)",
-    )
-    parser.add_argument(
-        "--name",
-        default=None,
-        help=f"MAGI name (default: {DEFAULT_MAGI_NAME})",
-    )
-    parser.add_argument(
-        "--magis",
-        default=None,
-        dest="magis_database_url",
-        help="MAGIS database URL (omit ⇒ bootstrap first MAGIS)",
-    )
-    parser.add_argument(
-        "--magi-id",
-        default=None,
-        dest="magi_id",
-        help="MAGI identity when joining an existing MAGIS",
-    )
-
-
-def _config_from_args(args: argparse.Namespace) -> StartupConfig:
+def _config(args: argparse.Namespace) -> StartupConfig:
     return StartupConfig.from_cli(
         host_workspace_dir=getattr(args, "host_workspace_dir", None),
         magi_name=getattr(args, "name", None),
@@ -194,58 +20,112 @@ def _config_from_args(args: argparse.Namespace) -> StartupConfig:
     )
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    spec = init_first_magi(_config(args))
+    print(f"initialized {spec.magi_name} (MAGI_ID={spec.magi_id}, port={spec.runtime_port})")
+    return 0
+
+
+def cmd_node_create(args: argparse.Namespace) -> int:
+    spec = create_node(_config(args))
+    print(f"created {spec.magi_name} (MAGI_ID={spec.magi_id}, port={spec.runtime_port})")
+    return 0
+
+
+def cmd_node_run(args: argparse.Namespace) -> int:
+    config = _config(args)
+    if not args.foreground:
+        return local.start_magi(config=config)
+    from magi.startup.runtime import run_magi
+
+    asyncio.run(run_magi(config))
+    return 0
+
+
+def cmd_node_stop(args: argparse.Namespace) -> int:
+    return local.stop_magi(config=_config(args), force=args.force)
+
+
+def cmd_node_restart(args: argparse.Namespace) -> int:
+    return local.restart_magi(config=_config(args))
+
+
+def cmd_node_status(args: argparse.Namespace) -> int:
+    status = local.status_magi(config=_config(args))
+    print(f"{status.magi_name}\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}")
+    return 0
+
+
+def cmd_webui_run(args: argparse.Namespace) -> int:
+    config = _config(args)
+    if args.foreground:
+        webui.run_webui_foreground(config=config)
+        return 0
+    url = webui.start_webui(config=config)
+    print(url)
+    return 0
+
+
+def cmd_webui_stop(args: argparse.Namespace) -> int:
+    return webui.stop_webui(config=_config(args), force=args.force)
+
+
+def cmd_webui_status(args: argparse.Namespace) -> int:
+    status = webui.get_webui_status(config=_config(args))
+    print(f"webui\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}")
+    return 0
+
+
+def _common(
+    parser: argparse.ArgumentParser,
+    *,
+    name_default: str | None = DEFAULT_MAGI_NAME,
+    name_required: bool = False,
+) -> None:
+    parser.add_argument("--host-workspace-dir")
+    parser.add_argument("--name", default=name_default, required=name_required)
+    parser.add_argument("--magis", dest="magis_database_url")
+    parser.add_argument("--magi-id")
+
+
+def _lifecycle_parser(parent: argparse._SubParsersAction, name: str, handler, *, foreground: bool = False, force: bool = False) -> None:
+    parser = parent.add_parser(name)
+    _common(parser)
+    if foreground:
+        parser.add_argument("--foreground", action="store_true", help="run in this process")
+    if force:
+        parser.add_argument("--force", action="store_true")
+    parser.set_defaults(handler=handler)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="magi",
-        description="MAGI unified CLI — every startup verb lives here.",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(prog="magi", description="MAGI provisioning and runtime lifecycle")
+    root = parser.add_subparsers(dest="command", required=True)
+    init = root.add_parser("init", help="provision Genesis and eva-000")
+    _common(init)
+    init.set_defaults(handler=cmd_init)
 
-    # run
-    p = sub.add_parser("run", help="bootstrap + serve one MAGI in-process")
-    _add_common_args(p)
-    p.set_defaults(handler=cmd_run)
+    node = root.add_parser("node", help="manage provisioned MAGI nodes")
+    node_sub = node.add_subparsers(dest="node_command", required=True)
+    create = node_sub.add_parser("create", help="register and provision an EVA")
+    _common(create, name_default=None, name_required=True)
+    create.set_defaults(handler=cmd_node_create)
+    _lifecycle_parser(node_sub, "run", cmd_node_run, foreground=True)
+    _lifecycle_parser(node_sub, "stop", cmd_node_stop, force=True)
+    _lifecycle_parser(node_sub, "restart", cmd_node_restart)
+    _lifecycle_parser(node_sub, "status", cmd_node_status)
 
-    # create
-    p = sub.add_parser("create", help="register a new MAGI under an existing MAGIS")
-    _add_common_args(p)
-    p.add_argument("--start", action="store_true", help="spawn subprocess after create")
-    p.add_argument("--no-start", action="store_true", help="skip subprocess spawn")
-    p.set_defaults(handler=cmd_create)
-
-    # start — port is hardcoded (plan §21); no operator knob.
-    p = sub.add_parser("start", help="spawn a detached MAGI subprocess")
-    _add_common_args(p)
-    p.set_defaults(handler=cmd_start)
-
-    # stop
-    p = sub.add_parser("stop", help="stop one MAGI subprocess (SIGTERM)")
-    _add_common_args(p)
-    p.add_argument("--force", action="store_true", help="SIGKILL immediately")
-    p.set_defaults(handler=cmd_stop)
-
-    # restart
-    p = sub.add_parser("restart", help="stop + start one MAGI subprocess")
-    _add_common_args(p)
-    p.set_defaults(handler=cmd_restart)
-
-    # status
-    p = sub.add_parser("status", help="list local MAGI slots")
-    _add_common_args(p)
-    p.set_defaults(handler=cmd_status)
-
-    # webui
-    p = sub.add_parser("webui", help="boot the singleton WebUI in-process")
-    _add_common_args(p)
-    p.set_defaults(handler=cmd_webui)
-
+    control = root.add_parser("webui", help="manage the singleton control service")
+    control_sub = control.add_subparsers(dest="webui_command", required=True)
+    _lifecycle_parser(control_sub, "run", cmd_webui_run, foreground=True)
+    _lifecycle_parser(control_sub, "stop", cmd_webui_stop, force=True)
+    _lifecycle_parser(control_sub, "status", cmd_webui_status)
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    return args.handler(args)
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return int(args.handler(args))
 
 
-__all__ = ["main", "build_parser", "StartupConfig", "StartupContext"]
+__all__ = ["build_parser", "main"]

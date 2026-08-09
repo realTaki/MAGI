@@ -126,9 +126,9 @@ def resolve_magis_database_path(host_workspace_dir: Path) -> Path:
 def resolve_private_database_path(workspace_dir: Path) -> Path:
     """Return the private SQLite path for one MAGI.
 
-    ``<workspace>/magi.db``
+    ``<workspace>/memories/magi.db``
     """
-    return workspace_dir / "magi.db"
+    return workspace_dir / "memories" / "magi.db"
 
 
 def resolve_private_database_url(workspace_dir: Path) -> str:
