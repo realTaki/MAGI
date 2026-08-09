@@ -314,7 +314,7 @@ def _build_subprocess_argv(config: StartupConfig) -> list[str]:
     Plan §16 — the child is always ``magi run`` with explicit identity
     args so it works even when env inheritance is disrupted.
     """
-    argv = [sys.executable, "-m", "magi", "run", "--name", config.magi_name]
+    argv = [sys.executable, "-m", "magi", "cli", "run", "--name", config.magi_name]
     if config.magis_database_url:
         argv.extend(["--magis", config.magis_database_url])
     if config.magi_id:
