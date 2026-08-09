@@ -37,6 +37,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
+from magi.bus.library.local.contactBook import ROLE_ASSIGNED
 from magi.bus import Bus
 from magi.channels.api.dependencies import BusDep, WorkersDep
 from magi.channels.telegram import bot as tg_bot
@@ -564,7 +565,10 @@ async def verify_admin(payload: VerifyAdminRequest, bus: BusDep) -> VerifyAdminR
     test message. The new code-based flow uses ``/send-admin-code``
     and ``/verify-admin-code`` instead.
     """
-    return await _send_admin_code_inner(bus, SendAdminCodeRequest(tgid=payload.tgid))
+    sent = await _send_admin_code_inner(bus, SendAdminCodeRequest(tgid=payload.tgid))
+    # The legacy shape has no ``expires_in``; carry over only the fields
+    # this endpoint's contract declares.
+    return VerifyAdminResponse(ok=sent.ok, error=sent.error)
 
 
 @router.post("/send-admin-code", response_model=SendAdminCodeResponse)
@@ -866,6 +870,14 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
     """
 
     if control_store.enabled():
+        # Control-plane mirror of the single-MAGI path below. ``magis_admins.uid``
+        # is a ``ForeignKey("contacts.id")`` — the schema rejects raw telegram
+        # chat ids. We therefore upsert a local :class:`Contact` per telegram
+        # id (same shape the non-control path produces via
+        # :meth:`ContactBook.replace_admin_set`) and link it into
+        # ``magis_admins`` with the Contact's PK. Existing admin rows whose
+        # bound chat is no longer in the set are demoted on both sides so
+        # the "replace the admin set" semantics carry over.
         try:
             telegram_ids = sorted({int(value.strip()) for value in payload.tgids if value.strip()})
         except ValueError:
@@ -873,11 +885,33 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
         if not telegram_ids:
             return SaveAdminResponse(ok=False, error="At least one tgid required")
         root = bus.magis_book.get_root() if bus.magis_book else None
-        if root is None or bus.magis_admins_book is None:
+        if root is None or bus.magis_admins_book is None or bus.contacts_book is None:
             return SaveAdminResponse(ok=False, error="Genesis MAGIS is not initialized")
+
+        # 1. Demote existing admins whose bound chat is no longer in the set.
+        for existing in bus.magis_admins_book.list_for_magis(magis_id=root.id):
+            if existing.uid in telegram_ids:
+                continue
+            bus.magis_admins_book.remove(uid=existing.uid, magis_id=root.id)
+            contact = bus.contacts_book.get(contact_id=existing.uid)
+            if contact is not None and contact.telegram_id not in telegram_ids:
+                bus.contacts_book.update(contact_id=existing.uid, admin=False)
+
+        # 2. Upsert a Contact per telegram id and link it into magis_admins.
         for tg_id in telegram_ids:
-            if not any(row.uid == tg_id for row in bus.magis_admins_book.list_for_magis(magis_id=root.id)):
-                bus.magis_admins_book.add(uid=tg_id, magis_id=root.id)
+            contact = bus.contacts_book.get_by_telegram(telegram_id=tg_id)
+            if contact is None:
+                contact = bus.contacts_book.add(
+                    name=f"tg-{tg_id}",
+                    display_name=f"tg-{tg_id}",
+                    telegram_id=tg_id,
+                    role=ROLE_ASSIGNED,
+                    admin=True,
+                )
+            elif not contact.admin:
+                bus.contacts_book.update(contact_id=contact.id, admin=True)
+            if not bus.magis_admins_book.is_admin_for(uid=contact.id):
+                bus.magis_admins_book.add(uid=contact.id, magis_id=root.id)
         return SaveAdminResponse(ok=True, count=len(telegram_ids))
 
     cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})

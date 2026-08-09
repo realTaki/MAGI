@@ -67,13 +67,15 @@ async def proxy_runtime(
     runtime_path = f"/api/{path}"
     if request.url.query:
         runtime_path = f"{runtime_path}?{request.url.query}"
+    raw_display_name = browser_session.get("display_name")
+    named_display_name = raw_display_name if isinstance(raw_display_name, str) else None
     try:
         signed_headers = build_proxy_headers(
             method=request.method,
             path_and_query=runtime_path,
             target_id=magic_id,
             operator_id=int(browser_session["telegram_id"]),
-            operator_name=(browser_session.get("display_name") if isinstance(browser_session.get("display_name"), str) else None) or f"User {browser_session['telegram_id']}",
+            operator_name=named_display_name or f"User {browser_session['telegram_id']}",
             telegram_id=int(browser_session["telegram_id"]),
             admin=bool(browser_session.get("admin")),
             assigned=bool(browser_session.get("assigned")),

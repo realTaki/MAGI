@@ -73,7 +73,10 @@ async def call_llm_for_summary(
     bus: "Bus",
 ) -> str | None:
     """One LLM call to compress *to_compress* into a summary."""
-    system = bus.prompt_book.compaction_prompt()
+    prompt_book = bus.prompt_book
+    if prompt_book is None:
+        return None
+    system = prompt_book.compaction_prompt()
     user_lines: list[str] = []
     for m in to_compress:
         who = m["role"].upper()
@@ -85,10 +88,10 @@ async def call_llm_for_summary(
     from magi.bus.guild.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
-        messages=(
+        messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
-        ),
+        ],
         max_tokens=1024,
         parameters={"phase": "auto_compact"},
     )
