@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.workers.base import ChannelWorker
+from magi.channels.worker_base import ChannelWorker
 from magi.channels.api.health import health_channels
 
 
@@ -60,8 +60,8 @@ def test_health_returns_none_when_not_polled():
 @pytest.mark.asyncio
 async def test_health_endpoint_returns_empty_when_no_workers():
     """/health/channels returns empty channels list when no workers registered."""
-    from magi.channels.workers import _registry as workers_registry
-    from magi.channels.workers import registered_channel_workers
+    from magi.channels import _registry as workers_registry
+    from magi.channels import registered_channel_workers
 
     # Save and clear
     saved = dict(workers_registry)

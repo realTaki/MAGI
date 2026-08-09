@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.workers.task import TaskWorker
+from magi.channels.tasks.worker import TaskWorker
 
 
 def test_init_populates_required_attributes():

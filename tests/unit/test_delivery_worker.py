@@ -48,7 +48,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
         "magi.channels.telegram.bot.send_text_raw", fake_send,
     )
 
-    from magi.channels.workers.telegram import TelegramWorker
+    from magi.channels.telegram.worker import TelegramWorker
 
     worker = TelegramWorker(mock_bus)
     worker._stopping = False
@@ -91,7 +91,7 @@ async def test_telegram_worker_fails_without_token():
         job_id="j1",
     )
 
-    from magi.channels.workers.telegram import TelegramWorker
+    from magi.channels.telegram.worker import TelegramWorker
 
     worker = TelegramWorker(mock_bus)
 

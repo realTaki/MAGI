@@ -65,7 +65,7 @@ def test_worker_should_fire_run_at_once():
     mock_bus.agent_job_board = MagicMock()
     mock_bus.messages_book = MagicMock()
 
-    from magi.channels.workers.task import TaskWorker
+    from magi.channels.tasks.worker import TaskWorker
     w = TaskWorker(mock_bus)
 
     past = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()

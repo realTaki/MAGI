@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.workers.base import ChannelWorker
+from magi.channels.worker_base import ChannelWorker
 from magi.new_bus.guild.deliveryJob import DeliveryJob, DeliveryResult
 
 
