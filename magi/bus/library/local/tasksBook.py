@@ -436,6 +436,12 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 ) from None
             kwargs["run_at"] = canonical
         with self._session() as s:
+            # ``id`` is a String PK (per the legacy ``task_<hex>`` shape
+            # carried forward from the old bus). The Book mints it
+            # when the caller didn't pass one — same as ``upsert_by_name``
+            # does.
+            if "id" not in kwargs or not kwargs["id"]:
+                kwargs["id"] = _new_task_id()
             row = _TaskRow(source=source, **kwargs)
             s.add(row)
             s.commit()
@@ -690,7 +696,12 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             if task is not None:
                 task.last_run_at = started_at
             s.commit()
-            return self._row_to_dto(run_row)
+            s.refresh(run_row)
+        # ``self.dto_cls`` is ``Task``, not ``TaskRun`` — convert the
+        # run row via the ``TaskRunBook`` so the field set matches.
+        # Sharing the same ``magis_factory`` keeps both Books on the
+        # same session/connection scope.
+        return TaskRunBook(self._factory)._row_to_dto(run_row)
 
     def mark_run_at_consumed(self, *, task_id: str) -> None:
         """One-shot run_at: set enabled=0 after successful fire."""

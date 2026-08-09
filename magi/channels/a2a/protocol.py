@@ -43,7 +43,7 @@ Inbound (peer → me):
 
 Outbound (me → peer):
 
-    POST {peer_im_id}/a2a/inbox     # peer_im_id from lookup_im_id
+    POST {peer_runtime_address}/a2a/inbox
     Headers: same as inbound
     Body:    same as inbound
 
@@ -69,7 +69,7 @@ where ``<code>`` is one of:
 
 Why these codes: domain code (tools, runner, webui) treats
 non-2xx as opaque ``response.json()["error"]`` — no extra
-schema to learn. The dispatcher logs the code on the sending
+schema to learn. The A2A worker logs the code on the sending
 side for ops triage.
 """
 
@@ -101,7 +101,7 @@ REPLAY_WINDOW_SECONDS: Final[int] = 300
 #: the use case, and short enough to keep headers tidy.
 SIGNATURE_LENGTH: Final[int] = 32
 
-#: Error codes the dispatcher logs on the sending side
+#: Error codes the A2A worker logs on the sending side
 #: when a peer responds with a non-2xx status.
 ERROR_INVALID_SIGNATURE: Final[str] = "auth.invalid_signature"
 ERROR_REPLAYED_TIMESTAMP: Final[str] = "auth.replayed_timestamp"

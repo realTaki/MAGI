@@ -1,7 +1,7 @@
 """Connector registry — process-wide connector instances.
 
-Mirrors :mod:`magi.channels.dispatcher` (channels) and
-:mod:`magi.tools.registry` (tools) so the runtime has a
+Uses the same explicit-registry pattern as
+:mod:`magi.tools.registry` so the runtime has a
 single pattern for "register at boot, look up by name,
 clean up at shutdown".
 
@@ -32,7 +32,7 @@ _INSTANCES: dict[tuple[str, str], Connector] = {}
 # Optional loader hooks. ``register_connector_factory(name, fn)``
 # installs a *factory* that ``load_connectors`` calls to
 # construct one :class:`Connector` for every enabled config.
-# Mirrors ``magi.channels.dispatcher.register_adapter``.
+# Re-registering a name intentionally replaces its factory.
 _FACTORIES: dict[str, Any] = {}
 
 
@@ -44,8 +44,7 @@ def register_connector_factory(
 
     ``factory(config: ConnectorConfig) -> Connector`` is
     called once per enabled config at boot. Re-registering
-    the same name replaces the prior factory — same
-    idempotency contract as :func:`magi.channels.dispatcher.register_adapter`.
+    the same name replaces the prior factory.
     """
     _FACTORIES[name] = factory
 

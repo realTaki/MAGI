@@ -1,14 +1,10 @@
-"""A2A channel adapter — skeleton.
+"""A2A peer-route resolver.
 
-Design lives in :mod:`magi.channels.a2a` (the package docstring).
-This file owns the dispatcher contract surface; every method
-that talks to the wire is intentionally ``NotImplementedError``
-until the runtime lands. The adapter is registered at import
-time so the dispatcher routes ``Channel.A2A`` to it from day
-one (letting domain code reach ``send_to_uid`` + ``lookup_im_id``
-without crashing).
+The A2A worker owns durable peer delivery. This module only resolves a
+target MAGI to its runtime address; it is not a channel adapter and is not
+registered in the human-channel delivery path.
 
-Adapter contract — see ``magi.channels.dispatcher.ChannelAdapter``:
+Route resolver contract:
 
   - ``name`` is ``"a2a"`` (matches :attr:`magi.channels.Channel.A2A`).
   - ``send(uid=magic_id, text)``
@@ -81,7 +77,7 @@ class A2AAdapter:
     def lookup_im_id(self, uid: int) -> str | None:
         """Return the peer's cluster DNS name, or ``None``.
 
-        Implemented as a stub so the dispatcher contract
+        Implemented as a stub so the route-resolver contract
         resolves without raising: callers can already read
         the placeholder. The placeholder uses the
         ``magi-magi-node-<uid>`` prefix matching the k8s
@@ -104,12 +100,9 @@ class A2AAdapter:
         """Not applicable for a2a — peer routing uses the
         public ``magic`` table, no per-peer im_id binding.
 
-        The dispatcher does not call this method (it is only
-        invoked from the wizard's verify-and-bind flow,
-        which is human-channel specific), so the runtime
-        never reaches this stub in practice. We raise
-        explicitly so a future caller that tries to reuse
-        the bind API for a2a gets a clear error.
+        A2A has no user-selectable address binding. We raise explicitly so a
+        future caller that tries to reuse human-channel binding gets a clear
+        error.
         """
         raise NotImplementedError(
             "A2AAdapter.bind_im_id is not applicable: peer "

@@ -119,7 +119,7 @@ def _build_tool_out(
 @router.get("/tools", response_model=ToolListOut)
 def list_tools(_admin: AdminGate) -> ToolListOut:
     """Render the durable bus catalog, never an execution registry."""
-    definitions = bus.tool_catalog.list_definitions()
+    definitions = bus.tool_definitions_book.list_enabled()
     items = [
         _build_tool_out(
             {

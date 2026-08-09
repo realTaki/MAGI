@@ -88,10 +88,16 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     """TaskBook.mark_run_at_consumed sets enabled=0 after fire."""
     from magi.bus.db import EngineFactory
     from magi.bus.library.local.tasksBook import TaskBook, ChannelEnum, SOURCE_USER
+    from magi.bus.library.local.contactBook import ContactBook
+    from magi.bus.library.local.sessionBook import SessionBook  # noqa: F401
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
     tb = TaskBook(f)
+
+    # ``tasks.uid`` → ``contacts.id`` is a RESTRICT FK; seed a contact
+    # so the INSERT below doesn't trip it.
+    uid = ContactBook(f).add(name="test-contact", role="assigned").id
 
     future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     now = datetime.now(timezone.utc).isoformat()
@@ -101,8 +107,8 @@ def test_mark_run_at_consumed_sets_enabled_zero():
         prompt="run once then disable",
         run_at=future,
         target_channel=ChannelEnum.WEBUI,
-        uid=42,
-        session_id="sess_oc",
+        uid=uid,
+        session_id=None,
         tz="UTC",
         created_at=now,
         updated_at=now,

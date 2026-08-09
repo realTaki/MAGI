@@ -214,6 +214,32 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
+    def set_telegram_id(
+        self,
+        *,
+        contact_id: int,
+        telegram_id: int | None,
+    ) -> Contact | None:
+        """[claude, 2026-08-08] Bind / unbind a Telegram chat id on a contact.
+
+        ``telegram_id=None`` clears the binding. Returns the updated
+        :class:`Contact` or ``None`` if no row matches.
+
+        Required by ``magi/channels/telegram/adapter.py`` and
+        ``magi/channels/api/tg_bindings.py`` (both reach this through
+        the :mod:`magi.channels.api._bus` wrapper).
+        """
+        with self._session() as s:
+            row = s.scalar(
+                select(_ContactRow).where(_ContactRow.id == contact_id)
+            )
+            if row is None:
+                return None
+            row.telegram_id = telegram_id
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
     def search(self, *, query: str, limit: int = 20) -> list[Contact]:
         """Case-insensitive substring search across name and notes.
 

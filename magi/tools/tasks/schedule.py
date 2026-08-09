@@ -304,16 +304,17 @@ class ScheduleTaskTool(Tool):
         # is enforced by the worker via ``Tool.gate(ctx)``
         # before ``run()`` is called — no manual re-check here.
 
-        # D.28: stamp the operator's bound IM id on the new
-        # session row as a breadcrumb. Resolved via the
-        # bus.dispatcher outside the open_session
-        # (the dispatcher opens its own SQLite session
-        # — nested inside an outer txn would deadlock).
+        # Stamp the Contact-owned Telegram address on the new session as a
+        # breadcrumb. Resolve it outside the task write transaction because
+        # ContactBook uses its own short SQLite transaction.
         # Empty string when the operator has no TG binding.
         operator_id = int(ctx.uid)
         bus = ctx.bus
+        contact = bus.contacts_book.get(contact_id=operator_id)
         task_session_delivery_address = (
-            bus.dispatcher.lookup_im_id(operator_id, ChannelEnum.TG) or ""
+            str(contact.telegram_id)
+            if contact is not None and contact.telegram_id is not None
+            else ""
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
