@@ -147,9 +147,6 @@ async def _runtime_lifespan(
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
-    import magi.channels
-    magi.channels.set_current_bus(bus)
-
     # Startup order: providers → tools → mcp → agent → channels → proactive
     await start_provider_worker(bus=bus)
     await start_tool_worker(bus=bus)
@@ -196,9 +193,6 @@ async def worker_lifespan():
 
     state_dir = str(resolve_workspace_dir() / "memories")
     bus = bootstrap_bus(state_dir=state_dir)
-
-    import magi.channels
-    magi.channels.set_current_bus(bus)
 
     await start_provider_worker(bus=bus)
     await start_tool_worker(bus=bus)
@@ -321,9 +315,11 @@ async def _serve_runtime_api(
     log_level = _log_level(bus)
     reload_dirs = _reload_dirs() if reload else None
 
+    from magi.channels.api.app import create_runtime_app
+
     config = uvicorn.Config(
-        "magi.channels.api.app:create_runtime_app",
-        factory=True,
+        create_runtime_app(bus=bus),
+        factory=False,
         host=host,
         port=port,
         log_level=log_level,

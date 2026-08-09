@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from magi.channels.a2a.protocol import PROTOCOL_VERSION, verify_signature
-from magi.channels import get_current_bus
+from magi.channels.api.dependencies import get_bus
 
 router = APIRouter(tags=["a2a"])
 
@@ -29,10 +29,9 @@ def _error(status: int, code: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": code})
 
 
-def _can_receive_from(sender_magic_id: int) -> bool:
+def _can_receive_from(bus, sender_magic_id: int) -> bool:
     # Bus memberships_book is the source of truth for A2A scope
-    bus = get_current_bus()
-    if bus is not None and bus.memberships_book is not None:
+    if bus.memberships_book is not None:
         try:
             return bus.memberships_book.can_receive_a2a(sender_magic_id)
         except (AttributeError, NotImplementedError):
@@ -43,6 +42,7 @@ def _can_receive_from(sender_magic_id: int) -> bool:
 
 @router.post("/a2a/inbox", status_code=202)
 async def receive(request: Request) -> JSONResponse:
+    bus = get_bus(request)
     raw = await request.body()
     headers = request.headers
     try:
@@ -55,7 +55,7 @@ async def receive(request: Request) -> JSONResponse:
         return _error(400, "bad_request")
     if not verify_signature(magic_id=magic_id, timestamp=timestamp, body=raw, signature=signature):
         return _error(401, "auth.invalid_signature")
-    if not _can_receive_from(magic_id):
+    if not _can_receive_from(bus, magic_id):
         return _error(403, "auth.out_of_scope")
     try:
         body = json.loads(raw)
@@ -74,9 +74,6 @@ async def receive(request: Request) -> JSONResponse:
         if not isinstance(reply_to, str) or not reply_to:
             return _error(400, "bad_request")
         is_error = bool(body.get("is_error", False))
-        bus = get_current_bus()
-        if bus is None:
-            return _error(503, "bus_unavailable")
         from magi.bus.guild.sendA2AJob import SendA2AResult
 
         bus.a2a_job_board.submit_result(
@@ -99,9 +96,6 @@ async def receive(request: Request) -> JSONResponse:
     # v2.0 ChatJob envelope: event_id is the producer idempotency key;
     # conversation_id scopes the steering claim; payload carries all
     # channel-specific fields.
-    bus = get_current_bus()
-    if bus is None:
-        return _error(503, "bus_unavailable")
     from magi.bus.guild.chatJob import ChatJob
 
     run_id = bus.agent_job_board.publish(

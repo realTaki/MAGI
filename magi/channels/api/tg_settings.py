@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,
     DEFAULT_READ_REACTION_EMOJI,
@@ -104,9 +105,9 @@ class DoneReactionUpdateRequest(BaseModel):
 
 
 @router.get("/tg-settings/read-reaction", response_model=ReadReactionOut)
-def get_read_reaction(_admin: AdminGate) -> ReadReactionOut:
+def get_read_reaction(_admin: AdminGate, bus: BusDep) -> ReadReactionOut:
     return ReadReactionOut(
-        current=get_read_reaction_emoji(),
+        current=get_read_reaction_emoji(bus),
         default=DEFAULT_READ_REACTION_EMOJI,
         choices=[
             ReactionChoice(value=v, label=lbl)
@@ -119,6 +120,7 @@ def get_read_reaction(_admin: AdminGate) -> ReadReactionOut:
 def put_read_reaction(
     payload: ReadReactionUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ReadReactionOut:
     """Persist a new read-reaction emoji.
 
@@ -140,7 +142,7 @@ def put_read_reaction(
             ),
         )
 
-    set_read_reaction_emoji(payload.emoji)
+    set_read_reaction_emoji(bus, payload.emoji)
     logger.info("tg read-reaction emoji set to %r", payload.emoji)
     return ReadReactionOut(
         current=payload.emoji,
@@ -153,10 +155,10 @@ def put_read_reaction(
 
 
 @router.get("/tg-settings/done-reaction", response_model=DoneReactionOut)
-def get_done_reaction(_admin: AdminGate) -> DoneReactionOut:
+def get_done_reaction(_admin: AdminGate, bus: BusDep) -> DoneReactionOut:
     """Return the configured done-reaction emoji + choices."""
     return DoneReactionOut(
-        current=get_done_reaction_emoji(),
+        current=get_done_reaction_emoji(bus),
         default=DEFAULT_DONE_REACTION_EMOJI,
         choices=[
             ReactionChoice(value=v, label=lbl)
@@ -169,6 +171,7 @@ def get_done_reaction(_admin: AdminGate) -> DoneReactionOut:
 def put_done_reaction(
     payload: DoneReactionUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> DoneReactionOut:
     """Persist a new done-reaction emoji.
 
@@ -192,7 +195,7 @@ def put_done_reaction(
             ),
         )
 
-    set_done_reaction_emoji(payload.emoji)
+    set_done_reaction_emoji(bus, payload.emoji)
     logger.info("tg done-reaction emoji set to %r", payload.emoji)
     return DoneReactionOut(
         current=payload.emoji,

@@ -13,11 +13,11 @@ from magi.channels.a2a.adapter import A2AAdapter
 from magi.channels.a2a.protocol import sign_request
 
 
-async def send_a2a_delivery(target_magic_id: int, event_id: str, payload: dict[str, Any]) -> None:
+async def send_a2a_delivery(bus, target_magic_id: int, event_id: str, payload: dict[str, Any]) -> None:
     runtime_id = os.environ.get("MAGI_RUNTIME_ID", "")
     if not runtime_id.isdigit():
         raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
-    destination = A2AAdapter().lookup_im_id(target_magic_id)
+    destination = A2AAdapter(bus).lookup_im_id(target_magic_id)
     if not destination:
         raise RuntimeError(f"no A2A route for magic {target_magic_id}")
     body = {

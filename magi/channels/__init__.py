@@ -21,31 +21,10 @@ here as the common channel vocabulary.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
 from magi.channels.worker_base import ChannelWorker
 from magi.bus.library.local.tasksBook import Channel
 
-if TYPE_CHECKING:
-    from magi.bus import Bus
-
 logger = logging.getLogger("magi.channels")
-
-# Adapter bridge set by the runtime after bus bootstrap. New worker code uses
-# explicit constructor injection; this accessor is limited to channel adapters.
-_current_bus: Bus | None = None
-
-
-def set_current_bus(bus: Bus) -> None:
-    """Set the process-global bus reference."""
-    global _current_bus
-    _current_bus = bus
-
-
-def get_current_bus() -> Bus | None:
-    """Return the process-global bus reference, or None."""
-    return _current_bus
-
 
 # ── Channel Worker lifecycle ─────────────────────────────────────────
 
@@ -135,8 +114,6 @@ __all__ = [
     "worker_base",
     "Channel",
     "ChannelWorker",
-    "set_current_bus",
-    "get_current_bus",
     "start_channel_workers",
     "stop_channel_workers",
     "registered_channel_workers",

@@ -43,4 +43,4 @@ class A2AWorker(ChannelWorker):
         from magi.channels.a2a.transport import send_a2a_delivery
         target = int(job.target) if job.target else 0
         if not target: raise ValueError("A2A delivery missing target")
-        await send_a2a_delivery(target, job.invocation_id, job.request or {})
+        await send_a2a_delivery(self.bus, target, job.invocation_id, job.request or {})

@@ -152,15 +152,14 @@ def run_webui() -> None:
     # workers; the selected MAGI runtime owns those.  Both processes point at
     # the same durable local state directory.
     from magi.bus import bootstrap_bus
-    from magi.channels import set_current_bus
+    from magi.channels.api.app import create_control_app
     from magi.startup.paths import resolve_workspace_dir
 
     state_dir = Path(resolve_workspace_dir()) / "memories"
     state_dir.mkdir(parents=True, exist_ok=True)
-    set_current_bus(bootstrap_bus(state_dir=str(state_dir)))
+    app = create_control_app(bus=bootstrap_bus(state_dir=str(state_dir)))
     uvicorn.run(
-        "magi.channels.api.app:create_control_app",
-        factory=True,
+        app,
         host=str(os.environ.get("MAGI_WEBUI_HOST") or WEBUI_HOST),
         port=int(os.environ.get("MAGI_WEBUI_PORT") or WEBUI_PORT),
         log_level=DEFAULT_LOG_LEVEL,

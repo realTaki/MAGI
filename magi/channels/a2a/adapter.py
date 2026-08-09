@@ -34,8 +34,12 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from magi.channels import Channel
+
+if TYPE_CHECKING:
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.channels.a2a.adapter")
 
@@ -43,7 +47,7 @@ logger = logging.getLogger("magi.channels.a2a.adapter")
 class A2AAdapter:
     """Channel adapter for MAGI-to-MAGI peer messaging.
 
-    Holds no state. The HTTP client (when implemented) will be
+    Holds the explicit BUS dependency. The HTTP client (when implemented) will be
     cached per peer ``magic_id`` and refreshed when the
     direct-membership list changes (the membership change is
     visible to this process via the public MAGIS PostgreSQL,
@@ -52,23 +56,21 @@ class A2AAdapter:
 
     name: str = Channel.A2A
 
+    def __init__(self, bus: "Bus") -> None:
+        self.bus = bus
+
     async def send(self, uid: int, text: str) -> None:
         """Push ``text`` to peer ``uid`` (a ``magic.id``).
 
         Queue a durable A2A delivery through bus delivery_job_board.
         """
-        from magi.channels import get_current_bus
-
         if not text:
             raise ValueError("A2A messages cannot be empty")
         if not os.environ.get("MAGI_RUNTIME_ID", "").isdigit():
             raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
 
-        nb = get_current_bus()
-        if nb is None:
-            raise RuntimeError("bus unavailable for A2A delivery")
         from magi.bus.guild.deliveryJob import DeliveryJob
-        nb.delivery_job_board.publish(DeliveryJob(
+        self.bus.delivery_job_board.publish(DeliveryJob(
             channel=Channel.A2A,
             destination=str(uid),
             payload={"text": text, "reply_to": None},

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from magi.channels import get_current_bus
+if TYPE_CHECKING:
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.channels.telegram.config")
 
@@ -30,15 +32,12 @@ DEFAULT_DONE_REACTION_EMOJI = "🏆"
 _VALID_EMOJI: frozenset[str] = frozenset(v for v, _ in REACTION_CHOICES)
 
 
-def _settings():
-    nb = get_current_bus()
-    if nb is None:
-        raise RuntimeError("bus unavailable")
-    return nb.settings_book
+def _settings(bus: "Bus"):
+    return bus.settings_book
 
 
-def get_read_reaction_emoji() -> str:
-    raw = _settings().get(key=_READ_META_KEY)
+def get_read_reaction_emoji(bus: "Bus") -> str:
+    raw = _settings(bus).get(key=_READ_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
             logger.warning("tg.read_reaction_emoji %r not in allowlist; defaulting", raw)
@@ -46,12 +45,12 @@ def get_read_reaction_emoji() -> str:
     return raw
 
 
-def set_read_reaction_emoji(emoji: str) -> None:
-    _settings().set(key=_READ_META_KEY, value=emoji)
+def set_read_reaction_emoji(bus: "Bus", emoji: str) -> None:
+    _settings(bus).set(key=_READ_META_KEY, value=emoji)
 
 
-def get_done_reaction_emoji() -> str:
-    raw = _settings().get(key=_DONE_META_KEY)
+def get_done_reaction_emoji(bus: "Bus") -> str:
+    raw = _settings(bus).get(key=_DONE_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
             logger.warning("tg.done_reaction_emoji %r not in allowlist; defaulting", raw)
@@ -59,5 +58,5 @@ def get_done_reaction_emoji() -> str:
     return raw
 
 
-def set_done_reaction_emoji(emoji: str) -> None:
-    _settings().set(key=_DONE_META_KEY, value=emoji)
+def set_done_reaction_emoji(bus: "Bus", emoji: str) -> None:
+    _settings(bus).set(key=_DONE_META_KEY, value=emoji)

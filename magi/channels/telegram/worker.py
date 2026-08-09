@@ -70,7 +70,7 @@ class TelegramWorker(ChannelWorker):
             await update.effective_message.reply_text("MAGI currently only handles text messages."); return
         session_id = _resolve_tg_session(self.bus, uid=uid, tgid=tgid)
         _append_user_message(self.bus, session_id, text)
-        asyncio.create_task(_send_read_receipt(update))
+        asyncio.create_task(_send_read_receipt(update, self.bus))
         from magi.bus.guild.chatJob import publish_chat
         try:
             publish_chat(
@@ -130,9 +130,9 @@ async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
     await update.effective_message.reply_text(f"Your Telegram ID is {tgid}. Ask your admin to add you.")
 
 
-async def _send_read_receipt(update) -> None:
+async def _send_read_receipt(update, bus: Bus) -> None:
     try:
         from magi.channels.telegram.config import get_read_reaction_emoji
-        reaction = get_read_reaction_emoji()
+        reaction = get_read_reaction_emoji(bus)
         if reaction: await update.get_bot().set_message_reaction(chat_id=update.effective_chat.id, message_id=update.effective_message.message_id, reaction=reaction)
     except Exception: pass

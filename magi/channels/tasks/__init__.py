@@ -9,6 +9,4 @@ and scheduler lifecycle. System-initiated proactive policies, including
 bundled task presets and their seeding, live in :mod:`magi.proactive`.
 """
 
-from magi.channels.tasks.channel import TaskChannel
-
-__all__ = ["TaskChannel"]
+__all__: list[str] = []

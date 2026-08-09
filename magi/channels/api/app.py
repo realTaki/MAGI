@@ -32,6 +32,11 @@ from pydantic import BaseModel
 from magi import __version__
 from magi.channels.api import auth, contacts, magic, magis, onboarding
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from magi.bus import Bus
+
 logger = logging.getLogger("magi.channels.api")
 
 # In-container path the Dockerfile uses. In dev (vite dev), we look
@@ -86,7 +91,13 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def create_app(*, include_spa: bool = True, include_control_routes: bool = True, include_private_routes: bool = True) -> FastAPI:
+def create_app(
+    *,
+    bus: "Bus",
+    include_spa: bool = True,
+    include_control_routes: bool = True,
+    include_private_routes: bool = True,
+) -> FastAPI:
     """Build either the standalone control WebUI or an internal Runtime API.
 
     ``include_control_routes=False`` is used by every MAGI runtime: it omits
@@ -101,23 +112,12 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     # ``magi.__main__``; the composition root owns the cross-package wiring.
     _ = include_private_routes  # keep the parameter's historical gate
 
-    # D.7: lifespan hook starts the auto-title background
-    # worker. Kept lazy (inside ``create_app``) so it runs
-    # after ``init_orm`` / ``init_sqlite`` have prepared the
-    # state — module-level startup would race those calls.
+    # Workers are owned by ``magi.startup.runtime``.  The HTTP application
+    # only exposes the BUS instance it was explicitly given; it never creates
+    # another BUS or worker pool in its lifespan.
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
-        if not include_private_routes:
-            yield
-            return
-        from magi.startup.runtime import worker_lifespan
-
-        async with worker_lifespan():
-            logger.info("durable runtime workers started")
-            try:
-                yield
-            finally:
-                logger.info("durable runtime workers stopped")
+        yield
 
     app = FastAPI(
         title="MAGI",
@@ -125,6 +125,7 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
         summary="MAGI node — channel-driven (WebUI / Telegram / …).",
         lifespan=_lifespan,
     )
+    app.state.bus = bus
 
     # Install the i18n-ready error envelope BEFORE the
     # routers mount so :class:`MagiHTTPException` raised
@@ -320,17 +321,11 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     return app
 
 
-def create_runtime_app() -> FastAPI:
+def create_runtime_app(*, bus: "Bus") -> FastAPI:
     """Factory for the internal API served by every MAGI runtime."""
-    return create_app(include_spa=False, include_control_routes=False)
+    return create_app(bus=bus, include_spa=False, include_control_routes=False)
 
 
-def create_control_app() -> FastAPI:
+def create_control_app(*, bus: "Bus") -> FastAPI:
     """Factory for the singleton browser-facing service; it has no local MAGI state."""
-    return create_app(include_spa=True, include_control_routes=True, include_private_routes=False)
-
-
-# A direct ASGI import must be safe in the singleton WebUI container: unlike a
-# MAGI runtime, it must never initialise private SQLite state merely by being
-# imported. Runtime containers always use ``create_runtime_app`` explicitly.
-app = create_control_app()
+    return create_app(bus=bus, include_spa=True, include_control_routes=True, include_private_routes=False)
